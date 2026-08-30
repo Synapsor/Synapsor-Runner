@@ -39,6 +39,13 @@ export type ReadWorkloadSet = {
   source: ReadWorkloadSource;
 };
 
+export type ReadWorkloadPlanCard = {
+  id: string;
+  title: string;
+  detail: string;
+  plan: Record<string, unknown>;
+};
+
 export type ReadAuthorityOperation =
   | "resource"
   | "return"
@@ -105,6 +112,200 @@ export type ReadWorkloadAnalysis = {
   explore_budget_consumed: false;
   source_database_changed: false;
 };
+
+/**
+ * Builds exact, no-model workload choices from authority already proven in the
+ * generated boundary. Selecting a card is representative intent, not an
+ * authority grant; the resulting minimum candidate remains disabled.
+ */
+export function buildReadWorkloadPlanCards(
+  generatedBoundary: ExplorationBoundaryDraft,
+): ReadWorkloadPlanCard[] {
+  const cards: ReadWorkloadPlanCard[] = [];
+  const resources = new Map(
+    generatedBoundary.pack.resources.map((resource) => [resource.id, resource]),
+  );
+  const add = (card: ReadWorkloadPlanCard): void => {
+    if (cards.some((existing) => existing.id === card.id)) return;
+    try {
+      const validated = validateExploreRequest(card.plan, activatedFacade(generatedBoundary));
+      compileExplorePlan(
+        validated.plan,
+        activatedFacade(generatedBoundary),
+        placeholderContext(),
+        generatedEngine(generatedBoundary),
+      );
+      cards.push(card);
+    } catch {
+      // A generated review can contain combinations that are individually
+      // reviewed but not valid together. Do not offer a card that cannot pass
+      // the same validator and compiler used at execution time.
+    }
+  };
+
+  for (const resource of generatedBoundary.pack.resources) {
+    const resourceName = metadataName(resource.label, resource.table);
+    const selected = resource.selectable_fields
+      .filter((field) => !(resource.model_withheld_fields ?? []).includes(field))
+      .slice(0, 4);
+    if (selected.length) {
+      add({
+        id: cardId("rows", resource.id),
+        title: `List ${resourceName}`,
+        detail: `Return ${selected.map((field) => metadataName(resource.field_metadata?.[field]?.label, field)).join(", ")}`,
+        plan: {
+          kind: "rows",
+          resource: resource.id,
+          select: selected,
+          limit: Math.min(25, generatedBoundary.budgets.max_rows),
+        },
+      });
+    }
+
+    add({
+      id: cardId("count", resource.id),
+      title: `Count ${resourceName}`,
+      detail: "Return one reviewed, cohort-protected count",
+      plan: {
+        kind: "aggregate",
+        resource: resource.id,
+        measures: [{ function: "count" }],
+        top_n: 1,
+      },
+    });
+
+    for (const field of resource.groupable_fields) {
+      const fieldName = metadataName(resource.field_metadata?.[field]?.label, field);
+      add({
+        id: cardId("count_by", resource.id, field),
+        title: `Count ${resourceName} by ${fieldName}`,
+        detail: `Group the reviewed count by ${field}`,
+        plan: {
+          kind: "aggregate",
+          resource: resource.id,
+          measures: [{ function: "count" }],
+          dimensions: [{ field }],
+          top_n: Math.min(25, generatedBoundary.budgets.max_top_n),
+        },
+      });
+    }
+
+    for (const field of resource.aggregate_measures) {
+      const functions = resource.aggregate_measure_functions?.[field] ?? ["sum", "avg"];
+      for (const fn of preferredAggregateFunctions(functions)) {
+        const fieldName = metadataName(resource.field_metadata?.[field]?.label, field);
+        const dimension = resource.groupable_fields[0];
+        add({
+          id: cardId(fn, resource.id, field, dimension),
+          title: `${aggregateVerb(fn)} ${fieldName}${dimension
+            ? ` by ${metadataName(resource.field_metadata?.[dimension]?.label, dimension)}`
+            : ` for ${resourceName}`}`,
+          detail: dimension
+            ? `Aggregate ${field} and group by ${dimension}`
+            : `Aggregate the reviewed ${field} measure`,
+          plan: {
+            kind: "aggregate",
+            resource: resource.id,
+            measures: [{ function: fn, field }],
+            ...(dimension ? { dimensions: [{ field: dimension }] } : {}),
+            top_n: Math.min(25, generatedBoundary.budgets.max_top_n),
+          },
+        });
+      }
+    }
+
+    for (const [field, buckets] of Object.entries(resource.time_bucket_fields)) {
+      const bucket = buckets.includes("month") ? "month" : buckets[0];
+      if (!bucket) continue;
+      add({
+        id: cardId("count_over", resource.id, field, bucket),
+        title: `Count ${resourceName} over ${readableIdentifier(bucket)}s`,
+        detail: `Bucket ${field} by reviewed ${bucket} boundaries`,
+        plan: {
+          kind: "aggregate",
+          resource: resource.id,
+          measures: [{ function: "count" }],
+          time_bucket: { field, bucket },
+          top_n: Math.min(25, generatedBoundary.budgets.max_top_n),
+        },
+      });
+    }
+
+    for (const relationship of [...resource.relationships].sort((left, right) =>
+      (right.path_depth ?? 1) - (left.path_depth ?? 1) || left.id.localeCompare(right.id))) {
+      const target = resources.get(relationship.target_resource);
+      if (!target) continue;
+      for (const field of target.groupable_fields.slice(0, 2)) {
+        add({
+          id: cardId("count_by_related", resource.id, relationship.id, field),
+          title: `Count ${resourceName} by related ${metadataName(target.field_metadata?.[field]?.label, field)}`,
+          detail: `${readableIdentifier(resource.table)} -> ${readableIdentifier(target.table)} via a reviewed ${relationship.path_depth}-hop path`,
+          plan: {
+            kind: "aggregate",
+            resource: resource.id,
+            measures: [{ function: "count" }],
+            dimensions: [{ field, relationship: relationship.id }],
+            top_n: Math.min(25, generatedBoundary.budgets.max_top_n),
+          },
+        });
+      }
+    }
+  }
+  return fairPlanCardSelection(cards, generatedBoundary.pack.resources.map((resource) => resource.id), 40);
+}
+
+export function readWorkloadFromPlanCards(input: {
+  name?: string;
+  cards: ReadWorkloadPlanCard[];
+  selectedIds: string[];
+}): ReadWorkloadSet {
+  const byId = new Map(input.cards.map((card) => [card.id, card]));
+  const selected = [...new Set(input.selectedIds)].map((id) => {
+    const card = byId.get(id);
+    if (!card) throw new Error(`READ_WORKLOAD_CARD_UNKNOWN: ${id} is not an offered reviewed plan.`);
+    return card;
+  });
+  if (!selected.length) {
+    throw new Error("READ_WORKLOAD_CARD_REQUIRED: select at least one representative question.");
+  }
+  return normalizeReadWorkloadSet({
+    schema_version: READ_WORKLOAD_SET_VERSION,
+    name: input.name?.trim() || "representative_reads",
+    allowed: selected.map((card) => ({
+      id: card.id,
+      description: card.title,
+      plan: card.plan,
+    })),
+    forbidden: [],
+    source: { kind: "operator_exact_plan" },
+  });
+}
+
+export function rankReadWorkloadPlanCardsForJob(
+  cards: ReadWorkloadPlanCard[],
+  job: string,
+): ReadWorkloadPlanCard[] {
+  const jobTokens = intentTokens(job);
+  if (!jobTokens.size) return [...cards];
+  return cards
+    .map((card, index) => {
+      const cardTokens = intentTokens([
+        card.title,
+        card.detail,
+        JSON.stringify(card.plan),
+      ].join(" "));
+      let score = 0;
+      for (const token of jobTokens) {
+        if (cardTokens.has(token)) score += token.length >= 8 ? 4 : token.length >= 5 ? 3 : 2;
+      }
+      const resource = typeof card.plan.resource === "string" ? readableIdentifier(card.plan.resource) : "";
+      const resourceTokens = intentTokens(resource);
+      if ([...resourceTokens].some((token) => jobTokens.has(token))) score += 6;
+      return { card, index, score };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .map(({ card }) => card);
+}
 
 export function normalizeReadWorkloadSet(value: unknown): ReadWorkloadSet {
   if (!isRecord(value)) {
@@ -776,6 +977,110 @@ function normalizeSource(value: unknown): ReadWorkloadSource {
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
   };
+}
+
+function metadataName(label: string | undefined, identifier: string): string {
+  return label?.trim() || readableIdentifier(identifier);
+}
+
+function readableIdentifier(value: string): string {
+  return value
+    .replaceAll(/[_-]+/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim();
+}
+
+function cardId(...parts: Array<string | undefined>): string {
+  const normalized = parts
+    .filter((part): part is string => Boolean(part))
+    .join("_")
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9_.-]+/g, "_")
+    .replaceAll(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return /^[a-z]/.test(normalized) ? normalized.slice(0, 64) : `q_${normalized}`.slice(0, 64);
+}
+
+function preferredAggregateFunctions(
+  functions: readonly AggregateMeasureFunction[],
+): AggregateMeasureFunction[] {
+  const preferred: AggregateMeasureFunction[] = ["avg", "sum", "stddev_pop", "stddev_samp", "var_pop", "var_samp"];
+  return preferred.filter((fn) => functions.includes(fn)).slice(0, 2);
+}
+
+function aggregateVerb(fn: AggregateMeasureFunction): string {
+  switch (fn) {
+    case "avg": return "Average";
+    case "sum": return "Total";
+    case "stddev_pop":
+    case "stddev_samp": return "Variation in";
+    case "var_pop":
+    case "var_samp": return "Variance of";
+    default: return readableIdentifier(fn);
+  }
+}
+
+function fairPlanCardSelection(
+  cards: ReadWorkloadPlanCard[],
+  resourceIds: string[],
+  limit: number,
+): ReadWorkloadPlanCard[] {
+  const queues = resourceIds.map((resourceId) => {
+    const remaining = cards.filter((card) => card.plan.resource === resourceId);
+    const take = (predicate: (card: ReadWorkloadPlanCard) => boolean): ReadWorkloadPlanCard | undefined => {
+      const index = remaining.findIndex(predicate);
+      return index < 0 ? undefined : remaining.splice(index, 1)[0];
+    };
+    const firstDimension = (card: ReadWorkloadPlanCard): Record<string, unknown> | undefined => {
+      const dimensions = Array.isArray(card.plan.dimensions) ? card.plan.dimensions : [];
+      return isRecord(dimensions[0]) ? dimensions[0] : undefined;
+    };
+    const firstMeasure = (card: ReadWorkloadPlanCard): Record<string, unknown> | undefined => {
+      const measures = Array.isArray(card.plan.measures) ? card.plan.measures : [];
+      return isRecord(measures[0]) ? measures[0] : undefined;
+    };
+    const front = [
+      take((card) => card.plan.kind === "rows"),
+      take((card) => card.plan.kind === "aggregate" && !card.plan.dimensions && !card.plan.time_bucket
+        && firstMeasure(card)?.function === "count"),
+      take((card) => Boolean(firstDimension(card)) && !firstDimension(card)?.relationship
+        && firstMeasure(card)?.function === "count"),
+      take((card) => Boolean(firstDimension(card)?.relationship)),
+      take((card) => firstMeasure(card)?.function !== "count"),
+      take((card) => Boolean(card.plan.time_bucket)),
+    ].filter((card): card is ReadWorkloadPlanCard => Boolean(card));
+    return [...front, ...remaining];
+  });
+  const selected: ReadWorkloadPlanCard[] = [];
+  for (let index = 0; selected.length < limit; index += 1) {
+    let added = false;
+    for (const queue of queues) {
+      const card = queue[index];
+      if (!card) continue;
+      selected.push(card);
+      added = true;
+      if (selected.length >= limit) break;
+    }
+    if (!added) break;
+  }
+  return selected;
+}
+
+function intentTokens(value: string): Set<string> {
+  const stopWords = new Set([
+    "a", "an", "and", "as", "at", "be", "by", "for", "from", "in", "is", "of", "on", "or", "per", "the", "to", "with",
+    "agent", "allow", "allowed", "answer", "auto", "approve", "propose", "show", "summarize",
+  ]);
+  const tokens = value.toLowerCase().replace(/[_./:-]+/gu, " ").match(/[a-z0-9]+/gu) ?? [];
+  return new Set(tokens.flatMap((token) => {
+    if (stopWords.has(token) || token.length < 2) return [];
+    const singular = token.endsWith("ies") && token.length > 4
+      ? `${token.slice(0, -3)}y`
+      : token.endsWith("s") && !token.endsWith("ss") && token.length > 3
+        ? token.slice(0, -1)
+        : token;
+    return singular === token ? [token] : [token, singular];
+  }));
 }
 
 function fieldsFor(atoms: ReadAuthorityAtom[], operation: ReadAuthorityOperation): Set<string> {

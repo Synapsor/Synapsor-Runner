@@ -99,6 +99,48 @@ describe("boundary review terminal picker", () => {
     await expect(confirmed).resolves.toBe(true);
   });
 
+  it("shows one prompt colon when a styled default is followed by Escape guidance", async () => {
+    const terminal = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(
+      terminal.input,
+      terminal.output,
+    );
+    const answer = session.promptText(terminalTheme(true).dim("Choice [Enter]:"));
+
+    await send(terminal.input, "\n");
+    await expect(answer).resolves.toBe("");
+
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("Choice [Enter] [Esc Back]:");
+    expect(rendered).not.toContain("Choice [Enter]: [Esc Back]:");
+  });
+
+  it("selects representative read questions in place without dumping the catalog", async () => {
+    const terminal = fakeTerminal(84, 16);
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const cards = Array.from({ length: 40 }, (_, index) => ({
+      id: `question_${index + 1}`,
+      title: `Question ${index + 1}`,
+      detail: `Reviewed aggregate shape ${index + 1}`,
+      plan: { resource: `public.resource_${index + 1}` },
+    }));
+
+    const selection = session.selectReadWorkloadCards!(cards);
+    await emitKey(terminal.input, { name: "space", sequence: " " });
+    await emitKey(terminal.input, { name: "down", sequence: "\u001b[B" });
+    await emitKey(terminal.input, { name: "down", sequence: "\u001b[B" });
+    await emitKey(terminal.input, { name: "space", sequence: " " });
+    await emitKey(terminal.input, { name: "return", sequence: "\r" });
+
+    await expect(selection).resolves.toEqual(["question_1", "question_3"]);
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("CHOOSE REPRESENTATIVE QUESTIONS");
+    expect(rendered).toContain("Space Select");
+    expect(rendered).toContain("2 selected");
+    expect(rendered).not.toContain("Question 40");
+    expect(terminal.input.isRaw).toBe(false);
+  });
+
   it("keeps the shell buffer hidden while naming a boundary from access", async () => {
     const terminal = fakeTerminal(80, 24);
     const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
@@ -152,6 +194,84 @@ describe("boundary review terminal picker", () => {
     expect(rendered.match(/SHARED REFERENCE REVIEW/gu)).toHaveLength(1);
     expect(rendered.match(/Table: public\.lab_catalog/gu)).toHaveLength(1);
     expect(terminal.input.isRaw).toBe(false);
+  });
+
+  it("keeps a numbered limits menu visible while the operator enters a choice", async () => {
+    const terminal = fakeTerminal(100, 28);
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const answer = session.promptText(
+      "Limit to review [1-13; Esc returns]",
+      {
+        context: [
+          "BOUNDARY LIMITS",
+          "1  Query volume           200 per rolling 24 hours",
+          "2  Request rate           120 per minute",
+          "3  Ranked candidate groups 50 groups",
+          "12 Derived-scope depth    2 proven hops",
+          "13 Analysis-path depth    2 proven hops",
+          "None of these settings changes small-group suppression.",
+        ],
+      },
+    );
+
+    await send(terminal.input, "12\n");
+    await expect(answer).resolves.toBe("12");
+
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("  BOUNDARY LIMITS\n");
+    expect(rendered).toContain("  1  Query volume");
+    expect(rendered).toContain("  12 Derived-scope depth");
+    expect(rendered).toContain("  13 Analysis-path depth");
+    expect(rendered).toContain("  Limit to review [1-13; Esc returns] [Esc Back]: 12");
+    expect(rendered.match(/BOUNDARY LIMITS/gu)).toHaveLength(1);
+    expect(terminal.input.isRaw).toBe(false);
+  });
+
+  it("keeps exact review context visible during ordinary and activation confirmations", async () => {
+    const ordinaryTerminal = fakeTerminal(100, 28);
+    const ordinarySession = createBoundaryReviewInteractiveSession(
+      ordinaryTerminal.input,
+      ordinaryTerminal.output,
+    );
+    const ordinary = ordinarySession.confirm(
+      "Confirm these reviewed settings?",
+      {
+        defaultValue: true,
+        context: [
+          "REVIEW EXACT BOUNDARY",
+          "Tenant scope: assets.tenant_id",
+          "Agent authority: unchanged until activation",
+        ],
+      },
+    );
+    await send(ordinaryTerminal.input, "\n");
+    await expect(ordinary).resolves.toBe(true);
+    const ordinaryOutput = stripAnsi(ordinaryTerminal.output.read()?.toString() ?? "");
+    expect(ordinaryOutput).toContain("REVIEW EXACT BOUNDARY");
+    expect(ordinaryOutput).toContain("Tenant scope: assets.tenant_id");
+    expect(ordinaryOutput).toContain("Confirm these reviewed settings? [Y/n]");
+
+    const activationTerminal = fakeTerminal(100, 28);
+    const activationSession = createBoundaryReviewInteractiveSession(
+      activationTerminal.input,
+      activationTerminal.output,
+    );
+    const activation = activationSession.confirmActivation!(
+      "Activate reviewed_staging exactly as shown?",
+      {
+        context: [
+          "REVIEW EXACT BOUNDARY",
+          "Writes: none - this is the Read Boundary",
+        ],
+      },
+    );
+    await send(activationTerminal.input, "y");
+    await expect(activation).resolves.toBe(true);
+    const activationOutput = stripAnsi(activationTerminal.output.read()?.toString() ?? "");
+    expect(activationOutput).toContain("REVIEW EXACT BOUNDARY");
+    expect(activationOutput).toContain("Writes: none - this is the Read Boundary");
+    expect(activationOutput).toContain("Activate reviewed_staging exactly as shown? [y/N]");
+    expect(activationTerminal.input.isRaw).toBe(false);
   });
 
   it("requires an explicit activation key and restores terminal state", async () => {
@@ -337,7 +457,7 @@ describe("boundary review terminal picker", () => {
     ));
     const firstView = output.read()?.toString() ?? "";
     expect(firstView).toContain("YOUR DATA BOUNDARY");
-    expect(firstView).toContain("\u001b[1;32mReviewed database grammar:");
+    expect(firstView).toMatch(/\u001b\[[0-9;]+mReviewed database grammar:/u);
     expect(stripAnsi(firstView)).toContain(
       "Reviewed database grammar: PostgreSQL 16 uses the full grammar; reviewed release line 16.",
     );
@@ -716,24 +836,37 @@ describe("boundary review terminal picker", () => {
     const session = createBoundaryReviewInteractiveSession(input, output);
     const selected = session.chooseResource([summary("public.orders", 0)]);
     const firstView = stripAnsi(output.read()?.toString() ?? "");
-    expect(firstView).toContain("W Workloads - compile representative reads");
+    expect(firstView).toContain("W Agent job - prepare reads + proposals");
     await send(input, "w");
     await expect(selected).resolves.toEqual({ action: "workloads" });
   });
 
-  it("shows Safe Actions status and opens proposal-only authoring only after read activation", async () => {
-    const inactiveTerminal = fakeTerminal();
-    const inactive = createBoundaryReviewInteractiveSession(
-      inactiveTerminal.input,
-      inactiveTerminal.output,
+  it("allows proposal drafting from a reviewed pending boundary while keeping activation separate", async () => {
+    const pendingTerminal = fakeTerminal();
+    const pending = createBoundaryReviewInteractiveSession(
+      pendingTerminal.input,
+      pendingTerminal.output,
     ).chooseResource([summary("public.orders", 0)]);
-    expect(stripAnsi(inactiveTerminal.output.read()?.toString() ?? ""))
-      .toContain("Y Safe actions - proposal-only first [NEEDS ACTIVE READS]");
-    await send(inactiveTerminal.input, "y");
-    expect(stripAnsi(inactiveTerminal.output.read()?.toString() ?? ""))
-      .toContain("Safe actions need an active reviewed read boundary");
-    await send(inactiveTerminal.input, "q");
-    await expect(inactive).resolves.toBeUndefined();
+    expect(stripAnsi(pendingTerminal.output.read()?.toString() ?? ""))
+      .toContain("Y Safe actions - prepare proposal [AVAILABLE]");
+    await send(pendingTerminal.input, "y");
+    await expect(pending).resolves.toEqual({
+      action: "actions",
+      boundary_name: "reviewed_staging",
+    });
+
+    const incompleteTerminal = fakeTerminal();
+    const incomplete = createBoundaryReviewInteractiveSession(
+      incompleteTerminal.input,
+      incompleteTerminal.output,
+    ).chooseResource([summary("public.orders", 1)]);
+    expect(stripAnsi(incompleteTerminal.output.read()?.toString() ?? ""))
+      .toContain("Y Safe actions - prepare proposal [FINISH READ REVIEW]");
+    await send(incompleteTerminal.input, "y");
+    expect(stripAnsi(incompleteTerminal.output.read()?.toString() ?? ""))
+      .toContain("Finish this exact read review first");
+    await send(incompleteTerminal.input, "q");
+    await expect(incomplete).resolves.toBeUndefined();
 
     const activeTerminal = fakeTerminal();
     const resource = summary("public.orders", 0);
@@ -757,14 +890,18 @@ describe("boundary review terminal picker", () => {
           matches_active_digest: true,
           table_count: 1,
           outstanding_decisions: 0,
+          proposal_action_state: "rehearsed",
         }],
       },
       { initialView: "access", startAtBoundaryList: true },
     );
     expect(stripAnsi(activeTerminal.output.read()?.toString() ?? ""))
-      .toContain("Y Safe actions - proposal-only first [AVAILABLE]");
+      .toContain("Y Safe actions - proposal rehearsed [READY FOR REVIEW]");
     await send(activeTerminal.input, "y");
-    await expect(active).resolves.toEqual({ action: "actions" });
+    await expect(active).resolves.toEqual({
+      action: "actions",
+      boundary_name: "reviewed_staging",
+    });
   });
 
   it("opens one boundary-wide privacy action from the boundary list", async () => {
@@ -1432,8 +1569,8 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("REMOVE BLOCKED - public.observation_events");
     expect(rendered).toContain("public.event_annotations depends on it");
     expect(rendered).toContain("No draft or active authority changed");
-    expect(raw).toContain("\u001b[1;31mREMOVE BLOCKED - public.observation_events");
-    expect(raw).toContain("\u001b[1;33mNo draft or active authority changed");
+    expect(raw).toMatch(/\u001b\[[0-9;]+mREMOVE BLOCKED - public\.observation_events/u);
+    expect(raw).toMatch(/\u001b\[[0-9;]+mNo draft or active authority changed/u);
   });
 
   it("explains the multi-table boundary concisely and keeps the exhaustive map available", async () => {
@@ -1840,8 +1977,7 @@ describe("boundary review terminal picker", () => {
 
       const rendered = output.read()?.toString() ?? "";
       const normalized = stripAnsi(rendered).replace(/\s+/gu, " ");
-      expect(rendered).toContain("\u001b[1;36m");
-      expect(rendered).toContain("\u001b[1;96m");
+      expect(rendered).toMatch(/\u001b\[[0-9;]+m/u);
       expect(rendered).not.toContain("\u001b[7m");
       expect(rendered).toContain("V");
       expect(rendered).toContain("MODEL + RUNNER");
@@ -1898,7 +2034,7 @@ describe("boundary review terminal picker", () => {
     expect(rendered).not.toContain("outcome: no reviewed operation");
   });
 
-  it("surfaces and selects the explicit repair for a legacy usable field with no analytical grants", async () => {
+  it("surfaces and selects optional operations for a usable field with no analytical grants", async () => {
     const terminal = fakeTerminal();
     const view = reviewView();
     const candidate = view.candidate!;
@@ -1908,7 +2044,7 @@ describe("boundary review terminal picker", () => {
     view.operation_repair_fields = ["outcome"];
 
     const map = formatBoundaryResourceMap(view, { commandName: "synapsor-runner" });
-    expect(map).toContain("OPERATION REPAIR AVAILABLE");
+    expect(map).toContain("OPTIONAL ANALYTICAL OPERATIONS");
     expect(map).toContain("outcome is usable but has no filter, sort, group, or measure grant");
     expect(map).toContain("current suggestions: return, filter(eq), sort, count distinct");
     expect(map).toContain("--allow-reviewed-field 'outcome'");
@@ -1924,9 +2060,9 @@ describe("boundary review terminal picker", () => {
 
     const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
     expect(rendered).toContain(
-      "S Repair operations - restore inspected filter/sort/group/measure grants [AVAILABLE]",
+      "S Add operations - apply inspected filter/sort/group/measure suggestions [AVAILABLE]",
     );
-    expect(rendered).toContain("Operation repair available: this usable field has no analytical grants");
+    expect(rendered).toContain("Optional operations available: this returned field has no analytical grants");
   });
 
   it("explains the reduced MySQL 5.7 grammar in the focused CLI editor", async () => {
@@ -1960,7 +2096,7 @@ describe("boundary review terminal picker", () => {
     const raw = output.read()?.toString() ?? "";
     const rendered = stripAnsi(raw);
 
-    expect(raw).toContain("\u001b[1;33mReviewed database grammar:");
+    expect(raw).toMatch(/\u001b\[[0-9;]+mReviewed database grammar:/u);
     expect(rendered).toMatch(
       /Reviewed database grammar: MySQL 5\.7\.44 uses the supported limited tier; reviewed release line\s+5\.7\./,
     );
@@ -2054,7 +2190,7 @@ describe("boundary review terminal picker", () => {
       "E Allowed values - narrow filtering/grouping to reviewed values [UNAVAILABLE]",
     );
     expect(first).toContain(
-      "S Repair operations - restore inspected filter/sort/group/measure grants [NOT NEEDED]",
+      "S Add operations - apply inspected filter/sort/group/measure suggestions [NOT NEEDED]",
     );
     expect(first).toContain(
       "X Exact-value groups - group by each distinct value [UNAVAILABLE]",

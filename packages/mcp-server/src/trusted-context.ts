@@ -142,7 +142,8 @@ export function resolveTrustedContext(
   }
   const provider = contextConfig.provider;
   const values = contextConfig.values ?? {};
-  const protectedOrganization = capability?.protected_read?.organization_scope?.organization_id;
+  const protectedOrganization = capability?.organization_scope?.organization_id
+    ?? capability?.protected_read?.organization_scope?.organization_id;
   const configuredOrganization = typeof values.organization_id === "string"
     ? values.organization_id.trim()
     : typeof values.tenant_id === "string"
@@ -173,11 +174,12 @@ export function resolveTrustedContext(
     if (protectedOrganization && environmentTenant && environmentTenant !== protectedOrganization) {
       throw new McpRuntimeError(
         "TRUSTED_ORGANIZATION_MISMATCH",
-        `${tenantEnv} does not match the organization frozen into protected capability ${capability?.name ?? "(unknown)"}.`,
+        `${tenantEnv} does not match the organization frozen into reviewed capability ${capability?.name ?? "(unknown)"}.`,
       );
     }
     const tenant = protectedOrganization ?? environmentTenant;
-    const principal = envValue(env, principalEnv);
+    const principal = envValue(env, principalEnv)
+      ?? optionalLocalProposalActor(capability, principalRequired, env);
     if (!tenant || (principalRequired && !principal)) {
       throw new McpRuntimeError(
         "TRUSTED_BINDING_MISSING",
@@ -191,11 +193,12 @@ export function resolveTrustedContext(
     if (protectedOrganization && configuredTenant && configuredTenant !== protectedOrganization) {
       throw new McpRuntimeError(
         "TRUSTED_ORGANIZATION_MISMATCH",
-        `The static trusted context does not match the organization frozen into protected capability ${capability?.name ?? "(unknown)"}.`,
+        `The static trusted context does not match the organization frozen into reviewed capability ${capability?.name ?? "(unknown)"}.`,
       );
     }
     const tenant = protectedOrganization ?? configuredTenant;
-    const principal = valueFromEnvOrLiteral(values.principal_env, values.principal, env);
+    const principal = valueFromEnvOrLiteral(values.principal_env, values.principal, env)
+      ?? optionalLocalProposalActor(capability, principalRequired, env);
     if (!tenant || (principalRequired && !principal)) {
       throw new McpRuntimeError(
         "TRUSTED_BINDING_MISSING",
@@ -216,7 +219,7 @@ export function resolveTrustedContext(
     if (protectedOrganization && sessionContext.tenant_id && sessionContext.tenant_id !== protectedOrganization) {
       throw new McpRuntimeError(
         "TRUSTED_ORGANIZATION_MISMATCH",
-        `The verified session tenant does not match the organization frozen into protected capability ${capability?.name ?? "(unknown)"}.`,
+        `The verified session tenant does not match the organization frozen into reviewed capability ${capability?.name ?? "(unknown)"}.`,
       );
     }
     return protectedOrganization
@@ -227,7 +230,7 @@ export function resolveTrustedContext(
     if (!protectedOrganization) {
       throw new McpRuntimeError(
         "TRUSTED_ORGANIZATION_AUTHORITY_MISSING",
-        "reviewed_organization context requires a protected capability with immutable single-organization authority.",
+        "reviewed_organization context requires a capability with immutable single-organization authority.",
       );
     }
     if (principalRequired) {
@@ -239,6 +242,18 @@ export function resolveTrustedContext(
     return { tenant_id: protectedOrganization, principal: "", provenance: "reviewed_organization" };
   }
   throw new McpRuntimeError("TRUSTED_CONTEXT_UNSUPPORTED", `${provider} trusted context is not available in local stdio mode.`);
+}
+
+function optionalLocalProposalActor(
+  capability: RuntimeCapabilityConfig | undefined,
+  principalRequired: boolean,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  if (principalRequired || capability?.kind !== "proposal") return undefined;
+  return envValue(env, "SYNAPSOR_OPERATOR_ACTOR")
+    ?? envValue(env, "USER")
+    ?? envValue(env, "USERNAME")
+    ?? "local_runner";
 }
 
 export function validateToolArgs(capability: RuntimeCapabilityConfig, args: Record<string, unknown>): void {

@@ -7,14 +7,131 @@ import {
 import {
   READ_WORKLOAD_SET_VERSION,
   analyzeReadWorkloadSet,
+  buildReadWorkloadPlanCards,
   extractReadAuthorityAtoms,
   normalizeReadWorkloadSet,
+  rankReadWorkloadPlanCardsForJob,
+  readWorkloadFromPlanCards,
   sanitizeReadWorkloadPlan,
+  type ReadWorkloadPlanCard,
   type ReadWorkloadSet,
 } from "./read-workload-assist.js";
 import { validateExplorePlan } from "./scoped-explore.js";
 
 describe("Read workload boundary compiler", () => {
+  it("ranks no-model cards from the job without selecting or changing them", () => {
+    const cards: ReadWorkloadPlanCard[] = [
+      {
+        id: "sites",
+        title: "Count sites by region",
+        detail: "Group site count by region",
+        plan: { kind: "aggregate", resource: "renewable_ops.sites", measures: [{ function: "count" }] },
+      },
+      {
+        id: "maintenance",
+        title: "List maintenance requests",
+        detail: "Return request type, priority, requested hours",
+        plan: { kind: "rows", resource: "renewable_ops.maintenance_requests", select: ["priority", "requested_hours"] },
+      },
+      {
+        id: "inspections",
+        title: "Count inspections by inspection kind",
+        detail: "Group the reviewed count by inspection kind",
+        plan: { kind: "aggregate", resource: "renewable_ops.inspections", measures: [{ function: "count" }] },
+      },
+    ];
+
+    const ranked = rankReadWorkloadPlanCardsForJob(
+      cards,
+      "Summarize urgent inspections and propose maintenance requests with four labor hours.",
+    );
+
+    expect(ranked.map((card) => card.id)).toEqual(["maintenance", "inspections", "sites"]);
+    expect(cards.map((card) => card.id)).toEqual(["sites", "maintenance", "inspections"]);
+  });
+
+  it("offers deterministic reviewed question cards without model or source access", () => {
+    const draft = generatedBoundary();
+    const cards = buildReadWorkloadPlanCards(draft);
+
+    expect(cards.map((card) => card.title)).toEqual(expect.arrayContaining([
+      "List orders",
+      "Count orders by status",
+      "Average amount by status",
+      "Count orders by related segment",
+      "Count orders over months",
+    ]));
+    const selected = cards.filter((card) => [
+      "List orders",
+      "Average amount by status",
+      "Count orders by related segment",
+    ].includes(card.title));
+    const workload = readWorkloadFromPlanCards({
+      cards,
+      selectedIds: selected.map((card) => card.id),
+    });
+    const analysis = analyzeReadWorkloadSet({ workload, generatedBoundary: draft });
+
+    expect(workload.source).toEqual({ kind: "operator_exact_plan" });
+    expect(analysis).toMatchObject({
+      status: "ready",
+      authority_granted: false,
+      source_query_executed: false,
+      explore_budget_consumed: false,
+      coverage: { allowed_supported: 3, allowed_total: 3 },
+    });
+    expect(() => readWorkloadFromPlanCards({ cards, selectedIds: ["not_offered"] }))
+      .toThrow("READ_WORKLOAD_CARD_UNKNOWN");
+  });
+
+  it("keeps one reviewed relationship question per rich resource inside the 40-card picker", () => {
+    const base = generatedBoundary();
+    const customers = structuredClone(base.pack.resources[0]!);
+    const orderTemplate = base.pack.resources[1]!;
+    const orders = Array.from({ length: 9 }, (_, index) => {
+      const order = structuredClone(orderTemplate);
+      order.id = `public.orders_${index + 1}`;
+      order.table = `orders_${index + 1}`;
+      const relationship = order.relationships[0]!;
+      relationship.id = `orders_${index + 1}_customer_id_fkey`;
+      relationship.proof!.links[0]!.constraint_name = relationship.id;
+      relationship.proof!.links[0]!.source_resource = order.id;
+      relationship.proof!.digest = canonicalJsonDigest(relationship.proof!.links);
+      return order;
+    });
+    const deepestRoot = orders[0]!;
+    const deepestRelationship = structuredClone(deepestRoot.relationships[0]!);
+    deepestRelationship.id = "orders_1_to_customers_depth_3";
+    deepestRelationship.path_depth = 3;
+    deepestRelationship.proof!.links = [
+      relationshipLink("orders_1_to_orders_2", orders[0]!.id, orders[1]!.id),
+      relationshipLink("orders_2_to_orders_3", orders[1]!.id, orders[2]!.id),
+      relationshipLink("orders_3_to_customers", orders[2]!.id, customers.id),
+    ];
+    deepestRelationship.proof!.digest = canonicalJsonDigest(deepestRelationship.proof!.links);
+    deepestRoot.relationships.push(deepestRelationship);
+    const boundary = structuredClone(base);
+    boundary.pack.resources = [customers, ...orders];
+    boundary.budgets.max_analysis_relationship_hops = 3;
+
+    const cards = buildReadWorkloadPlanCards(boundary);
+
+    expect(cards).toHaveLength(40);
+    for (const order of orders) {
+      const expectedRelationship = [...order.relationships]
+        .sort((left, right) => (right.path_depth ?? 1) - (left.path_depth ?? 1))[0]!.id;
+      const selectedRelationships = cards.flatMap((card) => {
+        const dimensions = card.plan.dimensions;
+        return card.plan.resource === order.id
+          && Array.isArray(dimensions)
+          && typeof dimensions[0]?.relationship === "string"
+          ? [dimensions[0].relationship]
+          : [];
+      });
+      expect(selectedRelationships, order.id).toContain(expectedRelationship);
+    }
+  });
+
   it("extracts exact relationship, field-operation, and aggregate authority", () => {
     const draft = generatedBoundary();
     const plan = validateExplorePlan(allowedPlan(), activated(draft));
@@ -312,5 +429,19 @@ function generatedBoundary(): ExplorationBoundaryDraft {
     },
     budgets: structuredClone(DEFAULT_REVIEWED_EXPLORATION_BUDGETS),
     unresolved_decisions: [],
+  };
+}
+
+function relationshipLink(constraintName: string, source: string, target: string) {
+  return {
+    constraint_name: constraintName,
+    source_resource: source,
+    target_resource: target,
+    source_columns: ["customer_id"],
+    target_columns: ["id"],
+    target_uniqueness: { kind: "primary_key" as const, name: `${target}_pkey`, columns: ["id"] },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
   };
 }

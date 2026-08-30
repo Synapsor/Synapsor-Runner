@@ -181,6 +181,8 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
           signature TEXT,
           integrity_hash TEXT,
           freshness_proof_digest TEXT,
+          action_boundary_name TEXT,
+          action_boundary_digest TEXT,
           created_at TEXT NOT NULL,
           FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
         );
@@ -573,6 +575,8 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
       this.ensureColumn("approvals", "signature", "TEXT");
       this.ensureColumn("approvals", "integrity_hash", "TEXT");
       this.ensureColumn("approvals", "freshness_proof_digest", "TEXT");
+      this.ensureColumn("approvals", "action_boundary_name", "TEXT");
+      this.ensureColumn("approvals", "action_boundary_digest", "TEXT");
       this.ensureColumn("attention_items", "acknowledgement_identity_json", "TEXT");
       this.ensureColumn("attention_items", "acknowledgement_decision_hash", "TEXT");
       this.ensureColumn("attention_items", "acknowledgement_signature", "TEXT");
@@ -622,6 +626,7 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
   
         CREATE INDEX IF NOT EXISTS idx_approvals_proposal_id ON approvals(proposal_id);
         CREATE INDEX IF NOT EXISTS idx_approvals_status_created ON approvals(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_approvals_action_boundary_created ON approvals(action_boundary_name, created_at);
   
         CREATE INDEX IF NOT EXISTS idx_proposal_events_kind_created ON proposal_events(kind, created_at);
         CREATE INDEX IF NOT EXISTS idx_worker_queue_claim ON worker_queue(status, next_attempt_at, lease_expires_at, created_at);

@@ -26,7 +26,10 @@ import {
 } from "./local-ui.js";
 import { compileSafeActionDraft } from "./safe-action.js";
 import { createScopedExploreRuntime } from "./scoped-explore.js";
-import { ACTION_SUGGESTION_VERSION } from "./action-design.js";
+import {
+  ACTION_SUGGESTION_VERSION,
+  assessActionSuggestion,
+} from "./action-design.js";
 import {
   READ_WORKLOAD_SET_VERSION,
   analyzeReadWorkloadSet,
@@ -1397,6 +1400,51 @@ export default defineCapability({
           }],
         },
       });
+      const quickNeedsBounds = await postJson(`${baseUrl}/api/actions/guided/quick`, mutationHeaders, {
+        intent: "Update one member loyalty balance within a reviewed limit.",
+      });
+      expect(quickNeedsBounds).toMatchObject({
+        ok: true,
+        source_database_changed: false,
+        authority_granted: false,
+        preparation: {
+          state: "needs_input",
+          decision: { kind: "numeric_bounds", field: "loyalty_balance" },
+        },
+      });
+      const quickReady = await postJson(`${baseUrl}/api/actions/guided/quick`, mutationHeaders, {
+        intent: "Update one member loyalty balance within a reviewed limit.",
+        decisions: {
+          numeric_bounds: { loyalty_balance: { minimum: 0, maximum: 500 } },
+        },
+      });
+      expect(quickReady).toMatchObject({
+        ok: true,
+        source_database_changed: false,
+        authority_granted: false,
+        preparation: {
+          state: "ready",
+          deterministic_approval_template: {
+            source: "reviewed_structure",
+            auto_approval: {
+              conditions: [{ field: "loyalty_balance", operator: "lte", value: 500 }],
+              max_per_day: 10,
+            },
+            shared_limits: [{
+              scope: "tenant_principal",
+              maximum: 10,
+              window_seconds: 86_400,
+            }],
+          },
+          action: {
+            resource: "public.members",
+            operation: "update",
+            authority_posture: "proposal_only",
+            writeback: { mode: "none" },
+            patches: [{ column: "loyalty_balance", minimum: 0, maximum: 500 }],
+          },
+        },
+      });
       const generatedSuggestion = await postJson(`${baseUrl}/api/actions/guided/suggest`, mutationHeaders, {
         intent: "Let support propose freezing one membership.",
         provider: "anthropic",
@@ -1417,6 +1465,19 @@ export default defineCapability({
           operation: "update",
           resource: "public.members",
           fields: ["loyalty_balance"],
+          approval_policy_proposal: {
+            mode: "deterministic",
+            conditions: [{ field: "loyalty_balance", operator: "lte", value: 250 }],
+            max_per_day: 20,
+            max_total_per_day: 2_000,
+            total_field: "loyalty_balance",
+            shared_limits: [{
+              kind: "count",
+              scope: "tenant_principal",
+              maximum: 5,
+              window_seconds: 3_600,
+            }],
+          },
           suggested_by: { kind: "model", provider: "openai", model: "gpt-5.6-luna" },
         },
       });
@@ -1428,8 +1489,37 @@ export default defineCapability({
         source_database_changed: false,
         suggestion: { state: "suggested" },
       });
+      const suggestedQuick = await postJson(`${baseUrl}/api/actions/guided/quick`, mutationHeaders, {
+        intent: "Propose one bounded loyalty balance adjustment.",
+        suggestion_id: importedSuggestion.suggestion.suggestion_id,
+        decisions: {
+          numeric_bounds: { loyalty_balance: { minimum: 0, maximum: 500 } },
+        },
+      });
+      expect(suggestedQuick).toMatchObject({
+        ok: true,
+        preparation: {
+          state: "ready",
+          deterministic_approval_template: {
+            source: "model_suggestion",
+            auto_approval: {
+              conditions: [{ field: "loyalty_balance", operator: "lte", value: 250 }],
+              max_per_day: 20,
+            },
+            shared_limits: [{
+              scope: "tenant_principal",
+              maximum: 5,
+              window_seconds: 3_600,
+            }],
+          },
+        },
+        authority_granted: false,
+        source_database_changed: false,
+      });
+      expect(suggestedQuick.preparation.action).not.toHaveProperty("auto_approval");
       const created = await postJson(`${baseUrl}/api/actions/guided/draft`, mutationHeaders, {
         suggestion_id: importedSuggestion.suggestion.suggestion_id,
+        action_boundary_job_intent: "Answer membership questions and propose bounded balance adjustments.",
         action: {
           capability_name: "membership.set_loyalty_balance",
           description: "Propose a reviewed loyalty balance for one assigned member.",
@@ -1445,6 +1535,12 @@ export default defineCapability({
             minimum: 0,
             maximum: 500,
           }],
+          auto_approval: {
+            conditions: [{ field: "loyalty_balance", operator: "lte", value: 250 }],
+            max_per_day: 20,
+            max_total_per_day: 2_000,
+            total_field: "loyalty_balance",
+          },
           confirmed_trusted_scope: true,
         },
       });
@@ -1452,6 +1548,35 @@ export default defineCapability({
         ok: true,
         source_database_changed: false,
         draft: { state: "disabled", capability: "membership.set_loyalty_balance" },
+      });
+      const policyAllows = await postJson(`${baseUrl}/api/actions/guided/policy/simulate`, mutationHeaders, {
+        capability_name: "membership.set_loyalty_balance",
+        patch: { loyalty_balance: 25 },
+        before: {},
+      });
+      expect(policyAllows).toMatchObject({
+        ok: true,
+        decision: "auto_approve",
+        qualifies: true,
+        conditions: [{ field: "loyalty_balance", status: "passed" }],
+        limits: expect.arrayContaining([
+          expect.objectContaining({ kind: "count", max: 20 }),
+          expect.objectContaining({ kind: "total", max: 2_000, field: "loyalty_balance" }),
+        ]),
+        authority_changed: false,
+        source_query_executed: false,
+        source_database_changed: false,
+      });
+      const policyFallsBack = await postJson(`${baseUrl}/api/actions/guided/policy/simulate`, mutationHeaders, {
+        capability_name: "membership.set_loyalty_balance",
+        patch: { loyalty_balance: 400 },
+        before: {},
+      });
+      expect(policyFallsBack).toMatchObject({
+        ok: true,
+        decision: "human_review",
+        qualifies: false,
+        reason: expect.stringContaining("failed"),
       });
       const suggestionsAfterReview = await getJson(`${baseUrl}/api/actions/guided`, headers);
       expect(suggestionsAfterReview.suggestions).toEqual(expect.arrayContaining([
@@ -1510,6 +1635,73 @@ export default defineCapability({
       expect(proposalOnlyConfig.proposal_freshness).toBeUndefined();
       expect(proposalOnlyConfig.sources.local_postgres.write_url_env).toBeUndefined();
       expect(proposalOnlyConfig.contracts).toEqual([activated.active.contract_path]);
+
+      const actionBoundaryOptions = await getJson(`${baseUrl}/api/actions/guided`, headers);
+      expect(actionBoundaryOptions.action_boundary_limit_options).toEqual([{
+        capability: "membership.set_loyalty_balance",
+        resource: "public.members",
+        operation: "update",
+        numeric_total_fields: ["loyalty_balance"],
+      }]);
+      const limited = await postJson(`${baseUrl}/api/actions/guided/boundary/limits`, mutationHeaders, {
+        shared_limits: [
+          {
+            id: "tenant_daily_count",
+            kind: "count",
+            scope: "tenant",
+            maximum: 20,
+            window_seconds: 86_400,
+          },
+          {
+            id: "principal_daily_balance",
+            kind: "total",
+            scope: "tenant_principal",
+            capability: "membership.set_loyalty_balance",
+            field: "loyalty_balance",
+            maximum: 2_000,
+            window_seconds: 86_400,
+          },
+        ],
+      });
+      expect(limited).toMatchObject({
+        ok: true,
+        authority_granted: false,
+        proposal_approved: false,
+        source_database_changed: false,
+        draft: { state: "disabled", authority: { shared_limits: expect.any(Array) } },
+      });
+      expect(JSON.parse(await fs.readFile(actionConfigPath, "utf8")).action_boundary.authority.shared_limits).toEqual([]);
+      const limitedActive = await postJson(`${baseUrl}/api/actions/guided/boundary/activate`, mutationHeaders, {
+        expected_digest: limited.draft.digest,
+        confirmation: `ACTIVATE ${limited.draft.digest}`,
+        actor: "reviewer@example.test",
+      });
+      expect(limitedActive).toMatchObject({
+        ok: true,
+        authority_granted: true,
+        proposal_approved: false,
+        source_database_changed: false,
+        active: { digest: limited.draft.digest },
+      });
+      expect(JSON.parse(await fs.readFile(actionConfigPath, "utf8")).action_boundary.authority.shared_limits)
+        .toHaveLength(2);
+      const policyWithSharedLimits = await postJson(`${baseUrl}/api/actions/guided/policy/simulate`, mutationHeaders, {
+        capability_name: "membership.set_loyalty_balance",
+        patch: { loyalty_balance: 25 },
+        before: {},
+      });
+      expect(policyWithSharedLimits.action_boundary_limits).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: "tenant_daily_count",
+          evaluation: "transaction_time",
+          effect_on_failure: "human_review",
+        }),
+        expect.objectContaining({
+          id: "principal_daily_balance",
+          field: "loyalty_balance",
+          scope: "tenant_principal",
+        }),
+      ]));
 
       const revised = await postJson(`${baseUrl}/api/actions/guided/revise`, mutationHeaders, {
         capability_name: "membership.set_loyalty_balance",
@@ -1571,6 +1763,9 @@ export default defineCapability({
       const boundaryLanding = await fetch(`${baseUrl}/`, { headers });
       const boundaryHtml = await boundaryLanding.text();
       expect(boundaryHtml).toContain("Add safe action");
+      expect(boundaryHtml).toContain("Create one proposal action");
+      expect(boundaryHtml).toContain("Prepare and rehearse proposal action");
+      expect(boundaryHtml).toContain("/api/actions/guided/quick");
       expect(boundaryHtml).toContain("Proposal only - WRITEBACK NONE");
       expect(boundaryHtml).toContain("structurally eligible, not pre-approved for writes");
       expect(boundaryHtml).toContain("/api/actions/guided/revise");
@@ -2583,6 +2778,21 @@ export default defineCapability({
   it("compiles and saves a Workbench read workload as a disabled boundary without source execution", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-read-workload-"));
     const inspection = boundaryReviewInspection();
+    inspection.tables[0]!.columns.push({
+      name: "version",
+      data_type: "integer",
+      nullable: false,
+      generated: false,
+      ordinal_position: 5,
+      suggestions: {
+        tenant: false,
+        conflict: true,
+        sensitive: false,
+        immutable: true,
+        large_or_binary: false,
+      },
+    });
+    inspection.tables[0]!.suggestions.conflict_columns = ["version"];
     const build = buildAutoBoundary({
       inspection,
       project: {
@@ -2655,6 +2865,29 @@ export default defineCapability({
           source_database_changed: false,
         };
       },
+      guidedActionSuggestionSet: async (input) => {
+        const resource = input.options.resources[0]!;
+        const operation = (["insert", "update"] as const).find((candidate) =>
+          resource.operation_availability[candidate].available);
+        if (!operation) throw new Error("Fixture needs one structurally available insert or update operation.");
+        const field = resource.structurally_eligible_fields[0]!.name;
+        const assessment = assessActionSuggestion({
+          schema_version: ACTION_SUGGESTION_VERSION,
+          intent: `Propose one reviewed ${resource.table} ${operation}.`,
+          operation,
+          resource: resource.id,
+          fields: [field],
+          suggested_by: { kind: "model", provider: input.provider, model: input.model },
+        }, input.options.resources);
+        return {
+          assessments: [assessment],
+          provider: input.provider,
+          model: input.model,
+          discarded_approval_policy_proposals: 1,
+          authority_granted: false,
+          source_database_changed: false,
+        };
+      },
     });
     const baseUrl = `http://${server.host}:${server.port}`;
     const headers = {
@@ -2678,6 +2911,64 @@ export default defineCapability({
       });
       expect(JSON.stringify(catalog.structural_catalog)).not.toContain("tenant_id");
       expect(JSON.stringify(catalog.structural_catalog)).not.toContain("trainer_comments");
+      expect(catalog.plan_cards).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.any(String),
+          title: expect.any(String),
+          plan: expect.any(Object),
+        }),
+      ]));
+      const delegationCatalog = await getJson(`${baseUrl}/api/boundary/delegations`, headers);
+      expect(delegationCatalog).toMatchObject({
+        ok: true,
+        delegations: [],
+        mapping_catalog: {
+          schema_version: "synapsor.job-mapping-catalog.v1",
+          plan_digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        },
+        stages: { explore: "off", propose: "off", delegate: "off", apply: "off" },
+        trust: {
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          source_database_changed: false,
+          authority_activated: false,
+        },
+      });
+      const preparedCatalog = await postJson(`${baseUrl}/api/boundary/delegations/catalog`, headers, {
+        expected_plan_digest: delegationCatalog.mapping_catalog.plan_digest,
+        accepted_shared_resources: [],
+        actor: "workbench-reviewer",
+      });
+      expect(preparedCatalog).toMatchObject({
+        ok: true,
+        applied: { authority_activated: false, source_database_changed: false },
+        authority_activated: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      });
+
+      const actionSet = await postJson(`${baseUrl}/api/actions/guided/suggest-set`, headers, {
+        job_intent: "Answer membership questions and propose one reviewed member change.",
+        provider: "openai",
+        model: "gpt-5.6-luna",
+        api_key_env: "OPENAI_API_KEY",
+        egress_acknowledged: true,
+        authoring_catalog: true,
+      });
+      expect(actionSet).toMatchObject({
+        ok: true,
+        discarded_approval_policy_proposals: 1,
+        suggestions: [{
+          state: "suggested",
+          assessment: { authority_granted: false, source_database_changed: false },
+        }],
+        authority_granted: false,
+        active_tools_changed: false,
+        source_database_changed: false,
+      });
+      const actionCandidate = actionSet.suggestions[0].current_assessment?.suggestion
+        ?? actionSet.suggestions[0].assessment.suggestion;
 
       const mapped = await postJson(`${baseUrl}/api/boundary/workloads/analyze`, headers, {
         mode: "model",
@@ -2692,6 +2983,11 @@ export default defineCapability({
         egress_acknowledged: true,
         actor: "workbench-reviewer",
         reason: "Review the model mapping without granting it authority.",
+        action_support: [{
+          resource: actionCandidate.resource,
+          operation: actionCandidate.operation,
+          fields: actionCandidate.fields,
+        }],
       });
       expect(mapped).toMatchObject({
         ok: true,
@@ -2706,6 +3002,8 @@ export default defineCapability({
         },
         preview: { authority_activated: false },
       });
+      expect(mapped.workload.analysis.candidate.pack.resources[0].selectable_fields)
+        .toEqual(expect.arrayContaining(actionCandidate.fields));
       expect(modelCalls).toEqual([{
         provider: "anthropic",
         model: "claude-sonnet-test",
@@ -2717,8 +3015,8 @@ export default defineCapability({
       }]);
 
       const analyzed = await postJson(`${baseUrl}/api/boundary/workloads/analyze`, headers, {
-        mode: "exact",
-        workload: catalog.starter_workload,
+        mode: "cards",
+        selected_card_ids: [catalog.plan_cards[0].id],
         actor: "workbench-reviewer",
         reason: "Compile the representative read before granting any authority.",
       });
@@ -2775,6 +3073,82 @@ export default defineCapability({
         explore_budget_consumed: false,
         source_database_changed: false,
       });
+      const noCsrf = await fetch(`${baseUrl}/api/boundary/delegations/record`, {
+        method: "POST",
+        headers: {
+          "x-synapsor-ui-token": "read-workload-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          job_intent: "Answer reviewed membership questions.",
+          analysis_id: analyzed.workload.analysis_id,
+          action_intents: [],
+          actions: [],
+        }),
+      });
+      expect(noCsrf.status).toBe(403);
+
+      const secretBearing = await fetch(`${baseUrl}/api/boundary/delegations/record`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          job_intent: "Answer reviewed membership questions.",
+          analysis_id: analyzed.workload.analysis_id,
+          action_intents: [],
+          actions: [],
+          token: "must-never-be-recorded",
+        }),
+      });
+      expect(secretBearing.status).toBe(409);
+      await expect(secretBearing.json()).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringContaining("unsupported fields: token"),
+      });
+
+      const mismatchedAction = await fetch(`${baseUrl}/api/boundary/delegations/record`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          job_intent: "Answer reviewed membership questions and propose one status change.",
+          analysis_id: analyzed.workload.analysis_id,
+          action_intents: ["Propose one reviewed status change."],
+          actions: [{
+            intent: "Propose one reviewed status change.",
+            capability: "membership.propose_status_change",
+            contract_digest: `sha256:${"9".repeat(64)}`,
+          }],
+        }),
+      });
+      expect(mismatchedAction.status).toBe(409);
+      await expect(mismatchedAction.json()).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringContaining("DELEGATION_ACTION_DRAFT_MISMATCH"),
+      });
+
+      const delegation = await postJson(`${baseUrl}/api/boundary/delegations/record`, headers, {
+        job_intent: "Answer reviewed membership questions without proposing source changes.",
+        analysis_id: analyzed.workload.analysis_id,
+        action_intents: [],
+        actions: [],
+      });
+      expect(delegation).toMatchObject({
+        ok: true,
+        delegation: {
+          state: "disabled",
+          actions: [],
+          authority_granted: false,
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          source_database_changed: false,
+        },
+        summary: {
+          stages: { explore: "off", propose: "off", delegate: "off", apply: "off" },
+        },
+      });
+      const delegationsAfter = await getJson(`${baseUrl}/api/boundary/delegations`, headers);
+      expect(delegationsAfter.delegations).toEqual([
+        expect.objectContaining({ revision_digest: delegation.delegation.revision_digest }),
+      ]);
       const boundary = await getJson(`${baseUrl}/api/boundary`, headers);
       expect(boundary.candidate.activation).toBe("disabled_unreviewed");
       expect(boundary.active_boundaries).toEqual([]);

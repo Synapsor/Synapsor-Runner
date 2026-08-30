@@ -157,7 +157,7 @@ export async function withAlternateTerminalScreen<T>(
   try {
     return await operation();
   } finally {
-    output.write("\u001b[?25h\u001b[?1049l");
+    output.write("\u001b[0m\u001b[?25h\u001b[?1049l");
   }
 }
 

@@ -36,40 +36,85 @@ incomplete mapping is blocked by deterministic validation.
 
 Everything below the dashed line works without a model.
 
-## Three Operator Paths
+## Default Guided Path
+
+Start from the normal one-command onboarding. No config or workload file is
+required:
+
+```bash
+synapsor-runner start --from-env DATABASE_URL --cli
+```
+
+Describe one agent job at the first prompt. Model-assisted mapping is the
+recommended route when a configured OpenAI, Anthropic, or loopback local model
+is available. Runner-guided exact question cards are the no-model route, and
+full manual review remains one choice away. The terminal prepares a complete
+disabled structural catalog, maps the job, records the immutable analysis and
+minimum candidate, then opens the exact boundary review in the same session.
+Press `W Agent job` later to reopen this flow from `/access`.
+
+This automates only non-authoritative state. The selected read boundary remains
+disabled until the operator confirms the exact activation summary.
+
+For an agent job that also needs proposals, the result is deliberately two
+artifacts: a **Read Boundary** for what the agent may learn and an **Action
+Boundary** for the exact changes it may propose. The Action Boundary records
+the exact Read Boundary dependency and inherits its trusted tenant/principal or
+whole-organization scope. Neither boundary activates the other, and approval
+or apply authority is not part of workload compilation.
+
+The Action Boundary does not inherit Read row-return fields as write
+permission. It reviews exact mutable fields independently. When an action needs
+an identity, patch field, conflict value, or reviewed before-state condition
+that the minimized Read Boundary does not return, Runner includes that exact
+field only in the action contract's internal read snapshot and marks it
+model-withheld. Structural keep-out remains an absolute exclusion.
+
+## Other Operator Paths
 
 ### Terminal TUI
 
-Open the boundary editor and press `W`:
+Open the boundary editor and press `W Agent job`:
 
 ```bash
 synapsor-runner boundary review --access --project-root .
 ```
 
-Choose one of:
+The job mapper offers:
 
-1. an exact workload JSON file;
-2. representative questions typed directly, with optional model mapping;
-3. a question-intent JSON file;
-4. an immutable saved analysis.
+1. model-assisted mapping with OpenAI, Anthropic, or a local endpoint;
+2. Runner-guided exact question cards with no model or JSON;
+3. full manual table and field setup;
+4. Advanced exact workload JSON;
+5. Advanced question-intent JSON plus a model;
+6. an immutable saved analysis.
 
-Runner shows coverage and retained authority before asking whether to save the
-disabled revision. Press `C` later to perform the separate boundary review and
-activation. Once reads are active, `Y Safe actions` opens proposal-first Action
-Assist and returns to boundary review when closed.
+Runner saves harmless analysis/draft state automatically and immediately shows
+the retained authority in the exact activation review. Once that revision is
+fully reviewed, `Y Safe actions` can draft and rehearse a dependent
+proposal-only action in the same session. Its activation remains blocked until
+the exact read revision is active.
+
+If this editor was opened with `/access` from Ask, option 2 names and reuses the
+current provider/model and its memory-only credential. It asks for the
+questions and one structural-metadata egress confirmation, not provider setup.
+For standalone use, exporting exactly one of `OPENAI_API_KEY` or
+`ANTHROPIC_API_KEY` gives the same automatic default. Runner asks explicitly
+when both or neither are configured and never persists a credential value.
 
 ### Workbench Preview
 
 Open Workbench through the normal reviewed setup, then choose **Compile read
 workload**. It provides:
 
+- reviewed question cards as the default path;
 - a visual aggregate builder for common counts and reviewed aggregates;
 - a multiline, syntax-highlighted full-workload JSON editor;
 - local JSON file import;
 - optional OpenAI, Anthropic, or OpenAI-compatible question mapping;
 - immutable saved-analysis replay;
 - coverage, deny-test, and retained-authority review;
-- a disabled-only save followed by explicit activation or Action Assist.
+- automatic disabled-candidate persistence followed by explicit activation.
 
 The visual builder is convenience, not a second grammar. It generates the same
 exact Explore plan JSON accepted by the deterministic compiler. Use the JSON

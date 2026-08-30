@@ -73,7 +73,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .status-message.blocked{padding:10px 12px;border-left:4px solid var(--warn);background:var(--warn-soft);color:var(--text)}
     .question-list{display:grid;gap:8px}.question{width:100%;text-align:left;background:var(--surface);color:var(--text);border-color:var(--line)}
     .question.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
-    .action-fields{display:grid;gap:10px;margin-top:10px}.action-field{border:1px solid var(--line);background:var(--surface-2);padding:12px;border-radius:6px}.action-field-settings{margin-top:10px}
+    .action-fields{display:grid;min-width:0;gap:10px;margin-top:10px}.action-field{min-width:0;overflow-wrap:anywhere;border:1px solid var(--line);background:var(--surface-2);padding:12px;border-radius:6px}.action-field-settings{margin-top:10px}
     .result-meta{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}.result-table{overflow:auto}.resolved-time-table .utc-range{display:grid;gap:2px}.resolved-time-table .utc-range span{white-space:nowrap}
     .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:12px}.tab{background:transparent;color:var(--muted);border:0;border-bottom:3px solid transparent;border-radius:0}.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
     .ask-surface{margin-top:22px;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:7px;overflow:hidden}
@@ -92,7 +92,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .plan-playground-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin:14px 0}.plan-playground-head h3{font-size:20px}.plan-playground-head p{max-width:720px;margin:3px 0 0}.plan-playground-grid{display:grid;grid-template-columns:minmax(0,1fr) 286px;gap:16px;align-items:start}.plan-playground-editor{min-width:0}.plan-code-shell{overflow:hidden;border:1px solid var(--line-strong);border-radius:7px;background:#09110e;box-shadow:0 14px 34px rgba(0,0,0,.18)}.plan-code-shell.invalid{border-color:var(--bad);box-shadow:0 0 0 2px color-mix(in srgb,var(--bad) 22%,transparent)}.plan-code-toolbar,.plan-code-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:42px;padding:7px 10px;border-bottom:1px solid #26372f;background:#101a16}.plan-code-footer{min-height:34px;border-top:1px solid #26372f;border-bottom:0;color:#8d9a94;font-size:11px}.plan-code-title,.plan-code-state{display:flex;align-items:center;gap:7px;min-width:0}.plan-code-title strong{color:#eef5f1;font-size:12px}.plan-code-toolbar .badge{padding:2px 7px;font-size:10px}.plan-code-toolbar button{min-height:30px;padding:4px 9px;font-size:11px}.plan-code-editor{display:grid;grid-template-columns:auto minmax(0,1fr);min-height:430px;max-height:65vh;overflow:hidden}.plan-line-numbers{min-width:48px;margin:0;padding:14px 11px 30px 7px;overflow:hidden;border:0;border-right:1px solid #22322a;border-radius:0;background:#0b1511;color:#52635b;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;text-align:right;user-select:none}.plan-code-stage{position:relative;min-width:0;min-height:430px;overflow:hidden}.plan-code-highlight,.plan-code-stage textarea{position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;padding:14px 16px 30px;overflow:auto;border:0;border-radius:0;background:transparent;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2;white-space:pre}.plan-code-highlight{max-height:none;pointer-events:none}.plan-code-highlight.syntax-block{padding-top:14px}.plan-code-highlight.syntax-block::before{display:none}.plan-code-stage textarea{z-index:1;resize:none;color:transparent;-webkit-text-fill-color:transparent;caret-color:#eef5f1;outline:0}.plan-code-stage textarea::selection{background:rgba(117,227,183,.24)}.plan-code-stage textarea:focus-visible{outline:0}.plan-playground-side{position:sticky;top:86px;display:grid;gap:10px}.plan-playground-side .field{padding:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}.plan-playground-scope{padding:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2)}.plan-playground-scope p{font-size:12px}.plan-playground-side button{width:100%}.plan-playground-side small{color:var(--muted)}.plan-playground-result{margin-top:16px}.plan-playground-result pre{max-height:520px}.plan-output-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:12px;margin-top:12px}.plan-output-grid details{min-width:0;margin:0;padding:12px;border:1px solid var(--line);border-radius:7px}.plan-output-grid pre{margin-bottom:4px}.plan-sql-note{display:flex;gap:7px;align-items:flex-start;margin:8px 0;color:var(--muted);font-size:12px}
     .instant-path{scroll-margin-top:76px}.instant-reveal{display:grid;grid-template-columns:minmax(310px,.8fr) minmax(520px,1.2fr);gap:54px;align-items:center;min-height:calc(100vh - 160px)}.instant-copy{display:grid;gap:20px;align-content:center}.instant-kicker{margin:0;color:#71e2b7;font-size:11px;font-weight:850;text-transform:uppercase}.instant-copy h2{max-width:610px;margin:0;color:#f4f8f6;font-size:46px;line-height:1.2}.instant-copy h2 span{display:block;color:#718078}.instant-copy>p{max-width:520px;margin:0;color:#aab6b0;font-size:17px;line-height:1.65}.instant-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.instant-actions button{min-height:52px;padding:12px 20px}.instant-actions .secondary{border-color:#314038;color:#d9e2dd}.instant-trust{display:block;color:#718078;font-size:11px;text-transform:uppercase}.instant-path .status-message{flex:1 0 100%;color:#aab6b0}.instant-boundary{min-width:0;padding:24px;border:1px solid #2a3e34;border-radius:8px;background:#101a16;color:#eef5f1}.instant-boundary-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.instant-boundary-head h3{margin:5px 0 1px;font-size:26px}.instant-boundary-head code{color:#75847c}.instant-badge{display:inline-flex;align-items:center;padding:5px 9px;border:1px solid #60412f;border-radius:999px;background:#211813;color:#f3b276;font-size:11px;font-weight:800;text-transform:uppercase}.instant-flow{display:grid;grid-template-columns:minmax(82px,1fr) minmax(124px,1.2fr) minmax(82px,1fr);gap:18px;align-items:center;min-height:190px;margin:18px 0;padding:18px 0;border-bottom:1px solid #23322b}.instant-node{position:relative;display:grid;place-items:center;min-height:84px;padding:10px;border:1px solid #33433b;border-radius:8px;text-align:center;color:#dfe9e4}.instant-node strong{display:block;font-size:18px}.instant-node span{color:#728078;font-size:10px;text-transform:uppercase}.instant-node.boundary{border-color:#5cd7a5;background:#142a21}.instant-node.boundary::before,.instant-node.boundary::after{content:"";position:absolute;top:calc(50% - 1px);width:20px;height:3px;background-image:repeating-linear-gradient(90deg,#78e6bb 0 8px,transparent 8px 16px),linear-gradient(#33433b,#33433b);background-position:0 0,center;background-repeat:repeat-x,no-repeat;background-size:32px 3px,100% 1px;animation:instant-edge-flow 1.9s linear infinite}.instant-node.boundary::before{right:100%}.instant-node.boundary::after{left:100%}@keyframes instant-edge-flow{to{background-position:32px 0,center}}.instant-blocked{position:absolute;top:calc(100% + 12px);left:50%;width:max-content;max-width:180px;transform:translateX(-50%);padding:3px 8px;border:1px solid #344039;border-radius:999px;background:#0c1411;color:#77847d;font-size:10px}.instant-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 28px}.instant-fact strong{display:block;margin-bottom:5px;color:#748279;font-size:10px;text-transform:uppercase}.instant-fact p{margin:0;color:#dce5e0}.instant-preview{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:start;margin-top:22px;padding:17px;border:1px solid #2a3b32;border-radius:8px;background:#0b1310}.instant-preview-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:7px;background:#173127;color:#77e7ba;font-weight:800}.instant-preview strong{display:block;color:#748279;font-size:10px;text-transform:uppercase}.instant-preview p{margin:5px 0 0;color:#eef5f1;font-size:16px}.instant-preview small{display:block;margin-top:6px;color:#718078}.instant-result{margin-top:12px}
     .plan-code-highlight{overflow:hidden}.plan-code-highlight .syntax-code{font:inherit;line-height:inherit}.status-message.loading{display:flex;align-items:center;gap:9px;color:var(--text)}.status-message.loading::before{content:"";width:14px;height:14px;flex:0 0 auto;border:2px solid color-mix(in srgb,var(--accent) 28%,transparent);border-top-color:var(--accent);border-radius:50%;animation:plan-progress-spin .75s linear infinite}#json-plan-playground[aria-busy=true] .plan-code-shell{border-color:color-mix(in srgb,var(--accent) 70%,var(--line-strong))}@keyframes plan-progress-spin{to{transform:rotate(360deg)}}
-    .workload-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:18px;align-items:start}.workload-side{position:sticky;top:86px}.workload-mode-panel.hidden{display:none}.workload-code-editor,.workload-code-stage{min-height:360px}.workload-question-list{display:grid;gap:10px}.workload-question-list textarea{min-height:128px}.workload-proof{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:7px;background:var(--line)}.workload-proof>div{padding:13px;background:var(--surface)}.workload-proof strong{display:block;color:var(--text);font-size:18px}.workload-proof span{font-size:11px;color:var(--muted)}.workload-entry{padding:11px 0;border-bottom:1px solid var(--line)}.workload-entry:last-child{border-bottom:0}.workload-entry p{margin:3px 0 0}.workload-review-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.workload-trust-list{display:grid;gap:7px;margin:12px 0}.workload-trust-list span::before{content:"✓";margin-right:7px;color:var(--good);font-weight:800}
+    .workload-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:18px;align-items:start}.workload-layout>*{min-width:0}.workload-side{position:sticky;top:86px;min-width:0}.workload-mode-panel.hidden{display:none}.workload-code-editor,.workload-code-stage{min-height:360px}.workload-question-list{display:grid;gap:10px}.workload-question-list textarea{min-height:128px}.workload-card-list{display:grid;gap:8px}.workload-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start;padding:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer}.workload-card:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}.workload-card input{margin-top:3px}.workload-card strong,.workload-card small{display:block}.workload-card small{margin-top:3px;color:var(--muted)}.workload-proof{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:7px;background:var(--line)}.workload-proof>div{padding:13px;background:var(--surface)}.workload-proof strong{display:block;color:var(--text);font-size:18px}.workload-proof span{font-size:11px;color:var(--muted)}.workload-entry{padding:11px 0;border-bottom:1px solid var(--line)}.workload-entry:last-child{border-bottom:0}.workload-entry p{margin:3px 0 0}.workload-review-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.workload-trust-list{display:grid;gap:7px;margin:12px 0}.workload-trust-list span::before{content:"✓";margin-right:7px;color:var(--good);font-weight:800}
     @media(prefers-reduced-motion:reduce){.instant-node.boundary::before,.instant-node.boundary::after,.status-message.loading::before{animation:none}}
     body.quick-start-mode,body.ask-focus-mode{--bg:#07100c;--surface:#101a16;--surface-2:#14211b;--text:#f2f7f4;--muted:#9aa8a1;--line:#27372f;--line-strong:#3b5045;--accent:#75e3b7;--accent-strong:#8aebc5;--accent-soft:#142d23;--good:#75e3b7;--good-soft:#142d23;background:#07100c}
     body.quick-start-mode header,body.ask-focus-mode header{background:#07100c;border-color:#1d2a24;backdrop-filter:none}
@@ -365,8 +365,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         <p class="rail-label">Setup workflow</p>
         <nav class="steps" aria-label="Workbench destinations">
           <button class="step" data-view="explore" type="button">Ask your data</button>
+          <button class="step" data-view="delegation" type="button">Delegate one job</button>
           <button class="step active" data-view="overview" type="button">Review data access</button>
-          <button class="step" data-view="workloads" type="button">Compile read workload</button>
+          <button class="step" data-view="workloads" type="button">Advanced read compiler</button>
           <button class="step" data-view="activate" type="button">Activate changes</button>
           <button class="step" data-view="protect" type="button">Make reusable</button>
           <button class="step" data-view="action" type="button">Add safe action</button>
@@ -452,18 +453,80 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      <div id="access-staged" class="access-final hidden" aria-live="polite"><p><strong id="access-staged-summary">No access changes staged</strong><br><span class="muted">This remains a disabled draft until Step 2.</span></p><button id="review-staged-access" type="button">Step 2 · Review and activate →</button></div>
 	    </section>
 
-    <section id="view-workloads" class="view">
+	    <section id="view-delegation" class="view">
+	      <p class="instant-kicker">Recommended setup · Read Boundary + Action Boundary</p>
+	      <h2>Prepare one agent job</h2>
+	      <p>Describe the job once. Runner prepares separate disabled read and proposal drafts, asks only for unresolved choices, and leaves every authority stage off until its own human review.</p>
+	      <div class="workload-layout">
+	        <div>
+	          <section class="band">
+	            <label class="field">What job are you giving this agent?<textarea id="delegation-job" maxlength="500" rows="3" placeholder="Answer support workload questions and propose bounded ticket status changes."></textarea></label>
+	          </section>
+	          <section class="band">
+	            <div class="split-actions"><div><h3>Reviewed mapping catalog</h3><p>Runner can stage uniquely proven relationship paths before mapping this job. Ambiguous paths stay manual; shared references need your explicit attestation.</p></div><span class="badge warn">Disabled only</span></div>
+	            <div id="delegation-catalog"><p>Loading reviewed structural paths...</p></div>
+	          </section>
+	          <section class="band">
+	            <div class="split-actions"><div><h3>Representative reads</h3><p id="delegation-read-help">Choose the questions this job must answer. These are exact reviewed plan cards, not free-form authority.</p></div><label class="check"><input id="delegation-use-model" type="checkbox"><span><strong>Use a model to map wording</strong><small>Optional. Exact server validation still decides the candidate.</small></span></label></div>
+	            <div id="delegation-card-tools">
+	              <label class="field">Find an exact read<input id="delegation-card-search" type="search" autocomplete="off" placeholder="Search questions, tables, or fields"></label>
+	              <p id="delegation-card-count" class="muted">Job matches appear first. Nothing is selected automatically.</p>
+	            </div>
+	            <div id="delegation-card-list" class="workload-card-list"><p>Loading reviewed questions...</p></div>
+	            <div id="delegation-model-settings" class="hidden">
+	              <label class="field">Representative read questions <small>(optional; Runner uses the job above when blank)</small><textarea id="delegation-read-questions" maxlength="12000" rows="5" placeholder="One representative question per line"></textarea></label>
+	              <div class="form-grid">
+	                <label class="field">Provider<select id="delegation-provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai_compatible">OpenAI-compatible or local</option></select></label>
+	                <label class="field">Model<input id="delegation-model" type="text" maxlength="128" value="gpt-5.6-luna"></label>
+	                <label class="field">API key environment variable<input id="delegation-key-env" type="text" maxlength="128" value="OPENAI_API_KEY"></label>
+	                <label id="delegation-base-url-wrap" class="field hidden">Provider base URL<input id="delegation-base-url" type="url" maxlength="2048" placeholder="http://127.0.0.1:11434/v1"></label>
+	              </div>
+	              <label class="check"><input id="delegation-egress" type="checkbox"><span><strong>Allow this job's structural metadata egress</strong><small>One acknowledgement covers bounded read and action-set mapping. No rows, values, kept-out fields, credentials, URLs, or trusted identities are sent.</small></span></label>
+	            </div>
+	          </section>
+	          <section class="band">
+	            <h3>Proposal actions</h3>
+	            <p>Optional clarification. With model mapping, leave this blank and Runner asks the model to separate the job into distinct proposal actions. Without a model, enter one business effect per line.</p>
+	            <label class="field">What may the agent propose?<textarea id="delegation-action-intents" maxlength="4000" rows="4" placeholder="Propose changing one ticket from open to resolved."></textarea></label>
+	            <label class="field">Approval starting point<select id="delegation-approval-mode"><option value="review_policy">Review deterministic rules when available</option><option value="human">Human approves every proposal</option></select></label>
+	            <p class="muted">Deterministic rules remain disabled until you review their exact conditions and limits. Hard delete always uses human approval. Apply remains a separate trusted authority.</p>
+	          </section>
+	        </div>
+	        <aside class="workload-side">
+	          <div class="band">
+	            <h3>Prepare disabled drafts</h3>
+	            <div class="workload-proof"><div><strong>Off</strong><span>Explore</span></div><div><strong>Off</strong><span>Propose</span></div><div><strong>Off</strong><span>Delegate</span></div><div><strong>Off</strong><span>Apply</span></div></div>
+	            <p>No source query runs. No privacy budget is consumed. No source row or active tool changes.</p>
+	            <button id="delegation-prepare" type="button">Prepare this job</button>
+	            <div id="delegation-status" class="status-message" role="status" aria-live="polite"></div>
+	          </div>
+	          <div id="delegation-saved" class="band"><p>No saved job drafts loaded.</p></div>
+	        </aside>
+	      </div>
+	      <div id="delegation-result"></div>
+	    </section>
+
+	    <section id="view-workloads" class="view">
       <p class="instant-kicker">Optional compiler · Before activation</p>
       <h2>Turn representative reads into a smaller boundary</h2>
-      <p>Give Runner exact plans, build a common aggregate visually, or let an optional model map questions to exact plans. Runner validates and minimizes the result deterministically. Nothing here queries source rows or activates access.</p>
+      <p>Select representative questions. Runner validates their exact reviewed plans and prepares the smallest matching boundary. Nothing here queries source rows or activates access.</p>
       <div class="tabs" role="tablist" aria-label="Read workload input">
-        <button id="workload-exact-tab" class="tab active" type="button" role="tab">Exact plans</button>
+        <button id="workload-cards-tab" class="tab active" type="button" role="tab">Question cards</button>
+        <button id="workload-exact-tab" class="tab" type="button" role="tab">Advanced exact plans</button>
         <button id="workload-model-tab" class="tab" type="button" role="tab">Map questions with a model</button>
         <button id="workload-saved-tab" class="tab" type="button" role="tab">Saved analyses</button>
       </div>
       <div class="workload-layout">
         <div>
-          <section id="workload-exact-panel" class="workload-mode-panel">
+          <section id="workload-cards-panel" class="workload-mode-panel">
+            <div class="band">
+              <h3>What should the agent be able to answer?</h3>
+              <p>Select every representative question that must work. Each card is an exact plan already checked against generated review candidates.</p>
+              <div id="workload-card-list" class="workload-card-list"><p>Loading reviewed questions...</p></div>
+            </div>
+          </section>
+
+          <section id="workload-exact-panel" class="workload-mode-panel hidden">
             <details class="band" open>
               <summary>Visual aggregate builder</summary>
               <p>Build one representative count or aggregate without writing JSON. Use the editor below for filters, rows, relationships, time windows, and the full reviewed grammar.</p>
@@ -516,16 +579,19 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
         <aside class="workload-side">
           <div class="band">
-            <h3>Human review record</h3>
-            <label class="field">Reviewer identity<input id="workload-actor" type="text" maxlength="128" autocomplete="username" placeholder="alex@example.com"></label>
-            <label class="field">Reason<input id="workload-reason" type="text" maxlength="500" value="Compile representative reads into a minimum candidate boundary."></label>
+            <h3>Prepare reviewed reads</h3>
             <div class="workload-trust-list">
               <span>No source query or privacy budget</span>
               <span>No source database change</span>
               <span>Disabled revision only</span>
               <span>Separate activation remains required</span>
             </div>
-            <button id="workload-analyze" type="button">Analyze minimum boundary</button>
+            <details>
+              <summary>Advanced audit labels</summary>
+              <label class="field">Reviewer identity<input id="workload-actor" type="text" maxlength="128" autocomplete="username" placeholder="alex@example.com"></label>
+              <label class="field">Reason<input id="workload-reason" type="text" maxlength="500" value="Compile representative reads into a minimum candidate boundary."></label>
+            </details>
+            <button id="workload-analyze" type="button">Prepare reviewed reads</button>
             <div id="workload-status" class="status-message" role="status" aria-live="polite"></div>
           </div>
         </aside>
@@ -768,13 +834,28 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
     <section id="view-action" class="view">
       <h2>Review Safe Actions</h2>
-      <p>Define one semantic INSERT, UPDATE, or DELETE action. Runner supplies only inspected structure; you choose every business bound and authority decision.</p>
+      <p>Describe one business effect. Runner ranks only reviewed structural candidates, prepares a proposal-only action, and asks about any choice it cannot resolve safely.</p>
       <div class="band notice">
         <strong>Proposal-only is the default.</strong>
         <p>A first activation uses <code>WRITEBACK NONE</code>. Execution and supervised automation are separate exact-digest revisions. Earlier proposals never gain authority after a promotion. The model cannot activate, approve, apply, or choose an executor.</p>
       </div>
       <div id="action-loading" class="band"><button id="load-action" type="button">Review available action shapes</button></div>
       <div id="action-wizard" class="hidden">
+        <div id="action-inventory"></div>
+        <div id="action-boundary-editor"></div>
+        <div id="action-revision" class="hidden"></div>
+        <section class="band">
+          <p class="instant-kicker">Recommended</p>
+          <h3>Create one proposal action</h3>
+          <p>Intent is used only to rank reviewed tables, operations, and fields. It never proves permission or activates a tool.</p>
+          <label class="field">What should the agent be allowed to propose?<input id="action-quick-intent" type="text" maxlength="500" placeholder="Register one student with a reviewed residency and entry cohort."></label>
+          <div class="actions"><button id="action-quick-prepare" type="button">Prepare proposal action</button></div>
+          <div id="action-quick-decision"></div>
+          <div id="action-quick-card"></div>
+          <div id="action-quick-status" class="status-message" role="status" aria-live="polite"></div>
+        </section>
+        <details id="action-advanced" class="band">
+          <summary><strong>Advanced action design</strong> - fixed values, transitions, approval policy, execution, receipts, or model suggestions</summary>
         <section class="band">
           <h3>Optional bounded suggestion</h3>
           <p>A model may suggest one exact candidate target, operation, and field set from structural metadata. The suggestion grants no authority and only preselects the normal review form.</p>
@@ -785,14 +866,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             <label class="field">API key environment name<input id="action-suggest-key-env" type="text" maxlength="128" value="OPENAI_API_KEY"></label>
             <label id="action-suggest-base-wrap" class="field hidden">OpenAI-compatible base URL<input id="action-suggest-base" type="url" maxlength="500"></label>
           </div>
-          <label class="check"><input id="action-suggest-egress" type="checkbox"><span>Send this intent and structural candidate metadata to the selected provider. No source rows, trusted identity values, credentials, approval policy, executor, or active authority are sent.</span></label>
+          <label class="check"><input id="action-suggest-egress" type="checkbox"><span>Send this intent and structural candidate metadata to the selected provider. No source rows, trusted identity values, credentials, active policy, executor, or authority are sent. The model may return a non-authoritative deterministic policy proposal for operator review.</span></label>
           <div class="actions"><button id="action-generate-suggestion" type="button">Generate bounded suggestion</button></div>
           <details><summary>Import suggestion JSON from another agent</summary><label class="field">Bounded ActionSuggestion JSON<textarea id="action-suggestion-json" rows="7" spellcheck="false" placeholder='{"schema_version":"synapsor.action-suggestion.v1",...}'></textarea></label><div class="actions"><button id="action-import-suggestion" type="button" class="secondary">Import suggestion</button></div></details>
           <div id="action-suggestion-status" class="status-message" role="status" aria-live="polite"></div>
           <div id="action-suggestions"></div>
         </section>
-        <div id="action-inventory"></div>
-        <div id="action-revision" class="hidden"></div>
         <section class="band">
           <div class="form-grid">
             <label class="field">Target resource<select id="action-resource"></select></label>
@@ -816,12 +895,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               <label class="field">Required distinct approvals<input id="action-quorum" type="number" min="1" max="10" value="1"></label>
             </div>
             <p class="muted">The approval role is a Synapsor contract role, not a database role or secret. In production, Runner requires that exact role in a freshly verified operator identity. <a href="https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/approval-roles-and-operator-identity.md" target="_blank" rel="noreferrer">Trace the role from IdP claim to approval and apply</a>.</p>
-            <label class="check" style="margin-top:14px"><input id="action-auto" type="checkbox"><span>Allow a small bounded case to be policy-approved. Off by default.</span></label>
-            <div id="action-auto-settings" class="form-grid hidden" style="margin-top:10px">
-              <label class="field">Bounded numeric field<select id="action-auto-field"></select></label>
-              <label class="field">Maximum automatic value<input id="action-auto-max" type="number" min="0" placeholder="Required reviewed threshold"></label>
-              <label class="field">Maximum per day<input id="action-auto-count" type="number" min="1" placeholder="Required reviewed count"></label>
-              <label class="field">Maximum total value per day<input id="action-auto-total" type="number" min="1" placeholder="Required aggregate circuit breaker"></label>
+            <label class="check" style="margin-top:14px"><input id="action-auto" type="checkbox"><span>Allow a smaller deterministic subset to be policy-approved. Off by default; every other valid proposal still needs a human.</span></label>
+            <div id="action-auto-settings" class="band hidden" style="margin-top:10px">
+              <strong>Deterministic auto-approval subset</strong>
+              <p>Every model-supplied change field receives an explicit reviewed condition. All conditions must pass. Missing current state, stale evidence, or uncertain usage falls back to human review.</p>
+              <div id="action-auto-conditions" class="action-fields"></div>
+              <div class="form-grid" style="margin-top:10px">
+                <label class="field">Maximum auto-approved proposals per day<input id="action-auto-count" type="number" min="1" placeholder="Required reviewed count"></label>
+                <label id="action-auto-total-field-wrap" class="field hidden">Aggregate numeric field<select id="action-auto-total-field"></select></label>
+                <label id="action-auto-total-wrap" class="field hidden">Maximum aggregate value per day<input id="action-auto-total" type="number" min="1" placeholder="Required aggregate circuit breaker"></label>
+              </div>
             </div>
             <h3 style="margin-top:18px">Execution authority</h3>
             <div class="form-grid">
@@ -858,8 +941,21 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             <div class="actions"><button id="create-action" type="button">Generate disabled action</button></div>
             <div id="action-status" class="status-message" role="status" aria-live="polite"></div>
             <div id="action-draft"></div>
-          </div>
-        </section>
+	          </div>
+	        </section>
+	        <section class="band">
+	          <h3>Explain or simulate deterministic approval</h3>
+	          <p>Use a disabled proposal capability and sample values. Runner evaluates the exact reviewed conditions without creating, approving, or applying a proposal.</p>
+	          <label class="field">Proposal capability<input id="action-policy-capability" type="text" maxlength="256" placeholder="support.propose_credit"></label>
+	          <div class="form-grid">
+	            <label class="field">Proposed patch JSON<textarea id="action-policy-patch" rows="6" spellcheck="false">{}</textarea></label>
+	            <label class="field">Current row facts JSON (optional)<textarea id="action-policy-before" rows="6" spellcheck="false">{}</textarea></label>
+	          </div>
+	          <div class="actions"><button id="action-policy-simulate" class="secondary" type="button">Explain this decision</button></div>
+	          <div id="action-policy-status" class="status-message" role="status" aria-live="polite"></div>
+	          <div id="action-policy-result"></div>
+	        </section>
+	        </details>
       </div>
     </section>
       </div>
@@ -880,7 +976,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let modelAuthorityMetadataMode="semantic";
     let candidateDigest;
 	    let currentView="overview";
-	    const validViews=new Set(["overview","exceptions","workloads","activate","explore","protect","action"]);
+	    const validViews=new Set(["overview","exceptions","delegation","workloads","activate","explore","protect","action"]);
 	    let viewHistoryReady=false;
 	    let resourceFilter="starter";
 	    let resourceSearch="";
@@ -905,10 +1001,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let guidedActionData=null;
     let guidedActionDraft=null;
     let guidedActionSuggestionId=null;
+    let quickActionDecisions={};
+    let quickActionPreparation=null;
+    let quickActionApprovalMode="human";
+    let resumeQuickActionAfterReadReview=false;
     let readWorkloadData=null;
     let readWorkloadPreview=null;
-    let readWorkloadMode="exact";
+    let readWorkloadMode="cards";
     let selectedReadWorkloadAnalysis=null;
+    let delegationData=null;
+    let delegationPendingJob=null;
+    let delegationSelectedCards=new Map();
     let askStatus=null;
 	    let boundaryCatalog={schema_version:"synapsor.boundary-catalog.v1",table_count:0,relationship_count:0,boundaries:[]};
 	    let boundaryMermaid="flowchart LR";
@@ -946,7 +1049,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       .replace(/([a-z0-9])([A-Z])/g,"$1 $2")
       .replace(/[_-]+/g," ")
       .trim()
-      .replace(/\b\w/g,char=>char.toUpperCase());
+      .replace(/\\b\\w/g,char=>char.toUpperCase());
 	    const modelFacingFieldIds=resource=>[...new Set([
 	      ...(resource?.selectable_fields||[]),
 	      ...Object.keys(resource?.filterable_fields||{}),
@@ -1333,6 +1436,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(!validViews.has(view))view="overview";
 	      const previousView=currentView;
 	      currentView=view;
+	      if(view!=="overview")document.body.classList.remove("quick-start-mode");
+	      else renderInstantOnboarding();
 	      document.body.classList.toggle("ask-focus-mode",view==="explore"&&activeBoundaries.length>0);
 	      document.body.classList.toggle("ask-result-mode",view==="explore"&&Boolean(document.querySelector("#ask-transcript .ask-turn.answer, #ask-transcript .ask-turn.error")));
 	      document.body.classList.toggle("access-focus-mode",view==="exceptions");
@@ -1352,6 +1457,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        renderResourceDetail();
 	      }
       if(view==="activate")renderSignoff();
+      if(view==="delegation")loadDelegationSetup();
       if(view==="workloads")loadReadWorkloadAssist();
       if(view==="explore"){
         if(activeBoundaries.length)runPreflight();
@@ -1380,7 +1486,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           ?hashView
           :activeBoundary
             ?"explore"
-            :"overview";
+            :"delegation";
       const requestedResource=history.state?.selected_resource;
       selectedResource=requested==="exceptions"
         && typeof requestedResource==="string"
@@ -3045,7 +3151,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         if(!field||!bandName||bandName.value.trim())return;
         const selected=JSON.parse(field.value);
         bandName.value=safeAnalyticsName((selected.relationship?selected.relationship+"_":"")+selected.field+"_band");
-        if(bandLabel&&!bandLabel.value.trim())bandLabel.value=bandName.value.replace(/_/g," ").replace(/\b\w/g,value=>value.toUpperCase());
+        if(bandLabel&&!bandLabel.value.trim())bandLabel.value=bandName.value.replace(/_/g," ").replace(/\\b\\w/g,value=>value.toUpperCase());
       };
       field?.addEventListener("change",suggestBand);
       suggestBand();
@@ -3086,7 +3192,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           const base=JSON.parse(byId("analytics-post-base").value);
           const subject=base.function==="count"?"rows":(base.relationship?base.relationship+"_":"")+(base.field||base.function);
           name.value=safeAnalyticsName(subject+"_"+shape);
-          if(label&&!label.value.trim())label.value=name.value.replace(/_/g," ").replace(/\b\w/g,value=>value.toUpperCase());
+          if(label&&!label.value.trim())label.value=name.value.replace(/_/g," ").replace(/\\b\\w/g,value=>value.toUpperCase());
         }
       };
       postShape?.addEventListener("change",refreshPostShape);
@@ -3106,7 +3212,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const label=byId("analytics-child-count-label");
         if(name&&!name.value.trim()){
           name.value=safeAnalyticsName(childShape.value==="child_count_total"?childName+"_count":"average_"+childName+"_per_parent");
-          if(label&&!label.value.trim())label.value=name.value.replace(/_/g," ").replace(/\b\w/g,value=>value.toUpperCase());
+          if(label&&!label.value.trim())label.value=name.value.replace(/_/g," ").replace(/\\b\\w/g,value=>value.toUpperCase());
         }
       };
       childPath?.addEventListener("change",()=>{
@@ -3794,13 +3900,25 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	            ...Object.entries(resource.field_enums||{}).map(([field,values])=>field+": "+values.join(" | ")),
 	            ...disabledEnums.map(field=>field+": none (filter/group disabled)")
 	          ];
-		          const fieldDisplay=field=>resource.field_metadata?.[field]?.label?resource.field_metadata[field].label+" ("+field+")":field;
-		          const fieldCell=(fields,label)=>'<strong>'+esc(fields.length)+'</strong> '+esc(label)+'<small>'+esc(fields.map(fieldDisplay).join(", ")||"None")+'</small>';
-		          const tenantScope=reviewedTenantScopeLabel(resource,resourceReview);
+	          const fieldDisplay=field=>resource.field_metadata?.[field]?.label?resource.field_metadata[field].label+" ("+field+")":field;
+	          const fieldCell=(fields,label)=>'<strong>'+esc(fields.length)+'</strong> '+esc(label)+'<small>'+esc(fields.map(fieldDisplay).join(", ")||"None")+'</small>';
+	          const reviewedOperations=[];
+	          const filters=Object.keys(resource.filterable_fields||{});
+	          if(filters.length)reviewedOperations.push("Filter: "+filters.map(fieldDisplay).join(", "));
+	          if((resource.sortable_fields||[]).length)reviewedOperations.push("Sort: "+resource.sortable_fields.map(fieldDisplay).join(", "));
+	          if((resource.groupable_fields||[]).length)reviewedOperations.push("Group: "+resource.groupable_fields.map(fieldDisplay).join(", "));
+	          if((resource.aggregate_measures||[]).length)reviewedOperations.push("Measure: "+resource.aggregate_measures.map(field=>{
+	            const functions=resource.aggregate_measure_functions?.[field]||[];
+	            return functions.length?functions.join("/")+"("+fieldDisplay(field)+")":fieldDisplay(field);
+	          }).join(", "));
+	          if((resource.count_distinct_fields||[]).length)reviewedOperations.push("Distinct count: "+resource.count_distinct_fields.map(fieldDisplay).join(", "));
+	          const buckets=Object.entries(resource.time_bucket_fields||{}).map(([field,units])=>fieldDisplay(field)+" ("+units.join("/")+")");
+	          if(buckets.length)reviewedOperations.push("Time bucket: "+buckets.join(", "));
+	          const tenantScope=reviewedTenantScopeLabel(resource,resourceReview);
 		          const principalScope=reviewedPrincipalScopeLabel(resource,resourceReview);
 		          const resourceName=resource.label?resource.label+" ("+resource.id+")":resource.id;
 	          return '<tr><td><strong>'+esc(resourceName)+'</strong>'+(resource.description?'<small>'+esc(resource.description)+'</small>':'')+'<small>Tenant scope: '+esc(tenantScope)+' · Principal scope: '+esc(principalScope)+' · minimum group '+esc(resource.minimum_cohort_size)+'</small><small>Allowed categorical values: '+esc(enumSummary.join("; ")||"None")+'</small><small>Model vocabulary: '+esc(modelVocabularySummary(resource))+'</small></td>'
-            +'<td>'+fieldCell(modelFields,"model-visible")+'</td>'
+            +'<td>'+fieldCell(modelFields,"row-return")+'<small>Reviewed operations: '+esc(reviewedOperations.join(" · ")||"None")+'</small></td>'
             +'<td>'+fieldCell(runnerFields,"Runner-only")+'</td>'
             +'<td>'+fieldCell(resource.kept_out_fields||[],"kept out")+'</td>'
             +'<td><strong>'+esc(links.length)+'</strong> reviewed<small>'+esc(links.join(", ")||"None")+'</small></td></tr>';
@@ -3808,10 +3926,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         byId("signoff-summary").innerHTML='<h3>One boundary, one exact confirmation</h3>'
           +'<p>This exact local read boundary will be added to, or update its own entry in, active Explore access. Other active boundaries stay independently reviewed. The model cannot perform or alter this confirmation.</p>'
           +(askStatus?.session?.configured?'<p><strong>Configured model:</strong> activation makes model-visible values in this boundary available to '+esc(providerLabel(askStatus.session.configuration.provider))+' under the same reviewed two-tool surface. Runner retains the in-memory key, clears prior conversation, and binds subsequent egress to the new active boundary set.</p>':'')
-		  +'<div class="boundary-version-table-wrap focused-boundary-table-wrap"><table class="boundary-version-table focused-boundary-table"><thead><tr><th>Table and scope</th><th>Model + Runner</th><th>Raw values: Runner only</th><th>Kept out</th><th>Related tables</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+		  +'<div class="boundary-version-table-wrap focused-boundary-table-wrap"><table class="boundary-version-table focused-boundary-table"><thead><tr><th>Table and scope</th><th>Model + Runner row values and operations</th><th>Raw values: Runner only</th><th>Kept out</th><th>Related tables</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
 		  +'<p><strong>Ranked queries:</strong> validate at most '+esc(candidate.budgets.max_ranked_groups??candidate.budgets.max_groups)+' candidate groups, suppress small cohorts, then return at most top '+esc(candidate.budgets.max_top_n)+'. The model cannot change this limit.</p>'
 		  +'<p><strong>Writes:</strong> none. <strong>Schema and role:</strong> rechecked immediately before activation. <strong>Source database:</strong> unchanged.</p>'
-          +(blocker?'<div class="risk high"><strong>One explicit choice remains.</strong><p>'+esc(blocker)+'</p><button id="return-to-access" class="secondary" type="button">Return to access editor</button></div>':'<p class="muted">Selecting Activate records every exact digest-bound decision shown here, activates only this boundary, and opens Ask.</p>');
+          +(blocker?'<div class="risk high"><strong>One explicit choice remains.</strong><p>'+esc(blocker)+'</p><button id="return-to-access" class="secondary" type="button">Return to access editor</button></div>':'<p class="muted">Selecting Activate records every exact digest-bound decision shown here, activates only this boundary, and opens Ask.</p><div class="actions"><button id="keep-read-reviewed" class="secondary" type="button">Keep reviewed and prepare an action</button></div><p class="muted">This records review only. Read authority stays inactive; dependent proposal-action activation remains blocked.</p>');
         byId("return-to-access")?.addEventListener("click",()=>{
           if(unresolvedRelationship)selectedResource=unresolvedRelationship.resource.id;
 	      else if(vocabularyGapResource)selectedResource=vocabularyGapResource.id;
@@ -3822,6 +3940,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             detail?.scrollIntoView({behavior:"smooth",block:"center"});
           });
         });
+        byId("keep-read-reviewed")?.addEventListener("click",keepReadReviewedDisabled);
         showDeploymentProfile(candidate.deployment_profile);
         renderRolePosture();
         updateActivationState();
@@ -3862,6 +3981,25 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       showDeploymentProfile(candidate.deployment_profile);
       renderRolePosture();
       updateActivationState();
+    }
+
+    async function keepReadReviewedDisabled(){
+      const message=byId("message");
+      try{
+        const blocker=focusedBoundaryBlocker();
+        if(blocker)throw new Error(blocker);
+        if(!byId("actor").value.trim())throw new Error("Enter who reviewed this access.");
+        confirmedDecisions=new Set(candidate.unresolved_decisions||[]);
+        await queueReviewProgressSave();
+        if(!reviewProgressHealthy)throw new Error("Review progress must be saved before preparing a dependent action.");
+        guidedActionData=null;
+        message.className="status-message success";
+        message.textContent="Read review recorded. Authority remains inactive; opening proposal Action Assist.";
+        setView("action");
+      }catch(error){
+        message.className="status-message error";
+        message.textContent=error.message;
+      }
     }
 
     function renderRolePosture(){
@@ -3936,6 +4074,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        });
 	        activeBoundary=payload.active;
 	        activeBoundaries=[...activeBoundaries.filter(boundary=>boundary.pack?.name!==payload.active.pack.name),payload.active];
+	        guidedActionData=null;
 	        synchronizeBoundaryAuthorityState(activeBoundary);
 	        focusedAccessReview=false;
 	        accessBaselineColumns=accessColumnSnapshot(candidate);
@@ -5126,7 +5265,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          const displayedAnswer=String(payload.display_answer||payload.answer||"");
 	          const suppressedShareWarning=(payload.display_answer_source||payload.answer_source)!=="runner"
 	            &&calls.some(call=>askSuppressedGroupCount(call.result)>0)
-	            &&/(?:\bshares?\b|\bpercent(?:age|ages|s)?\s+of\b|%\s+of\b)/i.test(displayedAnswer)
+	            &&/(?:\\bshares?\\b|\\bpercent(?:age|ages|s)?\\s+of\\b|%\\s+of\\b)/i.test(displayedAnswer)
 	              ?'<div class="notice"><strong>Complete-population share unavailable</strong><p>At least one group was withheld. Percentages calculated from the displayed rows describe only the returned non-suppressed subtotal.</p></div>'
 	              :"";
 	          const accessGuidance=askAccessGuidanceHtml(payload.access_guidance);
@@ -5727,7 +5866,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const dimension=resource.groupable_fields?.[0];
         const measure=resource.aggregate_measures?.[0];
         const timeField=Object.keys(resource.time_bucket_fields||{})[0];
-        const rawMeasureLabel=measure?fieldLabel(resource,measure).toLowerCase().replace(/\s+cents$/,""):"";
+        const rawMeasureLabel=measure?fieldLabel(resource,measure).toLowerCase().replace(/\\s+cents$/,""):"";
         const measureQuestionLabel=rawMeasureLabel&&rawMeasureLabel.startsWith("total ")
           ?rawMeasureLabel
           :rawMeasureLabel
@@ -5754,7 +5893,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       });
       const seenQuestions=new Set();
       const suggestions=proposedSuggestions.filter(item=>{
-        const key=String(item.question.text||"").trim().toLowerCase().replace(/\s+/g," ");
+        const key=String(item.question.text||"").trim().toLowerCase().replace(/\\s+/g," ");
         if(!key||seenQuestions.has(key))return false;
         seenQuestions.add(key);
         return true;
@@ -6991,13 +7130,458 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
     }
 
+    function delegationLines(value){
+      return [...new Set(String(value||"").split(/\\r?\\n/).map(line=>line.trim()).filter(Boolean))];
+    }
+
+    function delegationJobRequestsActions(value){
+      return /\\b(?:propose|create|schedule|assign|update|change|close|cancel|approve|issue|send|record|mark|waive|refund|credit|delete|remove)\\b/i.test(String(value||""));
+    }
+
+    function updateDelegationModelSettings(){
+      const enabled=byId("delegation-use-model").checked;
+      byId("delegation-card-list").classList.toggle("hidden",enabled);
+      byId("delegation-card-tools").classList.toggle("hidden",enabled);
+      byId("delegation-model-settings").classList.toggle("hidden",!enabled);
+      byId("delegation-read-help").textContent=enabled
+        ?"Write representative questions. The selected provider may map wording to exact reviewed plan IDs; Runner validates the result."
+        :"Choose the questions this job must answer. These are exact reviewed plan cards, not free-form authority.";
+      updateDelegationProvider();
+    }
+
+    function updateDelegationProvider(){
+      const provider=byId("delegation-provider").value;
+      const defaults=delegationData?.defaults||{};
+      byId("delegation-base-url-wrap").classList.toggle("hidden",provider!=="openai_compatible");
+      if(provider==="openai"){
+        byId("delegation-model").value=defaults.openai_model||"gpt-5.6-luna";
+        byId("delegation-key-env").value=defaults.openai_key_env||"OPENAI_API_KEY";
+      }else if(provider==="anthropic"){
+        byId("delegation-model").value=defaults.anthropic_model||"claude-sonnet-4-5";
+        byId("delegation-key-env").value=defaults.anthropic_key_env||"ANTHROPIC_API_KEY";
+      }
+    }
+
+    function delegationCardWords(value){
+      return String(value||"").toLowerCase().replace(/[_-]+/g," ").match(/[a-z0-9]+/g)||[];
+    }
+
+    function delegationCardScore(card,job){
+      const ignored=new Set(["a","an","and","for","from","in","of","on","one","the","to","with"]);
+      const normalize=word=>word.length>3&&word.endsWith("s")?word.slice(0,-1):word;
+      const wanted=[...new Set(delegationCardWords(job).map(normalize).filter(word=>word.length>1&&!ignored.has(word)))];
+      if(!wanted.length)return 0;
+      const searchable=delegationCardWords([card.title,card.detail,JSON.stringify(card.plan||{})].join(" ")).map(normalize);
+      const available=new Set(searchable);
+      return wanted.reduce((score,word)=>score+(available.has(word)?1:0),0);
+    }
+
+    function selectedDelegationCardIds(){
+      return new Set(delegationSelectedCards.keys());
+    }
+
+    function renderDelegationCards(){
+      const panel=byId("delegation-card-list");
+      const selected=selectedDelegationCardIds();
+      const job=byId("delegation-job").value.trim();
+      const query=byId("delegation-card-search").value.trim().toLowerCase();
+      const available=new Map((delegationData?.plan_cards||[]).map(card=>[card.id,card]));
+      for(const [id,card] of delegationSelectedCards)if(!available.has(id))available.set(id,card);
+      const cards=[...available.values()]
+        .map((card,index)=>({card,index,score:delegationCardScore(card,job)}))
+        .filter(({card})=>!query||[card.title,card.detail,JSON.stringify(card.plan||{})].join(" ").toLowerCase().includes(query))
+        .sort((left,right)=>right.score-left.score||left.index-right.index)
+        .map(({card})=>card);
+      if(!cards.length){panel.innerHTML='<p>No reviewed question cards are available yet. Review table access first, or use the Advanced read compiler.</p>';return}
+      panel.innerHTML=cards.map(card=>'<label class="workload-card"><input data-delegation-card type="checkbox" value="'+esc(card.id)+'" '+(selected.has(card.id)?'checked':'')+'><span><strong>'+esc(card.title)+'</strong><small>'+esc(card.detail)+'</small></span></label>').join("");
+      const visibleSelected=cards.filter(card=>selected.has(card.id)).length;
+      byId("delegation-card-count").textContent=selected.size+' selected · '+cards.length+' shown · Job matches appear first.'+(visibleSelected<selected.size?' Some selected cards are hidden by this search.':'');
+      document.querySelectorAll("[data-delegation-card]").forEach(input=>input.onchange=()=>{
+        if(input.checked){
+          const card=available.get(input.value);
+          if(card)delegationSelectedCards.set(input.value,card);
+        }else delegationSelectedCards.delete(input.value);
+        renderDelegationCards();
+      });
+    }
+
+    function delegationCatalogPath(path){
+      const links=path?.links||[];
+      const resources=links.length?[links[0].source_resource,...links.map(link=>link.target_resource)]:[path?.ancestor_resource].filter(Boolean);
+      return resources.map(resource=>String(resource).split(".").pop()).join(" → ");
+    }
+
+    function renderDelegationCatalog(){
+      const panel=byId("delegation-catalog");
+      const catalog=delegationData?.mapping_catalog;
+      if(!catalog){panel.innerHTML='<p class="muted">The reviewed mapping catalog is unavailable.</p>';return}
+      const derived=(catalog.derived_resources||[]).map(resource=>'<div class="action-field"><strong>'+esc(resource.resource_id)+'</strong><small>'+esc(delegationCatalogPath(resource.tenant_scope))+' · '+esc(resource.tenant_scope.depth)+' hop'+(resource.tenant_scope.depth===1?'':'s')+'</small></div>').join("");
+      const shared=(catalog.shared_reference_resources||[]).map(resource=>'<label class="workload-card"><input data-delegation-shared type="checkbox" value="'+esc(resource.resource_id)+'"><span><strong>'+esc(resource.resource_id)+'</strong><small>Confirm only if every tenant is meant to see the same reviewed rows.</small></span></label>').join("");
+      const manual=(catalog.manual_resources||[]).map(resource=>'<li><code>'+esc(resource.resource_id)+'</code> — '+esc(resource.reason)+'</li>').join("");
+      const depthChanged=catalog.current_limits.max_derived_scope_hops!==catalog.proposed_limits.max_derived_scope_hops||catalog.current_limits.max_analysis_relationship_hops!==catalog.proposed_limits.max_analysis_relationship_hops;
+      panel.innerHTML='<div class="workload-proof"><div><strong>'+esc(catalog.direct_resources.length)+'</strong><span>Direct</span></div><div><strong>'+esc(catalog.derived_resources.length)+'</strong><span>Proven paths</span></div><div><strong>'+esc(catalog.shared_reference_resources.length)+'</strong><span>Need attestation</span></div><div><strong>'+esc(catalog.manual_resources.length)+'</strong><span>Stay manual</span></div></div>'
+        +(derived?'<div class="action-fields" style="margin-top:10px">'+derived+'</div>':'')
+        +(shared?'<h4 style="margin-top:14px">Optional shared references</h4><div class="workload-card-list">'+shared+'</div>':'')
+        +(depthChanged?'<p class="muted">Path review limits will move to derived '+esc(catalog.proposed_limits.max_derived_scope_hops)+' and analysis '+esc(catalog.proposed_limits.max_analysis_relationship_hops)+', each within the hard cap of 3.</p>':'')
+        +(manual?'<details><summary>'+esc(catalog.manual_resources.length)+' table'+(catalog.manual_resources.length===1?'':'s')+' require manual review</summary><ul>'+manual+'</ul></details>':'')
+        +'<details><summary>Exact catalog identity</summary><code>'+esc(catalog.plan_digest)+'</code></details>';
+    }
+
+    async function prepareDelegationCatalog(actor){
+      const catalog=delegationData?.mapping_catalog;
+      if(!catalog)throw new Error("Reload the reviewed mapping catalog before preparing this job.");
+      const accepted=[...document.querySelectorAll("[data-delegation-shared]:checked")].map(input=>input.value);
+      const needsPreparation=(catalog.derived_resources||[]).length>0
+        ||accepted.length>0
+        ||catalog.current_limits.max_derived_scope_hops!==catalog.proposed_limits.max_derived_scope_hops
+        ||catalog.current_limits.max_analysis_relationship_hops!==catalog.proposed_limits.max_analysis_relationship_hops;
+      if(!needsPreparation)return;
+      const prepared=await post("/api/boundary/delegations/catalog",{
+        expected_plan_digest:catalog.plan_digest,
+        accepted_shared_resources:accepted,
+        actor
+      });
+      delegationData.mapping_catalog=prepared.mapping_catalog;
+      delegationData.plan_cards=prepared.plan_cards;
+      renderDelegationCatalog();
+      renderDelegationCards();
+    }
+
+    function renderSavedDelegations(){
+      const panel=byId("delegation-saved");
+      const drafts=delegationData?.delegations||[];
+      if(!drafts.length){panel.innerHTML='<p><strong>Saved jobs</strong></p><p class="muted">No immutable delegation drafts yet.</p>';return}
+      panel.innerHTML='<p><strong>Saved jobs</strong></p>'+drafts.slice(0,6).map(draft=>'<div class="action-field"><strong>'+esc(draft.job_intent)+'</strong><small>'+esc(draft.read.boundary_name)+' · '+esc(draft.actions.length)+' proposal action'+(draft.actions.length===1?'':'s')+'</small><details><summary>Exact draft identity</summary><code>'+esc(draft.revision_digest)+'</code></details></div>').join("");
+    }
+
+    async function loadDelegationSetup(){
+      if(delegationData)return;
+      const status=byId("delegation-status");
+      try{
+        status.className="status-message loading";
+        status.textContent="Loading reviewed job cards...";
+        delegationData=await getJson("/api/boundary/delegations");
+        const availability=delegationData.model_availability||{};
+        if(availability.openai||availability.anthropic){
+          byId("delegation-use-model").checked=true;
+          byId("delegation-provider").value=availability.openai?"openai":"anthropic";
+        }
+        renderDelegationCatalog();
+        renderDelegationCards();
+        renderSavedDelegations();
+        updateDelegationModelSettings();
+        status.className="status-message";
+        status.textContent="Ready. Preparing a job creates disabled drafts only.";
+      }catch(error){status.className="status-message error";status.textContent=error.message}
+    }
+
+    async function prepareDelegationJob(){
+      const status=byId("delegation-status");
+      const result=byId("delegation-result");
+      try{
+        const jobIntent=byId("delegation-job").value.trim();
+        if(!jobIntent)throw new Error("Describe one agent job first.");
+        let actionIntents=delegationLines(byId("delegation-action-intents").value);
+        if(actionIntents.length>8)throw new Error("Use at most eight proposal-action intents in one job.");
+        const useModel=byId("delegation-use-model").checked;
+        const actor=byId("actor").value.trim()||"local_operator";
+        const reason="Prepare disabled Read and Action Boundary drafts for: "+jobIntent;
+        let provider;
+        let model;
+        let keyEnv;
+        let baseUrl;
+        let analyzed;
+        let discardedPolicyProposals=0;
+        const mappedActionSeeds=[];
+        const unresolved=[];
+        status.className="status-message loading";
+        status.textContent="Preparing the complete disabled structural catalog...";
+        await prepareDelegationCatalog(actor);
+        if(useModel){
+          if(!byId("delegation-egress").checked)throw new Error("Review and allow structural metadata egress before model mapping.");
+          provider=byId("delegation-provider").value;
+          model=byId("delegation-model").value.trim();
+          keyEnv=byId("delegation-key-env").value.trim();
+          baseUrl=byId("delegation-base-url").value.trim();
+        }
+        status.textContent=useModel?"Mapping distinct proposal effects against the disabled catalog...":"Checking proposal targets against the disabled catalog...";
+        if(useModel&&actionIntents.length===0&&delegationJobRequestsActions(jobIntent)){
+          const generated=await post("/api/actions/guided/suggest-set",{
+            job_intent:jobIntent,provider,model,api_key_env:keyEnv,
+            ...(baseUrl?{base_url:baseUrl}:{}),
+            egress_acknowledged:true,authoring_catalog:true
+          });
+          discardedPolicyProposals=Number(generated.discarded_approval_policy_proposals||0);
+          for(const stored of generated.suggestions||[]){
+            const candidate=stored.current_assessment?.suggestion||stored.assessment?.suggestion||{};
+            if(!candidate.intent)continue;
+            actionIntents.push(candidate.intent);
+            mappedActionSeeds.push({
+              intent:candidate.intent,
+              suggestion_id:stored.suggestion_id,
+              decisions:{resource:candidate.resource,operation:candidate.operation,fields:candidate.fields||[]}
+            });
+          }
+        }else{
+          for(const intent of actionIntents){
+            try{
+              if(useModel){
+                const suggested=await post("/api/actions/guided/suggest",{
+                  intent,provider,model,api_key_env:keyEnv,
+                  ...(baseUrl?{base_url:baseUrl}:{}),
+                  egress_acknowledged:true,authoring_catalog:true
+                });
+                const candidate=suggested.suggestion.current_assessment?.suggestion||suggested.suggestion.assessment?.suggestion||{};
+                mappedActionSeeds.push({intent,suggestion_id:suggested.suggestion.suggestion_id,decisions:{resource:candidate.resource,operation:candidate.operation,fields:candidate.fields||[]}});
+              }else{
+                const quick=await post("/api/actions/guided/quick",{intent,decisions:{},authoring_catalog:true});
+                if(quick.preparation.state!=="ready"){
+                  unresolved.push({intent,preparation:quick.preparation});
+                  continue;
+                }
+                mappedActionSeeds.push({intent,decisions:quick.preparation.selected||{},preparation:quick.preparation});
+              }
+            }catch(error){unresolved.push({intent,error:error.message})}
+          }
+        }
+        if(actionIntents.length>8)throw new Error("The model proposed more than eight distinct actions; narrow the job before review.");
+        const actionSupport=mappedActionSeeds.map(seed=>{
+          const action=seed.preparation?.action;
+          const operation=action?.operation||seed.decisions.operation;
+          return {
+            resource:action?.resource||seed.decisions.resource,
+            operation,
+            fields:operation==="delete"?[]:(action?.patches||[]).map(patch=>patch.column).length
+              ?(action.patches||[]).map(patch=>patch.column)
+              :(seed.decisions.fields||[])
+          };
+        });
+        status.textContent=useModel?"Mapping representative reads with exact action-review support...":"Validating exact reviewed question cards...";
+        if(useModel){
+          const questions=delegationLines(byId("delegation-read-questions").value);
+          if(!questions.length)questions.push(jobIntent);
+          analyzed=await post("/api/boundary/workloads/analyze",{
+            mode:"model",
+            intent:{name:"delegation_reads",allowed_questions:questions,forbidden_questions:[]},
+            provider,model,api_key_env:keyEnv,
+            ...(baseUrl?{base_url:baseUrl}:{}),
+            egress_acknowledged:true,actor,reason,
+            ...(actionSupport.length?{action_support:actionSupport}:{})
+          });
+        }else{
+          const selected=[...delegationSelectedCards.values()];
+          if(!selected.length)throw new Error("Choose at least one representative read question.");
+          analyzed=await post("/api/boundary/workloads/analyze",{
+            mode:"exact",
+            workload:{
+              schema_version:"synapsor.read-workload-set.v1",
+              name:"delegation_reads",
+              allowed:selected.map(card=>({id:card.id,description:card.title,plan:card.plan})),
+              forbidden:[],
+              source:{kind:"operator_exact_plan"}
+            },
+            actor,reason,
+            ...(actionSupport.length?{action_support:actionSupport}:{})
+          });
+        }
+        const decision=analyzed.preview?.decision_digest;
+        if(!decision)throw new Error("Runner did not produce an exact disabled read-candidate preview.");
+        await post("/api/boundary/workloads/apply",{
+          analysis_id:analyzed.workload.analysis_id,
+          actor,reason,decision_digest:decision,confirmation:"APPLY WORKLOAD "+decision
+        });
+
+        const preparedCandidates=[];
+        for(const seed of mappedActionSeeds){
+          const intent=seed.intent;
+          try{
+            status.textContent="Preparing exact proposal review: "+intent;
+            const quick=await post("/api/actions/guided/quick",{intent,decisions:seed.decisions,...(seed.suggestion_id?{suggestion_id:seed.suggestion_id}:{})});
+            if(quick.preparation.state!=="ready"){
+              unresolved.push({intent,preparation:quick.preparation,selected:seed.decisions});
+              continue;
+            }
+            preparedCandidates.push({intent,suggestion_id:seed.suggestion_id,preparation:quick.preparation});
+          }catch(error){
+            unresolved.push({intent,error:error.message,selected:seed.decisions});
+          }
+        }
+        delegationPendingJob={
+          job_intent:jobIntent,
+          analysis_id:analyzed.workload.analysis_id,
+          action_intents:actionIntents,
+          candidates:preparedCandidates,
+          unresolved,
+          discarded_policy_proposals:typeof discardedPolicyProposals==="number"?discardedPolicyProposals:0,
+          ...(useModel?{model_assist:{provider,model,structural_metadata_egress_acknowledged:true}}:{})
+        };
+        if(!preparedCandidates.length){
+          await finalizeDelegationJob(true);
+          return;
+        }
+        renderDelegationPolicyReview();
+        status.className="status-message success";
+        status.textContent="Mapping complete. Review the exact approval path below; no action authority has been saved or activated.";
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+        result.innerHTML='<section class="band error"><strong>Job preparation stopped safely.</strong><p>'+esc(error.message)+'</p><p>No failed step activated authority or changed source data.</p></section>';
+      }
+    }
+
+    function delegationPolicyConditionText(condition){
+      const source=(condition.source||"patch")==="before"?"current row":"proposed value";
+      const operator={lte:"≤",gte:"≥",eq:"=",in:"in",max_length:"max length"}[condition.operator]||condition.operator;
+      const expected=condition.operator==="in"?(condition.values||[]).join(", "):condition.value;
+      return source+" · "+condition.field+" "+operator+" "+expected;
+    }
+
+    function delegationSharedLimitText(limit){
+      const measure=limit.kind==="count"?limit.maximum+" approvals":limit.maximum+" total "+limit.field;
+      return measure+" per "+humanizeIdentifier(limit.scope)+" every "+limit.window_seconds+" seconds";
+    }
+
+    function renderDelegationPolicyReview(){
+      const pending=delegationPendingJob;
+      if(!pending)return;
+      const requestedMode=byId("delegation-approval-mode").value;
+      const cards=pending.candidates.map((candidate,index)=>{
+        const template=candidate.preparation.deterministic_approval_template;
+        const conditions=template?.auto_approval?.conditions||[];
+        const limits=template?.shared_limits||[];
+        const deterministic=requestedMode==="review_policy"&&Boolean(template);
+        const source=template?.source==="model_suggestion"?"Model-proposed, Runner-validated":"Runner-derived from reviewed bounds";
+        return '<section class="band"><div class="split-actions"><div><h3>'+esc(candidate.intent)+'</h3><p><code>'+esc(candidate.preparation.action.capability_name)+'</code> · '+esc(candidate.preparation.action.operation.toUpperCase())+' '+esc(candidate.preparation.action.resource)+'</p></div><span class="badge warn">Disabled</span></div>'
+          +'<label class="field">Approval path<select data-delegation-policy="'+index+'"><option value="human" '+(deterministic?'':'selected')+'>Human approves every proposal</option>'+(template?'<option value="deterministic" '+(deterministic?'selected':'')+'>Deterministic rules; fallback to human</option>':'')+'</select></label>'
+          +(template?'<div data-delegation-policy-detail="'+index+'"><p><strong>'+esc(source)+'</strong></p><ul>'+conditions.map(condition=>'<li>'+esc(delegationPolicyConditionText(condition))+'</li>').join("")+'</ul><p><strong>Per-action ceiling:</strong> '+esc(template.auto_approval.max_per_day)+' per rolling 24 hours'+(template.auto_approval.max_total_per_day!==undefined?' · total '+esc(template.auto_approval.total_field)+' ≤ '+esc(template.auto_approval.max_total_per_day):'')+'</p>'+(limits.length?'<p><strong>Trusted-scope circuit breakers</strong></p><ul>'+limits.map(limit=>'<li>'+esc(delegationSharedLimitText(limit))+'</li>').join("")+'</ul>':'<p class="muted">No cross-action shared limit is proposed.</p>')+'<p class="muted">'+esc(template.rationale)+'</p></div>':'<p class="muted">No complete deterministic policy is available for this action. Human review remains required.</p>')
+          +'</section>';
+      }).join("");
+      const unresolved=pending.unresolved.length?'<div class="band notice"><strong>'+esc(pending.unresolved.length)+' action intent'+(pending.unresolved.length===1?' needs':'s need')+' a manual structural choice.</strong><p>They will remain unresolved and gain no authority.</p></div>':'';
+      const discarded=pending.discarded_policy_proposals||0;
+      const fallback=discarded?'<div class="band notice"><strong>Runner discarded '+esc(discarded)+' incomplete model policy proposal'+(discarded===1?'':'s')+'.</strong><p>The proposal action remains reviewable. The deterministic starting rules below come from exact reviewed field bounds, not the discarded model policy.</p></div>':'';
+      byId("delegation-result").innerHTML='<section class="band notice"><p class="instant-kicker">Exact approval review</p><h2>Choose when Runner may approve without a human</h2><p>Every deterministic condition must pass. Missing current state, stale evidence, a tripped tenant/principal/object limit, or any uncertainty falls back to human review. Hard delete is never eligible. Apply remains off.</p></section>'+fallback+cards+unresolved+'<div class="actions"><button id="delegation-save-reviewed" type="button">Save these disabled drafts</button><button id="delegation-save-human" class="secondary" type="button">Use human review for every action</button><button id="delegation-edit-actions" class="quiet" type="button">Open full Action Boundary editor</button></div>';
+      document.querySelectorAll("[data-delegation-policy]").forEach(select=>select.onchange=()=>{
+        const detail=document.querySelector('[data-delegation-policy-detail="'+select.dataset.delegationPolicy+'"]');
+        if(detail)detail.classList.toggle("hidden",select.value!=="deterministic");
+      });
+      document.querySelectorAll("[data-delegation-policy]").forEach(select=>select.onchange());
+      byId("delegation-save-reviewed").onclick=()=>finalizeDelegationJob(false);
+      byId("delegation-save-human").onclick=()=>finalizeDelegationJob(true);
+      byId("delegation-edit-actions").onclick=()=>setView("action");
+    }
+
+    async function finalizeDelegationJob(forceHuman){
+      const pending=delegationPendingJob;
+      if(!pending)return;
+      const status=byId("delegation-status");
+      const preparedActions=[];
+      const unresolved=[...pending.unresolved];
+      const stagedLimits=[];
+      try{
+        status.className="status-message loading";
+        for(const [index,candidate] of pending.candidates.entries()){
+          try{
+            const selected=forceHuman?"human":document.querySelector('[data-delegation-policy="'+index+'"]')?.value||"human";
+            const template=candidate.preparation.deterministic_approval_template;
+            if(selected==="deterministic"&&!template)throw new Error("No complete deterministic policy is available for this action.");
+            const action=structuredClone(candidate.preparation.action);
+            if(selected==="deterministic")action.auto_approval=structuredClone(template.auto_approval);
+            status.textContent="Compiling disabled proposal action: "+candidate.intent;
+            const drafted=await post("/api/actions/guided/draft",{
+              action,
+              action_boundary_job_intent:pending.job_intent,
+              ...(candidate.suggestion_id?{suggestion_id:candidate.suggestion_id}:{})
+            });
+            if(selected==="deterministic")stagedLimits.push(...structuredClone(template.shared_limits||[]));
+            const capability=(drafted.contract?.capabilities||[]).find(item=>item.name===drafted.draft.capability);
+            let rehearsal="required";
+            if(!capability?.lookup?.id_from_arg){
+              try{
+                const preview=await post("/api/actions/guided/preview",{capability_name:drafted.draft.capability,args:drafted.preview_args||{}});
+                drafted.draft.effect_preview=preview.preview;
+                rehearsal="passed";
+              }catch(error){rehearsal="required"}
+            }
+            preparedActions.push({
+              intent:candidate.intent,
+              capability:drafted.draft.capability,
+              contract_digest:drafted.draft.contract_digest,
+              rehearsal,
+              approval:selected
+            });
+          }catch(error){unresolved.push({intent:candidate.intent,error:error.message})}
+        }
+        if(stagedLimits.length){
+          const authority=await getJson("/api/actions/guided");
+          const current=authority.status?.action_boundary?.draft||authority.status?.action_boundary?.active;
+          const stagedIds=new Set(stagedLimits.map(limit=>limit.id));
+          const sharedLimits=[...(current?.authority?.shared_limits||[]).filter(limit=>!stagedIds.has(limit.id)),...stagedLimits];
+          await post("/api/actions/guided/boundary/limits",{shared_limits:sharedLimits,job_intent:pending.job_intent});
+        }
+        const recorded=await post("/api/boundary/delegations/record",{
+          job_intent:pending.job_intent,
+          analysis_id:pending.analysis_id,
+          action_intents:pending.action_intents,
+          actions:preparedActions.map(action=>({intent:action.intent,capability:action.capability,contract_digest:action.contract_digest})),
+          ...(pending.model_assist?{model_assist:pending.model_assist}:{})
+        });
+        delegationData.delegations=[recorded.delegation,...(delegationData.delegations||[]).filter(item=>item.job_name!==recorded.delegation.job_name)];
+        renderSavedDelegations();
+        guidedActionData=null;
+        const discardedPolicyProposals=pending.discarded_policy_proposals||0;
+        delegationPendingJob=null;
+        renderDelegationResult(recorded,preparedActions,unresolved,discardedPolicyProposals);
+        document.querySelector('[data-view="delegation"]').classList.add("done");
+        status.className="status-message success";
+        status.textContent=preparedActions.length
+          ?"Disabled Read and Action Boundary drafts saved. No authority or source data changed."
+          :"Disabled Read Boundary and proposal intents saved. Finish the highlighted choices to create an Action Boundary draft.";
+        await load();
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
+    function renderDelegationResult(recorded,preparedActions,unresolved,discardedPolicyProposals=0){
+      const summary=recorded.summary;
+      const readList=(summary.learn.representative_questions||[]).map(item=>'<li>'+esc(item)+'</li>').join("");
+      const actionList=preparedActions.length
+        ?preparedActions.map(item=>'<li><strong>'+esc(item.intent)+'</strong> · '+(item.approval==="deterministic"?'deterministic policy draft':'human approval')+' · disabled · rehearsal '+esc(item.rehearsal)+'</li>').join("")
+        :'<li>No proposal action draft prepared.</li>';
+      const readReviewComplete=(candidate?.unresolved_decisions||[]).every(decision=>confirmedDecisions.has(decision));
+      const unresolvedList=unresolved.length
+        ?'<div class="band notice"><strong>'+esc(unresolved.length)+' proposal intent'+(unresolved.length===1?' needs':'s need')+' one more reviewed choice.</strong><ul>'+unresolved.map(item=>'<li>'+esc(item.intent)+' — '+esc(item.preparation?.decision?.title||item.error||"Open Safe Action to continue.")+'</li>').join("")+'</ul><button id="delegation-resolve" type="button">'+(readReviewComplete?'Resolve in Safe Action':'Review Read Boundary to continue')+'</button></div>'
+        :'';
+      const deterministicCount=preparedActions.filter(item=>item.approval==="deterministic").length;
+      const fallbackNotice=discardedPolicyProposals?'<div class="band notice"><strong>Runner discarded '+esc(discardedPolicyProposals)+' incomplete model policy proposal'+(discardedPolicyProposals===1?'':'s')+'.</strong><p>The proposal intent and exact structural choices remain disabled and reviewable. Runner will derive a conservative policy candidate from the final reviewed bounds.</p></div>':'';
+      byId("delegation-result").innerHTML='<section class="band success"><p class="instant-kicker">Delegation draft saved</p><h3>'+esc(summary.job_intent)+'</h3><div class="workload-proof"><div><strong>Off</strong><span>Explore</span></div><div><strong>Off</strong><span>Propose</span></div><div><strong>Off</strong><span>Delegate</span></div><div><strong>Off</strong><span>Apply</span></div></div><div class="form-grid"><div><h4>Agent may learn after read activation</h4><ul>'+readList+'</ul></div><div><h4>Agent may propose after action activation</h4><ul>'+actionList+'</ul></div></div><p><strong>Human still required:</strong> activate the exact Read Boundary; rehearse and activate each exact proposal action; '+(deterministicCount?'review and activate '+deterministicCount+' exact deterministic policy draft'+(deterministicCount===1?'':'s')+'; ':'approve proposals outside those exact rules; ')+'apply through a separate trusted executor.</p><details><summary>Advanced immutable identity</summary><code>'+esc(recorded.delegation.revision_digest)+'</code></details><div class="actions"><button id="delegation-review-reads" type="button">Review Read Boundary</button>'+(summary.propose.actions.length?'<button id="delegation-review-actions" class="secondary" type="button">Review proposal actions and policies</button>':'')+'</div></section>'+fallbackNotice+unresolvedList;
+      byId("delegation-review-reads").onclick=openFocusedActivationReview;
+      if(byId("delegation-review-actions"))byId("delegation-review-actions").onclick=()=>{
+        if(readReviewComplete)setView("action");
+        else openFocusedActivationReview();
+      };
+      if(unresolved.length&&byId("delegation-resolve"))byId("delegation-resolve").onclick=async()=>{
+        const first=unresolved[0];
+        byId("action-quick-intent").value=first.intent;
+        quickActionDecisions={...(first.preparation?.selected||first.selected||{})};
+        quickActionApprovalMode=byId("delegation-approval-mode").value==="review_policy"?"deterministic":"human";
+        resumeQuickActionAfterReadReview=true;
+        if(!readReviewComplete){
+          await openFocusedActivationReview();
+          return;
+        }
+        setView("action");
+      };
+    }
+
     function setReadWorkloadMode(mode){
       readWorkloadMode=mode;
-      ["exact","model","saved"].forEach(name=>{
+      ["cards","exact","model","saved"].forEach(name=>{
         byId("workload-"+name+"-tab").classList.toggle("active",name===mode);
         byId("workload-"+name+"-panel").classList.toggle("hidden",name!==mode);
       });
-      byId("workload-analyze").textContent=mode==="saved"?"Review saved analysis":"Analyze minimum boundary";
+      byId("workload-analyze").textContent=mode==="cards"?"Prepare reviewed reads":mode==="saved"?"Review saved analysis":"Analyze minimum boundary";
     }
 
     function readWorkloadLines(value){
@@ -7063,6 +7647,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       };
       selector.onchange=update;
       update();
+    }
+
+    function renderReadWorkloadCards(){
+      const panel=byId("workload-card-list");
+      const cards=readWorkloadData?.plan_cards||[];
+      if(!cards.length){panel.innerHTML='<p>No reviewed question cards are available yet. Review a table or use Advanced exact plans.</p>';return}
+      panel.innerHTML=cards.map((card,index)=>'<label class="workload-card"><input type="checkbox" value="'+esc(card.id)+'"><span><strong>'+esc(card.title)+'</strong><small>'+esc(card.detail)+'</small></span></label>').join("");
     }
 
     function addBuiltReadWorkloadPlan(){
@@ -7139,12 +7730,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           byId("workload-json").value=JSON.stringify(readWorkloadData.starter_workload,null,2);
         }
         selectedReadWorkloadAnalysis=(readWorkloadData.workloads||[]).find(item=>item.state==="ready")?.analysis_id||null;
+        renderReadWorkloadCards();
         renderReadWorkloadBuilder();
         renderSavedReadWorkloads();
         updateReadWorkloadEditor();
         updateReadWorkloadProvider();
         status.className="status-message";
-        status.textContent="Ready. Build or paste representative reads, then analyze the minimum required authority.";
+        status.textContent="Ready. Select representative questions, then prepare the reviewed reads.";
       }catch(error){
         status.className="status-message error";
         status.textContent=error.message;
@@ -7158,20 +7750,24 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const analysis=workload.analysis;
       const coverage=analysis.coverage;
       const exposure=analysis.exposure;
+      const requestedReads=analysis.allowed.filter(item=>!(item.id.startsWith("action_review_")&&item.description.startsWith("Review the exact fields required to ")));
+      const requestedReadCoverage={supported:requestedReads.filter(item=>item.status==="supported").length,total:requestedReads.length};
       const entries=(label,items)=>'<details class="band"><summary>'+esc(label)+' ('+items.length+')</summary>'+items.map(item=>'<div class="workload-entry"><strong>'+esc(item.id)+' <span class="badge '+(item.status==="supported"||item.status==="denied"?'good':'bad')+'">'+esc(item.status.toUpperCase())+'</span></strong><p>'+esc(item.description)+'</p>'+(item.reason?'<small>'+esc(item.reason)+'</small>':'')+'</div>').join("")+'</details>';
-      panel.innerHTML='<section class="band '+(analysis.status==="ready"?'success':'error')+'"><div class="split-actions"><div><p class="instant-kicker">Deterministic workload proof</p><h3>'+esc(analysis.workload_name)+'</h3><p>'+esc(analysis.status==="ready"?'Every required plan compiles under the minimized disabled candidate.':'Runner refused to create a candidate until every blocker is resolved.')+'</p></div><span class="badge '+(analysis.status==="ready"?'good':'bad')+'">'+esc(analysis.status.toUpperCase())+'</span></div><div class="workload-proof"><div><strong>'+coverage.allowed_supported+'/'+coverage.allowed_total+'</strong><span>required reads supported</span></div><div><strong>'+coverage.forbidden_denied+'/'+coverage.forbidden_total+'</strong><span>exact deny tests refused</span></div><div><strong>'+exposure.candidate_resources+'/'+exposure.generated_resources+'</strong><span>resources retained</span></div><div><strong>'+exposure.candidate_operation_fields+'</strong><span>field operations retained</span></div></div>'+(analysis.blockers.length?'<div class="error"><strong>Blockers</strong><ul>'+analysis.blockers.map(item=>'<li>'+esc(item)+'</li>').join("")+'</ul></div>':'')+'<p><strong>Authority status:</strong> disabled · <strong>Source query:</strong> not executed · <strong>Explore budget:</strong> not consumed · <strong>Source database:</strong> unchanged</p>'+(payload.preview?'<div class="workload-review-actions"><button id="workload-apply" type="button">Save disabled read boundary</button><span>Activation remains a separate human step.</span></div><details><summary>Advanced exact review identifiers</summary><p>Analysis: <code>'+esc(workload.analysis_id)+'</code><br>Decision: <code>'+esc(payload.preview.decision_digest)+'</code><br>Candidate: <code>'+esc(payload.preview.candidate_digest)+'</code></p></details>':'')+'</section>'+entries("Required read checks",analysis.allowed)+entries("Forbidden read checks",analysis.forbidden);
-      if(payload.preview)byId("workload-apply").onclick=applyReadWorkloadCandidate;
+      panel.innerHTML='<section class="band '+(analysis.status==="ready"?'success':'error')+'"><div class="split-actions"><div><p class="instant-kicker">Deterministic workload proof</p><h3>'+esc(analysis.workload_name)+'</h3><p>'+esc(analysis.status==="ready"?'Every requested read plan compiles under the minimized disabled candidate.':'Runner refused to create a candidate until every blocker is resolved.')+'</p></div><span class="badge '+(analysis.status==="ready"?'good':'bad')+'">'+esc(analysis.status.toUpperCase())+'</span></div><div class="workload-proof"><div><strong>'+requestedReadCoverage.supported+'/'+requestedReadCoverage.total+'</strong><span>requested reads supported</span></div><div><strong>'+coverage.forbidden_denied+'/'+coverage.forbidden_total+'</strong><span>exact deny tests refused</span></div><div><strong>'+exposure.candidate_resources+'/'+exposure.generated_resources+'</strong><span>resources retained</span></div><div><strong>'+exposure.candidate_operation_fields+'</strong><span>field operations retained</span></div></div>'+(analysis.blockers.length?'<div class="error"><strong>Blockers</strong><ul>'+analysis.blockers.map(item=>'<li>'+esc(item)+'</li>').join("")+'</ul></div>':'')+'<p><strong>Authority status:</strong> disabled · <strong>Source query:</strong> not executed · <strong>Explore budget:</strong> not consumed · <strong>Source database:</strong> unchanged</p>'+(payload.preview?'<div class="workload-review-actions"><button id="workload-apply" type="button">Save disabled read boundary</button><span>Activation remains a separate human step.</span></div><details><summary>Advanced exact review identifiers</summary><p>Analysis: <code>'+esc(workload.analysis_id)+'</code><br>Decision: <code>'+esc(payload.preview.decision_digest)+'</code><br>Candidate: <code>'+esc(payload.preview.candidate_digest)+'</code></p></details>':'')+'</section>'+entries("Requested read checks",requestedReads)+entries("Forbidden read checks",analysis.forbidden);
+      if(payload.preview)byId("workload-apply").onclick=()=>applyReadWorkloadCandidate(false);
     }
 
     async function analyzeReadWorkload(){
       const status=byId("workload-status");
       readWorkloadPreview=null;
       try{
-        const actor=byId("workload-actor").value.trim();
-        const reason=byId("workload-reason").value.trim();
-        if(!actor||!reason)throw new Error("Enter the reviewer identity and concrete review reason.");
+        const actor=byId("workload-actor").value.trim()||"local_operator";
+        const reason=byId("workload-reason").value.trim()||"Compile representative reads into a minimum candidate boundary.";
         let body={mode:readWorkloadMode,actor,reason};
-        if(readWorkloadMode==="exact"){
+        if(readWorkloadMode==="cards"){
+          body.selected_card_ids=[...document.querySelectorAll('#workload-card-list input:checked')].map(input=>input.value);
+          if(!body.selected_card_ids.length)throw new Error("Select at least one representative question card.");
+        }else if(readWorkloadMode==="exact"){
           body.workload=JSON.parse(byId("workload-json").value);
         }else if(readWorkloadMode==="model"){
           const provider=byId("workload-provider").value;
@@ -7196,6 +7792,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const payload=await post("/api/boundary/workloads/analyze",body);
         readWorkloadPreview=payload;
         renderReadWorkloadResult(payload);
+        if(readWorkloadMode==="cards"){
+          await applyReadWorkloadCandidate(true);
+          return;
+        }
         status.className="status-message success";
         status.textContent="Analysis complete. Review coverage and exposure before saving the disabled revision.";
       }catch(error){
@@ -7206,9 +7806,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
     }
 
-    async function applyReadWorkloadCandidate(){
+    async function applyReadWorkloadCandidate(automatic=false){
       if(!readWorkloadPreview?.preview)return;
-      if(!window.confirm("Save this exact minimized candidate as the selected disabled boundary draft? Existing active authority and source data stay unchanged."))return;
+      if(!automatic&&!window.confirm("Save this exact minimized candidate as the selected disabled boundary draft? Existing active authority and source data stay unchanged."))return;
       const status=byId("workload-status");
       try{
         status.className="status-message loading";
@@ -7224,11 +7824,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         document.querySelector('[data-view="workloads"]').classList.add("done");
         readWorkloadData=null;
         await load();
-        byId("workload-result").innerHTML='<section class="band success"><h3>Disabled read boundary saved</h3><p>No source query ran, no privacy budget was consumed, no source data changed, and no authority was activated.</p><div class="actions"><button id="workload-go-activate" type="button">Review and activate reads</button><button id="workload-go-action" class="secondary" type="button">Continue to Action Assist</button></div></section>';
+        byId("workload-result").innerHTML='<section class="band success"><h3>Disabled read boundary saved</h3><p>No source query ran, no privacy budget was consumed, no source data changed, and no authority was activated.</p><div class="actions"><button id="workload-go-activate" type="button">Review read boundary</button></div><p class="muted">At review, either activate reads or keep the exact revision disabled and continue to Action Assist.</p></section>';
         byId("workload-go-activate").onclick=()=>setView("activate");
-        byId("workload-go-action").onclick=()=>setView("action");
         status.className="status-message success";
-        status.textContent=payload.next;
+        status.textContent=automatic?"Reviewed read candidate prepared. Review the exact boundary to activate access.":payload.next;
+        if(automatic)setView("activate");
       }catch(error){
         status.className="status-message error";
         status.textContent=error.message;
@@ -7240,6 +7840,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(guidedActionData){
         byId("action-loading").classList.add("hidden");
         byId("action-wizard").classList.remove("hidden");
+        await resumeDelegatedQuickAction();
         return;
       }
       try{
@@ -7250,7 +7851,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         byId("action-loading").classList.add("hidden");
         byId("action-wizard").classList.remove("hidden");
         populateGuidedResources();
-        status.textContent="Structural prerequisites loaded. Next: define one business action.";
+        const actionReady=(payload.options?.resources||[]).filter(resource=>Object.values(resource.operation_availability||{}).some(item=>item.available));
+        byId("action-quick-prepare").disabled=actionReady.length===0;
+        if(!actionReady.length){
+          status.className="status-message error";
+          status.textContent="No reviewed table has a source-proven proposal operation. Open Advanced action design to inspect the exact primary-key, retry, conflict, or scope blocker.";
+        }else{
+          status.textContent=payload.options?.boundary_state==="reviewed_pending"
+            ?"This exact read revision is fully reviewed but inactive. You can finish and rehearse a proposal action now; action activation waits for read activation."
+            :"Structural prerequisites loaded. Describe one proposal action; Runner will ask only about unresolved choices.";
+        }
         const drafts=(payload.status?.drafts||[]).slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
         if(drafts.length){
           const details=await getJson("/api/actions/guided/draft?capability="+encodeURIComponent(drafts[0].capability));
@@ -7259,12 +7869,208 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             ?"Resumed the existing exact-previewed draft. Next: activate its reviewed digest."
             :"Resumed the existing disabled draft. Next: enter real staging arguments and preview one proposal.";
         }
+        if(payload.options?.boundary_state==="active"&&quickActionPreparation?.state==="ready"&&guidedActionDraft?.draft?.effect_preview){
+          renderQuickActionActivation(quickActionPreparation.summary,guidedActionDraft.draft);
+          status.textContent="The required read revision is active. The rehearsed proposal action is ready for its separate activation.";
+        }
+        await resumeDelegatedQuickAction();
       }catch(error){
         byId("action-loading").classList.remove("hidden");
         byId("action-loading").innerHTML='<div class="error"><strong>Safe action authoring is unavailable.</strong><p>'+esc(error.message)+'</p><p>Keep Scoped Explore active until the action is drafted, or reactivate the exact reviewed authoring boundary.</p></div>';
         status.className="status-message error";
         status.textContent=error.message;
       }
+    }
+
+    async function resumeDelegatedQuickAction(){
+      if(!resumeQuickActionAfterReadReview)return;
+      resumeQuickActionAfterReadReview=false;
+      if(!byId("action-quick-intent").value.trim())return;
+      await prepareQuickAction(false);
+    }
+
+    async function prepareQuickAction(reset){
+      const status=byId("action-quick-status");
+      try{
+        const intent=requiredGuidedText("action-quick-intent","Business intent");
+        if(reset){quickActionDecisions={};quickActionPreparation=null}
+        status.className="status-message loading";
+        status.textContent="Ranking reviewed structural candidates. No model or source query is running...";
+        const payload=await post("/api/actions/guided/quick",{intent,decisions:quickActionDecisions});
+        quickActionPreparation=payload.preparation;
+        renderQuickActionPreparation(payload.preparation);
+        status.className="status-message";
+        status.textContent=payload.preparation.state==="ready"
+          ?"Proposal-only action card is ready for review. No authority or source row changed."
+          :"Runner needs one unresolved business choice before it can finish the card.";
+      }catch(error){status.className="status-message error";status.textContent=error.message}
+    }
+
+    function renderQuickActionPreparation(preparation){
+      const decisionPanel=byId("action-quick-decision");
+      const cardPanel=byId("action-quick-card");
+      decisionPanel.innerHTML="";
+      cardPanel.innerHTML="";
+      if(preparation.state==="ready"){
+        renderQuickActionCard(preparation);
+        return;
+      }
+      const decision=preparation.decision;
+      if(["resource","operation","guard_column"].includes(decision.kind)){
+        decisionPanel.innerHTML='<section class="band notice"><h3>'+esc(decision.title)+'</h3><p>'+esc(decision.help)+'</p><label class="field">Reviewed choice<select id="action-quick-choice">'+decision.choices.map(item=>'<option value="'+esc(item.value)+'">'+esc(item.label)+(item.detail?' - '+esc(item.detail):'')+'</option>').join("")+'</select></label><div class="actions"><button id="action-quick-continue" type="button">Use this reviewed choice</button></div></section>';
+        byId("action-quick-continue").onclick=()=>{
+          quickActionDecisions[decision.kind]=byId("action-quick-choice").value;
+          prepareQuickAction(false);
+        };
+        return;
+      }
+      if(decision.kind==="fields"){
+        decisionPanel.innerHTML='<section class="band notice"><h3>'+esc(decision.title)+'</h3><p>'+esc(decision.help)+'</p><div class="action-fields">'+decision.choices.map(item=>'<label class="check action-field"><input data-action-quick-field="'+esc(item.value)+'" type="checkbox"><span><strong>'+esc(item.label)+'</strong>'+(item.detail?'<small>'+esc(item.detail)+'</small>':'')+'</span></label>').join("")+'</div><div class="actions"><button id="action-quick-continue" type="button">Use selected fields</button></div></section>';
+        byId("action-quick-continue").onclick=()=>{
+          const fields=[...document.querySelectorAll("[data-action-quick-field]:checked")].map(input=>input.dataset.actionQuickField);
+          if(!fields.length){byId("action-quick-status").className="status-message error";byId("action-quick-status").textContent="Choose at least one reviewed field.";return}
+          quickActionDecisions.fields=fields;
+          prepareQuickAction(false);
+        };
+        return;
+      }
+      if(decision.kind==="numeric_bounds"){
+        decisionPanel.innerHTML='<section class="band notice"><h3>'+esc(decision.title)+'</h3><p>'+esc(decision.help)+'</p><div class="form-grid"><label class="field">Minimum<input id="action-quick-min" type="number" '+(decision.suggested_minimum===undefined?'':'value="'+esc(decision.suggested_minimum)+'"')+'></label><label class="field">Maximum<input id="action-quick-max" type="number" '+(decision.suggested_maximum===undefined?'':'value="'+esc(decision.suggested_maximum)+'"')+'></label></div><div class="actions"><button id="action-quick-continue" type="button">Use this reviewed range</button></div></section>';
+        byId("action-quick-continue").onclick=()=>{
+          try{
+            const minimum=requiredGuidedNumber("action-quick-min","Minimum");
+            const maximum=requiredGuidedNumber("action-quick-max","Maximum");
+            if(minimum>maximum)throw new Error("Minimum must be less than or equal to maximum.");
+            quickActionDecisions.numeric_bounds={...(quickActionDecisions.numeric_bounds||{}),[decision.field]:{minimum,maximum}};
+            prepareQuickAction(false);
+          }catch(error){byId("action-quick-status").className="status-message error";byId("action-quick-status").textContent=error.message}
+        };
+        return;
+      }
+      if(decision.kind==="delete_confirmation"){
+        decisionPanel.innerHTML='<section class="band notice"><h3>'+esc(decision.title)+'</h3><p>'+esc(decision.help)+'</p><label class="field">Type <code>'+esc(decision.expected)+'</code><input id="action-quick-delete" type="text" spellcheck="false"></label><div class="actions"><button id="action-quick-continue" type="button">Confirm proposal shape</button></div></section>';
+        byId("action-quick-continue").onclick=()=>{
+          quickActionDecisions.delete_confirmation=byId("action-quick-delete").value.trim();
+          prepareQuickAction(false);
+        };
+      }
+    }
+
+    function renderQuickActionCard(preparation){
+      const summary=preparation.summary;
+      const template=preparation.deterministic_approval_template;
+      if(quickActionApprovalMode==="deterministic"&&!template)quickActionApprovalMode="human";
+      const argumentsList=summary.arguments.length
+        ?summary.arguments.map(item=>'<li><strong>'+esc(item.label||item.field)+'</strong> <code>'+esc(item.field)+'</code> - '+esc(item.constraint)+'</li>').join("")
+        :'<li>No model-supplied value fields; one exact row identity is proposed for deletion.</li>';
+      const policyConditions=template?.auto_approval?.conditions||[];
+      const policyLimits=template?.shared_limits||[];
+      const policySource=template?.source==="model_suggestion"?"Model-proposed, Runner-validated":"Runner-derived from the reviewed bounds";
+      const policyReview=template
+        ?'<label class="field">Approval path<select id="action-quick-policy"><option value="human" '+(quickActionApprovalMode==="human"?'selected':'')+'>Human approves every proposal</option><option value="deterministic" '+(quickActionApprovalMode==="deterministic"?'selected':'')+'>Deterministic rules; fallback to human</option></select></label><div id="action-quick-policy-detail" class="band notice"><p><strong>'+esc(policySource)+'</strong></p><ul>'+policyConditions.map(condition=>'<li>'+esc(delegationPolicyConditionText(condition))+'</li>').join("")+'</ul><p><strong>Per-action ceiling:</strong> '+esc(template.auto_approval.max_per_day)+' approvals per rolling 24 hours</p>'+(policyLimits.length?'<p><strong>Trusted-scope circuit breakers</strong></p><ul>'+policyLimits.map(limit=>'<li>'+esc(delegationSharedLimitText(limit))+'</li>').join("")+'</ul>':'<p class="muted">No cross-action shared limit is needed for this reviewed organization scope.</p>')+'<p>Every rule must pass. Missing state, stale evidence, a tripped limit, or uncertainty falls back to human review. Apply remains separate.</p><p class="muted">'+esc(template.rationale)+'</p></div>'
+        :'<div class="band notice"><strong>Human approval required</strong><p>No complete deterministic policy is available for this action. Hard delete always stays on this path.</p></div>';
+      byId("action-quick-card").innerHTML='<section class="band success"><p class="instant-kicker">Proposal action candidate</p><h3>'+esc(summary.intent)+'</h3><p><strong>'+esc(summary.operation.toUpperCase())+'</strong> <code>'+esc(summary.resource)+'</code></p><h4>Model-supplied arguments</h4><ul>'+argumentsList+'</ul><h4>Runner-controlled</h4><ul>'+summary.trusted_context.map(item=>'<li>'+esc(item)+'</li>').join("")+'<li>'+esc(summary.retry_or_conflict_guard)+'</li></ul>'+policyReview+'<p><strong>Selected approval:</strong> <span id="action-quick-approval-summary"></span><br><strong>Authority:</strong> proposals only<br><strong>Writeback:</strong> none</p><p class="muted">Intent ranked candidates only. The server will compile and revalidate this exact action before saving a disabled draft.</p><div class="actions"><button id="action-quick-create" type="button">Prepare and rehearse proposal action</button><button id="action-quick-restart" class="secondary" type="button">Change choices</button><button id="action-quick-advanced" class="quiet" type="button">Advanced design</button></div></section>';
+      const updatePolicy=()=>{
+        const select=byId("action-quick-policy");
+        if(select)quickActionApprovalMode=select.value;
+        byId("action-quick-policy-detail")?.classList.toggle("hidden",quickActionApprovalMode!=="deterministic");
+        byId("action-quick-approval-summary").textContent=quickActionApprovalMode==="deterministic"
+          ?"exact deterministic policy; human fallback"
+          :summary.approval;
+      };
+      byId("action-quick-policy")?.addEventListener("change",updatePolicy);
+      updatePolicy();
+      byId("action-quick-create").onclick=createQuickAction;
+      byId("action-quick-restart").onclick=()=>prepareQuickAction(true);
+      byId("action-quick-advanced").onclick=()=>{byId("action-advanced").open=true;byId("action-advanced").scrollIntoView({block:"start",behavior:"smooth"})};
+    }
+
+    async function createQuickAction(){
+      const status=byId("action-quick-status");
+      try{
+        if(!quickActionPreparation||quickActionPreparation.state!=="ready")throw new Error("Prepare one exact proposal action card first.");
+        status.className="status-message loading";
+        status.textContent="Compiling the disabled proposal action...";
+        const template=quickActionPreparation.deterministic_approval_template;
+        const action=structuredClone(quickActionPreparation.action);
+        if(quickActionApprovalMode==="deterministic"){
+          if(!template)throw new Error("No complete deterministic policy is available for this action.");
+          action.auto_approval=structuredClone(template.auto_approval);
+        }
+        let draftPayload=await post("/api/actions/guided/draft",{action});
+        if(quickActionApprovalMode==="deterministic"&&template.shared_limits.length){
+          status.textContent="Binding trusted-scope rolling limits to the disabled Action Boundary...";
+          const authority=await getJson("/api/actions/guided");
+          const current=authority.status?.action_boundary?.draft||authority.status?.action_boundary?.active;
+          const stagedIds=new Set(template.shared_limits.map(limit=>limit.id));
+          const sharedLimits=[...(current?.authority?.shared_limits||[]).filter(limit=>!stagedIds.has(limit.id)),...structuredClone(template.shared_limits)];
+          await post("/api/actions/guided/boundary/limits",{shared_limits:sharedLimits,job_intent:quickActionPreparation.intent});
+          draftPayload=await getJson("/api/actions/guided/draft?capability="+encodeURIComponent(draftPayload.draft.capability));
+        }
+        const capability=(draftPayload.contract?.capabilities||[]).find(item=>item.name===draftPayload.draft.capability);
+        const lookupArgument=capability?.lookup?.id_from_arg;
+        if(lookupArgument){
+          guidedActionDraft=draftPayload;
+          const resource=(capability.subject?.schema||"")+"."+(capability.subject?.table||"");
+          byId("action-quick-card").innerHTML='<section class="band notice"><p class="instant-kicker">One rehearsal value needed</p><h3>Use an existing reviewed row</h3><p>Runner cannot invent or sample an existing '+esc(resource)+' ID. It reads this row once to freeze the proposal effect; the source row is never changed.</p><label class="field">Existing row ID<input id="action-quick-lookup" type="text" maxlength="256" autocomplete="off" spellcheck="false"></label><div class="actions"><button id="action-quick-rehearse" type="button">Run disposable rehearsal</button><button id="action-quick-leave" class="secondary" type="button">Leave action disabled</button></div></section>';
+          byId("action-quick-rehearse").onclick=()=>rehearseQuickAction(draftPayload,lookupArgument);
+          byId("action-quick-leave").onclick=()=>{status.className="status-message";status.textContent="The action remains disabled. No rehearsal, authority change, or source mutation occurred."};
+          status.className="status-message";
+          status.textContent="Enter one existing row ID to run the exact proposal rehearsal.";
+          return;
+        }
+        await rehearseQuickAction(draftPayload);
+      }catch(error){status.className="status-message error";status.textContent=error.message}
+    }
+
+    async function rehearseQuickAction(draftPayload,lookupArgument){
+      const status=byId("action-quick-status");
+      try{
+        const args={...(draftPayload.preview_args||{})};
+        if(lookupArgument)args[lookupArgument]=requiredGuidedText("action-quick-lookup","Existing row ID");
+        status.className="status-message loading";
+        status.textContent="Rehearsing the exact proposal in a disposable ledger...";
+        const previewPayload=await post("/api/actions/guided/preview",{capability_name:draftPayload.draft.capability,args});
+        draftPayload.draft.effect_preview=previewPayload.preview;
+        guidedActionDraft=draftPayload;
+        renderQuickActionActivation(quickActionPreparation.summary,draftPayload.draft);
+        status.className="status-message success";
+        status.textContent="Automatic rehearsal passed. The source database did not change; activation remains explicit.";
+      }catch(error){status.className="status-message error";status.textContent=error.message}
+    }
+
+    function renderQuickActionActivation(summary,draft){
+      byId("action-quick-decision").innerHTML="";
+      const readsPending=guidedActionData?.options?.boundary_state==="reviewed_pending";
+      const deterministic=quickActionApprovalMode==="deterministic";
+      byId("action-quick-card").innerHTML='<section class="band success"><p class="instant-kicker">Ready for authority review</p><h3>Proposal rehearsal passed</h3><p><strong>'+esc(summary.intent)+'</strong><br>'+esc(summary.operation.toUpperCase())+' '+esc(summary.resource)+'</p><ul><li>Generated bounded proposal accepted by the disposable ledger</li><li>Source database unchanged</li><li>Rehearsal proposal destroyed; it can never be approved or applied</li><li>'+(deterministic?'Exact deterministic approval and trusted-scope limits compiled; any mismatch falls back to human review':'Approval remains human-only')+'</li><li>Apply remains outside model-facing tools</li></ul>'+(readsPending?'<div class="band notice"><strong>Read activation comes first</strong><p>This action is bound to the fully reviewed pending read revision. Activate that exact read boundary, then return here to activate this rehearsed action.</p></div>':'<p><strong>Activating allows:</strong> create immutable bounded proposals'+(deterministic?' and approve only those that pass every exact deterministic rule and rolling limit':'.')+'<br><strong>Activating does not allow:</strong> apply, source writes, scope changes, or contract changes.</p>')+'<details><summary>Advanced exact digest</summary><code>'+esc(draft.contract_digest)+'</code></details><div class="actions">'+(readsPending?'<button id="action-quick-read" type="button">Review and activate reads</button>':'<button id="action-quick-activate" type="button">Activate proposal-only action</button>')+'<button id="action-quick-leave" class="secondary" type="button">Leave disabled</button></div></section>';
+      if(readsPending)byId("action-quick-read").onclick=()=>setView("activate");
+      else byId("action-quick-activate").onclick=activateQuickAction;
+      byId("action-quick-leave").onclick=()=>{byId("action-quick-status").className="status-message";byId("action-quick-status").textContent="The action remains a disabled rehearsed draft. No active authority changed."};
+    }
+
+    async function activateQuickAction(){
+      const status=byId("action-quick-status");
+      try{
+        if(!guidedActionDraft?.draft?.effect_preview)throw new Error("The exact action digest must pass rehearsal before activation.");
+        const draft=guidedActionDraft.draft;
+        status.className="status-message loading";
+        status.textContent="Rechecking schema, reviewed boundary, rehearsal, and exact action digest...";
+        const payload=await post("/api/actions/guided/activate",{
+          capability_name:draft.capability,
+          expected_digest:draft.contract_digest,
+          confirmation:"ACTIVATE "+draft.contract_digest,
+          actor:byId("actor").value.trim()||"local_operator"
+        });
+        const deterministic=quickActionApprovalMode==="deterministic";
+        byId("action-quick-card").innerHTML='<section class="band success"><p class="instant-kicker">Setup complete</p><h3>Read and proposal authority are active</h3><p><strong>'+esc(payload.active.capability)+'</strong> can create bounded proposals only. '+(deterministic?'Every exact deterministic rule and trusted-scope rolling limit must pass; otherwise the proposal waits for a human.':'Human approval remains required.')+' Writeback remains disabled.</p><div class="workload-proof"><div><strong>Active</strong><span>read boundary</span></div><div><strong>Active</strong><span>proposal action</span></div><div><strong>'+(deterministic?'Rules':'Human')+'</strong><span>'+(deterministic?'human fallback':'approval')+'</span></div><div><strong>Off</strong><span>writeback</span></div></div><div class="actions"><button id="action-quick-proposals" type="button">Open proposal inbox</button></div></section>';
+        byId("action-quick-proposals").onclick=openProposalReview;
+        document.querySelector('[data-view="action"]').classList.add("done");
+        byId("header-state").textContent="Reviewed read and proposal tools active";
+        byId("header-state").className="state good";
+        status.className="status-message success";
+        status.textContent="Proposal-only action activated. The source database is still unchanged.";
+      }catch(error){status.className="status-message error";status.textContent=error.message}
     }
 
     function populateGuidedResources(){
@@ -7372,12 +8178,113 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const active=status.activations||[];
       const drafts=status.drafts||[];
       const panel=byId("action-inventory");
+      renderActionBoundaryEditor(status);
       if(!active.length&&!drafts.length){panel.innerHTML="";return}
       panel.innerHTML='<section class="band"><h3>Managed action revisions</h3>'+
         (active.length?'<div class="action-fields">'+active.map(item=>'<div class="action-field"><strong>'+esc(item.capability)+'</strong><p>'+esc(humanizeIdentifier(item.authority_posture))+' · '+esc(item.writeback_mode)+'<br><code>'+esc(item.contract_digest)+'</code></p><button type="button" class="secondary" data-action-revise="'+esc(item.capability)+'">Draft authority revision</button></div>').join("")+'</div>':'<p>No active Safe Action revision.</p>')+
         (drafts.length?'<p><strong>Disabled drafts:</strong> '+drafts.map(item=>esc(item.capability)+' ('+esc(humanizeIdentifier(item.authority_posture))+')').join(", ")+'</p>':"")+
         '</section>';
       panel.querySelectorAll("[data-action-revise]").forEach(button=>button.onclick=()=>openGuidedActionRevision(active.find(item=>item.capability===button.dataset.actionRevise)));
+    }
+
+    function renderActionBoundaryEditor(status){
+      const panel=byId("action-boundary-editor");
+      const boundary=status?.action_boundary?.draft||status?.action_boundary?.active;
+      if(!boundary){panel.innerHTML="";return}
+      const limits=boundary.authority?.shared_limits||[];
+      const options=guidedActionData?.action_boundary_limit_options||[];
+      const activeByName=new Map((status.activations||[]).map(item=>[item.capability,item.contract_digest]));
+      const exactActive=Boolean(status.action_boundary?.draft)
+        && activeByName.size===(boundary.authority?.capabilities||[]).length
+        && (boundary.authority?.capabilities||[]).every(item=>activeByName.get(item.capability)===item.contract_digest);
+      const scopeLines=[...new Set((boundary.authority?.capabilities||[]).map(reference=>{
+        const resource=(guidedActionData?.options?.resources||[]).find(item=>item.id===reference.resource);
+        if(resource?.organization_scope)return reference.resource+": whole organization "+resource.organization_scope.organization_id;
+        return reference.resource+": trusted tenant"+(resource?.principal_key?" + principal":"");
+      }))];
+      const limitRows=limits.length
+        ?'<div class="action-fields">'+limits.map(limit=>'<div class="action-field"><strong>'+esc(limit.id)+'</strong><p>'+esc(actionBoundaryLimitText(limit))+'</p><button type="button" class="secondary" data-boundary-limit-remove="'+esc(limit.id)+'">Remove</button></div>').join("")+'</div>'
+        :'<p class="muted">No shared approval circuit breaker is reviewed. Per-action policy limits still apply where configured.</p>';
+      panel.innerHTML='<details class="band"><summary><strong>Action Boundary controls</strong> - trusted scope and cross-action approval limits ['+limits.length+']</summary><p><strong>State:</strong> '+(status.action_boundary?.draft?'disabled revision; active authority unchanged':'active')+'<br><strong>Purpose:</strong> '+esc(boundary.job_intent)+'</p><p><strong>Trusted MCP scope</strong><br>'+scopeLines.map(line=>esc(line)).join("<br>")+'</p><p class="muted">Tenant, principal, and object scope come from verified runtime context. The agent cannot provide or override them.</p>'+limitRows+'<div class="form-grid"><label class="field">Limit name<input id="action-boundary-limit-id" type="text" maxlength="80" placeholder="tenant_daily_count"></label><label class="field">Measure<select id="action-boundary-limit-kind"><option value="count">Approved proposal count</option><option value="total">Approved numeric total</option></select></label><label class="field">Trusted scope<select id="action-boundary-limit-scope"><option value="tenant_principal">Each tenant + principal</option><option value="tenant_object">Each tenant + object</option><option value="tenant">Each tenant</option><option value="capability">Each capability</option><option value="boundary">Whole boundary</option></select></label><label class="field">Applies to<select id="action-boundary-limit-capability"><option value="">All matching actions</option>'+options.map(item=>'<option value="'+esc(item.capability)+'">'+esc(item.capability)+'</option>').join("")+'</select></label><label id="action-boundary-limit-field-wrap" class="field hidden">Numeric patch field<select id="action-boundary-limit-field"></select></label><label class="field">Maximum<input id="action-boundary-limit-maximum" type="number" min="1" step="1"></label><label class="field">Rolling window seconds<input id="action-boundary-limit-window" type="number" min="60" max="31536000" step="1" value="86400"></label></div><div class="actions"><button id="action-boundary-limit-save" type="button">Save disabled limit revision</button>'+(status.action_boundary?.draft?'<button id="action-boundary-activate" type="button" class="secondary" '+(exactActive?'':'disabled')+'>Activate exact policy revision</button>':'')+'</div>'+(!exactActive&&status.action_boundary?.draft?'<p class="muted">This candidate also contains a disabled proposal action. Activate that rehearsed action to publish both exact revisions together.</p>':'')+'<div id="action-boundary-status" class="status-message" role="status" aria-live="polite"></div></details>';
+      byId("action-boundary-limit-kind").onchange=updateActionBoundaryLimitFields;
+      byId("action-boundary-limit-capability").onchange=updateActionBoundaryLimitFields;
+      byId("action-boundary-limit-save").onclick=saveActionBoundaryLimit;
+      panel.querySelectorAll("[data-boundary-limit-remove]").forEach(button=>button.onclick=()=>removeActionBoundaryLimit(button.dataset.boundaryLimitRemove));
+      if(byId("action-boundary-activate"))byId("action-boundary-activate").onclick=activateActionBoundaryRevision;
+      updateActionBoundaryLimitFields();
+    }
+
+    function actionBoundaryLimitText(limit){
+      const measure=limit.kind==="count"?limit.maximum+" approvals":limit.maximum+" total "+limit.field;
+      return measure+" · "+humanizeIdentifier(limit.scope)+" · "+limit.window_seconds+" seconds"+(limit.capability?" · "+limit.capability:"");
+    }
+
+    function updateActionBoundaryLimitFields(){
+      const kind=byId("action-boundary-limit-kind")?.value;
+      const capability=byId("action-boundary-limit-capability")?.value;
+      const total=kind==="total";
+      byId("action-boundary-limit-field-wrap")?.classList.toggle("hidden",!total);
+      if(total&&!capability){
+        const first=guidedActionData?.action_boundary_limit_options?.[0]?.capability;
+        if(first)byId("action-boundary-limit-capability").value=first;
+      }
+      const selected=byId("action-boundary-limit-capability")?.value;
+      const option=(guidedActionData?.action_boundary_limit_options||[]).find(item=>item.capability===selected);
+      if(byId("action-boundary-limit-field"))byId("action-boundary-limit-field").innerHTML=(option?.numeric_total_fields||[]).map(field=>'<option value="'+esc(field)+'">'+esc(field)+'</option>').join("");
+      if(byId("action-boundary-limit-capability"))byId("action-boundary-limit-capability").querySelector('option[value=""]').disabled=total;
+    }
+
+    async function saveActionBoundaryLimit(){
+      const status=byId("action-boundary-status");
+      try{
+        const current=guidedActionData.status.action_boundary.draft||guidedActionData.status.action_boundary.active;
+        const id=requiredGuidedText("action-boundary-limit-id","Limit name");
+        const kind=byId("action-boundary-limit-kind").value;
+        const capability=byId("action-boundary-limit-capability").value;
+        const maximum=requiredGuidedInteger("action-boundary-limit-maximum","Maximum");
+        const windowSeconds=requiredGuidedInteger("action-boundary-limit-window","Rolling window seconds");
+        const limit={id,kind,scope:byId("action-boundary-limit-scope").value,maximum,window_seconds:windowSeconds,...(capability?{capability}:{}),...(kind==="total"?{field:byId("action-boundary-limit-field").value}:{})};
+        if(kind==="total"&&!limit.field)throw new Error("Choose one reviewed numeric patch field.");
+        const sharedLimits=[...(current.authority.shared_limits||[]).filter(item=>item.id!==id),limit];
+        status.className="status-message loading";
+        status.textContent="Validating an exact disabled Action Boundary revision...";
+        const payload=await post("/api/actions/guided/boundary/limits",{shared_limits:sharedLimits});
+        await refreshGuidedActionAuthority();
+        byId("action-boundary-status").className="status-message success";
+        byId("action-boundary-status").textContent=payload.message;
+      }catch(error){status.className="status-message error";status.textContent=error.message}
+    }
+
+    async function removeActionBoundaryLimit(id){
+      const status=byId("action-boundary-status");
+      try{
+        const current=guidedActionData.status.action_boundary.draft||guidedActionData.status.action_boundary.active;
+        const sharedLimits=(current.authority.shared_limits||[]).filter(item=>item.id!==id);
+        const payload=await post("/api/actions/guided/boundary/limits",{shared_limits:sharedLimits});
+        await refreshGuidedActionAuthority();
+        byId("action-boundary-status").className="status-message success";
+        byId("action-boundary-status").textContent=payload.message;
+      }catch(error){status.className="status-message error";status.textContent=error.message}
+    }
+
+    async function activateActionBoundaryRevision(){
+      const status=byId("action-boundary-status");
+      try{
+        const draft=guidedActionData.status.action_boundary.draft;
+        if(!draft)throw new Error("No disabled Action Boundary revision is ready.");
+        if(!window.confirm("Activate this exact Action Boundary policy revision? No proposal will be approved or applied."))return;
+        status.className="status-message loading";
+        status.textContent="Rechecking the exact active action set and policy digest...";
+        const payload=await post("/api/actions/guided/boundary/activate",{expected_digest:draft.digest,confirmation:"ACTIVATE "+draft.digest,actor:byId("actor").value.trim()||"local_operator"});
+        await refreshGuidedActionAuthority();
+        byId("action-boundary-status").className="status-message success";
+        byId("action-boundary-status").textContent=payload.message;
+      }catch(error){status.className="status-message error";status.textContent=error.message}
+    }
+
+    async function refreshGuidedActionAuthority(){
+      guidedActionData=await getJson("/api/actions/guided");
+      renderGuidedActionInventory(guidedActionData.status||{drafts:[],activations:[]});
     }
 
     function openGuidedActionRevision(active){
@@ -7513,8 +8420,18 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const resource=selectedGuidedResource();
       if(!resource)return;
       const selected=[...document.querySelectorAll("[data-action-field]:checked")].map(input=>input.dataset.actionField);
-      const eligible=guidedCandidateFields(resource).filter(field=>selected.includes(field.name)&&isGuidedNumeric(field.data_type)&&document.querySelector('[data-action-mode="'+cssValue(field.name)+'"]')?.value==="argument");
-      byId("action-auto-field").innerHTML=eligible.map(field=>'<option value="'+esc(field.name)+'">'+esc(field.name)+'</option>').join("");
+      const eligible=guidedCandidateFields(resource).filter(field=>selected.includes(field.name)&&document.querySelector('[data-action-mode="'+cssValue(field.name)+'"]')?.value==="argument");
+      const conditions=byId("action-auto-conditions");
+      conditions.innerHTML=eligible.map(field=>{
+        if(isGuidedNumeric(field.data_type))return '<div class="action-field" data-action-auto-condition="'+esc(field.name)+'"><strong>'+esc(field.label||field.name)+'</strong><p class="muted">Auto-approve only inside this reviewed numeric subset. Set minimum equal to maximum for one exact value.</p><div class="form-grid"><label class="field">Minimum (optional)<input data-action-auto-min="'+esc(field.name)+'" type="number" placeholder="No additional minimum"></label><label class="field">Maximum<input data-action-auto-max="'+esc(field.name)+'" type="number" placeholder="Required reviewed maximum"></label></div></div>';
+        if((field.enum_values||[]).length)return '<div class="action-field" data-action-auto-condition="'+esc(field.name)+'"><strong>'+esc(field.label||field.name)+'</strong><p class="muted">Choose the reviewed enum values eligible for automatic approval.</p><label class="field">Allowed values<input data-action-auto-values="'+esc(field.name)+'" type="text" value="'+esc(field.enum_values.join(", "))+'"></label></div>';
+        if(/bool/i.test(field.data_type))return '<div class="action-field" data-action-auto-condition="'+esc(field.name)+'"><strong>'+esc(field.label||field.name)+'</strong><label class="field">Allowed boolean value<select data-action-auto-boolean="'+esc(field.name)+'"><option value="either">Either reviewed boolean</option><option value="true">True only</option><option value="false">False only</option></select></label></div>';
+        return '<div class="action-field" data-action-auto-condition="'+esc(field.name)+'"><strong>'+esc(field.label||field.name)+'</strong><p class="muted">Text is never interpreted as code. Automatic approval checks only this reviewed maximum length.</p><label class="field">Maximum text length<input data-action-auto-length="'+esc(field.name)+'" type="number" min="1" placeholder="Required reviewed maximum"></label></div>';
+      }).join("")||'<p class="muted">Select at least one bounded tool-argument field to define a deterministic approval subset.</p>';
+      const numeric=eligible.filter(field=>isGuidedNumeric(field.data_type));
+      byId("action-auto-total-field").innerHTML=numeric.map(field=>'<option value="'+esc(field.name)+'">'+esc(field.label||field.name)+'</option>').join("");
+      byId("action-auto-total-field-wrap").classList.toggle("hidden",numeric.length===0);
+      byId("action-auto-total-wrap").classList.toggle("hidden",numeric.length===0);
       if(byId("action-auto").checked&&!eligible.length){
         byId("action-auto").checked=false;
         byId("action-auto-settings").classList.add("hidden");
@@ -7579,9 +8496,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           const raw=document.querySelector('[data-action-fixed="'+cssValue(column)+'"]').value;
           if(!String(raw).trim())throw new Error(column+" fixed value is required.");
           patch.fixed_value=isGuidedNumeric(field.data_type)?requiredGuidedElementNumber(document.querySelector('[data-action-fixed="'+cssValue(column)+'"]'),column+" fixed value"):/bool/i.test(field.data_type)?raw==="true":raw;
-          const from=document.querySelector('[data-action-from="'+cssValue(column)+'"]');
-          if(from&&operation==="update")patch.allowed_from=from.value.split(",").map(value=>value.trim()).filter(Boolean);
         }
+        const from=document.querySelector('[data-action-from="'+cssValue(column)+'"]');
+        if(from&&operation==="update")patch.allowed_from=from.value.split(",").map(value=>value.trim()).filter(Boolean);
         return patch;
       });
       const posture=byId("action-authority-posture").value;
@@ -7623,12 +8540,37 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(operation==="update")action.version_advance=byId("action-version").value;
       if(operation==="insert")action.dedup_proposal_column=byId("action-dedup").value;
       if(operation==="delete")action.delete_confirmation=byId("action-delete-confirm").value;
-      if(byId("action-auto").checked)action.auto_approval={
-        field:byId("action-auto-field").value,
-        maximum:requiredGuidedNumber("action-auto-max","Automatic approval maximum"),
-        max_per_day:requiredGuidedInteger("action-auto-count","Automatic approvals per day"),
-        max_total_per_day:requiredGuidedInteger("action-auto-total","Automatic aggregate value per day")
-      };
+      if(byId("action-auto").checked){
+        const conditions=[];
+        for(const patch of patches.filter(item=>item.value_source==="argument")){
+          const field=guidedCandidateFields(resource).find(candidate=>candidate.name===patch.column);
+          if(isGuidedNumeric(field.data_type)){
+            const minimumInput=document.querySelector('[data-action-auto-min="'+cssValue(patch.column)+'"]');
+            const minimumRaw=String(minimumInput?.value||"").trim();
+            if(minimumRaw)conditions.push({field:patch.column,operator:"gte",value:requiredGuidedElementNumber(minimumInput,patch.column+" automatic minimum")});
+            conditions.push({field:patch.column,operator:"lte",value:requiredGuidedElementNumber(document.querySelector('[data-action-auto-max="'+cssValue(patch.column)+'"]'),patch.column+" automatic maximum")});
+          }else if((field.enum_values||[]).length){
+            const values=String(document.querySelector('[data-action-auto-values="'+cssValue(patch.column)+'"]')?.value||"").split(",").map(value=>value.trim()).filter(Boolean);
+            if(!values.length)throw new Error(patch.column+" needs at least one automatic-approval enum value.");
+            conditions.push({field:patch.column,operator:"in",values});
+          }else if(/bool/i.test(field.data_type)){
+            const value=document.querySelector('[data-action-auto-boolean="'+cssValue(patch.column)+'"]')?.value;
+            conditions.push(value==="either"?{field:patch.column,operator:"in",values:[false,true]}:{field:patch.column,operator:"eq",value:value==="true"});
+          }else{
+            conditions.push({field:patch.column,operator:"max_length",value:requiredGuidedElementInteger(document.querySelector('[data-action-auto-length="'+cssValue(patch.column)+'"]'),patch.column+" automatic maximum length")});
+          }
+        }
+        for(const patch of patches.filter(item=>(item.allowed_from||[]).length))conditions.push({source:"before",field:patch.column,operator:"in",values:patch.allowed_from});
+        action.auto_approval={
+          conditions,
+          max_per_day:requiredGuidedInteger("action-auto-count","Automatic approvals per day")
+        };
+        const numeric=patches.filter(item=>item.value_source==="argument"&&isGuidedNumeric(guidedCandidateFields(resource).find(candidate=>candidate.name===item.column)?.data_type));
+        if(numeric.length){
+          action.auto_approval.total_field=byId("action-auto-total-field").value;
+          action.auto_approval.max_total_per_day=requiredGuidedInteger("action-auto-total","Automatic aggregate value per day");
+        }
+      }
       return action;
     }
 
@@ -7638,6 +8580,25 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function requiredGuidedElementText(input,label){const value=String(input?.value||"").trim();if(!value)throw new Error(label+" is required.");return value}
     function requiredGuidedElementNumber(input,label){const raw=String(input?.value||"").trim();const value=Number(raw);if(!raw||!Number.isFinite(value))throw new Error(label+" must be an explicit finite number.");return value}
     function requiredGuidedElementInteger(input,label){const value=requiredGuidedElementNumber(input,label);if(!Number.isSafeInteger(value))throw new Error(label+" must be an integer.");return value}
+
+    async function simulateGuidedApprovalPolicy(){
+      const status=byId("action-policy-status");
+      const result=byId("action-policy-result");
+      try{
+        const capability=requiredGuidedText("action-policy-capability","Proposal capability");
+        const patch=JSON.parse(byId("action-policy-patch").value||"{}");
+        const before=JSON.parse(byId("action-policy-before").value||"{}");
+        status.className="status-message loading";
+        status.textContent="Evaluating the exact reviewed policy without creating a proposal...";
+        const payload=await post("/api/actions/guided/policy/simulate",{capability_name:capability,patch,before});
+        const conditionRows=(payload.conditions||[]).map(condition=>'<tr><td>'+esc(condition.source+'.'+condition.field)+'</td><td>'+esc(condition.operator)+'</td><td><span class="badge '+(condition.status==="passed"?'good':condition.status==="failed"?'bad':'warn')+'">'+esc(condition.status.toUpperCase())+'</span></td><td>'+esc(condition.reason)+'</td></tr>').join("");
+        const limitRows=(payload.limits||[]).map(limit=>'<li>'+esc(limit.kind.toUpperCase())+' '+esc(limit.max)+' per '+esc(limit.period)+(limit.field?' of '+esc(limit.field):'')+(limit.scope?' · '+esc(limit.scope):'')+'</li>').join("");
+        const boundaryLimitRows=(payload.action_boundary_limits||[]).map(limit=>'<li><strong>'+esc(limit.id)+'</strong>: '+esc(actionBoundaryLimitText(limit))+' · checked atomically; failure falls back to human review</li>').join("");
+        result.innerHTML='<section class="band '+(payload.decision==="auto_approve"?'success':'notice')+'"><p class="instant-kicker">Simulation only</p><h3>'+esc(humanizeIdentifier(payload.decision))+'</h3><p>'+esc(payload.reason)+'</p>'+(conditionRows?'<div class="result-table"><table><thead><tr><th>Reviewed input</th><th>Check</th><th>Status</th><th>Reason</th></tr></thead><tbody>'+conditionRows+'</tbody></table></div>':'<p>No deterministic conditions are attached.</p>')+(limitRows?'<h4>Per-action circuit breakers</h4><ul>'+limitRows+'</ul>':'')+(boundaryLimitRows?'<h4>Shared Action Boundary circuit breakers</h4><ul>'+boundaryLimitRows+'</ul>':'')+'<p class="muted">'+esc(payload.rolling_limits_note||"No authority changed and no proposal or source query ran.")+'</p></section>';
+        status.className="status-message "+(payload.decision==="auto_approve"?"success":"warn");
+        status.textContent="Simulation complete. Real approval rechecks freshness, state, and rolling usage atomically.";
+      }catch(error){status.className="status-message error";status.textContent=error.message;result.innerHTML=""}
+    }
 
     async function createGuidedAction(){
       const status=byId("action-status");
@@ -7666,6 +8627,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       guidedActionDraft=payload;
       const draft=payload.draft;
       const args=payload.preview_args||{};
+      const contractCapability=(payload.contract?.capabilities||[]).find(item=>item.name===draft.capability);
+      const policyPatch={};
+      Object.entries(contractCapability?.proposal?.patch||{}).forEach(([field,binding])=>{
+        if(binding&&typeof binding==="object"&&binding.from_arg&&Object.prototype.hasOwnProperty.call(args,binding.from_arg))policyPatch[field]=args[binding.from_arg];
+        else if(binding&&typeof binding==="object"&&Object.prototype.hasOwnProperty.call(binding,"fixed"))policyPatch[field]=binding.fixed;
+      });
+      byId("action-policy-capability").value=draft.capability;
+      byId("action-policy-patch").value=JSON.stringify(policyPatch,null,2);
       const inputs=Object.entries(args).map(([name,value])=>'<label class="field">'+esc(name)+'<input data-action-preview="'+esc(name)+'" data-value-type="'+esc(typeof value)+'" type="'+(typeof value==="number"?"number":typeof value==="boolean"?"checkbox":"text")+'" '+(typeof value==="boolean"&&value?"checked":"")+(typeof value==="boolean"?"":' value="'+esc(value)+'"')+'></label>').join("");
       byId("action-draft").innerHTML='<section class="band success"><h3>Disabled reviewable action revision</h3><p><strong>Capability:</strong> '+esc(draft.capability)+'<br><strong>Operation:</strong> '+esc(draft.operation.toUpperCase())+'<br><strong>Authority posture:</strong> '+esc(humanizeIdentifier(draft.authority_posture))+'<br><strong>Writeback:</strong> '+esc(draft.writeback_mode)+(draft.writeback_executor?' via '+esc(draft.writeback_executor):'')+'<br><strong>Supervised execution permission:</strong> '+(draft.supervised_worker_execution?"Contract side enabled; exact-digest deployment allowlist still required":"Off")+'<br><strong>Source database changed:</strong> no</p><details><summary>Review generated public DSL</summary><pre id="action-dsl-preview"></pre></details><details><summary>Advanced fingerprint</summary><code data-action-digest>'+esc(draft.contract_digest)+'</code></details><h3 style="margin-top:16px">Exact disabled-draft rehearsal</h3><p>Use a real row identifier and bounded values. Runner validates the actual semantic proposal path in a disposable ledger, then destroys that rehearsal record. It cannot later be approved or applied.</p><div class="form-grid">'+inputs+'</div><div class="actions"><button id="preview-action" type="button">Rehearse exact proposal</button></div><div id="action-activation"></div></section>';
       renderSyntaxCode("action-dsl-preview",payload.dsl||"Open "+draft.dsl_path+" to inspect the persisted public DSL.","synapsor-dsl");
@@ -7851,6 +8820,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     }
 
 	    document.querySelectorAll("[data-view]").forEach(button=>button.onclick=()=>setView(button.dataset.view));
+	    byId("delegation-use-model").onchange=updateDelegationModelSettings;
+	    byId("delegation-provider").onchange=updateDelegationProvider;
+	    byId("delegation-job").oninput=()=>delegationData&&renderDelegationCards();
+	    byId("delegation-card-search").oninput=()=>delegationData&&renderDelegationCards();
+	    byId("delegation-prepare").onclick=prepareDelegationJob;
+	    byId("workload-cards-tab").onclick=()=>setReadWorkloadMode("cards");
 	    byId("workload-exact-tab").onclick=()=>setReadWorkloadMode("exact");
 	    byId("workload-model-tab").onclick=()=>setReadWorkloadMode("model");
 	    byId("workload-saved-tab").onclick=()=>setReadWorkloadMode("saved");
@@ -7969,8 +8944,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     byId("clear-ask").onclick=clearAsk;
     byId("load-ask-history").onclick=()=>loadAskHistory(0);
     byId("refresh-protect").onclick=loadProtect;
-    byId("load-action").onclick=loadGuidedAction;
-    byId("create-action").onclick=createGuidedAction;
+     byId("load-action").onclick=loadGuidedAction;
+     byId("action-quick-prepare").onclick=()=>prepareQuickAction(true);
+     byId("action-policy-simulate").onclick=simulateGuidedApprovalPolicy;
+     byId("create-action").onclick=createGuidedAction;
     byId("action-quorum").onchange=updateGuidedCompatibility;
     updateAskProviderFields(false);
     bindNextButtons();

@@ -71,11 +71,10 @@ import {
   recommendedBoundaryReviewCandidate,
 } from "./boundary-candidate.js";
 import {
-  activateInstantCliBoundary,
   type InstantCliBoundaryActivationInput,
   type InstantCliBoundaryActivationResult,
 } from "./instant-cli-boundary.js";
-import { createBoundaryReviewInteractiveSession, terminalTheme } from "./boundary-cli-picker.js";
+import { terminalTheme } from "./boundary-cli-picker.js";
 import { mcpSmoke } from "./mcp-runtime.js";
 import {
   resolveAskMaxOutputTokens,
@@ -319,12 +318,10 @@ async function startAutoBoundary(
   const runBoundaryReview = dependencies.runBoundaryReview
     ?? ((reviewArgs, inspector, handoff) =>
       boundaryReviewCommand(reviewArgs, inspector, undefined, handoff));
-  const runInstantCliBoundary = dependencies.runInstantCliBoundary
-    ?? ((input: Omit<InstantCliBoundaryActivationInput, "session">) =>
-      activateInstantCliBoundary({
-        ...input,
-        session: createBoundaryReviewInteractiveSession(),
-      }));
+  // Kept as an injected secondary-surface seam for the compact Quick Start
+  // component's focused tests. The shipped CLI does not provide this
+  // dependency and therefore always enters job-first Boundary setup.
+  const runInstantCliBoundary = dependencies.runInstantCliBoundary;
   const openWorkbench = dependencies.openWorkbench ?? ui;
   const sourceEnv = optionalArg(args, "--from-env");
   if (!sourceEnv) throw new Error("Auto Boundary requires --from-env <DATABASE_URL_ENV_NAME>.");
@@ -418,23 +415,35 @@ async function startAutoBoundary(
           ...terminalAskLimits,
         });
       }
-      if (!context.progress && existingJourney?.status === "review_boundary") {
-        const instant = await runInstantCliBoundary({
-          projectRoot: project.root,
-          draft: context.draft,
-          lock: context.lock,
-          schemaInspector,
-          regenerateBoundary: regenerateInstantBoundary,
-        });
-        if (instant.accepted) {
-          return runPostActivationHandoff({
+      if (!context.progress) {
+        if (runInstantCliBoundary && existingJourney?.status === "review_boundary") {
+          const instant = await runInstantCliBoundary({
             projectRoot: project.root,
-            ...terminalAskLimits,
-            selection: instant.askSelection,
-            consentOnFirstQuestion: true,
+            draft: context.draft,
+            lock: context.lock,
+            schemaInspector,
+            regenerateBoundary: regenerateInstantBoundary,
           });
+          if (instant.accepted) {
+            return runPostActivationHandoff({
+              projectRoot: project.root,
+              ...terminalAskLimits,
+              selection: instant.askSelection,
+              consentOnFirstQuestion: true,
+            });
+          }
+          if (instant.reason === "operator_cancelled") return 0;
+          return runBoundaryReview(
+            ["--project-root", project.root, "--access"],
+            schemaInspector,
+            activationHandoff,
+          );
         }
-        if (instant.reason === "operator_cancelled") return 0;
+        return runBoundaryReview(
+          ["--project-root", project.root, "--access", "--job-first"],
+          schemaInspector,
+          activationHandoff,
+        );
       }
       return runBoundaryReview(
         ["--project-root", project.root, "--access"],
@@ -588,25 +597,32 @@ async function startAutoBoundary(
     writeGuidedOutput(`Static evidence warnings:\n${evidence.warnings.map((warning) => `  - ${warning}`).join("\n")}\n`);
   }
   if (cliMode) {
-    const instant = await runInstantCliBoundary({
-      projectRoot: project.root,
-      draft: build.exploration_boundary,
-      lock: build.lock,
-      schemaInspector,
-      initialInspection: inspection,
-      regenerateBoundary: regenerateInstantBoundary,
-    });
-    if (instant.accepted) {
-      return runPostActivationHandoff({
+    if (runInstantCliBoundary) {
+      const instant = await runInstantCliBoundary({
         projectRoot: project.root,
-        ...terminalAskLimits,
-        selection: instant.askSelection,
-        consentOnFirstQuestion: true,
+        draft: build.exploration_boundary,
+        lock: build.lock,
+        schemaInspector,
+        initialInspection: inspection,
+        regenerateBoundary: regenerateInstantBoundary,
       });
+      if (instant.accepted) {
+        return runPostActivationHandoff({
+          projectRoot: project.root,
+          ...terminalAskLimits,
+          selection: instant.askSelection,
+          consentOnFirstQuestion: true,
+        });
+      }
+      if (instant.reason === "operator_cancelled") return 0;
+      return runBoundaryReview(
+        ["--project-root", project.root, "--access"],
+        schemaInspector,
+        activationHandoff,
+      );
     }
-    if (instant.reason === "operator_cancelled") return 0;
     return runBoundaryReview(
-      ["--project-root", project.root, "--access"],
+      ["--project-root", project.root, "--access", "--job-first"],
       schemaInspector,
       activationHandoff,
     );

@@ -1,11 +1,44 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   exploreVocabularyDoctorCheck,
+  postgresRlsExploreTargets,
   withMysqlProbeConnection,
   withPostgresProbeClient,
 } from "./runtime-doctor.js";
 
 describe("runtime doctor database probe cleanup", () => {
+  it("uses active Explore resources as PostgreSQL RLS canary targets", () => {
+    const targets = postgresRlsExploreTargets([
+      {
+        source: "local_postgres",
+        pack: {
+          resources: [
+            { schema: "renewable_ops", table: "assets", primary_key: "asset_id" },
+            {
+              schema: "renewable_ops",
+              table: "asset_catalog",
+              primary_key: "catalog_id",
+              shared_reference_scope: { acknowledged: true },
+            },
+          ],
+        },
+      },
+      {
+        source: "other_postgres",
+        pack: { resources: [{ schema: "other", table: "rows", primary_key: "id" }] },
+      },
+      {
+        source: "local_postgres",
+        organization_scope: { mode: "single_organization" },
+        pack: { resources: [{ schema: "renewable_ops", table: "global_rows", primary_key: "id" }] },
+      },
+    ] as never, "local_postgres");
+
+    expect(targets).toEqual([
+      { schema: "renewable_ops", table: "assets", primaryKey: "asset_id" },
+    ]);
+  });
+
   it("warns on legacy opaque vocabulary without failing active authority", () => {
     const warning = exploreVocabularyDoctorCheck("legacy_boundary", {
       id: "legacy.t_0031",

@@ -104,6 +104,10 @@ export function rowToApproval(row: unknown): StoredApproval | undefined {
     signature: row.signature == null ? undefined : String(row.signature),
     integrity_hash: row.integrity_hash == null ? undefined : String(row.integrity_hash),
     freshness_proof_digest: row.freshness_proof_digest == null ? undefined : String(row.freshness_proof_digest),
+    action_boundary_name: row.action_boundary_name == null ? undefined : String(row.action_boundary_name),
+    action_boundary_digest: row.action_boundary_digest == null
+      ? undefined
+      : String(row.action_boundary_digest) as `sha256:${string}`,
     created_at: String(row.created_at),
   };
 }

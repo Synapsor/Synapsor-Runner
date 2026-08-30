@@ -28,6 +28,8 @@ import {
   type ActiveProposalLookup,
   type PolicyApprovalLimit,
   type PolicyApprovalLimitTrip,
+  type ActionBoundaryApprovalContext,
+  type ActionBoundaryApprovalLimitTrip,
   type PolicyApprovalDecision,
 } from "./domain-types.js";
 import {
@@ -589,6 +591,7 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
         proposal_version: number;
         reason: string;
         limits?: PolicyApprovalLimit[];
+        action_boundary?: ActionBoundaryApprovalContext;
         now?: string;
         freshness_proof_digest?: string;
       },
@@ -598,6 +601,8 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
       const window = utcDayWindow(now);
       const trippedLimits: PolicyApprovalLimitTrip[] = [];
       const nearLimits: PolicyApprovalLimitTrip[] = [];
+      const boundaryTrippedLimits: ActionBoundaryApprovalLimitTrip[] = [];
+      const boundaryNearLimits: ActionBoundaryApprovalLimitTrip[] = [];
       let quorumDeferred = false;
       this.transaction(() => {
         const proposal = this.requireProposal(proposalId);
@@ -677,12 +682,12 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
               const historical = parseChangeSet(JSON.parse(String(row.change_set_json)));
               const value = field ? historical.patch[field] : undefined;
               if (typeof value !== "number" || !Number.isSafeInteger(value)) invalidHistory = true;
-              else observed += value;
+              else observed += Math.abs(value);
             } catch {
               invalidHistory = true;
             }
           }
-          const proposedNumber = typeof proposed === "number" && Number.isSafeInteger(proposed) ? proposed : 0;
+          const proposedNumber = typeof proposed === "number" && Number.isSafeInteger(proposed) ? Math.abs(proposed) : 0;
           const projected = observed + proposedNumber;
           if (!field || invalidHistory || typeof proposed !== "number" || !Number.isSafeInteger(proposed) || projected > limit.max) {
             trippedLimits.push({
@@ -710,11 +715,27 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
             });
           }
         }
-        if (trippedLimits.length > 0) {
+        if (options.action_boundary) {
+          const boundaryLimits = evaluateActionBoundaryApprovalLimits(
+            this.db,
+            proposal,
+            options.action_boundary,
+            now,
+          );
+          boundaryTrippedLimits.push(...boundaryLimits.tripped);
+          boundaryNearLimits.push(...boundaryLimits.near);
+        }
+        if (trippedLimits.length > 0 || boundaryTrippedLimits.length > 0) {
           this.appendEvent(proposalId, "policy_auto_approval_deferred", actor, {
             policy: options.policy,
             fallback: "human_review",
-            tripped_limits: trippedLimits,
+            tripped_limits: [...trippedLimits, ...boundaryTrippedLimits],
+            ...(options.action_boundary ? {
+              action_boundary: {
+                name: options.action_boundary.name,
+                digest: options.action_boundary.digest,
+              },
+            } : {}),
           });
           return;
         }
@@ -723,9 +744,9 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
         this.db.prepare(`
           INSERT INTO approvals (
             proposal_id, proposal_version, proposal_hash, approver, status, reason,
-            freshness_proof_digest, created_at
+            freshness_proof_digest, action_boundary_name, action_boundary_digest, created_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           proposalId,
           options.proposal_version,
@@ -734,6 +755,8 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
           "approved",
           options.reason,
           options.freshness_proof_digest ?? null,
+          options.action_boundary?.name ?? null,
+          options.action_boundary?.digest ?? null,
           now,
         );
         this.appendEvent(proposalId, "proposal_approved", actor, {
@@ -742,6 +765,13 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
           reason: options.reason,
           policy: options.policy,
           aggregate_limits: options.limits ?? [],
+          action_boundary: options.action_boundary
+            ? {
+              name: options.action_boundary.name,
+              digest: options.action_boundary.digest,
+              shared_limits: options.action_boundary.limits,
+            }
+            : null,
           freshness_proof_digest: options.freshness_proof_digest ?? null,
         });
         for (const near of nearLimits) {
@@ -757,12 +787,27 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
             window_end: near.window_end,
           });
         }
+        for (const near of boundaryNearLimits) {
+          this.appendEvent(proposalId, "action_boundary_limit_near", actor, {
+            action_boundary_name: options.action_boundary?.name ?? null,
+            action_boundary_digest: options.action_boundary?.digest ?? null,
+            limit_id: near.id,
+            kind: near.kind,
+            scope: near.scope,
+            observed: near.observed,
+            proposed: near.proposed,
+            projected: near.projected,
+            maximum: near.maximum,
+            window_start: near.window_start,
+            window_end: near.window_end,
+          });
+        }
       });
       return {
         proposal: this.requireProposal(proposalId),
-        approved: !quorumDeferred && trippedLimits.length === 0,
+        approved: !quorumDeferred && trippedLimits.length === 0 && boundaryTrippedLimits.length === 0,
         policy: options.policy,
-        tripped_limits: trippedLimits,
+        tripped_limits: [...trippedLimits, ...boundaryTrippedLimits],
       };
     },
   
@@ -1041,4 +1086,150 @@ function legacyExploreBudgetAudits(
     });
   }
   return results;
+}
+
+function evaluateActionBoundaryApprovalLimits(
+  db: ProposalStoreMethodContext["db"],
+  proposal: StoredProposal,
+  boundary: ActionBoundaryApprovalContext,
+  now: string,
+): {
+  tripped: ActionBoundaryApprovalLimitTrip[];
+  near: ActionBoundaryApprovalLimitTrip[];
+} {
+  if (!/^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(boundary.name)
+    || !/^sha256:[a-f0-9]{64}$/.test(boundary.digest)
+    || !Array.isArray(boundary.limits)) {
+    throw new ProposalStoreError(
+      "ACTION_BOUNDARY_LIMIT_INVALID",
+      "Action Boundary approval accounting requires an exact reviewed boundary name, digest, and limit set.",
+    );
+  }
+  const nowMs = Date.parse(now);
+  if (!Number.isFinite(nowMs)) {
+    throw new ProposalStoreError("ACTION_BOUNDARY_LIMIT_TIME_INVALID", "Action Boundary approval accounting requires a valid time.");
+  }
+  const tripped: ActionBoundaryApprovalLimitTrip[] = [];
+  const near: ActionBoundaryApprovalLimitTrip[] = [];
+  const currentCapability = proposal.capability ?? proposal.action;
+  for (const limit of boundary.limits) {
+    assertActionBoundaryLimit(limit);
+    if (limit.capability && limit.capability !== currentCapability) continue;
+    const windowStart = new Date(nowMs - limit.window_seconds * 1000).toISOString();
+    const windowEnd = new Date(nowMs).toISOString();
+    const proposedTotal = limit.kind === "total" ? actionBoundaryTotalValue(proposal, limit.field) : undefined;
+    const base = {
+      ...limit,
+      observed: 0,
+      proposed: limit.kind === "count" ? 1 : proposedTotal ?? 0,
+      projected: 0,
+      window_start: windowStart,
+      window_end: windowEnd,
+      reason: "",
+    } satisfies ActionBoundaryApprovalLimitTrip;
+    if (limit.scope === "tenant_principal" && !proposal.principal) {
+      tripped.push({
+        ...base,
+        projected: base.proposed,
+        reason: `${limit.id} could not verify tenant/principal scope because the proposal has no trusted principal`,
+      });
+      continue;
+    }
+
+    const clauses = [
+      "a.action_boundary_name = ?",
+      "a.status = 'approved'",
+      "a.created_at >= ?",
+      "a.created_at <= ?",
+    ];
+    const params: Array<string | number> = [boundary.name, windowStart, windowEnd];
+    if (limit.capability) {
+      clauses.push("COALESCE(p.capability, p.action) = ?");
+      params.push(limit.capability);
+    }
+    if (limit.scope === "capability" && !limit.capability) {
+      clauses.push("COALESCE(p.capability, p.action) = ?");
+      params.push(currentCapability);
+    }
+    if (limit.scope === "tenant" || limit.scope === "tenant_principal" || limit.scope === "tenant_object") {
+      clauses.push("p.tenant_id = ?");
+      params.push(proposal.tenant_id);
+    }
+    if (limit.scope === "tenant_principal") {
+      clauses.push("p.principal = ?");
+      params.push(proposal.principal!);
+    }
+    if (limit.scope === "tenant_object") {
+      clauses.push("p.business_object = ?", "p.object_id = ?");
+      params.push(proposal.business_object, proposal.object_id);
+    }
+    const rows = db.prepare(`
+      SELECT p.change_set_json
+      FROM approvals a
+      JOIN proposals p ON p.proposal_id = a.proposal_id
+      WHERE ${clauses.join(" AND ")}
+    `).all(...params);
+
+    let observed = rows.length;
+    let historyInvalid = false;
+    if (limit.kind === "total") {
+      observed = 0;
+      for (const row of rows) {
+        if (!isRecord(row)) {
+          historyInvalid = true;
+          continue;
+        }
+        try {
+          const historical = parseChangeSet(JSON.parse(String(row.change_set_json)));
+          const value = limit.field ? historical.patch[limit.field] : undefined;
+          if (typeof value !== "number" || !Number.isSafeInteger(value)) historyInvalid = true;
+          else observed += Math.abs(value);
+        } catch {
+          historyInvalid = true;
+        }
+      }
+    }
+    const projected = observed + base.proposed;
+    const result: ActionBoundaryApprovalLimitTrip = {
+      ...base,
+      observed,
+      projected,
+      reason: proposedTotal === undefined && limit.kind === "total"
+        ? `${limit.id} could not verify the proposed total safely`
+        : historyInvalid
+        ? `${limit.id} could not verify its rolling history safely`
+        : `${limit.id} rolling ${limit.kind} ${projected} exceeds ${limit.maximum}`,
+    };
+    if ((limit.kind === "total" && proposedTotal === undefined) || historyInvalid || projected > limit.maximum) {
+      tripped.push(result);
+    } else if (projected / limit.maximum >= 0.8) {
+      near.push({
+        ...result,
+        reason: `${limit.id} rolling ${limit.kind} ${projected} is approaching ${limit.maximum}`,
+      });
+    }
+  }
+  return { tripped, near };
+}
+
+function actionBoundaryTotalValue(proposal: StoredProposal, field: string | undefined): number | undefined {
+  const value = field ? proposal.change_set.patch[field] : undefined;
+  return typeof value === "number" && Number.isSafeInteger(value) ? Math.abs(value) : undefined;
+}
+
+function assertActionBoundaryLimit(limit: ActionBoundaryApprovalContext["limits"][number]): void {
+  if (!limit
+    || !/^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(limit.id)
+    || (limit.kind !== "count" && limit.kind !== "total")
+    || !["boundary", "capability", "tenant", "tenant_principal", "tenant_object"].includes(limit.scope)
+    || !Number.isSafeInteger(limit.maximum)
+    || limit.maximum <= 0
+    || !Number.isSafeInteger(limit.window_seconds)
+    || limit.window_seconds < 60
+    || limit.window_seconds > 31_536_000
+    || (limit.capability !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_.]*$/.test(limit.capability))
+    || (limit.kind === "total" && (typeof limit.field !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(limit.field)))
+    || (limit.kind === "count" && limit.field !== undefined)) {
+    throw new ProposalStoreError("ACTION_BOUNDARY_LIMIT_INVALID", "Action Boundary approval limit metadata is invalid.");
+  }
 }

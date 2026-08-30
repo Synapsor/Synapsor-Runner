@@ -647,7 +647,7 @@ END
 `))).toThrow(/AUTO_APPROVE_APPROVAL_ROLE_REQUIRED/);
   });
 
-  it("rejects unsupported AUTO APPROVE comparisons and non-integer values", () => {
+  it("supports typed deterministic conditions and rejects unsupported or impossible comparisons", () => {
     expect(() => compileAgentDsl(planCreditSource(`
   APPROVAL ROLE support_reviewer
   AUTO APPROVE WHEN plan_credit_cents < 2500
@@ -657,12 +657,26 @@ END
   APPROVAL ROLE support_reviewer
   AUTO APPROVE WHEN plan_credit_cents <= -1
   WRITEBACK DIRECT SQL
-`))).toThrow(/AUTO_APPROVE_MAX_INVALID/);
-    expect(() => compileAgentDsl(planCreditSource(`
+`))).toThrow(/AUTO_APPROVE_MAX_BELOW_BOUND/);
+    const typed = compileAgentDsl(planCreditSource(`
   APPROVAL ROLE support_reviewer
   AUTO APPROVE WHEN plan_credit_cents <= 25.5
+  AUTO APPROVE WHEN credit_reason LENGTH <= 120
+  AUTO APPROVE WHEN CURRENT plan_credit_cents >= 1
+  LIMIT 20 PER DAY
+  LIMIT TOTAL 1000 OF plan_credit_cents PER DAY
   WRITEBACK DIRECT SQL
-`))).toThrow(/AUTO_APPROVE_MAX_INVALID/);
+`));
+    expect(typed.policies?.[0]?.rules).toEqual([
+      { source: "patch", field: "plan_credit_cents", operator: "lte", value: 25.5 },
+      { source: "patch", field: "credit_reason", operator: "max_length", value: 120 },
+      { source: "before", field: "plan_credit_cents", operator: "gte", value: 1 },
+    ]);
+    expect(typed.policies?.[0]?.limits?.[1]).toMatchObject({
+      kind: "total",
+      field: "plan_credit_cents",
+      max: 1000,
+    });
   });
 
   it("rejects AUTO APPROVE WHEN fields that are missing, non-numeric, duplicated, or above bounds", () => {
@@ -681,7 +695,7 @@ END
   AUTO APPROVE WHEN plan_credit_cents <= 2500
   AUTO APPROVE WHEN plan_credit_cents <= 1000
   WRITEBACK DIRECT SQL
-`))).toThrow(/AUTO_APPROVE_DUPLICATE_FIELD/);
+`))).toThrow(/AUTO_APPROVE_DUPLICATE_CONDITION/);
     expect(() => compileAgentDsl(planCreditSource(`
   APPROVAL ROLE support_reviewer
   AUTO APPROVE WHEN plan_credit_cents <= 50001
@@ -723,6 +737,51 @@ END
     const validation = validateAgentDsl(source);
     expect(validation.ok).toBe(true);
     expect(validation.warnings.map((warning) => warning.code)).toContain("NUMERIC_PATCH_BOUND_RECOMMENDED");
+  });
+
+  it("freezes proposal-only single-organization action authority", () => {
+    const source = planCreditSource(`
+  APPROVAL ROLE support_reviewer
+  WRITEBACK NONE
+`).replace(
+      "BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED",
+      "BIND tenant_id FROM REVIEWED_ORGANIZATION northgate-library REQUIRED",
+    ).replace(
+      "  TENANT KEY tenant_id\n",
+      "",
+    ).replace(
+      "  PROPOSE ACTION grant_plan_credit",
+      "  PROPOSE ACTION grant_plan_credit\n  ACTION SINGLE ORGANIZATION 'northgate-library' ACKNOWLEDGED",
+    );
+    const contract = compileAgentDsl(source);
+
+    expect(contract.contexts[0]?.bindings[0]).toMatchObject({
+      source: "reviewed_organization",
+      key: "northgate-library",
+      required: true,
+    });
+    expect(contract.capabilities[0]?.subject.tenant_key).toBeUndefined();
+    expect(contract.capabilities[0]?.proposal).toMatchObject({
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "northgate-library",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      },
+      writeback: { mode: "none" },
+    });
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(compileAgentDsl(formatAgentDsl(source))).toEqual(contract);
+
+    expect(() => compileAgentDsl(source.replace(
+      "  PRIMARY KEY id\n",
+      "  PRIMARY KEY id\n  TENANT KEY tenant_id\n",
+    ))).toThrow(/PROPOSAL_SCOPE_MODES_CONFLICT/);
+    expect(() => compileAgentDsl(source.replace("WRITEBACK NONE", "WRITEBACK DIRECT SQL")))
+      .toThrow(/PROPOSAL_ORGANIZATION_WRITEBACK_UNSUPPORTED/);
+    expect(() => compileAgentDsl(source
+      .replace("PROPOSE ACTION grant_plan_credit", "PROPOSE ACTION grant_plan_credit INSERT")
+      .replace("WRITEBACK NONE", "DEDUP KEY request_id = PROPOSAL ID\n  WRITEBACK NONE")))
+      .toThrow(/PROPOSAL_ORGANIZATION_INSERT_UNSUPPORTED/);
   });
 
   it("rejects numeric bounds on non-number args", () => {

@@ -35,6 +35,8 @@ import {
   type BoundaryMapFieldRow,
 } from "./boundary-map-presentation.js";
 import { exploreVocabularyCoverage } from "./explore-vocabulary.js";
+import { terminalBrandPalette } from "./terminal-brand-theme.js";
+import type { ReadWorkloadPlanCard } from "./read-workload-assist.js";
 
 export type BoundaryFieldTier = ReviewedBoundaryFieldTier;
 export type BoundaryFieldTierEditResult =
@@ -119,7 +121,11 @@ export type BoundaryResourceSelection =
         | "relationships";
     }
   | {
-      action: "create" | "rename" | "confirm" | "limits" | "privacy_all" | "workloads" | "actions";
+      action: "create" | "rename" | "confirm" | "limits" | "privacy_all" | "workloads";
+    }
+  | {
+      action: "actions";
+      boundary_name: string;
     }
   | {
       action: "model_output";
@@ -150,6 +156,7 @@ export type BoundaryReviewOverview = {
     outstanding_decisions: number;
     policy_review_required?: boolean;
     ask_intent_check_mode?: "balanced" | "boundary_only";
+    proposal_action_state?: "none" | "draft" | "rehearsed";
   }>;
 };
 
@@ -158,6 +165,10 @@ export type BoundaryAccessNotice = {
   title: string;
   lines: string[];
   footer?: string;
+};
+
+type BoundaryPromptOptions = {
+  context?: string[];
 };
 
 export type BoundaryReviewInteractiveSession = {
@@ -190,9 +201,22 @@ export type BoundaryReviewInteractiveSession = {
   resolveBlockedResource?(
     view: BoundaryResourceReviewView,
   ): Promise<BoundaryBlockedResolution>;
-  promptText(prompt: string): Promise<string | undefined>;
-  confirm(prompt: string, options?: { defaultValue?: boolean }): Promise<boolean | undefined>;
-  confirmActivation?(prompt: string): Promise<boolean | undefined>;
+  selectReadWorkloadCards?(
+    cards: ReadWorkloadPlanCard[],
+  ): Promise<string[] | undefined>;
+  promptText(prompt: string, options?: BoundaryPromptOptions): Promise<string | undefined>;
+  confirm(
+    prompt: string,
+    options?: BoundaryPromptOptions & { defaultValue?: boolean },
+  ): Promise<boolean | undefined>;
+  confirmActivation?(
+    prompt: string,
+    options?: BoundaryPromptOptions,
+  ): Promise<boolean | undefined>;
+  confirmReviewedDisabled?(
+    prompt: string,
+    options?: BoundaryPromptOptions,
+  ): Promise<boolean | undefined>;
 };
 
 type Keypress = {
@@ -214,6 +238,16 @@ type BoundaryRelationshipConnection = {
 };
 
 const tierOrder: BoundaryFieldTier[] = ["visible", "withheld_from_model", "kept_out"];
+
+function safeActionAccessLabel(
+  state: "none" | "draft" | "rehearsed" | undefined,
+  available: boolean,
+): string {
+  if (!available) return "Safe actions - prepare proposal [FINISH READ REVIEW]";
+  if (state === "rehearsed") return "Safe actions - proposal rehearsed [READY FOR REVIEW]";
+  if (state === "draft") return "Safe actions - continue proposal setup [DISABLED]";
+  return "Safe actions - prepare proposal [AVAILABLE]";
+}
 
 type TerminalTheme = ReturnType<typeof terminalTheme>;
 
@@ -257,7 +291,9 @@ export function createBoundaryReviewInteractiveSession(
   if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
     throw new Error("Interactive boundary review requires a real terminal.");
   }
-  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env), {
+    brand: true,
+  });
   return {
     chooseResource: (resources, overview, options) =>
       chooseResource(resources, overview, options, input, output),
@@ -266,10 +302,14 @@ export function createBoundaryReviewInteractiveSession(
     editRelationshipPaths: (view, summary) =>
       editRelationshipPaths(view, summary, input, output),
     resolveBlockedResource: (view) => resolveBlockedResource(view, input, output),
-    promptText: (prompt) => withAlternateTerminalScreen(
+    selectReadWorkloadCards: (cards) => selectReadWorkloadCards(cards, input, output),
+    promptText: (prompt, options = {}) => withAlternateTerminalScreen(
       output,
       () => readTerminalTextWithEscape(
-        formatTextPromptWithBack(prompt, theme),
+        terminalPromptWithContext(
+          formatTextPromptWithBack(prompt, theme),
+          options.context,
+        ),
         input,
         output,
       ),
@@ -277,8 +317,11 @@ export function createBoundaryReviewInteractiveSession(
     confirm: (prompt, options = {}) => withAlternateTerminalScreen(output, async () => {
       const defaultValue = options.defaultValue === true;
       const answer = await readTerminalTextWithEscape(
-        `${theme.bold(prompt)} ${theme.key(defaultValue ? "[Y/n]" : "[y/N]")} ` +
-          `${theme.key("[Esc Back]")}: `,
+        terminalPromptWithContext(
+          `${theme.bold(prompt)} ${theme.key(defaultValue ? "[Y/n]" : "[y/N]")} ` +
+            `${theme.key("[Esc Back]")}: `,
+          options.context,
+        ),
         input,
         output,
       );
@@ -286,15 +329,90 @@ export function createBoundaryReviewInteractiveSession(
       if (!answer) return defaultValue;
       return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
     }),
-    confirmActivation: (prompt) => withAlternateTerminalScreen(
+    confirmActivation: (prompt, options = {}) => withAlternateTerminalScreen(
       output,
       () => readTerminalActivationConfirmation(
-        theme.bold(prompt),
+        terminalPromptWithContext(theme.bold(prompt), options.context),
         input,
         output,
       ),
     ),
+    confirmReviewedDisabled: (prompt, options = {}) => withAlternateTerminalScreen(output, async () => {
+      const answer = await readTerminalTextWithEscape(
+        terminalPromptWithContext(
+          `${theme.bold(prompt)} ${theme.key("[y/N]")} ${theme.key("[Esc Back]")}: `,
+          options.context,
+        ),
+        input,
+        output,
+      );
+      if (answer === undefined) return undefined;
+      return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
+    }),
   };
+}
+
+async function selectReadWorkloadCards(
+  cards: Array<{ id: string; title: string; detail: string }>,
+  input: ReadStream,
+  output: WriteStream,
+): Promise<string[] | undefined> {
+  if (!cards.length) return [];
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env), {
+    brand: true,
+  });
+  const selected = new Set<string>();
+  let cursor = 0;
+  let notice = "";
+  return withRawKeys(input, output, async (nextKey, render) => {
+    while (true) {
+      const visibleRows = Math.max(5, (output.rows ?? 24) - 10);
+      const start = Math.max(0, Math.min(
+        cursor - Math.floor(visibleRows / 2),
+        Math.max(0, cards.length - visibleRows),
+      ));
+      const end = Math.min(cards.length, start + visibleRows);
+      const current = cards[cursor]!;
+      render([
+        theme.title("  CHOOSE REPRESENTATIVE QUESTIONS"),
+        `  ${theme.dim("No model or source query. Job matches appear first; nothing is preselected.")}`,
+        `  ${theme.bold(`${selected.size} selected`)}  ${theme.dim(`| question ${cursor + 1} of ${cards.length}`)}`,
+        `  ${theme.dim(current.detail)}`,
+        ...(notice ? [`  ${theme.warning(notice)}`] : [""]),
+        ...cards.slice(start, end).map((card, offset) => {
+          const index = start + offset;
+          const marker = selected.has(card.id) ? theme.success("[x]") : "[ ]";
+          const row = `  ${index === cursor ? theme.focus(">") : " "} ${marker} ${card.title}`;
+          return index === cursor ? theme.bold(row) : row;
+        }),
+        "",
+        `  ${theme.key("Up/Down")} Move   ${theme.key("Space")} Select   ${theme.key("A")} All   ${theme.key("C")} Clear`,
+        `  ${theme.key("Enter")} Continue   ${theme.key("Esc")} Back`,
+      ]);
+      const key = await nextKey();
+      notice = "";
+      if (key.name === "escape" || key.sequence === "\u001b" || (key.ctrl && ["c", "d"].includes(key.name ?? ""))) {
+        return undefined;
+      }
+      if (key.name === "up") cursor = (cursor - 1 + cards.length) % cards.length;
+      if (key.name === "down") cursor = (cursor + 1) % cards.length;
+      if (key.name === "space" || key.sequence === " ") {
+        if (selected.has(current.id)) selected.delete(current.id);
+        else selected.add(current.id);
+      }
+      if (key.name === "a" || key.sequence?.toLowerCase() === "a") {
+        cards.forEach((card) => selected.add(card.id));
+      }
+      if (key.name === "c" || key.sequence?.toLowerCase() === "c") selected.clear();
+      if (key.name === "return" || key.name === "enter") {
+        if (!selected.size) {
+          notice = "Select at least one question before continuing.";
+          continue;
+        }
+        return cards.filter((card) => selected.has(card.id)).map((card) => card.id);
+      }
+    }
+  });
 }
 
 async function resolveBlockedResource(
@@ -330,7 +448,9 @@ async function resolveBlockedResource(
       selected: true,
     }] : []),
   ];
-  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env), {
+    brand: true,
+  });
   const scopeGuidance = tenantOptions.length === 0
     ? blockedTenantScopeGuidance(view)
     : undefined;
@@ -579,7 +699,9 @@ async function chooseResource(
   output: WriteStream,
 ): Promise<BoundaryResourceSelection | undefined> {
   if (!resources.length) throw new Error("The boundary review contains no inspected tables or views.");
-  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env), {
+    brand: true,
+  });
   let selected = 0;
   let selectedBoundary = 0;
   let showMap = false;
@@ -827,6 +949,13 @@ async function chooseResource(
           }];
         selectedBoundary = Math.min(selectedBoundary, boundaryEntries.length - 1);
         const highlightedBoundary = boundaryEntries[selectedBoundary]!;
+        const highlightedOutstanding = highlightedBoundary.selected
+          ? (reviewLeft === "Complete"
+            ? (highlightedBoundary.policy_review_required ? 1 : 0)
+            : highlightedBoundary.outstanding_decisions)
+          : highlightedBoundary.outstanding_decisions;
+        const highlightedActionAvailable = highlightedBoundary.active
+          || (highlightedBoundary.selected && highlightedOutstanding === 0);
         const selectedBoundaryHasPendingChange = highlightedBoundary.selected
           && (highlightedBoundary.policy_review_required
             || !highlightedBoundary.active
@@ -868,8 +997,11 @@ async function chooseResource(
               `${theme.key("A")} New boundary`,
               `${theme.key("P")} Privacy for all tables`,
               `${theme.key("L")} Limits`,
-              `${theme.key("W")} Workloads - compile representative reads`,
-              `${theme.key("Y")} Safe actions - proposal-only first [NEEDS ACTIVE READS]`,
+              `${theme.key("W")} Agent job - prepare reads + proposals`,
+              `${theme.key("Y")} ${safeActionAccessLabel(
+                highlightedBoundary.proposal_action_state,
+                reviewLeft === "Complete" && !highlightedBoundary.policy_review_required,
+              )}`,
               `${theme.key("T")} Ask plan check`,
               `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
               `${theme.key("M")} Map`,
@@ -922,7 +1054,10 @@ async function chooseResource(
           if (key.name === "l") return { action: "limits" };
           if (key.name === "w") return { action: "workloads" };
           if (key.name === "y") {
-            actionNotice = "Safe actions need an active reviewed read boundary. Press Enter/C to review and activate reads first.";
+            if (reviewLeft === "Complete" && !highlightedBoundary.policy_review_required) {
+              return { action: "actions", boundary_name: candidateBoundaryName };
+            }
+            actionNotice = "Finish the read review first. Proposal drafting can begin before read activation, but only from a fully reviewed exact revision.";
             continue;
           }
           if (key.name === "t") {
@@ -1017,9 +1152,11 @@ async function chooseResource(
             `${theme.key("A")} New boundary`,
             `${theme.key("P")} Privacy for all tables`,
             `${theme.key("L")} Limits`,
-            `${theme.key("W")} Workloads - compile representative reads`,
-            `${theme.key("Y")} Safe actions - proposal-only first ` +
-              `[${highlightedBoundary.active ? "AVAILABLE" : "NEEDS ACTIVE READS"}]`,
+            `${theme.key("W")} Agent job - prepare reads + proposals`,
+            `${theme.key("Y")} ${safeActionAccessLabel(
+              highlightedBoundary.proposal_action_state,
+              highlightedActionAvailable,
+            )}`,
             `${theme.key("T")} Ask plan check`,
             `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
             `${theme.key("M")} Map`,
@@ -1074,8 +1211,12 @@ async function chooseResource(
         if (key.name === "l") return { action: "limits" };
         if (key.name === "w") return { action: "workloads" };
         if (key.name === "y") {
-          if (highlightedBoundary.active) return { action: "actions" };
-          actionNotice = "Safe actions need an active reviewed read boundary. Activate this boundary first.";
+          if (highlightedActionAvailable) {
+            return { action: "actions", boundary_name: highlightedBoundary.name };
+          }
+          actionNotice = highlightedBoundary.selected
+            ? "Finish this exact read review first. Read activation is not required for proposal drafting."
+            : "Open this boundary first. Pending proposal drafts bind only to the selected fully reviewed read revision.";
           continue;
         }
         if (key.name === "t") {
@@ -1183,6 +1324,8 @@ async function chooseResource(
           && resources.filter((resource) => resource.active).length === includedCount;
       const candidateHasPendingChange = selectedBoundaryEntry?.active === true
         && selectedBoundaryEntry.matches_active_digest === false;
+      const candidateActionAvailable = selectedBoundaryEntry?.active === true
+        || (reviewLeft === "Complete" && selectedBoundaryEntry?.policy_review_required !== true);
       const candidateStatus = candidateIsActive
         ? theme.success("ACTIVE")
         : candidateHasPendingChange
@@ -1237,9 +1380,11 @@ async function chooseResource(
         `${theme.key("M")} Map`,
         `${theme.key("N")} Rename`,
         `${theme.key("L")} Limits`,
-        `${theme.key("W")} Workloads - compile representative reads`,
-        `${theme.key("Y")} Safe actions - proposal-only first ` +
-          `[${selectedBoundaryEntry?.active ? "AVAILABLE" : "NEEDS ACTIVE READS"}]`,
+        `${theme.key("W")} Agent job - prepare reads + proposals`,
+        `${theme.key("Y")} ${safeActionAccessLabel(
+          overview?.boundaries?.find((entry) => entry.selected)?.proposal_action_state,
+          candidateActionAvailable,
+        )}`,
         `${theme.key("T")} Ask plan check`,
         `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
         `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
@@ -1450,8 +1595,13 @@ async function chooseResource(
       if (key.name === "l") return { action: "limits" };
       if (key.name === "w") return { action: "workloads" };
       if (key.name === "y") {
-        if (selectedBoundaryEntry?.active) return { action: "actions" };
-        actionNotice = "Safe actions need an active reviewed read boundary. Press C to activate reads first.";
+        if (candidateActionAvailable) {
+          return {
+            action: "actions",
+            boundary_name: highlighted.candidate_boundary_name,
+          };
+        }
+        actionNotice = "Finish this exact read review first. Proposal drafting can begin before read activation.";
         continue;
       }
       if (key.name === "t") {
@@ -1548,7 +1698,9 @@ async function editRelationshipPaths(
   const reviewedMaximum = view.reviewed_budgets?.max_analysis_relationship_hops
     ?? view.reviewed_budgets?.max_relationship_hops
     ?? 2;
-  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env), {
+    brand: true,
+  });
   let selected = 0;
   let showIds = false;
   let actionNotice: string | undefined;
@@ -1797,7 +1949,9 @@ async function editFieldTiers(
     field.name,
     options?.initialTiers?.[field.name] ?? currentFieldTier(view, field.name),
   ])) as Record<string, BoundaryFieldTier>;
-  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env), {
+    brand: true,
+  });
   let selected = 0;
   let showMap = false;
   let showMapDetails = false;
@@ -1902,7 +2056,7 @@ async function editFieldTiers(
         `${theme.key("O")} User/owner scope - restrict rows per user [${principalScope}]`,
         `${theme.key("I")} Column vocabulary - edit its label and description [${metadataStatus}]`,
         `${theme.key("E")} Allowed values - narrow filtering/grouping to reviewed values [${enumStatus}]`,
-        `${theme.key("S")} Repair operations - restore inspected filter/sort/group/measure grants [${operationRepairStatus}]`,
+        `${theme.key("S")} Add operations - apply inspected filter/sort/group/measure suggestions [${operationRepairStatus}]`,
         `${theme.key("X")} Exact-value groups - group by each distinct value [${exactNumericGroupingStatus}]`,
       ];
       const terminalRows = typeof output.rows === "number" && Number.isFinite(output.rows)
@@ -1955,7 +2109,7 @@ async function editFieldTiers(
           `${theme.key("O")} User/owner rows [${principalScope === "not configured" ? "OFF" : "SET"}]`,
           `${theme.key("I")} Label/describe [${metadataStatus}]`,
           `${theme.key("E")} Allowed values [${enumStatus}]`,
-          `${theme.key("S")} Repair operations [${operationRepairStatus}]`,
+          `${theme.key("S")} Add operations [${operationRepairStatus}]`,
           `${theme.key("X")} Exact-value groups [${exactNumericGroupingStatus}]`,
           `${theme.key("B/Esc")} ${options?.focusedAccess ? "Back to tables" : "Back"}`,
           `${theme.key("Q")} Quit`,
@@ -1973,7 +2127,7 @@ async function editFieldTiers(
           : styleTierConsequence(theme, tiers[highlighted.name]!),
         ...(operationRepairAvailable
           ? [theme.warning(
-              "Operation repair available: this usable field has no analytical grants, but the current inspected draft has safe suggestions.",
+              "Optional operations available: this returned field has no analytical grants; the inspected draft has suggestions you may review.",
             )]
           : []),
         ...(actionNotice ? [theme.warning(actionNotice)] : []),
@@ -2142,7 +2296,9 @@ async function editFieldEnumValues(
     throw new Error(`${view.resource_id}.${fieldName} has no reviewed database-declared value list.`);
   }
   const selectedValues = new Set(currentReviewedEnumValues(view, field, schemaValues));
-  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env), {
+    brand: true,
+  });
   let selected = 0;
   return withRawKeys(input, output, async (nextKey, render) => {
     while (true) {
@@ -2474,7 +2630,7 @@ function operationRepairLines(
   if (!generated || !fields.length) return [];
   return [
     "",
-    theme.warning("OPERATION REPAIR AVAILABLE"),
+    theme.warning("OPTIONAL ANALYTICAL OPERATIONS"),
     ...fields.flatMap((field) => {
       const tier = tiers[field] ?? currentFieldTier(view, field);
       const flag = tier === "withheld_from_model" ? "--withhold-from-model" : "--allow-reviewed-field";
@@ -2487,13 +2643,13 @@ function operationRepairLines(
         "--apply",
         "--actor \"$USER\"",
         "--reason",
-        shellQuote(`Restore the current inspected analytical operations for ${view.resource_id}.${field}.`),
+        shellQuote(`Add the current inspected analytical operations for ${view.resource_id}.${field}.`),
       ].join(" ");
       return [
         `  ${safeTerminalText(field)} is usable but has no filter, sort, group, or measure grant.`,
         `    current suggestions: ${boundaryFieldOperations(generated, field)}`,
-        "    repair here: press S while this column is selected",
-        `    scripted repair: ${safeTerminalText(command)}`,
+        "    review and add here: press S while this column is selected",
+        `    scripted review: ${safeTerminalText(command)}`,
       ];
     }),
   ];
@@ -2709,7 +2865,7 @@ function boundaryMapFieldNotes(
   if (field.sensitivity.state === "high_confidence_sensitive") notes.push("sensitive");
   else if (field.sensitivity.state === "unresolved_free_text") notes.push("needs review");
   if (restoresSuggestions) notes.push("restores on save");
-  if ((view.operation_repair_fields ?? []).includes(field.name)) notes.push("repair available");
+  if ((view.operation_repair_fields ?? []).includes(field.name)) notes.push("operations available");
   return notes;
 }
 
@@ -2967,7 +3123,7 @@ function candidateResourceOverviewLines(
       `${resource.runner_output_only_fields} raw Runner-only | ${resource.kept_out_fields} kept out`,
     ...((resource.operation_repair_fields?.length ?? 0) > 0
       ? [theme.warning(
-          `    Operation repair available: ${resource.operation_repair_fields!.join(", ")}`,
+          `    Optional operations: ${resource.operation_repair_fields!.join(", ")}`,
         )]
       : []),
   ];
@@ -3419,7 +3575,7 @@ function boundaryOverviewTableRow(
   ];
   if ((resource.operation_repair_fields?.length ?? 0) > 0) {
     fields.push(
-      `Repair: restore operations for ${resource.operation_repair_fields!.join(", ")}`,
+      `Optional: add suggested operations for ${resource.operation_repair_fields!.join(", ")}`,
     );
   }
   const review: string[] = [];
@@ -3751,8 +3907,8 @@ function resourceState(
   if (resource.active && resource.included) {
     if (resource.operation_repair_fields?.length) {
       return {
-        text: "[active + reviewed; operation repair available]",
-        style: theme.warning,
+        text: "[active + reviewed; more operations optional]",
+        style: theme.success,
       };
     }
     return resource.risk_count
@@ -3765,8 +3921,8 @@ function resourceState(
   if (!resource.included) return { text: "[available]", style: theme.dim };
   if (resource.operation_repair_fields?.length) {
     return {
-      text: "[reviewed; operation repair available]",
-      style: theme.warning,
+      text: "[reviewed; more operations optional]",
+      style: theme.success,
     };
   }
   if (resource.risk_count) {
@@ -3883,25 +4039,31 @@ function formatBoundaryAccessNotice(
   ];
 }
 
-export function terminalTheme(color: boolean) {
+export function terminalTheme(
+  color: boolean,
+  options: { brand?: boolean } = {},
+) {
+  const brand = color && options.brand ? terminalBrandPalette() : undefined;
   const style = (codes: string) => (value: string) =>
     color ? `\u001b[${codes}m${value}\u001b[0m` : value;
+  const code = (role: keyof NonNullable<typeof brand>, fallback: string) =>
+    brand?.[role] ?? fallback;
   return {
-    title: style("1;36"),
-    bold: style("1"),
-    italic: style("3"),
-    dim: style("2"),
-    key: style("1;36"),
-    focus: style("1;96"),
-    success: style("1;32"),
-    warning: style("1;33"),
-    danger: style("1;31"),
-    scope: style("1;35"),
-    value: style("36"),
-    relationship: style("1;34"),
-    visible: style("1;32"),
-    runnerOnly: style("1;33"),
-    keptOut: style("2"),
+    title: style(code("title", "1;36")),
+    bold: style(code("bold", "1")),
+    italic: style(code("italic", "3")),
+    dim: style(code("dim", "2")),
+    key: style(code("key", "1;36")),
+    focus: style(code("focus", "1;96")),
+    success: style(code("success", "1;32")),
+    warning: style(code("warning", "1;33")),
+    danger: style(code("danger", "1;31")),
+    scope: style(code("scope", "1;35")),
+    value: style(code("value", "36")),
+    relationship: style(code("relationship", "1;34")),
+    visible: style(code("visible", "1;32")),
+    runnerOnly: style(code("runnerOnly", "1;33")),
+    keptOut: style(code("keptOut", "2")),
   };
 }
 
@@ -3935,10 +4097,20 @@ function terminalFrameRows(lines: string[], width: number): number {
 
 function formatTextPromptWithBack(prompt: string, theme: TerminalTheme): string {
   const normalized = prompt.trimEnd();
-  const label = normalized.endsWith(":")
-    ? normalized.slice(0, -1).trimEnd()
-    : normalized;
+  // Styled prompts can end in one or more SGR restore sequences after the
+  // visible colon. Remove that visible colon without dropping the restores.
+  const label = normalized.replace(
+    /:((?:\u001b\[[0-9;]*m)*)$/u,
+    "$1",
+  ).trimEnd();
   return `${label} ${theme.key("[Esc Back]")}: `;
+}
+
+function terminalPromptWithContext(prompt: string, context: string[] | undefined): string {
+  if (!context?.length) return prompt;
+  const lines = [...context];
+  while (lines.at(-1)?.trim() === "") lines.pop();
+  return [...lines, "", prompt].join("\n");
 }
 
 function isTrustedScopeField(view: BoundaryResourceReviewView, field: string): boolean {

@@ -5,11 +5,28 @@ import { describe, expect, it } from "vitest";
 import {
   createInPlaceTerminalRenderer,
   fitTerminalFrameToRows,
+  withAlternateTerminalScreen,
   withRawTerminalScreen,
   withTerminalProgress,
 } from "./terminal-prompt.js";
 
 describe("in-place terminal rendering", () => {
+  it("never paints a custom background on the alternate terminal screen", async () => {
+    const output = new PassThrough() as WriteStream & PassThrough;
+    Object.assign(output, { isTTY: true });
+    const chunks: string[] = [];
+    output.on("data", (chunk) => chunks.push(String(chunk)));
+
+    await withAlternateTerminalScreen(output, async () => {
+      output.write("Runner frame");
+    });
+
+    const rendered = chunks.join("");
+    expect(rendered).toContain("\u001b[?1049h");
+    expect(rendered).toContain("Runner frame");
+    expect(rendered).not.toMatch(/\u001b\[(?:4[0-9]|48;)/u);
+  });
+
   it("animates long terminal work and always restores the cursor", async () => {
     const output = new PassThrough() as WriteStream & PassThrough;
     Object.assign(output, { isTTY: true });

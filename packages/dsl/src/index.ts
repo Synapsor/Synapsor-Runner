@@ -3,6 +3,7 @@ import {
   normalizeContract,
   type AgentContextSpec,
   type ArgumentSpec,
+  type ApprovalPolicyRuleSpec,
   type CapabilitySpec,
   type PolicySpec,
   type ProtectedReadAggregateSpec,
@@ -84,6 +85,7 @@ export type AgentDslCapabilityAst = {
   };
   proposal?: {
     action: string;
+    organizationScope?: ProtectedReadSpec["organization_scope"];
     allowedFields: string[];
     patch: Record<string, { fixed?: string | number | boolean | null; from_arg?: string; from_item?: string }>;
     numericBounds?: Record<string, { minimum?: number; maximum?: number }>;
@@ -92,7 +94,7 @@ export type AgentDslCapabilityAst = {
     approvalRole?: string;
     requiredApprovals?: number;
     supervisedWorkerApply?: boolean;
-    autoApprovalRules?: Array<{ field: string; max: number; line: number }>;
+    autoApprovalRules?: Array<ApprovalPolicyRuleSpec & { line: number }>;
     autoApprovalLimits?: Array<{
       kind: "count" | "total";
       max: number;
@@ -237,7 +239,7 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
           name: autoApprovalPolicyName,
           kind: "approval",
           mode: "green",
-          rules: capability.proposal.autoApprovalRules?.map((rule) => ({ field: rule.field, max: rule.max })),
+          rules: capability.proposal.autoApprovalRules?.map(({ line: _line, ...rule }) => rule),
           ...(capability.proposal.autoApprovalLimits?.length ? {
             limits: capability.proposal.autoApprovalLimits.map(({ line: _line, ...limit }) => limit),
           } : {}),
@@ -250,6 +252,9 @@ export function compileAgentDslWithWarnings(source: string): AgentDslCompileResu
           : undefined;
       spec.proposal = {
         action: capability.proposal.action,
+        ...(capability.proposal.organizationScope
+          ? { organization_scope: capability.proposal.organizationScope }
+          : {}),
         ...(capability.proposal.operation ? { operation: capability.proposal.operation } : {}),
         allowed_fields: capability.proposal.allowedFields,
         patch: capability.proposal.patch,
@@ -611,6 +616,23 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
         throw dslError(item.line, 1, "INVALID_PROTECTED_ORGANIZATION_ID", "protected organization id must contain 1-128 letters, numbers, dots, colons, underscores, or dashes");
       }
       reviewed.organizationScope = {
+        mode: "single_organization",
+        organization_id: organizationId,
+        acknowledgement: "all_rows_belong_to_one_organization",
+      };
+      continue;
+    }
+    const actionOrganization = item.text.match(/^ACTION\s+SINGLE\s+ORGANIZATION\s+('(?:''|[^'])*')\s+ACKNOWLEDGED$/i);
+    if (actionOrganization?.[1]) {
+      ensureProposal(capability, item);
+      if (capability.proposal.organizationScope) {
+        throw dslError(item.line, 1, "ACTION_ORGANIZATION_DUPLICATE", "a proposal permits one reviewed organization assertion");
+      }
+      const organizationId = parseProtectedLiteral(actionOrganization[1], item.line, 1);
+      if (typeof organizationId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(organizationId)) {
+        throw dslError(item.line, 1, "INVALID_ACTION_ORGANIZATION_ID", "action organization id must contain 1-128 letters, numbers, dots, colons, underscores, or dashes");
+      }
+      capability.proposal.organizationScope = {
         mode: "single_organization",
         organization_id: organizationId,
         acknowledgement: "all_rows_belong_to_one_organization",
@@ -1037,11 +1059,17 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
   }
   if (!capability.context) throw dslError(block.line, 1, "CAPABILITY_CONTEXT_REQUIRED", `${block.name} requires USING CONTEXT`);
   if (!capability.schema || !capability.table) throw dslError(block.line, 1, "CAPABILITY_SUBJECT_REQUIRED", `${block.name} requires ON schema.table`);
-  if (!capability.tenantKey && !capability.protectedRead?.organizationScope) {
-    throw dslError(block.line, 1, "CAPABILITY_TENANT_REQUIRED", `${block.name} requires TENANT KEY or a protected single-organization assertion`);
+  const organizationScope = capability.protectedRead?.organizationScope ?? capability.proposal?.organizationScope;
+  if (!capability.tenantKey && !organizationScope) {
+    throw dslError(block.line, 1, "CAPABILITY_TENANT_REQUIRED", `${block.name} requires TENANT KEY or a reviewed single-organization assertion`);
   }
-  if (capability.tenantKey && capability.protectedRead?.organizationScope) {
-    throw dslError(block.line, 1, "PROTECTED_SCOPE_MODES_CONFLICT", `${block.name} cannot combine TENANT KEY with PROTECTED SINGLE ORGANIZATION`);
+  if (capability.tenantKey && organizationScope) {
+    throw dslError(
+      block.line,
+      1,
+      capability.protectedRead ? "PROTECTED_SCOPE_MODES_CONFLICT" : "PROPOSAL_SCOPE_MODES_CONFLICT",
+      `${block.name} cannot combine TENANT KEY with reviewed single-organization authority`,
+    );
   }
   if (capability.lookup && capability.lookup.column !== capability.primaryKey) {
     throw dslError(
@@ -1080,6 +1108,14 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
   if (capability.kind === "proposal") {
     if (!capability.proposal) throw dslError(block.line, 1, "PROPOSAL_ACTION_REQUIRED", `${block.name} requires PROPOSE ACTION`);
     const operation = capability.proposal.operation?.kind ?? "update";
+    if (operation === "insert" && capability.proposal.organizationScope) {
+      throw dslError(
+        block.line,
+        1,
+        "PROPOSAL_ORGANIZATION_INSERT_UNSUPPORTED",
+        `${block.name} single-organization authority currently supports UPDATE and DELETE proposals; INSERT still requires source-enforced tenant deduplication`,
+      );
+    }
     if (operation === "update" && !capability.conflictKey && !capability.weakConflictGuardAcknowledged) {
       throw dslError(
         block.line,
@@ -1202,34 +1238,98 @@ function parseAutoApprovalClause(capability: AgentDslCapabilityAst & { proposal:
     throw dslError(line, 1, "AUTO_APPROVE_APPROVAL_ROLE_REQUIRED", "AUTO APPROVE WHEN requires an explicit APPROVAL ROLE before it");
   }
   const condition = rawCondition.trim();
-  const match = condition.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(<=)\s*(.+)$/);
-  if (!match?.[1] || !match[3]) {
-    throw dslError(line, 1, "AUTO_APPROVE_UNSUPPORTED", "AUTO APPROVE WHEN supports only: <field> <= <integer>");
+  const lengthMatch = condition.match(/^(?:(CURRENT)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+LENGTH\s*<=\s*(\d+)$/i);
+  const match = condition.match(/^(?:(CURRENT)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(<=|>=|=|IN)\s*(.+)$/i);
+  if ((!match?.[2] || !match[3] || !match[4]) && (!lengthMatch?.[2] || !lengthMatch[3])) {
+    throw dslError(
+      line,
+      1,
+      "AUTO_APPROVE_UNSUPPORTED",
+      "AUTO APPROVE WHEN supports <field> <=|>=|= <literal>, <field> IN (<literals>), <field> LENGTH <= <integer>, and CURRENT <field> conditions",
+    );
   }
-  const field = match[1];
-  const rawMax = match[3].trim();
-  if (!/^\d+$/.test(rawMax)) {
-    throw dslError(line, 1, "AUTO_APPROVE_MAX_INVALID", "AUTO APPROVE WHEN max must be a non-negative integer");
+  const source = (lengthMatch?.[1] ?? match?.[1]) ? "before" as const : "patch" as const;
+  const field = (lengthMatch?.[2] ?? match?.[2])!;
+  const operator = lengthMatch ? "MAX_LENGTH" : match![3]!.toUpperCase();
+  const rawValue = (lengthMatch?.[3] ?? match?.[4])!.trim();
+  if (source === "patch" && !Object.prototype.hasOwnProperty.call(capability.proposal.patch, field)) {
+    throw dslError(line, 1, "AUTO_APPROVE_FIELD_NOT_PATCHED", `AUTO APPROVE WHEN patch field ${field} must be in the PATCH list`);
   }
-  const max = Number(rawMax);
-  if (!Number.isSafeInteger(max)) {
-    throw dslError(line, 1, "AUTO_APPROVE_MAX_INVALID", "AUTO APPROVE WHEN max must be a safe non-negative integer");
+  if (source === "before"
+    && !capability.visibleFields.includes(field)
+    && capability.conflictKey !== field
+    && !Object.prototype.hasOwnProperty.call(capability.proposal.transitionGuards ?? {}, field)) {
+    throw dslError(line, 1, "AUTO_APPROVE_BEFORE_FIELD_NOT_CAPTURED", `CURRENT ${field} must be in the reviewed pre-change snapshot`);
   }
-  if (!Object.prototype.hasOwnProperty.call(capability.proposal.patch, field)) {
-    throw dslError(line, 1, "AUTO_APPROVE_FIELD_NOT_PATCHED", `AUTO APPROVE WHEN field ${field} must be in the PATCH list`);
+  let rule: ApprovalPolicyRuleSpec;
+  if (operator === "MAX_LENGTH") {
+    if (source !== "patch") throw dslError(line, 1, "AUTO_APPROVE_LENGTH_SOURCE_INVALID", "LENGTH conditions apply to model-supplied patch values only");
+    const value = Number(rawValue);
+    const patch = capability.proposal.patch[field];
+    const argument = patch?.from_arg ? capability.args[patch.from_arg] : undefined;
+    if (!Number.isSafeInteger(value) || value < 1 || !argument || argument.type !== "string") {
+      throw dslError(line, 1, "AUTO_APPROVE_LENGTH_INVALID", `${field} LENGTH requires a positive integer and reviewed string argument`);
+    }
+    if (argument.max_length !== undefined && value > argument.max_length) {
+      throw dslError(line, 1, "AUTO_APPROVE_LENGTH_EXCEEDS_BOUND", `${field} LENGTH must be <= ARG MAX LENGTH ${argument.max_length}`);
+    }
+    rule = { source, field, operator: "max_length", value };
+  } else if (operator === "IN") {
+    const list = rawValue.match(/^\((.*)\)$/s);
+    if (!list) throw dslError(line, 1, "AUTO_APPROVE_IN_LIST_REQUIRED", "AUTO APPROVE WHEN ... IN requires a parenthesized literal list");
+    const values = splitEnumValues(list[1] ?? "", line, field).map((value) => parseLiteral(value, line, 1));
+    if (values.length < 1 || values.length > 64) throw dslError(line, 1, "AUTO_APPROVE_IN_COUNT", "AUTO APPROVE IN requires 1 through 64 reviewed values");
+    rule = { source, field, operator: "in", values };
+  } else {
+    const value = parseLiteral(rawValue, line, 1);
+    if ((operator === "<=" || operator === ">=") && typeof value !== "number") {
+      throw dslError(line, 1, "AUTO_APPROVE_NUMERIC_VALUE_REQUIRED", `${operator} auto-approval conditions require a numeric literal`);
+    }
+    if ((operator === "<=" || operator === ">=") && !isNumericDslProposalField(capability, field)) {
+      throw dslError(line, 1, "AUTO_APPROVE_FIELD_NOT_NUMERIC", `AUTO APPROVE WHEN field ${field} must be numeric by BOUND, NUMBER arg patch, or numeric literal patch`);
+    }
+    const typedOperator = operator === "<=" ? "lte" : operator === ">=" ? "gte" : "eq";
+    // Preserve the established canonical contract shape for its original
+    // non-negative integer ceiling syntax.
+    rule = source === "patch" && typedOperator === "lte" && typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+      ? { field, max: value }
+      : { source, field, operator: typedOperator, value };
   }
-  if (!isNumericDslProposalField(capability, field)) {
-    throw dslError(line, 1, "AUTO_APPROVE_FIELD_NOT_NUMERIC", `AUTO APPROVE WHEN field ${field} must be numeric by BOUND, NUMBER arg patch, or integer literal patch`);
+  const bound = capability.proposal.numericBounds?.[field];
+  const comparisonValue = rule.max ?? rule.value;
+  if ((rule.max !== undefined || rule.operator === "lte")
+    && typeof comparisonValue === "number"
+    && bound?.maximum !== undefined
+    && comparisonValue > bound.maximum) {
+    throw dslError(line, 1, "AUTO_APPROVE_MAX_EXCEEDS_BOUND", `AUTO APPROVE WHEN maximum for ${field} must be <= BOUND maximum ${bound.maximum}`);
   }
-  const boundMax = capability.proposal.numericBounds?.[field]?.maximum;
-  if (boundMax !== undefined && max > boundMax) {
-    throw dslError(line, 1, "AUTO_APPROVE_MAX_EXCEEDS_BOUND", `AUTO APPROVE WHEN max for ${field} must be <= BOUND maximum ${boundMax}`);
+  if ((rule.max !== undefined || rule.operator === "lte")
+    && typeof comparisonValue === "number"
+    && bound?.minimum !== undefined
+    && comparisonValue < bound.minimum) {
+    throw dslError(line, 1, "AUTO_APPROVE_MAX_BELOW_BOUND", `AUTO APPROVE WHEN maximum for ${field} must be >= BOUND minimum ${bound.minimum}`);
+  }
+  if (rule.operator === "gte"
+    && typeof comparisonValue === "number"
+    && bound?.minimum !== undefined
+    && comparisonValue < bound.minimum) {
+    throw dslError(line, 1, "AUTO_APPROVE_MIN_BELOW_BOUND", `AUTO APPROVE WHEN minimum for ${field} must be >= BOUND minimum ${bound.minimum}`);
+  }
+  if (rule.operator === "gte"
+    && typeof comparisonValue === "number"
+    && bound?.maximum !== undefined
+    && comparisonValue > bound.maximum) {
+    throw dslError(line, 1, "AUTO_APPROVE_MIN_ABOVE_BOUND", `AUTO APPROVE WHEN minimum for ${field} must be <= BOUND maximum ${bound.maximum}`);
   }
   capability.proposal.autoApprovalRules ??= [];
-  if (capability.proposal.autoApprovalRules.some((rule) => rule.field === field)) {
-    throw dslError(line, 1, "AUTO_APPROVE_DUPLICATE_FIELD", `AUTO APPROVE WHEN already defines a rule for ${field}`);
+  const ruleOperator = rule.max !== undefined ? "lte" : rule.operator;
+  if (capability.proposal.autoApprovalRules.some((candidate) =>
+    (candidate.source ?? "patch") === source
+      && candidate.field === field
+      && (candidate.max !== undefined ? "lte" : candidate.operator) === ruleOperator)) {
+    throw dslError(line, 1, "AUTO_APPROVE_DUPLICATE_CONDITION", `AUTO APPROVE WHEN already defines ${source}.${field} ${ruleOperator}`);
   }
-  capability.proposal.autoApprovalRules.push({ field, max, line });
+  capability.proposal.autoApprovalRules.push({ ...rule, line });
 }
 
 function parseAutoApprovalLimitClause(
@@ -1243,7 +1343,7 @@ function parseAutoApprovalLimitClause(
   }
   const value = rawLimit.trim();
   const count = value.match(/^(\d+)\s+PER\s+(?:(OBJECT)\s+)?DAY$/i);
-  const total = value.match(/^TOTAL\s+(\d+)\s+PER\s+(?:(OBJECT)\s+)?DAY$/i);
+  const total = value.match(/^TOTAL\s+(\d+)(?:\s+OF\s+([A-Za-z_][A-Za-z0-9_]*))?\s+PER\s+(?:(OBJECT)\s+)?DAY$/i);
   if (!count && !total) {
     throw dslError(line, 1, "AUTO_APPROVAL_LIMIT_UNSUPPORTED", "LIMIT supports: LIMIT <count> PER DAY or LIMIT TOTAL <amount> PER DAY");
   }
@@ -1254,15 +1354,19 @@ function parseAutoApprovalLimitClause(
   }
   let field: string | undefined;
   if (total) {
-    const fields = [...new Set(rules.map((rule) => rule.field))];
-    if (fields.length !== 1) {
+    const explicitField = total[2];
+    const fields = explicitField ? [explicitField] : [...new Set(rules
+      .filter((rule) => (rule.source ?? "patch") === "patch" && (rule.max !== undefined || rule.operator === "lte" || rule.operator === "gte"))
+      .map((rule) => rule.field))];
+    if (fields.length !== 1 || !rules.some((rule) => (rule.source ?? "patch") === "patch" && rule.field === fields[0])) {
       throw dslError(line, 1, "AUTO_APPROVAL_TOTAL_FIELD_AMBIGUOUS", "LIMIT TOTAL requires exactly one AUTO APPROVE WHEN numeric field");
     }
     field = fields[0];
   }
   const kind = total ? "total" : "count";
   capability.proposal.autoApprovalLimits ??= [];
-  if (capability.proposal.autoApprovalLimits.some((limit) => limit.kind === kind && limit.scope === ((count?.[2] ?? total?.[2]) ? "tenant_policy_object" : "tenant_policy"))) {
+  const objectScope = count?.[2] ?? total?.[3];
+  if (capability.proposal.autoApprovalLimits.some((limit) => limit.kind === kind && limit.scope === (objectScope ? "tenant_policy_object" : "tenant_policy"))) {
     throw dslError(line, 1, "AUTO_APPROVAL_LIMIT_DUPLICATE", `duplicate ${kind} auto-approval limit for the same scope`);
   }
   capability.proposal.autoApprovalLimits.push({
@@ -1270,7 +1374,7 @@ function parseAutoApprovalLimitClause(
     max,
     period: "day",
     ...(field ? { field } : {}),
-    scope: (count?.[2] ?? total?.[2]) ? "tenant_policy_object" : "tenant_policy",
+    scope: objectScope ? "tenant_policy_object" : "tenant_policy",
     line,
   });
 }

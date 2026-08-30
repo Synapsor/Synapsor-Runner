@@ -29,7 +29,8 @@ npm install --global @synapsor/runner
 ```
 
 Paste the URL into the hidden prompt or export `DATABASE_URL`. Runner inspects
-metadata, proposes conservative access, and grants nothing before activation.
+metadata, asks what job the agent should perform, and grants nothing before
+activation.
 
 With `DATABASE_URL`, use the CLI:
 
@@ -37,18 +38,20 @@ With `DATABASE_URL`, use the CLI:
 synapsor-runner start --cli --from-env DATABASE_URL
 ```
 
-Review the starting boundary, then press Enter to activate. Use `M` to choose a
-model and `E` to edit access. Runner asks before reviewed data leaves the
-machine; edits remain disabled until confirmation.
+Model-assisted drafting is recommended with OpenAI, Anthropic, or a local
+tool-capable model. After explicit egress consent, Runner sends only structural
+metadata. No-model cards and manual review remain available. All drafts start
+disabled; only the operator activates them.
 
 See [Database To First Safe Tool](docs/guided-onboarding.md).
 
 ### Compile From Representative Jobs
 
-Press `W Workloads` to combine exact representative Explore plans into a
-minimized, disabled draft. Model mapping requires consent; Runner validates
-and grants nothing. After activation,
-`Y Safe actions` opens proposal-first write setup. See
+The first-run job flow turns one business intent into a minimized disabled
+**Read Boundary** and, for writes, a proposal-only **Action Boundary**. `W Agent
+job` reopens it. The Action Boundary inherits trusted scope, independently
+reviews mutable fields without widening read output, rehearses without writes,
+and activates separately. See
 [Boundary Assist](docs/read-workload-boundary-assist.md).
 
 ## Prove The Boundary Without A Database
@@ -60,9 +63,8 @@ client, model, or global install:
 npx -y @synapsor/runner try --prove --no-open
 ```
 
-Type `APPROVE` or `REJECT` at the trusted terminal prompt. Runner uses a
-deterministic simulated agent; output includes this abridged,
-verbatim sequence:
+Type `APPROVE` or `REJECT` at the trusted terminal prompt. A deterministic
+simulated agent produces this abridged sequence:
 
 ```text
 Actor:
@@ -86,17 +88,16 @@ Extended proof:
   stale apply refused: yes
 ```
 
-The simulated agent proposes from reviewed evidence; Runner waits for an
-outside-model decision, rechecks the effect, and records a receipt.
-Temporary state stays under `./.synapsor/try/`.
+Runner waits for an outside-model decision, rechecks the proposed effect, and
+records a receipt. Temporary state stays under `./.synapsor/try/`.
 `demo --quick` remains a noninteractive compatibility alias.
 
 ## What Runner Controls
 
 Synapsor Runner is an open-source database-authority layer for Postgres/MySQL.
-Keep RLS, views, and database permissions underneath it. You review what agents
-may ask, combine, reveal, and propose; scope, limits, activation, approval, and
-commit stay outside model-facing tools.
+Keep RLS, views, and database permissions. You review what agents may ask,
+reveal, and propose; scope, activation, approval, and commit stay outside model
+tools.
 
 ```text
 Raw database MCP   Agent -> execute_sql --------------------------> Database
@@ -116,9 +117,9 @@ or start with [safe Postgres MCP](docs/safe-postgres-mcp.md),
 
 ## Ask A Useful Question
 
-After review, use terminal Ask, preview Workbench, or an MCP client. All share
-one validation and execution path. Supply an OpenAI or Anthropic key, or use a
-loopback model. Keys and history stay in memory; loopback traffic stays local.
+After review, use terminal Ask, preview Workbench, or MCP. They share one
+execution path. Supply an OpenAI/Anthropic key or loopback model. Keys and
+history stay in memory; loopback traffic stays local.
 
 ```bash
 synapsor-runner try ask --provider openai --model gpt-5.6-luna
@@ -225,8 +226,9 @@ Or directly:
 synapsor-runner action review --project-root .
 ```
 
-Runner ranks schema-proven candidates. Humans review bounds, scope, approval,
-and execution. Proposal-only `WRITEBACK NONE` is the default; suggestions grant
+Runner ranks schema-proven candidates. The reviewed Action Boundary freezes
+exact actions, Read Boundary scope, policies, execution profiles, and shared
+limits. Proposal-only `WRITEBACK NONE` is the default; suggestions grant
 nothing. The TUI handles rehearsal, activation, and the inbox.
 
 Code-first remains:
@@ -248,8 +250,7 @@ Database  unchanged until an outside-model decision
 ```
 
 Auto-approval does not mean auto-apply: the exact contract digest and deployment both opt into supervised execution.
-External notifications are disabled and quiet by default.
-A webhook response cannot approve or apply.
+External notifications are disabled and quiet by default. A webhook response cannot approve or apply.
 
 Immediately before a Runner-managed commit, live scope, evidence freshness,
 version, bounds, limits, and idempotency are rechecked. Drift causes no
@@ -276,11 +277,10 @@ model-facing write execution. See [MCP Audit](docs/mcp-audit.md).
 
 ### Keep Your Existing Service Layer
 
-If your application already exposes narrow authenticated business operations,
-keep them. Runner can add the agent-specific review, proposal, policy,
-approval, evidence, receipt, and replay lifecycle around those operations.
-Multi-step transactions and external effects remain in an application-owned
-executor. See [Application Guardrails](docs/why-synapsor-vs-app-guardrails.md).
+Keep existing narrow authenticated business operations. Runner adds agent
+review, proposals, policy, approval, evidence, receipts, and replay. Multi-step
+transactions and external effects remain in an application-owned executor. See
+[Application Guardrails](docs/why-synapsor-vs-app-guardrails.md).
 
 ## Why Not Raw Text-To-SQL?
 

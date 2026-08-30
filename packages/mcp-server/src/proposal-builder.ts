@@ -127,7 +127,7 @@ export function buildChangeSet(input: {
       patch,
       after,
       guards: {
-        tenant: { column: input.capability.target.tenant_key ?? "__single_tenant_dev", value: input.capability.target.tenant_key ? input.context.tenant_id : "single_tenant_dev" },
+        tenant: proposalTenantGuard(input.capability, input.context),
         ...(principalScope ? { principal_scope: principalScope } : {}),
         allowed_columns: input.capability.allowed_columns ?? Object.keys(patch),
         ...(guard ? { expected_version: guard } : {}),
@@ -196,7 +196,7 @@ export function buildChangeSet(input: {
     patch,
     after,
     guards: {
-      tenant: { column: input.capability.target.tenant_key ?? "__single_tenant_dev", value: input.capability.target.tenant_key ? input.context.tenant_id : "single_tenant_dev" },
+      tenant: proposalTenantGuard(input.capability, input.context),
       ...(principalScope ? { principal_scope: principalScope } : {}),
       allowed_columns: input.capability.allowed_columns ?? Object.keys(patch),
       expected_version: guard!,
@@ -352,7 +352,7 @@ export function buildBoundedSetChangeSet(input: {
     patch: kind === "set_update" ? input.patch : {},
     after: { row_count: kind === "set_delete" ? 0 : members.length },
     guards: {
-      tenant: { column: input.capability.target.tenant_key ?? "__single_tenant_dev", value: input.capability.target.tenant_key ? input.context.tenant_id : "single_tenant_dev" },
+      tenant: proposalTenantGuard(input.capability, input.context),
       ...(principalScope ? { principal_scope: principalScope } : {}),
       allowed_columns: kind === "set_delete" ? [] : input.capability.allowed_columns ?? Object.keys(input.patch),
       ...(kind === "set_update" && operation.version_advance ? { version_advance: operation.version_advance } : {}),
@@ -559,6 +559,25 @@ export function resolveDeduplication(
     throw new McpRuntimeError("INSERT_PROPOSAL_ID_DEDUP_REQUIRED", `INSERT capability ${capability.name} must include a proposal_id deduplication component.`);
   }
   return { components };
+}
+
+export function proposalTenantGuard(
+  capability: RuntimeCapabilityConfig,
+  context: TrustedContext,
+): ChangeSetV2["guards"]["tenant"] {
+  if (capability.target.tenant_key) {
+    return { column: capability.target.tenant_key, value: context.tenant_id };
+  }
+  if (capability.organization_scope) {
+    if (capability.organization_scope.organization_id !== context.tenant_id) {
+      throw new McpRuntimeError(
+        "TRUSTED_ORGANIZATION_MISMATCH",
+        `Capability ${capability.name} is fixed to a different reviewed organization.`,
+      );
+    }
+    return { column: "__reviewed_organization", value: context.tenant_id };
+  }
+  return { column: "__single_tenant_dev", value: "single_tenant_dev" };
 }
 
 export function enforcePatchGuards(

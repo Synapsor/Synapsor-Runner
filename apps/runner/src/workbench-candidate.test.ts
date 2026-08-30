@@ -295,6 +295,48 @@ describe("recommended Workbench starter pack", () => {
       });
   });
 
+  it("keeps instant onboarding conservative when a reviewed draft contains a depth-three resource", () => {
+    const assets = resource("assets", { principal: true });
+    const findings = resource("inspection_findings", { groups: [] });
+    const inspections = resource("inspections", { groups: [] });
+    const remediation = resource("remediation_events", { groups: [] });
+    const links = [
+      scopeLink("remediation_events", "inspection_findings"),
+      scopeLink("inspection_findings", "inspections"),
+      scopeLink("inspections", "assets"),
+    ];
+    delete remediation.tenant_key;
+    delete remediation.principal_key;
+    remediation.tenant_scope = derivedScopeFromLinks(links, "tenant_id");
+    remediation.principal_scope = derivedScopeFromLinks(links, "assigned_staff_id");
+    remediation.relationships = [{
+      id: links.map((link) => link.constraint_name).join("__"),
+      target_resource: "public.assets",
+      local_columns: links[0]!.source_columns,
+      target_columns: links.at(-1)!.target_columns,
+      counted_entity: "remediation_event",
+      cardinality: "many_to_one",
+      max_fan_out: 1,
+      path_depth: 3,
+      proof: {
+        source: "database_catalog",
+        links,
+        digest: canonicalJsonDigest(links),
+      },
+    }];
+    const draft = boundary([remediation, findings, inspections, assets]);
+    draft.budgets.max_derived_scope_hops = 3;
+    draft.budgets.max_analysis_relationship_hops = 3;
+
+    const candidate = instantWorkbenchCandidate(draft);
+
+    expect(candidate.budgets.max_derived_scope_hops).toBe(2);
+    expect(candidate.budgets.max_analysis_relationship_hops).toBe(2);
+    expect(candidate.pack.resources.map((item) => item.id))
+      .not.toContain("public.remediation_events");
+    expect(candidate.pack.resources.length).toBeGreaterThan(0);
+  });
+
   it("does not duplicate monetary words in a generated starter question", () => {
     const candidate = instantWorkbenchCandidate(boundary([
       resource("payments", { measures: ["amount_cents"] }),
@@ -461,25 +503,36 @@ function depthTwoRelationship(
 }
 
 function derivedScope(ancestorColumn: string) {
-  const links = [{
-    constraint_name: "event_items_event_id_fkey",
-    source_resource: "public.event_items",
-    target_resource: "public.events",
-    source_columns: ["event_id"],
+  const links = [scopeLink("event_items", "events")];
+  return derivedScopeFromLinks(links, ancestorColumn);
+}
+
+function scopeLink(source: string, target: string) {
+  return {
+    constraint_name: `${source}_${target}_fkey`,
+    source_resource: `public.${source}`,
+    target_resource: `public.${target}`,
+    source_columns: [`${target.replace(/s$/, "")}_id`],
     target_columns: ["id"],
     target_uniqueness: {
       kind: "primary_key" as const,
-      name: "events_pkey",
+      name: `${target}_pkey`,
       columns: ["id"],
     },
     nullable: false,
     cardinality: "many_to_one" as const,
     max_fan_out: 1 as const,
-  }];
+  };
+}
+
+function derivedScopeFromLinks(
+  links: ReturnType<typeof scopeLink>[],
+  ancestorColumn: string,
+) {
   return {
     mode: "derived" as const,
-    path_id: "event_items_event_id_fkey",
-    ancestor_resource: "public.events",
+    path_id: links.map((link) => link.constraint_name).join("__"),
+    ancestor_resource: links.at(-1)!.target_resource,
     ancestor_column: ancestorColumn,
     proof: {
       source: "database_catalog" as const,

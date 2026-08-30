@@ -116,6 +116,151 @@ describe("model-assisted Read workload mapping", () => {
     expect(requestJson).not.toHaveBeenCalled();
   });
 
+  it("gives a local model one bounded correction when it returns prose instead of the required tool", async () => {
+    let attempt = 0;
+    const requests: string[] = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(JSON.stringify(request.body));
+      attempt += 1;
+      if (attempt === 1) {
+        return {
+          status: 200,
+          body: {
+            choices: [{ message: { role: "assistant", content: "Here is a prose summary instead." } }],
+          },
+        };
+      }
+      return {
+        status: 200,
+        body: {
+          choices: [{
+            message: {
+              role: "assistant",
+              content: "",
+              tool_calls: [{
+                id: "call_local_read_workload",
+                type: "function",
+                function: {
+                  name: "runner__submit_read_workloads",
+                  arguments: JSON.stringify({
+                    allowed: [{
+                      id: "orders_by_status",
+                      description: "Average order amount by status",
+                      plan: {
+                        kind: "aggregate",
+                        resource: "public.orders",
+                        measures: [{ function: "avg", field: "amount" }],
+                        dimensions: [{ field: "status" }],
+                      },
+                    }],
+                    forbidden: [],
+                  }),
+                },
+              }],
+            },
+          }],
+        },
+      };
+    });
+
+    const result = await generateModelReadWorkload({
+      name: "support_reads",
+      allowedQuestions: ["What is average order amount by status?"],
+      provider: "openai_compatible",
+      model: "qwen-local",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      generatedBoundary: generatedBoundary(),
+      egressAcknowledged: true,
+      dependencies: { requestJson },
+    });
+
+    expect(result.analysis.status).toBe("ready");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(requests[1]).toContain("previous response was discarded");
+    expect(requests[1]).toContain("Call runner.submit_read_workloads exactly once now");
+  });
+
+  it.each(["openai", "anthropic"] as const)(
+    "gives %s one bounded correction after deterministic workload validation refuses the first plan",
+    async (provider) => {
+      let attempt = 0;
+      const requests: string[] = [];
+      const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+        requests.push(JSON.stringify(request.body));
+        attempt += 1;
+        const input = {
+          allowed: [{
+            id: "orders_by_status",
+            description: "Average order amount by status",
+            plan: attempt === 1
+              ? {
+                  kind: "aggregate",
+                  resource: "public.orders",
+                  measures: [{ function: "avg" }],
+                  dimensions: [{ field: "status" }],
+                }
+              : {
+                  kind: "aggregate",
+                  resource: "public.orders",
+                  measures: [{ function: "avg", field: "amount" }],
+                  dimensions: [{ field: "status" }],
+                },
+          }],
+          forbidden: [],
+        };
+        return provider === "openai"
+          ? {
+              status: 200,
+              body: {
+                output: [{
+                  type: "function_call",
+                  call_id: `call_read_workload_${attempt}`,
+                  name: "runner__submit_read_workloads",
+                  arguments: JSON.stringify(input),
+                }],
+              },
+            }
+          : {
+              status: 200,
+              body: {
+                content: [{
+                  type: "tool_use",
+                  id: `toolu_read_workload_${attempt}`,
+                  name: "runner__submit_read_workloads",
+                  input,
+                }],
+              },
+            };
+      });
+
+      const result = await generateModelReadWorkload({
+        name: "support_reads",
+        allowedQuestions: ["What is average order amount by status?"],
+        provider,
+        model: provider === "openai" ? "gpt-5.6-luna" : "claude-test",
+        generatedBoundary: generatedBoundary(),
+        env: { TEST_PROVIDER_KEY: "provider-test-key" },
+        apiKeyEnv: "TEST_PROVIDER_KEY",
+        egressAcknowledged: true,
+        dependencies: { requestJson },
+      });
+
+      expect(requestJson).toHaveBeenCalledTimes(2);
+      expect(result.analysis.status).toBe("ready");
+      expect(result.workload.allowed[0]?.plan).toMatchObject({ kind: "aggregate" });
+      expect(requests[1]).toContain("Your first non-authoritative workload was refused");
+      expect(requests[0]).toContain('"enum":["rows"]');
+      expect(requests[0]).toContain('"required":["function","field"]');
+      expect(requests[1]).toContain("(missing) is not reviewed for avg");
+      expect(result).toMatchObject({
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      });
+    },
+  );
+
   it("keeps an invalid model mapping blocked and non-authoritative", async () => {
     const requestJson = vi.fn(async () => ({
       status: 200,
@@ -149,6 +294,7 @@ describe("model-assisted Read workload mapping", () => {
 
     expect(result.analysis.status).toBe("blocked");
     expect(result.analysis.candidate).toBeUndefined();
+    expect(requestJson).toHaveBeenCalledTimes(2);
     expect(result).toMatchObject({
       authority_granted: false,
       source_query_executed: false,

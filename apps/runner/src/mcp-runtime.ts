@@ -1047,17 +1047,17 @@ async function proposalInput(args: string[], capability: RuntimeCapabilityConfig
 }
 
 
-function sampleInputForCapability(capability: RuntimeCapabilityConfig): Record<string, unknown> {
+export function sampleInputForCapability(capability: RuntimeCapabilityConfig): Record<string, unknown> {
   const input: Record<string, unknown> = {};
   for (const [name, spec] of Object.entries(capability.args)) {
     if (spec.type === "object_array") {
       input[name] = [Object.fromEntries(Object.entries(spec.fields).map(([fieldName, fieldSpec]) => [fieldName, sampleScalarArg(fieldName, fieldSpec)]))];
       continue;
     }
-    if (name === capability.lookup.id_from_arg) input[name] = sampleIdForCapability(capability, name);
+    if (spec.enum?.length) input[name] = spec.enum[0];
+    else if (name === capability.lookup.id_from_arg) input[name] = sampleIdForCapability(capability, name);
     else if (/reason/i.test(name)) input[name] = sampleReasonForCapability(capability);
     else if (/resolution/i.test(name)) input[name] = "Resolved after reviewing policy evidence.";
-    else if (spec.enum?.length) input[name] = spec.enum[0];
     else if (/status/i.test(name)) input[name] = "pending_review";
     else if (/amount|cents|fee|credit|balance/i.test(name)) input[name] = typeof spec.maximum === "number" ? Math.min(spec.maximum, 1000) : 0;
     else if (spec.type === "number") input[name] = spec.minimum ?? 1;

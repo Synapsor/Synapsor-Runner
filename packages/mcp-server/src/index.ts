@@ -105,6 +105,9 @@ export {
   assertApprovalPolicyResolvable,
   assertProposalWritebackResolvable,
   evaluateApprovalPolicy,
+  explainApprovalPolicy,
+  type ApprovalPolicyConditionExplanation,
+  type ApprovalPolicyExplanation,
 } from "./approval-policy.js";
 export {
   capabilityWritebackExecutor,

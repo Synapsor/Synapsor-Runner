@@ -6,6 +6,7 @@
     "outDir": "dist"
   },
   "references": [
+    { "path": "../protocol" },
     { "path": "../spec" }
   ],
   "include": ["src/**/*.ts"]

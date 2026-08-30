@@ -709,6 +709,53 @@ describe("@synapsor/spec validation", () => {
     expect(validateContract(contract).errors.map((error) => error.code)).toContain("DELETE_CONFLICT_GUARD_REQUIRED");
   });
 
+  it("accepts proposal-only single-organization actions and refuses authority expansion", () => {
+    const contract = writeContract();
+    const capability = contract.capabilities[1];
+    delete capability.subject.tenant_key;
+    capability.proposal.organization_scope = {
+      mode: "single_organization",
+      organization_id: "northgate-library",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    capability.proposal.writeback = { mode: "none" };
+    contract.capabilities = [capability];
+    contract.workflows = [];
+    contract.contexts[0].bindings = contract.contexts[0].bindings.map((binding: Record<string, unknown>) =>
+      binding.name === contract.contexts[0].tenant_binding
+        ? { ...binding, source: "reviewed_organization", key: "northgate-library", required: true }
+        : binding);
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities[0]?.proposal?.organization_scope).toEqual({
+      mode: "single_organization",
+      organization_id: "northgate-library",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    });
+
+    const conflictingTenant = structuredClone(contract);
+    conflictingTenant.capabilities[0].subject.tenant_key = "tenant_id";
+    expect(validateContract(conflictingTenant).errors.map((error) => error.code))
+      .toContain("PROPOSAL_SCOPE_MODES_CONFLICT");
+
+    const executable = structuredClone(contract);
+    executable.capabilities[0].proposal.writeback = { mode: "direct_sql" };
+    executable.capabilities[0].proposal.execution = { mode: "supervised", role: "billing_worker" };
+    const executableCodes = validateContract(executable).errors.map((error) => error.code);
+    expect(executableCodes).toContain("PROPOSAL_ORGANIZATION_WRITEBACK_UNSUPPORTED");
+    expect(executableCodes).toContain("PROPOSAL_ORGANIZATION_EXECUTION_UNSUPPORTED");
+
+    const insert = structuredClone(contract);
+    insert.capabilities[0].proposal.operation = {
+      kind: "insert",
+      deduplication: {
+        components: [{ column: "request_id", source: "proposal_id" }],
+      },
+    };
+    expect(validateContract(insert).errors.map((error) => error.code))
+      .toContain("PROPOSAL_ORGANIZATION_INSERT_UNSUPPORTED");
+  });
+
   it("rejects policy auto-approval for direct hard DELETE", () => {
     const contract = writeContract();
     const proposal = contract.capabilities[1].proposal;

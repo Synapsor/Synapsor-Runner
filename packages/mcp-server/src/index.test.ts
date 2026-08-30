@@ -51,6 +51,7 @@ import {
 import {
   toolErrorPayload,
 } from "./runtime-errors.js";
+import { resolveTrustedContext } from "./trusted-context.js";
 import type { StreamableHttpSession } from "./runtime-types.js";
 
 const {
@@ -443,7 +444,10 @@ function autoApprovalConfig(): RuntimeConfig {
       name: "billing_propose_late_fee_waiver_auto_approval",
       kind: "approval",
       mode: "green",
-      rules: [{ field: "late_fee_cents", max: 2500 }],
+      rules: [
+        { field: "late_fee_cents", max: 2500 },
+        { source: "patch", field: "waiver_reason", operator: "max_length", value: 500 },
+      ],
     },
   ];
   return cloned;
@@ -597,6 +601,83 @@ function boundedBatchInsertConfig(maxRows = 2, aggregateMaximum = 5_000): Runtim
 }
 
 describe("local Synapsor MCP runtime", () => {
+  it("creates proposal-only actions under frozen single-organization authority", async () => {
+    const organizationConfig = structuredClone(config);
+    const proposal = organizationConfig.capabilities?.find((capability) => capability.kind === "proposal");
+    if (!proposal) throw new Error("proposal fixture missing");
+    delete proposal.target.tenant_key;
+    proposal.organization_scope = {
+      mode: "single_organization",
+      organization_id: "northgate-library",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    proposal.writeback = { mode: "none" };
+    proposal.visible_columns = proposal.visible_columns.filter((column) => column !== "tenant_id");
+    organizationConfig.capabilities = [proposal];
+    organizationConfig.trusted_context = {
+      provider: "environment",
+      values: { principal_env: "SYNAPSOR_PRINCIPAL" },
+    };
+    const readRow = vi.fn(async ({ context }) => {
+      expect(context).toEqual({
+        tenant_id: "northgate-library",
+        principal: "librarian-17",
+        provenance: "environment",
+      });
+      return {
+        row: {
+          id: "INV-3001",
+          late_fee_cents: 5500,
+          waiver_reason: null,
+          updated_at: "2026-06-20T14:31:08Z",
+        },
+        rowCount: 1,
+      };
+    });
+    const runtime = createMcpRuntime(organizationConfig, {
+      env: { SYNAPSOR_PRINCIPAL: "librarian-17" },
+      readRow,
+    });
+    try {
+      const result = await runtime.callTool(proposal.name, {
+        invoice_id: "INV-3001",
+        reason: "reviewed whole-library waiver",
+      });
+      expect(result).toMatchObject({
+        status: "review_required",
+        source_database_mutated: false,
+        writeback: { mode: "read_only", executor: "none" },
+      });
+      expect(readRow).toHaveBeenCalledTimes(1);
+      const stored = await runtime.store.getProposal(String(result.proposal_id));
+      expect(stored).toMatchObject({
+        tenant_id: "northgate-library",
+        principal: "librarian-17",
+        source_database_mutated: false,
+        change_set: {
+          guards: {
+            tenant: {
+              column: "__reviewed_organization",
+              value: "northgate-library",
+            },
+          },
+          writeback: { mode: "read_only", executor: "none" },
+        },
+      });
+    } finally {
+      await runtime.close();
+    }
+
+    const claimsConfig = structuredClone(organizationConfig);
+    claimsConfig.trusted_context = { provider: "http_claims" };
+    expect(() => resolveTrustedContext(
+      claimsConfig,
+      {},
+      proposal,
+      { tenant_id: "another-organization", principal: "librarian-17", provenance: "http_claims" },
+    )).toThrow(/TRUSTED_ORGANIZATION_MISMATCH|verified session tenant/i);
+  });
+
   it("closes the stdio runtime when client input ends", async () => {
     const input = new PassThrough();
     const output = new PassThrough();

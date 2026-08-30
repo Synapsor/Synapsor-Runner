@@ -25,14 +25,15 @@ engine.
 
 ## The Mental Model
 
-Five nouns explain the whole lifecycle.
+Six nouns explain the whole lifecycle.
 
 | Term | Meaning | Grants authority? |
 | --- | --- | --- |
 | **Read Boundary** | The reviewed tables, fields, relationships, scope, and limits Runner may use to inspect current state. | Yes, read authority only after activation. |
+| **Action Boundary** | The reviewed set of exact action revisions, Read Boundary dependencies, approval policies, execution profiles, and cross-action limits for one agent job. | Yes, proposal authority only after exact activation; it does not itself approve or apply. |
 | **ActionSuggestion** | Bounded convenience metadata naming an intent and possible resource, operation, and fields. | No. It cannot contain approval, execution, credentials, trusted identity, writeback, or SQL. |
 | **ActionDesign** | The human-reviewed choices and the schema proofs behind one business action. | Not by itself. It compiles a disabled revision. |
-| **ActionRevision** | Immutable DSL, canonical JSON, tests, review explanation, exact digest, and authority posture. | Only after exact rehearsal and activation. |
+| **ActionRevision** | One immutable semantic action: DSL, canonical JSON, tests, review explanation, exact digest, and authority posture. | Only when referenced by the exact active Action Boundary after rehearsal and activation. |
 | **Proposal** | One immutable requested effect, bound to the exact action digest, trusted scope, target, before/after state, guards, and approval posture. | It may become eligible for a separate approval and execution path. It is not itself a commit. |
 
 The normal progression is:
@@ -43,7 +44,8 @@ schema proofs
   -> human ActionDesign review
   -> disabled ActionRevision
   -> disposable source-unchanged rehearsal
-  -> exact-digest activation
+  -> disabled Action Boundary revision
+  -> exact action and Action Boundary activation
   -> agent invokes one semantic action
   -> immutable proposal
   -> outside-model approval
@@ -54,13 +56,56 @@ schema proofs
 At no point does Runner turn the model into a database administrator.
 
 For a new agent, Action Assist follows read setup rather than creating a second
-onboarding system. Compile representative reads with `W Workloads`, review and
-activate the resulting read boundary, then press `Y Safe actions`. Workbench
-uses the equivalent **Compile read workload -> Activate changes -> Add safe
-action** path. The handoff shares reviewed structural evidence only; read
-authority never implies write permission, and each Action revision retains its
-own rehearsal, digest, activation, approval, and execution posture. See
+onboarding system. Compile representative reads with `W Workloads`, complete
+the exact read review, then press `Y Safe actions`. Drafting and disposable
+rehearsal may happen before read activation; activating the proposal action may
+not. Workbench uses the equivalent **Compile read workload -> Add safe action**
+path and keeps both activation decisions explicit. The handoff shares reviewed
+structural evidence only; read authority never implies write permission, and
+each Action revision retains its own rehearsal, digest, activation, approval,
+and execution posture. See
 [Boundary Assist](read-workload-boundary-assist.md).
+
+The default path is one proposal-action card, not the full authority wizard.
+Runner uses the business-intent sentence only to rank reviewed structural
+candidates, asks about ambiguity or missing bounds, saves a disabled revision,
+and runs generated bounded arguments through a disposable proposal ledger.
+One later confirmation activates proposal creation only. **Advanced action
+design** retains fixed values, transitions, custom approval, execution,
+receipts, workers, exact DSL, and manual rehearsal controls.
+
+Drafting and rehearsal may use a fully reviewed read revision that is not yet
+active. The disabled action records the exact read boundary name and digest.
+That convenience grants no authority: proposal-action activation refuses until
+the same digest is active, and a changed read revision requires a new action
+review.
+
+## Trusted Scope Is Configured Once
+
+The Read Boundary is the authority source for agent identity isolation. During
+read review, the operator chooses one reviewed posture:
+
+- a direct trusted tenant column, with an optional direct principal column;
+- database-enforced scope such as reviewed PostgreSQL RLS; or
+- one frozen whole-organization identity when the source has no tenant model.
+
+The Action Boundary does not ask for a second tenant policy. It records the
+exact Read Boundary name, digest, generation lock, and trusted-context
+fingerprint, and each action points to that dependency. A changed Read Boundary
+therefore makes the dependent action stale instead of silently changing its
+scope.
+
+For local stdio, Runner resolves reviewed tenant/principal bindings from the
+configured trusted environment or local provider. For production HTTP, it uses
+the verified JWT/OAuth session claims on every request. Those values never
+appear as model arguments, and attempts to send `tenant_id`, `principal`, or
+other reserved authority fields are refused before proposal creation.
+
+The Action TUI and Workbench show the inherited scope beside every action. A
+managed write currently requires direct action scope; a relationship-derived
+read path does not become write authority. Shared approval circuit breakers may
+then be reviewed per tenant, tenant plus principal, tenant plus object, exact
+capability, or the whole Action Boundary.
 
 ## Human Control Plane And Agent Data Plane
 
@@ -70,6 +115,7 @@ The human control plane may:
 - select exact fields and value sources;
 - set numeric bounds, text limits, enums, and state transitions;
 - confirm trusted tenant and principal scope;
+- compose exact action revisions into one Action Boundary and set shared limits;
 - select conflict, version, and insert-deduplication guards;
 - require one reviewer or a quorum;
 - define deterministic policy approval thresholds;
@@ -107,13 +153,29 @@ proposal-only safe rollout.
 
 ## What Runner Can Prove From The Schema
 
-Runner starts from an activated Read Boundary and a fresh database inspection.
+Runner starts from a fully reviewed Read Boundary revision and a fresh database
+inspection. Drafting and rehearsal may use that exact pending revision;
+proposal activation still requires the same Read Boundary digest to be active.
 For managed Safe Actions, a resource must currently have a direct reviewed
 tenant key. If principal scope is required, it must also be direct. A derived
 read path does not silently become write authority.
 
-Runner excludes generated, identity, immutable, scope-owned, kept-out, and
-unreviewed fields from the write candidates. It then evaluates each operation:
+Runner evaluates Action fields independently from the Read Boundary's row-return
+list. It excludes generated, identity, immutable, scope-owned, and structurally
+kept-out fields from write candidates. The operator then reviews the exact
+mutable fields and value grammar for the action. If conflict validation,
+before-state policy, or evidence needs an exact field that Explore does not
+return, the action contract makes that field Runner-readable and model-withheld;
+it does not widen Read Boundary output. Structurally kept-out fields remain
+unavailable. Runner then evaluates each operation:
+
+A reviewed row identity may be one column of a composite source primary key
+only when every other primary-key column is a direct trusted tenant or
+principal scope column supplied by Runner. For example, `(tenant_id,
+student_id)` may use `student_id` as the proposal row identity because Runner
+also binds `tenant_id` outside model arguments. `(tenant_id, region_id,
+student_id)` stays blocked unless `region_id` is itself reviewed direct trusted
+scope. INSERT additionally requires a source-unique deduplication identity.
 
 | Operation | Structural prerequisites | Required reviewed controls |
 | --- | --- | --- |
@@ -152,7 +214,7 @@ Approval answers, "May this exact proposed effect proceed?" Execution answers,
 | --- | --- |
 | Human | One verified reviewer with the exact role approves the proposal. |
 | Quorum | Between 2 and 10 distinct verified reviewers approve the same proposal hash. |
-| Deterministic policy | Runner may approve a bounded numeric proposal at or below a reviewed threshold, with per-day count and aggregate-value circuit breakers. The model cannot select or alter the policy. |
+| Deterministic policy | Runner evaluates a reviewed conjunction over bounded numeric ranges, enums, booleans, text length, and captured pre-change facts. Rolling count/total limits may narrow one action or the whole Action Boundary. A failed or indeterminate check falls back to human review. The model cannot select or alter policy. |
 
 | Execution posture | Canonical writeback | Source effect |
 | --- | --- | --- |
@@ -264,7 +326,11 @@ The operator can ask OpenAI, Anthropic, or an OpenAI-compatible endpoint for
 one bounded suggestion. When opened through `/actions`, Runner can reuse the
 current Ask provider, model, and memory-only credential after a separate
 structural-metadata egress confirmation. The credential is not displayed,
-persisted, or sent in model content. The standalone command remains:
+persisted, or sent in model content. Opening `Y Safe actions` from `/access`
+inside Ask reuses the same session. Standalone terminal review automatically
+uses the default model for exactly one exported `OPENAI_API_KEY` or
+`ANTHROPIC_API_KEY`; with both or neither configured, it asks rather than
+guessing. The standalone command remains:
 
 ```bash
 synapsor-runner action suggest \
@@ -303,7 +369,7 @@ and verifies:
 
 The rehearsal proposal is destroyed. It cannot later be approved or applied.
 
-### 6. Activate The Exact Digest
+### 6. Activate The Exact Action Boundary
 
 Interactive activation shows the selected short digest, asks for a human
 yes/no decision, then internally binds that decision to the full digest and
@@ -313,9 +379,20 @@ artifacts, stale boundaries, or a missing exact rehearsal fail closed.
 Headless and CI activation still requires the full
 `ACTIVATE sha256:...` confirmation plus verified operator authority and nonce.
 
-Activation copies immutable artifacts under a digest-addressed revision path
-and updates the separate action runtime. It does not widen the production
-Explore two-tool surface.
+Activation copies immutable artifacts under a digest-addressed revision path,
+publishes the exact action inside its matching Action Boundary revision, and
+updates the separate action runtime last. It does not widen the production
+Explore two-tool surface. Multiple disabled actions may be reviewed before any
+activation; activating one rebases the remaining disabled Action Boundary
+candidates without changing their immutable action contract digests.
+
+From the Safe Action home, open **Review Action Boundary** to inspect its exact
+actions, Read Boundary dependencies, inherited trusted scope, approval modes,
+execution profiles, and shared limits. **Shared approval limits** can add a
+rolling count or numeric total for one trusted tenant, tenant+principal,
+tenant+object, capability, or the whole boundary. Editing creates a disabled
+boundary revision. **Activate this exact boundary revision** remains a separate
+operator decision and cannot approve a proposal or mutate a source row.
 
 ### 7. Invoke The Semantic Tool
 

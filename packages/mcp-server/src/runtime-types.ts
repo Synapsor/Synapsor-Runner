@@ -8,6 +8,7 @@ import type {
   ProposalRuntimeStore,
 } from "@synapsor-runner/proposal-store";
 import type {
+  RuntimeActionBoundaryV1,
   FreshnessAuthorityV1,
   FreshnessProofV1,
 } from "@synapsor-runner/protocol";
@@ -140,6 +141,8 @@ export type RuntimeCapabilityConfig = {
   max_rows?: number;
   aggregate?: AggregateReadSpec;
   protected_read?: ProtectedReadSpec;
+  /** Fixed reviewed whole-source organization authority for proposal-only actions. */
+  organization_scope?: ProtectedReadSpec["organization_scope"];
   patch?: Record<string, { fixed?: Scalar; from_arg?: string; from_item?: string }>;
   allowed_columns?: string[];
   numeric_bounds?: Record<string, RuntimeNumericBoundConfig>;
@@ -269,6 +272,8 @@ export type RuntimeProductionExploreConfig = {
   max_sessions_per_principal?: number;
 };
 
+export type RuntimeActionBoundaryReference = RuntimeActionBoundaryV1;
+
 export type RuntimeConfig = {
   version: 1;
   mode: RunnerMode;
@@ -276,6 +281,8 @@ export type RuntimeConfig = {
   model_output?: {
     authority_metadata?: "semantic" | "exact";
   };
+  /** Exact aggregate proposal authority compiled from a reviewed Action Boundary. */
+  action_boundary?: RuntimeActionBoundaryReference;
   contracts?: string[];
   policies?: PolicySpec[];
   approvals?: { disable_auto_approval?: boolean };

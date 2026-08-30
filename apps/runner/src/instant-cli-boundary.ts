@@ -89,7 +89,9 @@ async function activateInstantCliBoundaryAttempt(
     stdout.isTTY === true ? padTerminalBlock(value) : value,
   );
   const candidate = instantLocalBoundaryCandidate(input.draft);
-  const theme = terminalTheme(stdout.isTTY === true && !("NO_COLOR" in env));
+  const theme = terminalTheme(stdout.isTTY === true && !("NO_COLOR" in env), {
+    brand: true,
+  });
   const resource = candidate.pack.resources[0];
   if (!resource) {
     write([
@@ -168,18 +170,32 @@ async function activateInstantCliBoundaryAttempt(
   const actor = operatorActor(env);
   const digest = explorationBoundaryCandidateDigest(candidate);
   let askSelection = initialAskSelection;
-  write(formatInstantCliBoundaryReview({
-    draft: input.draft,
+  const reviewFrame = () => formatInstantCliBoundaryReview({
     candidate,
+    inspectedObjects: inspection.tables.length,
     question: firstValue.question,
     actor,
     askSelection,
     trustedScope,
     color: stdout.isTTY === true && !("NO_COLOR" in env),
-  }));
+  });
+  // A real TTY opens each text prompt on an alternate screen. Keep the review
+  // in that same frame so it remains visible while the operator chooses.
+  if (stdout.isTTY !== true) write(reviewFrame());
+  let reviewNotice: string[] = [];
+  const nextReviewNotice = (lines: string[]) => {
+    reviewNotice = lines;
+    if (stdout.isTTY !== true) write([...lines, ""].join("\n"));
+  };
   while (true) {
+    const promptContext = [
+      ...reviewFrame().split("\n"),
+      ...(reviewNotice.length ? ["", ...reviewNotice] : []),
+    ];
+    reviewNotice = [];
     const actionInput = await input.session.promptText(
       `${theme.key("ENTER")} Start asking   ${theme.key("E")} Change access   ${theme.key("M")} Change model\n${theme.dim("Choice [Enter]:")} `,
+      { context: promptContext },
     );
     if (actionInput === undefined) {
       write([
@@ -196,20 +212,17 @@ async function activateInstantCliBoundaryAttempt(
           ? await input.chooseAskSelection(undefined)
           : await choosePostActivationAskSelection({ env });
         if (!selected) {
-          write([
+          nextReviewNotice([
             "Model selection cancelled. Nothing was activated.",
             theme.dim("Back at Quick Start. Press Enter or M to choose a provider."),
-            "",
-          ].join("\n"));
+          ]);
           continue;
         }
         askSelection = selected;
-        write([
-          "",
+        nextReviewNotice([
           `${theme.success("Model")} ${formatPostActivationAskSelection(askSelection)}`,
           theme.dim("Provider selected. Continuing with the boundary activation you requested."),
-          "",
-        ].join("\n"));
+        ]);
       }
       break;
     }
@@ -218,22 +231,19 @@ async function activateInstantCliBoundaryAttempt(
         ? await input.chooseAskSelection(askSelection)
         : await choosePostActivationAskSelection({ env });
       if (!selected) {
-        write([
+        nextReviewNotice([
           askSelection
             ? "Model selection cancelled. Your previous model is unchanged."
             : "Model selection cancelled. No model is selected yet.",
           theme.dim("Back at Quick Start. Press Enter to choose, or M to choose again."),
-          "",
-        ].join("\n"));
+        ]);
         continue;
       }
       askSelection = selected;
-      write([
-        "",
+      nextReviewNotice([
         `${theme.success("Model")} ${formatPostActivationAskSelection(askSelection)}`,
         theme.dim("Press Enter to start, or M to change it again."),
-        "",
-      ].join("\n"));
+      ]);
       continue;
     }
     if (action === "e" || action === "edit" || action === "n" || action === "no") {
@@ -251,7 +261,7 @@ async function activateInstantCliBoundaryAttempt(
       ].join("\n"));
       return { accepted: false, reason: "operator_requested_detailed_review" };
     }
-    write("Use Enter, M, or E.\n");
+    nextReviewNotice([theme.warning("Choose Enter, E, or M. No review or authority changed.")]);
   }
   if (!askSelection) {
     throw new Error("Quick Start cannot activate for Ask without an explicit model or MCP route.");
@@ -390,17 +400,17 @@ async function handleStaleGenerationLock(input: {
 }
 
 function formatInstantCliBoundaryReview(input: {
-  draft: ExplorationBoundaryDraft;
   candidate: ExplorationBoundaryDraft;
+  inspectedObjects: number;
   question: string;
   actor: string;
   askSelection: PostActivationAskSelection | undefined;
   trustedScope: ExploreTrustedScope;
   color?: boolean;
 }): string {
-  const theme = terminalTheme(input.color === true);
+  const theme = terminalTheme(input.color === true, { brand: true });
   const resource = input.candidate.pack.resources[0]!;
-  const totalResources = input.draft.pack.resources.length;
+  const totalResources = input.inspectedObjects;
   const visibleFields = resource.selectable_fields.length;
   const withheldFields = input.candidate.pack.resources.reduce(
     (total, item) => total + (item.model_withheld_fields?.length ?? 0),
@@ -433,7 +443,7 @@ function formatInstantCliBoundaryReview(input: {
   return [
     "",
     theme.title("YOUR FIRST SAFE QUESTION"),
-    `Runner prepared one conservative, connected boundary from ${totalResources} inspected ${totalResources === 1 ? "table" : "tables"}.`,
+    `Runner inspected ${totalResources} database ${totalResources === 1 ? "object" : "objects"} and prepared one conservative, connected starter boundary.`,
     "A boundary is the reviewed data access your AI cannot exceed.",
     "",
     `  ${label("TABLES")} ${theme.bold(includedSummary || resourceLabel)}`,

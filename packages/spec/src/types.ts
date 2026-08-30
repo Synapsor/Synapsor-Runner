@@ -150,6 +150,12 @@ export type ProposalOperationSpec = ExtensionFields & {
 
 export type ProposalActionSpec = ExtensionFields & {
   action: string;
+  /**
+   * A reviewed assertion that the complete source belongs to one organization.
+   * This supplies trusted proposal/accounting identity without inventing a
+   * physical tenant column. Executable writeback requires separate authority.
+   */
+  organization_scope?: ProtectedReadOrganizationScopeSpec;
   /** Omitted by legacy contracts and interpreted as guarded single-row UPDATE. */
   operation?: ProposalOperationSpec;
   allowed_fields: string[];
@@ -426,8 +432,19 @@ export type PolicySpec = ExtensionFields & {
   name: string;
   kind: "approval" | "settlement" | "scope" | "custom";
   mode?: "green" | "yellow" | "red" | "manual" | "block";
-  rules?: JsonRecord[];
+  rules?: ApprovalPolicyRuleSpec[];
   limits?: ApprovalPolicyLimitSpec[];
+};
+
+export type ApprovalPolicyRuleSpec = ExtensionFields & {
+  /** Defaults to patch. before reads only the immutable pre-change snapshot. */
+  source?: "patch" | "before";
+  field: string;
+  /** Legacy integer ceilings use max without operator/value. */
+  max?: number;
+  operator?: "lte" | "gte" | "eq" | "in" | "max_length";
+  value?: JsonScalar;
+  values?: JsonScalar[];
 };
 
 export type ApprovalPolicyLimitSpec = ExtensionFields & {

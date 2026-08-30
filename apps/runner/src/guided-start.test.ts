@@ -125,6 +125,42 @@ describe("guided start surfaces", () => {
     }
   });
 
+  it("opens the shipped fresh CLI at one-job Read and Action Boundary setup", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-cli-job-first-"));
+    const schemaInspector = vi.fn(async () => inspection());
+    const runBoundaryReview = vi.fn(async () => 0);
+    const runPostActivationHandoff = vi.fn(async () => 0);
+    process.chdir(projectRoot);
+
+    try {
+      await expect(start(
+        ["--from-env", "DATABASE_URL", "--cli"],
+        {
+          interactive: true,
+          schemaInspector,
+          runBoundaryReview,
+          runPostActivationHandoff,
+          openWorkbench: vi.fn(async () => 0),
+        },
+      )).resolves.toBe(0);
+
+      expect(runBoundaryReview).toHaveBeenCalledOnce();
+      expect(runBoundaryReview).toHaveBeenCalledWith(
+        ["--project-root", projectRoot, "--access", "--job-first"],
+        schemaInspector,
+        expect.any(Function),
+      );
+      expect(runPostActivationHandoff).not.toHaveBeenCalled();
+      await expect(fs.access(path.join(
+        projectRoot,
+        ".synapsor/exploration-boundary.active.json",
+      ))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      process.chdir(suiteCwd);
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("opens Workbench with a config-aligned startable MySQL authoring baseline", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-mysql-workbench-"));
     const openWorkbench = vi.fn(async () => 0);
@@ -245,7 +281,7 @@ describe("guided start surfaces", () => {
       )).resolves.toBe(0);
       expect(schemaInspector).toHaveBeenCalledTimes(1);
       expect(runBoundaryReview).toHaveBeenLastCalledWith(
-        ["--project-root", projectRoot, "--access"],
+        ["--project-root", projectRoot, "--access", "--job-first"],
         schemaInspector,
         expect.any(Function),
       );
@@ -439,6 +475,14 @@ describe("guided start surfaces", () => {
       expect(runPostActivationHandoff).not.toHaveBeenCalled();
       expect(promptText).toHaveBeenCalledWith(
         "ENTER Start asking   E Change access   M Change model\nChoice [Enter]: ",
+        expect.objectContaining({
+          context: expect.arrayContaining([
+            "YOUR FIRST SAFE QUESTION",
+            expect.stringContaining("Runner inspected 1 database object and prepared one conservative, connected starter boundary"),
+            expect.stringContaining("Suggested from this boundary:"),
+            expect.stringContaining("The model cannot review, activate, or widen access."),
+          ]),
+        }),
       );
       expect(output).toContain(
         "Opening the focused access editor with this connected boundary as the baseline.",
@@ -468,6 +512,7 @@ describe("guided start surfaces", () => {
       model: "claude-owner-selected",
     }));
     const runPostActivationHandoff = vi.fn(async () => 0);
+    const promptContexts: string[][] = [];
     let output = "";
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
       output += String(chunk);
@@ -511,6 +556,13 @@ describe("guided start surfaces", () => {
       expect(schemaInspector).toHaveBeenCalledTimes(2);
       expect(promptText).toHaveBeenCalledWith(
         "ENTER Start asking   E Change access   M Change model\nChoice [Enter]: ",
+        expect.objectContaining({
+          context: expect.arrayContaining([
+            "YOUR FIRST SAFE QUESTION",
+            expect.stringContaining("TABLES       Service Visits"),
+            expect.stringContaining("MODEL        Choose OpenAI, Anthropic, a local model, or an MCP client"),
+          ]),
+        }),
       );
       expect(chooseAskSelection).toHaveBeenCalledOnce();
       expect(chooseAskSelection).toHaveBeenCalledWith(undefined);
@@ -523,7 +575,9 @@ describe("guided start surfaces", () => {
         consentOnFirstQuestion: true,
       });
       expect(output).toContain("YOUR FIRST SAFE QUESTION");
-      expect(output).toContain("Runner prepared one conservative, connected boundary");
+      expect(output).toContain(
+        "Runner inspected 1 database object and prepared one conservative, connected starter boundary",
+      );
       expect(output).toContain("TABLES       Service Visits");
       expect(output).toContain("Suggested from this boundary:");
       expect(output).toContain(
@@ -681,6 +735,7 @@ describe("guided start surfaces", () => {
       model: "claude-owner-selected",
     }));
     const runPostActivationHandoff = vi.fn(async () => 0);
+    const promptContexts: string[][] = [];
     process.chdir(projectRoot);
 
     try {
@@ -698,7 +753,10 @@ describe("guided start surfaces", () => {
               USER: "developer@example.test",
             },
             session: {
-              promptText: async () => actions.shift() ?? "",
+              promptText: async (_prompt, options) => {
+                promptContexts.push(options?.context ?? []);
+                return actions.shift() ?? "";
+              },
             },
             chooseAskSelection,
           }),
@@ -711,6 +769,8 @@ describe("guided start surfaces", () => {
       )).resolves.toBe(0);
 
       expect(chooseAskSelection).toHaveBeenCalledWith(undefined);
+      expect(promptContexts[1]?.join("\n")).toContain("MODEL        Anthropic / claude-owner-selected");
+      expect(promptContexts[1]?.join("\n")).toContain("Press Enter to start, or M to change it again.");
       expect(runPostActivationHandoff).toHaveBeenCalledWith({
         projectRoot,
         selection: {
@@ -736,6 +796,7 @@ describe("guided start surfaces", () => {
       })
       .mockResolvedValueOnce(undefined);
     const runPostActivationHandoff = vi.fn(async () => 0);
+    const promptContexts: string[][] = [];
     let output = "";
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
       output += String(chunk);
@@ -756,7 +817,12 @@ describe("guided start surfaces", () => {
               SYNAPSOR_TENANT_ID: "tenant-1",
               USER: "developer@example.test",
             },
-            session: { promptText: async () => actions.shift() ?? "" },
+            session: {
+              promptText: async (_prompt, options) => {
+                promptContexts.push(options?.context ?? []);
+                return actions.shift() ?? "";
+              },
+            },
             chooseAskSelection,
           }),
           runBoundaryReview: vi.fn(async () => {
@@ -773,6 +839,9 @@ describe("guided start surfaces", () => {
         model: "claude-owner-selected",
       });
       expect(output).toContain("Model selection cancelled. Your previous model is unchanged.");
+      expect(promptContexts[2]?.join("\n")).toContain(
+        "Model selection cancelled. Your previous model is unchanged.",
+      );
       expect(runPostActivationHandoff).toHaveBeenCalledWith({
         projectRoot,
         selection: { route: "anthropic", model: "claude-owner-selected" },
@@ -892,6 +961,7 @@ describe("guided start surfaces", () => {
       USER: "developer@example.test",
     };
     delete styledEnv.NO_COLOR;
+    let visiblePromptContext: string[] | undefined;
     process.chdir(projectRoot);
 
     try {
@@ -916,18 +986,25 @@ describe("guided start surfaces", () => {
             return true;
           },
         } as never,
-        session: { promptText: async () => "e" },
+        session: {
+          promptText: async (_prompt, options) => {
+            visiblePromptContext = options?.context;
+            return "e";
+          },
+        },
       });
 
       expect(result).toEqual({
         accepted: false,
         reason: "operator_requested_detailed_review",
       });
-      const output = chunks.join("");
-      expect(output).toContain("\u001b[1;36mYOUR FIRST SAFE QUESTION\u001b[0m");
-      expect(output).toContain("\u001b[1mService Visits\u001b[0m");
-      expect(output).toContain("\u001b[1;32m3 fields across 1 table\u001b[0m");
-      expect(output).toContain("\u001b[2m1 field\u001b[0m");
+      const visibleFrame = visiblePromptContext?.join("\n") ?? "";
+      expect(visibleFrame).toContain("YOUR FIRST SAFE QUESTION");
+      expect(visibleFrame).toContain("Service Visits");
+      expect(visibleFrame).toContain("3 fields across 1 table");
+      expect(visibleFrame).toContain("1 field");
+      expect(visibleFrame).toMatch(/\u001b\[[0-9;]+mYOUR FIRST SAFE QUESTION/u);
+      expect(chunks.join("")).not.toContain("YOUR FIRST SAFE QUESTION");
     } finally {
       process.chdir(suiteCwd);
       await fs.rm(projectRoot, { recursive: true, force: true });

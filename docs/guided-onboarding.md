@@ -77,15 +77,19 @@ npx -y @synapsor/runner start --from-env DATABASE_URL --cli
 ```
 
 Runner performs the same deterministic inspection and project generation, then
-shows one conservative one-table, zero-relationship Quick Start boundary.
-Pressing Enter once is the human gesture that reviews those exact defaults,
-rechecks the schema and read-only role, activates only that digest, and starts
-the provider and exact model displayed on the same screen. Press `M` to choose
-OpenAI, Anthropic, a loopback OpenAI-compatible model, an existing MCP client,
-or **Later**. Press `E` to open detailed multi-table/column review instead.
-Running the command again resumes review, or goes directly to
-model/client selection when a boundary is already active. `--no-open` remains
-the noninteractive initialize/resume flag; it does not start terminal review.
+asks for one agent job. The recommended route maps that job with a configured
+OpenAI, Anthropic, or loopback local model after explicit structural-metadata
+egress consent. Runner-guided exact plan cards require no model; full manual
+table and field review remains available.
+
+The mapper prepares a broad disabled structural catalog, minimizes it to the
+reviewed job, and presents one exact Read Boundary review. Change-oriented jobs
+also prepare a separate disabled Action Boundary and source-unchanged proposal
+rehearsal. Neither boundary activates the other. The model cannot activate,
+approve, apply, choose trusted scope, or supply SQL. Running the command again
+resumes the saved review, or goes to model/client selection when read authority
+is already active. `--no-open` remains the noninteractive initialize/resume
+flag; it does not start terminal review.
 
 ## Scripted Artifact Setup
 
@@ -154,6 +158,56 @@ Both editors use the same two-step boundary flow:
    in one focused surface;
 2. inspect one complete boundary summary and activate that exact boundary
    before returning directly to Ask.
+
+For workload-first review, press `W` in the terminal boundary editor or open
+**Compile read workload** in Workbench. The default path offers exact reviewed
+question cards and needs no JSON or model. Runner records the immutable
+analysis and disabled minimum candidate automatically, then moves directly to
+the same complete activation summary. Exact JSON and optional model mapping
+remain Advanced paths.
+
+When `/access` is opened from the local Ask shell, model-assisted workload
+mapping reuses that shell's provider, model, endpoint, and memory-only
+credential. The operator types representative questions and confirms the
+separate structural-metadata egress; provider setup is not repeated. In a
+standalone terminal editor, Runner makes the same path setup-free when exactly
+one conventional `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is exported. If both
+or neither are available, Runner asks instead of guessing. No credential value
+is displayed or persisted.
+
+After the exact read revision is fully reviewed, press `Y Safe actions`; read
+activation is not required merely to draft. The recommended Action Assist path
+turns one business intent into a consolidated proposal-only action card, asking
+only where a reviewed target, operation, guard, or business value bound is
+unresolved. Runner binds the disabled action to that read name and digest and
+generates a disposable source-unchanged rehearsal from the compiled contract.
+Proposal-action activation refuses until the exact dependent read digest is
+active, then remains a separate human decision. Auto-approval and writeback
+remain later Advanced authority transitions.
+
+Action field review is independent from Read row-return exposure. A minimized
+Read Boundary may authorize only grouping or measures on a table while its
+Action Boundary separately reviews an exact mutable field. For conflict checks,
+before-state conditions, and evidence, the generated action contract adds only
+the exact required fields as Runner-readable and model-withheld. This does not
+widen Explore output. A field kept out during structural review remains
+unavailable to both boundaries.
+
+Safe Action model suggestions use the same connection behavior. An existing
+Ask session or one unambiguous conventional provider environment is reused;
+only the bounded structural-metadata egress confirmation remains. A model may
+rank a candidate, but Runner never substitutes a different write effect when
+the operation named by the operator is unavailable.
+
+The first reviewed action also prepares a disabled **Action Boundary**. This is
+the job-level proposal authority: exact action revisions, exact Read Boundary
+dependencies, approval-policy references, execution profiles, and shared
+rolling limits. It inherits the Read Boundary's tenant, principal, RLS, or
+whole-organization authority and cannot replace it with model-supplied scope.
+The Safe Action home exposes **Review Action Boundary** so terminal and
+Workbench operators can see that inherited scope and review count/total
+circuit breakers per tenant, tenant+principal, tenant+object, capability, or
+boundary. Limit edits create a disabled digest; activation remains separate.
 
 Activating a differently named boundary adds it to the same authoring session;
 activating an existing name updates only that boundary. Ask keeps the selected
@@ -555,18 +609,24 @@ without merging their authority or activation decisions.
 
 Describe the allowed proposal in business language first. Runner ranks only
 reviewed metadata and schema-proven candidates. Schema metadata supplies
-structure, never business permission. The human specifies:
+structure, never business permission. The default terminal and Workbench path
+prepares one consolidated proposal-only card. It asks only when the intent does
+not identify one exact reviewed target, operation, guard, field set, or numeric
+bound. The card shows model-supplied arguments, Runner-controlled scope,
+idempotency/conflict posture, human approval, and `WRITEBACK NONE` together.
 
-1. the business action;
-2. target resource and exact row identity;
-3. fields that may change;
-4. allowed values, transitions, and numeric bounds;
-5. trusted tenant and principal scope;
-6. conflict/version guard;
-7. approval role;
-8. optional small bounded auto-approval;
-9. per-operation and daily limits;
-10. optional reviewed compensation.
+Runner saves the disabled revision automatically after that review and derives
+bounded rehearsal values from the compiled contract. The rehearsal uses the
+real proposal runtime with a disposable ledger, cannot mutate the source, and
+destroys its proposal. It may run while the fully reviewed read revision is
+still pending. The next explicit gesture activates only that exact proposal
+capability and matching Action Boundary revision, and is unavailable until the
+bound read digest is active. Approval, apply, and writeback remain unavailable.
+
+Choose **Advanced action design** only when the action needs fixed values,
+state transitions, custom approval policy, automatic approval, execution,
+receipts, supervised workers, manual rehearsal values, or exact artifact
+inspection.
 
 The TUI can also import a bounded ActionSuggestion or request one suggestion
 from OpenAI, Anthropic, or an OpenAI-compatible provider after explicit
@@ -576,7 +636,7 @@ never replace the decisions above. See the [Safe Action Human Control
 Plane](safe-action-control-plane.md).
 
 Runner generates public DSL, canonical JSON, tests, an exact-effect preview,
-and a disabled action. Unsupported or unsafe combinations fail closed. In
+and a disabled action behind the card. Unsupported or unsafe combinations fail closed. In
 particular, DELETE, bounded-set, quorum, auto-approval, and reversibility cannot
 be combined beyond what the canonical DSL supports.
 

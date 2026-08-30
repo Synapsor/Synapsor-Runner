@@ -82,17 +82,27 @@ export function recommendedBoundaryReviewCandidate(
 export function instantLocalBoundaryCandidate(
   draft: ExplorationBoundaryDraft,
 ): ExplorationBoundaryDraft {
-  const tenantOnlyResources = draft.pack.resources
+  const candidate = candidateWithReviewedDefaults(draft);
+  const maximumDerivedScopeHops = candidate.budgets.max_derived_scope_hops
+    ?? DEFAULT_REVIEWED_EXPLORATION_BUDGETS.max_derived_scope_hops
+    ?? 2;
+  const eligibleResources = candidate.pack.resources.filter((resource) =>
+    derivedScopeDepth(resource.tenant_scope) <= maximumDerivedScopeHops
+    && derivedScopeDepth(resource.principal_scope) <= maximumDerivedScopeHops);
+  const tenantOnlyResources = eligibleResources
     .filter((resource) => !resource.principal_key && !resource.principal_scope);
   const eligible = tenantOnlyResources.length > 0
     ? tenantOnlyResources
-    : draft.pack.resources;
-  if (eligible.length === 0) return structuredClone(draft);
+    : eligibleResources;
+  if (eligible.length === 0) {
+    candidate.pack.resources = [];
+    return candidate;
+  }
 
   const resourcesById = new Map(
-    draft.pack.resources.map((resource) => [resource.id, resource]),
+    candidate.pack.resources.map((resource) => [resource.id, resource]),
   );
-  const maximumResources = Math.min(INSTANT_BOUNDARY_RESOURCE_LIMIT, draft.pack.resources.length);
+  const maximumResources = Math.min(INSTANT_BOUNDARY_RESOURCE_LIMIT, eligibleResources.length);
   const ranked = [...eligible].sort((left, right) =>
     resourceReviewScore(right) - resourceReviewScore(left)
     || left.id.localeCompare(right.id));
@@ -109,11 +119,11 @@ export function instantLocalBoundaryCandidate(
       maximumResources,
     )) return false;
     if (!previous.has(resource.id)) selected.push(resource);
-    for (const candidate of draft.pack.resources) {
-      if (candidate.id !== resource.id
-        && selectedIds.has(candidate.id)
-        && !previous.has(candidate.id)) {
-        selected.push(candidate);
+    for (const dependency of candidate.pack.resources) {
+      if (dependency.id !== resource.id
+        && selectedIds.has(dependency.id)
+        && !previous.has(dependency.id)) {
+        selected.push(dependency);
       }
     }
     return true;
@@ -139,7 +149,6 @@ export function instantLocalBoundaryCandidate(
     if (!added) break;
   }
 
-  const candidate = candidateWithReviewedDefaults(draft);
   candidate.deployment_profile = draft.deployment_profile === "production"
     ? "production"
     : "development";
@@ -149,6 +158,13 @@ export function instantLocalBoundaryCandidate(
       .filter((relationship) => relationshipStaysInsidePack(relationship, selectedIds)),
   }));
   return reviewExplorationBoundaryCandidate(draft, candidate).candidate;
+}
+
+function derivedScopeDepth(
+  scope: ExplorationBoundaryDraft["pack"]["resources"][number]["tenant_scope"]
+    | ExplorationBoundaryDraft["pack"]["resources"][number]["principal_scope"],
+): number {
+  return scope?.mode === "derived" ? scope.proof.links.length : 0;
 }
 
 function candidateWithReviewedDefaults(

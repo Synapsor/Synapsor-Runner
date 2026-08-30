@@ -19,13 +19,67 @@
 - Connects read-boundary activation to the existing Safe Action control plane
   in CLI and Workbench while preserving separate read, proposal, activation,
   approval, and apply authority.
+- Makes reviewed question cards the default no-model path in both terminal and
+  Workbench. Runner records the immutable analysis and disabled minimum
+  candidate automatically, then continues directly to one explicit read
+  activation review; exact workload JSON remains under Advanced.
+- Reuses the current Ask provider/model and memory-only credential for model
+  mapping in `/access` and `Y Safe actions`. Standalone TUI use auto-selects an
+  unambiguous conventional OpenAI or Anthropic environment; structural-metadata
+  egress still requires explicit confirmation and no credential is persisted.
+- Keeps numbered boundary menus, privacy consequences, table sign-offs, and
+  the exact activation review visible on the same alternate terminal screen as
+  their input. In particular, `L Limits` now shows all 13 numbered settings
+  while the operator chooses one instead of clearing the menu first.
+- Keeps the complete first-safe-question summary visible while Quick Start
+  waits for Start, Change access, or Change model, and reports the full
+  inspected-object inventory separately from the conservative starter table.
+  Full-screen Read and Action Boundary surfaces use consistent semantic ANSI
+  foreground roles while preserving the terminal's own background and resize
+  behavior; `NO_COLOR` remains supported.
 
 ### Safe Action Human Control Plane
 
+- Adds a canonical first-class Action Boundary over exact action revisions,
+  exact Read Boundary dependencies, approval-policy references, execution
+  profiles, and shared limits. Existing active Safe Actions synthesize an
+  equivalent migration view without authority changes.
+- Freezes the Read Boundary's tenant, principal, RLS, or reviewed
+  whole-organization authority into the Action Boundary dependency. The model
+  cannot supply or replace trusted scope, and changed read authority makes the
+  dependent action stale.
+- Adds terminal and Workbench review for rolling cross-action count and numeric
+  total limits by boundary, capability, tenant, tenant+principal, or
+  tenant+object. Edits are disabled revisions; exact activation is separate,
+  and failed or indeterminate accounting falls back to human review.
+- Expands deterministic approval policy to reviewed numeric, enum, boolean,
+  text-length, and pre-change-state conjunctions while preserving existing
+  numeric-threshold behavior and requiring coverage of every model-controlled
+  numeric patch.
+- Adds proposal-only UPDATE/DELETE for reviewed single-organization Action
+  Boundaries; INSERT remains refused without source-enforced organization-safe
+  deduplication.
 - Adds intent-first terminal and preview Workbench authoring for bounded
   `INSERT`, `UPDATE`, and `DELETE` capabilities, with source-unchanged
   rehearsal, immutable revisions, proposal review, receipts, replay, evidence,
   deterministic approval policy, and exact-digest supervised execution.
+- Replaces the default per-field action wizard with one proposal-action card.
+  Business intent ranks reviewed structural candidates only; Runner asks only
+  when the target, operation, guard, field set, or numeric bound is unresolved.
+  It then compiles a disabled proposal-only revision and rehearses generated
+  bounded arguments in a disposable ledger before one explicit activation.
+- Keeps fixed values, transitions, approval policy, executors, receipts,
+  supervised workers, exact JSON, DSL, and digests available in Advanced
+  review without making ordinary proposal onboarding operate those states.
+- Allows a disabled proposal action to bind to a fully reviewed pending read
+  revision and complete its disposable rehearsal in the same session. The
+  proposal action still cannot activate until that exact read digest is active.
+- Returns a rehearsed pending action directly to read activation with a
+  state-aware next step, and refuses instead of substituting another operation
+  when the operator's clearly named write effect is unavailable.
+- Allows multiple disabled actions for one job to activate sequentially by
+  rebasing the remaining disabled Action Boundary candidates without changing
+  their immutable action contract digests.
 - Keeps managed actions proposal-only by default. Executable posture requires
   separate reviewed authority, and noninteractive activation requires an exact
   rehearsal plus verified operator identity, reason, expiry, and single-use

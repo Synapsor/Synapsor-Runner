@@ -289,6 +289,9 @@ export function runtimeCapabilityFromSpec(
     ...(capability.max_rows ? { max_rows: capability.max_rows } : {}),
     ...(capability.aggregate ? { aggregate: capability.aggregate } : {}),
     ...(capability.protected_read ? { protected_read: capability.protected_read } : {}),
+    ...(capability.proposal?.organization_scope
+      ? { organization_scope: capability.proposal.organization_scope }
+      : {}),
   };
   if (capability.kind === "proposal" && capability.proposal) {
     runtime.patch = capability.proposal.patch;

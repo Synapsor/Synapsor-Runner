@@ -193,6 +193,88 @@ describe("bounded Safe Action suggestion records", () => {
       contractDigest: `sha256:${"f".repeat(64)}`,
     })).rejects.toThrow(/NOT_REVIEWABLE/);
   });
+
+  it("stores a deterministic policy proposal as non-authoritative operator-review input", async () => {
+    const root = await temporaryRoot();
+    const imported = await importActionSuggestion({
+      projectRoot: root,
+      options: actionOptions("2"),
+      value: {
+        ...validSuggestion(),
+        approval_policy_proposal: {
+          mode: "deterministic",
+          conditions: [{ field: "status", operator: "in", values: ["closed"] }],
+          max_per_day: 20,
+          shared_limits: [{
+            kind: "count",
+            scope: "tenant",
+            maximum: 100,
+            window_seconds: 86400,
+          }],
+        },
+      },
+    });
+
+    expect(imported).toMatchObject({
+      state: "suggested",
+      authority_granted: false,
+      source_database_changed: false,
+      assessment: {
+        suggestion: {
+          approval_policy_proposal: {
+            mode: "deterministic",
+            max_per_day: 20,
+            conditions: [{ field: "status", operator: "in", values: ["closed"] }],
+          },
+        },
+      },
+    });
+  });
+
+  it("fails closed on delete auto-approval, uncovered fields, and unavailable principal scope", async () => {
+    const root = await temporaryRoot();
+    const options = actionOptions("3");
+    options.resources[0] = { ...options.resources[0]!, principal_key: undefined };
+    const blocked = await importActionSuggestion({
+      projectRoot: root,
+      options,
+      value: {
+        ...validSuggestion(),
+        operation: "delete",
+        fields: undefined,
+        approval_policy_proposal: {
+          mode: "deterministic",
+          conditions: [{ source: "before", field: "status", operator: "eq", value: "closed" }],
+          max_per_day: 1,
+          shared_limits: [{
+            kind: "count",
+            scope: "tenant_principal",
+            maximum: 1,
+            window_seconds: 3600,
+          }],
+        },
+      },
+    });
+    expect(blocked.state).toBe("blocked");
+    expect(blocked.current_assessment.blockers).toEqual(expect.arrayContaining([
+      expect.stringContaining("Hard DELETE cannot carry"),
+      expect.stringContaining("tenant_principal"),
+    ]));
+
+    await expect(importActionSuggestion({
+      projectRoot: root,
+      options,
+      value: {
+        ...validSuggestion(),
+        fields: ["status"],
+        approval_policy_proposal: {
+          mode: "deterministic",
+          conditions: [{ field: "status", operator: "contains", value: "closed" }],
+          max_per_day: 1,
+        },
+      },
+    })).rejects.toThrow(/POLICY_OPERATOR_INVALID/);
+  });
 });
 
 async function temporaryRoot(): Promise<string> {
@@ -214,6 +296,8 @@ function validSuggestion() {
 
 function actionOptions(digestCharacter: string): GuidedActionOptions {
   return {
+    boundary_name: "reviewed_staging",
+    boundary_state: "active",
     boundary_digest: `sha256:${digestCharacter.repeat(64)}`,
     source: "local_postgres",
     deployment_profile: "staging",

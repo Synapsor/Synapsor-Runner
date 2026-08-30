@@ -516,12 +516,22 @@ describe("try ask", () => {
       projectRoot: string;
       activationReviewNotice: string;
       onActivated: () => Promise<number>;
+      modelAuthoringSession: {
+        provider: string;
+        model: string;
+        apiKey?: string;
+      };
     }) => {
       expect(input.projectRoot).toBe(fixture.root);
       expect(input.activationReviewNotice).toContain(
         "Confirming activation also renews provider egress consent",
       );
       expect(input.activationReviewNotice).toContain("OpenAI / gpt-owner-selected");
+      expect(input.modelAuthoringSession).toMatchObject({
+        provider: "openai",
+        model: "gpt-owner-selected",
+        apiKey: secret,
+      });
       const financeDigest = `sha256:${"b".repeat(64)}`;
       const supportBoundary = {
         schema_version: "synapsor.exploration-boundary-active.v1",

@@ -4,7 +4,16 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { buildProposalReviewView, createMcpRuntime, evaluateProposalFreshness, loadRuntimeConfigFromFile, type ProposalFreshnessEvaluation } from "@synapsor-runner/mcp-server";
+import {
+  buildProposalReviewView,
+  createMcpRuntime,
+  evaluateProposalFreshness,
+  explainApprovalPolicy,
+  loadRuntimeConfigFromFile,
+  type ProposalFreshnessEvaluation,
+  type RuntimeCapabilityConfig,
+  type Scalar,
+} from "@synapsor-runner/mcp-server";
 import {
   ProposalStore,
   type AttentionEvent,
@@ -114,21 +123,30 @@ import {
 } from "./boundary-candidate.js";
 import {
   activateGuidedAction,
+  activateGuidedActionBoundary,
   createGuidedActionDraft,
   guidedActionDraftDetails,
   guidedActionOptions,
+  guidedActionOptionsFromCandidate,
   guidedActionStatus,
+  readGuidedActionDesignInput,
   recordGuidedActionPreview,
   reviseGuidedActionAuthority,
+  reviseGuidedActionBoundary,
   type GuidedActionAuthorityRevisionInput,
   type GuidedActionInput,
 } from "./guided-action.js";
 import { executeGuidedActionPreview as executeManagedGuidedActionPreview } from "./guided-action-runtime.js";
 import { withDisposableActionPreviewLedger } from "./action-preview-ledger.js";
-import { generateModelActionSuggestion } from "./action-suggestion-model.js";
+import {
+  generateModelActionSuggestion,
+  generateModelActionSuggestionSet,
+} from "./action-suggestion-model.js";
 import {
   analyzeReadWorkloadSet,
+  buildReadWorkloadPlanCards,
   normalizeReadWorkloadSet,
+  readWorkloadFromPlanCards,
   type ReadWorkloadSet,
 } from "./read-workload-assist.js";
 import {
@@ -146,6 +164,17 @@ import {
   type ReadWorkloadView,
 } from "./read-workloads.js";
 import {
+  buildDelegationDraft,
+  listDelegationDrafts,
+  summarizeDelegation,
+  writeDelegationDraft,
+  type DelegationModelAssist,
+} from "./delegation-setup.js";
+import {
+  applyJobMappingCatalog,
+  loadJobMappingCatalog,
+} from "./job-mapping-catalog.js";
+import {
   importActionSuggestion,
   listActionSuggestions,
   readActionSuggestion,
@@ -155,6 +184,11 @@ import {
   DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
   DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
 } from "./terminal-ask-defaults.js";
+import {
+  applySuggestedDeterministicApproval,
+  prepareQuickProposalAction,
+  type QuickProposalDecisions,
+} from "./guided-action-quick.js";
 import {
   activateSafeActionDraft,
   prepareSafeActionPreview,
@@ -307,6 +341,7 @@ export type LocalUiOptions = {
   safeActionPreview?: SafeActionPreview;
   guidedActionPreview?: GuidedActionPreview;
   guidedActionSuggestion?: typeof generateModelActionSuggestion;
+  guidedActionSuggestionSet?: typeof generateModelActionSuggestionSet;
   readWorkloadSuggestion?: typeof generateModelReadWorkload;
   freshnessEvaluator?: ProposalFreshnessEvaluator;
   schemaInspector?: typeof inspectDatabase;
@@ -514,6 +549,7 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
   const safeActionPreview = options.safeActionPreview ?? executeSafeActionPreview;
   const guidedActionPreview = options.guidedActionPreview ?? executeGuidedActionPreview;
   const guidedActionSuggestion = options.guidedActionSuggestion ?? generateModelActionSuggestion;
+  const guidedActionSuggestionSet = options.guidedActionSuggestionSet ?? generateModelActionSuggestionSet;
   const readWorkloadSuggestion = options.readWorkloadSuggestion ?? generateModelReadWorkload;
   const schemaInspector = options.schemaInspector ?? inspectDatabase;
   const freshnessEvaluator = options.freshnessEvaluator
@@ -552,6 +588,7 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
         safeActionPreview,
         guidedActionPreview,
         guidedActionSuggestion,
+        guidedActionSuggestionSet,
         readWorkloadSuggestion,
         freshnessEvaluator,
         schemaInspector,
@@ -642,6 +679,7 @@ async function handleRequest(input: {
   safeActionPreview: SafeActionPreview;
   guidedActionPreview: GuidedActionPreview;
   guidedActionSuggestion: typeof generateModelActionSuggestion;
+  guidedActionSuggestionSet: typeof generateModelActionSuggestionSet;
   readWorkloadSuggestion: typeof generateModelReadWorkload;
   freshnessEvaluator: ProposalFreshnessEvaluator;
   schemaInspector: typeof inspectDatabase;
@@ -678,6 +716,7 @@ async function handleRequest(input: {
     safeActionPreview,
     guidedActionPreview,
     guidedActionSuggestion,
+    guidedActionSuggestionSet,
     readWorkloadSuggestion,
     freshnessEvaluator,
     schemaInspector,
@@ -840,7 +879,10 @@ async function handleRequest(input: {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
     const boundaryCatalog = buildBoundaryCatalogModel(activeBoundaries);
-    const instantCandidate = hasReviewableResource && instantOnboarding
+    const instantCandidate = hasReviewableResource
+      && instantOnboarding
+      && activeBoundaries.length === 0
+      && !progress
       ? instantWorkbenchCandidate(draft)
       : null;
     const instantFirstValue = instantCandidate
@@ -981,6 +1023,7 @@ async function handleRequest(input: {
     sendJson(response, 200, {
       ok: true,
       workloads: await listReadWorkloadAnalyses({ projectRoot, generatedBoundary: draft }),
+      plan_cards: buildReadWorkloadPlanCards(draft),
       starter_workload: workbenchReadWorkloadStarter(draft),
       structural_catalog: readWorkloadCatalog(draft),
       defaults: {
@@ -1000,6 +1043,104 @@ async function handleRequest(input: {
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/boundary/delegations") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Delegation setup is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    const draft = JSON.parse(await fs.readFile(
+      path.join(boundaryRoot, "exploration-boundary.draft.json"),
+      "utf8",
+    )) as ExplorationBoundaryDraft;
+    sendJson(response, 200, {
+      ok: true,
+      delegations: await listDelegationDrafts(projectRoot),
+      plan_cards: buildReadWorkloadPlanCards(draft),
+      mapping_catalog: await loadJobMappingCatalog(projectRoot),
+      defaults: {
+        openai_model: DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
+        anthropic_model: DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
+        openai_key_env: "OPENAI_API_KEY",
+        anthropic_key_env: "ANTHROPIC_API_KEY",
+      },
+      model_availability: {
+        openai: Boolean(process.env.OPENAI_API_KEY?.trim()),
+        anthropic: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+        openai_compatible: false,
+      },
+      stages: {
+        explore: "off",
+        propose: "off",
+        delegate: "off",
+        apply: "off",
+      },
+      trust: {
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+        authority_activated: false,
+        model_can_activate: false,
+        model_can_approve: false,
+        model_can_apply: false,
+      },
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/boundary/delegations/catalog") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Delegation setup is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to prepare a disabled job-mapping catalog." });
+      return;
+    }
+    try {
+      const body = await readJsonBody(request);
+      assertWorkbenchObjectKeys(body, [
+        "expected_plan_digest",
+        "accepted_shared_resources",
+        "actor",
+      ], "job-mapping catalog review");
+      if (typeof body.expected_plan_digest !== "string"
+        || !Array.isArray(body.accepted_shared_resources)
+        || body.accepted_shared_resources.some((value) => typeof value !== "string")) {
+        throw new Error(
+          "Job-mapping catalog review requires an expected digest and an array of accepted shared-reference resources.",
+        );
+      }
+      const actor = typeof body.actor === "string" && body.actor.trim()
+        ? requiredReviewText(body.actor, "human reviewer")
+        : "local-workbench-review";
+      const applied = await applyJobMappingCatalog({
+        projectRoot,
+        expectedPlanDigest: body.expected_plan_digest,
+        acceptedSharedResources: body.accepted_shared_resources,
+        actor,
+        reason: "Prepare a complete disabled structural catalog for one-job Workbench mapping.",
+        schemaInspector,
+      });
+      const draft = JSON.parse(await fs.readFile(
+        path.join(boundaryRoot, "exploration-boundary.draft.json"),
+        "utf8",
+      )) as ExplorationBoundaryDraft;
+      sendJson(response, 200, {
+        ok: true,
+        applied,
+        mapping_catalog: await loadJobMappingCatalog(projectRoot),
+        plan_cards: buildReadWorkloadPlanCards(draft),
+        authority_activated: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      });
+    } catch (error) {
+      sendJson(response, 409, workbenchReadWorkloadError(error));
+    }
+    return;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/boundary/workloads/analyze") {
     if (!boundaryRoot) {
       sendJson(response, 404, { ok: false, error: "Boundary Workbench is not enabled for this session." });
@@ -1016,8 +1157,27 @@ async function handleRequest(input: {
         "utf8",
       )) as ExplorationBoundaryDraft;
       let workload: ReadWorkloadView;
-      if (body.mode === "exact") {
-        const exact = normalizeReadWorkloadSet(body.workload);
+      if (body.mode === "cards") {
+        if (!Array.isArray(body.selected_card_ids)
+          || body.selected_card_ids.some((value) => typeof value !== "string")) {
+          throw new Error("Choose at least one reviewed question card.");
+        }
+        const cards = buildReadWorkloadPlanCards(draft);
+        const exact = workbenchWorkloadWithActionSupport(readWorkloadFromPlanCards({
+          cards,
+          selectedIds: body.selected_card_ids,
+        }), body.action_support);
+        workload = await storeReadWorkloadAnalysis({
+          projectRoot,
+          generatedBoundary: draft,
+          source: exact.source,
+          analysis: analyzeReadWorkloadSet({ workload: exact, generatedBoundary: draft }),
+        });
+      } else if (body.mode === "exact") {
+        const exact = workbenchWorkloadWithActionSupport(
+          normalizeReadWorkloadSet(body.workload),
+          body.action_support,
+        );
         if (exact.source.kind !== "operator_exact_plan" && exact.source.kind !== "plan_playground") {
           throw new Error("Exact Workbench input must declare source.kind=operator_exact_plan or plan_playground.");
         }
@@ -1046,20 +1206,24 @@ async function handleRequest(input: {
           egressAcknowledged: body.egress_acknowledged === true,
           dependencies: askProviderDependencies,
         });
+        const exact = workbenchWorkloadWithActionSupport(mapped.workload, body.action_support);
         workload = await storeReadWorkloadAnalysis({
           projectRoot,
           generatedBoundary: draft,
-          source: mapped.workload.source!,
-          analysis: mapped.analysis,
+          source: exact.source!,
+          analysis: analyzeReadWorkloadSet({ workload: exact, generatedBoundary: draft }),
         });
       } else if (body.mode === "saved") {
+        if (body.action_support !== undefined) {
+          throw new Error("Saved workload analyses cannot be widened with action-review support; analyze the job again.");
+        }
         workload = await readReadWorkloadAnalysis({
           projectRoot,
           analysisId: requiredReviewText(body.analysis_id, "workload analysis id"),
           generatedBoundary: draft,
         });
       } else {
-        throw new Error("Boundary Assist mode must be exact, model, or saved.");
+        throw new Error("Boundary Assist mode must be cards, exact, model, or saved.");
       }
       const actor = optionalWorkbenchText(body.actor, "reviewer identity", 128);
       const reason = optionalWorkbenchText(body.reason, "review reason", 500);
@@ -1146,6 +1310,116 @@ async function handleRequest(input: {
         explore_budget_consumed: false,
         source_database_changed: false,
         next: "Review and activate this disabled read boundary, then continue to Action Assist if writes are needed.",
+      });
+    } catch (error) {
+      sendJson(response, 409, workbenchReadWorkloadError(error));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/boundary/delegations/record") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Delegation setup is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to record a delegation draft." });
+      return;
+    }
+    try {
+      const body = await readJsonBody(request);
+      assertWorkbenchObjectKeys(body, [
+        "job_intent",
+        "analysis_id",
+        "action_intents",
+        "actions",
+        "model_assist",
+      ], "delegation record");
+      const jobIntent = requiredReviewText(body.job_intent, "agent job");
+      const analysisId = requiredReviewText(body.analysis_id, "read workload analysis id");
+      if (!Array.isArray(body.action_intents) || body.action_intents.length > 8) {
+        throw new Error("Delegation setup accepts zero through eight proposal-action intents.");
+      }
+      const actionIntents = body.action_intents.map((value) =>
+        requiredReviewText(value, "proposal-action intent"));
+      if (!Array.isArray(body.actions)) {
+        throw new Error("Delegation setup requires an actions array, which may be empty.");
+      }
+      const generatedBoundary = JSON.parse(await fs.readFile(
+        path.join(boundaryRoot, "exploration-boundary.draft.json"),
+        "utf8",
+      )) as ExplorationBoundaryDraft;
+      const workload = await readReadWorkloadAnalysis({
+        projectRoot,
+        analysisId,
+        generatedBoundary,
+      });
+      if (workload.state !== "reviewed" || !workload.review) {
+        throw new Error("DELEGATION_READ_REVIEW_REQUIRED: save the exact disabled Read Boundary candidate first.");
+      }
+      const guidedStatus = await guidedActionStatus(projectRoot);
+      const seenCapabilities = new Set<string>();
+      const actionDrafts = body.actions.map((value) => {
+        if (!isRecord(value)) throw new Error("Each delegation action must name one exact intent, capability, and contract digest.");
+        assertWorkbenchObjectKeys(value, ["intent", "capability", "contract_digest"], "delegation action");
+        const intent = requiredReviewText(value.intent, "proposal-action intent");
+        const capability = requiredReviewText(value.capability, "proposal capability");
+        const contractDigest = requiredReviewText(value.contract_digest, "proposal contract digest");
+        if (!actionIntents.includes(intent)) {
+          throw new Error(`Delegation action ${capability} does not match one of this job's reviewed proposal intents.`);
+        }
+        if (seenCapabilities.has(capability)) throw new Error(`Delegation action ${capability} is duplicated.`);
+        seenCapabilities.add(capability);
+        const draft = guidedStatus.drafts.find((candidate) =>
+          candidate.capability === capability
+          && candidate.contract_digest === contractDigest
+          && candidate.boundary_name === generatedBoundary.pack.name);
+        if (!draft) {
+          throw new Error(`DELEGATION_ACTION_DRAFT_MISMATCH: ${capability} is not an exact disabled draft for ${generatedBoundary.pack.name}.`);
+        }
+        return { intent, draft };
+      });
+      let modelAssist: DelegationModelAssist | undefined;
+      if (body.model_assist !== undefined) {
+        if (!isRecord(body.model_assist)
+          || body.model_assist.structural_metadata_egress_acknowledged !== true) {
+          throw new Error("Delegation model assistance requires one explicit structural-metadata egress acknowledgement.");
+        }
+        assertWorkbenchObjectKeys(body.model_assist, [
+          "provider",
+          "model",
+          "structural_metadata_egress_acknowledged",
+        ], "delegation model assistance");
+        modelAssist = {
+          provider: workbenchReadWorkloadProvider(body.model_assist.provider),
+          model: requiredReviewText(body.model_assist.model, "model name"),
+          structural_metadata_egress_acknowledged: true,
+        };
+      }
+      const delegation = buildDelegationDraft({
+        jobIntent,
+        boundaryName: generatedBoundary.pack.name,
+        workload,
+        review: workload.review,
+        actionIntents,
+        actionDrafts,
+        ...(modelAssist ? { modelAssist } : {}),
+      });
+      const stored = await writeDelegationDraft(projectRoot, delegation);
+      sendJson(response, 200, {
+        ok: true,
+        delegation,
+        summary: summarizeDelegation(delegation, {
+          read_active: false,
+          proposal_active: false,
+          delegated_approval_active: false,
+          execution_active: false,
+        }),
+        stored,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
       });
     } catch (error) {
       sendJson(response, 409, workbenchReadWorkloadError(error));
@@ -3865,13 +4139,179 @@ async function handleRequest(input: {
       return;
     }
     const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
-    const options = await guidedActionOptions({ projectRoot, inspection });
+    const options = await guidedActionOptions({
+      projectRoot,
+      inspection,
+      allowReviewedPending: true,
+    });
+    const status = await guidedActionStatus(projectRoot);
+    const selectedBoundary = status.action_boundary.draft ?? status.action_boundary.active;
+    const limitOptions = selectedBoundary
+      ? await Promise.all(selectedBoundary.authority.capabilities.map(async (reference) => {
+          const hasExactDraft = status.drafts.some((draft) =>
+            draft.capability === reference.capability && draft.contract_digest === reference.contract_digest);
+          const design = await readGuidedActionDesignInput(
+            projectRoot,
+            reference.capability,
+            hasExactDraft ? "draft" : "active",
+          );
+          return {
+            capability: reference.capability,
+            resource: reference.resource,
+            operation: reference.operation,
+            numeric_total_fields: (design.patches ?? [])
+              .filter((patch) => patch.value_source === "argument"
+                ? Number.isFinite(patch.minimum) && Number.isFinite(patch.maximum)
+                : typeof patch.fixed_value === "number")
+              .map((patch) => patch.column),
+          };
+        }))
+      : [];
     sendJson(response, 200, {
       ok: true,
       options,
-      status: await guidedActionStatus(projectRoot),
+      status,
+      action_boundary_limit_options: limitOptions,
       suggestions: await listActionSuggestions({ projectRoot, options }),
       source_database_changed: false,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/guided/boundary/limits") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Action Boundary review is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to revise Action Boundary limits." });
+      return;
+    }
+    if (await cloudLinkedGovernance(configPath)) {
+      sendJson(response, 403, { ok: false, error: "Cloud-linked Action Boundary revisions must use the governed Cloud workflow." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    assertWorkbenchObjectKeys(body, ["shared_limits", "label", "job_intent"], "Action Boundary limit revision");
+    if (!Array.isArray(body.shared_limits)) {
+      throw new Error("Action Boundary limit revision requires one shared_limits array.");
+    }
+    const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
+    const draft = await reviseGuidedActionBoundary({
+      projectRoot,
+      inspection,
+      sharedLimits: body.shared_limits as Parameters<typeof reviseGuidedActionBoundary>[0]["sharedLimits"],
+      ...(typeof body.label === "string" ? { label: body.label } : {}),
+      ...(typeof body.job_intent === "string" ? { jobIntent: body.job_intent } : {}),
+    });
+    sendJson(response, 200, {
+      ok: true,
+      draft,
+      authority_granted: false,
+      proposal_approved: false,
+      source_database_changed: false,
+      message: "Disabled Action Boundary limit revision saved. Active authority is unchanged until exact activation.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/guided/boundary/activate") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Action Boundary activation is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to activate an Action Boundary revision." });
+      return;
+    }
+    if (await cloudLinkedGovernance(configPath)) {
+      sendJson(response, 403, { ok: false, error: "Cloud-linked Action Boundary activation must use the governed Cloud workflow." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    assertWorkbenchObjectKeys(body, ["expected_digest", "confirmation", "actor"], "Action Boundary activation");
+    if (typeof body.expected_digest !== "string"
+      || typeof body.confirmation !== "string"
+      || typeof body.actor !== "string") {
+      throw new Error("Action Boundary activation requires expected_digest, confirmation, and actor.");
+    }
+    const active = await activateGuidedActionBoundary({
+      projectRoot,
+      expectedDigest: body.expected_digest,
+      confirmation: body.confirmation,
+      actor: body.actor,
+    });
+    sendJson(response, 200, {
+      ok: true,
+      active,
+      authority_granted: true,
+      proposal_approved: false,
+      source_database_changed: false,
+      message: "Exact Action Boundary policy revision activated. No proposal was approved or applied.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/guided/quick") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Quick action authoring is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to prepare a proposal action." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    assertWorkbenchObjectKeys(body, ["intent", "decisions", "suggestion_id", "authoring_catalog"], "quick proposal preparation");
+    if (typeof body.intent !== "string" || !body.intent.trim()) {
+      throw new Error("Quick proposal authoring requires one business-intent sentence.");
+    }
+    if (body.decisions !== undefined && !isRecord(body.decisions)) {
+      throw new Error("Quick proposal decisions must be one JSON object.");
+    }
+    const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
+    const options = body.authoring_catalog === true
+      ? guidedActionOptionsFromCandidate({
+          candidate: JSON.parse(await fs.readFile(
+            path.join(boundaryRoot, "exploration-boundary.draft.json"),
+            "utf8",
+          )) as ExplorationBoundaryDraft,
+          inspection,
+        })
+      : await guidedActionOptions({
+          projectRoot,
+          inspection,
+          allowReviewedPending: true,
+        });
+    const suggestion = typeof body.suggestion_id === "string"
+      ? await readActionSuggestion({ projectRoot, suggestionId: body.suggestion_id, options })
+      : undefined;
+    if (suggestion && suggestion.state !== "suggested") {
+      throw new Error(`Guided action suggestion ${suggestion.suggestion_id} is ${suggestion.state} and cannot prepare another draft.`);
+    }
+    const suggested = suggestion?.current_assessment?.suggestion
+      ?? suggestion?.assessment.suggestion;
+    const supplied = isRecord(body.decisions) ? body.decisions as QuickProposalDecisions : {};
+    const decisions: QuickProposalDecisions = suggested
+      ? {
+          ...(suggested.resource ? { resource: suggested.resource } : {}),
+          ...(suggested.operation ? { operation: suggested.operation } : {}),
+          ...(suggested.fields ? { fields: suggested.fields } : {}),
+          ...supplied,
+        }
+      : supplied;
+    let preparation = prepareQuickProposalAction({
+      options,
+      intent: body.intent,
+      ...(Object.keys(decisions).length ? { decisions } : {}),
+    });
+    const assessment = suggestion?.current_assessment ?? suggestion?.assessment;
+    if (assessment) preparation = applySuggestedDeterministicApproval(preparation, assessment);
+    sendJson(response, 200, {
+      ok: true,
+      preparation,
+      source_database_changed: false,
+      authority_granted: false,
     });
     return;
   }
@@ -3890,7 +4330,19 @@ async function handleRequest(input: {
       throw new Error("Workbench action suggestions accept an API-key environment name only, never a credential value.");
     }
     const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
-    const options = await guidedActionOptions({ projectRoot, inspection });
+    const options = body.authoring_catalog === true
+      ? guidedActionOptionsFromCandidate({
+          candidate: JSON.parse(await fs.readFile(
+            path.join(boundaryRoot, "exploration-boundary.draft.json"),
+            "utf8",
+          )) as ExplorationBoundaryDraft,
+          inspection,
+        })
+      : await guidedActionOptions({
+          projectRoot,
+          inspection,
+          allowReviewedPending: true,
+        });
     let suggestionValue: unknown;
     let generatedBy: { provider: string; model: string } | undefined;
     if (isRecord(body.suggestion)) {
@@ -3946,6 +4398,80 @@ async function handleRequest(input: {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/actions/guided/suggest-set") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Action-set suggestions are available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to generate action-set suggestions." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    assertWorkbenchObjectKeys(body, [
+      "job_intent",
+      "provider",
+      "model",
+      "api_key_env",
+      "base_url",
+      "egress_acknowledged",
+      "authoring_catalog",
+    ], "action-set suggestion");
+    if ("api_key" in body || "credential" in body || "token" in body) {
+      throw new Error("Workbench action-set suggestions accept an API-key environment name only, never a credential value.");
+    }
+    const jobIntent = optionalWorkbenchText(body.job_intent, "agent job", 500);
+    if (!jobIntent) throw new Error("Action-set suggestion requires one agent job.");
+    const provider = workbenchReadWorkloadProvider(body.provider);
+    const model = optionalWorkbenchText(body.model, "model", 128)
+      ?? (provider === "anthropic" ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL : DEFAULT_TERMINAL_OPENAI_ASK_MODEL);
+    const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
+    const options = body.authoring_catalog === true
+      ? guidedActionOptionsFromCandidate({
+          candidate: JSON.parse(await fs.readFile(
+            path.join(boundaryRoot, "exploration-boundary.draft.json"),
+            "utf8",
+          )) as ExplorationBoundaryDraft,
+          inspection,
+        })
+      : await guidedActionOptions({ projectRoot, inspection, allowReviewedPending: true });
+    const generated = await guidedActionSuggestionSet({
+      jobIntent,
+      provider,
+      model,
+      options,
+      env: process.env,
+      ...(typeof body.api_key_env === "string" && body.api_key_env.trim()
+        ? { apiKeyEnv: body.api_key_env.trim() }
+        : {}),
+      ...(typeof body.base_url === "string" && body.base_url.trim()
+        ? { baseUrl: body.base_url.trim() }
+        : {}),
+      egressAcknowledged: body.egress_acknowledged === true,
+      ...(askProviderDependencies ? { dependencies: askProviderDependencies } : {}),
+    });
+    const suggestions = [];
+    for (const assessment of generated.assessments) {
+      suggestions.push(await importActionSuggestion({
+        projectRoot,
+        value: assessment.suggestion,
+        options,
+      }));
+    }
+    sendJson(response, 200, {
+      ok: true,
+      suggestions,
+      generated_by: { provider, model },
+      ...(generated.discarded_approval_policy_proposals
+        ? { discarded_approval_policy_proposals: generated.discarded_approval_policy_proposals }
+        : {}),
+      authority_granted: false,
+      active_tools_changed: false,
+      source_database_changed: false,
+    });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/actions/guided/draft") {
     if (!boundaryRoot) {
       sendJson(response, 404, { ok: false, error: "Guided action authoring is available only in an Auto Boundary Workbench." });
@@ -3973,7 +4499,11 @@ async function handleRequest(input: {
     const body = await readJsonBody(request);
     if (!isRecord(body.action)) throw new Error("Guided action authoring requires one reviewed action object.");
     const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
-    const options = await guidedActionOptions({ projectRoot, inspection });
+    const options = await guidedActionOptions({
+      projectRoot,
+      inspection,
+      allowReviewedPending: true,
+    });
     const suggestion = typeof body.suggestion_id === "string"
       ? await readActionSuggestion({ projectRoot, suggestionId: body.suggestion_id, options })
       : undefined;
@@ -3984,6 +4514,11 @@ async function handleRequest(input: {
       projectRoot,
       action: body.action as GuidedActionInput,
       inspection,
+      boundaryName: options.boundary_name,
+      allowReviewedPending: options.boundary_state === "reviewed_pending",
+      ...(typeof body.action_boundary_job_intent === "string" && body.action_boundary_job_intent.trim()
+        ? { actionBoundaryJobIntent: requiredReviewText(body.action_boundary_job_intent, "Action Boundary job purpose") }
+        : {}),
     });
     if (suggestion) {
       await recordActionSuggestionReview({
@@ -4015,8 +4550,10 @@ async function handleRequest(input: {
       projectRoot,
       status: "add_action",
       completedStep: "action_drafted",
-      authorityActive: true,
-      recommendedNextAction: "Rehearse the exact draft through the disposable preview ledger. The source database and durable proposal ledger will remain unchanged.",
+      authorityActive: options.boundary_state === "active",
+      recommendedNextAction: options.boundary_state === "reviewed_pending"
+        ? `Rehearse this disabled action, then activate read boundary ${options.boundary_name} before action activation.`
+        : "Rehearse the exact draft through the disposable preview ledger. The source database and durable proposal ledger will remain unchanged.",
     }).catch(() => undefined);
     sendJson(response, 200, {
       ok: true,
@@ -4028,6 +4565,108 @@ async function handleRequest(input: {
       source_database_changed: false,
       message: "Disabled action draft created. No model-facing authority was activated.",
     });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/guided/policy/simulate") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Approval-policy simulation is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to simulate an approval policy." });
+      return;
+    }
+    try {
+      const body = await readJsonBody(request);
+      const capabilityName = requiredReviewText(body.capability_name, "proposal capability");
+      const patch = workbenchScalarRecord(body.patch, "proposal patch");
+      const before = body.before === undefined
+        ? undefined
+        : workbenchScalarRecord(body.before, "pre-change row facts");
+      const status = await guidedActionStatus(projectRoot);
+      const disabled = status.drafts.find((candidate) => candidate.capability === capabilityName);
+      const reviewedBoundary = status.action_boundary.draft ?? status.action_boundary.active;
+      const actionBoundaryLimits = (reviewedBoundary?.authority.shared_limits ?? [])
+        .filter((limit) => !limit.capability || limit.capability === capabilityName)
+        .map((limit) => ({
+          ...limit,
+          evaluation: "transaction_time" as const,
+          effect_on_failure: "human_review" as const,
+        }));
+      let capability: RuntimeCapabilityConfig;
+      let policies: Awaited<ReturnType<typeof loadRuntimeConfigFromFile>>["policies"];
+      if (disabled) {
+        const contract = (await guidedActionDraftDetails(projectRoot, capabilityName)).contract;
+        const reviewedCapability = contract.capabilities.find((candidate) => candidate.name === capabilityName);
+        if (!reviewedCapability?.proposal) {
+          throw new Error(`${capabilityName} is not an exact proposal capability in the current Action Boundary draft.`);
+        }
+        capability = {
+          ...reviewedCapability,
+          approval: reviewedCapability.proposal.approval,
+          patch: reviewedCapability.proposal.patch,
+          allowed_columns: reviewedCapability.proposal.allowed_fields,
+          numeric_bounds: reviewedCapability.proposal.numeric_bounds,
+        } as unknown as RuntimeCapabilityConfig;
+        policies = contract.policies;
+      } else {
+        const runtimeConfig = await loadRuntimeConfigFromFile(path.join(projectRoot, "synapsor.actions.runner.json"));
+        const activeCapability = runtimeConfig.capabilities?.find((candidate) => candidate.name === capabilityName);
+        if (!activeCapability || activeCapability.kind !== "proposal") {
+          throw new Error(`${capabilityName} is not an exact proposal capability in the current Action Boundary draft.`);
+        }
+        capability = activeCapability;
+        policies = runtimeConfig.policies;
+      }
+      const policyName = capability.approval?.mode === "policy" ? capability.approval.policy : undefined;
+      const policy = policyName
+        ? policies?.find((candidate) => candidate.kind === "approval" && candidate.name === policyName)
+        : undefined;
+      if (!policyName || !policy) {
+        sendJson(response, 200, {
+          ok: true,
+          capability: capabilityName,
+          decision: "human_review",
+          qualifies: false,
+          reason: "No deterministic auto-approval policy is attached; every proposal requires human review.",
+          conditions: [],
+          limits: [],
+          action_boundary_limits: actionBoundaryLimits,
+          authority_changed: false,
+          source_query_executed: false,
+          source_database_changed: false,
+        });
+        return;
+      }
+      const explanation = explainApprovalPolicy(
+        capability as RuntimeCapabilityConfig,
+        policy,
+        patch,
+        before ? { before } : {},
+      );
+      sendJson(response, 200, {
+        ok: true,
+        capability: capabilityName,
+        authority_state: disabled ? "disabled_draft" : "active_revision",
+        ...(disabled ? { contract_digest: disabled.contract_digest } : {}),
+        policy: policyName,
+        ...explanation,
+        action_boundary_limits: actionBoundaryLimits,
+        rolling_limits_note: "Rolling count and total limits, proposal freshness, and current state are rechecked atomically during real approval.",
+        authority_changed: false,
+        source_query_executed: false,
+        source_database_changed: false,
+      });
+    } catch (error) {
+      sendJson(response, 409, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        authority_changed: false,
+        source_query_executed: false,
+        source_database_changed: false,
+      });
+    }
     return;
   }
 
@@ -6532,6 +7171,64 @@ function workbenchReadWorkloadIntent(value: unknown): {
     allowed_questions: questions(value.allowed_questions, "allowed questions", true),
     forbidden_questions: questions(value.forbidden_questions, "forbidden questions", false),
   };
+}
+
+function assertWorkbenchObjectKeys(
+  value: Record<string, unknown>,
+  allowed: string[],
+  label: string,
+): void {
+  const allowedKeys = new Set(allowed);
+  const unknown = Object.keys(value).filter((key) => !allowedKeys.has(key));
+  if (unknown.length) {
+    throw new Error(`${label} contains unsupported fields: ${unknown.join(", ")}. Credential values and unreviewed metadata are never persisted here.`);
+  }
+}
+
+function workbenchWorkloadWithActionSupport(
+  workload: ReadWorkloadSet,
+  value: unknown,
+): ReadWorkloadSet {
+  if (value === undefined) return workload;
+  if (!Array.isArray(value) || value.length > 8) {
+    throw new Error("Action-review support must contain at most eight exact action targets.");
+  }
+  const usedIds = new Set(workload.allowed.map((entry) => entry.id));
+  const support: ReadWorkloadSet["allowed"] = value.map((candidate, index) => {
+    if (!isRecord(candidate)) throw new Error("Each action-review support entry must be one object.");
+    assertWorkbenchObjectKeys(candidate, ["resource", "operation", "fields"], "action-review support");
+    const resource = optionalWorkbenchText(candidate.resource, "action support resource", 256);
+    if (!resource) throw new Error("Each action-review support entry requires one exact resource id.");
+    if (candidate.operation !== "insert" && candidate.operation !== "update" && candidate.operation !== "delete") {
+      throw new Error("Action-review support operation must be insert, update, or delete.");
+    }
+    if (!Array.isArray(candidate.fields) || candidate.fields.length > 32
+      || candidate.fields.some((field) => typeof field !== "string" || !field.trim() || field.length > 256)) {
+      throw new Error("Action-review support fields must be an array of at most 32 exact field ids.");
+    }
+    const fields = [...new Set(candidate.fields.map((field) => String(field).trim()))];
+    if (candidate.operation !== "delete" && fields.length === 0) {
+      throw new Error(`${candidate.operation} action-review support requires at least one exact field.`);
+    }
+    if (candidate.operation === "delete" && fields.length) {
+      throw new Error("Delete action-review support cannot add patch fields.");
+    }
+    let id = `action_review_${index + 1}`;
+    let suffix = 2;
+    while (usedIds.has(id)) id = `action_review_${index + 1}_${suffix++}`;
+    usedIds.add(id);
+    return {
+      id,
+      description: `Review the exact fields required to ${candidate.operation} ${resource}.`,
+      plan: fields.length
+        ? { kind: "rows", resource, select: fields, limit: 1 }
+        : { kind: "aggregate", resource, measures: [{ function: "count" }], top_n: 1 },
+    };
+  });
+  return normalizeReadWorkloadSet({
+    ...workload,
+    allowed: [...workload.allowed, ...support],
+  });
 }
 
 function workbenchReadWorkloadProvider(value: unknown): AskProvider {
@@ -9402,6 +10099,29 @@ function applyManagedBoundaryReviewDecision(
 function requiredReviewText(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`Managed boundary review requires ${label}.`);
   return value.trim();
+}
+
+function workbenchScalarRecord(value: unknown, label: string): Record<string, Scalar> {
+  if (!isRecord(value)) throw new Error(`${label} must be one JSON object.`);
+  const entries = Object.entries(value);
+  if (entries.length > 128) throw new Error(`${label} may contain at most 128 fields.`);
+  const result: Record<string, Scalar> = {};
+  for (const [field, candidate] of entries) {
+    if (!field || field.length > 256 || /[\u0000-\u001f\u007f]/.test(field)) {
+      throw new Error(`${label} contains an invalid field name.`);
+    }
+    if (candidate !== null
+      && typeof candidate !== "string"
+      && typeof candidate !== "number"
+      && typeof candidate !== "boolean") {
+      throw new Error(`${label}.${field} must be a string, number, boolean, or null.`);
+    }
+    if (typeof candidate === "number" && !Number.isFinite(candidate)) {
+      throw new Error(`${label}.${field} must be a finite number.`);
+    }
+    result[field] = candidate as Scalar;
+  }
+  return result;
 }
 
 function trustedScopeLabel(

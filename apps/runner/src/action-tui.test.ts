@@ -2,13 +2,25 @@ import { PassThrough } from "node:stream";
 import type { ReadStream, WriteStream } from "node:tty";
 import { describe, expect, it, vi } from "vitest";
 import {
+  actionAuthorityRevisionNeedsVersionAdvance,
+  actionBoundaryActivationStatusLine,
+  actionBoundaryApprovalStatusLine,
+  actionBoundaryLimitSummary,
+  actionActivationReviewLines,
+  actionDraftUsesQuickResume,
   actionReviewLines,
   collectGuidedActionInput,
   collectGuidedRehearsalArgs,
+  collectQuickGuidedRehearsalArgs,
+  collectQuickProposalActionInput,
+  conventionalModelAuthoringSession,
   createTerminalActionPrompter,
+  generatedGuidedRehearsalArgs,
   rankActionIntent,
   renderActionControlPlaneTable,
+  reviewActionDraft,
   reviewActionProposalInbox,
+  suggestedActionBoundaryLimits,
   type ActionControlPrompter,
 } from "./action-tui.js";
 import type { ActionOperatorService, ActionProposalDetail } from "./action-operator.js";
@@ -41,6 +53,8 @@ const orders: GuidedActionResourceOption = {
 };
 
 const options = {
+  boundary_name: "reviewed_staging",
+  boundary_state: "active" as const,
   boundary_digest: `sha256:${"a".repeat(64)}` as const,
   source: "local_postgres",
   deployment_profile: "staging" as const,
@@ -50,6 +64,205 @@ const options = {
 };
 
 describe("Safe Action terminal control plane", () => {
+  it("requires a reviewed version transition before promoting a proposal-only UPDATE", () => {
+    const executable = {
+      authority_posture: "executable" as const,
+      writeback: { mode: "direct_sql" as const },
+      receipt_mode: "runner_ledger" as const,
+    };
+    expect(actionAuthorityRevisionNeedsVersionAdvance({
+      operation: "update",
+      receipt_mode: "runner_ledger",
+    }, executable)).toBe(true);
+    expect(actionAuthorityRevisionNeedsVersionAdvance({
+      operation: "update",
+      receipt_mode: "runner_ledger",
+      version_advance: "integer_increment",
+    }, executable)).toBe(false);
+    expect(actionAuthorityRevisionNeedsVersionAdvance({
+      operation: "insert",
+      receipt_mode: "runner_ledger",
+    }, executable)).toBe(false);
+  });
+
+  it("names the active first-class Action Boundary in setup completion", () => {
+    const boundary = {
+      name: "default_action_boundary",
+      authority: {
+        capabilities: [{}, {}],
+        approval_policies: [{ capability: "support.propose_refund", mode: "policy" }],
+      },
+    } as Parameters<typeof actionBoundaryActivationStatusLine>[0];
+    expect(actionBoundaryActivationStatusLine(boundary))
+      .toBe("Action Boundary: ACTIVE (default_action_boundary; 2 actions)");
+    expect(actionBoundaryApprovalStatusLine(boundary, "support.propose_refund"))
+      .toBe("Approval: DETERMINISTIC POLICY WITH HUMAN FALLBACK");
+    expect(actionBoundaryApprovalStatusLine(boundary, "support.propose_note"))
+      .toBe("Approval: HUMAN REVIEW");
+    expect(actionBoundaryActivationStatusLine(undefined))
+      .toBe("Action Boundary: status unavailable");
+  });
+
+  it("auto-selects one conventional external model without reading or persisting its key", () => {
+    expect(conventionalModelAuthoringSession({ OPENAI_API_KEY: "openai-secret" })).toEqual({
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      apiKeyEnv: "OPENAI_API_KEY",
+    });
+    expect(conventionalModelAuthoringSession({ ANTHROPIC_API_KEY: "anthropic-secret" })).toEqual({
+      provider: "anthropic",
+      model: expect.any(String),
+      apiKeyEnv: "ANTHROPIC_API_KEY",
+    });
+    expect(conventionalModelAuthoringSession({
+      OPENAI_API_KEY: "openai-secret",
+      ANTHROPIC_API_KEY: "anthropic-secret",
+    })).toBeUndefined();
+    expect(conventionalModelAuthoringSession({})).toBeUndefined();
+  });
+
+  it("resumes proposal-only drafts through the minimal rehearsal path", () => {
+    expect(actionDraftUsesQuickResume({ authority_posture: "proposal_only" })).toBe(true);
+    expect(actionDraftUsesQuickResume({ authority_posture: "executable" })).toBe(false);
+  });
+
+  it("keeps a prepared job action disabled even after its exact rehearsal passed", async () => {
+    const messages: Array<{ title: string; lines: string[] }> = [];
+    const prompter: ActionControlPrompter = {
+      async choose() { throw new Error("prepare-only must not offer activation"); },
+      async text() { throw new Error("a completed rehearsal needs no input"); },
+      async confirm() { throw new Error("prepare-only must not ask for authority"); },
+      async message(title, lines) { messages.push({ title, lines }); },
+    };
+    const draft = {
+      schema_version: "synapsor.guided-action.v1",
+      state: "disabled",
+      capability: "orders.propose_credit",
+      source: "local_postgres",
+      resource: "public.orders",
+      operation: "update",
+      boundary_name: "reviewed_staging",
+      boundary_digest: `sha256:${"a".repeat(64)}`,
+      generation_lock_fingerprint: `sha256:${"b".repeat(64)}`,
+      contract_digest: `sha256:${"c".repeat(64)}`,
+      dsl_path: "./capability.synapsor.sql",
+      contract_path: "./synapsor.contract.json",
+      tests_path: "./contract-tests.json",
+      review_path: "./REVIEW.md",
+      design_path: "./action-design.json",
+      runtime_config_path: "./synapsor.actions.runner.json",
+      receipt_mode: "runner_ledger",
+      authority_posture: "proposal_only",
+      writeback_mode: "none",
+      supervised_worker_execution: false,
+      created_at: "2026-08-28T12:00:00.000Z",
+      effect_preview: {
+        contract_digest: `sha256:${"c".repeat(64)}`,
+        proposal_id: "prv_credit",
+        proposal_hash: `sha256:${"d".repeat(64)}`,
+        source_database_changed: false,
+        previewed_at: "2026-08-28T12:01:00.000Z",
+      },
+    } as Parameters<typeof reviewActionDraft>[0]["draft"];
+
+    await expect(reviewActionDraft({
+      projectRoot: "/tmp/not-read-in-prepare-only",
+      inspection: {} as Parameters<typeof reviewActionDraft>[0]["inspection"],
+      draft,
+      prompter,
+      env: {},
+      prepareOnly: true,
+    })).resolves.toBeUndefined();
+    expect(messages).toEqual([expect.objectContaining({
+      title: "PROPOSAL ACTION DRAFT SAVED",
+      lines: expect.arrayContaining([
+        "Proposal action: DISABLED",
+        "Approval: HUMAN",
+        "Writeback: OFF",
+        "Source database changed: no",
+      ]),
+    })]);
+  });
+
+  it("keeps exact proposal activation authority visible at 80x24", async () => {
+    const action = {
+      capability_name: "orders.propose_credit",
+      description: "Propose one bounded order credit.",
+      business_object: "order",
+      resource: "public.orders",
+      operation: "update" as const,
+      conflict_column: "version",
+      patches: [
+        { column: "status", value_source: "argument" as const, argument_name: "status" },
+        { column: "credit_cents", value_source: "argument" as const, argument_name: "credit_cents", minimum: 0, maximum: 2500 },
+      ],
+      approval_role: "action_reviewer",
+      required_approvals: 1,
+      auto_approval: {
+        conditions: [
+          { field: "status", operator: "in" as const, values: ["open"] },
+          { field: "credit_cents", operator: "lte" as const, value: 500 },
+        ],
+        max_per_day: 3,
+        max_total_per_day: 1000,
+        total_field: "credit_cents",
+      },
+      authority_posture: "proposal_only" as const,
+      writeback: { mode: "none" as const },
+      confirmed_trusted_scope: true,
+    };
+    const terminal = fakeTerminal(80, 24);
+    const prompter = createTerminalActionPrompter(terminal.input, terminal.output);
+    const choice = prompter.choose("ACTIVATE PROPOSAL ACTION", [
+      { value: "activate", label: "Activate this exact proposal-only action", detail: "Creates proposals only; approval and apply remain outside the agent." },
+      { value: "advanced", label: "Open draft details", detail: "Inspect DSL, policy, rehearsal, or edit the design." },
+      { value: "back", label: "Leave disabled" },
+    ], [
+      ...actionActivationReviewLines(action, orders),
+      "Rehearsal: passed for this exact disabled revision; source database changed: no.",
+    ]);
+
+    await emitKey(terminal.input, { name: "escape", sequence: "\u001b" });
+    await expect(choice).resolves.toBeUndefined();
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("Target: UPDATE public.orders");
+    expect(rendered).toContain("tenant tenant_id + principal rep_id");
+    expect(rendered).toContain("Conditions:");
+    expect(rendered).toContain("writeback none");
+    expect(rendered).not.toContain("rows hidden");
+  });
+
+  it("prepares one consolidated proposal-only action from unique reviewed intent", async () => {
+    const prompter = scriptedPrompter({
+      choices: ["create"],
+      texts: ["0,2500"],
+      confirms: [],
+    });
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Let support update an order credit_cents within a reviewed limit.",
+    );
+    expect(action).toMatchObject({
+      capability_name: "order.propose_update_orders",
+      description: "Let support update an order credit_cents within a reviewed limit.",
+      resource: "public.orders",
+      operation: "update",
+      conflict_column: "version",
+      approval_role: "action_reviewer",
+      required_approvals: 1,
+      authority_posture: "proposal_only",
+      writeback: { mode: "none" },
+      confirmed_trusted_scope: true,
+      patches: [{
+        column: "credit_cents",
+        value_source: "argument",
+        minimum: 0,
+        maximum: 2500,
+      }],
+    });
+  });
+
   it("collects a proposal-only UPDATE without inferring business bounds or execution", async () => {
     const prompter = scriptedPrompter({
       choices: [
@@ -140,6 +353,195 @@ describe("Safe Action terminal control plane", () => {
     });
   });
 
+  it("defaults to reviewing every remaining model-suggested field before optional extras", async () => {
+    const suggestion = assessActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: "Let support propose an order status and credit change.",
+      operation: "update",
+      resource: "public.orders",
+      fields: ["status", "credit_cents"],
+      suggested_by: { kind: "model", provider: "openai", model: "gpt-5.6-luna" },
+    }, options.resources);
+    const continuationDefaults: Array<{ label: string; defaultValue: boolean | undefined }> = [];
+    const prompter = scriptedPrompter({
+      choices: [
+        "public.orders",
+        "update",
+        "status",
+        "argument",
+        "credit_cents",
+        "argument",
+        "safe",
+        "create",
+      ],
+      texts: [
+        "0",
+        "5000",
+        "orders.propose_status_and_credit",
+        "Propose one reviewed order status and credit change.",
+      ],
+      confirms: [true, false, true],
+      onConfirm(label, defaultValue) {
+        if (label.includes("write field")) continuationDefaults.push({ label, defaultValue });
+      },
+    });
+
+    const action = await collectGuidedActionInput(options, prompter, suggestion, {
+      intent: suggestion.suggestion.intent,
+      mode: "guided",
+    });
+
+    expect(action?.patches?.map((patch) => patch.column)).toEqual(["status", "credit_cents"]);
+    expect(continuationDefaults).toEqual([
+      expect.objectContaining({ defaultValue: true }),
+      expect.objectContaining({ defaultValue: false }),
+    ]);
+  });
+
+  it("cancels an incomplete INSERT instead of skipping a required field", async () => {
+    const continuationDefaults: Array<{ label: string; defaultValue: boolean | undefined }> = [];
+    const prompter = scriptedPrompter({
+      choices: ["public.orders", "insert", "status", "argument"],
+      texts: [],
+      confirms: [false],
+      onConfirm(label, defaultValue) {
+        continuationDefaults.push({ label, defaultValue });
+      },
+    });
+
+    await expect(collectGuidedActionInput(options, prompter, undefined, {
+      intent: "Create one order.",
+      mode: "guided",
+    })).resolves.toBeUndefined();
+    expect(continuationDefaults).toEqual([
+      expect.objectContaining({ label: expect.stringContaining("Still required: credit_cents"), defaultValue: true }),
+    ]);
+  });
+
+  it("rebuilds an imported approval policy when the operator narrows the exact write fields", async () => {
+    const suggestion = assessActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: "Let support propose a bounded order status or credit change.",
+      operation: "update",
+      resource: "public.orders",
+      fields: ["status", "credit_cents"],
+      approval_policy_proposal: {
+        mode: "deterministic",
+        conditions: [
+          { field: "status", operator: "in", values: ["open"] },
+          { field: "credit_cents", operator: "lte", value: 1000 },
+        ],
+        max_per_day: 5,
+      },
+      suggested_by: { kind: "model", provider: "openai", model: "gpt-5.6-luna" },
+    }, options.resources);
+    let proposedPolicyWasOffered = false;
+    const prompter = scriptedPrompter({
+      choices: [
+        "public.orders",
+        "update",
+        "status",
+        "argument",
+        "delegate",
+        "recommended",
+        "create",
+      ],
+      texts: [
+        "orders.propose_status_only",
+        "Propose one reviewed order status change.",
+        "5",
+      ],
+      confirms: [false, true],
+      onChoose(title, choices) {
+        if (title === "AUTO-APPROVAL CONDITIONS") {
+          proposedPolicyWasOffered = choices.some((choice) => choice.value === "proposed");
+        }
+      },
+    });
+
+    const action = await collectGuidedActionInput(options, prompter, suggestion, {
+      intent: suggestion.suggestion.intent,
+      mode: "guided",
+    });
+
+    expect(proposedPolicyWasOffered).toBe(false);
+    expect(action?.patches?.map((patch) => patch.column)).toEqual(["status"]);
+    expect(action?.auto_approval).toEqual({
+      conditions: [{ field: "status", operator: "in", values: ["open", "closed"] }],
+      max_per_day: 5,
+    });
+  });
+
+  it("reviews a model-proposed deterministic policy and trusted principal limit without granting authority", async () => {
+    const suggestion = assessActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: "Let support propose small order credits without waiting for routine human approval.",
+      operation: "update",
+      resource: "public.orders",
+      fields: ["credit_cents"],
+      approval_policy_proposal: {
+        mode: "deterministic",
+        conditions: [{ field: "credit_cents", operator: "lte", value: 1000 }],
+        max_per_day: 5,
+        max_total_per_day: 2500,
+        total_field: "credit_cents",
+        shared_limits: [{
+          kind: "count",
+          scope: "tenant_principal",
+          maximum: 3,
+          window_seconds: 3600,
+        }],
+      },
+      suggested_by: { kind: "model", provider: "openai", model: "gpt-5.6-luna" },
+    }, options.resources);
+    const prompter = scriptedPrompter({
+      choices: [
+        "public.orders",
+        "update",
+        "credit_cents",
+        "argument",
+        "delegate",
+        "proposed",
+        "create",
+      ],
+      texts: [
+        "0",
+        "5000",
+        "orders.propose_small_credit",
+        "Propose one small reviewed order credit.",
+      ],
+      confirms: [false, true, true],
+    });
+
+    const action = await collectGuidedActionInput(options, prompter, suggestion, {
+      intent: suggestion.suggestion.intent,
+      mode: "guided",
+    });
+    expect(action).toMatchObject({
+      authority_posture: "proposal_only",
+      writeback: { mode: "none" },
+      required_approvals: 1,
+      auto_approval: {
+        conditions: [{ field: "credit_cents", operator: "lte", value: 1000 }],
+        max_per_day: 5,
+        max_total_per_day: 2500,
+        total_field: "credit_cents",
+      },
+    });
+    const limits = suggestedActionBoundaryLimits(action!.capability_name, suggestion);
+    expect(limits).toEqual([{
+      id: "suggested_orders_propose_small_credit_tenant_principal_count_1",
+      kind: "count",
+      scope: "tenant_principal",
+      maximum: 3,
+      window_seconds: 3600,
+      capability: "orders.propose_small_credit",
+    }]);
+    expect(actionBoundaryLimitSummary(limits[0]!)).toBe(
+      "At most 3 deterministic approvals for orders.propose_small_credit per trusted tenant + principal in 1 hour.",
+    );
+  });
+
   it("turns business intent into a proposal-only disabled design without asking execution questions", async () => {
     const prompter = scriptedPrompter({
       choices: ["public.orders", "update", "credit_cents", "argument", "safe", "create"],
@@ -221,6 +623,53 @@ describe("Safe Action terminal control plane", () => {
       credit_cents: 750,
       notify: true,
       note: "reviewed note",
+    });
+  });
+
+  it("generates bounded rehearsal values from the compiled contract", () => {
+    const details = {
+      draft: { capability: "orders.propose_generated_rehearsal" },
+      preview_args: { status: "open", credit_cents: 100, notify: false, note: "replace-with-note" },
+      contract: {
+        capabilities: [{
+          name: "orders.propose_generated_rehearsal",
+          args: {
+            status: { type: "string", enum: ["open", "closed"] },
+            credit_cents: { type: "number", minimum: 50, maximum: 1000 },
+            notify: { type: "boolean" },
+            note: { type: "string", max_length: 8 },
+          },
+        }],
+      },
+    } as unknown as Parameters<typeof generatedGuidedRehearsalArgs>[0];
+    expect(generatedGuidedRehearsalArgs(details)).toEqual({
+      status: "open",
+      credit_cents: 50,
+      notify: false,
+      note: "replace-",
+    });
+  });
+
+  it("asks only for the existing row identity that UPDATE rehearsal cannot invent", async () => {
+    const details = {
+      draft: { capability: "orders.propose_quick_update" },
+      preview_args: { order_id: "replace-with-order-id", credit_cents: 50 },
+      contract: {
+        capabilities: [{
+          name: "orders.propose_quick_update",
+          subject: { schema: "public", table: "orders" },
+          lookup: { id_from_arg: "order_id" },
+          args: {
+            order_id: { type: "string", max_length: 128 },
+            credit_cents: { type: "number", minimum: 50, maximum: 1000 },
+          },
+        }],
+      },
+    } as unknown as Parameters<typeof collectQuickGuidedRehearsalArgs>[0];
+    const prompter = scriptedPrompter({ choices: [], texts: ["ord-1"], confirms: [] });
+    await expect(collectQuickGuidedRehearsalArgs(details, prompter)).resolves.toEqual({
+      order_id: "ord-1",
+      credit_cents: 50,
     });
   });
 
@@ -306,6 +755,9 @@ describe("Safe Action terminal control plane", () => {
         source_database_changed: false,
       }],
       drafts: [],
+      action_boundary: {
+        synthesized_from_legacy_actions: false,
+      },
     }, 100);
     expect(lines.join("\n")).toMatch(/\+[-+]+\+/);
     expect(lines.join("\n")).toContain("Capability");
@@ -408,6 +860,46 @@ describe("Safe Action terminal control plane", () => {
 
     await emitKey(terminal.input, { name: "enter", sequence: "\r" });
     await expect(selection).resolves.toBe("members");
+    expect(terminal.input.isRaw).toBe(false);
+  });
+
+  it("highlights the declared safe default for confirmations and recommended choices", async () => {
+    const terminal = fakeTerminal(72, 14);
+    const prompter = createTerminalActionPrompter(terminal.input, terminal.output);
+
+    const declined = prompter.confirm("Enable deterministic approval?", false);
+    await nextTurn();
+    expect(stripAnsi(terminal.output.read()?.toString() ?? "")).toContain("> No");
+    await emitKey(terminal.input, { name: "enter", sequence: "\r" });
+    await expect(declined).resolves.toBe(false);
+
+    const window = prompter.choose("ROLLING APPROVAL WINDOW", [
+      { value: "3600", label: "1 hour" },
+      { value: "86400", label: "24 hours (recommended)" },
+    ], [], "86400");
+    await nextTurn();
+    expect(stripAnsi(terminal.output.read()?.toString() ?? "")).toContain("> 24 hours (recommended)");
+    await emitKey(terminal.input, { name: "enter", sequence: "\r" });
+    await expect(window).resolves.toBe("86400");
+  });
+
+  it("labels a readiness report as returning to the Safe Action menu instead of continuing forward", async () => {
+    const terminal = fakeTerminal(72, 12);
+    const prompter = createTerminalActionPrompter(terminal.input, terminal.output);
+    const report = prompter.message(
+      "SAFE ACTION READINESS",
+      ["Every action still requires review."],
+      "Back to Safe Action menu",
+    );
+
+    await nextTurn();
+    const frame = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(frame).toContain("> Back to Safe Action menu");
+    expect(frame).toContain("Enter Select");
+    expect(frame).not.toContain("Continue");
+
+    await emitKey(terminal.input, { name: "enter", sequence: "\r" });
+    await expect(report).resolves.toBeUndefined();
     expect(terminal.input.isRaw).toBe(false);
   });
 
@@ -526,6 +1018,7 @@ function scriptedPrompter(input: {
   texts: string[];
   confirms: boolean[];
   onChoose?: (title: string, choices: Parameters<ActionControlPrompter["choose"]>[1]) => void;
+  onConfirm?: (label: string, defaultValue: boolean | undefined) => void;
 }): ActionControlPrompter {
   return {
     async choose(title, choices) {
@@ -540,7 +1033,8 @@ function scriptedPrompter(input: {
       if (value === undefined) throw new Error("Unexpected text prompt.");
       return value;
     },
-    async confirm() {
+    async confirm(label, defaultValue) {
+      input.onConfirm?.(label, defaultValue);
       const value = input.confirms.shift();
       if (value === undefined) throw new Error("Unexpected confirmation prompt.");
       return value;

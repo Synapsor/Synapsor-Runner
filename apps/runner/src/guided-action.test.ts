@@ -12,21 +12,33 @@ import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
   activateExplorationBoundary,
   buildAutoBoundary,
+  deactivateExplorationBoundary,
   explorationBoundaryCandidateDigest,
+  reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
 } from "./auto-boundary.js";
 import {
   activateGuidedAction,
+  activateGuidedActionBoundary,
   createGuidedActionDraft,
   discardGuidedActionDraft,
+  guidedActionStatus,
   guidedActionOptions,
+  guidedActionOptionsFromCandidate,
   prepareGuidedActionPreview,
   readGuidedActionDesignInput,
   recordGuidedActionPreview,
+  reviseGuidedActionBoundary,
   reviseGuidedActionAuthority,
 } from "./guided-action.js";
 import { initializeGuidedProject } from "./guided-project.js";
 import { actionCommand } from "./boundary-commands.js";
+import {
+  boundaryReviewDecisions,
+  readBoundaryReviewProgress,
+  saveInstantBoundaryReviewBaseline,
+} from "./boundary-review-domain.js";
+import { readActionBoundaryActivation, readActionBoundaryDraft } from "./action-boundary.js";
 
 const temporaryRoots: string[] = [];
 
@@ -36,6 +48,370 @@ afterEach(async () => {
 });
 
 describe("guided write actions", () => {
+  it("keeps Action Boundary field review independent from minimized Read Boundary row returns", async () => {
+    const fixture = await activatedFitFlowFixture();
+    const generatedDraft = structuredClone(fixture.candidate);
+    const minimizedCandidate = structuredClone(generatedDraft);
+    const resource = minimizedCandidate.pack.resources[0]!;
+    resource.selectable_fields = [];
+    resource.sortable_fields = [];
+    resource.filterable_fields = {};
+    const candidate = reviewExplorationBoundaryCandidate(
+      generatedDraft,
+      minimizedCandidate,
+    ).candidate;
+
+    const options = guidedActionOptionsFromCandidate({
+      candidate,
+      inspection: fixture.inspection,
+    });
+
+    expect(options.resources[0]).toMatchObject({
+      id: "public.members",
+      writable_fields: expect.arrayContaining([
+        expect.objectContaining({ name: "membership_status" }),
+        expect.objectContaining({ name: "loyalty_balance" }),
+      ]),
+      structurally_eligible_fields: expect.arrayContaining([
+        expect.objectContaining({ name: "membership_status" }),
+        expect.objectContaining({ name: "loyalty_balance" }),
+      ]),
+      operation_availability: {
+        update: { available: true },
+        insert: { available: true },
+      },
+    });
+    expect(options.resources[0]?.kept_out_fields).toEqual(expect.arrayContaining([
+      "payment_method",
+      "medical_notes",
+      "organization_id",
+      "assigned_trainer_id",
+    ]));
+
+    await deactivateExplorationBoundary(fixture.root, candidate.pack.name);
+    const progress = await saveInstantBoundaryReviewBaseline({
+      projectRoot: fixture.root,
+      draft: generatedDraft,
+      candidate,
+      actor: "reviewer@example.test",
+    });
+    expect(progress.confirmed_decisions).toEqual(
+      boundaryReviewDecisions(candidate).map((decision) => decision.decision),
+    );
+    const reloadedProgress = await readBoundaryReviewProgress(fixture.root, generatedDraft);
+    expect(reloadedProgress).toMatchObject({
+      candidate: { pack: { name: candidate.pack.name } },
+      policy_migration: { status: "complete" },
+    });
+    expect(new Set(reloadedProgress!.confirmed_decisions)).toEqual(
+      new Set(boundaryReviewDecisions(reloadedProgress!.candidate).map((decision) => decision.decision)),
+    );
+    const created = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      boundaryName: candidate.pack.name,
+      allowReviewedPending: true,
+      action: {
+        capability_name: "membership.propose_minimized_status",
+        description: "Propose one bounded status change without widening read output.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "membership_status",
+          value_source: "argument",
+          argument_name: "membership_status",
+          allowed_from: ["active"],
+        }],
+        confirmed_trusted_scope: true,
+      },
+    });
+    expect(created.dsl).toContain("ALLOW READ id, membership_status, version");
+    expect(created.dsl).toContain("MODEL WITHHELD id, membership_status, version");
+    expect(created.contract.capabilities[0]).toMatchObject({
+      visible_fields: ["id", "membership_status", "version"],
+      model_withheld_fields: ["id", "membership_status", "version"],
+    });
+    expect(candidate.pack.resources[0]?.selectable_fields).toEqual([]);
+  });
+
+  it("authors and runs proposal-only UPDATE under reviewed single-organization scope", async () => {
+    const fixture = await activatedFitFlowFixture({ singleOrganization: true });
+    const options = await guidedActionOptions({ projectRoot: fixture.root, inspection: fixture.inspection });
+    expect(options.resources).toHaveLength(1);
+    expect(options.resources[0]).toMatchObject({
+      id: "public.members",
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "northgate-library",
+      },
+      operation_availability: {
+        update: { available: true },
+        insert: { available: false, reason: expect.stringMatching(/proposal-only|deduplication/i) },
+        delete: { available: true },
+      },
+    });
+    expect(options.resources[0]).not.toHaveProperty("tenant_key");
+
+    const created = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.set_whole_library_status",
+        description: "Propose one reviewed membership status change for this library.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "membership_status",
+          value_source: "argument",
+          argument_name: "membership_status",
+          allowed_from: ["active", "frozen"],
+        }],
+        confirmed_trusted_scope: true,
+      },
+      actionBoundaryJobIntent: "Help library staff manage membership status changes.",
+    });
+    expect(created.dsl).toContain("BIND tenant_id FROM REVIEWED_ORGANIZATION northgate-library REQUIRED");
+    expect(created.dsl).toContain("ACTION SINGLE ORGANIZATION 'northgate-library' ACKNOWLEDGED");
+    expect(created.dsl).toContain("WRITEBACK NONE");
+    expect(created.dsl).not.toContain("TENANT KEY");
+    expect(created.contract.capabilities[0]?.proposal?.organization_scope).toMatchObject({
+      organization_id: "northgate-library",
+    });
+    await expect(readActionBoundaryDraft(fixture.root)).resolves.toMatchObject({
+      state: "disabled",
+      job_intent: "Help library staff manage membership status changes.",
+    });
+
+    await recordGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      contractDigest: created.draft.contract_digest,
+      proposalId: "wrp_single_org_preview",
+      proposalHash: `sha256:${"8".repeat(64)}`,
+      sourceDatabaseChanged: false,
+    });
+    const active = await activateGuidedAction({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: created.draft.contract_digest,
+      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    });
+    expect(active).toMatchObject({
+      authority_posture: "proposal_only",
+      writeback_mode: "none",
+      source_database_changed: false,
+    });
+
+    const actionConfigPath = path.join(fixture.root, "synapsor.actions.runner.json");
+    const runtime = createMcpRuntime(loadRuntimeConfigFromFile(actionConfigPath), {
+      storePath: path.join(fixture.root, ".synapsor/single-org-action-test.db"),
+      env: {
+        DATABASE_URL: "postgresql://reader:redacted@db.example/fitflow",
+        SYNAPSOR_PRINCIPAL: "librarian-17",
+      },
+      generatedAuthorityInspector: async () => fixture.inspection,
+      readRow: async ({ context }) => {
+        expect(context).toMatchObject({
+          tenant_id: "northgate-library",
+          principal: "librarian-17",
+        });
+        return {
+          row: {
+            id: "member-1",
+            organization_id: "northgate-library",
+            assigned_trainer_id: "librarian-17",
+            membership_status: "active",
+            membership_tier: "plus",
+            loyalty_balance: 25,
+            version: 4,
+          },
+          rowCount: 1,
+        };
+      },
+    });
+    try {
+      const proposed = await runtime.callTool(created.draft.capability, {
+        member_id: "member-1",
+        membership_status: "frozen",
+      });
+      expect(proposed).toMatchObject({
+        ok: true,
+        source_database_changed: false,
+        proposal: { writeback: { mode: "proposal_only", applied: false } },
+      });
+      const proposalId = (proposed.proposal as { id: string }).id;
+      expect(runtime.store.getProposal(proposalId)).toMatchObject({
+        tenant_id: "northgate-library",
+        principal: "librarian-17",
+        source_database_mutated: false,
+        change_set: {
+          guards: {
+            tenant: { column: "__reviewed_organization", value: "northgate-library" },
+          },
+          writeback: { mode: "read_only", executor: "none" },
+        },
+      });
+    } finally {
+      await runtime.close();
+    }
+
+    await expect(reviseGuidedActionAuthority({
+      projectRoot: fixture.root,
+      capabilityName: active.capability,
+      expectedCurrentDigest: active.contract_digest,
+      authority: { authority_posture: "executable", writeback: { mode: "direct_sql" } },
+      inspection: fixture.inspection,
+    })).rejects.toThrow(/GUIDED_ACTION_ORGANIZATION_PROPOSAL_ONLY/);
+
+    await expect(createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.create_whole_library_member",
+        description: "Propose a new membership.",
+        resource: "public.members",
+        operation: "insert",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "membership_status",
+          value_source: "fixed",
+          fixed_value: "active",
+        }],
+        confirmed_trusted_scope: true,
+      },
+    })).rejects.toThrow(/GUIDED_ACTION_ORGANIZATION_INSERT_UNSUPPORTED/);
+  }, 30_000);
+
+  it("drafts and rehearses against a fully reviewed pending read boundary but gates activation", async () => {
+    const fixture = await activatedFitFlowFixture();
+    const boundaryName = fixture.candidate.pack.name;
+    await deactivateExplorationBoundary(fixture.root, boundaryName);
+    await saveInstantBoundaryReviewBaseline({
+      projectRoot: fixture.root,
+      draft: fixture.candidate,
+      candidate: fixture.candidate,
+      actor: "reviewer@example.test",
+    });
+
+    const options = await guidedActionOptions({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      boundaryName,
+      allowReviewedPending: true,
+    });
+    expect(options).toMatchObject({
+      boundary_name: boundaryName,
+      boundary_state: "reviewed_pending",
+      boundary_digest: explorationBoundaryCandidateDigest(fixture.candidate),
+    });
+
+    const created = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      boundaryName,
+      allowReviewedPending: true,
+      action: {
+        capability_name: "membership.propose_pending_loyalty_balance",
+        description: "Propose a reviewed loyalty balance for one assigned member.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum: 500,
+        }],
+        confirmed_trusted_scope: true,
+      },
+    });
+    expect(created.draft).toMatchObject({
+      state: "disabled",
+      boundary_name: boundaryName,
+      boundary_digest: options.boundary_digest,
+    });
+
+    const preview = await prepareGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+    });
+    expect(preview.draft_digest).toBe(created.draft.contract_digest);
+    await recordGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      contractDigest: created.draft.contract_digest,
+      proposalId: "wrp_pending_read_preview",
+      proposalHash: `sha256:${"b".repeat(64)}`,
+      sourceDatabaseChanged: false,
+    });
+
+    const actionBoundary = await reviseGuidedActionBoundary({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      sharedLimits: [{
+        id: "tenant_principal_pending_daily",
+        kind: "count",
+        scope: "tenant_principal",
+        capability: created.draft.capability,
+        maximum: 10,
+        window_seconds: 86_400,
+      }],
+    });
+    const rebased = (await guidedActionStatus(fixture.root)).drafts.find(
+      (draft) => draft.capability === created.draft.capability,
+    );
+    expect(rebased).toMatchObject({
+      contract_digest: created.draft.contract_digest,
+      action_boundary_name: actionBoundary.name,
+      action_boundary_digest: actionBoundary.digest,
+      effect_preview: {
+        contract_digest: created.draft.contract_digest,
+        source_database_changed: false,
+      },
+    });
+
+    const activation = {
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: created.draft.contract_digest,
+      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    };
+    await expect(activateGuidedAction(activation)).rejects.toThrow(
+      /GUIDED_ACTION_READ_DEPENDENCY_INACTIVE/,
+    );
+
+    const readDigest = explorationBoundaryCandidateDigest(fixture.candidate);
+    await activateExplorationBoundary({
+      projectRoot: fixture.root,
+      candidate: fixture.candidate,
+      expectedDigest: readDigest,
+      actor: "reviewer@example.test",
+      confirmation: `ACTIVATE ${readDigest}`,
+      confirmedDecisions: fixture.candidate.unresolved_decisions,
+      currentInspection: fixture.inspection,
+    });
+    await expect(activateGuidedAction(activation)).resolves.toMatchObject({
+      state: "active",
+      capability: created.draft.capability,
+      authority_posture: "proposal_only",
+      writeback_mode: "none",
+      source_database_changed: false,
+    });
+  });
+
   it("emits a disabled bounded update with optional auto-approval through public DSL", async () => {
     const fixture = await activatedFitFlowFixture();
     const options = await guidedActionOptions({ projectRoot: fixture.root, inspection: fixture.inspection });
@@ -94,7 +470,7 @@ describe("guided write actions", () => {
     expect(created.dsl).toContain("BOUND loyalty_balance 0..500");
     expect(created.dsl).toContain("AUTO APPROVE WHEN loyalty_balance <= 100");
     expect(created.dsl).toContain("LIMIT 20 PER DAY");
-    expect(created.dsl).toContain("LIMIT TOTAL 1000 PER DAY");
+    expect(created.dsl).toContain("LIMIT TOTAL 1000 OF loyalty_balance PER DAY");
     expect(created.dsl).toContain("ALLOW SUPERVISED WORKER APPLY");
     expect(created.dsl).not.toMatch(/execute_sql|sql\s+string/i);
     expect(created.contract.capabilities[0]?.proposal).toMatchObject({
@@ -111,6 +487,15 @@ describe("guided write actions", () => {
       state: "disabled",
       source: "local_postgres",
       supervised_worker_execution: true,
+      action_boundary_name: "default_action_boundary",
+      action_boundary_digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
+    await expect(readActionBoundaryDraft(fixture.root)).resolves.toMatchObject({
+      state: "disabled",
+      digest: created.draft.action_boundary_digest,
+      authority: {
+        capabilities: [{ capability: created.draft.capability, contract_digest: created.draft.contract_digest }],
+      },
     });
     await expect(fs.readFile(path.join(fixture.root, created.draft.dsl_path), "utf8")).resolves.toBe(created.dsl);
     await expect(readGuidedActionDesignInput(
@@ -142,6 +527,185 @@ describe("guided write actions", () => {
       "membership.set_loyalty_balance",
       "draft",
     )).rejects.toThrow(/GUIDED_ACTION_DRAFT_REQUIRED/);
+  });
+
+  it("advertises proposal operations when trusted tenant scope completes the source primary key", async () => {
+    const fixture = await activatedFitFlowFixture({ compositePrimaryKey: true });
+    const options = await guidedActionOptions({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+    });
+
+    expect(options.resources[0]).toMatchObject({
+      id: "public.members",
+      primary_key: "id",
+      operation_availability: {
+        insert: { available: true },
+        update: { available: true },
+        delete: { available: true },
+      },
+    });
+
+    await expect(createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.propose_scoped_member",
+        description: "Propose one reviewed member under trusted tenant scope.",
+        resource: "public.members",
+        operation: "insert",
+        dedup_proposal_column: "request_id",
+        approval_role: "membership_reviewer",
+        patches: [
+          { column: "membership_status", value_source: "fixed", fixed_value: "active" },
+          { column: "membership_tier", value_source: "argument", argument_name: "membership_tier" },
+          {
+            column: "loyalty_balance",
+            value_source: "argument",
+            argument_name: "loyalty_balance",
+            minimum: 0,
+            maximum: 500,
+          },
+        ],
+        confirmed_trusted_scope: true,
+      },
+    })).resolves.toMatchObject({
+      draft: {
+        capability: "membership.propose_scoped_member",
+        state: "disabled",
+      },
+      dsl: expect.stringContaining("DEDUP KEY organization_id = TRUSTED TENANT, request_id = PROPOSAL ID"),
+    });
+  });
+
+  it("names a required unreviewed INSERT column instead of misreporting deduplication", async () => {
+    const fixture = await activatedFitFlowFixture({ hiddenRequiredInsertField: true });
+    const options = await guidedActionOptions({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+    });
+
+    expect(options.resources[0]).toMatchObject({
+      id: "public.members",
+      insert_dedup_candidates: [],
+      operation_availability: {
+        insert: {
+          available: false,
+          reason: expect.stringMatching(/required insert column service_window.*not reviewed.*no source default/i),
+        },
+      },
+    });
+    expect(options.resources[0]?.operation_availability.insert.reason).not.toMatch(/no primary\/unique/i);
+  });
+
+  it("keeps proposal operations blocked when a source primary-key component is not trusted scope", async () => {
+    const fixture = await activatedFitFlowFixture({ untrustedPrimaryKeyComponent: true });
+    const options = await guidedActionOptions({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+    });
+
+    for (const availability of Object.values(options.resources[0]!.operation_availability)) {
+      expect(availability.available).toBe(false);
+      expect(availability.reason).toContain("direct trusted scope");
+    }
+  });
+
+  it("does not invent a required principal binding for a tenant-only reviewed resource", async () => {
+    const fixture = await activatedFitFlowFixture({ principalScoped: false });
+    const options = await guidedActionOptions({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+    });
+    expect(options.resources[0]?.principal_key).toBeUndefined();
+
+    const created = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.propose_tenant_only_balance",
+        description: "Propose one bounded tenant-only membership balance.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum: 500,
+        }],
+        confirmed_trusted_scope: true,
+      },
+    });
+    expect(created.dsl).toContain("BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED");
+    expect(created.dsl).not.toContain("BIND principal");
+    expect(created.dsl).not.toContain("PRINCIPAL BINDING");
+    expect(created.contract.contexts[0]).not.toHaveProperty("principal_binding");
+
+    const prepared = await prepareGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+    });
+    const runtime = createMcpRuntime(
+      runtimeConfigForMockRead(path.join(fixture.root, prepared.config_path)),
+      {
+        storePath: ":memory:",
+        env: {
+          DATABASE_URL: "postgresql://reader:redacted@db.example/fitflow",
+          SYNAPSOR_TENANT_ID: "acme",
+          USER: "local-reviewer",
+        },
+        readRow: async ({ context }) => {
+          expect(context).toMatchObject({
+            tenant_id: "acme",
+            principal: "local-reviewer",
+            provenance: "environment",
+          });
+          return {
+            row: {
+              id: "member-1",
+              organization_id: "acme",
+              membership_status: "active",
+              membership_tier: "plus",
+              loyalty_balance: 25,
+              version: 4,
+            },
+            rowCount: 1,
+          };
+        },
+      },
+    );
+    try {
+      const proposed = await runtime.callTool(created.draft.capability, {
+        member_id: "member-1",
+        loyalty_balance: 100,
+      });
+      expect(proposed).toMatchObject({
+        ok: true,
+        kind: "proposal",
+        source_database_changed: false,
+      });
+      const proposalId = String(
+        proposed.proposal_id
+          ?? (proposed.proposal as { id?: string } | undefined)?.id
+          ?? "",
+      );
+      expect(await runtime.store.getProposal(proposalId)).toMatchObject({
+        change_set: {
+          principal: {
+            id: "local-reviewer",
+            source: "environment",
+          },
+          guards: {
+            tenant: { column: "organization_id", value: "acme" },
+          },
+        },
+      });
+    } finally {
+      await runtime.close();
+    }
   });
 
   it("does not advertise or accept guarded writes with relationship-carried principal scope", async () => {
@@ -338,7 +902,106 @@ describe("guided write actions", () => {
     })).rejects.toThrow(/DELETE_SUPERVISED_WORKER_FORBIDDEN/);
   });
 
-  it("activates proposal-only first and promotes execution only through a new immutable revision", async () => {
+  it("rebases multiple disabled action drafts as each reviewed revision becomes active", async () => {
+    const fixture = await activatedFitFlowFixture();
+    const freeze = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      actionBoundaryJobIntent: "Let membership staff propose bounded account changes.",
+      action: {
+        capability_name: "membership.freeze_membership",
+        description: "Propose freezing one assigned active membership.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "membership_status",
+          value_source: "fixed",
+          fixed_value: "frozen",
+          allowed_from: ["active"],
+        }],
+        confirmed_trusted_scope: true,
+      },
+    });
+    const balance = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.set_loyalty_balance",
+        description: "Propose a reviewed loyalty balance for one assigned member.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum: 500,
+        }],
+        confirmed_trusted_scope: true,
+      },
+    });
+    expect(freeze.draft.action_boundary_digest).not.toBe(balance.draft.action_boundary_digest);
+    for (const [draft, marker] of [[freeze.draft, "a"], [balance.draft, "b"]] as const) {
+      await recordGuidedActionPreview({
+        projectRoot: fixture.root,
+        capabilityName: draft.capability,
+        contractDigest: draft.contract_digest,
+        proposalId: `wrp_multi_${marker}`,
+        proposalHash: `sha256:${marker.repeat(64)}`,
+        sourceDatabaseChanged: false,
+      });
+    }
+
+    await activateGuidedAction({
+      projectRoot: fixture.root,
+      capabilityName: freeze.draft.capability,
+      expectedDigest: freeze.draft.contract_digest,
+      confirmation: `ACTIVATE ${freeze.draft.contract_digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    });
+    const afterFirst = await guidedActionStatus(fixture.root);
+    expect(afterFirst.activations.map((item) => item.capability)).toEqual([freeze.draft.capability]);
+    expect(afterFirst.drafts.map((item) => item.capability)).toEqual([balance.draft.capability]);
+    expect(afterFirst.drafts[0]?.effect_preview).toMatchObject({
+      contract_digest: balance.draft.contract_digest,
+      source_database_changed: false,
+    });
+    expect(afterFirst.drafts[0]?.action_boundary_digest).not.toBe(balance.draft.action_boundary_digest);
+    expect(afterFirst.action_boundary.draft?.authority.capabilities.map((item) => item.capability).sort()).toEqual([
+      balance.draft.capability,
+      freeze.draft.capability,
+    ].sort());
+
+    const rebasedBalance = afterFirst.drafts[0]!;
+    await activateGuidedAction({
+      projectRoot: fixture.root,
+      capabilityName: rebasedBalance.capability,
+      expectedDigest: rebasedBalance.contract_digest,
+      confirmation: `ACTIVATE ${rebasedBalance.contract_digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    });
+    const complete = await guidedActionStatus(fixture.root);
+    expect(complete.drafts).toEqual([]);
+    expect(complete.action_boundary.draft).toBeUndefined();
+    expect(complete.action_boundary.active?.authority.capabilities.map((item) => item.capability).sort()).toEqual([
+      balance.draft.capability,
+      freeze.draft.capability,
+    ].sort());
+    const runtimeConfig = JSON.parse(
+      await fs.readFile(path.join(fixture.root, "synapsor.actions.runner.json"), "utf8"),
+    );
+    expect(runtimeConfig.contracts).toHaveLength(2);
+  }, 30_000);
+
+  it("reviews and activates shared cross-action limits as a separate exact boundary revision", async () => {
     const fixture = await activatedFitFlowFixture();
     const created = await createGuidedActionDraft({
       projectRoot: fixture.root,
@@ -350,6 +1013,170 @@ describe("guided write actions", () => {
         operation: "update",
         conflict_column: "version",
         version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum: 500,
+        }],
+        confirmed_trusted_scope: true,
+      },
+    });
+    await recordGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      contractDigest: created.draft.contract_digest,
+      proposalId: "wrp_limit_base",
+      proposalHash: `sha256:${"c".repeat(64)}`,
+      sourceDatabaseChanged: false,
+    });
+    await activateGuidedAction({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: created.draft.contract_digest,
+      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    });
+
+    await expect(reviseGuidedActionBoundary({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      sharedLimits: [{
+        id: "invalid_total",
+        kind: "total",
+        scope: "tenant",
+        capability: created.draft.capability,
+        field: "membership_status",
+        maximum: 100,
+        window_seconds: 86_400,
+      }],
+    })).rejects.toThrow(/ACTION_BOUNDARY_TOTAL_FIELD_NOT_NUMERIC/);
+
+    const revised = await reviseGuidedActionBoundary({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      sharedLimits: [
+        {
+          id: "tenant_daily_proposals",
+          kind: "count",
+          scope: "tenant",
+          maximum: 20,
+          window_seconds: 86_400,
+        },
+        {
+          id: "principal_daily_balance",
+          kind: "total",
+          scope: "tenant_principal",
+          capability: created.draft.capability,
+          field: "loyalty_balance",
+          maximum: 1_000,
+          window_seconds: 86_400,
+        },
+      ],
+      now: "2026-08-28T18:00:00.000Z",
+    });
+    const beforeActivation = await guidedActionStatus(fixture.root);
+    expect(beforeActivation.action_boundary.active?.authority.shared_limits).toEqual([]);
+    expect(beforeActivation.action_boundary.draft?.digest).toBe(revised.digest);
+    expect(beforeActivation.action_boundary.draft?.authority.shared_limits).toHaveLength(2);
+    await expect(activateGuidedActionBoundary({
+      projectRoot: fixture.root,
+      expectedDigest: revised.digest,
+      confirmation: `ACTIVATE ${"0".repeat(64)}`,
+      actor: "reviewer@example.test",
+    })).rejects.toThrow(/ACTION_BOUNDARY_CONFIRMATION_REQUIRED/);
+    const activated = await activateGuidedActionBoundary({
+      projectRoot: fixture.root,
+      expectedDigest: revised.digest,
+      confirmation: `ACTIVATE ${revised.digest}`,
+      actor: "reviewer@example.test",
+      now: "2026-08-28T18:05:00.000Z",
+    });
+    expect(activated.digest).toBe(revised.digest);
+    expect(activated.authority.shared_limits).toHaveLength(2);
+    const afterActivation = await guidedActionStatus(fixture.root);
+    expect(afterActivation.action_boundary.draft).toBeUndefined();
+    expect(afterActivation.action_boundary.active?.digest).toBe(revised.digest);
+    const runtimeConfig = JSON.parse(
+      await fs.readFile(path.join(fixture.root, "synapsor.actions.runner.json"), "utf8"),
+    );
+    expect(runtimeConfig.action_boundary).toMatchObject({
+      digest: revised.digest,
+      authority: { shared_limits: revised.authority.shared_limits },
+    });
+  }, 30_000);
+
+  it("reviews shared limits against a disabled action before its immutable revision exists", async () => {
+    const fixture = await activatedFitFlowFixture();
+    const created = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.propose_small_balance",
+        description: "Propose one bounded loyalty balance for human or deterministic review.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum: 100,
+        }],
+        auto_approval: {
+          conditions: [{ field: "loyalty_balance", operator: "lte", value: 100 }],
+          max_per_day: 10,
+          max_total_per_day: 500,
+          total_field: "loyalty_balance",
+        },
+        confirmed_trusted_scope: true,
+      },
+    });
+
+    const revised = await reviseGuidedActionBoundary({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      sharedLimits: [{
+        id: "principal_daily_balance_before_activation",
+        kind: "total",
+        scope: "tenant_principal",
+        capability: created.draft.capability,
+        field: "loyalty_balance",
+        maximum: 500,
+        window_seconds: 86_400,
+      }],
+    });
+
+    const status = await guidedActionStatus(fixture.root);
+    expect(status.activations).toEqual([]);
+    expect(status.action_boundary.active).toBeUndefined();
+    expect(status.action_boundary.draft?.digest).toBe(revised.digest);
+    expect(status.action_boundary.draft?.authority.shared_limits).toEqual([
+      expect.objectContaining({
+        id: "principal_daily_balance_before_activation",
+        capability: created.draft.capability,
+        field: "loyalty_balance",
+      }),
+    ]);
+  }, 30_000);
+
+  it("activates proposal-only first and promotes execution only through a new immutable revision", async () => {
+    const fixture = await activatedFitFlowFixture();
+    const created = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.set_loyalty_balance",
+        description: "Propose a reviewed loyalty balance for one assigned member.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
         approval_role: "membership_reviewer",
         patches: [{
           column: "loyalty_balance",
@@ -380,6 +1207,11 @@ describe("guided write actions", () => {
     expect(previewConfig.sources.local_postgres).toMatchObject({
       read_url_env: "DATABASE_URL",
       read_only: true,
+      database_scope: {
+        mode: "postgres_rls",
+        tenant_setting: "app.organization_id",
+        principal_setting: "app.principal",
+      },
     });
     expect(previewConfig.sources.local_postgres.write_url_env).toBeUndefined();
     await recordGuidedActionPreview({
@@ -404,6 +1236,16 @@ describe("guided write actions", () => {
       authority_posture: "proposal_only",
       writeback_mode: "none",
       source_database_changed: false,
+      boundary_name: "reviewed_staging",
+      action_boundary_name: "default_action_boundary",
+      action_boundary_digest: created.draft.action_boundary_digest,
+    });
+    await expect(readActionBoundaryActivation(fixture.root)).resolves.toMatchObject({
+      state: "active",
+      digest: active.action_boundary_digest,
+      authority: {
+        capabilities: [{ capability: active.capability, contract_digest: active.contract_digest }],
+      },
     });
     const baseConfig = JSON.parse(await fs.readFile(path.join(fixture.root, "synapsor.runner.json"), "utf8"));
     expect(baseConfig.sources.local_postgres.read_only).toBe(true);
@@ -424,7 +1266,7 @@ describe("guided write actions", () => {
     expect(environmentBeforePromotion).not.toContain("SYNAPSOR_DATABASE_WRITE_URL=");
 
     let sourceReads = 0;
-    const proposalRuntime = createMcpRuntime(loadRuntimeConfigFromFile(actionConfigPath), {
+    const proposalRuntime = createMcpRuntime(runtimeConfigForMockRead(actionConfigPath), {
       storePath: path.join(fixture.root, ".synapsor/action-runtime-test.db"),
       env: {
         DATABASE_URL: "postgresql://reader:redacted@db.example/fitflow",
@@ -499,6 +1341,7 @@ describe("guided write actions", () => {
       authority: {
         authority_posture: "executable",
         writeback: { mode: "direct_sql" },
+        version_advance: "integer_increment",
       },
       inspection: fixture.inspection,
     });
@@ -509,6 +1352,7 @@ describe("guided write actions", () => {
     });
     expect(promoted.draft.contract_digest).not.toBe(active.contract_digest);
     expect(promoted.dsl).toContain("WRITEBACK DIRECT SQL");
+    expect(promoted.dsl).toContain("ADVANCE VERSION version USING INTEGER INCREMENT");
     const unchangedBeforePromotion = JSON.parse(await fs.readFile(actionConfigPath, "utf8"));
     expect(unchangedBeforePromotion.contracts).toEqual([active.contract_path]);
 
@@ -635,7 +1479,6 @@ describe("guided write actions", () => {
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     });
-
     const deleted = await createGuidedActionDraft({
       projectRoot: fixture.root,
       inspection: fixture.inspection,
@@ -662,7 +1505,7 @@ describe("guided write actions", () => {
       proposalHash: `sha256:${"d".repeat(64)}`,
       sourceDatabaseChanged: false,
     });
-    await activateGuidedAction({
+    const deleteActivation = await activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: deleted.draft.capability,
       expectedDigest: deleted.draft.contract_digest,
@@ -670,10 +1513,19 @@ describe("guided write actions", () => {
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     });
+    const actionBoundary = await readActionBoundaryActivation(fixture.root);
+    expect(actionBoundary).toMatchObject({
+      digest: deleteActivation.action_boundary_digest,
+    });
+    expect(actionBoundary?.authority.capabilities.map((item) => item.capability)).toEqual([
+      "membership.propose_create_member",
+      "membership.propose_delete_member",
+    ]);
+    expect(actionBoundary?.authority.read_dependencies).toHaveLength(1);
 
     let sourceReads = 0;
     const runtime = createMcpRuntime(
-      loadRuntimeConfigFromFile(path.join(fixture.root, "synapsor.actions.runner.json")),
+      runtimeConfigForMockRead(path.join(fixture.root, "synapsor.actions.runner.json")),
       {
         storePath: path.join(fixture.root, ".synapsor/crud-action-runtime.db"),
         env: {
@@ -942,10 +1794,74 @@ describe("guided write actions", () => {
   });
 });
 
-async function activatedFitFlowFixture(): Promise<{ root: string; inspection: SchemaInspection }> {
+function runtimeConfigForMockRead(configPath: string) {
+  const config = loadRuntimeConfigFromFile(configPath);
+  for (const source of Object.values(config.sources ?? {})) {
+    delete source.database_scope;
+  }
+  return config;
+}
+
+async function activatedFitFlowFixture(options: {
+  compositePrimaryKey?: boolean;
+  untrustedPrimaryKeyComponent?: boolean;
+  principalScoped?: boolean;
+  singleOrganization?: boolean;
+  hiddenRequiredInsertField?: boolean;
+} = {}): Promise<{
+  root: string;
+  inspection: SchemaInspection;
+  candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"];
+}> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-action-"));
   temporaryRoots.push(root);
   const inspection = fitFlowInspection();
+  if (options.singleOrganization) {
+    const table = inspection.tables[0]!;
+    table.columns = table.columns.filter((candidate) => candidate.name !== "organization_id");
+    table.suggestions.tenant_columns = [];
+    table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+      .filter((candidate) => candidate !== "organization_id");
+    table.unique_constraints = table.unique_constraints.filter((constraint) =>
+      !constraint.columns.includes("organization_id"));
+    table.indexes = table.indexes.filter((index) => !(index.columns ?? []).includes("organization_id"));
+    table.row_level_security = false;
+    table.row_level_security_policies = [];
+    table.role_posture!.row_security_forced = false;
+    table.role_posture!.row_security_effective_for_current_role = false;
+  }
+  if (options.compositePrimaryKey) {
+    const table = inspection.tables[0]!;
+    table.primary_key = ["organization_id", "id"];
+    table.unique_constraints = [
+      { name: "members_pkey", columns: ["organization_id", "id"] },
+      { name: "members_id_key", columns: ["id"] },
+      { name: "members_organization_request_key", columns: ["organization_id", "request_id"] },
+    ];
+    table.indexes = [
+      { name: "members_pkey", columns: ["organization_id", "id"], unique: true },
+      { name: "members_id_key", columns: ["id"], unique: true },
+      { name: "members_organization_request_key", columns: ["organization_id", "request_id"], unique: true },
+    ];
+  }
+  if (options.untrustedPrimaryKeyComponent) {
+    const table = inspection.tables[0]!;
+    table.columns.push(column("partition_id", "text", { immutable: true }));
+    table.primary_key = ["organization_id", "partition_id", "id"];
+    table.unique_constraints = [
+      { name: "members_pkey", columns: ["organization_id", "partition_id", "id"] },
+      { name: "members_id_key", columns: ["id"] },
+      { name: "members_organization_request_key", columns: ["organization_id", "request_id"] },
+    ];
+    table.indexes = [
+      { name: "members_pkey", columns: ["organization_id", "partition_id", "id"], unique: true },
+      { name: "members_id_key", columns: ["id"], unique: true },
+      { name: "members_organization_request_key", columns: ["organization_id", "request_id"], unique: true },
+    ];
+  }
+  if (options.hiddenRequiredInsertField) {
+    inspection.tables[0]!.columns.push(column("service_window", "text"));
+  }
   const build = buildAutoBoundary({
     inspection,
     project: {
@@ -956,16 +1872,31 @@ async function activatedFitFlowFixture(): Promise<{ root: string; inspection: Sc
       database_env_names: ["DATABASE_URL"],
     },
     sourceEnv: "DATABASE_URL",
+    ...(options.singleOrganization
+      ? { singleOrganization: { organizationId: "northgate-library" } }
+      : {}),
     overrides: {
       schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
       resources: {
         "public.members": {
           principal_key: {
-            value: "assigned_trainer_id",
+            value: options.principalScoped === false ? null : "assigned_trainer_id",
             actor: "reviewer@example.test",
-            reason: "Assigned trainers may access only their reviewed member rows.",
+            reason: options.principalScoped === false
+              ? "This reviewed tenant-only resource does not apply per-principal row scope."
+              : "Assigned trainers may access only their reviewed member rows.",
             decided_at: "2026-07-24T17:00:00.000Z",
           },
+          ...(options.hiddenRequiredInsertField ? {
+            fields: {
+              service_window: {
+                exposure: "keep_out" as const,
+                actor: "reviewer@example.test",
+                reason: "This required source field was deliberately not reviewed for agent use.",
+                decided_at: "2026-07-24T17:00:00.000Z",
+              },
+            },
+          } : {}),
         },
       },
     },
@@ -984,7 +1915,7 @@ async function activatedFitFlowFixture(): Promise<{ root: string; inspection: Sc
     confirmedDecisions: candidate.unresolved_decisions,
     currentInspection: inspection,
   });
-  return { root, inspection };
+  return { root, inspection, candidate };
 }
 
 async function activatedDerivedPrincipalWriteFixture(): Promise<{

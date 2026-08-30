@@ -429,13 +429,13 @@ predicate, still applies reviewed principal scope when present, and refuses the
 mode if inspection finds evidence that the source is actually multi-tenant.
 
 Add \`--cli\` to keep the complete interactive journey in the terminal. Runner
-drafts or resumes the boundary and, for a fresh conservative candidate, asks
-for one default-yes human Quick Start gesture. That gesture records review,
-rechecks schema and read-only role posture, and activates only the exact
-one-table, zero-relationship local digest. The same screen displays the
-selected provider and exact model. Enter accepts that default without adding a
-step; M chooses OpenAI, Anthropic, a loopback OpenAI-compatible model, an
-existing MCP client, or Later; E opens detailed multi-table/column review.
+drafts or resumes the boundary and asks what job the agent should perform.
+Model-assisted structural mapping is recommended when OpenAI, Anthropic, or a
+loopback local model is configured; Runner-guided exact cards and full manual
+review remain available. The result is a minimized disabled Read Boundary and,
+for change-oriented jobs, a separate disabled proposal Action Boundary. The
+operator reviews and activates each exact authority independently. Models
+cannot activate, approve, apply, choose trusted scope, or send SQL.
 For the terminal model handoff, \`--timeout <seconds>\` sets the per-provider-call
 timeout from 1 through 600 seconds. Without an override, hosted and remote
 providers use 30 seconds while a loopback OpenAI-compatible model uses 120.

@@ -93,6 +93,7 @@ export type TryAskDependencies = {
     projectRoot: string;
     activationReviewNotice: string;
     onActivated: () => Promise<number>;
+    modelAuthoringSession: ActionModelSuggestionSession;
   }) => Promise<number>;
   runTerminalActionReview?: (input: {
     projectRoot: string;
@@ -692,11 +693,23 @@ export async function tryAsk(
 
       await initialGateway?.close().catch(() => undefined);
       initialGateway = undefined;
+      const modelAuthoringSession: ActionModelSuggestionSession = {
+        provider,
+        model,
+        ...(actionSuggestionSecret
+          ? { apiKey: actionSuggestionSecret }
+          : apiKeyEnv
+            ? { apiKeyEnv }
+            : {}),
+        ...(optionalArg(args, "--base-url") ? { baseUrl: optionalArg(args, "--base-url") } : {}),
+        ...(dependencies.providerDependencies ? { dependencies: dependencies.providerDependencies } : {}),
+      };
       const runBoundaryReview = dependencies.runTerminalBoundaryReview
         ?? (async (reviewInput: {
           projectRoot: string;
           activationReviewNotice: string;
           onActivated: () => Promise<number>;
+          modelAuthoringSession: ActionModelSuggestionSession;
         }) => {
           const [{ boundaryReviewCommand }, { inspectDatabase }] = await Promise.all([
             import("./boundary-commands.js"),
@@ -710,6 +723,7 @@ export async function tryAsk(
             {
               activationReviewNotice: () => reviewInput.activationReviewNotice,
               startAtBoundaryList: true,
+              modelAuthoringSession: reviewInput.modelAuthoringSession,
             },
           );
         });
@@ -725,6 +739,7 @@ export async function tryAsk(
           projectRoot,
           activationReviewNotice,
           onActivated: rebindAfterReviewedActivation,
+          modelAuthoringSession,
         });
       } catch (error) {
         try {

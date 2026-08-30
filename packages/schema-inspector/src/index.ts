@@ -704,6 +704,20 @@ export type DirectWritePrerequisite = {
   message: string;
 };
 
+export function sourcePrimaryKeyMatchesReviewedWriteIdentity(
+  table: Pick<TableInfo, "primary_key">,
+  input: Pick<DirectWriteAssessmentInput, "primary_key" | "tenant_key" | "principal_scope_key">,
+): boolean {
+  const identityOccurrences = table.primary_key.filter((column) => column === input.primary_key).length;
+  if (identityOccurrences !== 1) return false;
+  const trustedScopeColumns = new Set(
+    [input.tenant_key, input.principal_scope_key]
+      .filter((column): column is string => Boolean(column) && column !== input.primary_key),
+  );
+  return table.primary_key.every((column) =>
+    column === input.primary_key || trustedScopeColumns.has(column));
+}
+
 /** Assess only source-enforced facts visible in inspected metadata. */
 export function assessDirectWritePrerequisites(table: TableInfo, input: DirectWriteAssessmentInput): DirectWritePrerequisite[] {
   const checks: DirectWritePrerequisite[] = [];
@@ -713,9 +727,20 @@ export function assessDirectWritePrerequisites(table: TableInfo, input: DirectWr
   const warn = (code: string, message: string) => checks.push({ code, level: "warn", message } as const);
 
   if (!table.writable || table.type !== "table") fail("TARGET_NOT_WRITABLE_TABLE", "Direct writeback requires an inspected writable base table.");
-  if (table.primary_key.length !== 1 || table.primary_key[0] !== input.primary_key) {
-    fail("PRIMARY_KEY_NOT_EXACT", `Configured primary key ${input.primary_key} must match the table's single-column primary key.`);
-  } else pass("PRIMARY_KEY_EXACT", `Primary key ${input.primary_key} is source-enforced.`);
+  if (!sourcePrimaryKeyMatchesReviewedWriteIdentity(table, input)) {
+    const trustedScope = [input.tenant_key, input.principal_scope_key].filter(Boolean).join(", ") || "none";
+    fail(
+      "PRIMARY_KEY_NOT_EXACT",
+      `Reviewed row identity ${input.primary_key} plus direct trusted scope columns (${trustedScope}) must cover every source primary-key column; inspected primary key is (${table.primary_key.join(", ") || "none"}).`,
+    );
+  } else if (table.primary_key.length === 1) {
+    pass("PRIMARY_KEY_EXACT", `Primary key ${input.primary_key} is source-enforced.`);
+  } else {
+    pass(
+      "PRIMARY_KEY_EXACT",
+      `Reviewed row identity ${input.primary_key} plus direct trusted scope exactly covers source primary key (${table.primary_key.join(", ")}).`,
+    );
+  }
   if (!input.tenant_key || !columns.has(input.tenant_key)) fail("TENANT_COLUMN_MISSING", "Direct writeback requires a reviewed tenant column present in the target table.");
   else pass("TENANT_COLUMN_PRESENT", `Trusted tenant is forced through ${input.tenant_key}.`);
   if (input.principal_scope_key) {

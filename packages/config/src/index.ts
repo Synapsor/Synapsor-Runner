@@ -1,4 +1,10 @@
 import { validateContract } from "@synapsor/spec";
+import {
+  actionBoundaryAuthorityDigestV1,
+  actionBoundaryVersion,
+  normalizeActionBoundaryAuthorityV1,
+  type ActionBoundaryAuthorityV1,
+} from "@synapsor-runner/protocol";
 
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
@@ -20,8 +26,9 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "supervised_worker", "notifications", "production_explore", "model_output", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "supervised_worker", "notifications", "production_explore", "model_output", "action_boundary", "strict", "result_format"]);
 const MODEL_OUTPUT_KEYS = new Set(["authority_metadata"]);
+const ACTION_BOUNDARY_KEYS = new Set(["schema_version", "name", "digest", "authority"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
 const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms", "max_entries"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
@@ -217,6 +224,7 @@ const CAPABILITY_KEYS = new Set([
   "single_tenant_dev_ack",
   "aggregate",
   "protected_read",
+  "organization_scope",
   "kept_out_fields",
   "model_withheld_fields",
   "contract_provenance",
@@ -233,7 +241,7 @@ const CONFLICT_GUARD_KEYS = new Set(["column", "weak_guard_ack"]);
 const APPROVAL_KEYS = new Set(["mode", "required_role", "required_approvals", "policy"]);
 const EXECUTION_KEYS = new Set(["supervised_worker"]);
 const POLICY_KEYS = new Set(["name", "kind", "mode", "rules", "limits"]);
-const APPROVAL_POLICY_RULE_KEYS = new Set(["field", "max"]);
+const APPROVAL_POLICY_RULE_KEYS = new Set(["source", "field", "max", "operator", "value", "values"]);
 const APPROVAL_POLICY_LIMIT_KEYS = new Set(["kind", "max", "period", "field", "scope"]);
 const WRITEBACK_KEYS = new Set(["mode", "executor"]);
 const WRITEBACK_MODES = new Set(["direct_sql", "app_handler", "cloud_worker", "none"]);
@@ -355,6 +363,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
     input.generated_authority,
     input.production_explore,
   );
+  validateActionBoundary(input.action_boundary, input.capabilities, hasContracts, strict, errors);
   validateNotifications(input.notifications, strict, errors);
   validateSupervisedWorker(input.supervised_worker, input, strict, errors);
   validateProposalFreshness(input.proposal_freshness, input.capabilities, strict, errors, hasContracts);
@@ -364,6 +373,117 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateActionBoundary(
+  value: unknown,
+  capabilities: unknown,
+  hasContracts: boolean,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.action_boundary", code: "ACTION_BOUNDARY_NOT_OBJECT", message: "action_boundary must be an exact reviewed aggregate proposal-authority reference." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, ACTION_BOUNDARY_KEYS, "$.action_boundary", errors);
+  if (value.schema_version !== actionBoundaryVersion) {
+    errors.push({ path: "$.action_boundary.schema_version", code: "INVALID_ACTION_BOUNDARY_VERSION", message: `action_boundary.schema_version must be ${actionBoundaryVersion}.` });
+  }
+  if (!isSafeName(value.name)) {
+    errors.push({ path: "$.action_boundary.name", code: "INVALID_ACTION_BOUNDARY_NAME", message: "action_boundary.name must be a fixed safe boundary name." });
+  }
+  if (typeof value.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(value.digest)) {
+    errors.push({ path: "$.action_boundary.digest", code: "INVALID_ACTION_BOUNDARY_DIGEST", message: "action_boundary.digest must be the exact canonical sha256 authority digest." });
+  }
+  let authority: ActionBoundaryAuthorityV1 | undefined;
+  try {
+    authority = normalizeActionBoundaryAuthorityV1(value.authority);
+  } catch (error) {
+    errors.push({
+      path: "$.action_boundary.authority",
+      code: "ACTION_BOUNDARY_AUTHORITY_INVALID",
+      message: error instanceof Error ? error.message : "Action Boundary authority is invalid.",
+    });
+  }
+  if (!authority) return;
+  if (typeof value.digest === "string" && /^sha256:[a-f0-9]{64}$/.test(value.digest)
+    && actionBoundaryAuthorityDigestV1(authority) !== value.digest) {
+    errors.push({
+      path: "$.action_boundary.digest",
+      code: "ACTION_BOUNDARY_DIGEST_CHANGED",
+      message: "action_boundary.authority does not match the exact activated digest.",
+    });
+  }
+  if (authority.capabilities.length === 0) {
+    errors.push({ path: "$.action_boundary.authority.capabilities", code: "ACTION_BOUNDARY_CAPABILITIES_REQUIRED", message: "an active Action Boundary must list at least one exact proposal capability revision." });
+    return;
+  }
+  const references = new Map<string, string>();
+  for (const entry of authority.capabilities) {
+    references.set(entry.capability, entry.contract_digest);
+  }
+
+  const runtimeProposals = Array.isArray(capabilities)
+    ? capabilities.filter((capability): capability is JsonRecord => isRecord(capability) && capability.kind === "proposal")
+    : [];
+  // Raw configs may reference contracts that have not been expanded yet.
+  // loadRuntimeConfigFromFile validates again after expansion and performs the
+  // exact set comparison below.
+  if (hasContracts) return;
+  const runtimeNames = new Set(runtimeProposals.flatMap((capability) =>
+    isQualifiedName(capability.name) ? [String(capability.name)] : []));
+  for (const [name, digest] of references) {
+    const runtime = runtimeProposals.find((capability) => capability.name === name);
+    if (!runtime) {
+      errors.push({ path: "$.action_boundary.authority.capabilities", code: "ACTION_BOUNDARY_CAPABILITY_MISSING", message: `Action Boundary capability ${name} is absent from the resolved runtime.` });
+      continue;
+    }
+    const provenance = isRecord(runtime.contract_provenance) ? runtime.contract_provenance : undefined;
+    if (provenance?.digest !== digest) {
+      errors.push({ path: "$.action_boundary.authority.capabilities", code: "ACTION_BOUNDARY_CONTRACT_CHANGED", message: `Resolved capability ${name} does not match its exact reviewed contract digest.` });
+    }
+  }
+  for (const name of runtimeNames) {
+    if (!references.has(name)) {
+      errors.push({ path: "$.capabilities", code: "ACTION_BOUNDARY_RUNTIME_CAPABILITY_EXTRA", message: `Resolved proposal capability ${name} is outside the active Action Boundary.` });
+    }
+  }
+  for (const [index, limit] of authority.shared_limits.entries()) {
+    if (limit.kind !== "total" || !limit.field) continue;
+    const applicable = limit.capability
+      ? runtimeProposals.filter((capability) => capability.name === limit.capability)
+      : runtimeProposals;
+    for (const capability of applicable) {
+      if (!runtimeProposalPatchFieldIsNumeric(capability, limit.field)) {
+        errors.push({
+          path: `$.action_boundary.authority.shared_limits[${index}].field`,
+          code: "ACTION_BOUNDARY_TOTAL_FIELD_NOT_NUMERIC",
+          message: `Action Boundary total limit ${limit.id} requires ${String(capability.name)}.${limit.field} to be a reviewed numeric patch field.`,
+        });
+      }
+    }
+  }
+}
+
+function runtimeProposalPatchFieldIsNumeric(capability: JsonRecord, field: string): boolean {
+  if (!isRecord(capability.patch) || !isRecord(capability.patch[field])) return false;
+  const binding = capability.patch[field] as JsonRecord;
+  if (typeof binding.fixed === "number" && Number.isFinite(binding.fixed)) return true;
+  if (typeof binding.from_arg === "string" && isRecord(capability.args)) {
+    const argument = capability.args[binding.from_arg];
+    return isRecord(argument) && argument.type === "number";
+  }
+  if (typeof binding.from_item === "string" && isRecord(capability.args)) {
+    return Object.values(capability.args).some((argument) =>
+      isRecord(argument)
+      && argument.type === "object_array"
+      && isRecord(argument.fields)
+      && isRecord(argument.fields[binding.from_item as string])
+      && (argument.fields[binding.from_item as string] as JsonRecord).type === "number");
+  }
+  return false;
 }
 
 function validateModelOutput(
@@ -2103,7 +2223,43 @@ function validateApprovalPolicyRule(value: unknown, path: string, strict: boolea
   }
   if (strict) checkUnknownKeys(value, APPROVAL_POLICY_RULE_KEYS, path, errors);
   if (!isSafeIdentifier(value.field)) errors.push({ path: `${path}.field`, code: "INVALID_APPROVAL_POLICY_FIELD", message: "approval policy rule field must be a safe identifier." });
-  if (!Number.isInteger(value.max) || Number(value.max) < 0) errors.push({ path: `${path}.max`, code: "INVALID_APPROVAL_POLICY_MAX", message: "approval policy rule max must be a non-negative integer." });
+  if (value.source !== undefined && value.source !== "patch" && value.source !== "before") {
+    errors.push({ path: `${path}.source`, code: "INVALID_APPROVAL_POLICY_SOURCE", message: "approval policy source must be patch or before." });
+  }
+  if (value.max !== undefined) {
+    if (!Number.isSafeInteger(value.max) || Number(value.max) < 0) {
+      errors.push({ path: `${path}.max`, code: "INVALID_APPROVAL_POLICY_MAX", message: "approval policy rule max must be a non-negative safe integer." });
+    }
+    if (value.operator !== undefined || value.value !== undefined || value.values !== undefined || value.source !== undefined) {
+      errors.push({ path, code: "AMBIGUOUS_APPROVAL_POLICY_RULE", message: "legacy max rules cannot also declare source, operator, value, or values." });
+    }
+    return;
+  }
+  if (!["lte", "gte", "eq", "in", "max_length"].includes(String(value.operator))) {
+    errors.push({ path: `${path}.operator`, code: "INVALID_APPROVAL_POLICY_OPERATOR", message: "typed approval rules require lte, gte, eq, in, or max_length." });
+    return;
+  }
+  if (value.operator === "in") {
+    if (!Array.isArray(value.values) || value.values.length < 1 || value.values.length > 64 || value.values.some((item) => !isScalar(item))) {
+      errors.push({ path: `${path}.values`, code: "INVALID_APPROVAL_POLICY_VALUES", message: "in rules require 1 through 64 fixed scalar values." });
+    }
+    if (value.value !== undefined) errors.push({ path: `${path}.value`, code: "APPROVAL_POLICY_VALUE_FORBIDDEN", message: "in rules use values, not value." });
+    return;
+  }
+  if (value.values !== undefined) {
+    errors.push({ path: `${path}.values`, code: "APPROVAL_POLICY_VALUES_FORBIDDEN", message: `${String(value.operator)} rules use one value, not values.` });
+  }
+  if (value.operator === "lte" || value.operator === "gte") {
+    if (typeof value.value !== "number" || !Number.isFinite(value.value)) {
+      errors.push({ path: `${path}.value`, code: "INVALID_APPROVAL_POLICY_NUMERIC_VALUE", message: `${value.operator} rules require one finite numeric value.` });
+    }
+  } else if (value.operator === "max_length") {
+    if (!Number.isSafeInteger(value.value) || Number(value.value) < 0) {
+      errors.push({ path: `${path}.value`, code: "INVALID_APPROVAL_POLICY_LENGTH", message: "max_length rules require a non-negative safe integer." });
+    }
+  } else if (!Object.prototype.hasOwnProperty.call(value, "value") || !isScalar(value.value)) {
+    errors.push({ path: `${path}.value`, code: "INVALID_APPROVAL_POLICY_VALUE", message: "eq rules require one fixed scalar value." });
+  }
 }
 
 function validateExecutorAuth(value: unknown, path: string, strict: boolean, errors: ConfigIssue[]): void {
@@ -2381,10 +2537,15 @@ function validateCapability(
   validateCapabilityWriteback(value, path, executorNames, strict, errors);
   validateCapabilityReversibility(value, path, strict, errors);
   const protectedRead = value.protected_read !== undefined;
-  const reviewedOrganization = isRecord(value.protected_read)
+  const protectedOrganization = isRecord(value.protected_read)
     && isRecord(value.protected_read.organization_scope)
     && value.protected_read.organization_scope.mode === "single_organization"
     && typeof value.protected_read.organization_scope.organization_id === "string";
+  const proposalOrganization = isRecord(value.organization_scope)
+    && value.organization_scope.mode === "single_organization"
+    && typeof value.organization_scope.organization_id === "string";
+  validateRuntimeOrganizationScope(value.organization_scope, value.kind, path, strict, errors);
+  const reviewedOrganization = protectedOrganization || proposalOrganization;
   validateTarget(value.target, `${path}.target`, strict, errors, warnings, reviewedOrganization);
   if (protectedRead) {
     validateArgs(value.args, `${path}.args`, strict, errors, true);
@@ -2422,6 +2583,34 @@ function validateAggregateReadCapability(value: JsonRecord, path: string, strict
     if (value.aggregate.count_mode !== "rows" && value.aggregate.count_mode !== "non_null") errors.push({ path: `${path}.aggregate.count_mode`, code: "COUNT_MODE_REQUIRED", message: "COUNT requires rows or non_null mode." });
   } else if (!isSafeIdentifier(value.aggregate.column)) errors.push({ path: `${path}.aggregate.column`, code: "AGGREGATE_NUMERIC_COLUMN_REQUIRED", message: "SUM/AVG require a fixed aggregate column." });
   if (value.aggregate.selection !== undefined) validateSelection(value.aggregate.selection, `${path}.aggregate.selection`, strict, errors);
+}
+
+function validateRuntimeOrganizationScope(
+  value: unknown,
+  capabilityKind: unknown,
+  path: string,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (value === undefined) return;
+  const scopePath = `${path}.organization_scope`;
+  if (!isRecord(value)) {
+    errors.push({ path: scopePath, code: "ORGANIZATION_SCOPE_NOT_OBJECT", message: "organization_scope must be one exact reviewed authority object." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, new Set(["mode", "organization_id", "acknowledgement"]), scopePath, errors);
+  if (capabilityKind !== "proposal") {
+    errors.push({ path: scopePath, code: "ORGANIZATION_SCOPE_PROPOSAL_ONLY", message: "top-level organization_scope is valid only on proposal capabilities." });
+  }
+  if (value.mode !== "single_organization") {
+    errors.push({ path: `${scopePath}.mode`, code: "INVALID_ORGANIZATION_SCOPE_MODE", message: "organization_scope.mode must be single_organization." });
+  }
+  if (typeof value.organization_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value.organization_id)) {
+    errors.push({ path: `${scopePath}.organization_id`, code: "INVALID_ORGANIZATION_ID", message: "organization_id must contain 1-128 letters, numbers, dots, colons, underscores, or dashes." });
+  }
+  if (value.acknowledgement !== "all_rows_belong_to_one_organization") {
+    errors.push({ path: `${scopePath}.acknowledgement`, code: "ORGANIZATION_ACKNOWLEDGEMENT_REQUIRED", message: "organization_scope must retain the reviewed all-rows-belong-to-one-organization acknowledgement." });
+  }
 }
 
 function validateProtectedRuntimeCapability(value: JsonRecord, path: string, errors: ConfigIssue[]): void {
@@ -2577,8 +2766,14 @@ function validateTarget(
     errors.push({
       path: `${path}.tenant_key`,
       code: "TENANT_GUARD_REQUIRED",
-      message: "tenant_key is required unless target.single_tenant_dev is explicitly true for a local dev example or protected_read freezes one reviewed organization.",
+      message: "tenant_key is required unless target.single_tenant_dev is explicitly true for a local dev example or the capability freezes one reviewed organization.",
     });
+  }
+  if (hasTenantKey && reviewedOrganization) {
+    errors.push({ path, code: "SCOPE_MODES_CONFLICT", message: "a capability must use either target.tenant_key or one reviewed organization, never both." });
+  }
+  if (singleTenant && reviewedOrganization) {
+    errors.push({ path, code: "SCOPE_MODES_CONFLICT", message: "reviewed single-organization authority cannot be combined with single_tenant_dev." });
   }
   if (value.principal_scope_key !== undefined && !hasPrincipalScopeKey) {
     errors.push({ path: `${path}.principal_scope_key`, code: "INVALID_PRINCIPAL_SCOPE_KEY", message: "principal_scope_key must be a fixed safe identifier." });
@@ -2674,6 +2869,33 @@ function validateProposalCapability(
   errors: ConfigIssue[],
 ): void {
   const operation = validateCapabilityOperation(capability, path, strict, errors);
+  const organizationScoped = isRecord(capability.organization_scope)
+    && capability.organization_scope.mode === "single_organization"
+    && typeof capability.organization_scope.organization_id === "string"
+    && capability.organization_scope.acknowledgement === "all_rows_belong_to_one_organization";
+  if (organizationScoped) {
+    if (capabilityWritebackMode(capability) !== "none") {
+      errors.push({
+        path: `${path}.writeback.mode`,
+        code: "PROPOSAL_ORGANIZATION_WRITEBACK_UNSUPPORTED",
+        message: "reviewed single-organization proposal authority is proposal-only in this release; executable writeback still requires a direct reviewed tenant column.",
+      });
+    }
+    if (capability.execution !== undefined) {
+      errors.push({
+        path: `${path}.execution`,
+        code: "PROPOSAL_ORGANIZATION_EXECUTION_UNSUPPORTED",
+        message: "reviewed single-organization proposal authority cannot grant supervised execution in this release.",
+      });
+    }
+    if (operation === "insert") {
+      errors.push({
+        path: `${path}.operation.kind`,
+        code: "PROPOSAL_ORGANIZATION_INSERT_UNSUPPORTED",
+        message: "reviewed single-organization proposal authority currently supports UPDATE and DELETE proposals; INSERT still requires source-enforced tenant deduplication.",
+      });
+    }
+  }
   if (!isRecord(capability.patch) || (operation !== "delete" && Object.keys(capability.patch).length === 0)) {
     errors.push({ path: `${path}.patch`, code: "PATCH_REQUIRED", message: "UPDATE and INSERT capabilities must declare a fixed patch mapping." });
   } else if (operation === "delete" && Object.keys(capability.patch).length > 0) {

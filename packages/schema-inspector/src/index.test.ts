@@ -641,6 +641,39 @@ describe("schema inspector helpers", () => {
     expect(unsafe).toContainEqual(expect.objectContaining({ code: "INSERT_REQUIRED_COLUMNS_MISSING", level: "fail" }));
   });
 
+  it("accepts a reviewed row identity when direct trusted scope covers the remaining primary-key columns", () => {
+    const table = directWriteTable();
+    table.primary_key = ["tenant_id", "id"];
+    const scoped = assessDirectWritePrerequisites(table, {
+      operation: "update",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      allowed_columns: ["amount_cents"],
+      patch_columns: ["amount_cents"],
+      conflict_column: "version",
+    });
+    expect(scoped).toContainEqual(expect.objectContaining({
+      code: "PRIMARY_KEY_EXACT",
+      level: "pass",
+      message: expect.stringMatching(/trusted scope exactly covers source primary key/i),
+    }));
+
+    table.primary_key = ["tenant_id", "region_id", "id"];
+    const untrustedExtraComponent = assessDirectWritePrerequisites(table, {
+      operation: "update",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      allowed_columns: ["amount_cents"],
+      patch_columns: ["amount_cents"],
+      conflict_column: "version",
+    });
+    expect(untrustedExtraComponent).toContainEqual(expect.objectContaining({
+      code: "PRIMARY_KEY_NOT_EXACT",
+      level: "fail",
+      message: expect.stringContaining("region_id"),
+    }));
+  });
+
   it("counts a reviewed trusted principal column as supplied for INSERT", () => {
     const table = directWriteTable();
     table.columns.push({

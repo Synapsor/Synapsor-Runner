@@ -88,6 +88,8 @@ export type {
   ActiveProposalLookup,
   PolicyApprovalLimit,
   PolicyApprovalLimitTrip,
+  ActionBoundaryApprovalContext,
+  ActionBoundaryApprovalLimitTrip,
   PolicyApprovalDecision,
   WorkerPolicyExecutionLimits,
   MaybePromise,

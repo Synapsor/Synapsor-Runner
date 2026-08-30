@@ -14,6 +14,17 @@ for the Synapsor Cloud CLI.
 
 ### Boundary Assist And Unified Read-to-Action Onboarding
 
+- Fresh terminal onboarding now starts with one agent job. Model-assisted
+  structural mapping is recommended when OpenAI, Anthropic, or a local endpoint
+  is configured; Runner-guided exact cards and full manual authoring remain
+  first-class opt-outs. Runner prepares separate disabled Read and Action
+  Boundary drafts, asks only for unresolved human decisions, and keeps their
+  activation independent.
+- Job mapping uses the complete schema-proven disabled catalog, including
+  directly scoped resources outside the one-table starter, unique one- through
+  three-hop scope paths, and only human-attested shared references. It then
+  minimizes that catalog to exact compiler-valid plans before review.
+
 - `boundary assist`, the terminal boundary editor's `W Workloads` entry, and
   Workbench's **Compile read workload** step compile representative exact
   Explore plans into a minimized disabled read-boundary candidate. Workbench
@@ -38,9 +49,39 @@ for the Synapsor Cloud CLI.
   activation and action steps. Read authority still grants no write authority;
   Safe Action rehearsal, digest, activation, approval, and apply remain
   independent.
+- The default no-model route is reviewed question cards rather than authored
+  workload JSON. Runner saves immutable analysis and a disabled candidate
+  automatically, then opens the complete activation review. Exact plans,
+  question-intent JSON, and model mapping remain available under Advanced.
+- Model-assisted setup opened from Ask reuses the current provider, model,
+  endpoint, and memory-only credential for both read workloads and Safe Action
+  suggestions. Standalone TUI use auto-selects exactly one conventional OpenAI
+  or Anthropic environment. Metadata egress remains separately confirmed, and
+  no credential value is displayed or persisted.
 
 ### Safe Action Human Control Plane
 
+- Safe Actions now activate inside a canonical first-class **Action Boundary**
+  that freezes exact action contract revisions, exact Read Boundary
+  dependencies, approval-policy references, execution profiles, and shared
+  limits under one digest. Existing active Safe Actions synthesize the same
+  boundary view without changing their authority.
+- The Action Boundary inherits the Read Boundary's exact tenant, principal,
+  RLS, or reviewed whole-organization authority. Terminal and Workbench show
+  that scope explicitly; model arguments cannot supply or replace it. A changed
+  Read Boundary dependency makes the action stale.
+- Terminal and Workbench can review rolling cross-action count or numeric-total
+  limits per boundary, capability, tenant, tenant+principal, or tenant+object.
+  Limit edits create a disabled boundary revision and activate separately.
+  Atomic history uncertainty or a tripped limit falls back to human review;
+  it never approves or applies a proposal.
+- Deterministic approval policies now support reviewed conjunctions over
+  numeric bounds, enum subsets, booleans, text length, and captured pre-change
+  facts. Existing numeric-threshold policies remain compatible; every
+  model-controlled numeric patch still requires an explicit policy condition.
+- Proposal-only UPDATE/DELETE is available for reviewed single-organization
+  sources with frozen organization authority. INSERT remains refused there
+  until source-enforced organization-safe deduplication is reviewable.
 - Local `synapsor>` Ask now opens the same operator-only control plane with
   `/actions`, then resumes the same provider, model, memory-only credential,
   and conversation. Production Explore remains the locked two-tool read
@@ -52,6 +93,26 @@ for the Synapsor Cloud CLI.
   recommended rollout bundles one human reviewer with proposal-only
   `WRITEBACK NONE`; quorum, deterministic policy, execution, receipts, and
   workers stay behind an explicit advanced choice.
+- Terminal and Workbench now present one consolidated proposal-action card.
+  They interrupt only for a structurally ambiguous target/operation/guard,
+  an unresolved field set, or a missing numeric bound. A model is not needed.
+  The selected intent cannot prove permission and all final structure is
+  revalidated server-side.
+- A rehearsed proposal bound to a pending read revision returns directly to the
+  access screen with the exact activation order. If an intent clearly names an
+  unavailable operation, Runner refuses and names the remediation rather than
+  substituting a different write effect.
+- The recommended path generates bounded rehearsal arguments from the compiled
+  contract and runs the real proposal path in a disposable ledger. The source
+  database and durable proposal ledger remain unchanged. The next and only
+  authority-bearing step is explicit proposal-only activation.
+- A fully reviewed pending read revision may now be used for disabled action
+  drafting and disposable rehearsal. The draft records the exact boundary name
+  and digest, and activation fails closed until that exact read authority is
+  active.
+- Multiple disabled actions prepared for one job can be activated sequentially.
+  Runner rebases the remaining disabled Action Boundary candidates around each
+  newly active exact revision without changing their contract digests.
 - Rehearsal uses contract-derived enum, boolean, numeric-bound, and text-length
   prompts, with raw JSON retained for advanced fixtures. Interactive activation
   and proposal decisions bind the selected revision/proposal to its full

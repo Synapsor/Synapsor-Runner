@@ -304,6 +304,7 @@ export async function localDoctor(args: string[]): Promise<number> {
         sourceName,
         source,
         checkCanary: checkRls,
+        activeExploreBoundaries,
       }));
     }
   }
@@ -964,17 +965,26 @@ async function postgresRlsDoctorChecks(input: {
   sourceName: string;
   source: RunnerSourceConfig;
   checkCanary: boolean;
+  activeExploreBoundaries: ActivatedExplorationBoundary[];
 }): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const scope = input.source.database_scope;
   if (scope?.mode !== "postgres_rls") return checks;
   const readUrl = envValue(process.env, input.source.read_url_env);
   const readCapabilities = (input.config.capabilities ?? []).filter((capability) => capability.source === input.sourceName);
-  const readTargets = uniqueRlsTargets(readCapabilities.map((capability) => ({
-    schema: capability.target.schema,
-    table: capability.target.table,
-    operations: ["SELECT"] as PostgresRlsOperation[],
-  })));
+  const exploreTargets = postgresRlsExploreTargets(input.activeExploreBoundaries, input.sourceName);
+  const readTargets = uniqueRlsTargets([
+    ...readCapabilities.map((capability) => ({
+      schema: capability.target.schema,
+      table: capability.target.table,
+      operations: ["SELECT"] as PostgresRlsOperation[],
+    })),
+    ...exploreTargets.map((target) => ({
+      schema: target.schema,
+      table: target.table,
+      operations: ["SELECT"] as PostgresRlsOperation[],
+    })),
+  ]);
   if (!readUrl) {
     checks.push({
       name: `source:${input.sourceName}:postgres-rls-reader`,
@@ -1017,16 +1027,43 @@ async function postgresRlsDoctorChecks(input: {
       level: "warn",
       message: "Live cross-tenant/principal RLS canary was not run. On a disposable or explicitly approved live target, rerun doctor with --check-rls.",
     });
-  } else if (!readUrl || !readCapabilities.length) {
+  } else if (!readUrl || (!readCapabilities.length && !exploreTargets.length)) {
     checks.push({
       name: `source:${input.sourceName}:postgres-rls-live-canary`,
       ok: false,
       level: "fail",
-      message: "Live RLS canary requires the reader credential and at least one capability target.",
+      message: "Live RLS canary requires the reader credential and at least one named capability or active Explore Boundary target.",
     });
   } else {
     try {
-      await verifyPostgresRlsCanary(input.config, readCapabilities[0]!, readUrl, scope);
+      const capability = readCapabilities[0];
+      const exploreTarget = exploreTargets[0];
+      const tenantId = capability
+        ? trustedCliContext(input.config, capability, process.env).tenant_id
+        : envValue(process.env, "SYNAPSOR_TENANT_ID");
+      const principal = capability
+        ? trustedCliContext(input.config, capability, process.env).principal
+        : envValue(process.env, "SYNAPSOR_PRINCIPAL");
+      if (!tenantId || (scope.principal_setting && !principal)) {
+        throw new Error(
+          "POSTGRES_RLS_CANARY_TRUSTED_CONTEXT_MISSING:SYNAPSOR_TENANT_ID,SYNAPSOR_PRINCIPAL",
+        );
+      }
+      await verifyPostgresRlsCanary({
+        target: capability
+          ? {
+            schema: capability.target.schema,
+            table: capability.target.table,
+            primaryKey: capability.target.primary_key,
+          }
+          : exploreTarget!,
+        context: {
+          tenant_id: tenantId,
+          principal: principal ?? "synapsor-rls-canary-principal-not-configured",
+        },
+        databaseUrl: readUrl,
+        scope,
+      });
       checks.push({
         name: `source:${input.sourceName}:postgres-rls-live-canary`,
         ok: true,
@@ -1043,6 +1080,29 @@ async function postgresRlsDoctorChecks(input: {
     }
   }
   return checks;
+}
+
+
+export function postgresRlsExploreTargets(
+  boundaries: ActivatedExplorationBoundary[],
+  sourceName: string,
+): Array<{ schema: string; table: string; primaryKey: string }> {
+  const targets = new Map<string, { schema: string; table: string; primaryKey: string }>();
+  for (const boundary of boundaries) {
+    if (boundary.source !== sourceName || boundary.organization_scope) continue;
+    for (const resource of boundary.pack.resources) {
+      if (resource.shared_reference_scope) continue;
+      const key = `${resource.schema}\u0000${resource.table}`;
+      if (!targets.has(key)) {
+        targets.set(key, {
+          schema: resource.schema,
+          table: resource.table,
+          primaryKey: resource.primary_key,
+        });
+      }
+    }
+  }
+  return [...targets.values()];
 }
 
 
@@ -1103,43 +1163,48 @@ async function inspectPostgresRlsDoctorTarget(
 }
 
 
-async function verifyPostgresRlsCanary(
-  config: RuntimeConfig,
-  capability: RunnerCapabilityConfig,
-  databaseUrl: string,
+async function verifyPostgresRlsCanary(input: {
+  target: { schema: string; table: string; primaryKey: string };
+  context: { tenant_id: string; principal: string };
+  databaseUrl: string;
   scope: Extract<NonNullable<RunnerSourceConfig["database_scope"]>, { mode: "postgres_rls" }>,
-): Promise<void> {
-  const context = trustedCliContext(config, capability, process.env);
-  const pool = createPostgresPool(databaseUrl, { max: 1, connectionTimeoutMillis: 3000 });
-  const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
-  const primaryKey = quotePostgresIdentifier(capability.target.primary_key);
+}): Promise<void> {
+  const pool = createPostgresPool(input.databaseUrl, { max: 1, connectionTimeoutMillis: 3000 });
+  const table = `${quotePostgresIdentifier(input.target.schema)}.${quotePostgresIdentifier(input.target.table)}`;
+  const primaryKey = quotePostgresIdentifier(input.target.primaryKey);
   await withPostgresProbeClient(pool, async (client) => {
-    const bind = async (tenantId: string, principal: string) => bindPostgresTrustedScope(client, scope, {
+    const bind = async (tenantId: string, principal: string) => bindPostgresTrustedScope(client, input.scope, {
       tenant_id: tenantId,
       principal,
       provenance: "environment",
     });
     try {
       await client.query("BEGIN");
-      await bind(context.tenant_id, context.principal);
+      await bind(input.context.tenant_id, input.context.principal);
       const visible = await client.query(`SELECT ${primaryKey} AS id FROM ${table} ORDER BY ${primaryKey} LIMIT 1`);
       await client.query("ROLLBACK");
       const id = visible.rows[0]?.id;
       if (id === undefined) throw new Error("POSTGRES_RLS_CANARY_NO_VISIBLE_ROW");
 
       const deniedScopes: Array<[string, string]> = [
-        [`synapsor-canary-tenant-${crypto.randomUUID()}`, context.principal],
-        ...(scope.principal_setting
-          ? [[context.tenant_id, `synapsor-canary-principal-${crypto.randomUUID()}`] as [string, string]]
+        [`synapsor-canary-tenant-${crypto.randomUUID()}`, input.context.principal],
+        ...(input.scope.principal_setting
+          ? [[input.context.tenant_id, `synapsor-canary-principal-${crypto.randomUUID()}`] as [string, string]]
           : []),
       ];
       for (const [tenantId, principal] of deniedScopes) {
         await client.query("BEGIN");
-        const before = await client.query(
-          "SELECT current_setting($1, true) AS tenant, current_setting($2, true) AS principal",
-          [scope.tenant_setting, scope.principal_setting],
-        );
-        if (before.rows[0]?.tenant === context.tenant_id || before.rows[0]?.principal === context.principal) {
+        const before = input.scope.principal_setting
+          ? await client.query(
+            "SELECT current_setting($1, true) AS tenant, current_setting($2, true) AS principal",
+            [input.scope.tenant_setting, input.scope.principal_setting],
+          )
+          : await client.query(
+            "SELECT current_setting($1, true) AS tenant, NULL::text AS principal",
+            [input.scope.tenant_setting],
+          );
+        if (before.rows[0]?.tenant === input.context.tenant_id
+          || (input.scope.principal_setting && before.rows[0]?.principal === input.context.principal)) {
           throw new Error("POSTGRES_RLS_CONTEXT_LEAKED_ACROSS_TRANSACTION");
         }
         await bind(tenantId, principal);

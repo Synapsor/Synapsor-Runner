@@ -5,6 +5,7 @@ export { loadContract } from "./load.js";
 export { SynapsorSpecValidationError } from "./errors.js";
 export type {
   AgentContextSpec,
+  ApprovalPolicyRuleSpec,
   AggregateReadSpec,
   ArgumentSpec,
   CapabilitySpec,

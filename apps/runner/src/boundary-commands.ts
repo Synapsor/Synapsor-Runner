@@ -62,6 +62,9 @@ import {
   DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
   DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
 } from "./terminal-ask-defaults.js";
+import { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
+import { withTerminalProgress } from "./terminal-prompt.js";
+import { AskError } from "./model-ask.js";
 import {
   readModelAuthorityMetadataMode,
   updateModelAuthorityMetadataMode,
@@ -89,6 +92,7 @@ import {
   activateGuidedAction,
   createGuidedActionDraft,
   guidedActionOptions,
+  guidedActionOptionsFromCandidate,
   guidedActionStatus,
   readGuidedActionDraft,
   recordGuidedActionPreview,
@@ -98,21 +102,39 @@ import {
 } from "./guided-action.js";
 import { executeGuidedActionPreview } from "./guided-action-runtime.js";
 import {
+  conventionalModelAuthoringSession,
   inspectActionProject,
   renderActionControlPlaneTable,
   runActionControlPlane,
+  type ActionModelSuggestionSession,
 } from "./action-tui.js";
 import {
   importActionSuggestion,
   listActionSuggestions,
 } from "./action-suggestions.js";
-import { generateModelActionSuggestion } from "./action-suggestion-model.js";
+import {
+  generateModelActionSuggestion,
+  generateModelActionSuggestionSet,
+} from "./action-suggestion-model.js";
+import {
+  buildDelegationDraft,
+  writeDelegationDraft,
+  type DelegationModelAssist,
+} from "./delegation-setup.js";
+import {
+  applyJobMappingCatalog,
+  loadJobMappingCatalog,
+  type JobMappingCatalogPath,
+} from "./job-mapping-catalog.js";
 import {
   generateModelReadWorkload,
 } from "./read-workload-model.js";
 import {
   analyzeReadWorkloadSet,
+  buildReadWorkloadPlanCards,
   normalizeReadWorkloadSet,
+  rankReadWorkloadPlanCardsForJob,
+  readWorkloadFromPlanCards,
   type ReadWorkloadSet,
 } from "./read-workload-assist.js";
 import {
@@ -204,6 +226,15 @@ export type BoundaryReviewCommandOptions = {
     boundaryDigest: `sha256:${string}`;
   }) => string;
   startAtBoundaryList?: boolean;
+  /** Reuses the already-consented Ask model without persisting its credential. */
+  modelAuthoringSession?: ActionModelSuggestionSession;
+  modelReadWorkloadGenerator?: typeof generateModelReadWorkload;
+  modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
+  modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
+  actionProjectInspector?: typeof inspectActionProject;
+  runDelegationActionReview?: typeof runActionControlPlane;
+  /** Opens the one-job Read + Action Boundary setup before the schema editor. */
+  startWithAgentJob?: boolean;
 };
 
 export async function boundaryAssistCommand(
@@ -659,7 +690,7 @@ export async function boundaryReviewCommand(
   }
   assertKnownOptions(
     args,
-    new Set(["--project-root", "--output", "--json", "--confirm", "--actor", "--map", "--all", "--details", "--access"]),
+    new Set(["--project-root", "--output", "--json", "--confirm", "--actor", "--map", "--all", "--details", "--access", "--job-first"]),
     "boundary review",
   );
   if (args.includes("--all") && !args.includes("--map")) {
@@ -731,6 +762,13 @@ export async function boundaryReviewCommand(
       activationReviewNotice: options.activationReviewNotice,
       initialView: args.includes("--access") ? "access" : "boundaries",
       startAtBoundaryList: options.startAtBoundaryList,
+      modelAuthoringSession: options.modelAuthoringSession,
+      modelReadWorkloadGenerator: options.modelReadWorkloadGenerator,
+      modelActionSuggestionGenerator: options.modelActionSuggestionGenerator,
+      modelActionSuggestionSetGenerator: options.modelActionSuggestionSetGenerator,
+      actionProjectInspector: options.actionProjectInspector,
+      runDelegationActionReview: options.runDelegationActionReview,
+      startWithAgentJob: options.startWithAgentJob ?? args.includes("--job-first"),
     });
   }
   let context = await loadBoundaryReviewContext(projectRoot);
@@ -1176,6 +1214,12 @@ async function boundaryResourceReviewCommand(
         session,
         activationHandoff,
         activationReviewNotice: options.activationReviewNotice,
+        modelAuthoringSession: options.modelAuthoringSession,
+        modelReadWorkloadGenerator: options.modelReadWorkloadGenerator,
+        modelActionSuggestionGenerator: options.modelActionSuggestionGenerator,
+        modelActionSuggestionSetGenerator: options.modelActionSuggestionSetGenerator,
+        actionProjectInspector: options.actionProjectInspector,
+        runDelegationActionReview: options.runDelegationActionReview,
       });
     }
     if (result === "review") {
@@ -1437,6 +1481,13 @@ async function interactiveBoundaryReviewLoop(input: {
   activationReviewNotice?: BoundaryReviewCommandOptions["activationReviewNotice"];
   initialView?: "boundaries" | "access";
   startAtBoundaryList?: boolean;
+  modelAuthoringSession?: ActionModelSuggestionSession;
+  modelReadWorkloadGenerator?: typeof generateModelReadWorkload;
+  modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
+  modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
+  actionProjectInspector?: typeof inspectActionProject;
+  runDelegationActionReview?: typeof runActionControlPlane;
+  startWithAgentJob?: boolean;
 }): Promise<number> {
   let startAtBoundaryList = input.startAtBoundaryList;
   let selectedResourceId: string | undefined;
@@ -1453,6 +1504,7 @@ async function interactiveBoundaryReviewLoop(input: {
         }
       : {}),
   };
+  let startWithAgentJob = input.startWithAgentJob === true;
   while (true) {
     let context = await loadBoundaryReviewContext(input.projectRoot);
     const boundaryLibrary = await synchronizeBoundaryLibrary({
@@ -1468,11 +1520,43 @@ async function interactiveBoundaryReviewLoop(input: {
       input.projectRoot,
       boundaryLibrary.entries.map((entry) => entry.name),
     );
+    const guidedActions = await guidedActionStatus(input.projectRoot);
     const resolvedProject = await resolveSynapsorProject(input.projectRoot, process.env);
     const modelOutputConfigPath = resolvedProject?.config_path;
     const modelAuthorityMetadataMode = modelOutputConfigPath
       ? await readModelAuthorityMetadataMode(modelOutputConfigPath)
       : "semantic";
+    if (startWithAgentJob) {
+      startWithAgentJob = false;
+      try {
+        const assist = await interactiveReadWorkloadAssist({
+          projectRoot: input.projectRoot,
+          schemaInspector: input.schemaInspector,
+          session: input.session,
+          modelAuthoringSession: input.modelAuthoringSession,
+          modelReadWorkloadGenerator: input.modelReadWorkloadGenerator,
+          modelActionSuggestionGenerator: input.modelActionSuggestionGenerator,
+          modelActionSuggestionSetGenerator: input.modelActionSuggestionSetGenerator,
+          actionProjectInspector: input.actionProjectInspector,
+          runDelegationActionReview: input.runDelegationActionReview,
+          completeReadReview: async () => confirmActivateAndKeepAccessOpen(accessActivationInput),
+          jobFirst: true,
+        });
+        if (assist.activation_ready) {
+          process.stdout.write([
+            "",
+            "READ BOUNDARY DRAFT READY",
+            ...assist.notice.lines,
+            "The exact disabled draft is saved. Nothing is active until you review and activate it.",
+            "",
+          ].join("\n"));
+        }
+        accessNotice = assist.notice;
+      } catch (error) {
+        accessNotice = boundaryModelAssistFailureNotice(error, true);
+      }
+      continue;
+    }
     const selected = await input.session.chooseResource(
       await listBoundaryResourceReviews(input.projectRoot),
       {
@@ -1481,6 +1565,12 @@ async function interactiveBoundaryReviewLoop(input: {
         boundaries: boundaryLibrary.entries.map((entry) => ({
           ...entry,
           ask_intent_check_mode: askIntentModes[entry.name] ?? "balanced",
+          proposal_action_state: guidedActions.drafts.some((draft) =>
+            draft.boundary_name === entry.name && draft.effect_preview)
+            ? "rehearsed" as const
+            : guidedActions.drafts.some((draft) => draft.boundary_name === entry.name)
+              ? "draft" as const
+              : "none" as const,
         })),
       },
       {
@@ -1509,34 +1599,63 @@ async function interactiveBoundaryReviewLoop(input: {
     }
     if (selected.action === "workloads") {
       try {
-        accessNotice = await interactiveReadWorkloadAssist({
+        const assist = await interactiveReadWorkloadAssist({
           projectRoot: input.projectRoot,
           schemaInspector: input.schemaInspector,
           session: input.session,
+          modelAuthoringSession: input.modelAuthoringSession,
+          modelReadWorkloadGenerator: input.modelReadWorkloadGenerator,
+          modelActionSuggestionGenerator: input.modelActionSuggestionGenerator,
+          actionProjectInspector: input.actionProjectInspector,
+          runDelegationActionReview: input.runDelegationActionReview,
+          completeReadReview: async () => confirmActivateAndKeepAccessOpen(accessActivationInput),
         });
+        if (assist.activation_ready) {
+          process.stdout.write([
+            "",
+            "READ CANDIDATE READY",
+            ...assist.notice.lines,
+            "The immutable analysis and disabled candidate are saved. Agent authority is still unchanged.",
+            "Review the complete read boundary next; activation is the only authority confirmation.",
+            "",
+          ].join("\n"));
+          const activationResult = await confirmActivateAndKeepAccessOpen(accessActivationInput);
+          if (activationResult !== 0) return activationResult;
+        } else {
+          accessNotice = assist.notice;
+        }
       } catch (error) {
-        accessNotice = {
-          tone: "danger",
-          title: "Boundary Assist did not change the draft.",
-          lines: [redactCliErrorMessage(error instanceof Error ? error.message : String(error))],
-          footer: "Active authority and source data are unchanged.",
-        };
+        accessNotice = boundaryModelAssistFailureNotice(error, false);
       }
       continue;
     }
     if (selected.action === "actions") {
       await reviewActionsCommand(
-        ["--project-root", input.projectRoot],
+        ["--project-root", input.projectRoot, "--boundary", selected.boundary_name],
         inspectActionProject,
+        input.modelAuthoringSession,
       );
-      accessNotice = {
-        tone: "success",
-        title: "Returned from Safe Actions.",
-        lines: [
-          "Read-boundary review and active authority are unchanged.",
-          "New action revisions remain disabled until their own rehearsal and activation.",
-        ],
-      };
+      const actionStatus = await guidedActionStatus(input.projectRoot);
+      const rehearsedDrafts = actionStatus.drafts.filter((draft) =>
+        draft.boundary_name === selected.boundary_name && draft.effect_preview);
+      accessNotice = rehearsedDrafts.length
+        ? {
+            tone: "success",
+            title: "Proposal rehearsal passed. Source data is unchanged.",
+            lines: [
+              `${rehearsedDrafts.length} proposal-only action${rehearsedDrafts.length === 1 ? " is" : "s are"} ready for authority review.`,
+              "Press C to review and activate this read boundary. Then press Y to review the exact rehearsed proposal action.",
+            ],
+            footer: "No proposal action, approval, apply, or writeback authority is active yet.",
+          }
+        : {
+            tone: "success",
+            title: "Returned from Safe Actions.",
+            lines: [
+              "Read-boundary review and active authority are unchanged.",
+              "New action revisions remain disabled until their own rehearsal and activation.",
+            ],
+          };
       continue;
     }
     if (selected.action === "intent_check") {
@@ -2039,35 +2158,296 @@ async function interactiveBoundaryReviewLoop(input: {
   }
 }
 
+export async function promptBoundaryMappingModel(
+  session: Pick<BoundaryReviewInteractiveSession, "promptText">,
+  currentModel?: ActionModelSuggestionSession,
+  dependencies: {
+    discoverModels?: typeof discoverOpenAiCompatibleModels;
+  } = {},
+): Promise<ActionModelSuggestionSession | undefined> {
+  if (currentModel) return currentModel;
+  const providerText = await session.promptText(
+    "Provider [1]",
+    {
+      context: [
+        "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
+        "1  OpenAI",
+        "2  Anthropic",
+        "3  Local OpenAI-compatible endpoint",
+        "",
+        "The provider maps structural metadata to an untrusted proposal. Runner validates every exact identifier and operation.",
+      ],
+    },
+  );
+  if (providerText === undefined) return undefined;
+  const providerChoice = providerText.trim().toLowerCase() || "1";
+  const provider = providerChoice === "1" || providerChoice === "openai"
+    ? "openai"
+    : providerChoice === "2" || providerChoice === "anthropic"
+      ? "anthropic"
+      : providerChoice === "3" || providerChoice === "local" || providerChoice === "openai_compatible"
+        ? "openai_compatible"
+        : providerChoice;
+  if (provider !== "openai" && provider !== "anthropic" && provider !== "openai_compatible") {
+    throw new Error("Provider must be openai, anthropic, or openai_compatible.");
+  }
+
+  if (provider === "openai_compatible") {
+    const defaultBaseUrl = "http://127.0.0.1:11434/v1";
+    const baseText = await session.promptText(
+      `Local model endpoint [${defaultBaseUrl}]`,
+      {
+        context: [
+          "LOCAL MODEL",
+          "Runner will inspect this loopback endpoint for installed model names. Blank Enter uses Ollama's default endpoint.",
+          "No API key is required for the loopback path.",
+        ],
+      },
+    );
+    if (baseText === undefined) return undefined;
+    const baseUrl = baseText.trim() || defaultBaseUrl;
+    const detectedModels = await (dependencies.discoverModels ?? discoverOpenAiCompatibleModels)(baseUrl)
+      .catch(() => []);
+    const defaultModel = detectedModels[0] ?? "llama3.2";
+    const modelText = await session.promptText(
+      `Local model [${defaultModel}]`,
+      {
+        context: detectedModels.length
+          ? [
+              "DETECTED LOCAL MODELS",
+              ...detectedModels.slice(0, 8).map((model) => `- ${model}`),
+              ...(detectedModels.length > 8 ? [`- and ${detectedModels.length - 8} more`] : []),
+            ]
+          : [
+              "MODEL NAME",
+              "Runner could not list this endpoint's models. Enter the exact installed model name.",
+            ],
+      },
+    );
+    if (modelText === undefined) return undefined;
+    return {
+      provider,
+      model: modelText.trim() || defaultModel,
+      baseUrl,
+    };
+  }
+
+  const defaultModel = provider === "anthropic"
+    ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL
+    : DEFAULT_TERMINAL_OPENAI_ASK_MODEL;
+  const modelText = await session.promptText(`Model [${defaultModel}]`);
+  if (modelText === undefined) return undefined;
+  const keyDefault = provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
+  const keyText = await session.promptText(`API key environment variable [${keyDefault}]`);
+  if (keyText === undefined) return undefined;
+  return {
+    provider,
+    model: modelText.trim() || defaultModel,
+    apiKeyEnv: keyText.trim() || keyDefault,
+  };
+}
+
+function boundaryModelAssistFailureNotice(
+  error: unknown,
+  firstRun: boolean,
+): BoundaryAccessNotice {
+  if (error instanceof AskError && error.code === "ASK_REQUIRED_TOOL_NOT_CALLED") {
+    return {
+      tone: "danger",
+      title: "The selected model could not draft a structured Boundary.",
+      lines: [
+        "Runner discarded two prose responses because neither called the required bounded authoring tool.",
+        "Use a larger local model with reliable tool calling, or open Agent job with W and choose 2 for Runner-guided exact plan cards.",
+        "No model output was accepted.",
+      ],
+      footer: firstRun
+        ? "Active authority and source data are unchanged. Open Agent job again with W or edit manually."
+        : "Active authority and source data are unchanged.",
+    };
+  }
+  return {
+    tone: "danger",
+    title: "Agent job setup stopped safely.",
+    lines: [redactCliErrorMessage(error instanceof Error ? error.message : String(error))],
+    footer: firstRun
+      ? "Active authority and source data are unchanged. Open Agent job again with W or edit manually."
+      : "Active authority and source data are unchanged.",
+  };
+}
+
+function withBoundaryModelProgress<T>(
+  message: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return process.stderr.isTTY
+    ? withTerminalProgress(process.stderr, message, operation)
+    : operation();
+}
+
 async function interactiveReadWorkloadAssist(input: {
   projectRoot: string;
   schemaInspector: typeof inspectDatabase;
   session: BoundaryReviewInteractiveSession;
-}): Promise<BoundaryAccessNotice> {
-  const choice = await input.session.promptText([
-    "BOUNDARY ASSIST - REPRESENTATIVE READS",
-    "Runner compiles exact representative plans into the smallest candidate read boundary.",
-    "1  Exact workload JSON (no model)",
-    "2  Type representative questions (optional model maps language to exact plans)",
-    "3  Import question intent JSON",
-    "4  Saved workload analysis",
-    "Choose 1, 2, 3, or 4",
-  ].join("\n"));
-  if (choice === undefined) return boundaryAssistBackNotice();
-  if (choice !== "1" && choice !== "2" && choice !== "3" && choice !== "4") {
-    return {
+  modelAuthoringSession?: ActionModelSuggestionSession;
+  modelReadWorkloadGenerator?: typeof generateModelReadWorkload;
+  modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
+  modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
+  actionProjectInspector?: typeof inspectActionProject;
+  runDelegationActionReview?: typeof runActionControlPlane;
+  completeReadReview?: () => Promise<number>;
+  jobFirst?: boolean;
+}): Promise<{ notice: BoundaryAccessNotice; activation_ready: boolean }> {
+  const currentModel = input.modelAuthoringSession
+    ?? conventionalModelAuthoringSession(process.env);
+  const jobIntent = await input.session.promptText(
+    "What job are you giving this agent?",
+    {
+      context: [
+        "SET UP ONE AGENT JOB",
+        "Describe what the agent should answer and, if needed, what changes it may propose.",
+        "Runner will prepare separate disabled Read and Action Boundary drafts. The model cannot activate either one.",
+        "Example: Compare site performance, explain open maintenance work, and propose scheduling a technician.",
+        "",
+        "Type M for full manual table and field setup. Esc pauses without changing authority.",
+      ],
+    },
+  );
+  if (jobIntent === undefined) return boundaryAssistResult(boundaryAssistBackNotice("Delegation setup closed."));
+  if (input.jobFirst && /^(?:m|manual)$/i.test(jobIntent.trim())) {
+    return boundaryAssistResult({
+      tone: "success",
+      title: "Manual Boundary setup selected.",
+      lines: [
+        "Use the table list to build the Read Boundary directly; press Y for Action Boundaries when ready.",
+        "No model request was made and no authority changed.",
+      ],
+      footer: "W reopens one-job assisted setup at any time.",
+    });
+  }
+  if (!jobIntent.trim()) {
+    return boundaryAssistResult({
+      tone: "warning",
+      title: "Describe one agent job first.",
+      lines: ["Runner uses the job to keep the read and proposal drafts together; it does not infer authority from this sentence."],
+    });
+  }
+  const choice = await input.session.promptText(
+    input.jobFirst ? "Mapping method [1]" : "Choose 1-5",
+    {
+      context: input.jobFirst
+        ? [
+            "MAP THE JOB TO REVIEWED STRUCTURE",
+            currentModel
+              ? `1  Model-assisted with ${currentModel.provider}/${currentModel.model}  [recommended]`
+              : "1  Model-assisted with OpenAI, Anthropic, or a local model  [recommended]",
+            "2  Runner-guided exact plan cards  [no model]",
+            "3  Full manual table and field setup",
+            "4  Advanced exact read-workload JSON",
+            "5  Advanced question-intent JSON plus model",
+            "6  Reopen a saved workload analysis",
+            "",
+            "A model receives only reviewed structural metadata after you approve egress. It cannot activate authority.",
+          ]
+        : [
+            "HOW SHOULD RUNNER MAP THIS JOB?",
+            "1  Runner-guided cards (recommended; no model)",
+            currentModel
+              ? `2  Current ${currentModel.provider}/${currentModel.model} model (one metadata-egress review)`
+              : "2  Configure a model for bounded structural mapping",
+            "3  Advanced: exact read-workload JSON",
+            "4  Advanced: question-intent JSON plus model",
+            "5  Reopen a saved workload analysis",
+          ],
+    },
+  );
+  if (choice === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+  const normalizedChoice = choice.trim() || (input.jobFirst ? "1" : "");
+  if (input.jobFirst && normalizedChoice === "3") {
+    return boundaryAssistResult({
+      tone: "success",
+      title: "Manual Boundary setup selected.",
+      lines: ["No model request was made and no disabled draft was changed."],
+      footer: "Use the table list now. W reopens one-job assisted setup.",
+    });
+  }
+  const mode = input.jobFirst
+    ? ({ "1": "model", "2": "cards", "4": "exact", "5": "intent_model", "6": "saved" } as const)[normalizedChoice as "1" | "2" | "4" | "5" | "6"]
+    : ({ "1": "cards", "2": "model", "3": "exact", "4": "intent_model", "5": "saved" } as const)[normalizedChoice as "1" | "2" | "3" | "4" | "5"];
+  if (!mode) {
+    return boundaryAssistResult({
       tone: "warning",
       title: "Choose one Boundary Assist input mode.",
-      lines: ["Press W again and enter 1, 2, 3, or 4."],
-    };
+      lines: [`Press W again and enter a number from 1 through ${input.jobFirst ? 6 : 5}.`],
+    });
   }
+  let actionIntents = input.jobFirst
+    ? await promptJobFirstActionIntents(input.session, jobIntent.trim())
+    : await promptDelegationActionIntents(input.session);
+  if (!actionIntents) return boundaryAssistResult(boundaryAssistBackNotice("Delegation setup closed."));
   let context = await loadBoundaryReviewContext(input.projectRoot);
+  if (input.jobFirst && mode !== "saved") {
+    const prepared = await prepareJobMappingCatalog({
+      projectRoot: input.projectRoot,
+      schemaInspector: input.schemaInspector,
+      session: input.session,
+    });
+    if (!prepared) {
+      return boundaryAssistResult(boundaryAssistBackNotice(
+        "Job mapping paused. No model request was made and active authority is unchanged.",
+      ));
+    }
+    context = await loadBoundaryReviewContext(input.projectRoot);
+  }
+  // Job-first setup has just turned the current candidate into the broad,
+  // disabled mapping catalog. Use that exact reviewed revision so raised path
+  // limits and newly proven scope paths are present during validation. The
+  // resulting workload is minimized and revalidated before it replaces this
+  // catalog; no authority is activated here.
+  const mappingBoundary = context.candidate;
   let workload: ReadWorkloadView;
-  if (choice === "1") {
+  let modelAssistSession: ActionModelSuggestionSession | undefined;
+  let modelAssistRecord: DelegationModelAssist | undefined;
+  let actionInspection: Awaited<ReturnType<typeof inspectActionProject>> | undefined;
+  const preMappedActions: Array<{
+    intent: string;
+    result: Awaited<ReturnType<typeof generateModelActionSuggestion>>;
+  }> = [];
+  if (mode === "cards") {
+    const builtCards = buildReadWorkloadPlanCards(mappingBoundary);
+    const cards = input.jobFirst
+      ? rankReadWorkloadPlanCardsForJob(builtCards, jobIntent)
+      : builtCards;
+    if (!cards.length) {
+      return boundaryAssistResult({
+        tone: "warning",
+        title: "No reviewed question cards are available yet.",
+        lines: ["Review at least one table or use Advanced exact JSON for a specific plan."],
+      });
+    }
+    const selectedIds = input.session.selectReadWorkloadCards
+      ? await input.session.selectReadWorkloadCards(cards)
+      : await input.session.promptText([
+          "CHOOSE REPRESENTATIVE QUESTIONS",
+          "Select every question the agent needs. This selects exact plan shapes; it does not activate access.",
+          ...cards.map((card, index) => `${index + 1}  ${card.title}\n   ${card.detail}`),
+          "Numbers (comma-separated; ranges allowed, for example 1,3-5)",
+        ].join("\n")).then((selectedText) => selectedText === undefined
+          ? undefined
+          : parseReadWorkloadCardSelection(selectedText, cards.map((card) => card.id)));
+    if (selectedIds === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    const exact = readWorkloadFromPlanCards({ cards, selectedIds });
+    const analysis = analyzeReadWorkloadSet({ workload: exact, generatedBoundary: mappingBoundary });
+    workload = await storeReadWorkloadAnalysis({
+      projectRoot: input.projectRoot,
+      generatedBoundary: mappingBoundary,
+      source: exact.source,
+      analysis,
+    });
+  } else if (mode === "exact") {
     const file = await input.session.promptText(
-      "Exact workload JSON file [Esc Back]",
+      "Exact workload JSON file",
     );
-    if (file === undefined) return boundaryAssistBackNotice();
+    if (file === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
     if (!file.trim()) throw new Error("Choose one exact workload JSON file.");
     const exact = normalizeReadWorkloadSet(
       await readJsonFileWithLocation<unknown>(path.resolve(file.trim()), "read workload"),
@@ -2075,184 +2455,517 @@ async function interactiveReadWorkloadAssist(input: {
     if (exact.source?.kind !== "operator_exact_plan" && exact.source?.kind !== "plan_playground") {
       throw new Error("Exact workload import must declare source.kind=operator_exact_plan or plan_playground.");
     }
-    const analysis = analyzeReadWorkloadSet({ workload: exact, generatedBoundary: context.draft });
+    const analysis = analyzeReadWorkloadSet({ workload: exact, generatedBoundary: mappingBoundary });
     workload = await storeReadWorkloadAnalysis({
       projectRoot: input.projectRoot,
-      generatedBoundary: context.draft,
+      generatedBoundary: mappingBoundary,
       source: exact.source,
       analysis,
     });
-  } else if (choice === "2" || choice === "3") {
+  } else if (mode === "model" || mode === "intent_model") {
     let intent: ReturnType<typeof parseReadWorkloadIntent>;
-    if (choice === "2") {
-      const nameText = await input.session.promptText(
-        "Workload name [representative_reads] [Esc Back]",
-      );
-      if (nameText === undefined) return boundaryAssistBackNotice();
+    if (mode === "model" && input.jobFirst) {
+      intent = parseReadWorkloadIntent({
+        name: "delegation_reads",
+        allowed_questions: [jobIntent.trim()],
+        forbidden_questions: [],
+      });
+    } else if (mode === "model") {
       const allowedQuestions = await promptReadWorkloadQuestions(
         input.session,
-        "Required read",
+        "Question the agent must answer",
         true,
       );
-      if (!allowedQuestions) return boundaryAssistBackNotice();
+      if (!allowedQuestions) return boundaryAssistResult(boundaryAssistBackNotice());
       const forbiddenQuestions = await promptReadWorkloadQuestions(
         input.session,
-        "Forbidden read",
+        "Question that must stay refused",
         false,
       );
-      if (!forbiddenQuestions) return boundaryAssistBackNotice();
+      if (!forbiddenQuestions) return boundaryAssistResult(boundaryAssistBackNotice());
       intent = parseReadWorkloadIntent({
-        name: nameText.trim() || "representative_reads",
+        name: "delegation_reads",
         allowed_questions: allowedQuestions,
         forbidden_questions: forbiddenQuestions,
       });
     } else {
       const file = await input.session.promptText(
-        "Question intent JSON file (name, allowed_questions, forbidden_questions) [Esc Back]",
+        "Question intent JSON file (name, allowed_questions, forbidden_questions)",
       );
-      if (file === undefined) return boundaryAssistBackNotice();
+      if (file === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
       if (!file.trim()) throw new Error("Choose one question intent JSON file.");
       intent = parseReadWorkloadIntent(
         await readJsonFileWithLocation<unknown>(path.resolve(file.trim()), "read workload intent"),
       );
     }
-    const providerText = await input.session.promptText(
-      "Provider: openai, anthropic, or openai_compatible [openai] [Esc Back]",
-    );
-    if (providerText === undefined) return boundaryAssistBackNotice();
-    const provider = providerText.trim() || "openai";
-    if (provider !== "openai" && provider !== "anthropic" && provider !== "openai_compatible") {
-      throw new Error("Provider must be openai, anthropic, or openai_compatible.");
-    }
-    const defaultModel = provider === "anthropic"
-      ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL
-      : DEFAULT_TERMINAL_OPENAI_ASK_MODEL;
-    const modelText = await input.session.promptText(
-      `Model [${defaultModel}] [Esc Back]`,
-    );
-    if (modelText === undefined) return boundaryAssistBackNotice();
-    const keyDefault = provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
-    const keyText = await input.session.promptText(
-      `API key environment variable [${keyDefault}] [Esc Back]`,
-    );
-    if (keyText === undefined) return boundaryAssistBackNotice();
-    let baseUrl: string | undefined;
-    if (provider === "openai_compatible") {
-      const base = await input.session.promptText(
-        "OpenAI-compatible base URL (use a loopback URL for a local model) [Esc Back]",
-      );
-      if (base === undefined) return boundaryAssistBackNotice();
-      if (!base.trim()) throw new Error("openai_compatible requires one base URL.");
-      baseUrl = base.trim();
-    }
+    const selectedModel = await promptBoundaryMappingModel(input.session, currentModel);
+    if (!selectedModel) return boundaryAssistResult(boundaryAssistBackNotice());
+    const { provider, model, apiKeyEnv: keyText, baseUrl } = selectedModel;
     const acknowledged = await input.session.confirm([
-      "Send only reviewed visible resource/field names, types, relationship IDs, labels/descriptions, and these questions to the selected model?",
-      "Runner will not send database rows, values, kept-out fields, credentials, URLs, or trusted tenant/principal values.",
+      `Send this job, its read questions${actionIntents.length ? ", its proposal intents," : ""} and only reviewed structural names, types, relationships, labels, and descriptions to ${provider}/${model}?`,
+      input.jobFirst
+        ? "Runner may make one bounded read-mapping call and one bounded action-set call, plus one correction call only after a refusal. It will not send rows, database values, kept-out fields, credentials, URLs, or trusted tenant/principal values."
+        : "Runner may make one bounded read-mapping call and one bounded action-mapping call per action. It will not send rows, database values, kept-out fields, credentials, URLs, or trusted tenant/principal values.",
     ].join(" "), { defaultValue: false });
-    if (!acknowledged) return boundaryAssistBackNotice("Model mapping was not started.");
-    const mapped = await generateModelReadWorkload({
+    if (!acknowledged) return boundaryAssistResult(boundaryAssistBackNotice("Model mapping was not started."));
+    const mappingSession: ActionModelSuggestionSession = {
+      provider,
+      model,
+      ...(currentModel?.apiKey
+        ? { apiKey: currentModel.apiKey }
+        : keyText
+          ? { apiKeyEnv: keyText }
+          : {}),
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(currentModel?.dependencies ? { dependencies: currentModel.dependencies } : {}),
+    };
+    modelAssistSession = mappingSession;
+    modelAssistRecord = {
+      provider,
+      model: mappingSession.model,
+      structural_metadata_egress_acknowledged: true,
+    };
+    const mapped = await withBoundaryModelProgress(
+      "Mapping requested reads with the selected model",
+      () => (input.modelReadWorkloadGenerator ?? generateModelReadWorkload)({
       name: intent.name,
       allowedQuestions: intent.allowed_questions,
       forbiddenQuestions: intent.forbidden_questions,
       provider,
-      model: modelText.trim() || defaultModel,
-      generatedBoundary: context.draft,
-      apiKeyEnv: keyText.trim() || keyDefault,
+      model: mappingSession.model,
+      generatedBoundary: mappingBoundary,
+      ...(mappingSession.apiKey ? { apiKey: mappingSession.apiKey } : {}),
+      ...(mappingSession.apiKeyEnv ? { apiKeyEnv: mappingSession.apiKeyEnv } : {}),
       ...(baseUrl ? { baseUrl } : {}),
-      egressAcknowledged: true,
-    });
+      ...(mappingSession.dependencies ? { dependencies: mappingSession.dependencies } : {}),
+        egressAcknowledged: true,
+      }),
+    );
+    let mappedWorkload = mapped.workload;
+    let mappedAnalysis = mapped.analysis;
+    if (actionIntents.length) {
+      actionInspection = await (input.actionProjectInspector ?? inspectActionProject)(
+        input.projectRoot,
+        process.env,
+      );
+      const actionCatalog = guidedActionOptionsFromCandidate({
+        candidate: mappingBoundary,
+        inspection: actionInspection,
+      });
+      if (input.jobFirst && (input.modelActionSuggestionSetGenerator || !input.modelActionSuggestionGenerator)) {
+        const set = await withBoundaryModelProgress(
+          "Drafting Action Boundary suggestions with the selected model",
+          () => (input.modelActionSuggestionSetGenerator ?? generateModelActionSuggestionSet)({
+          jobIntent: jobIntent.trim(),
+          provider: mappingSession.provider,
+          model: mappingSession.model,
+          options: actionCatalog,
+          env: process.env,
+          ...(mappingSession.apiKey ? { apiKey: mappingSession.apiKey } : {}),
+          ...(mappingSession.apiKeyEnv ? { apiKeyEnv: mappingSession.apiKeyEnv } : {}),
+          ...(mappingSession.baseUrl ? { baseUrl: mappingSession.baseUrl } : {}),
+          ...(mappingSession.dependencies ? { dependencies: mappingSession.dependencies } : {}),
+            egressAcknowledged: true,
+          }),
+        );
+        actionIntents = set.assessments.map((assessment) => assessment.suggestion.intent);
+        for (const assessment of set.assessments) {
+          preMappedActions.push({
+            intent: assessment.suggestion.intent,
+            result: {
+              assessment,
+              provider: set.provider,
+              model: set.model,
+              authority_granted: false,
+              source_database_changed: false,
+            },
+          });
+        }
+      } else {
+        for (const actionIntent of actionIntents) {
+          const result = await withBoundaryModelProgress(
+            "Drafting one Action Boundary suggestion with the selected model",
+            () => (input.modelActionSuggestionGenerator ?? generateModelActionSuggestion)({
+            intent: actionIntent,
+            provider: mappingSession.provider,
+            model: mappingSession.model,
+            options: actionCatalog,
+            env: process.env,
+            ...(mappingSession.apiKey ? { apiKey: mappingSession.apiKey } : {}),
+            ...(mappingSession.apiKeyEnv ? { apiKeyEnv: mappingSession.apiKeyEnv } : {}),
+            ...(mappingSession.baseUrl ? { baseUrl: mappingSession.baseUrl } : {}),
+            ...(mappingSession.dependencies ? { dependencies: mappingSession.dependencies } : {}),
+              egressAcknowledged: true,
+            }),
+          );
+          preMappedActions.push({ intent: actionIntent, result });
+        }
+      }
+      const supportEntries: ReadWorkloadSet["allowed"] = [];
+      for (const [index, preMapped] of preMappedActions.entries()) {
+        if (preMapped.result.assessment.status !== "suggested") continue;
+        const result = preMapped.result;
+        const suggestion = result.assessment.suggestion;
+        const selectedFields = suggestion.operation === "delete"
+          ? []
+          : [...new Set(suggestion.fields ?? [])];
+        supportEntries.push({
+          id: uniqueWorkloadEntryId(
+            `action_review_${index + 1}`,
+            [...mappedWorkload.allowed, ...supportEntries].map((entry) => entry.id),
+          ),
+          description: `Review the exact fields required to ${suggestion.operation} ${suggestion.resource}.`,
+          plan: selectedFields.length
+            ? {
+                kind: "rows",
+                resource: suggestion.resource,
+                select: selectedFields,
+                limit: 1,
+              }
+            : {
+                kind: "aggregate",
+                resource: suggestion.resource,
+                measures: [{ function: "count" }],
+                top_n: 1,
+              },
+        });
+      }
+      if (supportEntries.length) {
+        mappedWorkload = normalizeReadWorkloadSet({
+          ...mappedWorkload,
+          allowed: [...mappedWorkload.allowed, ...supportEntries],
+        });
+        mappedAnalysis = analyzeReadWorkloadSet({
+          workload: mappedWorkload,
+          generatedBoundary: mappingBoundary,
+        });
+      }
+    }
     workload = await storeReadWorkloadAnalysis({
       projectRoot: input.projectRoot,
-      generatedBoundary: context.draft,
-      source: mapped.workload.source!,
-      analysis: mapped.analysis,
+      generatedBoundary: mappingBoundary,
+      source: mappedWorkload.source!,
+      analysis: mappedAnalysis,
     });
   } else {
     const workloads = await listReadWorkloadAnalyses({
       projectRoot: input.projectRoot,
-      generatedBoundary: context.draft,
+      generatedBoundary: mappingBoundary,
     });
     if (!workloads.length) {
-      return {
+      return boundaryAssistResult({
         tone: "warning",
         title: "No saved workload analyses are available.",
         lines: ["Press W and choose exact plans or optional model mapping first."],
-      };
+      });
     }
     const selectedId = await input.session.promptText([
       "SAVED WORKLOAD ANALYSES",
       ...workloads.slice(0, 12).map((entry) =>
         `${entry.analysis_id}  [${entry.state}]  ${entry.analysis.workload_name}`),
-      "Analysis ID [Esc Back]",
+      "Analysis ID",
     ].join("\n"));
-    if (selectedId === undefined) return boundaryAssistBackNotice();
+    if (selectedId === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
     workload = await readReadWorkloadAnalysis({
       projectRoot: input.projectRoot,
       analysisId: selectedId.trim(),
-      generatedBoundary: context.draft,
+      generatedBoundary: mappingBoundary,
     });
   }
   if (workload.state !== "ready") {
-    return {
+    return boundaryAssistResult({
       tone: "danger",
       title: `Workload ${workload.analysis.workload_name} is ${workload.state}.`,
       lines: workload.analysis.blockers.length
         ? workload.analysis.blockers.slice(0, 5)
         : [workload.stale_reason ?? "Re-run this workload against the current generated boundary."],
       footer: "Nothing was saved or activated.",
-    };
+    });
   }
-  const actorDefault = process.env.USER?.trim() || "local-reviewer";
-  const actorText = await input.session.promptText(`Reviewer identity [${actorDefault}] [Esc Back]`);
-  if (actorText === undefined) return boundaryAssistBackNotice();
   const reasonDefault = `Compile representative workload ${workload.analysis.workload_name}.`;
-  const reasonText = await input.session.promptText(`Review reason [${reasonDefault}] [Esc Back]`);
-  if (reasonText === undefined) return boundaryAssistBackNotice();
   context = await loadBoundaryReviewContext(input.projectRoot);
   const preview = await prepareReadWorkloadCandidate({
     projectRoot: input.projectRoot,
     workload,
-    actor: actorText.trim() || actorDefault,
-    reason: reasonText.trim() || reasonDefault,
+    actor: localInteractiveActor(),
+    reason: reasonDefault,
     expectedBindings: context.bundle.mutation_bindings,
     schemaInspector: input.schemaInspector,
   });
   const coverage = workload.analysis.coverage;
+  const requestedReadCoverage = representativeReadCoverage(workload.analysis);
   const exposure = workload.analysis.exposure;
-  const save = await input.session.confirm([
-    `Save this disabled candidate for ${workload.analysis.workload_name}?`,
-    `${coverage.allowed_supported}/${coverage.allowed_total} allowed questions work; `
-      + `${coverage.forbidden_denied}/${coverage.forbidden_total} exact forbidden plans remain denied.`,
-    `${exposure.candidate_resources} resources, ${exposure.candidate_return_fields} return fields, `
-      + `${exposure.candidate_operation_fields} operation fields, ${exposure.candidate_relationships} relationships.`,
-    "This replaces only the selected disabled draft. Existing active boundaries and source data remain unchanged.",
-  ].join(" "), { defaultValue: false });
-  if (!save) {
-    return {
-      tone: "success",
-      title: "Workload analysis saved; boundary draft unchanged.",
-      lines: [
-        `Analysis: ${workload.analysis_id}`,
-        "Press W and choose Saved workload analysis when you are ready to review it again.",
-      ],
-    };
-  }
   const committed = await commitReadWorkloadCandidate({
     projectRoot: input.projectRoot,
     preview,
   });
-  return {
-    tone: "success",
-    title: "Minimum read boundary saved as a disabled review revision.",
-    lines: [
-      `${coverage.allowed_supported}/${coverage.allowed_total} allowed questions work; `
-        + `${coverage.forbidden_denied}/${coverage.forbidden_total} exact deny tests remain blocked.`,
+  if (actionIntents.length) {
+    if (!input.completeReadReview) {
+      throw new Error(
+        "DELEGATION_READ_REVIEW_REQUIRED: finish the exact Read Boundary review before preparing dependent proposal actions.",
+      );
+    }
+    process.stdout.write([
+      "",
+      "READ CANDIDATE READY",
+      `${requestedReadCoverage.supported}/${requestedReadCoverage.total} requested read plans are supported.`,
       `${exposure.candidate_resources} resources | ${exposure.candidate_return_fields} return fields | `
         + `${exposure.candidate_relationships} relationships`,
-      `Review revision ${committed.review_revision}; agent authority is unchanged.`,
+      "Review the complete Read Boundary now. You may activate it or keep the exact review disabled while preparing actions.",
+      "No proposal, approval, apply, or source-write authority is active.",
+      "",
+    ].join("\n"));
+    const reviewResult = await input.completeReadReview();
+    if (reviewResult !== 0) {
+      throw new Error("DELEGATION_READ_REVIEW_INCOMPLETE: the exact Read Boundary review did not complete.");
+    }
+  }
+  const actionDrafts: Array<{
+    intent: string;
+    draft: Awaited<ReturnType<typeof guidedActionStatus>>["drafts"][number];
+  }> = [];
+  if (actionIntents.length) {
+    const inspection = actionInspection ?? await (input.actionProjectInspector ?? inspectActionProject)(
+      input.projectRoot,
+      process.env,
+    );
+    const runActionReview = input.runDelegationActionReview ?? runActionControlPlane;
+    for (const [actionIndex, actionIntent] of actionIntents.entries()) {
+      const before = new Set((await guidedActionStatus(input.projectRoot)).drafts.map((draft) =>
+        `${draft.capability}:${draft.contract_digest}`));
+      let initialSuggestionId: string | undefined;
+      if (modelAssistSession) {
+        const options = await guidedActionOptions({
+          projectRoot: input.projectRoot,
+          inspection,
+          boundaryName: context.candidate.pack.name,
+          allowReviewedPending: true,
+        });
+        const preMapped = preMappedActions[actionIndex];
+        const generated = preMapped?.intent === actionIntent
+          ? preMapped.result
+          : await (input.modelActionSuggestionGenerator ?? generateModelActionSuggestion)({
+              intent: actionIntent,
+              provider: modelAssistSession.provider,
+              model: modelAssistSession.model,
+              options,
+              env: process.env,
+              ...(modelAssistSession.apiKey ? { apiKey: modelAssistSession.apiKey } : {}),
+              ...(modelAssistSession.apiKeyEnv ? { apiKeyEnv: modelAssistSession.apiKeyEnv } : {}),
+              ...(modelAssistSession.baseUrl ? { baseUrl: modelAssistSession.baseUrl } : {}),
+              ...(modelAssistSession.dependencies ? { dependencies: modelAssistSession.dependencies } : {}),
+              egressAcknowledged: true,
+            });
+        const imported = await importActionSuggestion({
+          projectRoot: input.projectRoot,
+          value: generated.assessment.suggestion,
+          options,
+        });
+        initialSuggestionId = imported.suggestion_id;
+      }
+      await runActionReview({
+        projectRoot: input.projectRoot,
+        boundaryName: context.candidate.pack.name,
+        inspection,
+        env: process.env,
+        ...(initialSuggestionId ? { initialSuggestionId } : { initialIntent: actionIntent }),
+        ...(modelAssistSession ? { modelSuggestionSession: modelAssistSession } : {}),
+        prepareOnly: true,
+        actionBoundaryJobIntent: jobIntent.trim(),
+      });
+      const created = (await guidedActionStatus(input.projectRoot)).drafts.find((draft) =>
+        draft.boundary_name === context.candidate.pack.name
+        && !before.has(`${draft.capability}:${draft.contract_digest}`));
+      if (created) actionDrafts.push({ intent: actionIntent, draft: created });
+    }
+  }
+  const delegation = buildDelegationDraft({
+    jobIntent: jobIntent.trim(),
+    boundaryName: context.candidate.pack.name,
+    workload,
+    review: committed.review,
+    actionIntents,
+    actionDrafts,
+    ...(modelAssistRecord ? { modelAssist: modelAssistRecord } : {}),
+  });
+  await writeDelegationDraft(input.projectRoot, delegation);
+  return boundaryAssistResult({
+    tone: "success",
+    title: "Delegation drafts are ready for separate authority review.",
+    lines: [
+      `${requestedReadCoverage.supported}/${requestedReadCoverage.total} requested read plans are supported.`,
+      ...(coverage.forbidden_total
+        ? [`${coverage.forbidden_denied}/${coverage.forbidden_total} exact deny tests remain blocked.`]
+        : []),
+      `${exposure.candidate_resources} resources | ${exposure.candidate_return_fields} return fields | `
+        + `${exposure.candidate_relationships} relationships`,
+      actionIntents.length
+        ? `${actionDrafts.length}/${actionIntents.length} proposal actions are saved as disabled drafts${actionDrafts.some(({ draft }) => draft.effect_preview) ? "; disposable rehearsal passed where shown" : ""}.`
+        : "Proposal authority: OFF (this is a read-only job).",
+      "EXPLORE OFF | PROPOSE OFF | DELEGATE OFF | APPLY OFF",
+      `Review revision ${committed.review_revision}; no agent authority changed.`,
     ],
-    footer: "Press C to review and activate this read boundary. After read setup, use Action Assist only for proposal capabilities.",
-  };
+    footer: "The exact Read Boundary activation review opens next. Action activation remains separate.",
+  }, actionIntents.length === 0);
+}
+
+async function promptDelegationActionIntents(
+  session: BoundaryReviewInteractiveSession,
+): Promise<string[] | undefined> {
+  const intents: string[] = [];
+  while (intents.length < 8) {
+    const answer = await session.promptText(
+      intents.length === 0
+        ? "What may the agent propose? Leave blank for a read-only job."
+        : `Another proposal action ${intents.length + 1} (blank when done)`,
+    );
+    if (answer === undefined) return undefined;
+    const normalized = answer.trim().replace(/\s+/g, " ");
+    if (!normalized) return intents;
+    if (normalized.length > 500) {
+      throw new Error("Proposal action intents must be at most 500 characters each.");
+    }
+    intents.push(normalized);
+  }
+  return intents;
+}
+
+async function promptJobFirstActionIntents(
+  session: BoundaryReviewInteractiveSession,
+  jobIntent: string,
+): Promise<string[] | undefined> {
+  const appearsToChangeState = /\b(?:propose|create|schedule|assign|update|change|close|cancel|approve|issue|send|record|mark|waive|refund|credit|delete|remove)\b/i
+    .test(jobIntent);
+  const prepareActions = await session.confirm(
+    "Should this job include an Action Boundary for structured proposals?",
+    {
+      defaultValue: appearsToChangeState,
+      context: [
+        "READ AND ACTION BOUNDARIES",
+        "Read Boundary: what the agent may inspect through Explore.",
+        "Action Boundary: what structured change it may propose. Approval and apply remain separate.",
+        appearsToChangeState
+          ? "Runner noticed change-oriented language, so Action Boundary drafting is selected by default."
+          : "Choose No for a read-only job. You can add Action Boundaries later with Y.",
+      ],
+    },
+  );
+  if (prepareActions === undefined) return undefined;
+  return prepareActions ? [jobIntent] : [];
+}
+
+async function prepareJobMappingCatalog(input: {
+  projectRoot: string;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+}): Promise<boolean> {
+  const plan = await loadJobMappingCatalog(input.projectRoot);
+  const acceptedShared: string[] = [];
+  if (plan.shared_reference_resources.length) {
+    const reviewShared = await input.session.confirm(
+      `Review ${plan.shared_reference_resources.length} optional shared-reference table${plan.shared_reference_resources.length === 1 ? "" : "s"} for this job now?`,
+      {
+        defaultValue: false,
+        context: [
+          "OPTIONAL SHARED REFERENCES",
+          ...plan.shared_reference_resources.slice(0, 6).map((resource) => `- ${resource.resource_id}`),
+          ...(plan.shared_reference_resources.length > 6
+            ? [`- and ${plan.shared_reference_resources.length - 6} more`]
+            : []),
+          "Choose No unless the job needs these same rows for every tenant. They stay outside the disabled mapping catalog.",
+          "Choose Yes to review each business assertion separately; Runner cannot infer it from schema structure.",
+        ],
+      },
+    );
+    if (reviewShared === undefined) return false;
+    if (reviewShared) {
+      for (const resource of plan.shared_reference_resources) {
+        const accepted = await input.session.confirm(
+          `${resource.resource_id} has no per-tenant rows and may be treated as a shared reference?`,
+          {
+            defaultValue: false,
+            context: [
+              "SHARED REFERENCE REVIEW",
+              `${resource.resource_id} has no tenant column and no proven path to tenant-owned rows.`,
+              "Accept only when every tenant is meant to see the same reviewed rows.",
+              "This records a disabled, boundary-specific decision; it does not activate access.",
+            ],
+          },
+        );
+        if (accepted === undefined) return false;
+        if (accepted) acceptedShared.push(resource.resource_id);
+      }
+    }
+  }
+  const total = plan.direct_resources.length + plan.derived_resources.length + acceptedShared.length;
+  const limitsChange = plan.current_limits.max_derived_scope_hops
+      !== plan.proposed_limits.max_derived_scope_hops
+    || plan.current_limits.max_analysis_relationship_hops
+      !== plan.proposed_limits.max_analysis_relationship_hops;
+  if (!plan.direct_resources_to_include.length
+    && !plan.derived_resources.length
+    && !acceptedShared.length
+    && !limitsChange) {
+    process.stdout.write([
+      "",
+      "MAPPING CATALOG READY",
+      `${plan.direct_resources.length} directly scoped table${plan.direct_resources.length === 1 ? " is" : "s are"} available for disabled job mapping.`,
+      ...(plan.manual_resources.length ? [`${plan.manual_resources.length} table${plan.manual_resources.length === 1 ? " needs" : "s need"} manual scope review and will stay outside mapping.`] : []),
+      "No authority was activated.",
+      "",
+    ].join("\n"));
+    return true;
+  }
+  const approved = await input.session.confirm(
+    `Prepare ${total} tables as a disabled job-mapping catalog?`,
+    {
+      defaultValue: true,
+      context: [
+        "PREPARE DISABLED MAPPING CATALOG",
+        `${plan.direct_resources.length} directly scoped (${plan.direct_resources_to_include.length} added to this draft) | ${plan.derived_resources.length} catalog-proven derived | ${acceptedShared.length} reviewed shared reference`,
+        ...plan.derived_resources.slice(0, 8).map((resource) =>
+          `${resource.resource_id}: ${formatJobMappingPath(resource.tenant_scope)}`),
+        ...(plan.derived_resources.length > 8 ? [`${plan.derived_resources.length - 8} more proven paths`] : []),
+        ...(plan.proposed_limits.max_derived_scope_hops > plan.current_limits.max_derived_scope_hops
+          ? [`Derived-scope review depth: ${plan.current_limits.max_derived_scope_hops} -> ${plan.proposed_limits.max_derived_scope_hops} (hard cap 3)`]
+          : []),
+        ...(plan.proposed_limits.max_analysis_relationship_hops > plan.current_limits.max_analysis_relationship_hops
+          ? [`Analysis-relationship review depth: ${plan.current_limits.max_analysis_relationship_hops} -> ${plan.proposed_limits.max_analysis_relationship_hops} (hard cap 3)`]
+          : []),
+        ...(plan.manual_resources.length
+          ? [`${plan.manual_resources.length} ambiguous or unresolved table${plan.manual_resources.length === 1 ? " stays" : "s stay"} outside this catalog.`]
+          : []),
+        "Runner will minimize this catalog to the job. Nothing becomes active in this step.",
+      ],
+    },
+  );
+  if (!approved) return false;
+  const applied = await applyJobMappingCatalog({
+    projectRoot: input.projectRoot,
+    expectedPlanDigest: plan.plan_digest,
+    acceptedSharedResources: acceptedShared,
+    actor: localInteractiveActor(),
+    reason: "Prepare a complete disabled structural catalog for one-job Boundary mapping.",
+    schemaInspector: input.schemaInspector,
+  });
+  process.stdout.write([
+    "",
+    "MAPPING CATALOG READY",
+    `${total} tables are available to the workload mapper${applied.review_revision ? ` in disabled revision ${applied.review_revision}` : ""}.`,
+    ...(plan.manual_resources.length
+      ? [`${plan.manual_resources.length} ambiguous or unresolved table${plan.manual_resources.length === 1 ? " remains" : "s remain"} outside mapping; use the manual editor to review them.`]
+      : []),
+    "No Read Boundary, Action Boundary, proposal, approval, or apply authority was activated.",
+    "",
+  ].join("\n"));
+  return true;
+}
+
+function formatJobMappingPath(path: JobMappingCatalogPath): string {
+  const resources = path.links.length
+    ? [path.links[0]!.source_resource, ...path.links.map((link) => link.target_resource)]
+    : [path.ancestor_resource];
+  return `${resources.join(" -> ")} (${path.depth} hop${path.depth === 1 ? "" : "s"})`;
 }
 
 async function promptReadWorkloadQuestions(
@@ -2265,7 +2978,7 @@ async function promptReadWorkloadQuestions(
     const answer = await session.promptText(
       `${label} ${questions.length + 1}${questions.length === 0 && required
         ? " (required)"
-        : " (blank when done)"} [Esc Back]`,
+        : " (blank when done)"}`,
     );
     if (answer === undefined) return undefined;
     const normalized = answer.trim();
@@ -2287,6 +3000,66 @@ function boundaryAssistBackNotice(detail = "Boundary Assist closed."): BoundaryA
     title: detail,
     lines: ["The selected disabled draft, active authority, and source database are unchanged."],
   };
+}
+
+function boundaryAssistResult(
+  notice: BoundaryAccessNotice,
+  activationReady = false,
+): { notice: BoundaryAccessNotice; activation_ready: boolean } {
+  return { notice, activation_ready: activationReady };
+}
+
+function uniqueWorkloadEntryId(base: string, existingIds: string[]): string {
+  const existing = new Set(existingIds);
+  if (!existing.has(base)) return base;
+  for (let suffix = 2; suffix <= 99; suffix += 1) {
+    const candidate = `${base}_${suffix}`;
+    if (!existing.has(candidate)) return candidate;
+  }
+  throw new Error(`READ_WORKLOAD_ID_DUPLICATED: could not allocate a bounded id for ${base}.`);
+}
+
+function representativeReadCoverage(analysis: ReadWorkloadView["analysis"]): {
+  supported: number;
+  total: number;
+} {
+  const requested = analysis.allowed.filter((entry) =>
+    !(entry.id.startsWith("action_review_")
+      && entry.description.startsWith("Review the exact fields required to ")));
+  return {
+    supported: requested.filter((entry) => entry.status === "supported").length,
+    total: requested.length,
+  };
+}
+
+function parseReadWorkloadCardSelection(input: string, ids: string[]): string[] {
+  const normalized = input.trim().toLowerCase();
+  if (normalized === "all") return [...ids];
+  if (!normalized) {
+    throw new Error("Choose at least one representative question number.");
+  }
+  const indexes = new Set<number>();
+  for (const token of normalized.split(/[\s,]+/).filter(Boolean)) {
+    const range = /^(\d+)-(\d+)$/.exec(token);
+    if (range) {
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      if (start < 1 || end < start || end > ids.length) {
+        throw new Error(`Question range ${token} is outside 1-${ids.length}.`);
+      }
+      for (let index = start; index <= end; index += 1) indexes.add(index - 1);
+      continue;
+    }
+    if (!/^\d+$/.test(token)) {
+      throw new Error(`Question selection ${token} is not a number or range.`);
+    }
+    const index = Number(token);
+    if (index < 1 || index > ids.length) {
+      throw new Error(`Question number ${index} is outside 1-${ids.length}.`);
+    }
+    indexes.add(index - 1);
+  }
+  return [...indexes].sort((left, right) => left - right).map((index) => ids[index]!);
 }
 
 async function interactiveBoundaryLimitsReview(input: {
@@ -2318,8 +3091,7 @@ async function interactiveBoundaryLimitsReview(input: {
     { key: "max_derived_scope_hops", label: "Derived-scope depth", current: budgets.max_derived_scope_hops ?? budgets.max_relationship_hops, minimum: 1, maximum: 3, unit: "proven hops", consequence: "mandatory tenant/principal scope traversal" },
     { key: "max_analysis_relationship_hops", label: "Analysis-path depth", current: budgets.max_analysis_relationship_hops ?? budgets.max_relationship_hops, minimum: 1, maximum: 3, unit: "proven hops", consequence: "reviewed many-to-one analysis traversal" },
   ];
-  process.stdout.write([
-    "",
+  const limitMenu = [
     "BOUNDARY LIMITS",
     ...options.slice(0, 2).map((option, index) =>
       `${index + 1}  ${option.label.padEnd(22)} ${option.current} ${option.unit}`),
@@ -2327,11 +3099,14 @@ async function interactiveBoundaryLimitsReview(input: {
     ...options.slice(2).map((option, index) =>
       `${index + 4}  ${option.label.padEnd(22)} ${option.current} ${option.unit}`),
     "",
-    "Throughput controls bound request volume. Shape controls bound one validated result. Path depth is hard-capped at three catalog-proven many-to-one hops.",
-    "None of these settings changes small-group suppression, rolling extracted-cell accounting, or differencing protection.",
-    "",
-  ].join("\n"));
-  const selected = await input.session.promptText(`Limit to review [1-${options.length + 1}; Esc returns]`);
+    "Throughput controls bound request volume. Shape controls bound one validated result.",
+    "Relationship depth is capped at three catalog-proven many-to-one hops.",
+    "These settings do not change small-group suppression, rolling extracted-cell accounting, or differencing protection.",
+  ];
+  const selected = await input.session.promptText(
+    `Limit to review [1-${options.length + 1}; Esc returns]`,
+    { context: limitMenu },
+  );
   if (selected === undefined || !selected.trim()) {
     process.stdout.write("Returned to boundary review. No limit changed.\n");
     return 0;
@@ -2349,6 +3124,14 @@ async function interactiveBoundaryLimitsReview(input: {
   }
   const entered = await input.session.promptText(
     `${option.label} [${option.current}] (${option.minimum}-${option.maximum} ${option.unit})`,
+    {
+      context: [
+        "BOUNDARY LIMITS",
+        `Selected: ${option.label}`,
+        `Current: ${option.current} ${option.unit}`,
+        `Effect: ${option.consequence}`,
+      ],
+    },
   );
   if (entered === undefined) {
     process.stdout.write("Returned to boundary review. No limit changed.\n");
@@ -2370,7 +3153,15 @@ async function interactiveBoundaryLimitsReview(input: {
   }
   const accepted = await input.session.confirm(
     `Set ${option.label.toLowerCase()} to ${value} ${option.unit}? This changes ${option.consequence}.`,
-    { defaultValue: true },
+    {
+      defaultValue: true,
+      context: [
+        "REVIEW BOUNDARY LIMIT",
+        `${option.label}: ${option.current} -> ${value} ${option.unit}`,
+        "Suppression, extracted-cell accounting, and differencing protection do not change.",
+        "This saves a disabled revision; active authority does not change yet.",
+      ],
+    },
   );
   if (!accepted) {
     process.stdout.write("The selected reviewed limit was not changed.\n");
@@ -2412,6 +3203,14 @@ async function interactiveRankedGroupReview(input: {
     ?? context.draft.budgets.max_groups;
   const entered = await input.session.promptText(
     `Ranked underlying groups [${current}] (${context.candidate.budgets.max_groups}-${generatedMaximum}): `,
+    {
+      context: [
+        "BOUNDARY LIMITS - RANKED CANDIDATE GROUPS",
+        `Current underlying-group limit: ${current}`,
+        `Returned results remain capped at top ${context.candidate.budgets.max_top_n}.`,
+        "Suppression runs before ranking; this setting does not weaken privacy controls.",
+      ],
+    },
   );
   if (entered === undefined) {
     process.stdout.write("Returned to boundary review. The ranked limit was not changed.\n");
@@ -2435,7 +3234,15 @@ async function interactiveRankedGroupReview(input: {
   }
   const accepted = await input.session.confirm(
     `Allow ranked queries to consider at most ${value} underlying groups while returning at most ${context.candidate.budgets.max_top_n}?`,
-    { defaultValue: true },
+    {
+      defaultValue: true,
+      context: [
+        "REVIEW RANKED CANDIDATE LIMIT",
+        `Underlying groups: ${current} -> ${value}`,
+        `Returned top N: ${context.candidate.budgets.max_top_n} (unchanged)`,
+        "Suppression, extracted-cell accounting, and differencing protection remain unchanged.",
+      ],
+    },
   );
   if (!accepted) {
     process.stdout.write("The ranked aggregate limit was not changed.\n");
@@ -2527,7 +3334,17 @@ async function interactiveReviewedRelationshipPathReview(input: {
   if (selected.action === "remove") {
     const confirmed = await input.session.confirm(
       `Remove the reviewed analysis path ${pathLabel} from the disabled boundary? Queries that need it will be refused after activation.`,
-      { defaultValue: false },
+      {
+        defaultValue: false,
+        context: [
+          "REMOVE REVIEWED ANALYSIS PATH",
+          pathLabel,
+          ...(formatRelationshipJoinColumns(display)
+            ? [`via columns: ${formatRelationshipJoinColumns(display)}`]
+            : []),
+          `path ID: ${selected.relationship_id}`,
+        ],
+      },
     );
     if (!confirmed) {
       process.stdout.write("Relationship-path removal cancelled. No draft or active authority changed.\n\n");
@@ -2537,13 +3354,16 @@ async function interactiveReviewedRelationshipPathReview(input: {
 
   let unmatchedRows: "exclude" | "keep_null" | undefined;
   if (selected.action === "add" && generatedRelationship.nullable === true) {
-    process.stdout.write([
+    const unmatchedRowMenu = [
+      "OPTIONAL RELATIONSHIP",
       `The path ${pathLabel} contains an optional relationship. Choose how unmatched root rows behave:`,
       "  1  Exclude unmatched rows from this analysis",
       "  2  Keep unmatched rows under an empty/null related value",
-      "",
-    ].join("\n"));
-    const choice = await input.session.promptText("Missing related rows [1-2; Esc returns]");
+    ];
+    const choice = await input.session.promptText(
+      "Missing related rows [1-2; Esc returns]",
+      { context: unmatchedRowMenu },
+    );
     if (choice === undefined) {
       process.stdout.write("Relationship review cancelled. No draft or active authority changed.\n\n");
       return 0;
@@ -2651,8 +3471,8 @@ async function interactiveReviewedAnalyticsReview(input: {
         "automatic_numeric_bands",
       )
       : true;
-  process.stdout.write([
-    `\nREVIEWED ANALYTICS - ${input.resourceId}`,
+  const analyticsMenu = [
+    `REVIEWED ANALYTICS - ${input.resourceId}`,
     "These are human-reviewed limits. The AI can select only the choices shown by Runner; it cannot send formulas, bucket edges, or joins.",
     "1  Add a fixed numeric band",
     "2  Remove a fixed numeric band",
@@ -2664,9 +3484,11 @@ async function interactiveReviewedAnalyticsReview(input: {
     "6  Add a post-suppression calculation",
     "7  Add a safe child-count metric",
     "8  Remove a named reviewed metric",
-    "",
-  ].join("\n"));
-  const entered = await input.session.promptText("Choose 1-8; Esc returns without changes");
+  ];
+  const entered = await input.session.promptText(
+    "Choose 1-8; Esc returns without changes",
+    { context: analyticsMenu },
+  );
   if (entered === undefined || !entered.trim()) {
     process.stdout.write("Returned to boundary tables. No analytics setting changed.\n\n");
     return 0;
@@ -2728,22 +3550,27 @@ async function addReviewedAutoBand(
     );
     return 0;
   }
-  process.stdout.write([
+  const fieldMenu = [
+    "AUTOMATIC NUMERIC BANDS",
     "Choose a numeric field. Runner computes bands from only the trusted scoped rows.",
     ...fields.map((field, index) => `  ${index + 1}  ${resource.id}.${field}`),
-    "",
-  ].join("\n"));
-  const field = await chooseNumberedReviewOption(input.session, "Field number", fields);
+  ];
+  const field = await chooseNumberedReviewOption(
+    input.session,
+    "Field number",
+    fields,
+    fieldMenu,
+  );
   if (!field) return cancelledAnalyticsEdit();
 
-  process.stdout.write([
+  const methodMenu = [
+    `AUTOMATIC BANDS - ${resource.id}.${field}`,
     "Band calculation:",
     "  1  Quantile (recommended) - near-equal group populations; ties stay together",
     "  2  Equal width - equal numeric ranges with a reviewer-set minimum width",
     "  3  Allow either method",
-    "",
-  ].join("\n"));
-  const methodInput = await input.session.promptText("Method [1]");
+  ];
+  const methodInput = await input.session.promptText("Method [1]", { context: methodMenu });
   if (methodInput === undefined) return cancelledAnalyticsEdit();
   const methodChoice = methodInput.trim() || "1";
   const methods: ExplorationAutoBandMethod[] = methodChoice === "1"
@@ -2780,13 +3607,13 @@ async function addReviewedAutoBand(
     if (minBucketWidth === undefined) return cancelledAnalyticsEdit();
   }
 
-  process.stdout.write([
+  const labelMenu = [
+    `AUTOMATIC BANDS - ${resource.id}.${field}`,
     "Labels shown to the AI:",
     "  1  Ordinal (recommended) - Q1 of 5, Q2 of 5; no data-derived numbers",
     "  2  Rounded ranges - outward-rounded numeric ranges at a reviewer-set precision",
-    "",
-  ].join("\n"));
-  const labelInput = await input.session.promptText("Label style [1]");
+  ];
+  const labelInput = await input.session.promptText("Label style [1]", { context: labelMenu });
   if (labelInput === undefined) return cancelledAnalyticsEdit();
   const labelStyle: ExplorationAutoBandLabelStyle = (labelInput.trim() || "1") === "1"
     ? "ordinal"
@@ -2837,13 +3664,18 @@ async function removeReviewedAutoBand(
     process.stdout.write("This table has no automatic numeric bands to disable.\n\n");
     return 0;
   }
-  process.stdout.write([
+  const policyMenu = [
+    "DISABLE AUTOMATIC NUMERIC BANDS",
     "Choose the automatic numeric-band policy to disable:",
     ...policies.map((policy, index) =>
       `  ${index + 1}  ${resource.id}.${policy.field} (${policy.methods.join(" or ")}; ${policy.min_buckets}-${policy.max_buckets} buckets)`),
-    "",
-  ].join("\n"));
-  const selected = await chooseNumberedReviewOption(input.session, "Policy number", policies);
+  ];
+  const selected = await chooseNumberedReviewOption(
+    input.session,
+    "Policy number",
+    policies,
+    policyMenu,
+  );
   if (!selected) return cancelledAnalyticsEdit();
   const reason = await requiredReviewedAnalyticsReason(input.session);
   if (reason === undefined) return cancelledAnalyticsEdit();
@@ -2901,12 +3733,17 @@ async function addReviewedNumericBand(
     process.stdout.write("No reviewed numeric measure field is available for a band. No change was made.\n\n");
     return 0;
   }
-  process.stdout.write([
+  const fieldMenu = [
+    "FIXED NUMERIC BAND",
     "Choose the reviewed numeric field to group. Related fields include the exact reviewed path:",
     ...fields.map((item, index) => `  ${index + 1}  ${item.label}`),
-    "",
-  ].join("\n"));
-  const selected = await chooseNumberedReviewOption(input.session, "Field number", fields);
+  ];
+  const selected = await chooseNumberedReviewOption(
+    input.session,
+    "Field number",
+    fields,
+    fieldMenu,
+  );
   if (!selected) return cancelledAnalyticsEdit();
   const edgesInput = await input.session.promptText(
     "Ordered bucket edges, comma-separated (example: 1000, 5000)",
@@ -2975,10 +3812,17 @@ async function removeReviewedNumericBand(
     process.stdout.write("This table has no reviewed numeric bands to remove.\n\n");
     return 0;
   }
-  process.stdout.write(["Choose the numeric band to remove:", ...definitions.map(
-    (item, index) => `  ${index + 1}  ${item.name} - ${item.label}`,
-  ), ""].join("\n"));
-  const selected = await chooseNumberedReviewOption(input.session, "Band number", definitions);
+  const bandMenu = [
+    "REMOVE FIXED NUMERIC BAND",
+    "Choose the numeric band to remove:",
+    ...definitions.map((item, index) => `  ${index + 1}  ${item.name} - ${item.label}`),
+  ];
+  const selected = await chooseNumberedReviewOption(
+    input.session,
+    "Band number",
+    definitions,
+    bandMenu,
+  );
   if (!selected) return cancelledAnalyticsEdit();
   const reason = await requiredReviewedAnalyticsReason(input.session);
   if (reason === undefined) return cancelledAnalyticsEdit();
@@ -3003,31 +3847,41 @@ async function addReviewedDerivedMeasure(
   resource: ExplorationBoundaryDraft["pack"]["resources"][number],
 ): Promise<number> {
   const choices = reviewedAnalyticsOperandChoices(boundary, resource);
-  process.stdout.write([
+  const numeratorMenu = [
+    "NAMED RATIO OR PER-UNIT METRIC",
     "Choose the fixed numerator. Only existing reviewed aggregate permissions are listed:",
     ...choices.map((item, index) => `  ${index + 1}  ${item.label}`),
-    "",
-  ].join("\n"));
-  const numerator = await chooseNumberedReviewOption(input.session, "Numerator number", choices);
+  ];
+  const numerator = await chooseNumberedReviewOption(
+    input.session,
+    "Numerator number",
+    choices,
+    numeratorMenu,
+  );
   if (!numerator) return cancelledAnalyticsEdit();
   const relationship = "relationship" in numerator.value ? numerator.value.relationship : undefined;
   const denominators = choices.filter((item) =>
     ("relationship" in item.value ? item.value.relationship : undefined) === relationship);
-  process.stdout.write([
+  const denominatorMenu = [
+    "NAMED RATIO OR PER-UNIT METRIC",
     "Choose the fixed denominator. Both operands must use the same reviewed table path:",
     ...denominators.map((item, index) => `  ${index + 1}  ${item.label}`),
-    "",
-  ].join("\n"));
-  const denominator = await chooseNumberedReviewOption(input.session, "Denominator number", denominators);
+  ];
+  const denominator = await chooseNumberedReviewOption(
+    input.session,
+    "Denominator number",
+    denominators,
+    denominatorMenu,
+  );
   if (!denominator) return cancelledAnalyticsEdit();
-  process.stdout.write([
+  const resultMenu = [
+    "NAMED RATIO OR PER-UNIT METRIC",
     "Choose the released result:",
     "  1  Ratio",
     "  2  Percentage (ratio x 100)",
     "  3  Per-unit average (SUM divided by COUNT or COUNT DISTINCT)",
-    "",
-  ].join("\n"));
-  const shapeInput = await input.session.promptText("Shape number");
+  ];
+  const shapeInput = await input.session.promptText("Shape number", { context: resultMenu });
   if (shapeInput === undefined) return cancelledAnalyticsEdit();
   const shape = ({ "1": "ratio", "2": "percentage", "3": "per_unit_average" } as const)[shapeInput.trim() as "1" | "2" | "3"];
   if (!shape) throw new Error("Choose shape 1, 2, or 3.");
@@ -3075,10 +3929,17 @@ async function removeReviewedDerivedMeasure(
     process.stdout.write("This table has no reviewed derived measures to remove.\n\n");
     return 0;
   }
-  process.stdout.write(["Choose the derived measure to remove:", ...definitions.map(
-    (item, index) => `  ${index + 1}  ${item.name} - ${item.label}`,
-  ), ""].join("\n"));
-  const selected = await chooseNumberedReviewOption(input.session, "Measure number", definitions);
+  const measureMenu = [
+    "REMOVE REVIEWED METRIC",
+    "Choose the derived measure to remove:",
+    ...definitions.map((item, index) => `  ${index + 1}  ${item.name} - ${item.label}`),
+  ];
+  const selected = await chooseNumberedReviewOption(
+    input.session,
+    "Measure number",
+    definitions,
+    measureMenu,
+  );
   if (!selected) return cancelledAnalyticsEdit();
   const reason = await requiredReviewedAnalyticsReason(input.session);
   if (reason === undefined) return cancelledAnalyticsEdit();
@@ -3103,14 +3964,20 @@ async function addReviewedPostAggregateMeasure(
   resource: ExplorationBoundaryDraft["pack"]["resources"][number],
 ): Promise<number> {
   const choices = reviewedAnalyticsOperandChoices(boundary, resource);
-  process.stdout.write([
+  const baseMenu = [
+    "POST-SUPPRESSION CALCULATION",
     "Choose the reviewed base aggregate. Runner calculates only from groups that pass small-group privacy:",
     ...choices.map((item, index) => `  ${index + 1}  ${item.label}`),
-    "",
-  ].join("\n"));
-  const base = await chooseNumberedReviewOption(input.session, "Base aggregate number", choices);
+  ];
+  const base = await chooseNumberedReviewOption(
+    input.session,
+    "Base aggregate number",
+    choices,
+    baseMenu,
+  );
   if (!base) return cancelledAnalyticsEdit();
-  process.stdout.write([
+  const calculationMenu = [
+    "POST-SUPPRESSION CALCULATION",
     "Choose the fixed calculation:",
     "  1  Running total by time",
     "  2  Rank across released groups",
@@ -3120,8 +3987,11 @@ async function addReviewedPostAggregateMeasure(
     "  6  Percentage of the released-group total",
     "",
     "Time calculations require a reviewed time bucket when asked. Rank and percentage of total require a reviewed group and no time bucket.",
-  ].join("\n"));
-  const operationInput = await input.session.promptText("Calculation number");
+  ];
+  const operationInput = await input.session.promptText(
+    "Calculation number",
+    { context: calculationMenu },
+  );
   if (operationInput === undefined) return cancelledAnalyticsEdit();
   const shape = ({
     "1": "running_total",
@@ -3202,20 +4072,28 @@ async function addReviewedChildCountMeasure(
     ].join("\n"));
     return 0;
   }
-  process.stdout.write([
+  const childMenu = [
+    "SAFE CHILD-COUNT METRIC",
     "Choose the reviewed child relationship. Runner counts scoped child rows in a correlated subaggregate; it never performs a raw one-to-many join:",
     ...choices.map((item, index) => `  ${index + 1}  ${item.label}`),
-    "",
-  ].join("\n"));
-  const selected = await chooseNumberedReviewOption(input.session, "Child relationship number", choices);
+  ];
+  const selected = await chooseNumberedReviewOption(
+    input.session,
+    "Child relationship number",
+    choices,
+    childMenu,
+  );
   if (!selected) return cancelledAnalyticsEdit();
-  process.stdout.write([
+  const resultMenu = [
+    "SAFE CHILD-COUNT METRIC",
     "Choose the fixed result:",
     "  1  Total child rows across each released parent cohort",
     "  2  Average child rows per parent in each released cohort",
-    "",
-  ].join("\n"));
-  const shapeInput = await input.session.promptText("Result number [1]");
+  ];
+  const shapeInput = await input.session.promptText(
+    "Result number [1]",
+    { context: resultMenu },
+  );
   if (shapeInput === undefined) return cancelledAnalyticsEdit();
   const shapeChoice = shapeInput.trim() || "1";
   if (shapeChoice !== "1" && shapeChoice !== "2") throw new Error("Choose 1 for total or 2 for average.");
@@ -3375,8 +4253,9 @@ async function chooseNumberedReviewOption<T>(
   session: BoundaryReviewInteractiveSession,
   prompt: string,
   options: T[],
+  context: string[] = [],
 ): Promise<T | undefined> {
-  const entered = await session.promptText(prompt);
+  const entered = await session.promptText(prompt, { context });
   if (entered === undefined) return undefined;
   const index = Number(entered.trim());
   if (!Number.isSafeInteger(index) || index < 1 || index > options.length) {
@@ -3566,7 +4445,15 @@ async function resolveBlockedBoundaryResource(input: {
     }
     const confirmed = await input.session.confirm(
       `Confirm ${input.view.resource_id} has no per-tenant rows and every tenant may receive the same reviewed rows?`,
-      { defaultValue: false },
+      {
+        defaultValue: false,
+        context: [
+          "SHARED REFERENCE REVIEW",
+          `Table: ${input.view.resource_id}`,
+          `Reviewer reason: ${reason}`,
+          "This table will not receive a tenant predicate. Field, privacy, and budget controls still apply.",
+        ],
+      },
     );
     if (confirmed !== true) {
       process.stdout.write("Cancelled - no change was made.\n\n");
@@ -3702,7 +4589,7 @@ async function confirmAndActivateFocusedBoundary(input: {
       links: unresolvedRelationship.relationship.proof?.links,
     };
     const joinColumns = formatRelationshipJoinColumns(relationshipDisplay);
-    process.stdout.write([
+    const relationshipChoiceContext = [
       "",
       "ONE RELATIONSHIP CHOICE",
       formatRelationshipPath(relationshipDisplay),
@@ -3711,11 +4598,14 @@ async function confirmAndActivateFocusedBoundary(input: {
       "Some counted rows may not have a related record. This choice changes analytical totals.",
       "K  Keep the counted row and show an empty group value",
       "E  Exclude the counted row from analyses using this relationship",
-      "",
-    ].join("\n"));
+    ];
+    process.stdout.write([...relationshipChoiceContext, ""].join("\n"));
     let answer = "";
     while (!["k", "keep", "e", "exclude", "q", "quit"].includes(answer)) {
-      const entered = await input.session.promptText("Choose K or E (Q cancels): ");
+      const entered = await input.session.promptText(
+        "Choose K or E (Q cancels): ",
+        { context: relationshipChoiceContext },
+      );
       if (entered === undefined) {
         answer = "q";
         break;
@@ -3756,10 +4646,12 @@ async function confirmAndActivateFocusedBoundary(input: {
     );
     context = await loadBoundaryReviewContext(input.projectRoot);
   }
-  process.stdout.write(formatFocusedBoundaryActivationReview(
+  const activationReview = formatFocusedBoundaryActivationReview(
     context.bundle,
     process.stdout.isTTY === true && !("NO_COLOR" in process.env),
-  ));
+    true,
+  );
+  process.stdout.write(activationReview);
   const activationReviewNotice = input.activationReviewNotice?.({
     projectRoot: input.projectRoot,
     boundaryName: context.candidate.pack.name,
@@ -3772,6 +4664,10 @@ async function confirmAndActivateFocusedBoundary(input: {
         : `${activationReviewNotice}\n`,
     );
   }
+  const activationContext = [
+    ...activationReview.trimEnd().split("\n"),
+    ...(activationReviewNotice ? activationReviewNotice.trimEnd().split("\n") : []),
+  ];
   const actor = localInteractiveActor();
   const activationPrompt = context.candidate.deployment_profile === "production"
     ? input.keepAccessOpen
@@ -3781,9 +4677,48 @@ async function confirmAndActivateFocusedBoundary(input: {
       ? `Activate "${context.candidate.pack.name}" exactly as shown now? You will stay in /access.`
       : `Activate "${context.candidate.pack.name}" exactly as shown and continue to Ask?`;
   const accepted = input.keepAccessOpen && input.session.confirmActivation
-    ? await input.session.confirmActivation(activationPrompt)
-    : await input.session.confirm(activationPrompt, { defaultValue: input.keepAccessOpen !== true });
+    ? await input.session.confirmActivation(activationPrompt, { context: activationContext })
+    : await input.session.confirm(activationPrompt, {
+        defaultValue: input.keepAccessOpen !== true,
+        context: activationContext,
+      });
   if (!accepted) {
+    const keepReviewedDisabled = accepted === false
+      && input.keepAccessOpen
+      && input.session.confirmReviewedDisabled
+      ? await input.session.confirmReviewedDisabled(
+          `Keep "${context.candidate.pack.name}" fully reviewed but disabled so you can prepare dependent Safe Actions now?`,
+          {
+            context: [
+              "READ BOUNDARY REVIEWED - ACTIVATION NOT CONFIRMED",
+              `Boundary: ${context.candidate.pack.name}`,
+              "Choose Yes to freeze this exact reviewed revision without granting read authority.",
+              "Choose No or Esc to leave the review incomplete and return to /access.",
+            ],
+          },
+        )
+      : false;
+    if (keepReviewedDisabled) {
+      const progress = createBoundaryReviewProgress({
+        draft: context.draft,
+        candidate: context.candidate,
+        confirmedDecisions: context.candidate.unresolved_decisions,
+        ...(context.progress ? { previous: context.progress } : {}),
+        actor,
+        reason: "Confirmed the complete exact boundary while keeping read authority disabled.",
+        revision: (context.progress?.revision ?? 0) + 1,
+      });
+      await saveBoundaryReviewProgress(input.projectRoot, progress);
+      process.stdout.write([
+        "READ REVIEW COMPLETE - NOT ACTIVE",
+        `Boundary: ${context.candidate.pack.name}`,
+        "Agent read authority: unchanged",
+        "Source database changed: no",
+        "Press Y in /access to prepare and rehearse a proposal action against this exact pending revision, or C to activate reads.",
+        "",
+      ].join("\n"));
+      return 0;
+    }
     process.stdout.write([
       accepted === undefined
         ? "Activation confirmation was cancelled or unavailable. No change was made."
@@ -3821,8 +4756,11 @@ async function confirmAndActivateFocusedBoundary(input: {
 export function formatFocusedBoundaryActivationReview(
   bundle: BoundaryReviewBundle,
   color = false,
+  brandStyle = false,
 ): string {
-  const theme = terminalTheme(color);
+  const theme = terminalTheme(color, {
+    brand: brandStyle,
+  });
   const accessRows = bundle.candidate.pack.resources.flatMap((resource, index) => {
     const displayField = (field: string) => resource.field_metadata?.[field]?.label
       ? `${resource.field_metadata[field]!.label} (${field})`
@@ -4106,9 +5044,14 @@ async function confirmBoundaryReviewInteractively(input: {
   if (!outstanding.length) {
     return { context: input.context, actor: input.actor };
   }
-  process.stdout.write(formatBoundaryFinalReview(input.context.bundle));
+  const finalReview = formatBoundaryFinalReview(input.context.bundle);
+  const finalReviewContext = finalReview.trimEnd().split("\n");
+  process.stdout.write(finalReview);
   const actor = input.actor
-    || await input.session.promptText("Human reviewer identity (audit label, not a password): ");
+    || await input.session.promptText(
+      "Human reviewer identity (audit label, not a password): ",
+      { context: finalReviewContext },
+    );
   if (!actor) {
     process.stdout.write([
       "Returned to boundary review. No sign-offs were recorded.",
@@ -4121,12 +5064,14 @@ async function confirmBoundaryReviewInteractively(input: {
   let acceptedGroups = 0;
   const boundaryDecisions = outstanding.filter((decision) => !decision.resource_id);
   if (boundaryDecisions.length) {
-    process.stdout.write(formatBoundarySettingsSignoff(input.context.bundle));
+    const settingsSignoff = formatBoundarySettingsSignoff(input.context.bundle);
+    const settingsContext = settingsSignoff.trimEnd().split("\n");
+    process.stdout.write(settingsSignoff);
     const accepted = await input.session.confirm(
       input.context.candidate.deployment_profile === "production"
         ? "Confirm these boundary-wide production HTTP and trusted JWT scope settings?"
         : "Confirm these boundary-wide local-authoring and trusted-scope settings?",
-      { defaultValue: true },
+      { defaultValue: true, context: settingsContext },
     );
     if (accepted === undefined) {
       process.stdout.write("Returned to boundary review. No sign-offs were recorded.\n");
@@ -4140,10 +5085,12 @@ async function confirmBoundaryReviewInteractively(input: {
   for (const resource of input.context.candidate.pack.resources) {
     const decisions = outstanding.filter((decision) => decision.resource_id === resource.id);
     if (!decisions.length) continue;
-    process.stdout.write(formatBoundaryResourceSignoff(resource, decisions.length));
+    const resourceSignoff = formatBoundaryResourceSignoff(resource, decisions.length);
+    const resourceContext = resourceSignoff.trimEnd().split("\n");
+    process.stdout.write(resourceSignoff);
     const accepted = await input.session.confirm(
       `Sign off ${resource.id} exactly as shown?`,
-      { defaultValue: true },
+      { defaultValue: true, context: resourceContext },
     );
     if (accepted === undefined) {
       process.stdout.write("Returned to boundary review. No sign-offs from this review were recorded.\n");
@@ -4205,9 +5152,12 @@ async function confirmBoundaryResourceInteractively(input: {
     ].join("\n"));
     return context;
   }
-  process.stdout.write(formatBoundaryResourceSignoff(resource, outstanding.length));
+  const resourceSignoff = formatBoundaryResourceSignoff(resource, outstanding.length);
+  const resourceContext = resourceSignoff.trimEnd().split("\n");
+  process.stdout.write(resourceSignoff);
   const actor = await input.session.promptText(
     "Human reviewer identity (audit label, not a password): ",
+    { context: resourceContext },
   );
   if (!actor) {
     process.stdout.write([
@@ -4219,7 +5169,7 @@ async function confirmBoundaryResourceInteractively(input: {
   }
   if (!await input.session.confirm(
     `Sign off ${input.resourceId} exactly as shown?`,
-    { defaultValue: true },
+    { defaultValue: true, context: resourceContext },
   )) {
     process.stdout.write([
       "Table sign-off was not recorded.",
@@ -4514,17 +5464,21 @@ async function interactiveBoundaryResourceReview(input: {
       : trustedScopeChange
         ? "trusted-scope"
         : "sensitive-field";
-    process.stdout.write([
+    const accessReasonContext = [
+      "REVIEW ACCESS CHANGE",
       `This widens ${reviewedChangeLabel} access:`,
       ...auditedChanges.map((change) => `  ${change}`),
       `Reviewer: ${actor}`,
       "A concrete reason is required before Runner can save this change.",
       "Pressing Enter with an empty reason will not apply the change.",
-      "",
-    ].join("\n"));
+    ];
+    process.stdout.write([...accessReasonContext, ""].join("\n"));
     const prompt = `Required reason for this ${reviewedChangeLabel} access change`;
     while (reason === undefined) {
-      const entered = await input.session.promptText(`${prompt}: `);
+      const entered = await input.session.promptText(
+        `${prompt}: `,
+        { context: accessReasonContext },
+      );
       if (entered === undefined) {
         process.stdout.write(`Cancelled - no ${reviewedChangeLabel} access change was made.\n\n`);
         return input.focusedAccess ? "back" : 0;
@@ -4715,7 +5669,7 @@ async function interactiveExactNumericGroupingReview(input: {
   const resource = input.view.candidate ?? input.view.generated_candidate;
   if (!resource) return "cancelled";
   const budgets = input.view.reviewed_budgets;
-  process.stdout.write([
+  const exactGroupingContext = [
     `${input.enabled ? "ENABLE" : "REMOVE"} EXACT GROUPS - ${input.resourceId}.${input.field}`,
     input.enabled
       ? "Exact scalar values will become a reviewed grouping dimension. This is separate from fixed or automatic numeric bands."
@@ -4727,11 +5681,14 @@ async function interactiveExactNumericGroupingReview(input: {
       `Execution remains bounded by ${budgets?.statement_timeout_ms ?? "the reviewed"} ms statement timeout and the reviewed rolling query budgets.`,
     ] : []),
     "This saves only a disabled revision. Current active Explore authority does not change until exact-digest activation.",
-    "",
-  ].join("\n"));
+  ];
+  process.stdout.write([...exactGroupingContext, ""].join("\n"));
   const actor = input.focusedAccess
     ? localInteractiveActor()
-    : await input.session.promptText("Human reviewer identity (audit label, not a password)");
+    : await input.session.promptText(
+        "Human reviewer identity (audit label, not a password)",
+        { context: exactGroupingContext },
+      );
   if (!actor) return "cancelled";
   let reason: string | undefined;
   while (!reason) {
@@ -4739,6 +5696,7 @@ async function interactiveExactNumericGroupingReview(input: {
       input.enabled
         ? "Required reason this field is a safe, meaningful exact grouping dimension"
         : "Required reason for removing exact grouping",
+      { context: exactGroupingContext },
     );
     if (entered === undefined) return "cancelled";
     reason = entered.trim();
@@ -4805,20 +5763,31 @@ async function interactiveReviewedMetadataReview(input: {
   const subject = input.field
     ? `${input.resourceId}.${input.field}`
     : input.resourceId;
-  process.stdout.write([
+  const metadataContext = [
     `REVIEWED NAME AND DESCRIPTION - ${subject}`,
     "This metadata helps people and AI clients understand the exact database id. It grants no data access.",
     "Plans must still use the exact id. Enter keeps the current value; type - to clear it; Esc cancels.",
     `Current label: ${current?.label ?? "None"}`,
     `Current description: ${current?.description ?? "None"}`,
-    "",
-  ].join("\n"));
-  const labelInput = await input.session.promptText("Label (maximum 64 characters)");
+  ];
+  process.stdout.write([...metadataContext, ""].join("\n"));
+  const labelInput = await input.session.promptText(
+    "Label (maximum 64 characters)",
+    { context: metadataContext },
+  );
   if (labelInput === undefined) {
     process.stdout.write("Cancelled - no reviewed metadata change was made.\n\n");
     return "cancelled";
   }
-  const descriptionInput = await input.session.promptText("Description (maximum 280 characters)");
+  const descriptionInput = await input.session.promptText(
+    "Description (maximum 280 characters)",
+    {
+      context: [
+        ...metadataContext,
+        `Proposed label: ${labelInput.trim() || current?.label || "None"}`,
+      ],
+    },
+  );
   if (descriptionInput === undefined) {
     process.stdout.write("Cancelled - no reviewed metadata change was made.\n\n");
     return "cancelled";
@@ -4835,7 +5804,17 @@ async function interactiveReviewedMetadataReview(input: {
   }
   let reason: string | undefined;
   while (!reason) {
-    const entered = await input.session.promptText("Required reason for this reviewed metadata change");
+    const entered = await input.session.promptText(
+      "Required reason for this reviewed metadata change",
+      {
+        context: [
+          `REVIEWED NAME AND DESCRIPTION - ${subject}`,
+          `Label: ${effectiveLabel ?? "None"}`,
+          `Description: ${effectiveDescription ?? "None"}`,
+          "Metadata grants no data access; this reason is stored with the disabled review decision.",
+        ],
+      },
+    );
     if (entered === undefined) {
       process.stdout.write("Cancelled - no reviewed metadata change was made.\n\n");
       return "cancelled";
@@ -4933,15 +5912,18 @@ async function interactiveBoundaryPrincipalReview(input: {
     (option.kind === "direct" && option.value === candidate.principal_key)
     || (option.kind === "derived" && option.value === candidate.principal_scope?.path_id)
     || (option.kind === "none" && !candidate.principal_key && !candidate.principal_scope)));
-  process.stdout.write([
+  const rowLimitMenu = [
     `USER/OWNER ROW LIMIT - ${input.resourceId}`,
     "Runner binds this value from trusted application context. The AI never supplies it.",
     "Choose one reviewed column/path, or explicitly keep no per-user row limit:",
     ...options.map((option, index) =>
       `  ${index + 1}  ${option.label}${index === currentIndex ? " [current]" : ""}`),
-    "",
-  ].join("\n"));
-  const selectedText = await input.session.promptText(`Choice number [${currentIndex + 1}]`);
+  ];
+  process.stdout.write([...rowLimitMenu, ""].join("\n"));
+  const selectedText = await input.session.promptText(
+    `Choice number [${currentIndex + 1}]`,
+    { context: rowLimitMenu },
+  );
   if (selectedText === undefined) {
     process.stdout.write("Cancelled - no user/owner row-limit change was made.\n\n");
     return "columns";
@@ -4960,6 +5942,14 @@ async function interactiveBoundaryPrincipalReview(input: {
   while (!reason) {
     const entered = await input.session.promptText(
       "Required reason for this trusted user/owner row-limit decision",
+      {
+        context: [
+          `USER/OWNER ROW LIMIT - ${input.resourceId}`,
+          `Current: ${options[currentIndex]?.label ?? "No per-user row limit"}`,
+          `Proposed: ${selected.label}`,
+          "Runner binds this value from trusted application context. The AI never supplies it.",
+        ],
+      },
     );
     if (entered === undefined) {
       process.stdout.write("Cancelled - no user/owner row-limit change was made.\n\n");
@@ -5059,7 +6049,8 @@ async function interactiveBoundaryEnumReview(input: {
     process.stdout.write("Cancelled - no allowed-value change was made or activated.\n");
     return "columns";
   }
-  process.stdout.write([
+  const allowedValuesContext = [
+    "REVIEW ALLOWED VALUES",
     `Reviewing allowed values for ${input.resourceId}.${input.field}.`,
     `Database-declared maximum: ${schemaValues.join(", ")}`,
     `Values to keep: ${selected.length ? selected.join(", ") : "none"}`,
@@ -5075,11 +6066,14 @@ async function interactiveBoundaryEnumReview(input: {
       : "Keeping none disables filtering and grouping for this column; it does not enable free-text access.",
     `Reviewer: ${actor}`,
     "A concrete reason is required. Pressing Enter with an empty reason will not save the change.",
-    "",
-  ].join("\n"));
+  ];
+  process.stdout.write([...allowedValuesContext, ""].join("\n"));
   let reason: string | undefined;
   while (reason === undefined) {
-    const entered = await input.session.promptText("Required reason for this allowed-value change: ");
+    const entered = await input.session.promptText(
+      "Required reason for this allowed-value change: ",
+      { context: allowedValuesContext },
+    );
     if (entered === undefined) {
       process.stdout.write("Cancelled - no allowed-value change was made or activated.\n");
       return "columns";
@@ -5138,16 +6132,16 @@ async function interactiveMinimumCohortReview(input: {
 }): Promise<number | "back" | "review"> {
   const candidate = input.view.candidate ?? input.view.generated_candidate;
   if (!candidate) return "back";
-  process.stdout.write([
-    "",
+  const privacyContext = [
     `PRIVACY - ${input.resourceId}`,
     `Current minimum group size: ${candidate.minimum_cohort_size}`,
     "Runner hides aggregate groups with fewer rows than this number.",
     "Enter a whole number from 1 through 5. Use 1 to turn small-group suppression off.",
-    "",
-  ].join("\n"));
+  ];
+  process.stdout.write(["", ...privacyContext, ""].join("\n"));
   const enteredInput = await input.session.promptText(
     `New minimum group size [current ${candidate.minimum_cohort_size}]: `,
+    { context: privacyContext },
   );
   if (enteredInput === undefined) return "back";
   const entered = enteredInput.trim().toLowerCase();
@@ -5166,6 +6160,15 @@ async function interactiveMinimumCohortReview(input: {
   }
   const reasonInput = await input.session.promptText(
     `Reason for changing ${input.resourceId} from ${candidate.minimum_cohort_size} to ${minimumCohort} (recorded with this decision): `,
+    {
+      context: [
+        `PRIVACY - ${input.resourceId}`,
+        `Minimum group size: ${candidate.minimum_cohort_size} -> ${minimumCohort}`,
+        minimumCohort === 1
+          ? "Warning: small-group suppression will be off after activation."
+          : `Groups with fewer than ${minimumCohort} rows will be hidden after activation.`,
+      ],
+    },
   );
   if (reasonInput === undefined) {
     process.stdout.write("Returned to column review. The minimum group size was not changed.\n");
@@ -5175,15 +6178,23 @@ async function interactiveMinimumCohortReview(input: {
   if (!reason) {
     throw new Error("Changing the minimum group size requires a concrete human reason.");
   }
-  process.stdout.write(minimumCohort === 1
+  const privacyReviewContext = minimumCohort === 1
     ? [
-      "New setting: minimum group size 1 (small-group suppression off).",
-      "Consequence: aggregate output may contain a group with one person or record.",
-    ].join("\n") + "\n"
-    : `New setting: minimum group size ${minimumCohort}. Runner will hide groups with fewer than ${minimumCohort} rows.\n`);
+        "REVIEW PRIVACY CHANGE",
+        "New setting: minimum group size 1 (small-group suppression off).",
+        "Consequence: aggregate output may contain a group with one person or record.",
+        `Recorded reason: ${reason}`,
+      ]
+    : [
+        "REVIEW PRIVACY CHANGE",
+        `New setting: minimum group size ${minimumCohort}.`,
+        `Groups with fewer than ${minimumCohort} rows will be hidden.`,
+        `Recorded reason: ${reason}`,
+      ];
+  process.stdout.write(`${privacyReviewContext.slice(1).join("\n")}\n`);
   if (!await input.session.confirm(
     `Save this privacy change for ${input.resourceId}?`,
-    { defaultValue: true },
+    { defaultValue: true, context: privacyReviewContext },
   )) {
     process.stdout.write("Privacy change discarded. Nothing was saved or activated.\n");
     return "back";
@@ -5227,16 +6238,16 @@ async function interactiveBoundaryMinimumCohortReview(input: {
   const currentLabel = currentValues.length === 1
     ? String(currentValues[0])
     : `mixed (${currentValues.join(", ")})`;
-  process.stdout.write([
-    "",
+  const privacyContext = [
     `PRIVACY - ALL ${resources.length} TABLES IN THIS BOUNDARY`,
     `Current minimum group size: ${currentLabel}`,
     "Runner hides aggregate groups with fewer rows than the selected number.",
     "Enter a whole number from 1 through 5. Use 1 to turn small-group suppression off for every included table.",
-    "",
-  ].join("\n"));
+  ];
+  process.stdout.write(["", ...privacyContext, ""].join("\n"));
   const enteredInput = await input.session.promptText(
     `New minimum group size for all tables [current ${currentLabel}]: `,
+    { context: privacyContext },
   );
   if (enteredInput === undefined) return "back";
   const entered = enteredInput.trim().toLowerCase();
@@ -5257,6 +6268,16 @@ async function interactiveBoundaryMinimumCohortReview(input: {
   }
   const reasonInput = await input.session.promptText(
     `Reason for setting ${changed.length} table${changed.length === 1 ? "" : "s"} to minimum group size ${minimumCohort} (recorded with this decision): `,
+    {
+      context: [
+        "BOUNDARY-WIDE PRIVACY",
+        `Affected tables: ${changed.length}`,
+        `Minimum group size: ${currentLabel} -> ${minimumCohort}`,
+        minimumCohort === 1
+          ? "Warning: small-group suppression will be off for every included table after activation."
+          : `Groups with fewer than ${minimumCohort} rows will be hidden after activation.`,
+      ],
+    },
   );
   if (reasonInput === undefined) {
     process.stdout.write("Returned to boundary review. No minimum group size changed.\n");
@@ -5266,15 +6287,23 @@ async function interactiveBoundaryMinimumCohortReview(input: {
   if (!reason) {
     throw new Error("Changing minimum group sizes requires a concrete human reason.");
   }
-  process.stdout.write(minimumCohort === 1
+  const privacyReviewContext = minimumCohort === 1
     ? [
-      "New setting: minimum group size 1 for every included table (small-group suppression off).",
-      "Consequence: aggregate output may contain groups with one person or record.",
-    ].join("\n") + "\n"
-    : `New setting: minimum group size ${minimumCohort} for every included table. Runner will hide groups with fewer than ${minimumCohort} rows.\n`);
+        "REVIEW BOUNDARY-WIDE PRIVACY CHANGE",
+        "New setting: minimum group size 1 for every included table (small-group suppression off).",
+        "Consequence: aggregate output may contain groups with one person or record.",
+        `Recorded reason: ${reason}`,
+      ]
+    : [
+        "REVIEW BOUNDARY-WIDE PRIVACY CHANGE",
+        `New setting: minimum group size ${minimumCohort} for every included table.`,
+        `Groups with fewer than ${minimumCohort} rows will be hidden.`,
+        `Recorded reason: ${reason}`,
+      ];
+  process.stdout.write(`${privacyReviewContext.slice(1).join("\n")}\n`);
   if (!await input.session.confirm(
     `Save this privacy change for ${changed.length} table${changed.length === 1 ? "" : "s"}?`,
-    { defaultValue: true },
+    { defaultValue: true, context: privacyReviewContext },
   )) {
     process.stdout.write("Boundary-wide privacy change discarded. Nothing was saved or activated.\n");
     return "back";
@@ -6129,18 +7158,18 @@ export async function boundaryActivateCommand(
       );
     }
     const session = interactiveSession ?? createBoundaryReviewInteractiveSession();
-    process.stdout.write([
+    const activationContext = [
       formatBoundaryReviewSummary(context.bundle, { nextAction: false }).trimEnd(),
       `Exact reviewed fingerprint: ${context.bundle.candidate_digest}`,
       context.candidate.deployment_profile === "production"
         ? "Activation makes this boundary eligible only for an explicitly configured secured production HTTP Explore runtime."
         : "Activation adds this reviewed boundary to local read-only Explore. Each query remains inside exactly one active boundary.",
-      "",
-    ].join("\n"));
+    ];
+    process.stdout.write([...activationContext, ""].join("\n"));
     if (!confirmation) {
       const approved = await session.confirm(
         `Activate "${context.candidate.pack.name}" now?`,
-        { defaultValue: true },
+        { defaultValue: true, context: activationContext },
       );
       if (!approved) {
         process.stdout.write([
@@ -6873,15 +7902,18 @@ export async function actionCommand(
 async function reviewActionsCommand(
   args: string[],
   actionProjectInspector: ActionProjectInspector,
+  modelSuggestionSession?: ActionModelSuggestionSession,
 ): Promise<number> {
-  assertKnownOptions(args, new Set(["--config", "--project-root", "--store", "--suggestion"]), "action review");
+  assertKnownOptions(args, new Set(["--config", "--project-root", "--store", "--suggestion", "--boundary"]), "action review");
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   await runActionControlPlane({
     projectRoot,
+    ...(optionalArg(args, "--boundary") ? { boundaryName: optionalArg(args, "--boundary") } : {}),
     inspection: await actionProjectInspector(projectRoot, process.env),
     ...(optionalArg(args, "--config") ? { configPath: optionalArg(args, "--config") } : {}),
     ...(optionalArg(args, "--store") ? { storePath: optionalArg(args, "--store") } : {}),
     ...(optionalArg(args, "--suggestion") ? { initialSuggestionId: optionalArg(args, "--suggestion") } : {}),
+    ...(modelSuggestionSession ? { modelSuggestionSession } : {}),
   });
   return 0;
 }

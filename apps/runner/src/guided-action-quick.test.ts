@@ -1,0 +1,301 @@
+import { describe, expect, it } from "vitest";
+import { ACTION_SUGGESTION_VERSION, assessActionSuggestion } from "./action-design.js";
+import type { GuidedActionOptions, GuidedActionResourceOption } from "./guided-action.js";
+import {
+  applySuggestedDeterministicApproval,
+  prepareQuickProposalAction,
+} from "./guided-action-quick.js";
+
+const students: GuidedActionResourceOption = {
+  id: "institutional_research.students",
+  schema: "institutional_research",
+  table: "students",
+  label: "Students",
+  description: "Student registration records.",
+  primary_key: "student_id",
+  tenant_key: "tenant_id",
+  writable_fields: [
+    { name: "student_id", data_type: "varchar(32)", enum_values: [], nullable: false, required_for_insert: true },
+    { name: "residency", data_type: "text", enum_values: ["in_state", "out_of_state"], nullable: false, required_for_insert: true },
+    { name: "entry_cohort", data_type: "integer", enum_values: [], nullable: false, required_for_insert: true, suggested_numeric_minimum: 2020, suggested_numeric_maximum: 2030 },
+  ],
+  structurally_eligible_fields: [
+    { name: "student_id", data_type: "varchar(32)", enum_values: [], nullable: false, required_for_insert: true },
+    { name: "residency", data_type: "text", enum_values: ["in_state", "out_of_state"], nullable: false, required_for_insert: true },
+    { name: "entry_cohort", data_type: "integer", enum_values: [], nullable: false, required_for_insert: true, suggested_numeric_minimum: 2020, suggested_numeric_maximum: 2030 },
+  ],
+  conflict_candidates: ["student_id"],
+  insert_dedup_candidates: ["student_id"],
+  kept_out_fields: ["tenant_id"],
+  operation_availability: {
+    insert: { available: true, reason: "A unique student_id proves retry identity." },
+    update: { available: true, reason: "student_id identifies one row." },
+    delete: { available: true, reason: "student_id identifies one row." },
+  },
+};
+
+const options: GuidedActionOptions = {
+  boundary_name: "reviewed_staging",
+  boundary_state: "active",
+  boundary_digest: `sha256:${"a".repeat(64)}`,
+  source: "local_postgres",
+  deployment_profile: "staging",
+  resources: [students],
+  blocked_resources: [],
+  safe_defaults: {},
+};
+
+describe("quick proposal action preparation", () => {
+  it("prepares a complete proposal-only action from unique reviewed structure", () => {
+    const result = prepareQuickProposalAction({
+      options,
+      intent: "Register one student with a reviewed residency and entry cohort.",
+    });
+    expect(result).toMatchObject({
+      state: "ready",
+      authority_granted: false,
+      source_database_changed: false,
+      action: {
+        resource: "institutional_research.students",
+        operation: "insert",
+        dedup_proposal_column: "student_id",
+        authority_posture: "proposal_only",
+        writeback: { mode: "none" },
+        patches: [
+          { column: "entry_cohort", minimum: 2020, maximum: 2030 },
+          { column: "residency" },
+        ],
+      },
+      deterministic_approval_template: {
+        source: "reviewed_structure",
+        auto_approval: {
+          conditions: [
+            { field: "entry_cohort", operator: "lte", value: 2030 },
+            { field: "residency", operator: "in", values: ["in_state", "out_of_state"] },
+          ],
+          max_per_day: 10,
+        },
+        shared_limits: [{ scope: "tenant", maximum: 10, window_seconds: 86_400 }],
+      },
+    });
+    if (result.state !== "ready") throw new Error("expected ready action");
+    expect(result.summary.trusted_context).toEqual(["tenant_id from trusted Runner context"]);
+    expect(result.summary.arguments.map((item) => item.field)).toEqual(["entry_cohort", "residency"]);
+  });
+
+  it("replaces the structural template with one validated model policy proposal without granting authority", () => {
+    const prepared = prepareQuickProposalAction({
+      options,
+      intent: "Register one student with a reviewed residency and entry cohort.",
+    });
+    const assessment = assessActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: "Register one student with bounded values.",
+      resource: "institutional_research.students",
+      operation: "insert",
+      fields: ["entry_cohort", "residency"],
+      approval_policy_proposal: {
+        mode: "deterministic",
+        conditions: [
+          { field: "entry_cohort", operator: "lte", value: 2028 },
+          { field: "residency", operator: "in", values: ["in_state"] },
+        ],
+        max_per_day: 4,
+        shared_limits: [{ kind: "count", scope: "tenant", maximum: 8, window_seconds: 3600 }],
+      },
+      suggested_by: { kind: "model", provider: "openai", model: "gpt-test" },
+    }, options.resources);
+
+    const result = applySuggestedDeterministicApproval(prepared, assessment);
+
+    expect(result).toMatchObject({
+      state: "ready",
+      authority_granted: false,
+      deterministic_approval_template: {
+        source: "model_suggestion",
+        auto_approval: {
+          conditions: [
+            { field: "entry_cohort", operator: "lte", value: 2028 },
+            { field: "residency", operator: "in", values: ["in_state"] },
+          ],
+          max_per_day: 4,
+        },
+        shared_limits: [{
+          id: expect.stringContaining("student_propose_insert_students"),
+          scope: "tenant",
+          maximum: 8,
+          window_seconds: 3600,
+        }],
+      },
+    });
+    if (result.state !== "ready") throw new Error("expected ready action");
+    expect(result.action).not.toHaveProperty("auto_approval");
+  });
+
+  it("asks for an exact resource when intent ranking is ambiguous", () => {
+    const result = prepareQuickProposalAction({
+      options: {
+        ...options,
+        resources: [students, { ...students, id: "institutional_research.archived_students", table: "archived_students", label: "Archived students" }],
+      },
+      intent: "Update a student record.",
+    });
+    expect(result).toMatchObject({
+      state: "needs_input",
+      decision: { kind: "resource" },
+      authority_granted: false,
+    });
+  });
+
+  it("lets multiple reviewed field matches outrank a repeated loose table-token overlap", () => {
+    const serviceRequests: GuidedActionResourceOption = {
+      ...students,
+      id: "operations.service_requests",
+      schema: "operations",
+      table: "service_requests",
+      label: "Service requests",
+      description: "Requests for scheduled service work.",
+      writable_fields: [
+        { name: "request_type", data_type: "text", enum_values: ["inspection", "repair"], nullable: false, required_for_insert: true },
+      ],
+      structurally_eligible_fields: [
+        { name: "request_type", data_type: "text", enum_values: ["inspection", "repair"], nullable: false, required_for_insert: true },
+      ],
+      conflict_candidates: ["version"],
+      insert_dedup_candidates: ["request_id"],
+    };
+    const dispatchSettings: GuidedActionResourceOption = {
+      ...students,
+      id: "operations.dispatch_settings",
+      schema: "operations",
+      table: "dispatch_settings",
+      label: undefined,
+      description: undefined,
+      writable_fields: [
+        { name: "alert_level", data_type: "text", enum_values: ["standard", "elevated"], nullable: false, required_for_insert: false },
+        { name: "max_open_requests", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false, suggested_numeric_minimum: 1, suggested_numeric_maximum: 40 },
+      ],
+      structurally_eligible_fields: [
+        { name: "alert_level", data_type: "text", enum_values: ["standard", "elevated"], nullable: false, required_for_insert: false },
+        { name: "max_open_requests", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false, suggested_numeric_minimum: 1, suggested_numeric_maximum: 40 },
+      ],
+      conflict_candidates: ["version"],
+      insert_dedup_candidates: [],
+      operation_availability: {
+        insert: { available: false, reason: "No unique retry identity was found." },
+        update: { available: true, reason: "version detects a stale update." },
+        delete: { available: false, reason: "Delete is not reviewed." },
+      },
+    };
+
+    const result = prepareQuickProposalAction({
+      options: { ...options, resources: [serviceRequests, dispatchSettings] },
+      intent: "Update dispatcher alert level and maximum open requests with version conflict protection.",
+    });
+
+    expect(result).toMatchObject({
+      state: "ready",
+      recommendations: {
+        resource: "operations.dispatch_settings",
+        operation: "update",
+        fields: ["alert_level", "max_open_requests"],
+      },
+      action: {
+        resource: "operations.dispatch_settings",
+        operation: "update",
+        conflict_column: "version",
+        patches: [
+          { column: "alert_level" },
+          { column: "max_open_requests", minimum: 1, maximum: 40 },
+        ],
+      },
+    });
+  });
+
+  it("asks only for a missing numeric business bound", () => {
+    const withoutSuggestedBounds: GuidedActionResourceOption = {
+      ...students,
+      writable_fields: students.writable_fields.map((field) => field.name === "entry_cohort"
+        ? { ...field, suggested_numeric_minimum: undefined, suggested_numeric_maximum: undefined }
+        : field),
+      structurally_eligible_fields: students.structurally_eligible_fields.map((field) => field.name === "entry_cohort"
+        ? { ...field, suggested_numeric_minimum: undefined, suggested_numeric_maximum: undefined }
+        : field),
+    };
+    const unresolved = prepareQuickProposalAction({
+      options: { ...options, resources: [withoutSuggestedBounds] },
+      intent: "Register one student with residency and entry cohort.",
+    });
+    expect(unresolved).toMatchObject({
+      state: "needs_input",
+      decision: { kind: "numeric_bounds", field: "entry_cohort" },
+    });
+    const resolved = prepareQuickProposalAction({
+      options: { ...options, resources: [withoutSuggestedBounds] },
+      intent: "Register one student with residency and entry cohort.",
+      decisions: { numeric_bounds: { entry_cohort: { minimum: 2022, maximum: 2028 } } },
+    });
+    expect(resolved).toMatchObject({
+      state: "ready",
+      action: { patches: [{ column: "entry_cohort", minimum: 2022, maximum: 2028 }, { column: "residency" }] },
+    });
+  });
+
+  it("keeps hard-delete proposals behind an exact phrase", () => {
+    const unresolved = prepareQuickProposalAction({
+      options,
+      intent: "Delete one student.",
+    });
+    expect(unresolved).toMatchObject({
+      state: "needs_input",
+      decision: { kind: "delete_confirmation", expected: "DELETE institutional_research.students" },
+    });
+    const ready = prepareQuickProposalAction({
+      options,
+      intent: "Delete one student.",
+      decisions: { delete_confirmation: "DELETE institutional_research.students" },
+    });
+    expect(ready).toMatchObject({
+      state: "ready",
+      action: {
+        operation: "delete",
+        patches: [],
+        conflict_column: "student_id",
+        authority_posture: "proposal_only",
+        writeback: { mode: "none" },
+      },
+    });
+    if (ready.state !== "ready") throw new Error("expected ready delete action");
+    expect(ready.deterministic_approval_template).toBeUndefined();
+  });
+
+  it("refuses an exact target with no source-proven proposal operation instead of silently returning", () => {
+    const unavailable: GuidedActionResourceOption = {
+      ...students,
+      operation_availability: {
+        insert: { available: false, reason: "No unique retry identity was found." },
+        update: { available: false, reason: "No conflict/version field was found." },
+        delete: { available: false, reason: "Delete has no reviewed conflict guard." },
+      },
+    };
+    expect(() => prepareQuickProposalAction({
+      options: { ...options, resources: [unavailable] },
+      intent: "Create a new student.",
+    })).toThrow(/No proposal operation is structurally ready.*Open Readiness/s);
+  });
+
+  it("never substitutes DELETE when the stated UPDATE effect is unavailable", () => {
+    const deleteOnly: GuidedActionResourceOption = {
+      ...students,
+      operation_availability: {
+        insert: { available: false, reason: "No unique retry identity was found." },
+        update: { available: false, reason: "The reviewed row identity is unavailable." },
+        delete: { available: true, reason: "A reviewed administrative delete guard exists." },
+      },
+    };
+    expect(() => prepareQuickProposalAction({
+      options: { ...options, resources: [deleteOnly] },
+      intent: "Update one student residency.",
+    })).toThrow(/UPDATE.*unavailable.*did not substitute a different write effect/s);
+  });
+});

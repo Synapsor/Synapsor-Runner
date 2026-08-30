@@ -531,11 +531,11 @@ CLI can create, open, rename, and delete non-active drafts. The name is bound
 into review and activation digests. With no saved review, both surfaces use the same
 deterministic starter candidate of at most three related/high-value tables.
 Quick Start remains a separately labeled one-table, zero-relationship fast
-lane. In fresh local onboarding, one explicit operator gesture may review and
-activate that exact conservative boundary after schema and read-only-role
-revalidation. The model still cannot review or activate it. Declining the fast
-lane opens the detailed editor, and any widening requires the full recorded
-review. Quick Start never silently adds the rest of the schema.
+lane for explicit manual use. Fresh terminal onboarding instead starts from one
+agent job, prepares a complete disabled schema-proven mapping catalog, then
+minimizes it before exact review. A model may help map structural metadata but
+still cannot review or activate authority. Manual and Quick Start routes never
+silently add the rest of the schema.
 
 Print a concise overview without entering the picker:
 

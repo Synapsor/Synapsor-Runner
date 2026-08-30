@@ -3,6 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
+import {
+  actionBoundaryAuthorityDigestV1,
+  actionBoundaryReadDependencyDigestV1,
+  actionBoundaryVersion,
+} from "@synapsor-runner/protocol";
 import { validateRunnerCapabilityConfig } from "./index.js";
 
 const safeConfig = {
@@ -73,6 +78,84 @@ const safeConfig = {
 };
 
 describe("runner capability config validation", () => {
+  it("binds an Action Boundary to the exact resolved proposal capability set", () => {
+    const config = mutableConfig();
+    const digest = `sha256:${"a".repeat(64)}`;
+    config.capabilities[1].contract_provenance = { digest, version: "1" };
+    const readDependency = {
+      name: "reviewed_staging",
+      source: "app_postgres",
+      digest: `sha256:${"1".repeat(64)}` as const,
+      generation_lock_fingerprint: `sha256:${"2".repeat(64)}` as const,
+      trusted_context_fingerprint: `sha256:${"3".repeat(64)}` as const,
+    };
+    const authority = {
+      read_dependencies: [readDependency],
+      capabilities: [{
+        capability: config.capabilities[1].name,
+        resource: "public.invoices",
+        operation: "update" as const,
+        contract_digest: digest,
+        contract_path: "./synapsor/actions/active/billing.propose_late_fee_waiver/synapsor.contract.json",
+        read_dependency_digest: actionBoundaryReadDependencyDigestV1(readDependency),
+      }],
+      approval_policies: [{
+        capability: config.capabilities[1].name,
+        mode: "human" as const,
+        digest: `sha256:${"4".repeat(64)}` as const,
+      }],
+      execution_profiles: [{
+        capability: config.capabilities[1].name,
+        authority_posture: "executable" as const,
+        writeback_mode: "direct_sql" as const,
+        digest: `sha256:${"5".repeat(64)}` as const,
+      }],
+      shared_limits: [],
+    };
+    config.action_boundary = {
+      schema_version: actionBoundaryVersion,
+      name: "support_actions",
+      digest: actionBoundaryAuthorityDigestV1(authority),
+      authority,
+    };
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    const changed = structuredClone(config);
+    changed.action_boundary.authority.capabilities[0].contract_digest = `sha256:${"c".repeat(64)}`;
+    expect(validateRunnerCapabilityConfig(changed).errors.map((issue) => issue.code)).toContain(
+      "ACTION_BOUNDARY_CONTRACT_CHANGED",
+    );
+
+    const extra = structuredClone(config);
+    extra.capabilities.push({
+      ...structuredClone(extra.capabilities[1]),
+      name: "billing.propose_account_credit",
+    });
+    expect(validateRunnerCapabilityConfig(extra).errors.map((issue) => issue.code)).toContain(
+      "ACTION_BOUNDARY_RUNTIME_CAPABILITY_EXTRA",
+    );
+
+    const limited = structuredClone(config);
+    limited.action_boundary.authority.shared_limits = [{
+      id: "daily_fee_total",
+      kind: "total",
+      scope: "tenant",
+      maximum: 10000,
+      window_seconds: 86400,
+      capability: config.capabilities[1].name,
+      field: "late_fee_cents",
+    }];
+    limited.action_boundary.digest = actionBoundaryAuthorityDigestV1(limited.action_boundary.authority);
+    expect(validateRunnerCapabilityConfig(limited)).toMatchObject({ ok: true, errors: [] });
+
+    const nonNumeric = structuredClone(limited);
+    nonNumeric.action_boundary.authority.shared_limits[0].field = "waiver_reason";
+    nonNumeric.action_boundary.digest = actionBoundaryAuthorityDigestV1(nonNumeric.action_boundary.authority);
+    expect(validateRunnerCapabilityConfig(nonNumeric).errors.map((issue) => issue.code)).toContain(
+      "ACTION_BOUNDARY_TOTAL_FIELD_NOT_NUMERIC",
+    );
+  });
+
   it("validates semantic and exact model authority metadata modes", () => {
     for (const authority_metadata of ["semantic", "exact"] as const) {
       expect(validateRunnerCapabilityConfig({
@@ -268,6 +351,34 @@ describe("runner capability config validation", () => {
     expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
     expect(config.supervised_worker).toBeUndefined();
     expect(config.capabilities[1].execution).toBeUndefined();
+  });
+
+  it("validates typed approval predicates without accepting ambiguous rule shapes", () => {
+    const config = mutableConfig();
+    config.capabilities[1].approval = {
+      mode: "policy",
+      required_role: "support_lead",
+      policy: "billing_reviewed_waiver",
+    };
+    config.policies = [{
+      name: "billing_reviewed_waiver",
+      kind: "approval",
+      mode: "green",
+      rules: [
+        { field: "late_fee_cents", operator: "lte", value: 5000 },
+        { source: "before", field: "late_fee_cents", operator: "gte", value: 0 },
+        { field: "waiver_reason", operator: "max_length", value: 120 },
+        { field: "status", operator: "in", values: ["open", "past_due"] },
+        { field: "notified", operator: "eq", value: false },
+      ],
+    }];
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    const ambiguous = structuredClone(config);
+    ambiguous.policies[0].rules[0] = { field: "late_fee_cents", max: 5000, operator: "lte", value: 5000 };
+    expect(validateRunnerCapabilityConfig(ambiguous).errors.map((issue) => issue.code)).toContain(
+      "AMBIGUOUS_APPROVAL_POLICY_RULE",
+    );
   });
 
   it("accepts quiet operator-owned notification routes without inline destinations or secrets", () => {

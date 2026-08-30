@@ -5,6 +5,7 @@ import type {
   ExecutionReceiptV3,
   ExecutionReceiptV4,
   FreshnessProofV1,
+  ActionBoundarySharedLimitV1,
   WritebackJob,
   WritebackResult,
 } from "@synapsor-runner/protocol";
@@ -109,6 +110,8 @@ export type StoredApproval = {
   signature?: string;
   integrity_hash?: string;
   freshness_proof_digest?: string;
+  action_boundary_name?: string;
+  action_boundary_digest?: `sha256:${string}`;
   created_at: string;
 };
 
@@ -1060,11 +1063,26 @@ export type PolicyApprovalLimitTrip = PolicyApprovalLimit & {
   reason: string;
 };
 
+export type ActionBoundaryApprovalContext = {
+  name: string;
+  digest: `sha256:${string}`;
+  limits: ActionBoundarySharedLimitV1[];
+};
+
+export type ActionBoundaryApprovalLimitTrip = ActionBoundarySharedLimitV1 & {
+  observed: number;
+  proposed: number;
+  projected: number;
+  window_start: string;
+  window_end: string;
+  reason: string;
+};
+
 export type PolicyApprovalDecision = {
   proposal: StoredProposal;
   approved: boolean;
   policy: string;
-  tripped_limits: PolicyApprovalLimitTrip[];
+  tripped_limits: Array<PolicyApprovalLimitTrip | ActionBoundaryApprovalLimitTrip>;
 };
 
 export type WorkerPolicyExecutionLimits = {
@@ -1113,6 +1131,7 @@ export type ProposalRuntimeStore = {
       proposal_version: number;
       reason: string;
       limits?: PolicyApprovalLimit[];
+      action_boundary?: ActionBoundaryApprovalContext;
       now?: string;
       freshness_proof_digest?: string;
     },

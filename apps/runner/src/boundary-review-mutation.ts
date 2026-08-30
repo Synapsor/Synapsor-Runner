@@ -268,6 +268,13 @@ const REVIEWABLE_BUDGET_REQUEST_KEYS = [
   "max_analysis_relationship_hops",
 ] as const;
 
+const BOUNDARY_WIDE_REVIEW_REQUEST_KEYS = [
+  "max_ranked_groups",
+  "max_queries_per_session",
+  "rate_limit_per_minute",
+  ...REVIEWABLE_BUDGET_REQUEST_KEYS,
+] as const;
+
 type ReviewableBudgetRequestKey = typeof REVIEWABLE_BUDGET_REQUEST_KEYS[number];
 
 export type BoundaryReviewMutationBindings = {
@@ -988,6 +995,7 @@ export async function prepareBoundaryResourceReviewMutation(
       singleOrganization: { organizationId: state.candidate.organization_scope.organization_id },
     } : {}),
   });
+  alignGeneratedReviewBudgets(build.exploration_boundary, state.candidate, request);
 
   const candidate = buildReviewedCandidate({
     previous: state.candidate,
@@ -1058,6 +1066,7 @@ export async function prepareBoundaryReviewMutationBatch(
     throw new Error("One atomic boundary-review decision file must use one verified reviewer identity.");
   }
   for (const request of requests) validateBoundaryResourceRequest(request);
+  const boundaryWideSettings = consistentBoundaryWideReviewSettings(requests);
   const duplicateResources = requests
     .map((request) => request.resource_id)
     .filter((resource, index, values) => values.indexOf(resource) !== index);
@@ -1148,13 +1157,23 @@ export async function prepareBoundaryReviewMutationBatch(
       singleOrganization: { organizationId: state.candidate.organization_scope.organization_id },
     } : {}),
   });
+  alignGeneratedReviewBudgets(
+    build.exploration_boundary,
+    state.candidate,
+    boundaryWideSettings,
+  );
   let candidate = state.candidate;
   const differences: BoundaryReviewSemanticDiff[] = [];
   for (const request of requests) {
+    // Boundary-wide settings are carried through every resource mutation in
+    // the atomic batch. Otherwise a later resource rebuild can restore the
+    // generated default and strand a deep reviewed path under a shallower
+    // budget than the decision that admitted it.
+    const effectiveRequest = { ...request, ...boundaryWideSettings };
     const next = buildReviewedCandidate({
       previous: candidate,
       generated: build.exploration_boundary,
-      request,
+      request: effectiveRequest,
     });
     assertRequestedExposureState(request, next);
     differences.push(semanticDiff(
@@ -1195,6 +1214,39 @@ export async function prepareBoundaryReviewMutationBatch(
   };
 }
 
+function consistentBoundaryWideReviewSettings(
+  requests: BoundaryResourceReviewRequest[],
+): Partial<BoundaryResourceReviewRequest> {
+  const settings: Record<string, number> = {};
+  for (const key of BOUNDARY_WIDE_REVIEW_REQUEST_KEYS) {
+    const values = [...new Set(requests.flatMap((request) => {
+      const value = request[key];
+      return value === undefined ? [] : [value];
+    }))];
+    if (values.length > 1) {
+      throw new Error(
+        `Boundary-review decision file gives conflicting boundary-wide values for ${key}.`,
+      );
+    }
+    if (values[0] !== undefined) settings[key] = values[0];
+  }
+  return settings as Partial<BoundaryResourceReviewRequest>;
+}
+
+function alignGeneratedReviewBudgets(
+  generated: ExplorationBoundaryDraft,
+  reviewed: ExplorationBoundaryDraft,
+  settings: Partial<BoundaryResourceReviewRequest> = {},
+): void {
+  generated.budgets = preserveReviewedBudgets(generated, reviewed);
+  for (const key of BOUNDARY_WIDE_REVIEW_REQUEST_KEYS) {
+    const value = settings[key];
+    if (value !== undefined) {
+      (generated.budgets as unknown as Record<string, number>)[key] = value;
+    }
+  }
+}
+
 /**
  * Revalidates an exact, already-minimized candidate against a fresh database
  * inspection. The result is still a disabled review revision; this function
@@ -1224,9 +1276,12 @@ export async function prepareExactBoundaryCandidateMutation(
   const state = await loadBoundaryReviewFiles(projectRoot);
   const bindings = reviewBindings(state);
   if (input.expected_bindings) assertBindingsEqual(input.expected_bindings, bindings);
-  if (explorationBoundaryCandidateDigest(state.draft) !== input.expected_generated_boundary_digest) {
+  const currentDraftDigest = explorationBoundaryCandidateDigest(state.draft);
+  const currentCandidateDigest = explorationBoundaryCandidateDigest(state.candidate);
+  if (currentDraftDigest !== input.expected_generated_boundary_digest
+    && currentCandidateDigest !== input.expected_generated_boundary_digest) {
     throw new Error(
-      "READ_WORKLOAD_STALE: the generated boundary changed after workload analysis. Re-run workload analysis against the current boundary draft.",
+      "READ_WORKLOAD_STALE: the reviewed boundary changed after workload analysis. Re-run workload analysis against the current boundary draft.",
     );
   }
   const configuredTrustedContext = await configuredTrustedContextForReviewMutation(
@@ -1244,13 +1299,53 @@ export async function prepareExactBoundaryCandidateMutation(
   }
   const project = await detectProjectContext(projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
-  const build = buildReviewMutationBoundary({
+  const mutationBuild = buildReviewMutationBoundary({
     inspection,
     project,
     evidence,
     state,
     configuredTrustedContext,
-  }).build;
+  });
+  const cleanBuild = mutationBuild.build;
+  const overrides = pruneAutoBoundaryReviewOverrides(
+    inspection,
+    boundaryReviewOverridesForCandidate({
+      progress: state.progress,
+      baseline: cleanBuild.exploration_boundary,
+      candidate: state.candidate,
+      actor: input.actor,
+    }),
+    {
+      project,
+      parsedEvidence: evidence.parsed,
+      existingContracts: evidence.existingContracts,
+      configuredTrustedContext,
+      previousBoundary: state.candidate,
+    },
+  ).overrides;
+  const build = buildAutoBoundary({
+    inspection,
+    project,
+    parsedEvidence: evidence.parsed,
+    existingContracts: evidence.existingContracts,
+    sourceEnv: state.lock.source_env,
+    inspectedSchema: state.lock.inspected_schema,
+    overrides,
+    deploymentProfile: state.candidate.deployment_profile,
+    configuredTrustedContext,
+    useConfiguredTrustedContextForInference:
+      mutationBuild.useConfiguredTrustedContextForInference,
+    ...(state.candidate.trusted_context.provider === "http_claims" ? {
+      httpClaims: {
+        tenantClaim: state.candidate.trusted_context.tenant_claim,
+        principalClaim: state.candidate.trusted_context.principal_claim,
+      },
+    } : {}),
+    ...(state.candidate.organization_scope ? {
+      singleOrganization: { organizationId: state.candidate.organization_scope.organization_id },
+    } : {}),
+  });
+  alignGeneratedReviewBudgets(build.exploration_boundary, state.candidate);
   const staleBindings = [
     build.lock.schema_fingerprint !== state.lock.schema_fingerprint ? "schema fingerprint" : undefined,
     build.lock.role_posture_fingerprint !== state.lock.role_posture_fingerprint

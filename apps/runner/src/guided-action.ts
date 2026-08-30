@@ -2,9 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { compileAgentDsl, formatAgentDsl } from "@synapsor/dsl";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
-import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import {
+  canonicalJsonDigest,
+  type ActionBoundarySharedLimitV1,
+} from "@synapsor-runner/protocol";
 import {
   assessDirectWritePrerequisites,
+  sourcePrimaryKeyMatchesReviewedWriteIdentity,
   type ColumnInfo,
   type SchemaInspection,
   type TableInfo,
@@ -12,11 +16,21 @@ import {
 import { assertValidContract, type JsonScalar, type SynapsorContract } from "@synapsor/spec";
 import {
   compareGenerationLock,
+  explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
   type ActivatedExplorationBoundary,
+  type ExplorationBoundaryDraft,
   type GenerationLock,
 } from "./auto-boundary.js";
-import { extendEnvironmentExample } from "./guided-project.js";
+import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
+import {
+  boundaryReviewDecisions,
+  readBoundaryReviewProgress,
+} from "./boundary-review-domain.js";
+import {
+  extendEnvironmentExample,
+  readGuidedOnboardingState,
+} from "./guided-project.js";
 import {
   actionAuthorityForCapability,
   classifyActionAuthorityTransition,
@@ -26,6 +40,21 @@ import {
   type ActionWritebackMode,
   type ResolvedActionAuthority,
 } from "./action-authority.js";
+import {
+  DEFAULT_ACTION_BOUNDARY_NAME,
+  actionBoundaryStatus,
+  buildActionBoundaryDraft,
+  completeActionBoundaryPublication,
+  publishActionBoundaryActivation,
+  readActionBoundaryDraft,
+  reviseActionBoundaryDraft,
+  writeActionBoundaryDraft,
+  type ActionBoundaryCandidate,
+  type ActionBoundaryActivation,
+  type ActionBoundaryCapabilityReference,
+  type ActionBoundaryDraft,
+  type ActionBoundaryStatus,
+} from "./action-boundary.js";
 
 const GUIDED_ACTION_VERSION = "synapsor.guided-action.v1" as const;
 const GUIDED_ACTION_INDEX_VERSION = "synapsor.guided-action-index.v1" as const;
@@ -80,6 +109,24 @@ export type GuidedActionPatchInput = {
   allowed_from?: string[];
 };
 
+export type GuidedActionAutoApprovalCondition = {
+  source?: "patch" | "before";
+  field: string;
+  operator: "lte" | "gte" | "eq" | "in" | "max_length";
+  value?: JsonScalar;
+  values?: JsonScalar[];
+};
+
+export type GuidedActionAutoApprovalInput = {
+  /** Legacy single-threshold input retained for existing automation. */
+  field?: string;
+  maximum?: number;
+  conditions?: GuidedActionAutoApprovalCondition[];
+  max_per_day: number;
+  max_total_per_day?: number;
+  total_field?: string;
+};
+
 export type GuidedActionInput = {
   capability_name: string;
   description: string;
@@ -93,12 +140,7 @@ export type GuidedActionInput = {
   dedup_proposal_column?: string;
   approval_role: string;
   required_approvals?: number;
-  auto_approval?: {
-    field: string;
-    maximum: number;
-    max_per_day: number;
-    max_total_per_day: number;
-  };
+  auto_approval?: GuidedActionAutoApprovalInput;
   /** Proposal-only is the default. Execution is a separate reviewed revision. */
   authority_posture?: ActionAuthorityPosture;
   writeback?: {
@@ -121,8 +163,12 @@ export type GuidedActionDraft = {
   source: string;
   resource: string;
   operation: GuidedActionOperation;
+  /** Exact read boundary this disabled action revision depends on. */
+  boundary_name?: string;
   boundary_digest: `sha256:${string}`;
   generation_lock_fingerprint: `sha256:${string}`;
+  action_boundary_name?: string;
+  action_boundary_digest?: `sha256:${string}`;
   contract_digest: `sha256:${string}`;
   dsl_path: string;
   contract_path: string;
@@ -153,6 +199,13 @@ export type GuidedActionActivation = {
   capability: string;
   resource?: string;
   operation?: GuidedActionOperation;
+  source?: string;
+  boundary_name?: string;
+  boundary_digest?: `sha256:${string}`;
+  generation_lock_fingerprint?: `sha256:${string}`;
+  trusted_context_fingerprint?: `sha256:${string}`;
+  action_boundary_name?: string;
+  action_boundary_digest?: `sha256:${string}`;
   contract_digest: `sha256:${string}`;
   contract_path: string;
   design_path: string;
@@ -171,6 +224,7 @@ export type GuidedActionActivation = {
 export type GuidedActionStatus = {
   drafts: GuidedActionDraft[];
   activations: GuidedActionActivation[];
+  action_boundary: ActionBoundaryStatus;
 };
 
 export type GuidedActionAuthorityRevisionInput = {
@@ -183,6 +237,7 @@ export type GuidedActionAuthorityRevisionInput = {
   worker_policy?: GuidedActionWorkerPolicyInput;
   receipt_mode?: GuidedReceiptMode;
   write_url_env?: string;
+  version_advance?: GuidedActionInput["version_advance"];
 };
 
 export type GuidedActionAuthorityRevision = {
@@ -202,7 +257,8 @@ export type GuidedActionResourceOption = {
   label?: string;
   description?: string;
   primary_key: string;
-  tenant_key: string;
+  tenant_key?: string;
+  organization_scope?: NonNullable<ActivatedExplorationBoundary["organization_scope"]>;
   principal_key?: string;
   writable_fields: Array<{
     name: string;
@@ -230,27 +286,71 @@ export type GuidedActionBlockedResource = {
   next_steps: string[];
 };
 
-export async function guidedActionOptions(input: {
-  projectRoot: string;
-  inspection: SchemaInspection;
-}): Promise<{
+export type GuidedActionOptions = {
+  boundary_name: string;
+  boundary_state: "active" | "reviewed_pending";
   boundary_digest: `sha256:${string}`;
   source: string;
   deployment_profile: "development" | "staging" | "production";
   resources: GuidedActionResourceOption[];
   blocked_resources: GuidedActionBlockedResource[];
   safe_defaults: Record<string, unknown>;
-}> {
+};
+
+export async function guidedActionOptions(input: {
+  projectRoot: string;
+  inspection: SchemaInspection;
+  boundaryName?: string;
+  allowReviewedPending?: boolean;
+}): Promise<GuidedActionOptions> {
   const projectRoot = path.resolve(input.projectRoot);
-  const boundary = await loadCurrentBoundary(projectRoot, input.inspection);
+  const resolved = await loadGuidedActionBoundary(projectRoot, input.inspection, {
+    ...(input.boundaryName ? { boundaryName: input.boundaryName } : {}),
+    allowReviewedPending: input.allowReviewedPending === true,
+  });
+  return buildGuidedActionOptions(resolved.boundary, resolved.state, input.inspection);
+}
+
+/**
+ * Builds non-authoritative action-mapping options from the disabled catalog
+ * used by job-first onboarding. The candidate is still reviewed and activated
+ * through the normal Read Boundary path before any Action Boundary can depend
+ * on it.
+ */
+export function guidedActionOptionsFromCandidate(input: {
+  candidate: ExplorationBoundaryDraft;
+  inspection: SchemaInspection;
+}): GuidedActionOptions {
+  const { activation: _activation, unresolved_decisions: _unresolved, ...authority } = input.candidate;
+  const boundary: ActivatedExplorationBoundary = {
+    ...structuredClone(authority),
+    activation: {
+      state: "active",
+      digest: explorationBoundaryCandidateDigest(input.candidate),
+      actor: "job_mapping_catalog",
+      activated_at: new Date(0).toISOString(),
+      generation_lock_fingerprint: input.candidate.generation_lock_fingerprint,
+      reviewed_decisions: [],
+    },
+  };
+  return buildGuidedActionOptions(boundary, "reviewed_pending", input.inspection);
+}
+
+function buildGuidedActionOptions(
+  boundary: ActivatedExplorationBoundary,
+  boundaryState: "active" | "reviewed_pending",
+  inspection: SchemaInspection,
+): GuidedActionOptions {
   return {
+    boundary_name: boundary.pack.name,
+    boundary_state: boundaryState,
     boundary_digest: boundary.activation.digest,
     source: boundary.source,
     deployment_profile: boundary.deployment_profile,
     blocked_resources: boundary.pack.resources.flatMap((resource): GuidedActionBlockedResource[] => {
       const reasons: string[] = [];
       const nextSteps: string[] = [];
-      if (!resource.tenant_key) {
+      if (!resource.tenant_key && !boundary.organization_scope) {
         reasons.push("Guarded writes require a direct reviewed tenant column; relationship-carried read scope is not write authority.");
         nextSteps.push(`Add or review a direct tenant binding on ${resource.id}, then rescan and activate the Read Boundary.`);
       }
@@ -267,13 +367,12 @@ export async function guidedActionOptions(input: {
       }];
     }),
     resources: boundary.pack.resources
-      .filter((resource): resource is typeof resource & { tenant_key: string } =>
-        typeof resource.tenant_key === "string"
-        && resource.tenant_key.length > 0
+      .filter((resource) =>
+        (Boolean(resource.tenant_key) || Boolean(boundary.organization_scope))
         && !resource.principal_scope)
       .map((resource) => {
-      const table = requireInspectedTable(input.inspection, resource.schema, resource.table);
-      const writableFields = table.columns
+      const table = requireInspectedTable(inspection, resource.schema, resource.table);
+      const structurallyEligibleFields = table.columns
         .filter((column) =>
           !column.generated
           && !column.identity
@@ -281,8 +380,7 @@ export async function guidedActionOptions(input: {
           && column.name !== resource.primary_key
           && column.name !== resource.tenant_key
           && column.name !== resource.principal_key
-          && !resource.kept_out_fields.includes(column.name)
-          && resource.selectable_fields.includes(column.name))
+          && !resource.kept_out_fields.includes(column.name))
         .map((column) => ({
           name: column.name,
           data_type: column.data_type,
@@ -290,7 +388,7 @@ export async function guidedActionOptions(input: {
           nullable: column.nullable,
           required_for_insert: !column.nullable && column.default === undefined,
         }));
-      const writableFieldNames = new Set(writableFields.map((field) => field.name));
+      const writableFieldNames = new Set(structurallyEligibleFields.map((field) => field.name));
       const requiredInsertColumns = table.columns
         .filter((column) =>
           !column.nullable
@@ -298,13 +396,27 @@ export async function guidedActionOptions(input: {
           && !column.generated
           && !column.identity)
         .map((column) => column.name);
-      const insertDedupCandidates = insertIdentityCandidates(table, resource.tenant_key)
+      const sourceInsertDedupCandidates = (resource.tenant_key
+        ? insertIdentityCandidates(table, resource.tenant_key)
+        : []);
+      const insertDedupCandidates = sourceInsertDedupCandidates
         .filter((candidate) => requiredInsertColumns.every((column) =>
           column === resource.tenant_key
           || column === resource.principal_key
           || column === candidate
           || writableFieldNames.has(column)));
+      const blockedRequiredInsertColumns = requiredInsertColumns.filter((column) =>
+        column !== resource.tenant_key
+        && column !== resource.principal_key
+        && !sourceInsertDedupCandidates.includes(column)
+        && !writableFieldNames.has(column));
       const baseWrite = table.type === "table" && table.writable;
+      const directWriteIdentity = sourcePrimaryKeyMatchesReviewedWriteIdentity(table, {
+        primary_key: resource.primary_key,
+        ...(resource.tenant_key ? { tenant_key: resource.tenant_key } : {}),
+        ...(resource.principal_key ? { principal_scope_key: resource.principal_key } : {}),
+      });
+      const reviewedOrganization = Boolean(boundary.organization_scope);
       const hardDeleteBlocked = (table.write_triggers?.length ?? 0) > 0
         || (table.referenced_by ?? []).some((foreignKey) => foreignKey.delete_rule === "CASCADE");
       return {
@@ -314,9 +426,10 @@ export async function guidedActionOptions(input: {
         ...(resource.label ? { label: resource.label } : {}),
         ...(resource.description ? { description: resource.description } : {}),
         primary_key: resource.primary_key,
-        tenant_key: resource.tenant_key,
+        ...(resource.tenant_key ? { tenant_key: resource.tenant_key } : {}),
+        ...(boundary.organization_scope ? { organization_scope: boundary.organization_scope } : {}),
         ...(resource.principal_key ? { principal_key: resource.principal_key } : {}),
-        writable_fields: writableFields.map((field) => ({
+        writable_fields: structurallyEligibleFields.map((field) => ({
           ...field,
           ...(resource.field_metadata?.[field.name]?.label
             ? { label: resource.field_metadata[field.name]!.label }
@@ -325,7 +438,7 @@ export async function guidedActionOptions(input: {
             ? { description: resource.field_metadata[field.name]!.description }
             : {}),
         })),
-        structurally_eligible_fields: writableFields.map((field) => ({
+        structurally_eligible_fields: structurallyEligibleFields.map((field) => ({
           ...field,
           enum_values: [...field.enum_values],
           ...(resource.field_metadata?.[field.name]?.label
@@ -340,32 +453,50 @@ export async function guidedActionOptions(input: {
         kept_out_fields: resource.kept_out_fields,
         operation_availability: {
           update: {
-            available: baseWrite && table.suggestions.conflict_columns.length > 0 && writableFields.length > 0,
+            available: baseWrite && directWriteIdentity && table.suggestions.conflict_columns.length > 0 && structurallyEligibleFields.length > 0,
             reason: !baseWrite
               ? "Requires an inspected writable base table."
+              : !directWriteIdentity
+                ? "Requires the reviewed row identity plus direct trusted scope to cover every source primary-key column."
               : table.suggestions.conflict_columns.length === 0
                 ? "No source-proven conflict/version field was found."
-                : writableFields.length === 0
-                  ? "No reviewed non-sensitive writable field is available."
-                  : "Available with explicit bounds, conflict guard, approval, and receipt mode.",
+                : structurallyEligibleFields.length === 0
+                  ? "No non-kept-out mutable field is structurally eligible for a separate Action Boundary review."
+                  : reviewedOrganization
+                    ? "Available as proposal-only authority under the reviewed whole-organization scope."
+                    : "Available with explicit bounds, conflict guard, approval, and receipt mode.",
           },
           insert: {
-            available: baseWrite && insertDedupCandidates.length > 0 && writableFields.length > 0,
-            reason: !baseWrite
+            available: !reviewedOrganization && baseWrite && directWriteIdentity && insertDedupCandidates.length > 0 && structurallyEligibleFields.length > 0,
+            reason: reviewedOrganization
+              ? "Single-organization INSERT remains unavailable until source-enforced organization-safe deduplication is reviewed."
+              : !baseWrite
               ? "Requires an inspected writable base table."
+              : !directWriteIdentity
+                ? "Requires the reviewed row identity plus direct trusted scope to cover every source primary-key column."
+              : structurallyEligibleFields.length === 0
+                ? "No non-kept-out mutable field is structurally eligible for a separate Action Boundary review."
               : insertDedupCandidates.length === 0
-                ? "No primary/unique proposal-identity column can prove retry deduplication."
+                ? sourceInsertDedupCandidates.length === 0
+                  ? "No primary/unique proposal-identity column can prove retry deduplication."
+                  : blockedRequiredInsertColumns.length > 0
+                    ? `Required INSERT column${blockedRequiredInsertColumns.length === 1 ? "" : "s"} ${blockedRequiredInsertColumns.join(", ")} ${blockedRequiredInsertColumns.length === 1 ? "is" : "are"} not reviewed for Action Boundary use (kept out or structurally ineligible) and ${blockedRequiredInsertColumns.length === 1 ? "has" : "have"} no source default.`
+                    : "No source-proven INSERT shape satisfies every required column."
                 : "Available with an inspected dedup identity and explicit field bounds.",
           },
           delete: {
-            available: baseWrite && table.suggestions.conflict_columns.length > 0 && !hardDeleteBlocked,
+            available: baseWrite && directWriteIdentity && table.suggestions.conflict_columns.length > 0 && !hardDeleteBlocked,
             reason: !baseWrite
               ? "Requires an inspected writable base table."
+              : !directWriteIdentity
+                ? "Requires the reviewed row identity plus direct trusted scope to cover every source primary-key column."
               : table.suggestions.conflict_columns.length === 0
                 ? "No source-proven conflict/version field was found."
                 : hardDeleteBlocked
                   ? "Hard delete is blocked because inspected triggers or cascading references may widen the effect."
-                  : "Available only with human approval and an exact destructive confirmation.",
+                  : reviewedOrganization
+                    ? "Available as a proposal-only destructive intent with human approval; no writeback authority is granted."
+                    : "Available only with human approval and an exact destructive confirmation.",
           },
         },
       };
@@ -387,12 +518,13 @@ export async function guidedActionOptions(input: {
   };
 }
 
-export type GuidedActionOptions = Awaited<ReturnType<typeof guidedActionOptions>>;
-
 export async function createGuidedActionDraft(input: {
   projectRoot: string;
   action: GuidedActionInput;
   inspection: SchemaInspection;
+  boundaryName?: string;
+  allowReviewedPending?: boolean;
+  actionBoundaryJobIntent?: string;
   now?: string;
 }): Promise<{
   draft: GuidedActionDraft;
@@ -402,20 +534,29 @@ export async function createGuidedActionDraft(input: {
   preview_args: Record<string, JsonScalar>;
 }> {
   const projectRoot = path.resolve(input.projectRoot);
-  const boundary = await loadCurrentBoundary(projectRoot, input.inspection);
+  const resolved = await loadGuidedActionBoundary(projectRoot, input.inspection, {
+    ...(input.boundaryName ? { boundaryName: input.boundaryName } : {}),
+    allowReviewedPending: input.allowReviewedPending === true,
+  });
+  const boundary = resolved.boundary;
   const action = normalizeAction(input.action, boundary.deployment_profile);
   const resource = boundary.pack.resources.find((candidate) => candidate.id === action.resource);
-  if (!resource) throw new Error(`GUIDED_ACTION_RESOURCE_UNKNOWN: ${action.resource} is not in the active reviewed boundary.`);
-  requireDirectWriteTenantKey(resource);
+  if (!resource) throw new Error(`GUIDED_ACTION_RESOURCE_UNKNOWN: ${action.resource} is not in the selected reviewed boundary.`);
+  assertGuidedActionScopeAuthority(action, boundary, resource);
   const table = requireInspectedTable(input.inspection, resource.schema, resource.table);
-  const options = (await guidedActionOptions({ projectRoot, inspection: input.inspection })).resources
+  const options = (await guidedActionOptions({
+    projectRoot,
+    inspection: input.inspection,
+    boundaryName: boundary.pack.name,
+    allowReviewedPending: resolved.state === "reviewed_pending",
+  })).resources
     .find((candidate) => candidate.id === resource.id)!;
   const availability = options.operation_availability[action.operation];
   if (!availability.available) throw new Error(`GUIDED_ACTION_OPERATION_UNAVAILABLE: ${availability.reason}`);
   if (!action.confirmed_trusted_scope) {
     throw new Error("GUIDED_ACTION_SCOPE_CONFIRMATION_REQUIRED: confirm the inherited reviewed tenant and principal scope.");
   }
-  validateActionAgainstSource(action, resource, table);
+  validateActionAgainstSource(action, boundary, resource, table);
 
   const dsl = emitGuidedActionDsl({ action, boundary, resource, table });
   const contract = compileAgentDsl(dsl);
@@ -423,7 +564,7 @@ export async function createGuidedActionDraft(input: {
   const capability = contract.capabilities.find((candidate) => candidate.name === action.capability_name);
   if (!capability?.proposal) throw new Error("GUIDED_ACTION_COMPILE_FAILED: generated DSL did not produce proposal authority.");
   const contractDigest = canonicalJsonDigest(contract);
-  const tests = guidedActionTests(action, resource);
+  const tests = guidedActionTests(action, resource, boundary.organization_scope);
   const outputRoot = actionDraftRoot(projectRoot, action.capability_name);
   const dslPath = path.join(outputRoot, "capability.synapsor.sql");
   const contractPath = path.join(outputRoot, "synapsor.contract.json");
@@ -439,13 +580,14 @@ export async function createGuidedActionDraft(input: {
     && priorDraft.effect_preview.contract_digest === contractDigest
       ? priorDraft.effect_preview as GuidedActionDraft["effect_preview"]
       : undefined;
-  const draft: GuidedActionDraft = {
+  let draft: GuidedActionDraft = {
     schema_version: GUIDED_ACTION_VERSION,
     state: "disabled",
     capability: action.capability_name,
     source: boundary.source,
     resource: action.resource,
     operation: action.operation,
+    boundary_name: boundary.pack.name,
     boundary_digest: boundary.activation.digest,
     generation_lock_fingerprint: boundary.generation_lock_fingerprint,
     contract_digest: contractDigest,
@@ -467,6 +609,21 @@ export async function createGuidedActionDraft(input: {
     created_at: input.now ?? new Date().toISOString(),
     ...(preservedPreview ? { effect_preview: preservedPreview } : {}),
   };
+  const actionBoundaryDraft = await prospectiveActionBoundaryDraft({
+    projectRoot,
+    boundary,
+    candidateDraft: draft,
+    candidateContract: contract,
+    ...(input.actionBoundaryJobIntent
+      ? { jobIntent: input.actionBoundaryJobIntent }
+      : {}),
+    now: input.now,
+  });
+  draft = {
+    ...draft,
+    action_boundary_name: actionBoundaryDraft.name,
+    action_boundary_digest: actionBoundaryDraft.digest,
+  };
   await writeGuidedActionArtifacts({
     projectRoot,
     outputRoot,
@@ -475,8 +632,9 @@ export async function createGuidedActionDraft(input: {
     contract,
     tests,
     design: action,
-    review: guidedActionReview(draft, action, resource),
+    review: guidedActionReview(draft, action, resource, boundary.organization_scope),
   });
+  await writeActionBoundaryDraft(projectRoot, actionBoundaryDraft);
   return {
     draft,
     dsl,
@@ -534,6 +692,7 @@ export async function reviseGuidedActionAuthority(input: {
     ...(input.authority.worker_policy ? { worker_policy: input.authority.worker_policy } : {}),
     receipt_mode: input.authority.receipt_mode ?? design.receipt_mode,
     write_url_env: input.authority.write_url_env ?? design.write_url_env,
+    ...(input.authority.version_advance ? { version_advance: input.authority.version_advance } : {}),
     confirmed_trusted_scope: true,
   };
   const created = await createGuidedActionDraft({
@@ -576,10 +735,21 @@ export async function prepareGuidedActionPreview(input: {
   const runtimeConfigPath = containedProjectPath(projectRoot, draft.runtime_config_path);
   const sourceConfigPath = await existingFile(runtimeConfigPath) ?? baseConfigPath;
   const rawConfig = JSON.parse(await fs.readFile(sourceConfigPath, "utf8")) as Record<string, unknown>;
-  const boundary = await loadActivatedExplorationBoundary(projectRoot);
+  const boundary = (await loadGuidedActionBoundary(projectRoot, undefined, {
+    ...(draft.boundary_name ? { boundaryName: draft.boundary_name } : {}),
+    expectedDigest: draft.boundary_digest,
+    allowReviewedPending: true,
+  })).boundary;
   const previewPath = path.join(actionDraftRoot(projectRoot, draft.capability), "preview.runner.json");
   const previousActivation = await readGuidedActionActivation(projectRoot, draft.capability);
   const retainDirectSqlSource = await otherActiveGuidedActionsRequireDirectSql(projectRoot, draft.capability);
+  const actionBoundary = await prospectiveActionBoundaryDraft({
+    projectRoot,
+    boundary,
+    candidateDraft: draft,
+    candidateContract: contract,
+    now: draft.created_at,
+  });
   const previewConfig = configWithGuidedAction({
     projectRoot,
     sourceConfigPath,
@@ -593,6 +763,7 @@ export async function prepareGuidedActionPreview(input: {
     isolatedPreview: true,
     draft,
     boundary,
+    actionBoundary,
   });
   await validateExpandedGuidedConfig(previewConfig, previewPath, "GUIDED_ACTION_PREVIEW_CONFIG_INVALID");
   await writeAtomic(previewPath, json(previewConfig));
@@ -649,8 +820,11 @@ export async function activateGuidedAction(input: {
 }): Promise<GuidedActionActivation> {
   const projectRoot = path.resolve(input.projectRoot);
   const actor = reviewedText(input.actor, "operator identity", 128);
-  const boundary = await loadCurrentBoundary(projectRoot, input.inspection);
   const draft = await readGuidedActionDraft(projectRoot, input.capabilityName);
+  const boundary = await loadCurrentBoundary(projectRoot, input.inspection, {
+    ...(draft.boundary_name ? { boundaryName: draft.boundary_name } : {}),
+    expectedDigest: draft.boundary_digest,
+  });
   if (draft.boundary_digest !== boundary.activation.digest
     || draft.generation_lock_fingerprint !== boundary.generation_lock_fingerprint) {
     throw new Error("GUIDED_ACTION_BOUNDARY_STALE: the reviewed data boundary changed; generate and preview a new action draft.");
@@ -666,6 +840,19 @@ export async function activateGuidedAction(input: {
   }
   if (!draft.effect_preview || draft.effect_preview.contract_digest !== digest || draft.effect_preview.source_database_changed) {
     throw new Error("GUIDED_ACTION_EFFECT_PREVIEW_REQUIRED: run one exact staging proposal preview for this digest before activation.");
+  }
+  const prospectiveBoundary = await prospectiveActionBoundaryDraft({
+    projectRoot,
+    boundary,
+    candidateDraft: draft,
+    candidateContract: contract,
+    now: draft.created_at,
+  });
+  if (draft.action_boundary_name !== prospectiveBoundary.name
+    || draft.action_boundary_digest !== prospectiveBoundary.digest) {
+    throw new Error(
+      "GUIDED_ACTION_BOUNDARY_SET_CHANGED: another action revision changed the prospective Action Boundary; reload and rehearse this draft.",
+    );
   }
 
   const activeRoot = path.join(projectRoot, GUIDED_ACTION_ROOT, "active");
@@ -699,6 +886,7 @@ export async function activateGuidedAction(input: {
     retainDirectSqlSource,
     draft,
     boundary,
+    actionBoundary: prospectiveBoundary,
   });
   await validateExpandedGuidedConfig(nextConfig, configPath, "GUIDED_ACTION_CONFIG_INVALID", {
     path: activeContractPath,
@@ -721,6 +909,9 @@ export async function activateGuidedAction(input: {
   );
   const environmentPath = path.join(projectRoot, ".env.example");
   let environmentRollback: { existed: boolean; contents?: string } | undefined;
+  let actionBoundaryPublication: Awaited<ReturnType<typeof publishActionBoundaryActivation>> | undefined;
+  let remainingDraftsPublication: Awaited<ReturnType<typeof rebaseDisabledGuidedActionDrafts>> | undefined;
+  const previousActionBoundaryDraft = await readActionBoundaryDraft(projectRoot, prospectiveBoundary.name);
   const activatedAt = input.now ?? new Date().toISOString();
   const active: GuidedActionActivation = {
     schema_version: GUIDED_ACTION_VERSION,
@@ -728,6 +919,13 @@ export async function activateGuidedAction(input: {
     capability: draft.capability,
     resource: draft.resource,
     operation: draft.operation,
+    source: draft.source,
+    boundary_name: draft.boundary_name,
+    boundary_digest: draft.boundary_digest,
+    generation_lock_fingerprint: draft.generation_lock_fingerprint,
+    trusted_context_fingerprint: guidedActionTrustedContextFingerprint(boundary),
+    action_boundary_name: prospectiveBoundary.name,
+    action_boundary_digest: prospectiveBoundary.digest,
     contract_digest: digest,
     contract_path: relativeProjectPath(projectRoot, activeContractPath),
     design_path: relativeProjectPath(projectRoot, activeDesignPath),
@@ -766,10 +964,28 @@ export async function activateGuidedAction(input: {
     }
     await writeAtomic(path.join(revisionRoot, "activation.json"), json(active));
     await writeAtomic(activePointerPath, json(active));
+    actionBoundaryPublication = await publishActionBoundaryActivation({
+      projectRoot,
+      draft: prospectiveBoundary,
+      actor,
+      now: activatedAt,
+    });
     // Runtime configuration is the actual tool authority. Publish it last so
     // an interrupted activation can only be temporarily under-authorized.
     await writeAtomic(configPath, json(nextConfig));
+    await completeActionBoundaryPublication(projectRoot, prospectiveBoundary.name);
+    remainingDraftsPublication = await rebaseDisabledGuidedActionDrafts({
+      projectRoot,
+      inspection: input.inspection,
+    });
   } catch (error) {
+    await remainingDraftsPublication?.rollback().catch(() => undefined);
+    if (previousActionBoundaryDraft) {
+      await writeActionBoundaryDraft(projectRoot, previousActionBoundaryDraft).catch(() => undefined);
+    } else {
+      await completeActionBoundaryPublication(projectRoot, prospectiveBoundary.name).catch(() => undefined);
+    }
+    await actionBoundaryPublication?.rollback().catch(() => undefined);
     if (previousConfig.existed) await writeAtomic(configPath, previousConfig.contents!).catch(() => undefined);
     else await fs.rm(configPath, { force: true }).catch(() => undefined);
     if (environmentRollback) {
@@ -788,6 +1004,109 @@ export async function activateGuidedAction(input: {
     throw error;
   }
   return active;
+}
+
+/**
+ * A job may prepare several disabled actions before activating any of them.
+ * Once one revision becomes active, every remaining draft must name the new
+ * prospective Action Boundary (active set plus that one draft). The action
+ * contract and its rehearsal remain byte-for-byte unchanged.
+ */
+async function rebaseDisabledGuidedActionDrafts(input: {
+  projectRoot: string;
+  inspection: SchemaInspection;
+}): Promise<{ rollback: () => Promise<void> }> {
+  const indexPath = path.join(input.projectRoot, ".synapsor/guided-action-drafts.json");
+  const priorIndex = await fs.readFile(indexPath, "utf8").then(
+    (contents) => ({ existed: true, contents }),
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return { existed: false, contents: undefined };
+      throw error;
+    },
+  );
+  const status = await guidedActionStatus(input.projectRoot);
+  const activeByCapability = new Map(status.activations.map((activation) => [
+    activation.capability,
+    activation.contract_digest,
+  ]));
+  const remaining = status.drafts.filter((draft) =>
+    activeByCapability.get(draft.capability) !== draft.contract_digest);
+  const priorDraftFiles = await Promise.all(remaining.map(async (draft) => {
+    const draftPath = path.join(actionDraftRoot(input.projectRoot, draft.capability), "draft.json");
+    return { draftPath, contents: await fs.readFile(draftPath, "utf8") };
+  }));
+  const rebased: Array<{ draft: GuidedActionDraft; boundary: ActionBoundaryDraft }> = [];
+  for (const draft of remaining) {
+    let boundary: ActivatedExplorationBoundary;
+    try {
+      boundary = (await loadGuidedActionBoundary(input.projectRoot, input.inspection, {
+        ...(draft.boundary_name ? { boundaryName: draft.boundary_name } : {}),
+        expectedDigest: draft.boundary_digest,
+        allowReviewedPending: true,
+      })).boundary;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/GUIDED_ACTION_READ_(?:BOUNDARY_REQUIRED|DEPENDENCY_INACTIVE)/.test(message)) {
+        // A draft tied to another unavailable Read Boundary remains untouched.
+        continue;
+      }
+      throw error;
+    }
+    const contract = JSON.parse(
+      await fs.readFile(containedProjectPath(input.projectRoot, draft.contract_path), "utf8"),
+    ) as SynapsorContract;
+    if (canonicalJsonDigest(contract) !== draft.contract_digest) {
+      throw new Error(`GUIDED_ACTION_DRAFT_TAMPERED: ${draft.capability} no longer matches its reviewed digest.`);
+    }
+    const nextBoundary = await prospectiveActionBoundaryDraft({
+      projectRoot: input.projectRoot,
+      boundary,
+      candidateDraft: draft,
+      candidateContract: contract,
+      now: draft.created_at,
+    });
+    rebased.push({
+      draft: {
+        ...draft,
+        action_boundary_name: nextBoundary.name,
+        action_boundary_digest: nextBoundary.digest,
+      },
+      boundary: nextBoundary,
+    });
+  }
+
+  let rolledBack = false;
+  try {
+    for (const item of rebased) {
+      await writeAtomic(
+        path.join(actionDraftRoot(input.projectRoot, item.draft.capability), "draft.json"),
+        json(item.draft),
+      );
+    }
+    const byCapability = new Map(rebased.map((item) => [item.draft.capability, item.draft]));
+    await writeActionIndex(
+      input.projectRoot,
+      remaining.map((draft) => byCapability.get(draft.capability) ?? draft),
+    );
+    const nextBoundary = rebased
+      .sort((left, right) => left.draft.capability.localeCompare(right.draft.capability))[0]?.boundary;
+    if (nextBoundary) await writeActionBoundaryDraft(input.projectRoot, nextBoundary);
+  } catch (error) {
+    await Promise.all(priorDraftFiles.map(({ draftPath, contents }) =>
+      writeAtomic(draftPath, contents).catch(() => undefined)));
+    if (priorIndex.existed) await writeAtomic(indexPath, priorIndex.contents!).catch(() => undefined);
+    else await fs.rm(indexPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  return {
+    rollback: async () => {
+      if (rolledBack) return;
+      rolledBack = true;
+      await Promise.all(priorDraftFiles.map(({ draftPath, contents }) => writeAtomic(draftPath, contents)));
+      if (priorIndex.existed) await writeAtomic(indexPath, priorIndex.contents!);
+      else await fs.rm(indexPath, { force: true });
+    },
+  };
 }
 
 export async function readGuidedActionDraft(
@@ -960,10 +1279,402 @@ export async function guidedActionStatus(projectRootInput: string): Promise<Guid
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+  const sortedDrafts = drafts.sort((left, right) => left.capability.localeCompare(right.capability));
+  const sortedActivations = activations.sort((left, right) => left.capability.localeCompare(right.capability));
+  const storedBoundary = await actionBoundaryStatus(projectRoot);
   return {
-    drafts: drafts.sort((left, right) => left.capability.localeCompare(right.capability)),
-    activations: activations.sort((left, right) => left.capability.localeCompare(right.capability)),
+    drafts: sortedDrafts,
+    activations: sortedActivations,
+    action_boundary: !storedBoundary.active && sortedActivations.length
+      ? await synthesizedLegacyActionBoundaryStatus(projectRoot, sortedActivations)
+      : storedBoundary,
   };
+}
+
+export async function reviseGuidedActionBoundary(input: {
+  projectRoot: string;
+  inspection: SchemaInspection;
+  sharedLimits: ActionBoundarySharedLimitV1[];
+  label?: string;
+  jobIntent?: string;
+  now?: string;
+}): Promise<ActionBoundaryDraft> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const status = await guidedActionStatus(projectRoot);
+  const current = status.action_boundary.draft ?? status.action_boundary.active;
+  if (!current) {
+    throw new Error("ACTION_BOUNDARY_REQUIRED: create at least one disabled proposal action before reviewing shared limits.");
+  }
+  await assertActionBoundarySharedLimitsMatchContracts(projectRoot, current, input.sharedLimits);
+  const previousDraft = status.action_boundary.draft;
+  const revised = reviseActionBoundaryDraft({
+    current,
+    sharedLimits: input.sharedLimits,
+    ...(input.label ? { label: input.label } : {}),
+    ...(input.jobIntent ? { jobIntent: input.jobIntent } : {}),
+    ...(input.now ? { now: input.now } : {}),
+  });
+  await writeActionBoundaryDraft(projectRoot, revised);
+  try {
+    await rebaseDisabledGuidedActionDrafts({
+      projectRoot,
+      inspection: input.inspection,
+    });
+  } catch (error) {
+    if (previousDraft) await writeActionBoundaryDraft(projectRoot, previousDraft).catch(() => undefined);
+    else await completeActionBoundaryPublication(projectRoot, revised.name).catch(() => undefined);
+    throw error;
+  }
+  return (await readActionBoundaryDraft(projectRoot, revised.name)) ?? revised;
+}
+
+export async function activateGuidedActionBoundary(input: {
+  projectRoot: string;
+  expectedDigest: string;
+  confirmation: string;
+  actor: string;
+  configPath?: string;
+  now?: string;
+}): Promise<ActionBoundaryActivation> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const status = await guidedActionStatus(projectRoot);
+  const draft = status.action_boundary.draft;
+  if (!draft) throw new Error("ACTION_BOUNDARY_DRAFT_REQUIRED: no disabled Action Boundary revision is ready to activate.");
+  if (draft.digest !== input.expectedDigest) {
+    throw new Error("ACTION_BOUNDARY_DRAFT_CHANGED: reload and review the exact current Action Boundary revision.");
+  }
+  if (input.confirmation !== `ACTIVATE ${draft.digest}`) {
+    throw new Error(`ACTION_BOUNDARY_CONFIRMATION_REQUIRED: enter ACTIVATE ${draft.digest}.`);
+  }
+  const activeContracts = new Map(status.activations.map((activation) => [
+    activation.capability,
+    activation.contract_digest,
+  ]));
+  const draftContracts = new Map(draft.authority.capabilities.map((capability) => [
+    capability.capability,
+    capability.contract_digest,
+  ]));
+  const exactActiveSet = activeContracts.size === draftContracts.size
+    && [...draftContracts].every(([capability, digest]) => activeContracts.get(capability) === digest);
+  if (!exactActiveSet) {
+    throw new Error(
+      "ACTION_BOUNDARY_ACTION_REVIEW_REQUIRED: this boundary also contains a disabled action revision; activate that rehearsed action instead so capability and boundary authority publish together.",
+    );
+  }
+  const configPaths = [...new Set(status.activations.map((activation) =>
+    containedProjectPath(projectRoot, activation.config_path)))];
+  const configPath = input.configPath
+    ? path.resolve(input.configPath)
+    : configPaths.length === 1
+      ? configPaths[0]!
+      : undefined;
+  if (!configPath || (configPaths.length && !configPaths.includes(configPath))) {
+    throw new Error("ACTION_BOUNDARY_CONFIG_REQUIRED: active action revisions do not identify one common managed runtime config.");
+  }
+  const previousConfig = await fs.readFile(configPath, "utf8");
+  const nextConfig = JSON.parse(previousConfig) as Record<string, unknown>;
+  nextConfig.action_boundary = {
+    schema_version: draft.schema_version,
+    name: draft.name,
+    digest: draft.digest,
+    authority: draft.authority,
+  };
+  await validateExpandedGuidedConfig(nextConfig, configPath, "ACTION_BOUNDARY_CONFIG_INVALID");
+  let publication: Awaited<ReturnType<typeof publishActionBoundaryActivation>> | undefined;
+  try {
+    publication = await publishActionBoundaryActivation({
+      projectRoot,
+      draft,
+      actor: reviewedText(input.actor, "operator identity", 128),
+      ...(input.now ? { now: input.now } : {}),
+    });
+    // Runtime configuration is the effective authority and remains the final
+    // publication step for a limit-only Action Boundary revision.
+    await writeAtomic(configPath, json(nextConfig));
+    await completeActionBoundaryPublication(projectRoot, draft.name);
+    return publication.activation;
+  } catch (error) {
+    await publication?.rollback().catch(() => undefined);
+    await writeAtomic(configPath, previousConfig).catch(() => undefined);
+    await writeActionBoundaryDraft(projectRoot, draft).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function assertActionBoundarySharedLimitsMatchContracts(
+  projectRoot: string,
+  boundary: ActionBoundaryDraft | ActionBoundaryActivation,
+  limits: ActionBoundarySharedLimitV1[],
+): Promise<void> {
+  // Protocol normalization validates ids, scopes, windows, and capability
+  // references. Rebuilding a disabled revision also makes those checks apply
+  // before any managed artifact changes.
+  const normalized = reviseActionBoundaryDraft({ current: boundary, sharedLimits: limits });
+  for (const limit of normalized.authority.shared_limits) {
+    if (limit.kind !== "total" || !limit.field) continue;
+    const applicable = limit.capability
+      ? normalized.authority.capabilities.filter((candidate) => candidate.capability === limit.capability)
+      : normalized.authority.capabilities;
+    for (const reference of applicable) {
+      const contract = await readActionBoundaryReferencedContract(projectRoot, boundary, reference);
+      if (canonicalJsonDigest(contract) !== reference.contract_digest) {
+        throw new Error(`ACTION_BOUNDARY_ACTIVE_CONTRACT_CHANGED: ${reference.capability} no longer matches its reviewed digest.`);
+      }
+      const capability = contract.capabilities.find((candidate) => candidate.name === reference.capability);
+      if (!capability?.proposal || !guidedProposalPatchFieldIsNumeric(capability, limit.field)) {
+        throw new Error(
+          `ACTION_BOUNDARY_TOTAL_FIELD_NOT_NUMERIC: ${limit.id} requires ${reference.capability}.${limit.field} to be a reviewed numeric patch field.`,
+        );
+      }
+    }
+  }
+}
+
+async function readActionBoundaryReferencedContract(
+  projectRoot: string,
+  boundary: ActionBoundaryDraft | ActionBoundaryActivation,
+  reference: ActionBoundaryCapabilityReference,
+): Promise<SynapsorContract> {
+  const immutablePath = containedProjectPath(projectRoot, reference.contract_path);
+  try {
+    return JSON.parse(await fs.readFile(immutablePath, "utf8")) as SynapsorContract;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT" || boundary.state !== "disabled") throw error;
+  }
+
+  // A disabled Action Boundary names the immutable path that activation will
+  // publish. Until then, validate against the exact-digest managed draft.
+  const draft = await readGuidedActionDraft(projectRoot, reference.capability);
+  if (draft.contract_digest !== reference.contract_digest) {
+    throw new Error(`ACTION_BOUNDARY_DRAFT_CHANGED: ${reference.capability} no longer matches its disabled Action Boundary digest.`);
+  }
+  return JSON.parse(
+    await fs.readFile(containedProjectPath(projectRoot, draft.contract_path), "utf8"),
+  ) as SynapsorContract;
+}
+
+function guidedProposalPatchFieldIsNumeric(
+  capability: SynapsorContract["capabilities"][number],
+  field: string,
+): boolean {
+  if (!capability.proposal || !isRecord(capability.proposal.patch)) return false;
+  const binding = capability.proposal.patch[field];
+  if (!isRecord(binding)) return false;
+  if (typeof binding.fixed === "number" && Number.isFinite(binding.fixed)) return true;
+  if (typeof binding.from_arg === "string") {
+    const argument = capability.args?.[binding.from_arg];
+    return argument?.type === "number";
+  }
+  return false;
+}
+
+async function synthesizedLegacyActionBoundaryStatus(
+  projectRoot: string,
+  activations: GuidedActionActivation[],
+): Promise<ActionBoundaryStatus> {
+  const fallbackBoundary = await loadActivatedExplorationBoundary(projectRoot);
+  const candidates = await Promise.all(activations.map((activation) =>
+    actionBoundaryCandidateForActivation(projectRoot, activation, fallbackBoundary)));
+  const draft = buildActionBoundaryDraft({
+    candidates,
+    now: activations.map((activation) => activation.activated_at).sort().at(-1),
+  });
+  const active: ActionBoundaryActivation = {
+    schema_version: draft.schema_version,
+    state: "active",
+    name: draft.name,
+    label: draft.label,
+    job_intent: draft.job_intent,
+    authority: draft.authority,
+    digest: draft.digest,
+    actor: "legacy_action_migration",
+    activated_at: activations.map((activation) => activation.activated_at).sort().at(-1)!,
+  };
+  return {
+    active,
+    synthesized_from_legacy_actions: true,
+  };
+}
+
+async function prospectiveActionBoundaryDraft(input: {
+  projectRoot: string;
+  boundary: ActivatedExplorationBoundary;
+  candidateDraft: GuidedActionDraft;
+  candidateContract: SynapsorContract;
+  jobIntent?: string;
+  now?: string;
+}): Promise<ActionBoundaryDraft> {
+  const status = await guidedActionStatus(input.projectRoot);
+  const existingCandidates = await Promise.all(status.activations
+    .filter((activation) => activation.capability !== input.candidateDraft.capability)
+    .map((activation) => actionBoundaryCandidateForActivation(
+      input.projectRoot,
+      activation,
+      input.boundary,
+    )));
+  const candidate = actionBoundaryCandidate({
+    draft: input.candidateDraft,
+    contract: input.candidateContract,
+    boundary: input.boundary,
+    contractPath: futureGuidedActionContractPath(
+      input.projectRoot,
+      input.candidateDraft.capability,
+      input.candidateDraft.contract_digest,
+    ),
+  });
+  const current = status.action_boundary.draft ?? status.action_boundary.active;
+  return buildActionBoundaryDraft({
+    name: current?.name ?? DEFAULT_ACTION_BOUNDARY_NAME,
+    label: current?.label ?? "Default action boundary",
+    jobIntent: current?.job_intent
+      ?? input.jobIntent
+      ?? "Allow the reviewed agent actions collected for this project.",
+    candidates: [...existingCandidates, candidate],
+    sharedLimits: current?.authority.shared_limits ?? [],
+    ...(input.now ? { now: input.now } : {}),
+  });
+}
+
+async function actionBoundaryCandidateForActivation(
+  projectRoot: string,
+  activation: GuidedActionActivation,
+  fallbackBoundary: ActivatedExplorationBoundary,
+): Promise<ActionBoundaryCandidate> {
+  const contract = JSON.parse(
+    await fs.readFile(containedProjectPath(projectRoot, activation.contract_path), "utf8"),
+  ) as SynapsorContract;
+  if (canonicalJsonDigest(contract) !== activation.contract_digest) {
+    throw new Error(`ACTION_BOUNDARY_ACTIVE_CONTRACT_CHANGED: ${activation.capability} no longer matches its active digest.`);
+  }
+  const boundary = activation.boundary_name && activation.boundary_digest
+    ? await loadActivatedExplorationBoundary(projectRoot, {
+        name: activation.boundary_name,
+        digest: activation.boundary_digest,
+      })
+    : fallbackBoundary;
+  return actionBoundaryCandidate({
+    draft: {
+      schema_version: GUIDED_ACTION_VERSION,
+      state: "disabled",
+      capability: activation.capability,
+      source: activation.source ?? boundary.source,
+      resource: activation.resource ?? actionCapabilityResource(contract, activation.capability),
+      operation: activation.operation ?? actionCapabilityOperation(contract, activation.capability),
+      boundary_name: activation.boundary_name ?? boundary.pack.name,
+      boundary_digest: activation.boundary_digest ?? boundary.activation.digest,
+      generation_lock_fingerprint: activation.generation_lock_fingerprint ?? boundary.generation_lock_fingerprint,
+      contract_digest: activation.contract_digest,
+      dsl_path: activation.dsl_path,
+      contract_path: activation.contract_path,
+      tests_path: activation.tests_path,
+      review_path: activation.review_path,
+      write_url_env: "SYNAPSOR_DATABASE_WRITE_URL",
+      receipt_mode: "runner_ledger",
+      authority_posture: activation.authority_posture,
+      writeback_mode: activation.writeback_mode,
+      ...(activation.writeback_executor ? { writeback_executor: activation.writeback_executor } : {}),
+      supervised_worker_execution: activation.authority_posture === "supervised_execution",
+      design_path: activation.design_path,
+      runtime_config_path: activation.config_path,
+      created_at: activation.activated_at,
+    },
+    contract,
+    boundary,
+    contractPath: activation.contract_path,
+  });
+}
+
+function actionBoundaryCandidate(input: {
+  draft: GuidedActionDraft;
+  contract: SynapsorContract;
+  boundary: ActivatedExplorationBoundary;
+  contractPath: string;
+}): ActionBoundaryCandidate {
+  const capability = input.contract.capabilities.find((candidate) => candidate.name === input.draft.capability);
+  if (!capability?.proposal) {
+    throw new Error(`ACTION_BOUNDARY_CAPABILITY_MISSING: ${input.draft.capability} is not a proposal capability in its exact contract.`);
+  }
+  const approval = capability.proposal.approval ?? { mode: "human" as const };
+  const referencedPolicy = approval.policy
+    ? input.contract.policies?.find((policy) => policy.name === approval.policy)
+    : undefined;
+  const executionAuthority = {
+    authority_posture: input.draft.authority_posture,
+    writeback: capability.proposal.writeback ?? { mode: input.draft.writeback_mode },
+    execution: capability.proposal.execution ?? null,
+    worker_policy: input.draft.worker_policy ?? null,
+    receipt_mode: input.draft.receipt_mode,
+  };
+  return {
+    read_dependency: {
+      name: input.draft.boundary_name ?? input.boundary.pack.name,
+      source: input.draft.source,
+      digest: input.draft.boundary_digest,
+      generation_lock_fingerprint: input.draft.generation_lock_fingerprint,
+      trusted_context_fingerprint: guidedActionTrustedContextFingerprint(input.boundary),
+    },
+    capability: {
+      capability: input.draft.capability,
+      resource: input.draft.resource,
+      operation: input.draft.operation,
+      contract_digest: input.draft.contract_digest,
+      contract_path: input.contractPath,
+    },
+    approval_policy: {
+      capability: input.draft.capability,
+      mode: approval.mode === "policy" ? "policy" : "human",
+      authority: {
+        approval,
+        policy: referencedPolicy ?? null,
+      },
+    },
+    execution_profile: {
+      capability: input.draft.capability,
+      authority_posture: input.draft.authority_posture,
+      writeback_mode: input.draft.writeback_mode,
+      ...(input.draft.writeback_executor ? { writeback_executor: input.draft.writeback_executor } : {}),
+      authority: executionAuthority,
+    },
+  };
+}
+
+function guidedActionTrustedContextFingerprint(boundary: ActivatedExplorationBoundary): `sha256:${string}` {
+  return canonicalJsonDigest({
+    trusted_context: boundary.trusted_context,
+    organization_scope: boundary.organization_scope ?? null,
+  });
+}
+
+function futureGuidedActionContractPath(
+  projectRoot: string,
+  capability: string,
+  digest: `sha256:${string}`,
+): string {
+  return relativeProjectPath(projectRoot, path.join(
+    projectRoot,
+    GUIDED_ACTION_ROOT,
+    "revisions",
+    safeCapabilityFileName(capability),
+    digest.replace(/^sha256:/, ""),
+    "synapsor.contract.json",
+  ));
+}
+
+function actionCapabilityResource(contract: SynapsorContract, capabilityName: string): string {
+  const capability = contract.capabilities.find((candidate) => candidate.name === capabilityName);
+  const schema = capability?.subject.schema;
+  const table = capability?.subject.table;
+  if (!schema || !table) throw new Error(`ACTION_BOUNDARY_RESOURCE_MISSING: ${capabilityName} has no reviewed source resource.`);
+  return `${schema}.${table}`;
+}
+
+function actionCapabilityOperation(contract: SynapsorContract, capabilityName: string): GuidedActionOperation {
+  const capability = contract.capabilities.find((candidate) => candidate.name === capabilityName);
+  const operation = capability?.proposal?.operation?.kind;
+  if (operation !== "insert" && operation !== "update" && operation !== "delete") {
+    throw new Error(`ACTION_BOUNDARY_OPERATION_MISSING: ${capabilityName} has no reviewed write operation.`);
+  }
+  return operation;
 }
 
 async function otherActiveGuidedActionsRequireDirectSql(
@@ -982,28 +1693,44 @@ function emitGuidedActionDsl(input: {
   table: TableInfo;
 }): string {
   const { action, boundary, resource, table } = input;
-  const tenantKey = requireDirectWriteTenantKey(resource);
-  if (boundary.organization_scope) {
-    throw new Error(
-      "GUIDED_ACTION_SINGLE_ORGANIZATION_UNSUPPORTED: Safe Actions currently require a direct trusted tenant column; fixed-organization write authority is not inferred from Explore read authority.",
-    );
-  }
+  const organizationScope = boundary.organization_scope;
+  const tenantKey = organizationScope ? undefined : requireDirectWriteTenantKey(resource);
   const contextName = safeIdentifier(`guided_${safeCapabilityFileName(action.capability_name)}`);
   const lookupArgument = action.lookup_argument || `${singular(resource.table)}_id`;
-  const contextBindings = boundary.trusted_context.provider === "http_claims"
-    ? [
-        `  BIND tenant_id FROM HTTP_CLAIM ${safeBindingKey(boundary.trusted_context.tenant_claim!)} REQUIRED`,
-        `  BIND principal FROM HTTP_CLAIM ${safeBindingKey(boundary.trusted_context.principal_claim)} REQUIRED`,
-      ]
-    : [
-        `  BIND tenant_id FROM ENVIRONMENT ${safeIdentifier(boundary.trusted_context.tenant_env)} REQUIRED`,
-        `  BIND principal FROM ENVIRONMENT ${safeIdentifier(boundary.trusted_context.principal_env)} REQUIRED`,
-      ];
+  const principalBinding = resource.principal_key
+    ? boundary.trusted_context.provider === "http_claims"
+      ? `  BIND principal FROM HTTP_CLAIM ${safeBindingKey(boundary.trusted_context.principal_claim)} REQUIRED`
+      : `  BIND principal FROM ENVIRONMENT ${safeIdentifier(boundary.trusted_context.principal_env)} REQUIRED`
+    : undefined;
+  const tenantBinding = organizationScope
+    ? `  BIND tenant_id FROM REVIEWED_ORGANIZATION ${organizationScope.organization_id} REQUIRED`
+    : boundary.trusted_context.provider === "http_claims"
+      ? `  BIND tenant_id FROM HTTP_CLAIM ${safeBindingKey(boundary.trusted_context.tenant_claim!)} REQUIRED`
+      : `  BIND tenant_id FROM ENVIRONMENT ${safeIdentifier(boundary.trusted_context.tenant_env)} REQUIRED`;
+  const contextBindings = [tenantBinding, ...(principalBinding ? [principalBinding] : [])];
+  const actionOnlyReadFields = [
+    ...(action.operation === "insert"
+      ? []
+      : [resource.primary_key]),
+    ...action.patches.map((patch) => patch.column),
+    ...(action.auto_approval?.conditions
+      .filter((condition) => condition.source === "before")
+      .map((condition) => condition.field) ?? []),
+    ...(action.operation !== "insert" && action.conflict_column ? [action.conflict_column] : []),
+  ];
+  const actionReadFields = [...new Set([
+    ...resource.selectable_fields,
+    ...actionOnlyReadFields,
+  ])].filter((field) => !resource.kept_out_fields.includes(field));
+  const actionModelWithheldFields = [...new Set([
+    ...(resource.model_withheld_fields ?? []),
+    ...actionOnlyReadFields.filter((field) => !resource.selectable_fields.includes(field)),
+  ])].filter((field) => actionReadFields.includes(field));
   const lines = [
     `CREATE AGENT CONTEXT ${contextName}`,
     ...contextBindings,
     "  TENANT BINDING tenant_id",
-    "  PRINCIPAL BINDING principal",
+    ...(principalBinding ? ["  PRINCIPAL BINDING principal"] : []),
     "END",
     "",
     `CREATE CAPABILITY ${action.capability_name}`,
@@ -1013,7 +1740,7 @@ function emitGuidedActionDsl(input: {
     `  SOURCE ${safeIdentifier(boundary.source)}`,
     `  ON ${safeIdentifier(resource.schema)}.${safeIdentifier(resource.table)}`,
     `  PRIMARY KEY ${safeIdentifier(resource.primary_key)}`,
-    `  TENANT KEY ${safeIdentifier(tenantKey)}`,
+    ...(tenantKey ? [`  TENANT KEY ${safeIdentifier(tenantKey)}`] : []),
     ...(resource.principal_key ? [`  PRINCIPAL SCOPE KEY ${safeIdentifier(resource.principal_key)}`] : []),
     ...(action.operation === "insert" ? [] : [
       `  CONFLICT GUARD ${safeIdentifier(action.conflict_column!)}`,
@@ -1025,13 +1752,19 @@ function emitGuidedActionDsl(input: {
     ...action.patches
       .filter((patch) => patch.value_source === "argument")
       .map((patch) => argumentDsl(patch.argument_name!, requireColumn(table, patch.column), patch)),
-    `  ALLOW READ ${resource.selectable_fields.map(safeIdentifier).join(", ")}`,
+    `  ALLOW READ ${actionReadFields.map(safeIdentifier).join(", ")}`,
+    ...(actionModelWithheldFields.length
+      ? [`  MODEL WITHHELD ${actionModelWithheldFields.map(safeIdentifier).join(", ")}`]
+      : []),
     ...(resource.kept_out_fields.length ? [`  KEEP OUT ${resource.kept_out_fields.map(safeIdentifier).join(", ")}`] : []),
     "  REQUIRE EVIDENCE",
     "  MAX ROWS 1",
     `  PROPOSE ACTION ${safeIdentifier(lastCapabilitySegment(action.capability_name))} ${action.operation.toUpperCase()}`,
+    ...(organizationScope
+      ? [`  ACTION SINGLE ORGANIZATION '${escapeDslString(organizationScope.organization_id)}' ACKNOWLEDGED`]
+      : []),
     ...(action.operation === "insert" ? [
-      `  DEDUP KEY ${safeIdentifier(tenantKey)} = TRUSTED TENANT, ${safeIdentifier(action.dedup_proposal_column!)} = PROPOSAL ID`,
+      `  DEDUP KEY ${safeIdentifier(tenantKey!)} = TRUSTED TENANT, ${safeIdentifier(action.dedup_proposal_column!)} = PROPOSAL ID`,
     ] : []),
     ...(action.operation === "delete" ? [] : [
       `  ALLOW WRITE ${action.patches.map((patch) => safeIdentifier(patch.column)).join(", ")}`,
@@ -1045,9 +1778,11 @@ function emitGuidedActionDsl(input: {
     `  APPROVAL ROLE ${safeIdentifier(action.approval_role)}`,
     ...(action.required_approvals > 1 ? [`  REQUIRE ${action.required_approvals} APPROVALS`] : []),
     ...(action.auto_approval ? [
-      `  AUTO APPROVE WHEN ${safeIdentifier(action.auto_approval.field)} <= ${action.auto_approval.maximum}`,
+      ...action.auto_approval.conditions.map(autoApprovalConditionDsl),
       `  LIMIT ${action.auto_approval.max_per_day} PER DAY`,
-      `  LIMIT TOTAL ${action.auto_approval.max_total_per_day} PER DAY`,
+      ...(action.auto_approval.max_total_per_day !== undefined
+        ? [`  LIMIT TOTAL ${action.auto_approval.max_total_per_day} OF ${safeIdentifier(action.auto_approval.total_field!)} PER DAY`]
+        : []),
     ] : []),
     ...(action.authority.supervised_worker_execution ? ["  ALLOW SUPERVISED WORKER APPLY"] : []),
     guidedActionWritebackDsl(action.authority),
@@ -1063,6 +1798,122 @@ function guidedActionWritebackDsl(authority: ResolvedActionAuthority): string {
   if (authority.writeback.mode === "direct_sql") return "  WRITEBACK DIRECT SQL";
   if (authority.writeback.mode === "cloud_worker") return "  WRITEBACK CLOUD WORKER";
   return `  WRITEBACK APP HANDLER EXECUTOR ${safeIdentifier(authority.writeback.executor!)}`;
+}
+
+type NormalizedGuidedAutoApproval = {
+  conditions: Array<Required<Pick<GuidedActionAutoApprovalCondition, "source" | "field" | "operator">> & {
+    value?: JsonScalar;
+    values?: JsonScalar[];
+  }>;
+  max_per_day: number;
+  max_total_per_day?: number;
+  total_field?: string;
+};
+
+function normalizeGuidedAutoApproval(
+  input: GuidedActionAutoApprovalInput | undefined,
+  patches: Array<ReturnType<typeof normalizePatch>>,
+): NormalizedGuidedAutoApproval | undefined {
+  if (!input) return undefined;
+  const legacy = input.field !== undefined || input.maximum !== undefined;
+  if (legacy && input.conditions?.length) {
+    throw new Error("GUIDED_ACTION_AUTO_APPROVAL_SHAPE_CONFLICT: use legacy field/maximum or typed conditions, not both.");
+  }
+  let rawConditions: GuidedActionAutoApprovalCondition[];
+  if (legacy) {
+    if (!input.field || typeof input.maximum !== "number" || !Number.isFinite(input.maximum)) {
+      throw new Error("GUIDED_ACTION_AUTO_APPROVAL_FIELD_INVALID: legacy auto-approval requires one field and finite maximum.");
+    }
+    rawConditions = [{ field: input.field, operator: "lte", value: input.maximum }];
+  } else {
+    rawConditions = input.conditions ?? [];
+  }
+  if (rawConditions.length < 1 || rawConditions.length > 16) {
+    throw new Error("GUIDED_ACTION_AUTO_APPROVAL_CONDITION_COUNT: use 1 through 16 deterministic conditions.");
+  }
+  const seen = new Set<string>();
+  const conditions = rawConditions.map((condition) => {
+    const source = condition.source ?? "patch";
+    const field = safeIdentifier(condition.field);
+    const key = `${source}:${field}:${condition.operator}`;
+    if (seen.has(key)) throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_CONDITION_DUPLICATE: ${key}.`);
+    seen.add(key);
+    if (source !== "patch" && source !== "before") {
+      throw new Error("GUIDED_ACTION_AUTO_APPROVAL_SOURCE_INVALID: conditions may read patch or before values only.");
+    }
+    if (condition.operator === "in") {
+      if (!Array.isArray(condition.values) || condition.values.length < 1 || condition.values.length > 64) {
+        throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_VALUES_INVALID: ${field} IN requires 1 through 64 reviewed values.`);
+      }
+      condition.values.forEach((value) => assertJsonScalar(value, `auto-approval ${field} value`));
+      return { source, field, operator: "in" as const, values: [...condition.values] };
+    }
+    if (condition.operator !== "lte" && condition.operator !== "gte" && condition.operator !== "eq" && condition.operator !== "max_length") {
+      throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_OPERATOR_INVALID: ${condition.operator}.`);
+    }
+    if (!Object.prototype.hasOwnProperty.call(condition, "value")) {
+      throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_VALUE_REQUIRED: ${source}.${field} ${condition.operator}.`);
+    }
+    assertJsonScalar(condition.value, `auto-approval ${field} value`);
+    if ((condition.operator === "lte" || condition.operator === "gte" || condition.operator === "max_length")
+      && (typeof condition.value !== "number" || !Number.isFinite(condition.value))) {
+      throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_NUMERIC_VALUE_REQUIRED: ${source}.${field} ${condition.operator}.`);
+    }
+    return { source, field, operator: condition.operator, value: condition.value };
+  });
+  const modelControlledFields = patches
+    .filter((patch) => patch.value_source === "argument")
+    .map((patch) => patch.column);
+  for (const field of modelControlledFields) {
+    if (!conditions.some((condition) => condition.source === "patch" && condition.field === field)) {
+      throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_FIELD_UNCOVERED: model-controlled patch ${field} needs an explicit policy condition.`);
+    }
+  }
+  if (!positiveInteger(input.max_per_day)) {
+    throw new Error("GUIDED_ACTION_AUTO_APPROVAL_LIMIT_REQUIRED: max_per_day must be a positive integer.");
+  }
+  let totalField = input.total_field ? safeIdentifier(input.total_field) : undefined;
+  if (input.max_total_per_day !== undefined) {
+    if (!positiveInteger(input.max_total_per_day)) {
+      throw new Error("GUIDED_ACTION_AUTO_APPROVAL_TOTAL_INVALID: max_total_per_day must be a positive integer.");
+    }
+    if (!totalField) {
+      const numericFields = [...new Set(conditions
+        .filter((condition) => condition.source === "patch" && (condition.operator === "lte" || condition.operator === "gte"))
+        .map((condition) => condition.field))];
+      if (numericFields.length !== 1) {
+        throw new Error("GUIDED_ACTION_AUTO_APPROVAL_TOTAL_FIELD_REQUIRED: choose one numeric patch field for the aggregate circuit breaker.");
+      }
+      [totalField] = numericFields;
+    }
+  } else if (totalField) {
+    throw new Error("GUIDED_ACTION_AUTO_APPROVAL_TOTAL_REQUIRED: total_field requires max_total_per_day.");
+  }
+  return {
+    conditions,
+    max_per_day: input.max_per_day,
+    ...(input.max_total_per_day !== undefined ? { max_total_per_day: input.max_total_per_day } : {}),
+    ...(totalField ? { total_field: totalField } : {}),
+  };
+}
+
+function autoApprovalConditionDsl(condition: NormalizedGuidedAutoApproval["conditions"][number]): string {
+  const prefix = condition.source === "before" ? "CURRENT " : "";
+  if (condition.operator === "in") {
+    return `  AUTO APPROVE WHEN ${prefix}${safeIdentifier(condition.field)} IN (${condition.values!.map(dslLiteral).join(", ")})`;
+  }
+  if (condition.operator === "max_length") {
+    return `  AUTO APPROVE WHEN ${prefix}${safeIdentifier(condition.field)} LENGTH <= ${condition.value}`;
+  }
+  const operator = condition.operator === "lte" ? "<=" : condition.operator === "gte" ? ">=" : "=";
+  return `  AUTO APPROVE WHEN ${prefix}${safeIdentifier(condition.field)} ${operator} ${dslLiteral(condition.value)}`;
+}
+
+function assertJsonScalar(value: unknown, label: string): asserts value is JsonScalar {
+  if (value !== null && typeof value !== "string" && typeof value !== "boolean"
+    && (typeof value !== "number" || !Number.isFinite(value))) {
+    throw new Error(`GUIDED_ACTION_LITERAL_INVALID: ${label} must be a finite JSON scalar.`);
+  }
 }
 
 function normalizeAction(
@@ -1111,7 +1962,8 @@ function normalizeAction(
   if (input.reversible && input.version_advance !== "integer_increment") {
     throw new Error("GUIDED_ACTION_REVERSIBLE_VERSION_REQUIRED: reversible UPDATE requires exact integer version advancement.");
   }
-  if (input.reversible && input.auto_approval) {
+  const autoApproval = normalizeGuidedAutoApproval(input.auto_approval, patches);
+  if (input.reversible && autoApproval) {
     throw new Error("GUIDED_ACTION_REVERSIBLE_AUTO_APPROVAL_FORBIDDEN: reviewed compensation requires independent human approval.");
   }
   if (authority.supervised_worker_execution && input.reversible) {
@@ -1120,10 +1972,10 @@ function normalizeAction(
   if (authority.supervised_worker_execution && operation === "delete") {
     throw new Error("GUIDED_ACTION_DELETE_SUPERVISED_WORKER_FORBIDDEN: hard DELETE remains outside supervised automatic execution.");
   }
-  if (input.auto_approval && operation === "delete") {
+  if (autoApproval && operation === "delete") {
     throw new Error("GUIDED_ACTION_DELETE_AUTO_APPROVAL_FORBIDDEN: hard DELETE always requires human review.");
   }
-  if (input.auto_approval && requiredApprovals > 1) {
+  if (autoApproval && requiredApprovals > 1) {
     throw new Error("GUIDED_ACTION_QUORUM_AUTO_APPROVAL_FORBIDDEN: a multi-reviewer quorum cannot be presented as immediate policy completion.");
   }
   if (input.reversible && authority.writeback.mode !== "direct_sql") {
@@ -1132,19 +1984,8 @@ function normalizeAction(
   if (operation === "delete" && input.delete_confirmation !== `DELETE ${input.resource}`) {
     throw new Error(`GUIDED_ACTION_DELETE_CONFIRMATION_REQUIRED: enter DELETE ${input.resource}.`);
   }
-  if (input.auto_approval) {
-    const patch = patches.find((candidate) => candidate.column === input.auto_approval!.field);
-    if (!patch || patch.value_source !== "argument" || !Number.isFinite(patch.minimum) || !Number.isFinite(patch.maximum)) {
-      throw new Error("GUIDED_ACTION_AUTO_APPROVAL_FIELD_INVALID: auto-approval must use one bounded numeric argument patch.");
-    }
-    if (!Number.isFinite(input.auto_approval.maximum)
-      || input.auto_approval.maximum < patch.minimum!
-      || input.auto_approval.maximum > patch.maximum!) {
-      throw new Error("GUIDED_ACTION_AUTO_APPROVAL_BOUND_INVALID: policy maximum must be within the reviewed numeric patch range.");
-    }
-    if (!positiveInteger(input.auto_approval.max_per_day) || !positiveInteger(input.auto_approval.max_total_per_day)) {
-      throw new Error("GUIDED_ACTION_AUTO_APPROVAL_LIMIT_REQUIRED: set positive per-day count and aggregate-value circuit breakers.");
-    }
+  if (autoApproval && !positiveInteger(autoApproval.max_per_day)) {
+    throw new Error("GUIDED_ACTION_AUTO_APPROVAL_LIMIT_REQUIRED: set a positive per-day count circuit breaker.");
   }
   return {
     ...input,
@@ -1159,7 +2000,7 @@ function normalizeAction(
     approval_role: approvalRole,
     required_approvals: requiredApprovals,
     authority,
-    auto_approval: input.auto_approval,
+    auto_approval: autoApproval,
     supervised_worker_execution: authority.supervised_worker_execution,
     worker_policy: workerPolicy,
     reversible: input.reversible === true,
@@ -1248,13 +2089,18 @@ function normalizePatch(input: GuidedActionPatchInput): GuidedActionPatchInput &
 
 function validateActionAgainstSource(
   action: ReturnType<typeof normalizeAction>,
+  boundary: ActivatedExplorationBoundary,
   resource: ActivatedExplorationBoundary["pack"]["resources"][number],
   table: TableInfo,
 ): void {
-  const tenantKey = requireDirectWriteTenantKey(resource);
-  if (table.type !== "table" || !table.writable) throw new Error("GUIDED_ACTION_TABLE_REQUIRED: direct writeback requires an inspected writable base table.");
-  if (table.primary_key.length !== 1 || table.primary_key[0] !== resource.primary_key) {
-    throw new Error("GUIDED_ACTION_PRIMARY_KEY_MISMATCH: direct writeback requires the source-proven single-column primary key.");
+  const tenantKey = boundary.organization_scope ? undefined : requireDirectWriteTenantKey(resource);
+  if (table.type !== "table" || !table.writable) throw new Error("GUIDED_ACTION_TABLE_REQUIRED: a Safe Action requires an inspected writable base table, even when its first revision is proposal-only.");
+  if (!sourcePrimaryKeyMatchesReviewedWriteIdentity(table, {
+    primary_key: resource.primary_key,
+    ...(tenantKey ? { tenant_key: tenantKey } : {}),
+    ...(resource.principal_key ? { principal_scope_key: resource.principal_key } : {}),
+  })) {
+    throw new Error("GUIDED_ACTION_PRIMARY_KEY_MISMATCH: the reviewed row identity plus direct trusted scope must cover every source primary-key column.");
   }
   const conflict = action.conflict_column;
   if (conflict && !table.suggestions.conflict_columns.includes(conflict)) {
@@ -1264,35 +2110,130 @@ function validateActionAgainstSource(
     const column = requireColumn(table, patch.column);
     if (column.generated || column.identity) throw new Error(`GUIDED_ACTION_GENERATED_COLUMN_BLOCKED: ${patch.column} is database-generated.`);
     if (column.suggestions.immutable) throw new Error(`GUIDED_ACTION_IMMUTABLE_COLUMN_BLOCKED: ${patch.column} is inspected as immutable.`);
-    if (resource.kept_out_fields.includes(patch.column) || !resource.selectable_fields.includes(patch.column)) {
-      throw new Error(`GUIDED_ACTION_FIELD_NOT_REVIEWED: ${patch.column} is not raw-visible in the active reviewed boundary.`);
+    if (resource.kept_out_fields.includes(patch.column)) {
+      throw new Error(`GUIDED_ACTION_FIELD_NOT_REVIEWED: ${patch.column} is kept out by the reviewed structural catalog.`);
     }
     validatePatchType(patch, column, action.operation);
   }
+  if (action.auto_approval) {
+    validateGuidedAutoApprovalAgainstSource(action.auto_approval, action.patches, resource, table);
+  }
   if (action.operation === "insert") {
     const dedup = action.dedup_proposal_column;
-    if (!dedup || !insertIdentityCandidates(table, tenantKey).includes(dedup)) {
+    if (!tenantKey || !dedup || !insertIdentityCandidates(table, tenantKey).includes(dedup)) {
       throw new Error("GUIDED_ACTION_INSERT_DEDUP_UNPROVEN: select a primary/unique proposal-identity column proven by inspected metadata.");
     }
   }
-  const prerequisites = assessDirectWritePrerequisites(table, {
-    operation: action.operation,
-    primary_key: resource.primary_key,
-    tenant_key: tenantKey,
-    ...(resource.principal_key ? { principal_scope_key: resource.principal_key } : {}),
-    allowed_columns: action.patches.map((patch) => patch.column),
-    patch_columns: action.patches.map((patch) => patch.column),
-    ...(conflict ? { conflict_column: conflict } : {}),
-    ...(action.version_advance && conflict ? {
-      version_advance: { column: conflict, strategy: action.version_advance },
-    } : {}),
-    ...(action.operation === "insert" && action.dedup_proposal_column
-      ? { dedup_columns: [tenantKey, action.dedup_proposal_column] }
-      : {}),
-  });
-  const failures = prerequisites.filter((check) => check.level === "fail");
-  if (failures.length) {
-    throw new Error(`GUIDED_ACTION_SOURCE_PREREQUISITE_FAILED: ${failures.map((failure) => failure.message).join(" ")}`);
+  if (tenantKey) {
+    const prerequisites = assessDirectWritePrerequisites(table, {
+      operation: action.operation,
+      primary_key: resource.primary_key,
+      tenant_key: tenantKey,
+      ...(resource.principal_key ? { principal_scope_key: resource.principal_key } : {}),
+      allowed_columns: action.patches.map((patch) => patch.column),
+      patch_columns: action.patches.map((patch) => patch.column),
+      ...(conflict ? { conflict_column: conflict } : {}),
+      ...(action.version_advance && conflict ? {
+        version_advance: { column: conflict, strategy: action.version_advance },
+      } : {}),
+      ...(action.operation === "insert" && action.dedup_proposal_column
+        ? { dedup_columns: [tenantKey, action.dedup_proposal_column] }
+        : {}),
+    });
+    const failures = prerequisites.filter((check) => check.level === "fail");
+    if (failures.length) {
+      throw new Error(`GUIDED_ACTION_SOURCE_PREREQUISITE_FAILED: ${failures.map((failure) => failure.message).join(" ")}`);
+    }
+  }
+}
+
+function assertGuidedActionScopeAuthority(
+  action: ReturnType<typeof normalizeAction>,
+  boundary: ActivatedExplorationBoundary,
+  resource: ActivatedExplorationBoundary["pack"]["resources"][number],
+): void {
+  if (!boundary.organization_scope) {
+    requireDirectWriteTenantKey(resource);
+    return;
+  }
+  if (resource.tenant_key) {
+    throw new Error("GUIDED_ACTION_SCOPE_MODES_CONFLICT: a whole-organization boundary cannot also grant a direct tenant-column action scope.");
+  }
+  if (action.operation === "insert") {
+    throw new Error("GUIDED_ACTION_ORGANIZATION_INSERT_UNSUPPORTED: single-organization INSERT proposals still require source-enforced organization-safe deduplication.");
+  }
+  if (action.authority.posture !== "proposal_only"
+    || action.authority.writeback.mode !== "none"
+    || action.authority.supervised_worker_execution) {
+    throw new Error(
+      "GUIDED_ACTION_ORGANIZATION_PROPOSAL_ONLY: a reviewed whole-organization action can create proposals in this release, but executable writeback still requires a direct reviewed tenant column.",
+    );
+  }
+}
+
+function validateGuidedAutoApprovalAgainstSource(
+  policy: NormalizedGuidedAutoApproval,
+  patches: Array<ReturnType<typeof normalizePatch>>,
+  resource: ActivatedExplorationBoundary["pack"]["resources"][number],
+  table: TableInfo,
+): void {
+  for (const condition of policy.conditions) {
+    const column = requireColumn(table, condition.field);
+    if (condition.source === "patch" && !patches.some((patch) => patch.column === condition.field)) {
+      throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_FIELD_NOT_PATCHED: ${condition.field}.`);
+    }
+    if (condition.source === "before" && resource.kept_out_fields.includes(condition.field)) {
+      throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_BEFORE_FIELD_NOT_REVIEWED: ${condition.field} is kept out of the reviewed pre-change snapshot.`);
+    }
+    const values = condition.operator === "in" ? condition.values! : [condition.value];
+    if (condition.operator === "max_length") {
+      if (condition.source !== "patch" || isNumericType(column.data_type) || isBooleanType(column.data_type)
+        || !Number.isSafeInteger(condition.value) || Number(condition.value) < 1) {
+        throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_LENGTH_INVALID: ${condition.field} requires a positive reviewed string length.`);
+      }
+      const patch = patches.find((candidate) => candidate.column === condition.field);
+      if (!patch || patch.value_source !== "argument" || !patch.max_length || Number(condition.value) > patch.max_length) {
+        throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_LENGTH_EXCEEDS_BOUND: ${condition.field}.`);
+      }
+      continue;
+    }
+    if (condition.operator === "lte" || condition.operator === "gte") {
+      if (!isNumericType(column.data_type)) {
+        throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_FIELD_NOT_NUMERIC: ${condition.field}.`);
+      }
+      if (condition.source === "patch") {
+        const patch = patches.find((candidate) => candidate.column === condition.field)!;
+        const value = condition.value as number;
+        if (patch.value_source !== "argument" || !Number.isFinite(patch.minimum) || !Number.isFinite(patch.maximum)
+          || value < patch.minimum! || value > patch.maximum!) {
+          throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_BOUND_INVALID: ${condition.field} ${condition.operator} must stay within its reviewed numeric patch range.`);
+        }
+      }
+    }
+    for (const value of values) validateAutoApprovalLiteralForColumn(condition.field, value, column);
+  }
+  if (policy.total_field) {
+    const patch = patches.find((candidate) => candidate.column === policy.total_field);
+    const column = requireColumn(table, policy.total_field);
+    if (!patch || patch.value_source !== "argument" || !isNumericType(column.data_type)) {
+      throw new Error("GUIDED_ACTION_AUTO_APPROVAL_TOTAL_FIELD_INVALID: aggregate limits require one model-supplied numeric patch field.");
+    }
+  }
+}
+
+function validateAutoApprovalLiteralForColumn(field: string, value: JsonScalar | undefined, column: ColumnInfo): void {
+  if (value === null) return;
+  if (isNumericType(column.data_type) && typeof value !== "number") {
+    throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_TYPE_MISMATCH: ${field} requires numeric policy values.`);
+  }
+  if (isBooleanType(column.data_type) && typeof value !== "boolean") {
+    throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_TYPE_MISMATCH: ${field} requires boolean policy values.`);
+  }
+  if (!isNumericType(column.data_type) && !isBooleanType(column.data_type) && typeof value !== "string") {
+    throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_TYPE_MISMATCH: ${field} requires string policy values.`);
+  }
+  if (column.enum_values?.length && !column.enum_values.includes(String(value))) {
+    throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_ENUM_INVALID: ${field} must use ${column.enum_values.join(", ")}.`);
   }
 }
 
@@ -1356,6 +2297,7 @@ function configWithGuidedAction(input: {
   isolatedPreview?: boolean;
   draft: GuidedActionDraft;
   boundary: ActivatedExplorationBoundary;
+  actionBoundary: ActionBoundaryDraft;
 }): Record<string, unknown> {
   const config = structuredClone(input.config);
   config.mode = "review";
@@ -1380,6 +2322,12 @@ function configWithGuidedAction(input: {
   const relativeContract = relativeConfigPath(outputConfigDirectory, input.contractPath);
   if (!contracts.includes(relativeContract)) contracts.push(relativeContract);
   config.contracts = contracts;
+  config.action_boundary = {
+    schema_version: input.actionBoundary.schema_version,
+    name: input.actionBoundary.name,
+    digest: input.actionBoundary.digest,
+    authority: input.actionBoundary.authority,
+  };
   const sources = isRecord(config.sources) ? config.sources : {};
   const sourceName = input.draft.source;
   const source = isRecord(sources[sourceName]) ? structuredClone(sources[sourceName] as Record<string, unknown>) : undefined;
@@ -1390,10 +2338,13 @@ function configWithGuidedAction(input: {
     && JSON.stringify(source.database_scope) !== JSON.stringify(databaseScope)) {
     throw new Error("GUIDED_ACTION_DATABASE_SCOPE_MISMATCH: the source no longer matches the reviewed RLS session boundary.");
   }
+  // Proposal-only UPDATE and DELETE drafts still read one reviewed source row
+  // to freeze a conflict snapshot. Apply the reviewed RLS session settings to
+  // that read even though no writeback authority exists yet.
+  if (databaseScope) source.database_scope = databaseScope;
   if (input.draft.writeback_mode === "direct_sql") {
     source.read_only = false;
     source.write_url_env = input.draft.write_url_env;
-    if (databaseScope) source.database_scope = databaseScope;
     source.receipts = input.draft.receipt_mode === "runner_ledger"
       ? { authority: "runner_ledger" }
       : {
@@ -1540,30 +2491,153 @@ function guidedActionDatabaseScope(
   };
 }
 
+type GuidedActionBoundaryResolution = {
+  boundary: ActivatedExplorationBoundary;
+  state: "active" | "reviewed_pending";
+};
+
+type GuidedActionBoundarySelector = {
+  boundaryName?: string;
+  expectedDigest?: string;
+  allowReviewedPending?: boolean;
+};
+
 async function loadCurrentBoundary(
   projectRoot: string,
   inspection: SchemaInspection,
+  selector: Omit<GuidedActionBoundarySelector, "allowReviewedPending"> = {},
 ): Promise<ActivatedExplorationBoundary> {
-  const boundary = await loadActivatedExplorationBoundary(projectRoot);
-  const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
-  const comparison = compareGenerationLock(lock, inspection);
-  if (!comparison.current) throw new Error(`GUIDED_ACTION_SCHEMA_STALE: ${comparison.changes.join("; ")}.`);
-  if (canonicalJsonDigest(lock) !== boundary.generation_lock_fingerprint) {
-    throw new Error("GUIDED_ACTION_LOCK_MISMATCH: active boundary does not match the current generation lock.");
+  return (await loadGuidedActionBoundary(projectRoot, inspection, selector)).boundary;
+}
+
+async function loadGuidedActionBoundary(
+  projectRoot: string,
+  inspection: SchemaInspection | undefined,
+  selector: GuidedActionBoundarySelector = {},
+): Promise<GuidedActionBoundaryResolution> {
+  const active = await readOptionalGuidedActionActiveBoundary(projectRoot, selector);
+  const pending = await readReviewedPendingActionBoundary(projectRoot, selector);
+  if (selector.allowReviewedPending && pending
+    && (!active || active.activation.digest !== pending.activation.digest)) {
+    await assertGuidedActionBoundaryCurrent(projectRoot, pending, inspection);
+    return { boundary: pending, state: "reviewed_pending" };
   }
-  return boundary;
+  if (active) {
+    await assertGuidedActionBoundaryCurrent(projectRoot, active, inspection);
+    return { boundary: active, state: "active" };
+  }
+  if (pending) {
+    throw new Error(
+      `GUIDED_ACTION_READ_DEPENDENCY_INACTIVE: reviewed read boundary ${pending.pack.name} `
+      + `at ${pending.activation.digest} must be activated before this proposal action can be activated.`,
+    );
+  }
+  throw new Error(
+    selector.boundaryName
+      ? `GUIDED_ACTION_READ_BOUNDARY_REQUIRED: ${selector.boundaryName} is not a fully reviewed pending or active read boundary.`
+      : "GUIDED_ACTION_READ_BOUNDARY_REQUIRED: finish reviewing one read boundary before drafting a proposal action.",
+  );
+}
+
+async function readOptionalGuidedActionActiveBoundary(
+  projectRoot: string,
+  selector: GuidedActionBoundarySelector,
+): Promise<ActivatedExplorationBoundary | undefined> {
+  try {
+    return await loadActivatedExplorationBoundary(projectRoot, {
+      ...(selector.boundaryName ? { name: selector.boundaryName } : {}),
+      ...(selector.expectedDigest && /^sha256:[a-f0-9]{64}$/.test(selector.expectedDigest)
+        ? { digest: selector.expectedDigest as `sha256:${string}` }
+        : {}),
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function readReviewedPendingActionBoundary(
+  projectRoot: string,
+  selector: GuidedActionBoundarySelector,
+): Promise<ActivatedExplorationBoundary | undefined> {
+  const journey = await readGuidedOnboardingState(projectRoot);
+  const boundaryRoot = path.resolve(
+    projectRoot,
+    journey?.artifacts.boundary_root ?? "synapsor/generated",
+  );
+  const relativeRoot = path.relative(projectRoot, boundaryRoot);
+  if (relativeRoot.startsWith("..") || path.isAbsolute(relativeRoot)) {
+    throw new Error("GUIDED_ACTION_BOUNDARY_ROOT_INVALID: managed boundary root escapes the project.");
+  }
+  const draft = await fs.readFile(
+    path.join(boundaryRoot, "exploration-boundary.draft.json"),
+    "utf8",
+  ).then(
+    (value) => JSON.parse(value) as ExplorationBoundaryDraft,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    },
+  );
+  if (!draft) return undefined;
+  const progress = await readBoundaryReviewProgress(projectRoot, draft);
+  const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
+  if (selector.boundaryName && candidate.pack.name !== selector.boundaryName) return undefined;
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  if (selector.expectedDigest && selector.expectedDigest !== digest) return undefined;
+  if (!progress || progress.policy_migration.status === "review_required") return undefined;
+  const confirmed = new Set(progress.confirmed_decisions);
+  const decisions = boundaryReviewDecisions(candidate);
+  if (decisions.some((decision) => !confirmed.has(decision.decision))) return undefined;
+  const {
+    activation: _disabledActivation,
+    unresolved_decisions: _unresolvedDecisions,
+    ...authority
+  } = candidate;
+  return {
+    ...authority,
+    activation: {
+      state: "active",
+      digest,
+      actor: progress.confirmations.at(-1)?.actor ?? "reviewed-pending-boundary",
+      activated_at: progress.updated_at,
+      generation_lock_fingerprint: candidate.generation_lock_fingerprint,
+      reviewed_decisions: decisions.map((decision) => ({
+        decision: decision.decision,
+        confirmed: true as const,
+      })),
+    },
+  };
+}
+
+async function assertGuidedActionBoundaryCurrent(
+  projectRoot: string,
+  boundary: ActivatedExplorationBoundary,
+  inspection: SchemaInspection | undefined,
+): Promise<void> {
+  const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
+  if (inspection) {
+    const comparison = compareGenerationLock(lock, inspection);
+    if (!comparison.current) throw new Error(`GUIDED_ACTION_SCHEMA_STALE: ${comparison.changes.join("; ")}.`);
+  }
+  if (canonicalJsonDigest(lock) !== boundary.generation_lock_fingerprint) {
+    throw new Error("GUIDED_ACTION_LOCK_MISMATCH: reviewed boundary does not match the current generation lock.");
+  }
 }
 
 function guidedActionTests(
   action: ReturnType<typeof normalizeAction>,
   resource: ActivatedExplorationBoundary["pack"]["resources"][number],
+  organizationScope?: ActivatedExplorationBoundary["organization_scope"],
 ): Record<string, unknown> {
   return {
     schema_version: "synapsor.contract-tests.v1",
     capability: action.capability_name,
     tests: [
       { name: "tool creates proposal only", kind: "source_unchanged_before_approval", expected: "source_database_changed_false" },
-      { name: "trusted tenant required", kind: "scope", expected: resource.tenant_key },
+      organizationScope
+        ? { name: "reviewed organization fixed", kind: "scope", expected: organizationScope.organization_id }
+        : { name: "trusted tenant required", kind: "scope", expected: resource.tenant_key },
       ...(resource.principal_key ? [{ name: "cross-principal denied", kind: "cross_principal_deny", expected: "generic_miss" }] : []),
       { name: "kept-out fields absent", kind: "redaction", expected: resource.kept_out_fields },
       { name: "allowed columns exact", kind: "write_boundary", expected: action.patches.map((patch) => patch.column) },
@@ -1571,8 +2645,13 @@ function guidedActionTests(
       { name: "retry idempotent", kind: "idempotency", expected: "no_duplicate_mutation" },
       { name: "activation outside model", kind: "deny", expected: "no_model_activation_approval_or_apply" },
       ...(action.auto_approval ? [
-        { name: "policy threshold bounded", kind: "policy", expected: action.auto_approval.maximum },
-        { name: "daily policy circuits", kind: "policy_budget", expected: { count: action.auto_approval.max_per_day, total: action.auto_approval.max_total_per_day } },
+        { name: "policy conditions bounded", kind: "policy", expected: action.auto_approval.conditions },
+        { name: "daily policy circuits", kind: "policy_budget", expected: {
+          count: action.auto_approval.max_per_day,
+          ...(action.auto_approval.max_total_per_day !== undefined
+            ? { total: action.auto_approval.max_total_per_day, field: action.auto_approval.total_field }
+            : {}),
+        } },
       ] : []),
       ...(action.supervised_worker_execution ? [{
         name: "supervised execution remains dual opt-in",
@@ -1588,6 +2667,7 @@ function guidedActionReview(
   draft: GuidedActionDraft,
   action: ReturnType<typeof normalizeAction>,
   resource: ActivatedExplorationBoundary["pack"]["resources"][number],
+  organizationScope?: ActivatedExplorationBoundary["organization_scope"],
 ): string {
   return [
     `# Review ${draft.capability}`,
@@ -1595,7 +2675,9 @@ function guidedActionReview(
     "State: disabled",
     "",
     `Operation: ${action.operation.toUpperCase()} one ${resource.id}`,
-    `Trusted tenant column: ${resource.tenant_key}`,
+    ...(resource.tenant_key
+      ? [`Trusted tenant column: ${resource.tenant_key}`]
+      : [`Reviewed whole organization: ${organizationScope?.organization_id ?? "not configured"}; no tenant predicate is applied.`]),
     `Trusted principal column: ${resource.principal_key ?? "not configured"}`,
     `Allowed write fields: ${action.patches.map((patch) => patch.column).join(", ") || "none"}`,
     `Conflict guard: ${action.conflict_column ?? "not applicable"}`,
@@ -1651,13 +2733,7 @@ async function updateActionIndex(projectRoot: string, draft: GuidedActionDraft):
     ? existing.drafts.filter((item): item is GuidedActionDraft => isRecord(item) && typeof item.capability === "string" && item.capability !== draft.capability)
     : [];
   drafts.push(draft);
-  await writeAtomic(indexPath, json({
-    schema_version: GUIDED_ACTION_INDEX_VERSION,
-    state: "disabled",
-    inferred_write_authority: false,
-    drafts: drafts.sort((left, right) => left.capability.localeCompare(right.capability)),
-    next_action: "Preview the exact proposal effect, then activate only the reviewed digest.",
-  }));
+  await writeActionIndex(projectRoot, drafts);
 }
 
 async function removeActionFromIndex(projectRoot: string, capability: string): Promise<void> {
@@ -1672,6 +2748,11 @@ async function removeActionFromIndex(projectRoot: string, capability: string): P
     ? existing.drafts.filter((item): item is GuidedActionDraft =>
         isRecord(item) && typeof item.capability === "string" && item.capability !== capability)
     : [];
+  await writeActionIndex(projectRoot, drafts);
+}
+
+async function writeActionIndex(projectRoot: string, drafts: GuidedActionDraft[]): Promise<void> {
+  const indexPath = path.join(projectRoot, ".synapsor/guided-action-drafts.json");
   await writeAtomic(indexPath, json({
     schema_version: GUIDED_ACTION_INDEX_VERSION,
     state: "disabled",

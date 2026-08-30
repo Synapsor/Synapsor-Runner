@@ -1283,6 +1283,217 @@ describe("proposal store", () => {
     }
   });
 
+  it("enforces rolling Action Boundary limits across capabilities and boundary revisions", () => {
+    const store = new ProposalStore();
+    const boundaryName = "support_actions";
+    const firstDigest = `sha256:${"a".repeat(64)}` as const;
+    const nextDigest = `sha256:${"b".repeat(64)}` as const;
+    const limits = [
+      { id: "all_actions", kind: "count" as const, scope: "tenant" as const, maximum: 2, window_seconds: 3600 },
+      { id: "credit_magnitude", kind: "total" as const, scope: "tenant" as const, maximum: 500, window_seconds: 3600, field: "late_fee_cents" },
+    ];
+    const create = (id: string, action: string, objectId: string, amount: number) => {
+      const proposal = structuredClone(changeSet) as any;
+      proposal.proposal_id = id;
+      proposal.action = action;
+      proposal.scope.object_id = objectId;
+      proposal.source.primary_key.value = objectId;
+      proposal.patch.late_fee_cents = amount;
+      proposal.after.late_fee_cents = amount;
+      proposal.integrity.proposal_hash = `sha256:${id}`;
+      return store.createProposal(proposal);
+    };
+    try {
+      const first = create("wrp_boundary_1", "billing.propose_credit", "INV-BOUNDARY-1", 250);
+      const second = create("wrp_boundary_2", "support.propose_refund", "INV-BOUNDARY-2", -200);
+      const third = create("wrp_boundary_3", "billing.propose_adjustment", "INV-BOUNDARY-3", 100);
+      expect(store.approveProposalByPolicy(first.proposal_id, {
+        policy: "small_credit",
+        proposal_hash: first.proposal_hash,
+        proposal_version: first.proposal_version,
+        reason: "qualified",
+        action_boundary: { name: boundaryName, digest: firstDigest, limits },
+        now: "2026-07-12T01:00:00.000Z",
+      }).approved).toBe(true);
+      expect(store.approveProposalByPolicy(second.proposal_id, {
+        policy: "small_refund",
+        proposal_hash: second.proposal_hash,
+        proposal_version: second.proposal_version,
+        reason: "qualified",
+        action_boundary: { name: boundaryName, digest: firstDigest, limits },
+        now: "2026-07-12T01:10:00.000Z",
+      }).approved).toBe(true);
+
+      const deferred = store.approveProposalByPolicy(third.proposal_id, {
+        policy: "small_adjustment",
+        proposal_hash: third.proposal_hash,
+        proposal_version: third.proposal_version,
+        reason: "qualified",
+        // A replacement revision must not reset use of the stable boundary.
+        action_boundary: { name: boundaryName, digest: nextDigest, limits },
+        now: "2026-07-12T01:20:00.000Z",
+      });
+      expect(deferred).toMatchObject({ approved: false, proposal: { state: "pending_review" } });
+      expect(deferred.tripped_limits).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "all_actions", observed: 2, proposed: 1, projected: 3 }),
+        // The negative second patch counts by magnitude; it cannot cancel prior use.
+        expect.objectContaining({ id: "credit_magnitude", observed: 450, proposed: 100, projected: 550 }),
+      ]));
+      expect(store.approvals(first.proposal_id)).toEqual([
+        expect.objectContaining({ action_boundary_name: boundaryName, action_boundary_digest: firstDigest }),
+      ]);
+
+      const restored = new ProposalStore();
+      try {
+        expect(restored.importSharedLedgerEntries(store.sharedLedgerEntries()).skipped).toBe(0);
+        expect(restored.approvals(second.proposal_id)).toEqual([
+          expect.objectContaining({ action_boundary_name: boundaryName, action_boundary_digest: firstDigest }),
+        ]);
+      } finally {
+        restored.close();
+      }
+    } finally {
+      store.close();
+    }
+  });
+
+  it("isolates Action Boundary approval accounting by capability, principal, and object", () => {
+    const store = new ProposalStore();
+    const boundary = {
+      name: "support_actions",
+      digest: `sha256:${"c".repeat(64)}` as const,
+    };
+    const create = (input: {
+      id: string;
+      tenant?: string;
+      principal?: string;
+      action?: string;
+      objectId?: string;
+    }) => {
+      const proposal = structuredClone(changeSet) as any;
+      proposal.proposal_id = input.id;
+      proposal.action = input.action ?? "billing.waive_late_fee";
+      proposal.principal.id = input.principal ?? "support_agent_17";
+      proposal.scope.tenant_id = input.tenant ?? "acme";
+      proposal.scope.object_id = input.objectId ?? input.id;
+      proposal.source.primary_key.value = proposal.scope.object_id;
+      proposal.guards.tenant.value = proposal.scope.tenant_id;
+      proposal.integrity.proposal_hash = `sha256:${input.id}`;
+      return store.createProposal(proposal);
+    };
+    const approve = (
+      proposal: ReturnType<typeof create>,
+      limit: {
+        id: string;
+        kind: "count";
+        scope: "capability" | "tenant_principal" | "tenant_object";
+        maximum: number;
+        window_seconds: number;
+      },
+      now: string,
+    ) => store.approveProposalByPolicy(proposal.proposal_id, {
+      policy: "reviewed_policy",
+      proposal_hash: proposal.proposal_hash,
+      proposal_version: proposal.proposal_version,
+      reason: "qualified",
+      action_boundary: { ...boundary, limits: [limit] },
+      now,
+    });
+    try {
+      const capabilityLimit = {
+        id: "one_per_capability",
+        kind: "count" as const,
+        scope: "capability" as const,
+        maximum: 1,
+        window_seconds: 3600,
+      };
+      expect(approve(create({ id: "wrp_capability_a1", action: "billing.action_a" }), capabilityLimit, "2026-07-12T01:00:00.000Z").approved).toBe(true);
+      expect(approve(create({ id: "wrp_capability_b1", action: "billing.action_b" }), capabilityLimit, "2026-07-12T01:01:00.000Z").approved).toBe(true);
+      expect(approve(create({ id: "wrp_capability_a2", action: "billing.action_a" }), capabilityLimit, "2026-07-12T01:02:00.000Z")).toMatchObject({
+        approved: false,
+        tripped_limits: [expect.objectContaining({ id: "one_per_capability", observed: 1, projected: 2 })],
+      });
+
+      const principalLimit = {
+        id: "one_per_principal",
+        kind: "count" as const,
+        scope: "tenant_principal" as const,
+        maximum: 1,
+        window_seconds: 3600,
+      };
+      expect(approve(create({ id: "wrp_principal_a1", principal: "agent_a" }), principalLimit, "2026-07-12T02:00:00.000Z").approved).toBe(true);
+      expect(approve(create({ id: "wrp_principal_b1", principal: "agent_b" }), principalLimit, "2026-07-12T02:01:00.000Z").approved).toBe(true);
+      expect(approve(create({ id: "wrp_principal_a2", principal: "agent_a" }), principalLimit, "2026-07-12T02:02:00.000Z")).toMatchObject({
+        approved: false,
+        tripped_limits: [expect.objectContaining({ id: "one_per_principal", observed: 1, projected: 2 })],
+      });
+
+      const objectLimit = {
+        id: "one_per_object",
+        kind: "count" as const,
+        scope: "tenant_object" as const,
+        maximum: 1,
+        window_seconds: 3600,
+      };
+      expect(approve(create({ id: "wrp_object_a1", action: "billing.object_action_a", objectId: "INV-A" }), objectLimit, "2026-07-12T03:00:00.000Z").approved).toBe(true);
+      expect(approve(create({ id: "wrp_object_b1", action: "billing.object_action_b", objectId: "INV-B" }), objectLimit, "2026-07-12T03:01:00.000Z").approved).toBe(true);
+      expect(approve(create({ id: "wrp_object_a2", action: "billing.object_action_c", objectId: "INV-A" }), objectLimit, "2026-07-12T03:02:00.000Z")).toMatchObject({
+        approved: false,
+        tripped_limits: [expect.objectContaining({ id: "one_per_object", observed: 1, projected: 2 })],
+      });
+    } finally {
+      store.close();
+    }
+  });
+
+  it("fails closed when tenant-principal Action Boundary accounting lacks a trusted principal", () => {
+    const store = new ProposalStore();
+    try {
+      const proposal = structuredClone(changeSet) as any;
+      proposal.proposal_id = "wrp_missing_principal";
+      proposal.principal.id = "support_agent_17";
+      proposal.scope.object_id = "INV-MISSING-PRINCIPAL";
+      proposal.source.primary_key.value = proposal.scope.object_id;
+      proposal.integrity.proposal_hash = "sha256:wrp_missing_principal";
+      const stored = store.createProposal(proposal);
+      // Simulate an old or externally imported record whose trusted principal
+      // metadata is unavailable. The policy path must never treat it as a new
+      // independent principal bucket.
+      store.db.prepare("UPDATE proposals SET principal = NULL WHERE proposal_id = ?")
+        .run(stored.proposal_id);
+
+      const decision = store.approveProposalByPolicy(stored.proposal_id, {
+        policy: "reviewed_policy",
+        proposal_hash: stored.proposal_hash,
+        proposal_version: stored.proposal_version,
+        reason: "qualified",
+        action_boundary: {
+          name: "support_actions",
+          digest: `sha256:${"d".repeat(64)}`,
+          limits: [{
+            id: "principal_limit",
+            kind: "count",
+            scope: "tenant_principal",
+            maximum: 2,
+            window_seconds: 3600,
+          }],
+        },
+        now: "2026-07-12T04:00:00.000Z",
+      });
+
+      expect(decision).toMatchObject({
+        approved: false,
+        proposal: { state: "pending_review" },
+        tripped_limits: [expect.objectContaining({
+          id: "principal_limit",
+          reason: expect.stringContaining("no trusted principal"),
+        })],
+      });
+    } finally {
+      store.close();
+    }
+  });
+
   it("persists immutable proposals and append-only events", () => {
     const store = new ProposalStore();
     try {

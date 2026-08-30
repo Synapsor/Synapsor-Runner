@@ -29,7 +29,9 @@ describe("Auto Boundary Workbench renderer", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
 
-    expect(html).toContain("Compile read workload");
+    expect(html).toContain("Advanced read compiler");
+    expect(html).toContain("Question cards");
+    expect(html).toContain("What should the agent be able to answer?");
     expect(html).toContain("Visual aggregate builder");
     expect(html).toContain("Map questions with a model");
     expect(html).toContain("Allow structural metadata egress for this mapping");
@@ -38,7 +40,123 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(script).toContain('getJson("/api/boundary/workloads")');
     expect(script).toContain('post("/api/boundary/workloads/analyze"');
     expect(script).toContain('post("/api/boundary/workloads/apply"');
+    expect(script).toContain('readWorkloadMode="cards"');
+    expect(script).toContain("selected_card_ids");
+    expect(script).toContain("applyReadWorkloadCandidate(true)");
+    expect(html).toContain("Keep reviewed and prepare an action");
+    expect(script).toContain("keepReadReviewedDisabled");
+    expect(script).toContain("Authority remains inactive; opening proposal Action Assist");
     expect(script).toContain('setView("action")');
+  });
+
+  it("presents one job-level Read and Action Boundary flow with four separate authority stages", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+
+    expect(html).toContain("Delegate one job");
+    expect(html).toContain("Prepare one agent job");
+    expect(html).toContain("What job are you giving this agent?");
+    expect(html).toContain("Reviewed mapping catalog");
+    expect(html).toContain(".workload-layout>*{min-width:0}");
+    expect(html).toContain(".action-field{min-width:0;overflow-wrap:anywhere");
+    expect(html).toContain("Model + Runner row values and operations");
+    expect(html).toContain("Reviewed operations: ");
+    expect(html).toContain("Find an exact read");
+    expect(html).toContain("Job matches appear first. Nothing is selected automatically.");
+    expect(html).toContain("Approval starting point");
+    expect(html).toContain("Review deterministic rules when available");
+    expect(html).toContain("What may the agent propose?");
+    expect(html).toContain("Allow this job's structural metadata egress");
+    expect(html).toContain("One acknowledgement covers bounded read and action-set mapping");
+    expect(html).toContain("leave this blank and Runner asks the model to separate the job into distinct proposal actions");
+    expect(html).toContain("Explain or simulate deterministic approval");
+    expect(html).toContain("Every model-supplied change field receives an explicit reviewed condition");
+    expect(html).toContain("Maximum auto-approved proposals per day");
+    expect(script).toContain('operator:"gte"');
+    expect(script).toContain('operator:"lte"');
+    expect(script).toContain('operator:"in"');
+    expect(script).toContain('operator:"max_length"');
+    expect(script).toContain('source:"before"');
+    expect(script).toContain('getJson("/api/boundary/delegations")');
+    expect(script).toContain('post("/api/boundary/delegations/catalog"');
+    expect(script).toContain("selectedDelegationCardIds");
+    expect(script).toContain("delegationSelectedCards=new Map()");
+    expect(script).toContain('mode:"exact"');
+    expect(script).toContain('source:{kind:"operator_exact_plan"}');
+    expect(script).toContain('post("/api/boundary/delegations/record"');
+    expect(script).toContain('post("/api/actions/guided/suggest-set"');
+    const detectorStart = script.indexOf("function delegationJobRequestsActions");
+    const detectorEnd = script.indexOf("function updateDelegationModelSettings", detectorStart);
+    expect(detectorStart).toBeGreaterThanOrEqual(0);
+    expect(detectorEnd).toBeGreaterThan(detectorStart);
+    const detector = script.slice(detectorStart, detectorEnd);
+    expect(vm.runInNewContext(
+      `${detector}; delegationJobRequestsActions("Analyze inspections and propose creating a bounded maintenance request.")`,
+    )).toBe(true);
+    expect(vm.runInNewContext(
+      `${detector}; delegationJobRequestsActions("Analyze inspection workload by asset kind.")`,
+    )).toBe(false);
+    expect(script).not.toContain("\u0008");
+    expect(script).toContain("authoring_catalog:true");
+    expect(script).toContain("action_support:actionSupport");
+    expect(script).toContain("deterministic_approval_template");
+    expect(script).toContain("Every deterministic condition must pass");
+    expect(script).toContain("Runner discarded ");
+    expect(script).toContain("incomplete model policy proposal");
+    expect(script).toContain("come from exact reviewed field bounds");
+    expect(script).toContain("Hard delete is never eligible");
+    expect(script).toContain('selected==="deterministic"');
+    expect(script).toContain("Review Read Boundary to continue");
+    expect(script).toContain("selected:seed.decisions");
+    expect(script).toContain("first.preparation?.selected||first.selected");
+    expect(script).toContain("proposal intents saved");
+    expect(script).toContain("resumeQuickActionAfterReadReview=true");
+    expect(script).toContain("openFocusedActivationReview");
+    expect(script).toContain('action_boundary_job_intent:pending.job_intent');
+    expect(script).toContain('post("/api/actions/guided/policy/simulate"');
+    expect(html).toContain("No source query runs");
+    expect(html).toContain("<span>Explore</span>");
+    expect(script).toContain(':"delegation";');
+  });
+
+  it("makes proposal-only action cards and automatic rehearsal the Workbench default", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+
+    expect(html).toContain("Create one proposal action");
+    expect(html).toContain("Intent is used only to rank reviewed tables, operations, and fields");
+    expect(html).toContain("Advanced action design");
+    expect(script).toContain('post("/api/actions/guided/quick"');
+    expect(script).toContain("quickActionPreparation.action");
+    expect(script).toContain("Deterministic rules; fallback to human");
+    expect(script).toContain("action.auto_approval=structuredClone(template.auto_approval)");
+    expect(script).toContain("Binding trusted-scope rolling limits to the disabled Action Boundary");
+    expect(script).toContain('post("/api/actions/guided/boundary/limits"');
+    expect(script).toContain("any mismatch falls back to human review");
+    expect(script).toContain("draftPayload.preview_args");
+    expect(script).toContain("One rehearsal value needed");
+    expect(script).toContain("Runner cannot invent or sample an existing");
+    expect(script).toContain("rehearseQuickAction(draftPayload,lookupArgument)");
+    expect(script).toContain("Automatic rehearsal passed");
+    expect(script).toContain("Activate proposal-only action");
+    expect(script).toContain("Read and proposal authority are active");
+    expect(script).toContain('byId("action-quick-prepare").disabled=actionReady.length===0');
+    expect(script).toContain("No reviewed table has a source-proven proposal operation");
+  });
+
+  it("reviews trusted scope and shared Action Boundary limits through exact disabled revisions", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+
+    expect(html).toContain('id="action-boundary-editor"');
+    expect(script).toContain("Action Boundary controls");
+    expect(script).toContain("Trusted MCP scope");
+    expect(script).toContain("Each tenant + principal");
+    expect(script).toContain("Each tenant + object");
+    expect(script).toContain("Save disabled limit revision");
+    expect(script).toContain('post("/api/actions/guided/boundary/limits"');
+    expect(script).toContain('post("/api/actions/guided/boundary/activate"');
+    expect(script).toContain("No proposal will be approved or applied");
   });
 
   it("keeps the 1.7.0 reviewed-access controls discoverable in both Workbench and CLI", () => {
@@ -614,7 +732,7 @@ describe("Auto Boundary Workbench renderer", () => {
       html.indexOf('data-view="overview" type="button">Review data access'),
     );
     expect(html).not.toContain("3. Ask your data");
-    expect(html).toContain(':activeBoundary\n            ?"explore"\n            :"overview"');
+    expect(html).toContain(':activeBoundary\n            ?"explore"\n            :"delegation"');
     expect(html).toContain("Ask naturally. Runner holds the boundary.");
     expect(html).toContain("Your model can reason freely. Its database requests cannot.");
     expect(html).toContain("What can I ask?");
