@@ -201,6 +201,29 @@ describe("boundary review terminal picker", () => {
     expect(terminal.input.isRaw).toBe(false);
   });
 
+  it("opens exact-card editing with Runner recommendations already selected", async () => {
+    const terminal = fakeTerminal(84, 16);
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const cards = Array.from({ length: 8 }, (_, index) => ({
+      id: `question_${index + 1}`,
+      title: `Question ${index + 1}`,
+      detail: `Reviewed aggregate shape ${index + 1}`,
+      plan: { resource: `public.resource_${index + 1}` },
+    }));
+
+    const selection = session.selectReadWorkloadCards!(cards, {
+      initialSelectedIds: ["question_1", "question_3"],
+      recommendationLabel: "Runner preselected 2 explainable matches from reviewed metadata.",
+    });
+    await emitKey(terminal.input, { name: "return", sequence: "\r" });
+
+    await expect(selection).resolves.toEqual(["question_1", "question_3"]);
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("Runner preselected 2 explainable matches");
+    expect(rendered).toContain("2 selected");
+    expect(terminal.input.isRaw).toBe(false);
+  });
+
   it("keeps the shell buffer hidden while naming a boundary from access", async () => {
     const terminal = fakeTerminal(80, 24);
     const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);

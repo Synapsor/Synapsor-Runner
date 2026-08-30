@@ -470,7 +470,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	            <div class="split-actions"><div><h3>Representative reads</h3><p id="delegation-read-help">Choose the questions this job must answer. These are exact reviewed plan cards, not free-form authority.</p></div><label class="check"><input id="delegation-use-model" type="checkbox"><span><strong>Use a model to map wording</strong><small>Optional. Exact server validation still decides the candidate.</small></span></label></div>
 	            <div id="delegation-card-tools">
 	              <label class="field">Find an exact read<input id="delegation-card-search" type="search" autocomplete="off" placeholder="Search questions, tables, or fields"></label>
-	              <p id="delegation-card-count" class="muted">Job matches appear first. Nothing is selected automatically.</p>
+	              <div class="split-actions"><p id="delegation-card-count" class="muted">Describe the job to receive a bounded reviewed-metadata recommendation.</p><button id="delegation-use-recommended" class="secondary" type="button">Use Runner recommendation</button></div>
 	            </div>
 	            <div id="delegation-card-list" class="workload-card-list"><p>Loading reviewed questions...</p></div>
 	            <div id="delegation-model-settings" class="hidden">
@@ -486,7 +486,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          </section>
 	          <section class="band">
 	            <h3>Proposal actions</h3>
-	            <p>Optional clarification. With model mapping, leave this blank and Runner asks the model to separate the job into distinct proposal actions. Without a model, enter one business effect per line.</p>
+	            <p>Optional clarification. Leave this blank to reuse the change-oriented job above as one proposal intent. Add one business effect per line only when you need to split multiple actions; model mapping may also separate distinct effects.</p>
 	            <label class="field">What may the agent propose?<textarea id="delegation-action-intents" maxlength="4000" rows="4" placeholder="Propose changing one ticket from open to resolved."></textarea></label>
 	            <label class="field">Approval starting point<select id="delegation-approval-mode"><option value="review_policy">Review deterministic rules when available</option><option value="human">Human approves every proposal</option></select></label>
 	            <p class="muted">Deterministic rules remain disabled until you review their exact conditions and limits. Hard delete always uses human approval. Apply remains a separate trusted authority.</p>
@@ -1012,6 +1012,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let delegationData=null;
     let delegationPendingJob=null;
     let delegationSelectedCards=new Map();
+    let delegationCardSelectionEdited=false;
     let askStatus=null;
 	    let boundaryCatalog={schema_version:"synapsor.boundary-catalog.v1",table_count:0,relationship_count:0,boundaries:[]};
 	    let boundaryMermaid="flowchart LR";
@@ -7167,13 +7168,51 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     }
 
     function delegationCardScore(card,job){
-      const ignored=new Set(["a","an","and","for","from","in","of","on","one","the","to","with"]);
-      const normalize=word=>word.length>3&&word.endsWith("s")?word.slice(0,-1):word;
+      const ignored=new Set(["a","an","and","as","at","be","by","for","from","in","is","of","on","or","per","the","to","with","agent","allow","allowed","answer","auto","approve","propose","show","summarize"]);
+      const normalize=word=>word.length>4&&word.endsWith("ies")?word.slice(0,-3)+"y":word.length>3&&word.endsWith("s")&&!word.endsWith("ss")?word.slice(0,-1):word;
       const wanted=[...new Set(delegationCardWords(job).map(normalize).filter(word=>word.length>1&&!ignored.has(word)))];
       if(!wanted.length)return 0;
       const searchable=delegationCardWords([card.title,card.detail,JSON.stringify(card.plan||{})].join(" ")).map(normalize);
       const available=new Set(searchable);
-      return wanted.reduce((score,word)=>score+(available.has(word)?1:0),0);
+      let score=wanted.reduce((total,word)=>total+(available.has(word)?word.length>=8?4:word.length>=5?3:2:0),0);
+      const resourceWords=delegationCardWords(String(card.plan?.resource||"")).map(normalize);
+      if(resourceWords.some(word=>wanted.includes(word)))score+=6;
+      return score;
+    }
+
+    function delegationCardRecommendations(job,limit=4){
+      const scored=(delegationData?.plan_cards||[]).map((card,index)=>({card,index,score:delegationCardScore(card,job)})).filter(entry=>entry.score>0).sort((left,right)=>right.score-left.score||left.index-right.index);
+      const chosen=[];
+      const resources=new Set();
+      for(const entry of scored){
+        const resource=String(entry.card.plan?.resource||"");
+        if(resources.has(resource))continue;
+        chosen.push(entry.card);
+        resources.add(resource);
+        if(chosen.length>=limit)return chosen;
+      }
+      const chosenIds=new Set(chosen.map(card=>card.id));
+      for(const entry of scored){
+        if(chosen.length>=limit)break;
+        if(chosenIds.has(entry.card.id))continue;
+        chosen.push(entry.card);
+        chosenIds.add(entry.card.id);
+      }
+      return chosen;
+    }
+
+    function useDelegationRecommendations(){
+      const recommended=delegationCardRecommendations(byId("delegation-job").value.trim());
+      if(!recommended.length){
+        delegationSelectedCards.clear();
+        delegationCardSelectionEdited=false;
+        renderDelegationCards();
+        return false;
+      }
+      delegationSelectedCards=new Map(recommended.map(card=>[card.id,card]));
+      delegationCardSelectionEdited=false;
+      renderDelegationCards();
+      return true;
     }
 
     function selectedDelegationCardIds(){
@@ -7184,6 +7223,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const panel=byId("delegation-card-list");
       const selected=selectedDelegationCardIds();
       const job=byId("delegation-job").value.trim();
+      const recommended=delegationCardRecommendations(job);
+      const recommendedIds=new Set(recommended.map(card=>card.id));
       const query=byId("delegation-card-search").value.trim().toLowerCase();
       const available=new Map((delegationData?.plan_cards||[]).map(card=>[card.id,card]));
       for(const [id,card] of delegationSelectedCards)if(!available.has(id))available.set(id,card);
@@ -7193,10 +7234,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         .sort((left,right)=>right.score-left.score||left.index-right.index)
         .map(({card})=>card);
       if(!cards.length){panel.innerHTML='<p>No reviewed question cards are available yet. Review table access first, or use the Advanced read compiler.</p>';return}
-      panel.innerHTML=cards.map(card=>'<label class="workload-card"><input data-delegation-card type="checkbox" value="'+esc(card.id)+'" '+(selected.has(card.id)?'checked':'')+'><span><strong>'+esc(card.title)+'</strong><small>'+esc(card.detail)+'</small></span></label>').join("");
+      panel.innerHTML=cards.map(card=>'<label class="workload-card"><input data-delegation-card type="checkbox" value="'+esc(card.id)+'" '+(selected.has(card.id)?'checked':'')+'><span><strong>'+esc(card.title)+(recommendedIds.has(card.id)?' <span class="badge good">Recommended</span>':'')+'</strong><small>'+esc(card.detail)+'</small></span></label>').join("");
       const visibleSelected=cards.filter(card=>selected.has(card.id)).length;
-      byId("delegation-card-count").textContent=selected.size+' selected · '+cards.length+' shown · Job matches appear first.'+(visibleSelected<selected.size?' Some selected cards are hidden by this search.':'');
+      byId("delegation-card-count").textContent=selected.size+' selected · '+recommended.length+' recommended · '+cards.length+' shown.'+(visibleSelected<selected.size?' Some selected cards are hidden by this search.':'');
       document.querySelectorAll("[data-delegation-card]").forEach(input=>input.onchange=()=>{
+        delegationCardSelectionEdited=true;
         if(input.checked){
           const card=available.get(input.value);
           if(card)delegationSelectedCards.set(input.value,card);
@@ -7211,17 +7253,29 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return resources.map(resource=>String(resource).split(".").pop()).join(" → ");
     }
 
+    function delegationResourceNamed(job,resourceId){
+      const normalize=word=>word.length>4&&word.endsWith("ies")?word.slice(0,-3)+"y":word.length>3&&word.endsWith("s")&&!word.endsWith("ss")?word.slice(0,-1):word;
+      const table=String(resourceId||"").split(".").pop()||"";
+      const required=[...new Set(delegationCardWords(table).map(normalize).filter(word=>word.length>1))];
+      const available=new Set(delegationCardWords(job).map(normalize));
+      return required.length>0&&required.every(word=>available.has(word));
+    }
+
     function renderDelegationCatalog(){
       const panel=byId("delegation-catalog");
       const catalog=delegationData?.mapping_catalog;
       if(!catalog){panel.innerHTML='<p class="muted">The reviewed mapping catalog is unavailable.</p>';return}
       const derived=(catalog.derived_resources||[]).map(resource=>'<div class="action-field"><strong>'+esc(resource.resource_id)+'</strong><small>'+esc(delegationCatalogPath(resource.tenant_scope))+' · '+esc(resource.tenant_scope.depth)+' hop'+(resource.tenant_scope.depth===1?'':'s')+'</small></div>').join("");
-      const shared=(catalog.shared_reference_resources||[]).map(resource=>'<label class="workload-card"><input data-delegation-shared type="checkbox" value="'+esc(resource.resource_id)+'"><span><strong>'+esc(resource.resource_id)+'</strong><small>Confirm only if every tenant is meant to see the same reviewed rows.</small></span></label>').join("");
+      const allShared=catalog.shared_reference_resources||[];
+      const matchedShared=allShared.filter(resource=>delegationResourceNamed(byId("delegation-job").value,resource.resource_id));
+      const shared=matchedShared.map(resource=>'<label class="workload-card"><input data-delegation-shared type="checkbox" value="'+esc(resource.resource_id)+'"><span><strong>'+esc(resource.resource_id)+'</strong><small>Explicitly attest only if every tenant is meant to see the same reviewed rows.</small></span></label>').join("");
+      const skippedShared=allShared.length-matchedShared.length;
       const manual=(catalog.manual_resources||[]).map(resource=>'<li><code>'+esc(resource.resource_id)+'</code> — '+esc(resource.reason)+'</li>').join("");
       const depthChanged=catalog.current_limits.max_derived_scope_hops!==catalog.proposed_limits.max_derived_scope_hops||catalog.current_limits.max_analysis_relationship_hops!==catalog.proposed_limits.max_analysis_relationship_hops;
       panel.innerHTML='<div class="workload-proof"><div><strong>'+esc(catalog.direct_resources.length)+'</strong><span>Direct</span></div><div><strong>'+esc(catalog.derived_resources.length)+'</strong><span>Proven paths</span></div><div><strong>'+esc(catalog.shared_reference_resources.length)+'</strong><span>Need attestation</span></div><div><strong>'+esc(catalog.manual_resources.length)+'</strong><span>Stay manual</span></div></div>'
         +(derived?'<div class="action-fields" style="margin-top:10px">'+derived+'</div>':'')
-        +(shared?'<h4 style="margin-top:14px">Optional shared references</h4><div class="workload-card-list">'+shared+'</div>':'')
+        +(shared?'<h4 style="margin-top:14px">Job-matched shared references</h4><div class="workload-card-list">'+shared+'</div>':'')
+        +(skippedShared?'<p class="muted">'+esc(skippedShared)+' unrelated optional shared-reference table'+(skippedShared===1?' was':'s were')+' skipped. Add one from full access review when the job really needs it.</p>':'')
         +(depthChanged?'<p class="muted">Path review limits will move to derived '+esc(catalog.proposed_limits.max_derived_scope_hops)+' and analysis '+esc(catalog.proposed_limits.max_analysis_relationship_hops)+', each within the hard cap of 3.</p>':'')
         +(manual?'<details><summary>'+esc(catalog.manual_resources.length)+' table'+(catalog.manual_resources.length===1?'':'s')+' require manual review</summary><ul>'+manual+'</ul></details>':'')
         +'<details><summary>Exact catalog identity</summary><code>'+esc(catalog.plan_digest)+'</code></details>';
@@ -7231,7 +7285,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const catalog=delegationData?.mapping_catalog;
       if(!catalog)throw new Error("Reload the reviewed mapping catalog before preparing this job.");
       const accepted=[...document.querySelectorAll("[data-delegation-shared]:checked")].map(input=>input.value);
-      const needsPreparation=(catalog.derived_resources||[]).length>0
+      const needsPreparation=(catalog.direct_resources_to_include||[]).length>0
+        ||(catalog.derived_resources||[]).length>0
         ||accepted.length>0
         ||catalog.current_limits.max_derived_scope_hops!==catalog.proposed_limits.max_derived_scope_hops
         ||catalog.current_limits.max_analysis_relationship_hops!==catalog.proposed_limits.max_analysis_relationship_hops;
@@ -7244,7 +7299,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       delegationData.mapping_catalog=prepared.mapping_catalog;
       delegationData.plan_cards=prepared.plan_cards;
       renderDelegationCatalog();
-      renderDelegationCards();
+      if(delegationCardSelectionEdited)renderDelegationCards();
+      else useDelegationRecommendations();
     }
 
     function renderSavedDelegations(){
@@ -7284,6 +7340,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         let actionIntents=delegationLines(byId("delegation-action-intents").value);
         if(actionIntents.length>8)throw new Error("Use at most eight proposal-action intents in one job.");
         const useModel=byId("delegation-use-model").checked;
+        if(!useModel&&actionIntents.length===0&&delegationJobRequestsActions(jobIntent))actionIntents=[jobIntent];
         const actor=byId("actor").value.trim()||"local_operator";
         const reason="Prepare disabled Read and Action Boundary drafts for: "+jobIntent;
         let provider;
@@ -7369,8 +7426,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             ...(actionSupport.length?{action_support:actionSupport}:{})
           });
         }else{
+          if(!delegationSelectedCards.size&&!delegationCardSelectionEdited)useDelegationRecommendations();
           const selected=[...delegationSelectedCards.values()];
-          if(!selected.length)throw new Error("Choose at least one representative read question.");
+          if(!selected.length)throw new Error("Runner found no unique reviewed-metadata match. Choose at least one exact read question, or use model-assisted mapping.");
           analyzed=await post("/api/boundary/workloads/analyze",{
             mode:"exact",
             workload:{
@@ -8822,7 +8880,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    document.querySelectorAll("[data-view]").forEach(button=>button.onclick=()=>setView(button.dataset.view));
 	    byId("delegation-use-model").onchange=updateDelegationModelSettings;
 	    byId("delegation-provider").onchange=updateDelegationProvider;
-	    byId("delegation-job").oninput=()=>delegationData&&renderDelegationCards();
+	    byId("delegation-job").oninput=()=>{if(delegationData){renderDelegationCatalog();renderDelegationCards()}};
+	    byId("delegation-job").onchange=()=>{if(delegationData&&!delegationCardSelectionEdited)useDelegationRecommendations()};
+	    byId("delegation-use-recommended").onclick=()=>delegationData&&useDelegationRecommendations();
 	    byId("delegation-card-search").oninput=()=>delegationData&&renderDelegationCards();
 	    byId("delegation-prepare").onclick=prepareDelegationJob;
 	    byId("workload-cards-tab").onclick=()=>setReadWorkloadMode("cards");

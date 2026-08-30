@@ -116,6 +116,7 @@ import {
   generateModelActionSuggestion,
   generateModelActionSuggestionSet,
 } from "./action-suggestion-model.js";
+import { prepareQuickProposalAction } from "./guided-action-quick.js";
 import {
   buildDelegationDraft,
   writeDelegationDraft,
@@ -124,7 +125,6 @@ import {
 import {
   applyJobMappingCatalog,
   loadJobMappingCatalog,
-  type JobMappingCatalogPath,
 } from "./job-mapping-catalog.js";
 import {
   generateModelReadWorkload,
@@ -134,7 +134,9 @@ import {
   buildReadWorkloadPlanCards,
   normalizeReadWorkloadSet,
   rankReadWorkloadPlanCardsForJob,
+  recommendReadWorkloadPlanCardsForJob,
   readWorkloadFromPlanCards,
+  type ReadWorkloadPlanCard,
   type ReadWorkloadSet,
 } from "./read-workload-assist.js";
 import {
@@ -2183,28 +2185,92 @@ async function interactiveBoundaryReviewLoop(input: {
 }
 
 export async function promptBoundaryMappingModel(
-  session: Pick<BoundaryReviewInteractiveSession, "promptText">,
+  session: Pick<BoundaryReviewInteractiveSession, "promptText"> & Partial<Pick<BoundaryReviewInteractiveSession, "chooseOption">>,
   currentModel?: ActionModelSuggestionSession,
   dependencies: {
     discoverModels?: typeof discoverOpenAiCompatibleModels;
+    env?: NodeJS.ProcessEnv;
   } = {},
 ): Promise<ActionModelSuggestionSession | undefined> {
   if (currentModel) return currentModel;
-  const providerText = await session.promptText(
-    "Provider [1]",
-    {
-      context: [
-        "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
-        "1  OpenAI",
-        "2  Anthropic",
-        "3  Local OpenAI-compatible endpoint",
-        "",
-        "The provider maps structural metadata to an untrusted proposal. Runner validates every exact identifier and operation.",
+  const defaultBaseUrl = "http://127.0.0.1:11434/v1";
+  const discoverModels = dependencies.discoverModels ?? discoverOpenAiCompatibleModels;
+  const detectedModels = await discoverModels(defaultBaseUrl).catch(() => []);
+  const env = dependencies.env ?? process.env;
+  const openAiReady = Boolean(env.OPENAI_API_KEY?.trim());
+  const anthropicReady = Boolean(env.ANTHROPIC_API_KEY?.trim());
+  let providerChoice: string;
+  if (session.chooseOption) {
+    const detectedModel = detectedModels[0];
+    const initialValue = detectedModel && !openAiReady && !anthropicReady
+      ? "detected_local"
+      : openAiReady && !anthropicReady
+        ? "openai"
+        : anthropicReady && !openAiReady
+          ? "anthropic"
+          : detectedModel
+            ? "detected_local"
+            : "openai";
+    const selected = await session.chooseOption(
+      "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
+      [
+        ...(detectedModel
+          ? [{
+              value: "detected_local",
+              label: `Local Ollama ${detectedModel}${initialValue === "detected_local" ? "  [recommended; detected]" : "  [detected]"}`,
+              detail: "Uses the bounded loopback endpoint; no API key or extra setup prompt.",
+            }]
+          : []),
+        {
+          value: "openai",
+          label: `OpenAI${openAiReady ? "  [ready]" : ""}`,
+          detail: openAiReady ? "Uses OPENAI_API_KEY without printing or persisting its value." : "Requires an API key environment variable.",
+        },
+        {
+          value: "anthropic",
+          label: `Anthropic${anthropicReady ? "  [ready]" : ""}`,
+          detail: anthropicReady ? "Uses ANTHROPIC_API_KEY without printing or persisting its value." : "Requires an API key environment variable.",
+        },
+        {
+          value: "openai_compatible",
+          label: detectedModel ? "Another local OpenAI-compatible endpoint" : "Local OpenAI-compatible endpoint",
+          detail: "Runner lists model names only from a loopback endpoint.",
+        },
       ],
-    },
-  );
-  if (providerText === undefined) return undefined;
-  const providerChoice = providerText.trim().toLowerCase() || "1";
+      {
+        initialValue,
+        context: [
+          "The model receives reviewed structural metadata only after your egress confirmation.",
+          "Its result is an untrusted draft. Runner revalidates every exact identifier, operation, bound, and policy.",
+        ],
+      },
+    );
+    if (selected === undefined) return undefined;
+    if (selected === "detected_local") {
+      return {
+        provider: "openai_compatible",
+        model: detectedModel!,
+        baseUrl: defaultBaseUrl,
+      };
+    }
+    providerChoice = selected;
+  } else {
+    const providerText = await session.promptText(
+      "Provider [1]",
+      {
+        context: [
+          "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
+          "1  OpenAI",
+          "2  Anthropic",
+          `3  Local OpenAI-compatible endpoint${detectedModels[0] ? ` (detected ${detectedModels[0]})` : ""}`,
+          "",
+          "The provider maps structural metadata to an untrusted proposal. Runner validates every exact identifier and operation.",
+        ],
+      },
+    );
+    if (providerText === undefined) return undefined;
+    providerChoice = providerText.trim().toLowerCase() || "1";
+  }
   const provider = providerChoice === "1" || providerChoice === "openai"
     ? "openai"
     : providerChoice === "2" || providerChoice === "anthropic"
@@ -2217,7 +2283,6 @@ export async function promptBoundaryMappingModel(
   }
 
   if (provider === "openai_compatible") {
-    const defaultBaseUrl = "http://127.0.0.1:11434/v1";
     const baseText = await session.promptText(
       `Local model endpoint [${defaultBaseUrl}]`,
       {
@@ -2230,17 +2295,18 @@ export async function promptBoundaryMappingModel(
     );
     if (baseText === undefined) return undefined;
     const baseUrl = baseText.trim() || defaultBaseUrl;
-    const detectedModels = await (dependencies.discoverModels ?? discoverOpenAiCompatibleModels)(baseUrl)
-      .catch(() => []);
-    const defaultModel = detectedModels[0] ?? "llama3.2";
+    const modelsAtEndpoint = baseUrl === defaultBaseUrl
+      ? detectedModels
+      : await discoverModels(baseUrl).catch(() => []);
+    const defaultModel = modelsAtEndpoint[0] ?? "llama3.2";
     const modelText = await session.promptText(
       `Local model [${defaultModel}]`,
       {
-        context: detectedModels.length
+        context: modelsAtEndpoint.length
           ? [
               "DETECTED LOCAL MODELS",
-              ...detectedModels.slice(0, 8).map((model) => `- ${model}`),
-              ...(detectedModels.length > 8 ? [`- and ${detectedModels.length - 8} more`] : []),
+              ...modelsAtEndpoint.slice(0, 8).map((model) => `- ${model}`),
+              ...(modelsAtEndpoint.length > 8 ? [`- and ${modelsAtEndpoint.length - 8} more`] : []),
             ]
           : [
               "MODEL NAME",
@@ -2281,7 +2347,7 @@ function boundaryModelAssistFailureNotice(
       title: "The selected model could not draft a structured Boundary.",
       lines: [
         "Runner discarded two prose responses because neither called the required bounded authoring tool.",
-        "Use a larger local model with reliable tool calling, or open Agent job with W and select Runner-guided exact plan cards.",
+        "Use a larger local model with reliable tool calling, or open Agent job with W and select Runner-guided recommended draft.",
         "No model output was accepted.",
       ],
       footer: firstRun
@@ -2306,6 +2372,50 @@ function withBoundaryModelProgress<T>(
   return process.stderr.isTTY
     ? withTerminalProgress(process.stderr, message, operation)
     : operation();
+}
+
+function isRequiredBoundaryToolFailure(error: unknown): error is AskError {
+  return error instanceof AskError && error.code === "ASK_REQUIRED_TOOL_NOT_CALLED";
+}
+
+async function promptRunnerGuidedModelFallback(input: {
+  session: BoundaryReviewInteractiveSession;
+  provider: string;
+  model: string;
+  stage: "Read Boundary" | "Action Boundary";
+}): Promise<"runner" | "back"> {
+  const context = [
+    `${input.provider}/${input.model} returned prose twice instead of the required bounded ${input.stage} authoring tool.`,
+    "Runner discarded both responses. No model output became authority and no source query or write ran.",
+    "The deterministic path uses the same job and reviewed structural catalog; you still review the exact disabled draft.",
+  ];
+  if (input.session.chooseOption) {
+    const selected = await input.session.chooseOption(
+      "MODEL COULD NOT PRODUCE A STRUCTURED DRAFT",
+      [
+        {
+          value: "runner",
+          label: "Continue this job with Runner's deterministic recommendation [recommended]",
+          detail: "No new job entry, provider setup, or metadata egress is required.",
+        },
+        {
+          value: "back",
+          label: "Back and choose another model",
+          detail: "The broad authoring catalog remains disabled; active authority is unchanged.",
+        },
+      ],
+      { initialValue: "runner", context },
+    );
+    return selected === "runner" ? "runner" : "back";
+  }
+  const accepted = await input.session.confirm(
+    "Continue this same job with Runner's deterministic recommended draft?",
+    {
+      defaultValue: true,
+      context: ["MODEL COULD NOT PRODUCE A STRUCTURED DRAFT", ...context],
+    },
+  );
+  return accepted ? "runner" : "back";
 }
 
 async function interactiveReadWorkloadAssist(input: {
@@ -2366,13 +2476,15 @@ async function interactiveReadWorkloadAssist(input: {
           value: "model",
           label: currentModel
             ? `Model-assisted with ${currentModel.provider}/${currentModel.model}  [recommended]`
-            : "Model-assisted with OpenAI, Anthropic, or a local model  [recommended]",
+            : "Model-assisted with OpenAI, Anthropic, or a local model  [configure]",
           detail: "Runner validates the untrusted proposal; the model cannot activate authority.",
         },
         {
           value: "cards",
-          label: "Runner-guided exact plan cards  [no model]",
-          detail: "Choose compiler-valid representative questions yourself.",
+          label: currentModel
+            ? "Runner-guided recommended draft  [no model]"
+            : "Runner-guided recommended draft  [recommended; no model configured]",
+          detail: "Runner proposes a small exact read set; review it once and edit only when needed.",
         },
         {
           value: "manual",
@@ -2396,7 +2508,7 @@ async function interactiveReadWorkloadAssist(input: {
         },
       ],
       {
-        initialValue: "model",
+        initialValue: currentModel ? "model" : "cards",
         context: [
           "A model receives only reviewed structural metadata after you approve egress.",
           "Use Up/Down to inspect a path; Enter selects only the highlighted path.",
@@ -2416,15 +2528,17 @@ async function interactiveReadWorkloadAssist(input: {
     }
   } else {
     const choice = await input.session.promptText(
-      input.jobFirst ? "Mapping method [1]" : "Choose 1-5",
+      input.jobFirst ? `Mapping method [${currentModel ? "1" : "2"}]` : "Choose 1-5",
       {
         context: input.jobFirst
           ? [
               "MAP THE JOB TO REVIEWED STRUCTURE",
               currentModel
                 ? `1  Model-assisted with ${currentModel.provider}/${currentModel.model}  [recommended]`
-                : "1  Model-assisted with OpenAI, Anthropic, or a local model  [recommended]",
-              "2  Runner-guided exact plan cards  [no model]",
+                : "1  Model-assisted with OpenAI, Anthropic, or a local model  [configure]",
+              currentModel
+                ? "2  Runner-guided recommended draft  [no model]"
+                : "2  Runner-guided recommended draft  [recommended; no model configured]",
               "3  Full manual table and field setup",
               "4  Advanced exact read-workload JSON",
               "5  Advanced question-intent JSON plus model",
@@ -2445,7 +2559,7 @@ async function interactiveReadWorkloadAssist(input: {
       },
     );
     if (choice === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
-    const normalizedChoice = choice.trim() || (input.jobFirst ? "1" : "");
+    const normalizedChoice = choice.trim() || (input.jobFirst ? (currentModel ? "1" : "2") : "");
     manualSelected = input.jobFirst === true && normalizedChoice === "3";
     mode = input.jobFirst
       ? ({ "1": "model", "2": "cards", "4": "exact", "5": "intent_model", "6": "saved" } as const)[normalizedChoice as "1" | "2" | "4" | "5" | "6"]
@@ -2468,16 +2582,18 @@ async function interactiveReadWorkloadAssist(input: {
         : "Press W again and enter a number from 1 through 5."],
     });
   }
-  let actionIntents = input.jobFirst
+  const promptedActionIntents = input.jobFirst
     ? await promptJobFirstActionIntents(input.session, jobIntent.trim())
     : await promptDelegationActionIntents(input.session);
-  if (!actionIntents) return boundaryAssistResult(boundaryAssistBackNotice("Delegation setup closed."));
+  if (!promptedActionIntents) return boundaryAssistResult(boundaryAssistBackNotice("Delegation setup closed."));
+  let actionIntents: string[] = promptedActionIntents;
   let context = await loadBoundaryReviewContext(input.projectRoot);
   if (input.jobFirst && mode !== "saved") {
     const prepared = await prepareJobMappingCatalog({
       projectRoot: input.projectRoot,
       schemaInspector: input.schemaInspector,
       session: input.session,
+      jobIntent: jobIntent.trim(),
     });
     if (!prepared) {
       return boundaryAssistResult(boundaryAssistBackNotice(
@@ -2492,7 +2608,7 @@ async function interactiveReadWorkloadAssist(input: {
   // resulting workload is minimized and revalidated before it replaces this
   // catalog; no authority is activated here.
   const mappingBoundary = context.candidate;
-  let workload: ReadWorkloadView;
+  let workload: ReadWorkloadView | undefined;
   let modelAssistSession: ActionModelSuggestionSession | undefined;
   let modelAssistRecord: DelegationModelAssist | undefined;
   let actionInspection: Awaited<ReturnType<typeof inspectActionProject>> | undefined;
@@ -2500,37 +2616,54 @@ async function interactiveReadWorkloadAssist(input: {
     intent: string;
     result: Awaited<ReturnType<typeof generateModelActionSuggestion>>;
   }> = [];
-  if (mode === "cards") {
+  const prepareRunnerGuidedWorkload = async (): Promise<ReadWorkloadView | undefined> => {
     const builtCards = buildReadWorkloadPlanCards(mappingBoundary);
     const cards = input.jobFirst
       ? rankReadWorkloadPlanCardsForJob(builtCards, jobIntent)
       : builtCards;
     if (!cards.length) {
-      return boundaryAssistResult({
-        tone: "warning",
-        title: "No reviewed question cards are available yet.",
-        lines: ["Review at least one table or use Advanced exact JSON for a specific plan."],
-      });
+      throw new Error("No reviewed question cards are available yet. Review at least one table or use Advanced exact JSON for a specific plan.");
     }
-    const selectedIds = input.session.selectReadWorkloadCards
-      ? await input.session.selectReadWorkloadCards(cards)
-      : await input.session.promptText([
-          "CHOOSE REPRESENTATIVE QUESTIONS",
-          "Select every question the agent needs. This selects exact plan shapes; it does not activate access.",
-          ...cards.map((card, index) => `${index + 1}  ${card.title}\n   ${card.detail}`),
-          "Numbers (comma-separated; ranges allowed, for example 1,3-5)",
-        ].join("\n")).then((selectedText) => selectedText === undefined
-          ? undefined
-          : parseReadWorkloadCardSelection(selectedText, cards.map((card) => card.id)));
-    if (selectedIds === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
-    const exact = readWorkloadFromPlanCards({ cards, selectedIds });
+    const selectedIds = await selectRunnerGuidedReadCards({
+      session: input.session,
+      cards,
+      jobIntent: input.jobFirst ? jobIntent.trim() : undefined,
+    });
+    if (selectedIds === undefined) return undefined;
+    let exact = readWorkloadFromPlanCards({ cards, selectedIds });
+    if (actionIntents.length) {
+      actionInspection = await (input.actionProjectInspector ?? inspectActionProject)(
+        input.projectRoot,
+        process.env,
+      );
+      const actionCatalog = guidedActionOptionsFromCandidate({
+        candidate: mappingBoundary,
+        inspection: actionInspection,
+      });
+      const supportEntries = noModelActionSupportEntries({
+        actionIntents,
+        options: actionCatalog,
+        existingIds: exact.allowed.map((entry) => entry.id),
+      });
+      if (supportEntries.length) {
+        exact = normalizeReadWorkloadSet({
+          ...exact,
+          allowed: [...exact.allowed, ...supportEntries],
+        });
+      }
+    }
     const analysis = analyzeReadWorkloadSet({ workload: exact, generatedBoundary: mappingBoundary });
-    workload = await storeReadWorkloadAnalysis({
+    return storeReadWorkloadAnalysis({
       projectRoot: input.projectRoot,
       generatedBoundary: mappingBoundary,
       source: exact.source,
       analysis,
     });
+  };
+  if (mode === "cards") {
+    const guided = await prepareRunnerGuidedWorkload();
+    if (!guided) return boundaryAssistResult(boundaryAssistBackNotice());
+    workload = guided;
   } else if (mode === "exact") {
     const file = await input.session.promptText(
       "Exact workload JSON file",
@@ -2613,25 +2746,47 @@ async function interactiveReadWorkloadAssist(input: {
       model: mappingSession.model,
       structural_metadata_egress_acknowledged: true,
     };
-    const mapped = await withBoundaryModelProgress(
-      "Mapping requested reads with the selected model",
-      () => (input.modelReadWorkloadGenerator ?? generateModelReadWorkload)({
-      name: intent.name,
-      allowedQuestions: intent.allowed_questions,
-      forbiddenQuestions: intent.forbidden_questions,
-      provider,
-      model: mappingSession.model,
-      generatedBoundary: mappingBoundary,
-      ...(mappingSession.apiKey ? { apiKey: mappingSession.apiKey } : {}),
-      ...(mappingSession.apiKeyEnv ? { apiKeyEnv: mappingSession.apiKeyEnv } : {}),
-      ...(baseUrl ? { baseUrl } : {}),
-      ...(mappingSession.dependencies ? { dependencies: mappingSession.dependencies } : {}),
-        egressAcknowledged: true,
-      }),
-    );
-    let mappedWorkload = mapped.workload;
-    let mappedAnalysis = mapped.analysis;
-    if (actionIntents.length) {
+    let mapped: Awaited<ReturnType<typeof generateModelReadWorkload>> | undefined;
+    try {
+      mapped = await withBoundaryModelProgress(
+        "Mapping requested reads with the selected model",
+        () => (input.modelReadWorkloadGenerator ?? generateModelReadWorkload)({
+          name: intent.name,
+          allowedQuestions: intent.allowed_questions,
+          forbiddenQuestions: intent.forbidden_questions,
+          provider,
+          model: mappingSession.model,
+          generatedBoundary: mappingBoundary,
+          ...(mappingSession.apiKey ? { apiKey: mappingSession.apiKey } : {}),
+          ...(mappingSession.apiKeyEnv ? { apiKeyEnv: mappingSession.apiKeyEnv } : {}),
+          ...(baseUrl ? { baseUrl } : {}),
+          ...(mappingSession.dependencies ? { dependencies: mappingSession.dependencies } : {}),
+          egressAcknowledged: true,
+        }),
+      );
+    } catch (error) {
+      if (!isRequiredBoundaryToolFailure(error)) throw error;
+      const fallback = await promptRunnerGuidedModelFallback({
+        session: input.session,
+        provider,
+        model: mappingSession.model,
+        stage: "Read Boundary",
+      });
+      if (fallback === "back") {
+        return boundaryAssistResult(boundaryAssistBackNotice(
+          "Model output was discarded. Choose another model or the Runner-guided path when you reopen Agent job.",
+        ));
+      }
+      const guided = await prepareRunnerGuidedWorkload();
+      if (!guided) return boundaryAssistResult(boundaryAssistBackNotice());
+      workload = guided;
+      modelAssistSession = undefined;
+      modelAssistRecord = undefined;
+    }
+    if (mapped) {
+      let mappedWorkload = mapped.workload;
+      let mappedAnalysis = mapped.analysis;
+      if (actionIntents.length) {
       actionInspection = await (input.actionProjectInspector ?? inspectActionProject)(
         input.projectRoot,
         process.env,
@@ -2640,7 +2795,9 @@ async function interactiveReadWorkloadAssist(input: {
         candidate: mappingBoundary,
         inspection: actionInspection,
       });
-      if (input.jobFirst && (input.modelActionSuggestionSetGenerator || !input.modelActionSuggestionGenerator)) {
+      let actionMappingFellBack = false;
+      try {
+        if (input.jobFirst && (input.modelActionSuggestionSetGenerator || !input.modelActionSuggestionGenerator)) {
         const set = await withBoundaryModelProgress(
           "Drafting Action Boundary suggestions with the selected model",
           () => (input.modelActionSuggestionSetGenerator ?? generateModelActionSuggestionSet)({
@@ -2669,8 +2826,8 @@ async function interactiveReadWorkloadAssist(input: {
             },
           });
         }
-      } else {
-        for (const actionIntent of actionIntents) {
+        } else {
+          for (const actionIntent of actionIntents) {
           const result = await withBoundaryModelProgress(
             "Drafting one Action Boundary suggestion with the selected model",
             () => (input.modelActionSuggestionGenerator ?? generateModelActionSuggestion)({
@@ -2686,11 +2843,34 @@ async function interactiveReadWorkloadAssist(input: {
               egressAcknowledged: true,
             }),
           );
-          preMappedActions.push({ intent: actionIntent, result });
+            preMappedActions.push({ intent: actionIntent, result });
+          }
         }
+      } catch (error) {
+        if (!isRequiredBoundaryToolFailure(error)) throw error;
+        const fallback = await promptRunnerGuidedModelFallback({
+          session: input.session,
+          provider,
+          model: mappingSession.model,
+          stage: "Action Boundary",
+        });
+        if (fallback === "back") {
+          return boundaryAssistResult(boundaryAssistBackNotice(
+            "The Read draft was not saved because Action drafting was paused. No model output became authority.",
+          ));
+        }
+        actionMappingFellBack = true;
+        modelAssistSession = undefined;
+        preMappedActions.length = 0;
       }
       const supportEntries: ReadWorkloadSet["allowed"] = [];
-      for (const [index, preMapped] of preMappedActions.entries()) {
+      if (actionMappingFellBack) {
+        supportEntries.push(...noModelActionSupportEntries({
+          actionIntents,
+          options: actionCatalog,
+          existingIds: mappedWorkload.allowed.map((entry) => entry.id),
+        }));
+      } else for (const [index, preMapped] of preMappedActions.entries()) {
         if (preMapped.result.assessment.status !== "suggested") continue;
         const result = preMapped.result;
         const suggestion = result.assessment.suggestion;
@@ -2728,13 +2908,14 @@ async function interactiveReadWorkloadAssist(input: {
           generatedBoundary: mappingBoundary,
         });
       }
+      }
+      workload = await storeReadWorkloadAnalysis({
+        projectRoot: input.projectRoot,
+        generatedBoundary: mappingBoundary,
+        source: mappedWorkload.source!,
+        analysis: mappedAnalysis,
+      });
     }
-    workload = await storeReadWorkloadAnalysis({
-      projectRoot: input.projectRoot,
-      generatedBoundary: mappingBoundary,
-      source: mappedWorkload.source!,
-      analysis: mappedAnalysis,
-    });
   } else {
     const workloads = await listReadWorkloadAnalyses({
       projectRoot: input.projectRoot,
@@ -2759,6 +2940,9 @@ async function interactiveReadWorkloadAssist(input: {
       analysisId: selectedId.trim(),
       generatedBoundary: mappingBoundary,
     });
+  }
+  if (!workload) {
+    throw new Error("Boundary workload preparation ended without a reviewed workload.");
   }
   if (workload.state !== "ready") {
     return boundaryAssistResult({
@@ -2946,28 +3130,32 @@ async function prepareJobMappingCatalog(input: {
   projectRoot: string;
   schemaInspector: typeof inspectDatabase;
   session: BoundaryReviewInteractiveSession;
+  jobIntent: string;
 }): Promise<boolean> {
   const plan = await loadJobMappingCatalog(input.projectRoot);
   const acceptedShared: string[] = [];
-  if (plan.shared_reference_resources.length) {
+  const relevantShared = plan.shared_reference_resources.filter((resource) =>
+    jobExplicitlyNamesResource(input.jobIntent, resource.resource_id));
+  const skippedSharedCount = plan.shared_reference_resources.length - relevantShared.length;
+  if (relevantShared.length) {
     const reviewShared = await input.session.confirm(
-      `Review ${plan.shared_reference_resources.length} optional shared-reference table${plan.shared_reference_resources.length === 1 ? "" : "s"} for this job now?`,
+      `Review ${relevantShared.length} job-matched shared-reference table${relevantShared.length === 1 ? "" : "s"} now?`,
       {
         defaultValue: false,
         context: [
           "OPTIONAL SHARED REFERENCES",
-          ...plan.shared_reference_resources.slice(0, 6).map((resource) => `- ${resource.resource_id}`),
-          ...(plan.shared_reference_resources.length > 6
-            ? [`- and ${plan.shared_reference_resources.length - 6} more`]
+          ...relevantShared.slice(0, 6).map((resource) => `- ${resource.resource_id}`),
+          ...(relevantShared.length > 6
+            ? [`- and ${relevantShared.length - 6} more`]
             : []),
-          "Choose No unless the job needs these same rows for every tenant. They stay outside the disabled mapping catalog.",
+          "The job explicitly names this table concept. Choose No unless every tenant should receive the same reviewed rows.",
           "Choose Yes to review each business assertion separately; Runner cannot infer it from schema structure.",
         ],
       },
     );
     if (reviewShared === undefined) return false;
     if (reviewShared) {
-      for (const resource of plan.shared_reference_resources) {
+      for (const resource of relevantShared) {
         const accepted = await input.session.confirm(
           `${resource.resource_id} has no per-tenant rows and may be treated as a shared reference?`,
           {
@@ -2998,36 +3186,28 @@ async function prepareJobMappingCatalog(input: {
       "",
       "MAPPING CATALOG READY",
       `${plan.direct_resources.length} directly scoped table${plan.direct_resources.length === 1 ? " is" : "s are"} available for disabled job mapping.`,
+      ...(skippedSharedCount
+        ? [`${skippedSharedCount} unrelated optional shared-reference table${skippedSharedCount === 1 ? " was" : "s were"} skipped; use manual review if needed.`]
+        : []),
       ...(plan.manual_resources.length ? [`${plan.manual_resources.length} table${plan.manual_resources.length === 1 ? " needs" : "s need"} manual scope review and will stay outside mapping.`] : []),
       "No authority was activated.",
       "",
     ].join("\n"));
     return true;
   }
-  const approved = await input.session.confirm(
-    `Prepare ${total} tables as a disabled job-mapping catalog?`,
-    {
-      defaultValue: true,
-      context: [
-        "PREPARE DISABLED MAPPING CATALOG",
-        `${plan.direct_resources.length} directly scoped (${plan.direct_resources_to_include.length} added to this draft) | ${plan.derived_resources.length} catalog-proven derived | ${acceptedShared.length} reviewed shared reference`,
-        ...plan.derived_resources.slice(0, 8).map((resource) =>
-          `${resource.resource_id}: ${formatJobMappingPath(resource.tenant_scope)}`),
-        ...(plan.derived_resources.length > 8 ? [`${plan.derived_resources.length - 8} more proven paths`] : []),
-        ...(plan.proposed_limits.max_derived_scope_hops > plan.current_limits.max_derived_scope_hops
-          ? [`Derived-scope review depth: ${plan.current_limits.max_derived_scope_hops} -> ${plan.proposed_limits.max_derived_scope_hops} (hard cap 3)`]
-          : []),
-        ...(plan.proposed_limits.max_analysis_relationship_hops > plan.current_limits.max_analysis_relationship_hops
-          ? [`Analysis-relationship review depth: ${plan.current_limits.max_analysis_relationship_hops} -> ${plan.proposed_limits.max_analysis_relationship_hops} (hard cap 3)`]
-          : []),
-        ...(plan.manual_resources.length
-          ? [`${plan.manual_resources.length} ambiguous or unresolved table${plan.manual_resources.length === 1 ? " stays" : "s stay"} outside this catalog.`]
-          : []),
-        "Runner will minimize this catalog to the job. Nothing becomes active in this step.",
-      ],
-    },
-  );
-  if (!approved) return false;
+  process.stdout.write([
+    "",
+    "PREPARING DISABLED MAPPING CATALOG",
+    `${plan.direct_resources.length} direct | ${plan.derived_resources.length} uniquely proven derived | ${acceptedShared.length} reviewed shared reference`,
+    ...(plan.proposed_limits.max_derived_scope_hops > plan.current_limits.max_derived_scope_hops
+      ? [`Derived-scope authoring depth ${plan.current_limits.max_derived_scope_hops} -> ${plan.proposed_limits.max_derived_scope_hops}`]
+      : []),
+    ...(plan.proposed_limits.max_analysis_relationship_hops > plan.current_limits.max_analysis_relationship_hops
+      ? [`Analysis-path authoring depth ${plan.current_limits.max_analysis_relationship_hops} -> ${plan.proposed_limits.max_analysis_relationship_hops}`]
+      : []),
+    "Runner will immediately minimize this disabled intermediate to the reviewed job. No authority is active.",
+    "",
+  ].join("\n"));
   const applied = await applyJobMappingCatalog({
     projectRoot: input.projectRoot,
     expectedPlanDigest: plan.plan_digest,
@@ -3043,17 +3223,31 @@ async function prepareJobMappingCatalog(input: {
     ...(plan.manual_resources.length
       ? [`${plan.manual_resources.length} ambiguous or unresolved table${plan.manual_resources.length === 1 ? " remains" : "s remain"} outside mapping; use the manual editor to review them.`]
       : []),
+    ...(skippedSharedCount
+      ? [`${skippedSharedCount} unrelated optional shared-reference table${skippedSharedCount === 1 ? " remains" : "s remain"} outside mapping.`]
+      : []),
     "No Read Boundary, Action Boundary, proposal, approval, or apply authority was activated.",
     "",
   ].join("\n"));
   return true;
 }
 
-function formatJobMappingPath(path: JobMappingCatalogPath): string {
-  const resources = path.links.length
-    ? [path.links[0]!.source_resource, ...path.links.map((link) => link.target_resource)]
-    : [path.ancestor_resource];
-  return `${resources.join(" -> ")} (${path.depth} hop${path.depth === 1 ? "" : "s"})`;
+function jobExplicitlyNamesResource(jobIntent: string, resourceId: string): boolean {
+  const table = resourceId.split(".").at(-1) ?? resourceId;
+  const tableTokens = boundaryIntentTokens(table);
+  if (!tableTokens.length) return false;
+  const jobTokens = new Set(boundaryIntentTokens(jobIntent));
+  return tableTokens.every((token) => jobTokens.has(token));
+}
+
+function boundaryIntentTokens(value: string): string[] {
+  const raw = value.toLowerCase().replace(/[_./:-]+/gu, " ").match(/[a-z0-9]+/gu) ?? [];
+  return [...new Set(raw.filter((token) => token.length > 1).map((token) =>
+    token.endsWith("ies") && token.length > 4
+      ? `${token.slice(0, -3)}y`
+      : token.endsWith("s") && !token.endsWith("ss") && token.length > 3
+        ? token.slice(0, -1)
+        : token))];
 }
 
 async function promptReadWorkloadQuestions(
@@ -3105,6 +3299,110 @@ function uniqueWorkloadEntryId(base: string, existingIds: string[]): string {
     if (!existing.has(candidate)) return candidate;
   }
   throw new Error(`READ_WORKLOAD_ID_DUPLICATED: could not allocate a bounded id for ${base}.`);
+}
+
+async function selectRunnerGuidedReadCards(input: {
+  session: BoundaryReviewInteractiveSession;
+  cards: ReadWorkloadPlanCard[];
+  jobIntent?: string;
+}): Promise<string[] | undefined> {
+  const recommendation = input.jobIntent
+    ? recommendReadWorkloadPlanCardsForJob(input.cards, input.jobIntent)
+    : { cards: [], matched_resource_count: 0, source: "reviewed_metadata" as const };
+  const recommendedIds = recommendation.cards.map((card) => card.id);
+  if (recommendedIds.length && input.session.chooseOption) {
+    const decision = await input.session.chooseOption(
+      "RUNNER-GUIDED READ DRAFT",
+      [
+        {
+          value: "use",
+          label: `Use these ${recommendedIds.length} exact question${recommendedIds.length === 1 ? "" : "s"}  [recommended]`,
+          detail: "Saves a minimized disabled candidate; exact Read Boundary review is still next.",
+        },
+        {
+          value: "edit",
+          label: "Review or change exact questions",
+          detail: "Open every compiler-valid card with Runner's matches already selected.",
+        },
+        { value: "back", label: "Back" },
+      ],
+      {
+        initialValue: "use",
+        context: [
+          `Runner matched reviewed metadata across ${recommendation.matched_resource_count} resource${recommendation.matched_resource_count === 1 ? "" : "s"}. No model or source query ran.`,
+          ...recommendation.cards.map((card) => `- ${card.title}`),
+          "This is drafting assistance only. Nothing activates until the exact boundary review.",
+        ],
+      },
+    );
+    if (!decision || decision === "back") return undefined;
+    if (decision === "use") return recommendedIds;
+  }
+  if (input.session.selectReadWorkloadCards) {
+    return input.session.selectReadWorkloadCards(input.cards, {
+      initialSelectedIds: recommendedIds,
+      recommendationLabel: recommendedIds.length
+        ? `Runner preselected ${recommendedIds.length} explainable match${recommendedIds.length === 1 ? "" : "es"}; review or change them.`
+        : "Runner found no unique reviewed-metadata match. Select exact questions; no model or source query ran.",
+    });
+  }
+  const selectedText = await input.session.promptText([
+    "CHOOSE REPRESENTATIVE QUESTIONS",
+    "Select every question the agent needs. This selects exact plan shapes; it does not activate access.",
+    ...input.cards.map((card, index) =>
+      `${index + 1}${recommendedIds.includes(card.id) ? "*" : " "} ${card.title}\n   ${card.detail}`),
+    ...(recommendedIds.length
+      ? ["Blank Enter uses the starred Runner recommendation."]
+      : []),
+    "Numbers (comma-separated; ranges allowed, for example 1,3-5)",
+  ].join("\n"));
+  if (selectedText === undefined) return undefined;
+  if (!selectedText.trim() && recommendedIds.length) return recommendedIds;
+  return parseReadWorkloadCardSelection(selectedText, input.cards.map((card) => card.id));
+}
+
+function noModelActionSupportEntries(input: {
+  actionIntents: string[];
+  options: Awaited<ReturnType<typeof guidedActionOptions>>;
+  existingIds: string[];
+}): ReadWorkloadSet["allowed"] {
+  const entries: ReadWorkloadSet["allowed"] = [];
+  for (const [index, intent] of input.actionIntents.entries()) {
+    let preparation: ReturnType<typeof prepareQuickProposalAction>;
+    try {
+      preparation = prepareQuickProposalAction({ options: input.options, intent });
+    } catch {
+      // Action readiness belongs to the separate Action Boundary review. This
+      // helper may preserve a proven target, but must not block that review.
+      continue;
+    }
+    const resources = preparation.state === "ready"
+      ? [preparation.action.resource]
+      : preparation.selected.resource
+        ? [preparation.selected.resource]
+        : preparation.recommendations.resource
+          ? [preparation.recommendations.resource]
+          : preparation.decision.kind === "resource"
+            ? preparation.decision.choices.map((choice) => choice.value).slice(0, 8)
+            : [];
+    for (const resource of [...new Set(resources)]) {
+      const id = uniqueWorkloadEntryId(
+        `action_review_${index + 1}`,
+        [...input.existingIds, ...entries.map((entry) => entry.id)],
+      );
+      entries.push({
+        id,
+        description: `Review the exact fields required to propose a change to ${resource}.`,
+        plan: {
+          kind: "aggregate",
+          resource,
+          measures: [{ function: "count" }],
+          top_n: 1,
+        },
+      });
+    }
+  }
+  return entries;
 }
 
 function representativeReadCoverage(analysis: ReadWorkloadView["analysis"]): {

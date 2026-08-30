@@ -58,8 +58,10 @@ import { safeTerminalText } from "./analytics-shell-render.js";
 import type { AskProvider, AskProviderDependencies } from "./model-ask.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import {
+  applySuggestedDeterministicApproval,
   prepareQuickProposalAction,
   rankActionIntent,
+  type QuickDeterministicApprovalTemplate,
   type QuickProposalDecisions,
 } from "./guided-action-quick.js";
 
@@ -1171,8 +1173,13 @@ export async function collectQuickProposalActionInput(
   prompter: ActionControlPrompter,
   intent: string,
   initialContext: string[] = [],
+  assisted: {
+    initialDecisions?: QuickProposalDecisions;
+    suggestion?: ActionSuggestionAssessment;
+    onDeterministicApprovalAccepted?: (template: QuickDeterministicApprovalTemplate) => void;
+  } = {},
 ): Promise<GuidedActionInput | "advanced" | undefined> {
-  const decisions: QuickProposalDecisions = {};
+  const decisions: QuickProposalDecisions = structuredClone(assisted.initialDecisions ?? {});
   let firstChoice = true;
   const choiceContext = (context: string[]): string[] => {
     if (!firstChoice) return context;
@@ -1182,18 +1189,36 @@ export async function collectQuickProposalActionInput(
       : context;
   };
   while (true) {
-    const preparation = prepareQuickProposalAction({ options, intent, decisions });
+    let preparation = prepareQuickProposalAction({ options, intent, decisions });
+    if (assisted.suggestion) {
+      preparation = applySuggestedDeterministicApproval(preparation, assisted.suggestion);
+    }
     if (preparation.state === "ready") {
       const resource = options.resources.find((candidate) => candidate.id === preparation.action.resource)!;
       const canDelegateApproval = preparation.action.operation !== "delete"
         && (preparation.action.patches ?? []).some((patch) => patch.value_source === "argument");
+      const proposedApproval = preparation.deterministic_approval_template;
+      const proposedByModel = proposedApproval?.source === "model_suggestion";
       const decision = await prompter.choose("REVIEW PROPOSAL ACTION", [
+        ...(proposedApproval
+          ? [{
+              value: "delegate",
+              label: proposedByModel
+                ? "Review model-proposed deterministic approval rules [recommended]"
+                : "Review Runner-proposed deterministic approval rules [recommended]",
+              detail: proposedByModel
+                ? "Runner revalidated every exact condition; you still confirm the policy and its circuit breakers."
+                : "Derived from the full reviewed field bounds; you still confirm the policy and its circuit breakers.",
+            }]
+          : []),
         {
           value: "create",
           label: "Prepare and rehearse this disabled proposal action",
-          detail: "Writes disabled artifacts only; source rows stay unchanged.",
+          detail: proposedApproval
+            ? `Keep human approval instead of the ${proposedByModel ? "model-proposed" : "Runner-proposed"} deterministic policy.`
+            : "Writes disabled artifacts only; source rows stay unchanged.",
         },
-        ...(canDelegateApproval
+        ...(canDelegateApproval && !proposedApproval
           ? [{
               value: "delegate",
               label: "Add deterministic approval rules",
@@ -1214,7 +1239,11 @@ export async function collectQuickProposalActionInput(
           resource,
           operation: preparation.action.operation,
           patches: preparation.action.patches ?? [],
+          ...(proposedApproval ? { initial: proposedApproval.auto_approval } : {}),
         });
+        if (autoApproval && proposedApproval) {
+          assisted.onDeterministicApprovalAccepted?.(proposedApproval);
+        }
         return autoApproval ? { ...preparation.action, auto_approval: autoApproval } : undefined;
       }
       return decision === "create" ? preparation.action : undefined;
@@ -1445,11 +1474,13 @@ async function reviewAndStageActionBoundaryLimits(input: {
   action: GuidedActionInput;
   resource: GuidedActionResourceOption;
   suggestion?: ActionSuggestionAssessment;
+  initialLimits?: ActionBoundarySharedLimitV1[];
 }): Promise<number> {
   const argumentFields = new Set((input.action.patches ?? [])
     .filter((patch) => patch.value_source === "argument")
     .map((patch) => patch.column));
-  let limits = suggestedActionBoundaryLimits(input.capability, input.suggestion)
+  let limits = (input.initialLimits ?? suggestedActionBoundaryLimits(input.capability, input.suggestion))
+    .map((limit) => ({ ...limit, capability: input.capability }))
     .filter((limit) => limit.kind === "count" || (limit.field !== undefined && argumentFields.has(limit.field)));
   if (!limits.length) {
     const add = await input.prompter.confirm(
@@ -1593,8 +1624,8 @@ async function collectDeterministicAutoApproval(input: {
   const proposedConditions = input.initial ? reviewedAutoApprovalConditions(input.initial) : [];
   const policyContext = [
     `Target: ${input.operation.toUpperCase()} ${input.resource.id}`,
-    "Every condition is ANDed. A failed, missing, or uncertain check returns the proposal to human review.",
-    "This policy may approve a proposal; it never grants apply authority or writes to the source database.",
+    "All conditions must pass; a failed, missing, or uncertain check returns to human review.",
+    "Approval only: no apply authority and no source-database write.",
   ];
   const style = await input.prompter.choose("AUTO-APPROVAL CONDITIONS", [
     ...(proposedConditions.length
@@ -2997,26 +3028,78 @@ async function reviewImportedSuggestion(input: {
     ]);
     return undefined;
   }
-  const proceed = await input.prompter.confirm([
-    `Review imported suggestion ${suggestion.suggestion_id}?`,
-    suggestion.assessment.suggestion.intent,
-    suggestion.assessment.suggestion.approval_policy_proposal
-      ? "The suggestion prioritizes candidates and offers deterministic policy inputs. Every condition, limit, activation, and execution decision remains explicit."
-      : "The suggestion only reorders candidates. Every authority decision remains explicit.",
-  ].join(" "), false);
-  if (!proceed) return undefined;
-  const draft = await collectAndCreateAction({
-    projectRoot: input.projectRoot,
-    inspection: input.inspection,
-    options: input.options,
-    prompter: input.prompter,
-    suggestion: suggestion.current_assessment,
-    authoring: {
-      intent: suggestion.current_assessment.suggestion.intent,
-      mode: "guided",
+  const proposed = suggestion.current_assessment.suggestion;
+  if (!proposed.resource || !proposed.operation) {
+    throw new Error("A suggested Action draft must name one exact reviewed resource and operation.");
+  }
+  let acceptedApprovalTemplate: QuickDeterministicApprovalTemplate | undefined;
+  const quick = await collectQuickProposalActionInput(
+    input.options,
+    input.prompter,
+    proposed.intent,
+    [
+      "MODEL-SUGGESTED ACTION DRAFT",
+      `Target: ${proposed.operation.toUpperCase()} ${proposed.resource}`,
+      `Proposed fields: ${proposed.operation === "delete" ? "none" : (proposed.fields ?? []).join(", ") || "none"}`,
+      proposed.approval_policy_proposal
+        ? "Deterministic conditions were proposed from structural metadata and revalidated by Runner; they are not authority."
+        : "Approval remains human by default.",
+      "Review unresolved business bounds below. Nothing activates, approves, applies, or writes in this step.",
+    ],
+    {
+      initialDecisions: {
+        resource: proposed.resource,
+        operation: proposed.operation,
+        ...(proposed.operation === "delete" ? {} : { fields: proposed.fields ?? [] }),
+      },
+      suggestion: suggestion.current_assessment,
+      onDeterministicApprovalAccepted: (template) => {
+        acceptedApprovalTemplate = template;
+      },
     },
-    actionBoundaryJobIntent: input.actionBoundaryJobIntent,
-  });
+  );
+  let draft: GuidedActionDraft | undefined;
+  let quickStart = true;
+  if (quick === "advanced") {
+    draft = await collectAndCreateAction({
+      projectRoot: input.projectRoot,
+      inspection: input.inspection,
+      options: input.options,
+      prompter: input.prompter,
+      suggestion: suggestion.current_assessment,
+      authoring: {
+        intent: proposed.intent,
+        mode: "guided",
+      },
+      actionBoundaryJobIntent: input.actionBoundaryJobIntent,
+    });
+    quickStart = false;
+  } else if (quick) {
+    draft = (await createGuidedActionDraft({
+      projectRoot: input.projectRoot,
+      action: quick,
+      inspection: input.inspection,
+      boundaryName: input.options.boundary_name,
+      allowReviewedPending: input.options.boundary_state === "reviewed_pending",
+      ...(input.actionBoundaryJobIntent
+        ? { actionBoundaryJobIntent: input.actionBoundaryJobIntent }
+        : {}),
+    })).draft;
+    if (quick.auto_approval) {
+      await reviewAndStageActionBoundaryLimits({
+        projectRoot: input.projectRoot,
+        inspection: input.inspection,
+        prompter: input.prompter,
+        capability: draft.capability,
+        action: quick,
+        resource: input.options.resources.find((resource) => resource.id === quick.resource)!,
+        suggestion: suggestion.current_assessment,
+        ...(acceptedApprovalTemplate?.shared_limits
+          ? { initialLimits: acceptedApprovalTemplate.shared_limits }
+          : {}),
+      });
+    }
+  }
   if (!draft) return undefined;
   await recordActionSuggestionReview({
     projectRoot: input.projectRoot,
@@ -3033,7 +3116,7 @@ async function reviewImportedSuggestion(input: {
     ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}),
     ...(input.operatorSession ? { operatorSession: input.operatorSession } : {}),
     returnToAsk: input.returnToAsk,
-    quickStart: actionDraftUsesQuickResume(draft),
+    quickStart: quickStart && actionDraftUsesQuickResume(draft),
     prepareOnly: input.prepareOnly,
   });
 }
@@ -3051,6 +3134,7 @@ async function createAndReviewQuickAction(input: {
   prepareOnly?: boolean;
   actionBoundaryJobIntent?: string;
 }): Promise<string | undefined> {
+  let acceptedApprovalTemplate: QuickDeterministicApprovalTemplate | undefined;
   const quick = await collectQuickProposalActionInput(
     input.options,
     input.prompter,
@@ -3063,6 +3147,11 @@ async function createAndReviewQuickAction(input: {
           "Preparing a separate disabled Action Boundary; proposal, approval, apply, and writes remain off.",
         ]
       : [],
+    {
+      onDeterministicApprovalAccepted: (template) => {
+        acceptedApprovalTemplate = template;
+      },
+    },
   );
   let draft: GuidedActionDraft | undefined;
   let quickStart = true;
@@ -3095,6 +3184,9 @@ async function createAndReviewQuickAction(input: {
         capability: draft.capability,
         action: quick,
         resource: input.options.resources.find((resource) => resource.id === quick.resource)!,
+        ...(acceptedApprovalTemplate?.shared_limits
+          ? { initialLimits: acceptedApprovalTemplate.shared_limits }
+          : {}),
       });
     }
   }

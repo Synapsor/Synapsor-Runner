@@ -81,11 +81,11 @@ export function buildJobMappingCatalog(
   views: BoundaryResourceReviewView[],
 ): JobMappingCatalogPlan {
   const directResources = views
-    .filter((view) => Boolean(view.generated_candidate))
+    .filter((view) => isGeneratedDirectResource(view))
     .map((view) => view.resource_id)
     .sort();
   const directResourcesToInclude = views
-    .filter((view) => Boolean(view.generated_candidate) && !view.included)
+    .filter((view) => isGeneratedDirectResource(view) && !view.included)
     .map((view) => view.resource_id)
     .sort();
   const derivedResources: JobMappingCatalogPlan["derived_resources"] = [];
@@ -93,17 +93,24 @@ export function buildJobMappingCatalog(
   const manualResources: JobMappingCatalogPlan["manual_resources"] = [];
 
   for (const view of views) {
-    if (view.generated_candidate) continue;
-    const identity = view.row_identity.selected
+    if (isGeneratedDirectResource(view)) continue;
+    const identity = view.generated_candidate?.primary_key
+      ?? view.row_identity.selected
       ?? (view.row_identity.candidates.length === 1 ? view.row_identity.candidates[0] : undefined);
     if (!identity) {
       manualResources.push({ resource_id: view.resource_id, reason: "Row identity is ambiguous." });
       continue;
     }
     const tenantPaths = view.derived_tenant_scope?.candidates ?? [];
-    if (tenantPaths.length === 1) {
+    const tenantPath = view.generated_candidate?.tenant_scope
+      ?? view.derived_tenant_scope?.selected
+      ?? (tenantPaths.length === 1 ? tenantPaths[0] : undefined);
+    if (tenantPath) {
       const principalPaths = view.derived_principal_scope?.candidates ?? [];
-      if (principalPaths.length > 1) {
+      const principalPath = view.generated_candidate?.principal_scope
+        ?? view.derived_principal_scope?.selected
+        ?? (principalPaths.length === 1 ? principalPaths[0] : undefined);
+      if (!principalPath && principalPaths.length > 1) {
         manualResources.push({
           resource_id: view.resource_id,
           reason: "Principal scope has multiple proven paths and requires an exact reviewer choice.",
@@ -113,8 +120,8 @@ export function buildJobMappingCatalog(
       derivedResources.push({
         resource_id: view.resource_id,
         row_identity: identity,
-        tenant_scope: catalogPath(tenantPaths[0]!),
-        ...(principalPaths[0] ? { principal_scope: catalogPath(principalPaths[0]) } : {}),
+        tenant_scope: catalogPath(tenantPath),
+        ...(principalPath ? { principal_scope: catalogPath(principalPath) } : {}),
       });
       continue;
     }
@@ -125,7 +132,7 @@ export function buildJobMappingCatalog(
       });
       continue;
     }
-    if (view.shared_reference_scope?.eligible) {
+    if (view.generated_candidate?.shared_reference_scope || view.shared_reference_scope?.eligible) {
       sharedResources.push({ resource_id: view.resource_id, row_identity: identity });
       continue;
     }
@@ -183,6 +190,16 @@ export function buildJobMappingCatalog(
     },
   };
   return { ...core, plan_digest: canonicalJsonDigest(core) };
+}
+
+function isGeneratedDirectResource(view: BoundaryResourceReviewView): boolean {
+  const generated = view.generated_candidate;
+  if (!generated) return false;
+  // A regenerated authoring draft can contain previously reviewed derived or
+  // shared resources. Presence in that draft therefore does not by itself
+  // prove direct scope. Classify from the frozen resource authority so a
+  // minimized boundary can be expanded again ancestor-first.
+  return !generated.tenant_scope && !generated.shared_reference_scope;
 }
 
 export async function applyJobMappingCatalog(input: {

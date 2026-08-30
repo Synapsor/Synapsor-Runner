@@ -222,6 +222,10 @@ export type BoundaryReviewInteractiveSession = {
   ): Promise<BoundaryBlockedResolution>;
   selectReadWorkloadCards?(
     cards: ReadWorkloadPlanCard[],
+    options?: {
+      initialSelectedIds?: string[];
+      recommendationLabel?: string;
+    },
   ): Promise<string[] | undefined>;
   chooseOption?(
     title: string,
@@ -369,7 +373,7 @@ export function createBoundaryReviewInteractiveSession(
     editRelationshipPaths: (view, summary) =>
       editRelationshipPaths(view, summary, input, output),
     resolveBlockedResource: (view) => resolveBlockedResource(view, input, output),
-    selectReadWorkloadCards: (cards) => selectReadWorkloadCards(cards, input, output),
+    selectReadWorkloadCards: (cards, options) => selectReadWorkloadCards(cards, input, output, options),
     chooseOption: (title, choices, options) =>
       chooseBoundaryPromptOption(title, choices, options, input, output, theme),
     promptText: (prompt, options = {}) => withAlternateTerminalScreen(
@@ -491,12 +495,17 @@ async function selectReadWorkloadCards(
   cards: Array<{ id: string; title: string; detail: string }>,
   input: ReadStream,
   output: WriteStream,
+  options: {
+    initialSelectedIds?: string[];
+    recommendationLabel?: string;
+  } = {},
 ): Promise<string[] | undefined> {
   if (!cards.length) return [];
   const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env), {
     brand: true,
   });
-  const selected = new Set<string>();
+  const offeredIds = new Set(cards.map((card) => card.id));
+  const selected = new Set((options.initialSelectedIds ?? []).filter((id) => offeredIds.has(id)));
   let cursor = 0;
   let notice = "";
   return withRawKeys(input, output, async (nextKey, render) => {
@@ -510,7 +519,8 @@ async function selectReadWorkloadCards(
       const current = cards[cursor]!;
       render([
         theme.title("  CHOOSE REPRESENTATIVE QUESTIONS"),
-        `  ${theme.dim("No model or source query. Job matches appear first; nothing is preselected.")}`,
+        `  ${theme.dim(options.recommendationLabel
+          ?? "No model or source query. Job matches appear first; choose exact plan shapes.")}`,
         `  ${theme.bold(`${selected.size} selected`)}  ${theme.dim(`| question ${cursor + 1} of ${cards.length}`)}`,
         `  ${theme.dim(current.detail)}`,
         ...(notice ? [`  ${theme.warning(notice)}`] : [""]),

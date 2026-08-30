@@ -88,6 +88,44 @@ describe("job mapping catalog", () => {
       { resource_id: "ops.tasks", reason: expect.stringContaining("Principal scope") },
     ]);
   });
+
+  it("reclassifies regenerated derived resources by their frozen scope and keeps ancestor-first order", () => {
+    const root = reviewView({ id: "ops.accounts", generated: true });
+    const oneHopPath = path("orders_account_fk", [
+      ["ops.orders", "ops.accounts", "account_id"],
+    ]);
+    const twoHopPath = path("events_order_fk__orders_account_fk", [
+      ["ops.events", "ops.orders", "order_id"],
+      ["ops.orders", "ops.accounts", "account_id"],
+    ]);
+    const oneHop = reviewView({
+      id: "ops.orders",
+      generated: true,
+      included: false,
+      tenantPaths: [oneHopPath],
+      generatedTenantPath: oneHopPath,
+    });
+    const twoHop = reviewView({
+      id: "ops.events",
+      generated: true,
+      included: false,
+      tenantPaths: [twoHopPath],
+      generatedTenantPath: twoHopPath,
+    });
+
+    const result = buildJobMappingCatalog([twoHop, root, oneHop]);
+
+    expect(result.direct_resources).toEqual(["ops.accounts"]);
+    expect(result.direct_resources_to_include).toEqual([]);
+    expect(result.derived_resources.map((resource) => ({
+      id: resource.resource_id,
+      depth: resource.tenant_scope.depth,
+    }))).toEqual([
+      { id: "ops.orders", depth: 1 },
+      { id: "ops.events", depth: 2 },
+    ]);
+    expect(result.manual_resources).toEqual([]);
+  });
 });
 
 function reviewView(input: {
@@ -98,8 +136,17 @@ function reviewView(input: {
   rowIdentity?: string[];
   tenantPaths?: Array<ReturnType<typeof path>>;
   principalPaths?: Array<ReturnType<typeof path>>;
+  generatedTenantPath?: ReturnType<typeof path>;
+  generatedPrincipalPath?: ReturnType<typeof path>;
   relationships?: Array<{ target: string }>;
 }): BoundaryResourceReviewView {
+  const generatedCandidate = input.generated
+    ? {
+        primary_key: input.rowIdentity?.[0] ?? "id",
+        ...(input.generatedTenantPath ? { tenant_scope: input.generatedTenantPath } : {}),
+        ...(input.generatedPrincipalPath ? { principal_scope: input.generatedPrincipalPath } : {}),
+      } as unknown as BoundaryResourceReviewView["generated_candidate"]
+    : null;
   return {
     ok: true,
     resource_id: input.id,
@@ -123,8 +170,8 @@ function reviewView(input: {
       nullable: false,
       cardinality_proven: true,
     })),
-    candidate: input.generated ? {} as BoundaryResourceReviewView["candidate"] : null,
-    generated_candidate: input.generated ? {} as BoundaryResourceReviewView["generated_candidate"] : null,
+    candidate: input.generated ? structuredClone(generatedCandidate) : null,
+    generated_candidate: generatedCandidate,
     bindings: {} as BoundaryResourceReviewView["bindings"],
     reviewed_budgets: {
       max_relationship_hops: 2,

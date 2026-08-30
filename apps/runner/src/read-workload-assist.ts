@@ -46,6 +46,12 @@ export type ReadWorkloadPlanCard = {
   plan: Record<string, unknown>;
 };
 
+export type ReadWorkloadPlanCardRecommendation = {
+  cards: ReadWorkloadPlanCard[];
+  matched_resource_count: number;
+  source: "reviewed_metadata";
+};
+
 export type ReadAuthorityOperation =
   | "resource"
   | "return"
@@ -285,26 +291,77 @@ export function rankReadWorkloadPlanCardsForJob(
   cards: ReadWorkloadPlanCard[],
   job: string,
 ): ReadWorkloadPlanCard[] {
-  const jobTokens = intentTokens(job);
-  if (!jobTokens.size) return [...cards];
-  return cards
-    .map((card, index) => {
-      const cardTokens = intentTokens([
-        card.title,
-        card.detail,
-        JSON.stringify(card.plan),
-      ].join(" "));
-      let score = 0;
-      for (const token of jobTokens) {
-        if (cardTokens.has(token)) score += token.length >= 8 ? 4 : token.length >= 5 ? 3 : 2;
-      }
-      const resource = typeof card.plan.resource === "string" ? readableIdentifier(card.plan.resource) : "";
-      const resourceTokens = intentTokens(resource);
-      if ([...resourceTokens].some((token) => jobTokens.has(token))) score += 6;
-      return { card, index, score };
-    })
+  return scoreReadWorkloadPlanCards(cards, job)
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .map(({ card }) => card);
+}
+
+/**
+ * Produces a small disabled-draft recommendation from exact cards that already
+ * pass the Explore validator and compiler. A positive reviewed-metadata match
+ * is required; no match means the operator must choose cards explicitly.
+ */
+export function recommendReadWorkloadPlanCardsForJob(
+  cards: ReadWorkloadPlanCard[],
+  job: string,
+  limit = 4,
+): ReadWorkloadPlanCardRecommendation {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 12) {
+    throw new Error("READ_WORKLOAD_RECOMMENDATION_LIMIT_INVALID: limit must be an integer from 1 through 12.");
+  }
+  const scored = scoreReadWorkloadPlanCards(cards, job)
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+  if (!scored.length) {
+    return { cards: [], matched_resource_count: 0, source: "reviewed_metadata" };
+  }
+
+  const bestByResource = new Map<string, (typeof scored)[number]>();
+  for (const entry of scored) {
+    const resource = typeof entry.card.plan.resource === "string"
+      ? entry.card.plan.resource
+      : "";
+    if (!bestByResource.has(resource)) bestByResource.set(resource, entry);
+  }
+  const selected: Array<(typeof scored)[number]> = [...bestByResource.values()]
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, limit);
+  const selectedIds = new Set(selected.map((entry) => entry.card.id));
+  for (const entry of scored) {
+    if (selected.length >= limit) break;
+    if (selectedIds.has(entry.card.id)) continue;
+    selected.push(entry);
+    selectedIds.add(entry.card.id);
+  }
+  selected.sort((left, right) => right.score - left.score || left.index - right.index);
+  return {
+    cards: selected.map((entry) => entry.card),
+    matched_resource_count: new Set(selected.map((entry) => String(entry.card.plan.resource ?? ""))).size,
+    source: "reviewed_metadata",
+  };
+}
+
+function scoreReadWorkloadPlanCards(
+  cards: ReadWorkloadPlanCard[],
+  job: string,
+): Array<{ card: ReadWorkloadPlanCard; index: number; score: number }> {
+  const jobTokens = intentTokens(job);
+  return cards.map((card, index) => {
+    if (!jobTokens.size) return { card, index, score: 0 };
+    const cardTokens = intentTokens([
+      card.title,
+      card.detail,
+      JSON.stringify(card.plan),
+    ].join(" "));
+    let score = 0;
+    for (const token of jobTokens) {
+      if (cardTokens.has(token)) score += token.length >= 8 ? 4 : token.length >= 5 ? 3 : 2;
+    }
+    const resource = typeof card.plan.resource === "string" ? readableIdentifier(card.plan.resource) : "";
+    const resourceTokens = intentTokens(resource);
+    if ([...resourceTokens].some((token) => jobTokens.has(token))) score += 6;
+    return { card, index, score };
+  });
 }
 
 export function normalizeReadWorkloadSet(value: unknown): ReadWorkloadSet {

@@ -11,6 +11,7 @@ import {
   extractReadAuthorityAtoms,
   normalizeReadWorkloadSet,
   rankReadWorkloadPlanCardsForJob,
+  recommendReadWorkloadPlanCardsForJob,
   readWorkloadFromPlanCards,
   sanitizeReadWorkloadPlan,
   type ReadWorkloadPlanCard,
@@ -48,6 +49,75 @@ describe("Read workload boundary compiler", () => {
 
     expect(ranked.map((card) => card.id)).toEqual(["maintenance", "inspections", "sites"]);
     expect(cards.map((card) => card.id)).toEqual(["sites", "maintenance", "inspections"]);
+  });
+
+  it("recommends a small resource-diverse no-model draft only from positive reviewed matches", () => {
+    const cards: ReadWorkloadPlanCard[] = [
+      {
+        id: "maintenance_rows",
+        title: "List maintenance requests",
+        detail: "Return priority and requested hours",
+        plan: { kind: "rows", resource: "renewable_ops.maintenance_requests", select: ["priority"] },
+      },
+      {
+        id: "maintenance_count",
+        title: "Count maintenance requests by priority",
+        detail: "Group maintenance requests by priority",
+        plan: { kind: "aggregate", resource: "renewable_ops.maintenance_requests", measures: [{ function: "count" }] },
+      },
+      {
+        id: "inspections",
+        title: "Count inspections by inspection kind",
+        detail: "Group inspections by inspection kind",
+        plan: { kind: "aggregate", resource: "renewable_ops.inspections", measures: [{ function: "count" }] },
+      },
+      {
+        id: "sites",
+        title: "Count sites by region",
+        detail: "Group sites by region",
+        plan: { kind: "aggregate", resource: "renewable_ops.sites", measures: [{ function: "count" }] },
+      },
+    ];
+
+    const recommendation = recommendReadWorkloadPlanCardsForJob(
+      cards,
+      "Explain inspection workload and open maintenance requests.",
+      3,
+    );
+
+    expect(recommendation).toMatchObject({
+      source: "reviewed_metadata",
+      matched_resource_count: 2,
+    });
+    expect(recommendation.cards).toHaveLength(3);
+    expect(recommendation.cards.map((card) => card.id)).toEqual(expect.arrayContaining([
+      "maintenance_rows",
+      "inspections",
+    ]));
+    expect(recommendation.cards.map((card) => card.id)).not.toContain("sites");
+    expect(cards.map((card) => card.id)).toEqual([
+      "maintenance_rows",
+      "maintenance_count",
+      "inspections",
+      "sites",
+    ]);
+  });
+
+  it("does not invent a no-model recommendation when reviewed metadata does not match", () => {
+    const recommendation = recommendReadWorkloadPlanCardsForJob([
+      {
+        id: "sites",
+        title: "Count sites by region",
+        detail: "Group sites by region",
+        plan: { kind: "aggregate", resource: "renewable_ops.sites", measures: [{ function: "count" }] },
+      },
+    ], "Explain quarterly invoices and customer refunds.");
+
+    expect(recommendation).toEqual({
+      cards: [],
+      matched_resource_count: 0,
+      source: "reviewed_metadata",
+    });
   });
 
   it("offers deterministic reviewed question cards without model or source access", () => {

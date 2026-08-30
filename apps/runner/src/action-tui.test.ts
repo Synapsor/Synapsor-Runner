@@ -26,6 +26,7 @@ import {
 import type { ActionOperatorService, ActionProposalDetail } from "./action-operator.js";
 import type { GuidedActionResourceOption } from "./guided-action.js";
 import { ACTION_SUGGESTION_VERSION, assessActionSuggestion } from "./action-design.js";
+import type { QuickDeterministicApprovalTemplate } from "./guided-action-quick.js";
 
 const orders: GuidedActionResourceOption = {
   id: "public.orders",
@@ -279,24 +280,97 @@ describe("Safe Action terminal control plane", () => {
     });
   });
 
+  it("reviews a validated model Action draft without reselecting its target, operation, or fields", async () => {
+    const suggestion = assessActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: "Let support propose a bounded order credit.",
+      operation: "update",
+      resource: "public.orders",
+      fields: ["credit_cents"],
+      approval_policy_proposal: {
+        mode: "deterministic",
+        conditions: [{ field: "credit_cents", operator: "lte", value: 500 }],
+        max_per_day: 3,
+        max_total_per_day: 1_000,
+        total_field: "credit_cents",
+      },
+      suggested_by: { kind: "model", provider: "openai", model: "gpt-5.6-luna" },
+    }, options.resources);
+    expect(suggestion.status, suggestion.blockers.join("; ")).toBe("suggested");
+    const choiceTitles: string[] = [];
+    const firstChoiceLabels: string[] = [];
+    const prompter = scriptedPrompter({
+      choices: ["delegate", "proposed"],
+      texts: ["0,2500"],
+      confirms: [true],
+      onChoose: (title, choices) => {
+        choiceTitles.push(title);
+        firstChoiceLabels.push(choices[0]?.label ?? "");
+      },
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      suggestion.suggestion.intent,
+      ["MODEL-SUGGESTED ACTION DRAFT"],
+      {
+        initialDecisions: {
+          resource: suggestion.suggestion.resource,
+          operation: suggestion.suggestion.operation,
+          fields: suggestion.suggestion.fields,
+        },
+        suggestion,
+      },
+    );
+
+    expect(choiceTitles).toEqual(["REVIEW PROPOSAL ACTION", "AUTO-APPROVAL CONDITIONS"]);
+    expect(firstChoiceLabels[0]).toContain("model-proposed deterministic approval rules");
+    expect(firstChoiceLabels[1]).toContain("proposed conditions");
+    expect(action).toMatchObject({
+      resource: "public.orders",
+      operation: "update",
+      patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
+      auto_approval: {
+        conditions: [{ field: "credit_cents", operator: "lte", value: 500 }],
+        max_per_day: 3,
+        max_total_per_day: 1_000,
+        total_field: "credit_cents",
+      },
+      authority_posture: "proposal_only",
+      writeback: { mode: "none" },
+    });
+  });
+
   it("keeps deterministic approval fields and circuit breakers tied to the reviewed action", async () => {
     const textPrompts: Array<{
       label: string;
       options: Parameters<ActionControlPrompter["text"]>[1];
     }> = [];
     const choiceContexts = new Map<string, string[]>();
+    const firstChoiceLabels = new Map<string, string>();
+    let acceptedTemplate: QuickDeterministicApprovalTemplate | undefined;
     const prompter = scriptedPrompter({
       choices: ["delegate", "custom", "at_most"],
       texts: ["0,2500", "500", "3", "1000"],
       confirms: [],
       onText: (label, options) => textPrompts.push({ label, options }),
-      onChoose: (title, _choices, context = []) => choiceContexts.set(title, context),
+      onChoose: (title, choices, context = []) => {
+        choiceContexts.set(title, context);
+        firstChoiceLabels.set(title, choices[0]?.label ?? "");
+      },
     });
 
     const action = await collectQuickProposalActionInput(
       options,
       prompter,
       "Let support update an order credit_cents within a reviewed limit.",
+      [],
+      {
+        onDeterministicApprovalAccepted(template) {
+          acceptedTemplate = template;
+        },
+      },
     );
 
     expect(action).toMatchObject({
@@ -307,9 +381,20 @@ describe("Safe Action terminal control plane", () => {
         total_field: "credit_cents",
       },
     });
+    expect(firstChoiceLabels.get("REVIEW PROPOSAL ACTION"))
+      .toContain("Runner-proposed deterministic approval rules");
+    expect(acceptedTemplate).toMatchObject({
+      source: "reviewed_structure",
+      shared_limits: [{
+        kind: "count",
+        scope: "tenant_principal",
+        maximum: 10,
+        window_seconds: 86_400,
+      }],
+    });
     expect(choiceContexts.get("AUTO-APPROVAL CONDITIONS")).toEqual(expect.arrayContaining([
       "Target: UPDATE public.orders",
-      expect.stringContaining("returns the proposal to human review"),
+      expect.stringContaining("returns to human review"),
     ]));
     expect(textPrompts.find((prompt) => prompt.label === "Auto-approve credit_cents at or below"))
       .toMatchObject({

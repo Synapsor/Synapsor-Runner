@@ -37,6 +37,7 @@ import {
   synchronizeBoundaryLibrary,
 } from "./boundary-library.js";
 import type {
+  BoundaryAccessNotice,
   BoundaryFieldTier,
   BoundaryReviewInteractiveSession,
 } from "./boundary-cli-picker.js";
@@ -60,6 +61,7 @@ import {
   READ_WORKLOAD_SET_VERSION,
 } from "./read-workload-assist.js";
 import { generateModelReadWorkload } from "./read-workload-model.js";
+import { AskError } from "./model-ask.js";
 import {
   generateModelActionSuggestionSet,
 } from "./action-suggestion-model.js";
@@ -117,6 +119,35 @@ describe("boundary operator-plane CLI", () => {
       "Local model [qwen2.5:7b]",
     ]);
     expect(prompts[2]?.context).toContain("- qwen2.5:7b");
+  });
+
+  it("selects a detected loopback model from the TUI without endpoint or model text prompts", async () => {
+    const choices: Array<{ title: string; values: string[]; initial?: string }> = [];
+    await expect(promptBoundaryMappingModel({
+      chooseOption: async (title, options, promptOptions) => {
+        choices.push({
+          title,
+          values: options.map((option) => option.value),
+          ...(promptOptions?.initialValue ? { initial: promptOptions.initialValue } : {}),
+        });
+        return "detected_local";
+      },
+      promptText: async () => {
+        throw new Error("A detected local model should not require text setup.");
+      },
+    }, undefined, {
+      discoverModels: async () => ["qwen2.5:7b"],
+      env: {},
+    })).resolves.toEqual({
+      provider: "openai_compatible",
+      model: "qwen2.5:7b",
+      baseUrl: "http://127.0.0.1:11434/v1",
+    });
+    expect(choices).toEqual([{
+      title: "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
+      values: ["detected_local", "openai", "anthropic", "openai_compatible"],
+      initial: "detected_local",
+    }]);
   });
 
   it("exports an exact review bundle and requires a replay-safe signed decision for headless activation", async () => {
@@ -2005,7 +2036,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it("keeps shared-reference tables outside job mapping unless a human attests them", async () => {
+  it("skips an unrelated shared-reference table without interrupting no-model job mapping", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-first-shared-"));
     const inspection = scopedAndSharedReferenceInspection();
     const build = buildAutoBoundary({
@@ -2050,11 +2081,75 @@ describe("boundary operator-plane CLI", () => {
         { startWithAgentJob: true },
       )).resolves.toBe(0);
 
-      expect(confirmations).toContain("Review 1 optional shared-reference table for this job now?");
+      expect(confirmations).not.toContain("Review 1 job-matched shared-reference table now?");
       expect(confirmations.some((prompt) => prompt.startsWith("public.reference_catalog"))).toBe(false);
       const context = await loadBoundaryReviewContext(root);
       expect(context.candidate.pack.resources.map((resource) => resource.id))
         .toEqual(["public.service_visits"]);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("requires a human attestation when a no-model job explicitly names a shared-reference table", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-first-named-shared-"));
+    const inspection = scopedAndSharedReferenceInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const confirmations: string[] = [];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) {
+          return "Compare service visits with reference catalog entries.";
+        }
+        if (prompt.includes("Mapping method")) return "2";
+        throw new Error(`Unexpected named shared-reference job prompt: ${prompt}`);
+      },
+      confirm: async (prompt) => {
+        confirmations.push(prompt);
+        if (prompt.includes("Action Boundary")) return false;
+        if (prompt.includes("job-matched shared-reference")) return true;
+        if (prompt.startsWith("public.reference_catalog")) return true;
+        throw new Error(`Unexpected named shared-reference confirmation: ${prompt}`);
+      },
+      selectReadWorkloadCards: async (cards) => cards.map((card) => card.id),
+      confirmActivation: async () => {
+        throw new Error("Job mapping must not activate a shared-reference decision.");
+      },
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        { startWithAgentJob: true },
+      )).resolves.toBe(0);
+
+      expect(confirmations).toContain("Review 1 job-matched shared-reference table now?");
+      expect(confirmations.some((prompt) => prompt.startsWith("public.reference_catalog"))).toBe(true);
+      const context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.reference_catalog",
+        "public.service_visits",
+      ]);
+      expect(context.candidate.pack.resources.find((resource) => resource.id === "public.reference_catalog")
+        ?.shared_reference_scope).toMatchObject({ mode: "shared_reference" });
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
@@ -2086,6 +2181,7 @@ describe("boundary operator-plane CLI", () => {
       "1",
     ];
     const actionCalls: Array<Parameters<typeof runActionControlPlane>[0]> = [];
+    const accessNotices: Array<BoundaryAccessNotice | undefined> = [];
     const runDelegationActionReview = vi.fn(async (
       actionInput: Parameters<typeof runActionControlPlane>[0],
     ) => {
@@ -2096,7 +2192,10 @@ describe("boundary operator-plane CLI", () => {
       return { state: "closed" as const, source_database_changed: false as const, activated_actions: [] };
     });
     const session: BoundaryReviewInteractiveSession = {
-      chooseResource: async () => choices.shift(),
+      chooseResource: async (_resources, _overview, options) => {
+        accessNotices.push(options?.notice);
+        return choices.shift();
+      },
       editFieldTiers: async () => undefined,
       promptText: async () => answers.shift(),
       confirm: async () => {
@@ -2118,7 +2217,7 @@ describe("boundary operator-plane CLI", () => {
         },
       )).resolves.toBe(0);
 
-      expect(actionCalls).toHaveLength(1);
+      expect(actionCalls, JSON.stringify(accessNotices, null, 2)).toHaveLength(1);
       expect(actionCalls[0]).toMatchObject({
         projectRoot: root,
         boundaryName: "reviewed_staging",
@@ -2368,6 +2467,175 @@ describe("boundary operator-plane CLI", () => {
         "public.service_visits",
       ]);
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("continues the same job through Runner guidance when a local model returns prose instead of the required tool", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-model-fallback-"));
+    const inspection = actionTargetInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const fallbackChoices: string[] = [];
+    const runDelegationActionReview = vi.fn(async () => ({
+      state: "closed" as const,
+      source_database_changed: false as const,
+      activated_actions: [],
+    }));
+    const modelReadWorkloadGenerator = vi.fn(async () => {
+      throw new AskError(
+        "ASK_REQUIRED_TOOL_NOT_CALLED",
+        "The local model returned prose instead of the required authoring tool.",
+      );
+    });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) {
+          return "Explain service visits and propose creating a maintenance request.";
+        }
+        throw new Error(`Unexpected model-fallback text prompt: ${prompt}`);
+      },
+      chooseOption: async (title, _choices, options) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "MODEL COULD NOT PRODUCE A STRUCTURED DRAFT") {
+          expect(options?.initialValue).toBe("runner");
+          fallbackChoices.push(title);
+          return "runner";
+        }
+        if (title === "RUNNER-GUIDED READ DRAFT") return "use";
+        throw new Error(`Unexpected model-fallback choice: ${title}`);
+      },
+      confirm: async () => true,
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai_compatible",
+            model: "qwen2.5:7b",
+            baseUrl: "http://127.0.0.1:11434/v1",
+          },
+          modelReadWorkloadGenerator,
+          actionProjectInspector: async () => inspection,
+          runDelegationActionReview,
+        },
+      )).resolves.toBe(0);
+
+      expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
+      expect(fallbackChoices).toEqual(["MODEL COULD NOT PRODUCE A STRUCTURED DRAFT"]);
+      expect(runDelegationActionReview).toHaveBeenCalledOnce();
+      expect(runDelegationActionReview).toHaveBeenCalledWith(expect.objectContaining({
+        initialIntent: "Explain service visits and propose creating a maintenance request.",
+        prepareOnly: true,
+      }));
+      const reviewed = await loadBoundaryReviewContext(root);
+      expect(reviewed.candidate.pack.resources.map((resource) => resource.id)).toContain(
+        "public.maintenance_requests",
+      );
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("accepts a bounded no-model recommendation once and preserves its proposal target without activation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-no-model-recommended-"));
+    const inspection = actionTargetInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const recommendationTitles: string[] = [];
+    const runDelegationActionReview = vi.fn(async () => ({
+      state: "closed" as const,
+      source_database_changed: false as const,
+      activated_actions: [],
+    }));
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) {
+          return "Explain service visits and propose creating a maintenance request.";
+        }
+        throw new Error(`Unexpected no-model recommendation prompt: ${prompt}`);
+      },
+      chooseOption: async (title, _choices, options) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") {
+          expect(options?.initialValue).toBe("cards");
+          return "cards";
+        }
+        if (title === "RUNNER-GUIDED READ DRAFT") {
+          recommendationTitles.push(...(options?.context ?? []).filter((line) => line.startsWith("- ")));
+          return "use";
+        }
+        throw new Error(`Unexpected no-model recommendation choice: ${title}`);
+      },
+      selectReadWorkloadCards: async () => {
+        throw new Error("The recommended path should not open the full exact-card picker.");
+      },
+      confirm: async (prompt) => {
+        if (prompt.includes("Action Boundary")) return true;
+        throw new Error(`Unexpected no-model recommendation confirmation: ${prompt}`);
+      },
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          actionProjectInspector: async () => inspection,
+          runDelegationActionReview,
+        },
+      )).resolves.toBe(0);
+
+      expect(recommendationTitles.length).toBeGreaterThan(0);
+      expect(recommendationTitles.length).toBeLessThanOrEqual(4);
+      expect(runDelegationActionReview).toHaveBeenCalledOnce();
+      const reviewed = await loadBoundaryReviewContext(root);
+      expect(reviewed.candidate.pack.resources.map((resource) => resource.id)).toContain(
+        "public.maintenance_requests",
+      );
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundaries.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await fs.rm(root, { recursive: true, force: true });
