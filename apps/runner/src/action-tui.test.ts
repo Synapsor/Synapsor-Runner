@@ -21,6 +21,7 @@ import {
   reviewActionDraft,
   reviewActionProposalInbox,
   suggestedActionBoundaryLimits,
+  type ActionBoundaryInterviewContext,
   type ActionControlPrompter,
 } from "./action-tui.js";
 import type { ActionOperatorService, ActionProposalDetail } from "./action-operator.js";
@@ -280,6 +281,227 @@ describe("Safe Action terminal control plane", () => {
     });
   });
 
+  it("asks for unresolved Action bounds in natural language and confirms the exact interpretation", async () => {
+    const textLabels: string[] = [];
+    const decisionInterpreter = vi.fn(async () => ({
+      state: "resolved" as const,
+      decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } } },
+      summary: "credit_cents: 0 through 2500",
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const prompter = scriptedPrompter({
+      choices: ["confirm", "create"],
+      texts: ["From zero through twenty-five dollars."],
+      confirms: [],
+      onText: (label) => textLabels.push(label),
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Let support update an order credit_cents within a reviewed limit.",
+      [],
+      {
+        modelInterview: {
+          session: { provider: "openai", model: "gpt-5.6-luna" },
+          egressAcknowledged: true,
+          decisionInterpreter,
+        },
+      },
+    );
+
+    expect(textLabels).toEqual([
+      "What is the smallest and largest credit cents the agent may propose?",
+    ]);
+    expect(decisionInterpreter).toHaveBeenCalledWith(expect.objectContaining({
+      answer: "From zero through twenty-five dollars.",
+      decision: expect.objectContaining({ kind: "numeric_bounds", field: "credit_cents" }),
+      egressAcknowledged: true,
+    }));
+    expect(action).toMatchObject({
+      resource: "public.orders",
+      operation: "update",
+      patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
+      authority_posture: "proposal_only",
+      writeback: { mode: "none" },
+    });
+  });
+
+  it("continues with exact controls after a refused model interpretation instead of retrying later decisions", async () => {
+    const recoveryChoices: string[] = [];
+    const decisionInterpreter = vi.fn(async () => {
+      throw new Error("ACTION_BOUNDARY_INTERVIEW_INVALID: malformed local-model tool output.");
+    });
+    const prompter = scriptedPrompter({
+      choices: ["manual", "create"],
+      texts: ["From zero through twenty-five dollars.", "0,2500"],
+      confirms: [],
+      onChoose(title, choices) {
+        if (title === "MODEL INTERPRETATION NOT USED") {
+          recoveryChoices.push(...choices.map((choice) => `${choice.value}:${choice.label}`));
+        }
+      },
+    });
+
+    const result = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Let support update an order credit_cents within a reviewed limit.",
+      [],
+      {
+        modelInterview: {
+          session: { provider: "openai_compatible", model: "qwen2.5:7b", baseUrl: "http://127.0.0.1:11434/v1" },
+          egressAcknowledged: true,
+          decisionInterpreter,
+        },
+      },
+    );
+
+    expect(decisionInterpreter).toHaveBeenCalledOnce();
+    expect(recoveryChoices).toEqual(expect.arrayContaining([
+      expect.stringContaining("manual:Continue this Action setup with exact controls"),
+      expect.stringContaining("retry:Try one more natural-language answer"),
+    ]));
+    expect(result).toMatchObject({
+      resource: "public.orders",
+      operation: "update",
+      patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
+    });
+  });
+
+  it("requires a separate exact confirmation before operator-supplied value context reaches the model", async () => {
+    let attempt = 0;
+    const decisionInterpreter = vi.fn(async (input: Parameters<NonNullable<ActionBoundaryInterviewContext["decisionInterpreter"]>>[0]) => {
+      attempt += 1;
+      return attempt === 1
+        ? {
+            state: "value_request" as const,
+            field: "credit_cents",
+            reason: "The operator named a local business class that is not schema-declared.",
+            question: "Which exact credit values are in that class?",
+            correction_used: false,
+            authority_granted: false as const,
+            source_database_changed: false as const,
+          }
+        : {
+            state: "resolved" as const,
+            decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } } },
+            summary: "credit_cents: 0 through 2500",
+            correction_used: false,
+            authority_granted: false as const,
+            source_database_changed: false as const,
+          };
+    });
+    const prompter = scriptedPrompter({
+      choices: ["provide", "send", "confirm", "create"],
+      texts: ["Use our ordinary low-credit class.", "0, 2500"],
+      confirms: [],
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Let support update an order credit_cents within a reviewed limit.",
+      [],
+      {
+        modelInterview: {
+          session: { provider: "openai", model: "gpt-5.6-luna" },
+          egressAcknowledged: true,
+          decisionInterpreter,
+        },
+      },
+    );
+
+    expect(decisionInterpreter).toHaveBeenCalledTimes(2);
+    expect(decisionInterpreter.mock.calls[1]?.[0]).toMatchObject({
+      answer: "Use our ordinary low-credit class.",
+      operatorApprovedValues: {
+        field: "credit_cents",
+        values: ["0", "2500"],
+        egressAcknowledged: true,
+      },
+    });
+    expect(action).toMatchObject({
+      patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
+      authority_posture: "proposal_only",
+    });
+  });
+
+  it("lets the operator replace a prepared approval policy in natural language before one exact confirmation", async () => {
+    const policyInterpreter = vi.fn(async () => ({
+      state: "resolved" as const,
+      auto_approval: {
+        conditions: [{ field: "credit_cents", operator: "lte" as const, value: 500 }],
+        max_per_day: 3,
+        max_total_per_day: 1000,
+        total_field: "credit_cents",
+      },
+      shared_limits: [{
+        kind: "count" as const,
+        scope: "tenant_principal" as const,
+        maximum: 3,
+        window_seconds: 86400,
+      }],
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    let acceptedTemplate: QuickDeterministicApprovalTemplate | undefined;
+    const prompter = scriptedPrompter({
+      choices: ["confirm", "delegate", "change", "confirm"],
+      texts: [
+        "From zero through twenty-five dollars.",
+        "Credits up to five dollars, at most three per support agent each day and ten dollars total.",
+      ],
+      confirms: [],
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Let support update an order credit_cents within a reviewed limit.",
+      [],
+      {
+        modelInterview: {
+          session: { provider: "openai", model: "gpt-5.6-luna" },
+          egressAcknowledged: true,
+          decisionInterpreter: async () => ({
+            state: "resolved",
+            decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } } },
+            summary: "credit_cents: 0 through 2500",
+            correction_used: false,
+            authority_granted: false,
+            source_database_changed: false,
+          }),
+          policyInterpreter,
+        },
+        onDeterministicApprovalAccepted(template) {
+          acceptedTemplate = template;
+        },
+      },
+    );
+
+    expect(policyInterpreter).toHaveBeenCalledWith(expect.objectContaining({
+      answer: expect.stringContaining("three per support agent"),
+      action: expect.objectContaining({ resource: "public.orders" }),
+      egressAcknowledged: true,
+    }));
+    expect(action).toMatchObject({
+      auto_approval: {
+        conditions: [{ field: "credit_cents", operator: "lte", value: 500 }],
+        max_per_day: 3,
+        max_total_per_day: 1000,
+        total_field: "credit_cents",
+      },
+    });
+    expect(acceptedTemplate).toMatchObject({
+      source: "model_interview",
+      shared_limits: [{ scope: "tenant_principal", maximum: 3, window_seconds: 86400 }],
+    });
+  });
+
   it("reviews a validated model Action draft without reselecting its target, operation, or fields", async () => {
     const suggestion = assessActionSuggestion({
       schema_version: ACTION_SUGGESTION_VERSION,
@@ -300,9 +522,9 @@ describe("Safe Action terminal control plane", () => {
     const choiceTitles: string[] = [];
     const firstChoiceLabels: string[] = [];
     const prompter = scriptedPrompter({
-      choices: ["delegate", "proposed"],
+      choices: ["delegate", "confirm"],
       texts: ["0,2500"],
-      confirms: [true],
+      confirms: [],
       onChoose: (title, choices) => {
         choiceTitles.push(title);
         firstChoiceLabels.push(choices[0]?.label ?? "");
@@ -324,9 +546,9 @@ describe("Safe Action terminal control plane", () => {
       },
     );
 
-    expect(choiceTitles).toEqual(["REVIEW PROPOSAL ACTION", "AUTO-APPROVAL CONDITIONS"]);
+    expect(choiceTitles).toEqual(["REVIEW PROPOSAL ACTION", "EXACT DETERMINISTIC APPROVAL POLICY"]);
     expect(firstChoiceLabels[0]).toContain("model-proposed deterministic approval rules");
-    expect(firstChoiceLabels[1]).toContain("proposed conditions");
+    expect(firstChoiceLabels[1]).toContain("exact disabled policy");
     expect(action).toMatchObject({
       resource: "public.orders",
       operation: "update",
@@ -351,7 +573,7 @@ describe("Safe Action terminal control plane", () => {
     const firstChoiceLabels = new Map<string, string>();
     let acceptedTemplate: QuickDeterministicApprovalTemplate | undefined;
     const prompter = scriptedPrompter({
-      choices: ["delegate", "custom", "at_most"],
+      choices: ["delegate", "manual", "custom", "at_most"],
       texts: ["0,2500", "500", "3", "1000"],
       confirms: [],
       onText: (label, options) => textPrompts.push({ label, options }),

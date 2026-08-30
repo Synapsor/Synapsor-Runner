@@ -128,6 +128,10 @@ import {
 } from "./job-mapping-catalog.js";
 import {
   generateModelReadWorkload,
+  type ModelReadClarificationDecision,
+  type ModelReadClarificationRequest,
+  type ModelReadValueContextDecision,
+  type ModelReadValueRequest,
 } from "./read-workload-model.js";
 import {
   analyzeReadWorkloadSet,
@@ -2425,6 +2429,113 @@ function withBoundaryModelProgress<T>(
     : operation();
 }
 
+async function promptReadBoundaryClarification(input: {
+  session: BoundaryReviewInteractiveSession;
+  model: ActionModelSuggestionSession;
+  request: ModelReadClarificationRequest;
+}): Promise<ModelReadClarificationDecision> {
+  const exactTarget = `${input.request.resource}${input.request.field ? `.${input.request.field}` : ""}`;
+  const answer = await input.session.promptText(input.request.question, {
+    context: [
+      "CLARIFY ONE REVIEWED NAME",
+      `Exact reviewed metadata: ${exactTarget}`,
+      `Why the model stopped: ${input.request.reason}`,
+      `Your answer will be sent to ${boundaryModelLabel(input.model)} for one bounded remapping call.`,
+      "Explain only the business meaning. Do not paste rows, credentials, personal data, or trusted tenant/principal values.",
+      "Runner will validate the resulting exact plan and will not grant or activate authority.",
+    ],
+  });
+  return answer?.trim()
+    ? { state: "answered", answer: answer.trim() }
+    : { state: "declined" };
+}
+
+async function promptReadBoundaryValueContext(input: {
+  session: BoundaryReviewInteractiveSession;
+  model: ActionModelSuggestionSession;
+  request: ModelReadValueRequest;
+}): Promise<ModelReadValueContextDecision> {
+  const context = [
+    `Exact reviewed field: ${input.request.resource}.${input.request.field}`,
+    `Model reason: ${input.request.reason}`,
+    `Model question: ${input.request.question}`,
+    "Runner has not queried this field and will not sample rows automatically.",
+    "Native ENUM and enforced CHECK allowlists are already structural metadata; observed row values need this separate decision.",
+  ];
+  const route = input.session.chooseOption
+    ? await input.session.chooseOption("MODEL REQUESTED READ VALUE CONTEXT", [
+        {
+          value: "provide",
+          label: "Provide exact values yourself",
+          detail: "Runner previews what you type and asks again before one bounded model request.",
+        },
+        {
+          value: "without",
+          label: "Continue without observed values [recommended]",
+          detail: "No source query or value egress; the model must use reviewed structural metadata only.",
+        },
+      ], { context, initialValue: "without" })
+    : (await input.session.confirm(
+        "Provide exact values yourself for one separately confirmed model request?",
+        { context: ["MODEL REQUESTED READ VALUE CONTEXT", ...context], defaultValue: false },
+      ))
+      ? "provide"
+      : "without";
+  if (route !== "provide") return { state: "without_values" };
+
+  let warning: string | undefined;
+  while (true) {
+    const raw = await input.session.promptText(
+      `Exact ${input.request.field} values to provide (comma separated)`,
+      {
+        context: [
+          "TYPE ONLY THE VALUES YOU APPROVE FOR EGRESS",
+          `Field: ${input.request.resource}.${input.request.field}`,
+          "Runner will not query the database. Only values typed here can enter the next model request.",
+          "Do not paste credentials, tokens, personal data, or unrestricted row samples.",
+          ...(warning ? [`Not accepted: ${warning}`] : []),
+        ],
+      },
+    );
+    if (raw === undefined) return { state: "without_values" };
+    const values = [...new Set(raw.split(",").map((value) => value.trim()).filter(Boolean))];
+    if (!values.length || values.length > 32 || values.some((value) => value.length > 200)) {
+      warning = "enter 1 through 32 values, each at most 200 characters";
+      continue;
+    }
+    if (JSON.stringify(values).length > 4_000) {
+      warning = "the total approved value context must stay within 4,000 characters";
+      continue;
+    }
+    if (values.some((value) => /(?:postgres(?:ql)?|mysql):\/\/|BEGIN [A-Z ]*PRIVATE KEY|api[_-]?key\s*[:=]|bearer\s+[A-Za-z0-9._-]+/i.test(value))) {
+      warning = "the input appears to contain a credential or secret";
+      continue;
+    }
+    const send = await input.session.confirm(
+      `Send only these ${values.length} value${values.length === 1 ? "" : "s"} to ${boundaryModelLabel(input.model)} for one bounded Read mapping request?`,
+      {
+        context: [
+          "CONFIRM READ VALUE EGRESS",
+          `Field: ${input.request.resource}.${input.request.field}`,
+          ...values.map((value) => `  ${value}`),
+          "If the model uses a value, it may appear in the disabled workload proposal shown for review; it is not active authority until you confirm the boundary separately.",
+          "Source query executed: no | authority granted: no | source database changed: no",
+        ],
+        defaultValue: false,
+      },
+    );
+    return send
+      ? {
+          state: "provided",
+          resource: input.request.resource,
+          field: input.request.field,
+          values,
+          egressAcknowledged: true,
+        }
+      : { state: "without_values" };
+  }
+}
+
 function isRequiredBoundaryToolFailure(error: unknown): error is AskError {
   return error instanceof AskError && error.code === "ASK_REQUIRED_TOOL_NOT_CALLED";
 }
@@ -2445,6 +2556,16 @@ function recoverableActionModelDraftFailure(error: unknown): BoundaryModelDraftF
     kind: "reviewed_grammar",
     blockers: [blocked[1]?.trim() || "The proposed action did not fit the reviewed Action Boundary grammar."],
   };
+}
+
+function recoverableReadModelDraftFailure(error: unknown): BoundaryModelDraftFailure | undefined {
+  if (isRequiredBoundaryToolFailure(error)) return { kind: "required_tool" };
+  if (!(error instanceof Error)) return undefined;
+  if (/^READ_WORKLOAD_NOT_SUBMITTED:/i.test(error.message)) return { kind: "required_tool" };
+  if (/^READ_WORKLOAD_(?:ASSISTANCE_REQUEST_REPEATED|CLARIFICATION_DECLINED|CLARIFICATION_REQUIRED|OPAQUE_METADATA_CLARIFICATION_REQUIRED|VALUE_CONTEXT_REQUIRED):/i.test(error.message)) {
+    return { kind: "reviewed_grammar", blockers: [error.message] };
+  }
+  return undefined;
 }
 
 async function promptRunnerGuidedModelFallback(input: {
@@ -2741,6 +2862,7 @@ async function interactiveReadWorkloadAssist(input: {
   const mappingBoundary = context.candidate;
   let workload: ReadWorkloadView | undefined;
   let modelAssistSession: ActionModelSuggestionSession | undefined;
+  let modelInterviewSession: ActionModelSuggestionSession | undefined;
   let modelAssistRecord: DelegationModelAssist | undefined;
   let actionInspection: Awaited<ReturnType<typeof inspectActionProject>> | undefined;
   const preMappedActions: Array<{
@@ -2853,15 +2975,16 @@ async function interactiveReadWorkloadAssist(input: {
     const selectedModel = await promptBoundaryMappingModel(input.session, currentModel);
     if (!selectedModel) return boundaryAssistResult(boundaryAssistBackNotice());
     const confirmModelEgress = (session: ActionModelSuggestionSession) => input.session.confirm([
-      `Send this job, its read questions${actionIntents.length ? ", its proposal intents," : ""} and only reviewed structural names, types, relationships, labels, and descriptions to ${boundaryModelLabel(session)}?`,
+      `Send this job, its read questions${actionIntents.length ? ", its proposal intents," : ""} and only reviewed structural names, types, relationships, labels, descriptions, and schema-declared ENUM/CHECK allowlists to ${boundaryModelLabel(session)}?`,
       input.jobFirst
-        ? "Runner may make one bounded read-mapping call and one bounded action-set call, plus one correction call only after a refusal. It will not send rows, database values, kept-out fields, credentials, URLs, or trusted tenant/principal values."
-        : "Runner may make one bounded read-mapping call and one bounded action-mapping call per action. It will not send rows, database values, kept-out fields, credentials, URLs, or trusted tenant/principal values.",
+        ? "Runner may make one bounded read-mapping call and one bounded action-set call, plus one correction call only after a refusal. During this same job, it may also send reviewed-name clarifications and business-policy answers you type so the model can translate them into exact plans, fields, ranges, and approval rules for your confirmation. It will not send rows, observed database values, kept-out fields, credentials, URLs, or trusted tenant/principal values. Any later value request has its own exact preview and confirmation."
+        : "Runner may make one bounded read-mapping call and one bounded action-mapping call per action. It will not send rows, observed database values, kept-out fields, credentials, URLs, or trusted tenant/principal values.",
     ].join(" "), { defaultValue: false });
     let mappingSession: ActionModelSuggestionSession = { ...selectedModel };
     const acknowledged = await confirmModelEgress(mappingSession);
     if (!acknowledged) return boundaryAssistResult(boundaryAssistBackNotice("Model mapping was not started."));
     modelAssistSession = mappingSession;
+    modelInterviewSession = mappingSession;
     modelAssistRecord = {
       provider: mappingSession.provider,
       model: mappingSession.model,
@@ -2889,11 +3012,21 @@ async function interactiveReadWorkloadAssist(input: {
             ...(mappingSession.baseUrl ? { baseUrl: mappingSession.baseUrl } : {}),
             ...(mappingSession.dependencies ? { dependencies: mappingSession.dependencies } : {}),
             egressAcknowledged: true,
+            valueRequestHandler: (request) => promptReadBoundaryValueContext({
+              session: input.session,
+              model: mappingSession,
+              request,
+            }),
+            clarificationHandler: (request) => promptReadBoundaryClarification({
+              session: input.session,
+              model: mappingSession,
+              request,
+            }),
           }),
         );
       } catch (error) {
-        if (!isRequiredBoundaryToolFailure(error)) throw error;
-        failure = { kind: "required_tool" };
+        failure = recoverableReadModelDraftFailure(error);
+        if (!failure) throw error;
       }
       if (mapped?.analysis.status === "blocked") {
         failure = {
@@ -2944,6 +3077,7 @@ async function interactiveReadWorkloadAssist(input: {
           ));
         }
         modelAssistSession = mappingSession;
+        modelInterviewSession = mappingSession;
         modelAssistRecord = {
           provider: mappingSession.provider,
           model: mappingSession.model,
@@ -3061,6 +3195,7 @@ async function interactiveReadWorkloadAssist(input: {
             ));
           }
           modelAssistSession = mappingSession;
+          modelInterviewSession = mappingSession;
         }
       }
       const supportEntries: ReadWorkloadSet["allowed"] = [];
@@ -3241,7 +3376,8 @@ async function interactiveReadWorkloadAssist(input: {
         inspection,
         env: process.env,
         ...(initialSuggestionId ? { initialSuggestionId } : { initialIntent: actionIntent }),
-        ...(modelAssistSession ? { modelSuggestionSession: modelAssistSession } : {}),
+        ...(modelInterviewSession ? { modelSuggestionSession: modelInterviewSession } : {}),
+        ...(modelInterviewSession ? { modelInterviewEgressAcknowledged: true } : {}),
         prepareOnly: true,
         actionBoundaryJobIntent: jobIntent.trim(),
       });

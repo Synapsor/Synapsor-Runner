@@ -416,7 +416,12 @@ function suggestionCatalog(options: GuidedActionOptions) {
       ...(field.label ? { label: field.label } : {}),
       ...(field.description ? { description: field.description } : {}),
       type: field.data_type,
-      ...(field.enum_values.length ? { enum: field.enum_values } : {}),
+      ...(field.enum_values.length
+        ? {
+            enum: field.enum_values,
+            enum_source: "schema_declared_enum_or_check",
+          }
+        : {}),
       required_for_insert: field.required_for_insert,
       ...(field.suggested_numeric_minimum !== undefined
         ? { suggested_numeric_minimum: field.suggested_numeric_minimum }

@@ -1960,6 +1960,8 @@ describe("boundary operator-plane CLI", () => {
         model: "gpt-job-mapper",
         allowedQuestions: ["Explain service activity to support staff."],
         egressAcknowledged: true,
+        valueRequestHandler: expect.any(Function),
+        clarificationHandler: expect.any(Function),
       }));
       const context = await loadBoundaryReviewContext(root);
       expect(context.candidate.activation).toBe("disabled_unreviewed");
@@ -2437,6 +2439,9 @@ describe("boundary operator-plane CLI", () => {
       expect(prompts.some((prompt) => /Provider:|Model \[|API key environment/.test(prompt))).toBe(false);
       expect(confirms).toHaveLength(1);
       expect(confirms[0]).toContain("anthropic[claude-current]");
+      expect(confirms[0]).toContain("schema-declared ENUM/CHECK allowlists");
+      expect(confirms[0]).toContain("observed database values");
+      expect(confirms[0]).toContain("exact preview and confirmation");
       expect(modelReadWorkloadGenerator).toHaveBeenCalledWith(expect.objectContaining({
         provider: "anthropic",
         model: "claude-current",
@@ -2916,6 +2921,11 @@ describe("boundary operator-plane CLI", () => {
       expect(runDelegationActionReview).toHaveBeenCalledWith(expect.objectContaining({
         initialIntent: "Explain service visits and propose creating a maintenance request.",
         prepareOnly: true,
+        modelSuggestionSession: expect.objectContaining({
+          provider: "openai_compatible",
+          model: "qwen2.5:7b",
+        }),
+        modelInterviewEgressAcknowledged: true,
       }));
       const reviewed = await loadBoundaryReviewContext(root);
       expect(reviewed.candidate.pack.resources.map((resource) => resource.id)).toContain(

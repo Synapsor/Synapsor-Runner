@@ -156,6 +156,10 @@ describe("model-assisted Safe Action suggestions", () => {
       });
       expect(JSON.stringify(request.body)).not.toContain("provider-test-key");
       expect(JSON.stringify(request.body)).not.toContain("tenant_id");
+      expect(JSON.stringify(request.body)).toContain("enum_source");
+      expect(JSON.stringify(request.body)).toContain("schema_declared_enum_or_check");
+      expect(JSON.stringify(request.body)).toContain("open");
+      expect(JSON.stringify(request.body)).toContain("closed");
     },
   );
 

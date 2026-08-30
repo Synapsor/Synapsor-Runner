@@ -73,10 +73,18 @@ export type QuickProposalSummary = {
 };
 
 export type QuickDeterministicApprovalTemplate = {
-  source: "reviewed_structure" | "model_suggestion";
+  source: "reviewed_structure" | "model_suggestion" | "model_interview";
   auto_approval: GuidedActionAutoApprovalInput;
   shared_limits: ActionBoundarySharedLimitV1[];
   rationale: string;
+  normalizations?: string[];
+};
+
+export type QuickDeterministicApprovalPolicyInput = {
+  source: "model_suggestion" | "model_interview";
+  auto_approval: GuidedActionAutoApprovalInput;
+  shared_limits?: Array<Omit<ActionBoundarySharedLimitV1, "id" | "capability">>;
+  rationale?: string;
 };
 
 export type QuickProposalPreparation =
@@ -313,32 +321,53 @@ export function applySuggestedDeterministicApproval(
     || suggestion.operation !== preparation.action.operation) {
     throw new Error("The approval-policy proposal does not match the exact prepared action target and operation.");
   }
+  return applyInterpretedDeterministicApproval(preparation, {
+    source: "model_suggestion",
+    auto_approval: {
+      conditions: structuredClone(policy.conditions),
+      max_per_day: policy.max_per_day,
+      ...(policy.max_total_per_day === undefined
+        ? {}
+        : {
+            max_total_per_day: policy.max_total_per_day,
+            total_field: policy.total_field,
+          }),
+    },
+    shared_limits: structuredClone(policy.shared_limits ?? []),
+    rationale: policy.rationale,
+  });
+}
+
+export function applyInterpretedDeterministicApproval(
+  preparation: QuickProposalPreparation,
+  input: QuickDeterministicApprovalPolicyInput,
+): QuickProposalPreparation {
+  if (preparation.state !== "ready") return preparation;
+  if (preparation.action.operation === "delete") {
+    throw new Error("Hard DELETE cannot use deterministic auto-approval.");
+  }
+  const normalized = normalizeApprovalPolicy(preparation.action, input.auto_approval);
   const argumentFields = (preparation.action.patches ?? [])
     .filter((patch) => patch.value_source === "argument")
     .map((patch) => patch.column);
-  const uncovered = argumentFields.find((field) => !policy.conditions.some((condition) =>
+  const conditions = normalized.auto_approval.conditions ?? [];
+  const uncovered = argumentFields.find((field) => !conditions.some((condition) =>
     (condition.source ?? "patch") === "patch" && condition.field === field));
   if (uncovered) {
     throw new Error(
-      `The suggested deterministic policy does not cover prepared model-controlled field ${uncovered}. Use human review or edit the policy.`,
+      `The deterministic policy does not cover prepared model-controlled field ${uncovered}. Use human review or describe a complete policy.`,
     );
   }
+  const capabilityStem = preparation.action.capability_name
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
+    .slice(0, 32);
   return {
     ...preparation,
     deterministic_approval_template: {
-      source: "model_suggestion",
-      auto_approval: {
-        conditions: structuredClone(policy.conditions),
-        max_per_day: policy.max_per_day,
-        ...(policy.max_total_per_day === undefined
-          ? {}
-          : {
-              max_total_per_day: policy.max_total_per_day,
-              total_field: policy.total_field,
-            }),
-      },
-      shared_limits: (policy.shared_limits ?? []).map((limit, index) => ({
-        id: `suggested_${preparation.action.capability_name.replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 32)}_${limit.scope}_${limit.kind}_${index + 1}`,
+      source: input.source,
+      auto_approval: normalized.auto_approval,
+      shared_limits: (input.shared_limits ?? []).map((limit, index) => ({
+        id: `${input.source === "model_interview" ? "interview" : "suggested"}_${capabilityStem}_${limit.scope}_${limit.kind}_${index + 1}`,
         kind: limit.kind,
         scope: limit.scope,
         maximum: limit.maximum,
@@ -346,10 +375,123 @@ export function applySuggestedDeterministicApproval(
         capability: preparation.action.capability_name,
         ...(limit.field ? { field: limit.field } : {}),
       })),
-      rationale: policy.rationale
-        ?? "A model proposed these bounded inputs from structural metadata. Runner revalidated every exact field, operator, and trusted scope.",
+      rationale: input.rationale
+        ?? (input.source === "model_interview"
+          ? "Runner translated the operator's business-policy answer through a bounded model tool, then revalidated every exact field, operator, range, and trusted scope."
+          : "A model proposed these bounded inputs from structural metadata. Runner revalidated every exact field, operator, and trusted scope."),
+      ...(normalized.normalizations.length
+        ? { normalizations: normalized.normalizations }
+        : {}),
     },
   };
+}
+
+function normalizeApprovalPolicy(
+  action: GuidedActionInput,
+  policy: GuidedActionAutoApprovalInput,
+): { auto_approval: GuidedActionAutoApprovalInput; normalizations: string[] } {
+  if (!Number.isSafeInteger(policy.max_per_day) || policy.max_per_day < 1 || policy.max_per_day > 1_000_000) {
+    throw new Error("The deterministic policy count must be an integer from 1 through 1000000.");
+  }
+  const patches = new Map((action.patches ?? [])
+    .filter((patch) => patch.value_source === "argument")
+    .map((patch) => [patch.column, patch]));
+  const normalizations: string[] = [];
+  const conditions = (policy.conditions ?? []).map((condition) => {
+    if ((condition.source ?? "patch") !== "patch") return structuredClone(condition);
+    const patch = patches.get(condition.field);
+    if (!patch) {
+      throw new Error(`Deterministic policy field ${condition.field} is not a model-controlled field in this action.`);
+    }
+    if (patch.minimum !== undefined && patch.maximum !== undefined) {
+      return normalizeNumericCondition(condition, patch.minimum, patch.maximum, normalizations);
+    }
+    if (condition.operator === "max_length" && patch.max_length !== undefined) {
+      if (typeof condition.value !== "number" || !Number.isSafeInteger(condition.value) || condition.value < 1) {
+        throw new Error(`${condition.field} max_length must be a positive integer.`);
+      }
+      if (condition.value > patch.max_length) {
+        normalizations.push(
+          `${condition.field} maximum length narrowed from ${condition.value} to the reviewed proposal maximum ${patch.max_length}.`,
+        );
+        return { ...condition, value: patch.max_length };
+      }
+    }
+    return structuredClone(condition);
+  });
+  if (policy.max_total_per_day !== undefined) {
+    if (!Number.isFinite(policy.max_total_per_day) || policy.max_total_per_day <= 0) {
+      throw new Error("The aggregate deterministic policy ceiling must be a positive finite number.");
+    }
+    if (!policy.total_field || !patches.has(policy.total_field)) {
+      throw new Error("The aggregate deterministic policy must name one model-controlled numeric field.");
+    }
+    const totalPatch = patches.get(policy.total_field)!;
+    if (totalPatch.minimum === undefined || totalPatch.maximum === undefined) {
+      throw new Error(`Aggregate policy field ${policy.total_field} is not a bounded numeric proposal field.`);
+    }
+  }
+  return {
+    auto_approval: {
+      conditions,
+      max_per_day: policy.max_per_day,
+      ...(policy.max_total_per_day === undefined
+        ? {}
+        : {
+            max_total_per_day: policy.max_total_per_day,
+            total_field: policy.total_field,
+          }),
+    },
+    normalizations,
+  };
+}
+
+function normalizeNumericCondition(
+  condition: NonNullable<GuidedActionAutoApprovalInput["conditions"]>[number],
+  minimum: number,
+  maximum: number,
+  normalizations: string[],
+): NonNullable<GuidedActionAutoApprovalInput["conditions"]>[number] {
+  if (condition.operator === "in") {
+    const values = (condition.values ?? []).filter((value): value is number =>
+      typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum);
+    if (!values.length) {
+      throw new Error(`${condition.field} has no policy value inside the reviewed proposal range ${minimum} through ${maximum}.`);
+    }
+    if (values.length !== (condition.values ?? []).length) {
+      normalizations.push(`${condition.field} allowed values were intersected with the reviewed proposal range ${minimum} through ${maximum}.`);
+    }
+    return { ...condition, values };
+  }
+  if (!["gte", "lte", "eq"].includes(condition.operator)
+    || typeof condition.value !== "number"
+    || !Number.isFinite(condition.value)) {
+    throw new Error(`${condition.field} needs a finite numeric gte, lte, eq, or in condition.`);
+  }
+  if (condition.operator === "eq") {
+    if (condition.value < minimum || condition.value > maximum) {
+      throw new Error(`${condition.field} exact policy value ${condition.value} is outside the reviewed proposal range ${minimum} through ${maximum}.`);
+    }
+    return structuredClone(condition);
+  }
+  if (condition.operator === "gte") {
+    if (condition.value > maximum) {
+      throw new Error(`${condition.field} policy minimum ${condition.value} leaves no value inside the reviewed proposal range ${minimum} through ${maximum}.`);
+    }
+    if (condition.value < minimum) {
+      normalizations.push(`${condition.field} policy minimum narrowed from ${condition.value} to reviewed proposal minimum ${minimum}.`);
+      return { ...condition, value: minimum };
+    }
+    return structuredClone(condition);
+  }
+  if (condition.value < minimum) {
+    throw new Error(`${condition.field} policy maximum ${condition.value} leaves no value inside the reviewed proposal range ${minimum} through ${maximum}.`);
+  }
+  if (condition.value > maximum) {
+    normalizations.push(`${condition.field} policy maximum narrowed from ${condition.value} to reviewed proposal maximum ${maximum}.`);
+    return { ...condition, value: maximum };
+  }
+  return structuredClone(condition);
 }
 
 export function rankActionIntent(

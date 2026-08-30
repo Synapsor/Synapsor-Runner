@@ -132,6 +132,78 @@ describe("quick proposal action preparation", () => {
     expect(result.action).not.toHaveProperty("auto_approval");
   });
 
+  it("intersects model policy thresholds with the operator-reviewed proposal range", () => {
+    const prepared = prepareQuickProposalAction({
+      options,
+      intent: "Register one student with a reviewed residency and entry cohort.",
+      decisions: { numeric_bounds: { entry_cohort: { minimum: 2022, maximum: 2028 } } },
+    });
+    const assessment = assessActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: "Register one student with bounded values.",
+      resource: "institutional_research.students",
+      operation: "insert",
+      fields: ["entry_cohort", "residency"],
+      approval_policy_proposal: {
+        mode: "deterministic",
+        conditions: [
+          { field: "entry_cohort", operator: "gte", value: 1900 },
+          { field: "entry_cohort", operator: "lte", value: 2100 },
+          { field: "residency", operator: "in", values: ["in_state"] },
+        ],
+        max_per_day: 4,
+      },
+      suggested_by: { kind: "model", provider: "openai", model: "gpt-test" },
+    }, options.resources);
+
+    const result = applySuggestedDeterministicApproval(prepared, assessment);
+
+    expect(result).toMatchObject({
+      state: "ready",
+      deterministic_approval_template: {
+        source: "model_suggestion",
+        auto_approval: {
+          conditions: [
+            { field: "entry_cohort", operator: "gte", value: 2022 },
+            { field: "entry_cohort", operator: "lte", value: 2028 },
+            { field: "residency", operator: "in", values: ["in_state"] },
+          ],
+        },
+        normalizations: [
+          expect.stringContaining("minimum narrowed from 1900"),
+          expect.stringContaining("maximum narrowed from 2100"),
+        ],
+      },
+    });
+  });
+
+  it("refuses a deterministic policy whose numeric intersection is empty", () => {
+    const prepared = prepareQuickProposalAction({
+      options,
+      intent: "Register one student with a reviewed residency and entry cohort.",
+      decisions: { numeric_bounds: { entry_cohort: { minimum: 2022, maximum: 2028 } } },
+    });
+    const assessment = assessActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: "Register one student with bounded values.",
+      resource: "institutional_research.students",
+      operation: "insert",
+      fields: ["entry_cohort", "residency"],
+      approval_policy_proposal: {
+        mode: "deterministic",
+        conditions: [
+          { field: "entry_cohort", operator: "lte", value: 2000 },
+          { field: "residency", operator: "in", values: ["in_state"] },
+        ],
+        max_per_day: 4,
+      },
+      suggested_by: { kind: "model", provider: "openai", model: "gpt-test" },
+    }, options.resources);
+
+    expect(() => applySuggestedDeterministicApproval(prepared, assessment))
+      .toThrow(/leaves no value inside the reviewed proposal range 2022 through 2028/);
+  });
+
   it("asks for an exact resource when intent ranking is ambiguous", () => {
     const result = prepareQuickProposalAction({
       options: {
