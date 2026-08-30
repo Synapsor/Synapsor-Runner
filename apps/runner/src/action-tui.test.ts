@@ -233,10 +233,15 @@ describe("Safe Action terminal control plane", () => {
   });
 
   it("prepares one consolidated proposal-only action from unique reviewed intent", async () => {
+    const textPrompts: Array<{
+      label: string;
+      options: Parameters<ActionControlPrompter["text"]>[1];
+    }> = [];
     const prompter = scriptedPrompter({
       choices: ["create"],
       texts: ["0,2500"],
       confirms: [],
+      onText: (label, options) => textPrompts.push({ label, options }),
     });
     const action = await collectQuickProposalActionInput(
       options,
@@ -261,6 +266,78 @@ describe("Safe Action terminal control plane", () => {
         maximum: 2500,
       }],
     });
+    expect(textPrompts[0]).toMatchObject({
+      label: "Allowed credit_cents range (minimum,maximum)",
+      options: {
+        title: "SET THE REVIEWED RANGE FOR CREDIT_CENTS",
+        context: expect.arrayContaining([
+          "Target: UPDATE public.orders",
+          "Agent-supplied field: credit_cents",
+          "Enter two numbers separated by a comma, for example 0.5,16.",
+        ]),
+      },
+    });
+  });
+
+  it("keeps deterministic approval fields and circuit breakers tied to the reviewed action", async () => {
+    const textPrompts: Array<{
+      label: string;
+      options: Parameters<ActionControlPrompter["text"]>[1];
+    }> = [];
+    const choiceContexts = new Map<string, string[]>();
+    const prompter = scriptedPrompter({
+      choices: ["delegate", "custom", "at_most"],
+      texts: ["0,2500", "500", "3", "1000"],
+      confirms: [],
+      onText: (label, options) => textPrompts.push({ label, options }),
+      onChoose: (title, _choices, context = []) => choiceContexts.set(title, context),
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Let support update an order credit_cents within a reviewed limit.",
+    );
+
+    expect(action).toMatchObject({
+      auto_approval: {
+        conditions: [{ field: "credit_cents", operator: "lte", value: 500 }],
+        max_per_day: 3,
+        max_total_per_day: 1000,
+        total_field: "credit_cents",
+      },
+    });
+    expect(choiceContexts.get("AUTO-APPROVAL CONDITIONS")).toEqual(expect.arrayContaining([
+      "Target: UPDATE public.orders",
+      expect.stringContaining("returns the proposal to human review"),
+    ]));
+    expect(textPrompts.find((prompt) => prompt.label === "Auto-approve credit_cents at or below"))
+      .toMatchObject({
+        options: {
+          title: "SET NUMERIC AUTO-APPROVAL CEILING",
+          context: expect.arrayContaining(["Target: UPDATE public.orders"]),
+        },
+      });
+    expect(textPrompts.find((prompt) => prompt.label === "Maximum auto-approved proposals per day"))
+      .toMatchObject({
+        options: {
+          title: "SET PER-ACTION CIRCUIT BREAKER",
+          context: expect.arrayContaining([
+            expect.stringContaining("per rolling 24 hours"),
+            expect.stringContaining("require human review"),
+          ]),
+        },
+      });
+    expect(textPrompts.find((prompt) =>
+      prompt.label === "Maximum aggregate credit_cents auto-approved per day"))
+      .toMatchObject({
+        options: {
+          title: "SET AGGREGATE CIRCUIT BREAKER",
+          context: expect.arrayContaining([
+            expect.stringContaining("maximum combined credit_cents"),
+          ]),
+        },
+      });
   });
 
   it("keeps the reviewed-but-disabled Read handoff visible in the first Action choice", async () => {
@@ -988,6 +1065,31 @@ describe("Safe Action terminal control plane", () => {
     await expect(selection).resolves.toBeUndefined();
     expect(terminal.input.isRaw).toBe(false);
   });
+
+  it("keeps a colored action and policy explanation above line input", async () => {
+    vi.stubEnv("NO_COLOR", "");
+    const terminal = fakeTerminal(80, 14);
+    const prompter = createTerminalActionPrompter(terminal.input, terminal.output);
+    const text = prompter.text("Maximum approvals in the rolling window", {
+      defaultValue: "3",
+      title: "SET TRUSTED-SCOPE APPROVAL LIMIT",
+      context: [
+        "Action: INSERT renewable_ops.maintenance_requests",
+        "Selected scope: each trusted tenant + principal.",
+        "Enter the count ceiling now; choose the rolling time window next.",
+      ],
+    });
+
+    await nextTurn();
+    const rendered = terminal.output.read()?.toString() ?? "";
+    expect(rendered).toContain("\u001b[1;36m  SET TRUSTED-SCOPE APPROVAL LIMIT\u001b[0m");
+    expect(stripAnsi(rendered)).toContain("Action: INSERT renewable_ops.maintenance_requests");
+    expect(stripAnsi(rendered)).toContain("Maximum approvals in the rolling window [3] [Esc Back]:");
+
+    terminal.input.write("5\n");
+    await expect(text).resolves.toBe("5");
+    expect(terminal.input.isRaw).toBe(false);
+  });
 });
 
 function proposalDetail(state: "pending_review" | "approved"): ActionProposalDetail {
@@ -1050,6 +1152,10 @@ function scriptedPrompter(input: {
     choices: Parameters<ActionControlPrompter["choose"]>[1],
     context?: string[],
   ) => void;
+  onText?: (
+    label: string,
+    options?: Parameters<ActionControlPrompter["text"]>[1],
+  ) => void;
   onConfirm?: (label: string, defaultValue: boolean | undefined) => void;
 }): ActionControlPrompter {
   return {
@@ -1060,7 +1166,8 @@ function scriptedPrompter(input: {
       expect(choices.some((choice) => choice.value === value && !choice.disabled)).toBe(true);
       return value;
     },
-    async text() {
+    async text(label, options) {
+      input.onText?.(label, options);
       const value = input.texts.shift();
       if (value === undefined) throw new Error("Unexpected text prompt.");
       return value;

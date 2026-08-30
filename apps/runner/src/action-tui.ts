@@ -72,6 +72,24 @@ export type ActionPromptChoice = {
   disabled?: boolean;
 };
 
+type ActionTextPromptOptions = {
+  defaultValue?: string;
+  secret?: boolean;
+  title?: string;
+  context?: string[];
+};
+
+class ActionPromptBack extends Error {
+  constructor() {
+    super("Action authoring returned to the previous screen.");
+    this.name = "ActionPromptBack";
+  }
+}
+
+function isActionPromptBack(error: unknown): error is ActionPromptBack {
+  return error instanceof ActionPromptBack;
+}
+
 export type ActionControlPrompter = {
   choose(
     title: string,
@@ -79,7 +97,7 @@ export type ActionControlPrompter = {
     context?: string[],
     initialValue?: string,
   ): Promise<string | undefined>;
-  text(label: string, options?: { defaultValue?: string; secret?: boolean }): Promise<string | undefined>;
+  text(label: string, options?: ActionTextPromptOptions): Promise<string | undefined>;
   confirm(label: string, defaultValue?: boolean): Promise<boolean | undefined>;
   message(title: string, lines: string[], backLabel?: string): Promise<void>;
 };
@@ -250,17 +268,21 @@ export async function runActionControlPlane(input: {
           });
           if (activated) activatedActions.add(activated);
         } catch (error) {
-          await prompter.message("PROPOSAL ACTION REFUSED", [
-            error instanceof Error ? error.message : String(error),
-            "No action authority was activated and no weaker action was substituted.",
-          ]);
+          if (!isActionPromptBack(error)) {
+            await prompter.message("PROPOSAL ACTION REFUSED", [
+              error instanceof Error ? error.message : String(error),
+              "No action authority was activated and no weaker action was substituted.",
+            ]);
+          }
         }
         if (input.prepareOnly) break;
         continue;
       }
+      const homeChoices = actionHomeChoices(status, suggestions, options, modelSuggestionSession);
+      const preferredDraft = status.drafts.find((draft) => draft.effect_preview) ?? status.drafts[0];
       const choice = await prompter.choose(
         "ACTION BOUNDARY",
-        actionHomeChoices(status, suggestions, options, modelSuggestionSession),
+        homeChoices,
         [
           "The Action Boundary is the reviewed set of changes an agent may propose. Approval and apply stay outside the agent.",
           ...actionBoundaryHomeLines(status),
@@ -268,6 +290,7 @@ export async function runActionControlPlane(input: {
           `Targets with at least one proposal operation ${actionReadyResourceCount(options)} | Fully blocked ${actionBlockedTargetCount(options)}.`,
           ...notice,
         ],
+        preferredDraft ? `draft:${preferredDraft.capability}` : "boundary",
       );
       notice = [];
       if (!choice || choice === "quit") break;
@@ -518,6 +541,10 @@ export async function runActionControlPlane(input: {
           }
         }
       } catch (error) {
+        if (isActionPromptBack(error)) {
+          notice = [];
+          continue;
+        }
         notice = [
           error instanceof Error ? error.message : String(error),
           "No authority was activated and no weaker fallback was used.",
@@ -1024,6 +1051,7 @@ export async function collectGuidedActionInput(
     autoApproval = await collectDeterministicAutoApproval({
       prompter,
       resource,
+      operation,
       patches: patches ?? [],
       initial: reviewableInitialAutoApproval,
     });
@@ -1061,6 +1089,7 @@ export async function collectGuidedActionInput(
       autoApproval = await collectDeterministicAutoApproval({
         prompter,
         resource,
+        operation,
         patches: patches ?? [],
         initial: reviewableInitialAutoApproval,
       });
@@ -1168,6 +1197,7 @@ export async function collectQuickProposalActionInput(
         const autoApproval = await collectDeterministicAutoApproval({
           prompter,
           resource,
+          operation: preparation.action.operation,
           patches: preparation.action.patches ?? [],
         });
         return autoApproval ? { ...preparation.action, auto_approval: autoApproval } : undefined;
@@ -1201,8 +1231,24 @@ export async function collectQuickProposalActionInput(
       const defaultRange = unresolved.suggested_minimum !== undefined && unresolved.suggested_maximum !== undefined
         ? `${unresolved.suggested_minimum},${unresolved.suggested_maximum}`
         : undefined;
-      const raw = await prompter.text(`Allowed ${unresolved.field} range as minimum,maximum`, {
+      const selectedResource = options.resources.find((candidate) =>
+        candidate.id === preparation.selected.resource);
+      const target = preparation.selected.resource
+        ? `${preparation.selected.operation?.toUpperCase() ?? "PROPOSAL"} ${preparation.selected.resource}`
+        : "reviewed proposal target";
+      const raw = await prompter.text(`Allowed ${unresolved.field} range (minimum,maximum)`, {
         ...(defaultRange ? { defaultValue: defaultRange } : {}),
+        title: unresolved.title.toUpperCase(),
+        context: [
+          `Target: ${target}`,
+          ...(selectedResource?.label && selectedResource.label !== selectedResource.id
+            ? [`Table label: ${selectedResource.label}`]
+            : []),
+          `Agent-supplied field: ${unresolved.field}`,
+          unresolved.help,
+          "Enter two numbers separated by a comma, for example 0.5,16.",
+          "These bounds constrain every proposal; they do not auto-approve or write anything.",
+        ],
       });
       if (raw === undefined) return undefined;
       const values = raw.split(",").map((value) => Number(value.trim()));
@@ -1285,7 +1331,16 @@ export function createTerminalActionPrompter(input: ReadStream, output: WriteStr
     async text(label, options = {}) {
       clear();
       const suffix = options.defaultValue !== undefined ? ` [${options.defaultValue}]` : "";
-      const value = await readTerminalTextWithEscape(`  ${label}${suffix} [Esc Back]: `, input, output);
+      const hasFrame = Boolean(options.title || options.context?.length);
+      const prompt = hasFrame
+        ? [
+            ...(options.title ? [theme.title(`  ${options.title}`)] : []),
+            ...(options.context ?? []).map((line) => `  ${formatActionPromptContextLine(theme, line)}`),
+            "",
+            `  ${label}${suffix} ${theme.key("[Esc Back]")}: `,
+          ].join("\n")
+        : `  ${label}${suffix} ${theme.key("[Esc Back]")}: `;
+      const value = await readTerminalTextWithEscape(prompt, input, output);
       if (value === undefined) return undefined;
       return value || options.defaultValue;
     },
@@ -1399,8 +1454,26 @@ async function reviewAndStageActionBoundaryLimits(input: {
       { value: "tenant_object", label: "Each trusted tenant + target row", detail: "Bounds repeated approvals against one exact reviewed object." },
     ], ["The agent supplies none of these identity values; Runner derives them from verified runtime context."]);
     if (!scope) return 0;
+    const scopeDescription = scope === "tenant_principal"
+      ? "each trusted tenant + principal"
+      : scope === "tenant_object"
+        ? "each trusted tenant + target row"
+        : "each trusted tenant";
     const maximum = boundedInteger(
-      await requiredText(input.prompter, "Maximum approvals in the rolling window", String(input.action.auto_approval!.max_per_day)),
+      await requiredText(
+        input.prompter,
+        "Maximum approvals in the rolling window",
+        String(input.action.auto_approval!.max_per_day),
+        {
+          title: "SET TRUSTED-SCOPE APPROVAL LIMIT",
+          context: [
+            `Action: ${input.action.operation.toUpperCase()} ${input.resource.id}`,
+            `Selected scope: ${scopeDescription}. Identity comes from verified Runner context, never model arguments.`,
+            "Enter the count ceiling now; choose the rolling time window on the next screen.",
+            "When this shared ceiling is reached, automatic approval stops and proposals require human review.",
+          ],
+        },
+      ),
       1,
       Number.MAX_SAFE_INTEGER,
       "Shared approval maximum",
@@ -1410,7 +1483,11 @@ async function reviewAndStageActionBoundaryLimits(input: {
       { value: "86400", label: "24 hours (recommended)" },
       { value: "604800", label: "7 days" },
       { value: "2592000", label: "30 days" },
-    ], [], "86400");
+    ], [
+      `Action: ${input.action.operation.toUpperCase()} ${input.resource.id}`,
+      `Selected scope: ${scopeDescription} | maximum ${maximum} approval(s).`,
+      "Choose how far back Runner counts approvals for this trusted-scope circuit breaker.",
+    ], "86400");
     if (!window) return 0;
     limits = [{
       id: `reviewed_${scope}_count`,
@@ -1493,11 +1570,17 @@ export function suggestedActionBoundaryLimits(
 async function collectDeterministicAutoApproval(input: {
   prompter: ActionControlPrompter;
   resource: GuidedActionResourceOption;
+  operation: GuidedActionOperation;
   patches: GuidedActionPatchInput[];
   initial?: GuidedActionAutoApprovalInput;
 }): Promise<GuidedActionAutoApprovalInput | undefined> {
   const modelPatches = input.patches.filter((patch) => patch.value_source === "argument");
   const proposedConditions = input.initial ? reviewedAutoApprovalConditions(input.initial) : [];
+  const policyContext = [
+    `Target: ${input.operation.toUpperCase()} ${input.resource.id}`,
+    "Every condition is ANDed. A failed, missing, or uncertain check returns the proposal to human review.",
+    "This policy may approve a proposal; it never grants apply authority or writes to the source database.",
+  ];
   const style = await input.prompter.choose("AUTO-APPROVAL CONDITIONS", [
     ...(proposedConditions.length
       ? [{
@@ -1517,7 +1600,7 @@ async function collectDeterministicAutoApproval(input: {
       detail: "Choose numeric ranges, enum subsets, boolean values, and exact or length-bounded text per field.",
     },
   ], [
-    "All conditions are ANDed. Missing state, ambiguity, or a failed condition falls back to human review.",
+    ...policyContext,
     ...(proposedConditions.length
       ? [
           "",
@@ -1552,6 +1635,10 @@ async function collectDeterministicAutoApproval(input: {
             { value: "at_most", label: "At or below a reviewed maximum" },
             { value: "range", label: "Inside a reviewed range" },
             { value: "exact", label: "Only one exact value" },
+          ], [
+            ...policyContext,
+            `Field: ${patch.column} | proposal envelope: ${patch.minimum} through ${patch.maximum}.`,
+            "Choose the narrower condition that must pass for automatic approval.",
           ])
         : "at_most";
       if (!mode) return undefined;
@@ -1560,11 +1647,27 @@ async function collectDeterministicAutoApproval(input: {
           input.prompter,
           `${patch.column} minimum for auto-approval`,
           String(patch.minimum),
+          {
+            title: "SET NUMERIC AUTO-APPROVAL RANGE",
+            context: [
+              ...policyContext,
+              `Field: ${patch.column} | proposal envelope: ${patch.minimum} through ${patch.maximum}.`,
+              "Enter the lowest value eligible for automatic approval.",
+            ],
+          },
         ), `${patch.column} policy minimum`);
         const maximum = finiteNumber(await requiredText(
           input.prompter,
           `${patch.column} maximum for auto-approval`,
           String(patch.maximum),
+          {
+            title: "SET NUMERIC AUTO-APPROVAL RANGE",
+            context: [
+              ...policyContext,
+              `Field: ${patch.column} | proposal envelope: ${patch.minimum} through ${patch.maximum}.`,
+              `Minimum already reviewed: ${minimum}. Enter the highest value eligible for automatic approval.`,
+            ],
+          },
         ), `${patch.column} policy maximum`);
         conditions.push(
           { field: patch.column, operator: "gte", value: minimum },
@@ -1575,6 +1678,14 @@ async function collectDeterministicAutoApproval(input: {
           input.prompter,
           `Exact ${patch.column} value for auto-approval`,
           String(patch.minimum),
+          {
+            title: "SET EXACT AUTO-APPROVAL VALUE",
+            context: [
+              ...policyContext,
+              `Field: ${patch.column} | proposal envelope: ${patch.minimum} through ${patch.maximum}.`,
+              "Only this exact value will be eligible for automatic approval.",
+            ],
+          },
         ), `${patch.column} exact policy value`);
         conditions.push({ field: patch.column, operator: "eq", value });
       } else {
@@ -1585,6 +1696,14 @@ async function collectDeterministicAutoApproval(input: {
           input.prompter,
           `Auto-approve ${patch.column} at or below`,
           String(legacyDefault ?? existingTyped?.value ?? patch.maximum),
+          {
+            title: "SET NUMERIC AUTO-APPROVAL CEILING",
+            context: [
+              ...policyContext,
+              `Field: ${patch.column} | proposal envelope: ${patch.minimum} through ${patch.maximum}.`,
+              "Enter the highest value eligible for automatic approval; larger valid proposals require human review.",
+            ],
+          },
         ), `${patch.column} policy maximum`);
         conditions.push({ field: patch.column, operator: "lte", value: maximum });
       }
@@ -1597,6 +1716,14 @@ async function collectDeterministicAutoApproval(input: {
               input.prompter,
               `${patch.column} values eligible for auto-approval (comma separated)`,
               field.enum_values.join(", "),
+              {
+                title: "SET AUTO-APPROVAL VALUES",
+                context: [
+                  ...policyContext,
+                  `Field: ${patch.column} | reviewed values: ${field.enum_values.join(", ")}.`,
+                  "Enter a comma-separated subset. Other reviewed values require human approval.",
+                ],
+              },
             ),
             field.enum_values,
             patch.column,
@@ -1611,6 +1738,9 @@ async function collectDeterministicAutoApproval(input: {
             { value: "false", label: "Only false" },
             { value: "true", label: "Only true" },
             { value: "either", label: "Either reviewed boolean value" },
+          ], [
+            ...policyContext,
+            `Field: ${patch.column} | choose the boolean values eligible for automatic approval.`,
           ])
         : "either";
       if (!choice) return undefined;
@@ -1623,17 +1753,36 @@ async function collectDeterministicAutoApproval(input: {
       ? await input.prompter.choose(`AUTO-APPROVE ${field.label ?? patch.column}`, [
           { value: "exact", label: "Only one exact reviewed value" },
           { value: "length", label: "Any text within a reviewed maximum length" },
+        ], [
+          ...policyContext,
+          `Field: ${patch.column} | choose how narrowly text values are eligible for automatic approval.`,
         ])
       : "length";
     if (!mode) return undefined;
     if (mode === "exact") {
-      const value = await requiredText(input.prompter, `Exact ${patch.column} value for auto-approval`);
+      const value = await requiredText(
+        input.prompter,
+        `Exact ${patch.column} value for auto-approval`,
+        undefined,
+        {
+          title: "SET EXACT AUTO-APPROVAL VALUE",
+          context: [...policyContext, `Field: ${patch.column} | only this exact text will auto-approve.`],
+        },
+      );
       conditions.push({ field: patch.column, operator: "eq", value });
     } else {
       const maximum = boundedInteger(await requiredText(
         input.prompter,
         `${patch.column} maximum length for auto-approval`,
         String(patch.max_length ?? 128),
+        {
+          title: "SET TEXT AUTO-APPROVAL LIMIT",
+          context: [
+            ...policyContext,
+            `Field: ${patch.column} | proposal maximum length: ${patch.max_length ?? 4096}.`,
+            "Enter the longest text value eligible for automatic approval.",
+          ],
+        },
       ), 1, patch.max_length ?? 4096, `${patch.column} policy length`);
       conditions.push({ field: patch.column, operator: "max_length", value: maximum });
     }
@@ -1646,6 +1795,14 @@ async function collectDeterministicAutoApproval(input: {
     input.prompter,
     "Maximum auto-approved proposals per day",
     String(input.initial?.max_per_day ?? 20),
+    {
+      title: "SET PER-ACTION CIRCUIT BREAKER",
+      context: [
+        ...policyContext,
+        "Enter how many proposals this action policy may auto-approve per rolling 24 hours.",
+        "After the ceiling is reached, further proposals require human review.",
+      ],
+    },
   ), 1, 1_000_000, "per-day policy count");
   const numericPatches = modelPatches.filter((patch) => patch.minimum !== undefined && patch.maximum !== undefined);
   if (!numericPatches.length) return { conditions, max_per_day: maxPerDay };
@@ -1658,6 +1815,14 @@ async function collectDeterministicAutoApproval(input: {
     input.prompter,
     `Maximum aggregate ${totalField} auto-approved per day`,
     String(input.initial?.max_total_per_day ?? Math.max(totalPatch.maximum ?? 1, 1) * maxPerDay),
+    {
+      title: "SET AGGREGATE CIRCUIT BREAKER",
+      context: [
+        ...policyContext,
+        `Count ceiling already reviewed: ${maxPerDay} auto-approved proposal(s) per rolling 24 hours.`,
+        `Enter the maximum combined ${totalField} across those auto-approved proposals.`,
+      ],
+    },
   ), 1, 1_000_000_000, "aggregate policy value");
   return {
     conditions,
@@ -3271,8 +3436,17 @@ async function chooseRequired(prompter: ActionControlPrompter, title: string, va
   return prompter.choose(title, values.map((value) => ({ value, label: value })));
 }
 
-async function requiredText(prompter: ActionControlPrompter, label: string, defaultValue?: string): Promise<string> {
-  const value = await prompter.text(label, { ...(defaultValue !== undefined ? { defaultValue } : {}) });
+async function requiredText(
+  prompter: ActionControlPrompter,
+  label: string,
+  defaultValue?: string,
+  display: Pick<ActionTextPromptOptions, "title" | "context"> = {},
+): Promise<string> {
+  const value = await prompter.text(label, {
+    ...(defaultValue !== undefined ? { defaultValue } : {}),
+    ...display,
+  });
+  if (value === undefined) throw new ActionPromptBack();
   if (!value) throw new Error(`${label} is required.`);
   return value;
 }
