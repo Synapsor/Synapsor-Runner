@@ -588,6 +588,7 @@ export type AnalyticsShellIo = {
     title: string;
     message: string;
     initialValue?: string;
+    showSelectedDetail?: boolean;
     options: Array<{
       value: string;
       label: string;
@@ -896,10 +897,12 @@ export function createTerminalAnalyticsShellIo(input: {
   readable?: Readable;
   writable?: Writable;
   terminal?: boolean;
+  slashCommands?: boolean;
 } = {}): AnalyticsShellIo {
   const readable = input.readable ?? process.stdin;
   const writable = input.writable ?? process.stdout;
   const terminal = input.terminal ?? Boolean((readable as NodeJS.ReadStream).isTTY);
+  const slashCommands = input.slashCommands ?? true;
   let interrupt: (() => void) | undefined;
   const rl = readline.createInterface({
     input: readable,
@@ -908,6 +911,7 @@ export function createTerminalAnalyticsShellIo(input: {
     historySize: 100,
     removeHistoryDuplicates: true,
     completer: (line: string): [string[], string] => {
+      if (!slashCommands) return [[], line];
       const matches = slashMenuSuggestions(line)
         .flatMap((entry) => entry.completion ? [entry.completion] : []);
       const recognizedAction = COMMANDS.some((command) =>
@@ -994,7 +998,7 @@ export function createTerminalAnalyticsShellIo(input: {
     redrawInputSurface("");
   };
   const renderSlashMenu = () => {
-    if (!questionActive || closed) return;
+    if (!slashCommands || !questionActive || closed) return;
     const line = rl.line;
     const menu = renderSlashCommandMenu(
       line,
@@ -1019,7 +1023,7 @@ export function createTerminalAnalyticsShellIo(input: {
       }
       return;
     }
-    if (slashMenuRenderQueued) return;
+    if (!slashCommands || slashMenuRenderQueued) return;
     slashMenuRenderQueued = true;
     setImmediate(() => {
       slashMenuRenderQueued = false;
@@ -1097,16 +1101,23 @@ export function createTerminalAnalyticsShellIo(input: {
           )]
           : []),
         "",
-        ...visibleOptions.map((option, visibleIndex) => {
+        ...visibleOptions.flatMap((option, visibleIndex) => {
           const optionIndex = windowStart + visibleIndex;
           const marker = optionIndex === selected ? ">" : " ";
           const label = safeTerminalText(option.label).padEnd(labelWidth);
-          const detail = option.detail ? `  ${safeTerminalText(option.detail)}` : "";
-          const line = fit(`${marker} ${label}${detail}`, width);
-          return optionIndex === selected ? theme.focus(line) : line;
+          const inlineDetail = option.detail && !choice.showSelectedDetail
+            ? `  ${safeTerminalText(option.detail)}`
+            : "";
+          const line = fit(`${marker} ${label}${inlineDetail}`, width);
+          return [
+            optionIndex === selected ? theme.focus(line) : line,
+            ...(optionIndex === selected && choice.showSelectedDetail && option.detail
+              ? [`    ${theme.dim(safeTerminalText(option.detail))}`]
+              : []),
+          ];
         }),
         "",
-        `${theme.key("Up/Down")} Select   ${theme.key("Enter")} Show diagram   ${theme.key("Esc")} Cancel`,
+        `${theme.key("Up/Down")} Move   ${theme.key("Enter")} Select   ${theme.key("Esc")} Back`,
       ].flatMap((line) =>
         wrapStyledTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
       pickerRenderer.render(lines);

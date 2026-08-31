@@ -349,6 +349,7 @@ describe("Safe Action terminal control plane", () => {
 
   it("continues with exact controls after a refused model interpretation instead of retrying later decisions", async () => {
     const recoveryChoices: string[] = [];
+    const recoveryContext: string[] = [];
     const decisionInterpreter = vi.fn(async () => {
       throw new Error("ACTION_BOUNDARY_INTERVIEW_INVALID: malformed local-model tool output.");
     });
@@ -356,9 +357,10 @@ describe("Safe Action terminal control plane", () => {
       choices: ["manual", "create"],
       texts: ["From zero through twenty-five dollars.", "0,2500"],
       confirms: [],
-      onChoose(title, choices) {
+      onChoose(title, choices, context) {
         if (title === "MODEL INTERPRETATION NOT USED") {
           recoveryChoices.push(...choices.map((choice) => `${choice.value}:${choice.label}`));
+          recoveryContext.push(...(context ?? []));
         }
       },
     });
@@ -382,6 +384,10 @@ describe("Safe Action terminal control plane", () => {
       expect.stringContaining("manual:Continue this Action setup with exact controls"),
       expect.stringContaining("retry:Try one more natural-language answer"),
     ]));
+    expect(recoveryContext).toContain(
+      "The selected model returned invalid structured output: malformed local-model tool output.",
+    );
+    expect(recoveryContext.join("\n")).not.toContain("ACTION_BOUNDARY_INTERVIEW_INVALID");
     expect(result).toMatchObject({
       resource: "public.orders",
       operation: "update",

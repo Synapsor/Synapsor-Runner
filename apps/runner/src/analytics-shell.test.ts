@@ -1974,6 +1974,59 @@ describe("Synapsor Analytics shell", () => {
     expect(readable.isRaw).toBe(false);
   });
 
+  it("keeps the highlighted explanation readable without overflowing a short terminal", async () => {
+    const readable = new PassThrough() as PassThrough & {
+      isRaw: boolean;
+      setRawMode(value: boolean): void;
+    };
+    readable.isRaw = false;
+    readable.setRawMode = (value) => {
+      readable.isRaw = value;
+    };
+    const writable = new PassThrough() as PassThrough & { columns: number; rows: number };
+    writable.columns = 64;
+    writable.rows = 10;
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+
+    const choice = io.choose!({
+      title: "CHOOSE A DRAFTING PATH",
+      message: "Select one path.",
+      showSelectedDetail: true,
+      options: [
+        {
+          value: "model",
+          label: "Use the selected model",
+          detail: "Talk through the job; Runner validates every suggested Read and Action decision.",
+        },
+        {
+          value: "runner",
+          label: "Continue without a model",
+          detail: "Runner prepares exact plan cards from reviewed schema evidence.",
+        },
+      ],
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    let frame = chunks.join("");
+    expect(terminalFrameRows(frame)).toBeLessThanOrEqual(10);
+    expect(stripAnsi(frame)).toContain("Talk through the job; Runner");
+    expect(stripAnsi(frame)).toContain("Enter Select");
+    expect(stripAnsi(frame)).not.toContain("Show diagram");
+
+    const offset = frame.length;
+    readable.emit("keypress", "", { name: "down", sequence: "\u001b[B" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    frame = chunks.join("").slice(offset);
+    expect(terminalFrameRows(frame)).toBeLessThanOrEqual(10);
+    expect(stripAnsi(frame)).toContain("Runner prepares exact plan cards");
+
+    readable.emit("keypress", "", { name: "return", sequence: "\r" });
+    await expect(choice).resolves.toBe("runner");
+    io.close();
+  });
+
   it("keeps blank terminal rows below the live analytics prompt", async () => {
     const readable = new PassThrough();
     const writable = new PassThrough() as PassThrough & { columns: number };

@@ -221,6 +221,7 @@ describe("boundary operator-plane CLI", () => {
         "Change the model for openai",
         "Choose another provider",
       ],
+      initial: "current",
       explicit: true,
     }]);
   });
@@ -1975,6 +1976,14 @@ describe("boundary operator-plane CLI", () => {
         throw new Error("Job-first drafting must not open activation implicitly.");
       },
     };
+    const chatClose = vi.fn();
+    const chatModel = vi.fn();
+    const chatRunner = vi.fn();
+    const chatProgressCalls: string[] = [];
+    const chatProgress = async <T>(message: string, operation: () => Promise<T>): Promise<T> => {
+      chatProgressCalls.push(message);
+      return operation();
+    };
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
       await expect(boundaryReviewCommandInternal(
@@ -1990,6 +1999,20 @@ describe("boundary operator-plane CLI", () => {
             apiKey: "session-only-secret",
           },
           modelReadWorkloadGenerator,
+          boundaryAuthoringChatFactory: () => ({
+            session,
+            actionPrompter: {
+              choose: async () => undefined,
+              text: async () => undefined,
+              confirm: async () => undefined,
+              message: async () => undefined,
+            },
+            setModel: vi.fn(),
+            runner: chatRunner,
+            model: chatModel,
+            progress: chatProgress,
+            close: chatClose,
+          }),
         },
       )).resolves.toBe(0);
 
@@ -2007,6 +2030,16 @@ describe("boundary operator-plane CLI", () => {
         valueRequestHandler: expect.any(Function),
         clarificationHandler: expect.any(Function),
       }));
+      expect(chatProgressCalls).toEqual(["Mapping requested reads with the selected model"]);
+      expect(chatModel).toHaveBeenCalledWith(expect.arrayContaining([
+        expect.stringContaining("representative read plan"),
+      ]));
+      expect(chatRunner).toHaveBeenCalledWith(
+        "Runner validation",
+        expect.any(Array),
+        "success",
+      );
+      expect(chatClose).toHaveBeenCalledOnce();
       const context = await loadBoundaryReviewContext(root);
       expect(context.candidate.activation).toBe("disabled_unreviewed");
       expect(context.candidate.pack.resources).toHaveLength(1);
@@ -2030,6 +2063,112 @@ describe("boundary operator-plane CLI", () => {
         "utf8",
       );
       expect(stored).not.toContain("session-only-secret");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("keeps an egress denial in the same authoring chat and continues without a model", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-chat-egress-denied-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const modelReadWorkloadGenerator = vi.fn();
+    const choices: string[] = [];
+    const chatClose = vi.fn();
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) {
+          return "Explain service activity to support staff.";
+        }
+        throw new Error(`Unexpected denied-egress text prompt: ${prompt}`);
+      },
+      chooseOption: async (title, options, promptOptions) => {
+        choices.push(title);
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
+        if (title === "MODEL REQUEST NOT STARTED") {
+          expect(promptOptions?.initialValue).toBe("runner");
+          expect(options.map((option) => option.value)).toEqual([
+            "runner",
+            "review",
+            "change_model",
+            "back",
+          ]);
+          return "runner";
+        }
+        if (title === "RUNNER-GUIDED READ DRAFT") return "use";
+        throw new Error(`Unexpected denied-egress choice: ${title}`);
+      },
+      confirm: async (prompt) => {
+        if (prompt.includes("Action Boundary")) return false;
+        if (prompt.includes("structural names")) return false;
+        throw new Error(`Unexpected denied-egress confirmation: ${prompt}`);
+      },
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-job-mapper",
+            apiKey: "session-only-secret",
+          },
+          modelReadWorkloadGenerator,
+          boundaryAuthoringChatFactory: () => ({
+            session,
+            actionPrompter: {
+              choose: async () => undefined,
+              text: async () => undefined,
+              confirm: async () => undefined,
+              message: async () => undefined,
+            },
+            setModel: vi.fn(),
+            runner: vi.fn(),
+            model: vi.fn(),
+            progress: async <T>(_message: string, operation: () => Promise<T>) => operation(),
+            close: chatClose,
+          }),
+        },
+      )).resolves.toBe(0);
+
+      expect(choices).toEqual(expect.arrayContaining([
+        "MODEL REQUEST NOT STARTED",
+        "RUNNER-GUIDED READ DRAFT",
+      ]));
+      expect(modelReadWorkloadGenerator).not.toHaveBeenCalled();
+      expect(chatClose).toHaveBeenCalledOnce();
+      const delegation = await readDelegationDraft(root, "explain_service_activity_to_support_staff");
+      expect(delegation).toMatchObject({
+        state: "disabled",
+        actions: [],
+        authority_granted: false,
+        source_query_executed: false,
+        source_database_changed: false,
+      });
+      expect(delegation).not.toHaveProperty("model_assist");
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -2606,7 +2745,7 @@ describe("boundary operator-plane CLI", () => {
           return "model";
         }
         expect(title).toBe("MODEL FOR BOUNDARY DRAFTING");
-        expect(promptOptions?.initialValue).toBeUndefined();
+        expect(promptOptions?.initialValue).toBe("current");
         expect(promptOptions?.requireExplicitSelection).toBe(true);
         modelChoices.push(...options.map((option) => option.label));
         return "current";
@@ -3786,6 +3925,62 @@ describe("boundary operator-plane CLI", () => {
       expect(active.activation.digest).toBe(
         explorationBoundaryCandidateDigest(build.exploration_boundary),
       );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps conversational activation output inside the authoring transcript", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-conversation-activation-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const presented: Array<{ title: string; lines: string[]; tone?: string }> = [];
+    const session: BoundaryReviewInteractiveSession = {
+      presentationMode: "conversation",
+      present: (title, lines, tone) => presented.push({ title, lines, ...(tone ? { tone } : {}) }),
+      chooseResource: async () => ({ action: "confirm" }),
+      editFieldTiers: async () => undefined,
+      promptText: async () => "alice",
+      confirm: async () => true,
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root],
+        async () => inspection,
+        session,
+        async () => 0,
+      )).resolves.toBe(0);
+
+      expect(presented).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          title: "READ BOUNDARY ACTIVATED",
+          tone: "success",
+          lines: expect.arrayContaining([
+            expect.stringMatching(/active for local read-only Explore/i),
+            "Source database changed: no",
+          ]),
+        }),
+      ]));
+      expect(output).not.toContain("BOUNDARY REVIEW\n");
+      expect(output).not.toContain("ACTIVATION SUCCEEDED");
+      expect(output).not.toContain("/access is still open");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

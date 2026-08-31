@@ -1496,7 +1496,7 @@ async function collectConversationalProposalDecision(input: {
         { value: "manual", label: "Continue this Action setup with exact controls [recommended]", detail: "No further provider requests for the remaining Action Boundary decisions." },
         { value: "back", label: "Back", detail: "Save no value for this unresolved decision." },
       ], [
-        error instanceof Error ? error.message : String(error),
+        conversationalModelFailure(error),
         "Runner accepted no model output. No authority or source data changed.",
         ...(operatorRetryUsed ? ["The one operator-requested retry was also refused."] : []),
       ], "manual");
@@ -1562,6 +1562,12 @@ async function collectConversationalProposalDecision(input: {
     if (!choice || choice === "back") return "back";
     notice = ["The prior interpretation was discarded. Your next answer replaces it."];
   }
+}
+
+function conversationalModelFailure(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const reason = raw.replace(/^[A-Z][A-Z0-9_]+:\s*/u, "").trim();
+  return `The selected model returned invalid structured output${reason ? `: ${reason}` : "."}`;
 }
 
 async function reviewPreparedDeterministicApproval(input: {

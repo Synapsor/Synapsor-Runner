@@ -193,6 +193,13 @@ type BoundaryChoicePromptOptions = BoundaryPromptOptions & {
 };
 
 export type BoundaryReviewInteractiveSession = {
+  /** Conversation surfaces retain scrollback and render prompt context themselves. */
+  presentationMode?: "screen" | "conversation";
+  present?(
+    title: string,
+    lines: string[],
+    tone?: "normal" | "success" | "warning" | "danger",
+  ): void;
   chooseResource(
     resources: BoundaryResourceReviewSummary[],
     overview?: BoundaryReviewOverview,

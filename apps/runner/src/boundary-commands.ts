@@ -109,6 +109,11 @@ import {
   type ActionModelSuggestionSession,
 } from "./action-tui.js";
 import {
+  createBoundaryAuthoringChat,
+  type BoundaryAuthoringChat,
+  type BoundaryAuthoringChatFactory,
+} from "./boundary-authoring-chat.js";
+import {
   importActionSuggestion,
   listActionSuggestions,
 } from "./action-suggestions.js";
@@ -239,6 +244,8 @@ export type BoundaryReviewCommandOptions = {
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
+  /** Overrides the persistent model-assisted authoring surface in tests or embedded clients. */
+  boundaryAuthoringChatFactory?: BoundaryAuthoringChatFactory;
   /** Opens the one-job Read + Action Boundary setup before the schema editor. */
   startWithAgentJob?: boolean;
 };
@@ -774,6 +781,7 @@ export async function boundaryReviewCommand(
       modelActionSuggestionSetGenerator: options.modelActionSuggestionSetGenerator,
       actionProjectInspector: options.actionProjectInspector,
       runDelegationActionReview: options.runDelegationActionReview,
+      boundaryAuthoringChatFactory: options.boundaryAuthoringChatFactory,
       startWithAgentJob: options.startWithAgentJob ?? args.includes("--job-first"),
     });
   }
@@ -1226,6 +1234,7 @@ async function boundaryResourceReviewCommand(
         modelActionSuggestionSetGenerator: options.modelActionSuggestionSetGenerator,
         actionProjectInspector: options.actionProjectInspector,
         runDelegationActionReview: options.runDelegationActionReview,
+        boundaryAuthoringChatFactory: options.boundaryAuthoringChatFactory,
       });
     }
     if (result === "review") {
@@ -1493,6 +1502,7 @@ async function interactiveBoundaryReviewLoop(input: {
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
+  boundaryAuthoringChatFactory?: BoundaryAuthoringChatFactory;
   startWithAgentJob?: boolean;
 }): Promise<number> {
   let startAtBoundaryList = input.startAtBoundaryList;
@@ -1559,8 +1569,10 @@ async function interactiveBoundaryReviewLoop(input: {
           modelActionSuggestionSetGenerator: input.modelActionSuggestionSetGenerator,
           actionProjectInspector: input.actionProjectInspector,
           runDelegationActionReview: input.runDelegationActionReview,
-          completeReadReview: async (mode) => confirmActivateAndKeepAccessOpen({
+          boundaryAuthoringChatFactory: input.boundaryAuthoringChatFactory,
+          completeReadReview: async (mode, session = input.session) => confirmActivateAndKeepAccessOpen({
             ...accessActivationInput,
+            session,
             prepareDependentActions: mode === "prepare_actions",
           }),
           jobFirst: true,
@@ -1650,8 +1662,10 @@ async function interactiveBoundaryReviewLoop(input: {
           modelActionSuggestionGenerator: input.modelActionSuggestionGenerator,
           actionProjectInspector: input.actionProjectInspector,
           runDelegationActionReview: input.runDelegationActionReview,
-          completeReadReview: async (mode) => confirmActivateAndKeepAccessOpen({
+          boundaryAuthoringChatFactory: input.boundaryAuthoringChatFactory,
+          completeReadReview: async (mode, session = input.session) => confirmActivateAndKeepAccessOpen({
             ...accessActivationInput,
+            session,
             prepareDependentActions: mode === "prepare_actions",
           }),
           jobFirst: true,
@@ -2245,6 +2259,7 @@ export async function promptBoundaryMappingModel(
           "MODEL FOR BOUNDARY DRAFTING",
           choices,
           {
+            initialValue: "current",
             requireExplicitSelection: true,
             context: [
               "Choose the exact model/provider for this job; Runner does not select one for you.",
@@ -2674,7 +2689,7 @@ async function promptRunnerGuidedModelFallback(input: {
   return accepted ? "runner" : "back";
 }
 
-async function interactiveReadWorkloadAssist(input: {
+type InteractiveReadWorkloadAssistInput = {
   projectRoot: string;
   schemaInspector: typeof inspectDatabase;
   session: BoundaryReviewInteractiveSession;
@@ -2684,11 +2699,62 @@ async function interactiveReadWorkloadAssist(input: {
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
-  completeReadReview?: (mode: "prepare_actions" | "activate") => Promise<number>;
+  boundaryAuthoringChatFactory?: BoundaryAuthoringChatFactory;
+  completeReadReview?: (
+    mode: "prepare_actions" | "activate",
+    session?: BoundaryReviewInteractiveSession,
+  ) => Promise<number>;
   jobFirst?: boolean;
-}): Promise<{ notice: BoundaryAccessNotice; activation_ready: boolean; handoff_ready: boolean }> {
+};
+
+async function interactiveReadWorkloadAssist(
+  input: InteractiveReadWorkloadAssistInput,
+): Promise<{ notice: BoundaryAccessNotice; activation_ready: boolean; handoff_ready: boolean }> {
   const currentModel = input.modelAuthoringSession
     ?? conventionalModelAuthoringSession(process.env);
+  const shouldOpenChat = input.jobFirst === true && (
+    input.boundaryAuthoringChatFactory !== undefined
+    || (process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY)
+  );
+  const authoringChat = shouldOpenChat
+    ? (input.boundaryAuthoringChatFactory ?? createBoundaryAuthoringChat)({
+        ...(currentModel ? { modelLabel: boundaryModelLabel(currentModel) } : {}),
+      })
+    : undefined;
+  const session = authoringChat
+    ? { ...input.session, ...authoringChat.session }
+    : input.session;
+  try {
+    return await interactiveReadWorkloadAssistSession({
+      ...input,
+      session,
+      currentModel,
+      ...(authoringChat ? { authoringChat } : {}),
+    });
+  } finally {
+    authoringChat?.close();
+  }
+}
+
+async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorkloadAssistInput & {
+  currentModel?: ActionModelSuggestionSession;
+  authoringChat?: BoundaryAuthoringChat;
+}): Promise<{ notice: BoundaryAccessNotice; activation_ready: boolean; handoff_ready: boolean }> {
+  const currentModel = input.currentModel;
+  const runWithProgress = <T>(message: string, operation: () => Promise<T>) => input.authoringChat
+    ? input.authoringChat.progress(message, operation)
+    : withBoundaryModelProgress(message, operation);
+  const writeRunner = (
+    title: string,
+    lines: string[],
+    tone: "normal" | "success" | "warning" | "danger" = "normal",
+  ) => {
+    if (input.authoringChat) {
+      input.authoringChat.runner(title, lines, tone);
+      return;
+    }
+    process.stdout.write(["", title, ...lines, ""].join("\n"));
+  };
   const jobIntent = await input.session.promptText(
     "What job are you giving this agent?",
     {
@@ -2725,10 +2791,36 @@ async function interactiveReadWorkloadAssist(input: {
   let mode: MappingMode | undefined;
   let manualSelected = false;
   if (input.session.chooseOption) {
-    const selected = await input.session.chooseOption(
+    const conversationalJobChoices = [
+      {
+        value: "model",
+        label: currentModel
+          ? `Continue with ${boundaryModelLabel(currentModel)}  [recommended]`
+          : "Choose a drafting model  [recommended]",
+        detail: "Talk through the job; Runner validates every suggested Read and Action decision.",
+      },
+      {
+        value: "cards",
+        label: "Continue without a model",
+        detail: "Runner prepares explainable exact plan cards from reviewed schema evidence.",
+      },
+      {
+        value: "manual",
+        label: "Open the manual Boundary editors",
+        detail: "Review exact tables, fields, relationships, limits, and actions yourself.",
+      },
+      {
+        value: "advanced",
+        label: "Advanced inputs",
+        detail: "Import exact plan JSON, question-intent JSON, or a saved analysis.",
+      },
+    ];
+    let selected = await input.session.chooseOption(
       input.jobFirst ? "MAP THE JOB TO REVIEWED STRUCTURE" : "HOW SHOULD RUNNER MAP THIS JOB?",
       input.jobFirst
-        ? [
+        ? input.authoringChat
+          ? conversationalJobChoices
+          : [
             {
               value: "model",
               label: currentModel
@@ -2796,7 +2888,11 @@ async function interactiveReadWorkloadAssist(input: {
             },
           ],
       {
-        initialValue: input.jobFirst && currentModel ? "model" : "cards",
+        initialValue: input.authoringChat
+          ? "model"
+          : input.jobFirst && currentModel
+            ? "model"
+            : "cards",
         context: input.jobFirst
           ? [
               "A model receives only reviewed structural metadata after you approve egress.",
@@ -2809,6 +2905,33 @@ async function interactiveReadWorkloadAssist(input: {
       },
     );
     if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    if (selected === "advanced") {
+      selected = await input.session.chooseOption(
+        "ADVANCED BOUNDARY INPUT",
+        [
+          {
+            value: "exact",
+            label: "Exact read-workload JSON",
+            detail: "Supply compiler-shaped representative plans directly.",
+          },
+          {
+            value: "intent_model",
+            label: "Question-intent JSON plus model",
+            detail: "Supply exact allowed and refused question examples for bounded model mapping.",
+          },
+          {
+            value: "saved",
+            label: "Reopen a saved workload analysis",
+            detail: "Continue a prior disabled analysis against the current Boundary.",
+          },
+        ],
+        {
+          initialValue: "saved",
+          context: ["These paths are for repeatable imports and resumed reviews. None activates authority."],
+        },
+      );
+      if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    }
     manualSelected = input.jobFirst === true && selected === "manual";
     if (!manualSelected) {
       mode = selected as MappingMode;
@@ -2883,6 +3006,9 @@ async function interactiveReadWorkloadAssist(input: {
       schemaInspector: input.schemaInspector,
       session: input.session,
       jobIntent: jobIntent.trim(),
+      ...(input.authoringChat ? {
+        write: (title, lines, tone) => input.authoringChat!.runner(title, lines, tone),
+      } : {}),
     });
     if (!prepared) {
       return boundaryAssistResult(boundaryAssistBackNotice(
@@ -3011,6 +3137,7 @@ async function interactiveReadWorkloadAssist(input: {
     }
     const selectedModel = await promptBoundaryMappingModel(input.session, currentModel);
     if (!selectedModel) return boundaryAssistResult(boundaryAssistBackNotice());
+    input.authoringChat?.setModel(boundaryModelLabel(selectedModel));
     const confirmModelEgress = (session: ActionModelSuggestionSession) => input.session.confirm([
       `Send this job, its read questions${actionIntents.length ? ", its proposal intents," : ""} and only reviewed structural names, types, relationships, labels, descriptions, and schema-declared ENUM/CHECK allowlists to ${boundaryModelLabel(session)}?`,
       input.jobFirst
@@ -3018,15 +3145,78 @@ async function interactiveReadWorkloadAssist(input: {
         : "Runner may make one bounded read-mapping call and one bounded action-mapping call per action. It will not send rows, observed database values, kept-out fields, credentials, URLs, or trusted tenant/principal values.",
     ].join(" "), { defaultValue: false });
     let mappingSession: ActionModelSuggestionSession = { ...selectedModel };
-    const acknowledged = await confirmModelEgress(mappingSession);
-    if (!acknowledged) return boundaryAssistResult(boundaryAssistBackNotice("Model mapping was not started."));
-    modelAssistSession = mappingSession;
-    modelInterviewSession = mappingSession;
-    modelAssistRecord = {
-      provider: mappingSession.provider,
-      model: mappingSession.model,
-      structural_metadata_egress_acknowledged: true,
-    };
+    let acknowledged = await confirmModelEgress(mappingSession);
+    while (!acknowledged) {
+      if (!input.authoringChat || !input.session.chooseOption) {
+        return boundaryAssistResult(boundaryAssistBackNotice("Model mapping was not started."));
+      }
+      const recovery = await input.session.chooseOption(
+        "MODEL REQUEST NOT STARTED",
+        [
+          {
+            value: "runner",
+            label: "Continue this job without a model  [recommended]",
+            detail: "Reuse the same disabled catalog and prepare explainable exact plan cards.",
+          },
+          {
+            value: "review",
+            label: "Review the same permission again",
+            detail: "No request starts unless you approve the exact metadata egress shown above.",
+          },
+          {
+            value: "change_model",
+            label: "Choose another model",
+            detail: "Keep the same job, then review the replacement model and its metadata egress.",
+          },
+          {
+            value: "back",
+            label: "Pause this job",
+            detail: "Keep active authority unchanged and return to the access editor only by explicit choice.",
+          },
+        ],
+        {
+          initialValue: "runner",
+          context: [
+            "Runner sent nothing to the model. The same job and disabled structural catalog are still available.",
+            "Choose how to continue; no source query, source write, or authority change has occurred.",
+          ],
+        },
+      );
+      if (recovery === "runner") {
+        const guided = await prepareRunnerGuidedWorkload();
+        if (!guided) return boundaryAssistResult(boundaryAssistBackNotice());
+        workload = guided;
+        break;
+      }
+      if (recovery === "review") {
+        acknowledged = await confirmModelEgress(mappingSession);
+        continue;
+      }
+      if (recovery === "change_model") {
+        const replacement = await promptBoundaryMappingModel(input.session, mappingSession);
+        if (!replacement) {
+          input.authoringChat.runner("Model choice unchanged", [
+            "No provider request was made. The same job is still waiting for a drafting path.",
+          ], "warning");
+          continue;
+        }
+        mappingSession = { ...replacement };
+        input.authoringChat.setModel(boundaryModelLabel(mappingSession));
+        acknowledged = await confirmModelEgress(mappingSession);
+        continue;
+      }
+      return boundaryAssistResult(boundaryAssistBackNotice(
+        "Agent job paused by the operator. No provider request was made and no authority changed.",
+      ));
+    }
+    if (!workload) {
+      modelAssistSession = mappingSession;
+      modelInterviewSession = mappingSession;
+      modelAssistRecord = {
+        provider: mappingSession.provider,
+        model: mappingSession.model,
+        structural_metadata_egress_acknowledged: true,
+      };
     let mapped: Awaited<ReturnType<typeof generateModelReadWorkload>> | undefined;
     let operatorRetryUsed = false;
     while (!workload && !mapped) {
@@ -3035,7 +3225,7 @@ async function interactiveReadWorkloadAssist(input: {
         | { kind: "reviewed_grammar"; blockers: string[] }
         | undefined;
       try {
-        mapped = await withBoundaryModelProgress(
+        mapped = await runWithProgress(
           "Mapping requested reads with the selected model",
           () => (input.modelReadWorkloadGenerator ?? generateModelReadWorkload)({
             name: intent.name,
@@ -3107,6 +3297,7 @@ async function interactiveReadWorkloadAssist(input: {
           ));
         }
         mappingSession = { ...replacement };
+        input.authoringChat?.setModel(boundaryModelLabel(mappingSession));
         const replacementAcknowledged = await confirmModelEgress(mappingSession);
         if (!replacementAcknowledged) {
           return boundaryAssistResult(boundaryAssistBackNotice(
@@ -3125,6 +3316,19 @@ async function interactiveReadWorkloadAssist(input: {
     if (mapped) {
       let mappedWorkload = mapped.workload;
       let mappedAnalysis = mapped.analysis;
+      input.authoringChat?.model([
+        `I drafted ${mappedWorkload.allowed.length} representative read plan${mappedWorkload.allowed.length === 1 ? "" : "s"} for this job.`,
+        ...mappedWorkload.allowed.slice(0, 6).map((entry) => `- ${modelReadPlanSummary(entry.plan)}`),
+        ...(mappedWorkload.allowed.length > 6
+          ? [`- and ${mappedWorkload.allowed.length - 6} more`]
+          : []),
+      ]);
+      input.authoringChat?.runner("Runner validation", [
+        mappedAnalysis.status === "ready"
+          ? "Every displayed plan uses exact reviewed identifiers and compiler-valid grammar."
+          : "The draft is not eligible to become a candidate; blockers remain below.",
+        "No Read authority is active.",
+      ], mappedAnalysis.status === "ready" ? "success" : "warning");
       if (actionIntents.length) {
       actionInspection = await (input.actionProjectInspector ?? inspectActionProject)(
         input.projectRoot,
@@ -3142,7 +3346,7 @@ async function interactiveReadWorkloadAssist(input: {
         try {
           if (input.jobFirst
             && (input.modelActionSuggestionSetGenerator || !input.modelActionSuggestionGenerator)) {
-            const set = await withBoundaryModelProgress(
+            const set = await runWithProgress(
               "Drafting Action Boundary suggestions with the selected model",
               () => (input.modelActionSuggestionSetGenerator ?? generateModelActionSuggestionSet)({
                 jobIntent: jobIntent.trim(),
@@ -3172,7 +3376,7 @@ async function interactiveReadWorkloadAssist(input: {
             }
           } else {
             for (const actionIntent of actionIntents) {
-              const result = await withBoundaryModelProgress(
+              const result = await runWithProgress(
                 "Drafting one Action Boundary suggestion with the selected model",
                 () => (input.modelActionSuggestionGenerator ?? generateModelActionSuggestion)({
                   intent: actionIntent,
@@ -3225,6 +3429,7 @@ async function interactiveReadWorkloadAssist(input: {
             ));
           }
           mappingSession = { ...replacement };
+          input.authoringChat?.setModel(boundaryModelLabel(mappingSession));
           const replacementAcknowledged = await confirmModelEgress(mappingSession);
           if (!replacementAcknowledged) {
             return boundaryAssistResult(boundaryAssistBackNotice(
@@ -3234,6 +3439,19 @@ async function interactiveReadWorkloadAssist(input: {
           modelAssistSession = mappingSession;
           modelInterviewSession = mappingSession;
         }
+      }
+      if (preMappedActions.length) {
+        input.authoringChat?.model([
+          `I drafted ${preMappedActions.length} bounded Action suggestion${preMappedActions.length === 1 ? "" : "s"}.`,
+          ...preMappedActions.slice(0, 6).map(({ result }) => {
+            const suggestion = result.assessment.suggestion;
+            return `- ${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}`;
+          }),
+        ]);
+        input.authoringChat?.runner("Runner validation", [
+          "The targets and operations shown above exist in the inspected Action catalog.",
+          "They are suggestions only. Exact fields, bounds, policy, rehearsal, and activation remain ahead.",
+        ], "success");
       }
       const supportEntries: ReadWorkloadSet["allowed"] = [];
       if (actionMappingFellBack) {
@@ -3287,6 +3505,7 @@ async function interactiveReadWorkloadAssist(input: {
         source: mappedWorkload.source!,
         analysis: mappedAnalysis,
       });
+    }
     }
   } else {
     const workloads = await listReadWorkloadAnalyses({
@@ -3349,17 +3568,14 @@ async function interactiveReadWorkloadAssist(input: {
         "DELEGATION_READ_REVIEW_REQUIRED: finish the exact Read Boundary review before preparing dependent proposal actions.",
       );
     }
-    process.stdout.write([
-      "",
-      "READ CANDIDATE READY",
+    writeRunner("READ CANDIDATE READY", [
       `${requestedReadCoverage.supported}/${requestedReadCoverage.total} requested read plans are supported.`,
       `${exposure.candidate_resources} resources | ${exposure.candidate_return_fields} return fields | `
         + `${exposure.candidate_relationships} relationships`,
       "Review the complete Read Boundary now. You may activate it or keep the exact review disabled while preparing actions.",
       "No proposal, approval, apply, or source-write authority is active.",
-      "",
-    ].join("\n"));
-    const reviewResult = await input.completeReadReview("prepare_actions");
+    ], "success");
+    const reviewResult = await input.completeReadReview("prepare_actions", input.session);
     if (reviewResult !== 0) {
       throw new Error("DELEGATION_READ_REVIEW_INCOMPLETE: the exact Read Boundary review did not complete.");
     }
@@ -3429,6 +3645,7 @@ async function interactiveReadWorkloadAssist(input: {
         ...(initialSuggestionId ? { initialSuggestionId } : { initialIntent: actionIntent }),
         ...(modelInterviewSession ? { modelSuggestionSession: modelInterviewSession } : {}),
         ...(modelInterviewSession ? { modelInterviewEgressAcknowledged: true } : {}),
+        ...(input.authoringChat ? { prompter: input.authoringChat.actionPrompter } : {}),
         prepareOnly: true,
         actionBoundaryJobIntent: jobIntent.trim(),
       });
@@ -3454,15 +3671,12 @@ async function interactiveReadWorkloadAssist(input: {
     candidateDigest: committed.candidate_digest,
   });
   if (actionDrafts.length && !readBoundaryActive && input.completeReadReview) {
-    process.stdout.write([
-      "",
-      "NEXT AUTHORITY REVIEW - READ BOUNDARY",
+    writeRunner("NEXT AUTHORITY REVIEW - READ BOUNDARY", [
       `Read Boundary: ${context.candidate.pack.name}`,
       "The job draft is complete. Review the exact Read authority now; activation remains your decision.",
       "After Read activation, Runner opens each rehearsed Action Boundary revision for its own separate confirmation.",
-      "",
-    ].join("\n"));
-    const reviewResult = await input.completeReadReview("activate");
+    ]);
+    const reviewResult = await input.completeReadReview("activate", input.session);
     if (reviewResult !== 0) {
       throw new Error("DELEGATION_READ_ACTIVATION_REVIEW_INCOMPLETE: the final Read Boundary review did not complete.");
     }
@@ -3478,14 +3692,11 @@ async function interactiveReadWorkloadAssist(input: {
       process.env,
     );
     for (const { draft } of actionDrafts) {
-      process.stdout.write([
-        "",
-        "NEXT AUTHORITY REVIEW - ACTION BOUNDARY",
+      writeRunner("NEXT AUTHORITY REVIEW - ACTION BOUNDARY", [
         `Action: ${draft.capability}`,
         "Runner will show the exact proposal fields, bounds, policy, and rehearsal before asking for activation.",
         "Activating proposal authority still grants no approval or apply authority and performs no source write.",
-        "",
-      ].join("\n"));
+      ]);
       await runActionReview({
         projectRoot: input.projectRoot,
         boundaryName: context.candidate.pack.name,
@@ -3494,6 +3705,7 @@ async function interactiveReadWorkloadAssist(input: {
         initialDraftCapability: draft.capability,
         exitAfterInitialDraft: true,
         returnToAsk: false,
+        ...(input.authoringChat ? { prompter: input.authoringChat.actionPrompter } : {}),
       });
     }
   }
@@ -3588,6 +3800,11 @@ async function prepareJobMappingCatalog(input: {
   schemaInspector: typeof inspectDatabase;
   session: BoundaryReviewInteractiveSession;
   jobIntent: string;
+  write?: (
+    title: string,
+    lines: string[],
+    tone?: "normal" | "success" | "warning" | "danger",
+  ) => void;
 }): Promise<boolean> {
   const plan = await loadJobMappingCatalog(input.projectRoot);
   const acceptedShared: string[] = [];
@@ -3639,22 +3856,19 @@ async function prepareJobMappingCatalog(input: {
     && !plan.derived_resources.length
     && !acceptedShared.length
     && !limitsChange) {
-    process.stdout.write([
-      "",
-      "MAPPING CATALOG READY",
+    const lines = [
       `${plan.direct_resources.length} directly scoped table${plan.direct_resources.length === 1 ? " is" : "s are"} available for disabled job mapping.`,
       ...(skippedSharedCount
         ? [`${skippedSharedCount} unrelated optional shared-reference table${skippedSharedCount === 1 ? " was" : "s were"} skipped; use manual review if needed.`]
         : []),
       ...(plan.manual_resources.length ? [`${plan.manual_resources.length} table${plan.manual_resources.length === 1 ? " needs" : "s need"} manual scope review and will stay outside mapping.`] : []),
       "No authority was activated.",
-      "",
-    ].join("\n"));
+    ];
+    if (input.write) input.write("MAPPING CATALOG READY", lines, "success");
+    else process.stdout.write(["", "MAPPING CATALOG READY", ...lines, ""].join("\n"));
     return true;
   }
-  process.stdout.write([
-    "",
-    "PREPARING DISABLED MAPPING CATALOG",
+  const preparingLines = [
     `${plan.direct_resources.length} direct | ${plan.derived_resources.length} uniquely proven derived | ${acceptedShared.length} reviewed shared reference`,
     ...(plan.proposed_limits.max_derived_scope_hops > plan.current_limits.max_derived_scope_hops
       ? [`Derived-scope authoring depth ${plan.current_limits.max_derived_scope_hops} -> ${plan.proposed_limits.max_derived_scope_hops}`]
@@ -3663,8 +3877,9 @@ async function prepareJobMappingCatalog(input: {
       ? [`Analysis-path authoring depth ${plan.current_limits.max_analysis_relationship_hops} -> ${plan.proposed_limits.max_analysis_relationship_hops}`]
       : []),
     "Runner will immediately minimize this disabled intermediate to the reviewed job. No authority is active.",
-    "",
-  ].join("\n"));
+  ];
+  if (input.write) input.write("PREPARING DISABLED MAPPING CATALOG", preparingLines);
+  else process.stdout.write(["", "PREPARING DISABLED MAPPING CATALOG", ...preparingLines, ""].join("\n"));
   const applied = await applyJobMappingCatalog({
     projectRoot: input.projectRoot,
     expectedPlanDigest: plan.plan_digest,
@@ -3673,9 +3888,7 @@ async function prepareJobMappingCatalog(input: {
     reason: "Prepare a complete disabled structural catalog for one-job Boundary mapping.",
     schemaInspector: input.schemaInspector,
   });
-  process.stdout.write([
-    "",
-    "MAPPING CATALOG READY",
+  const readyLines = [
     `${total} tables are available to the workload mapper${applied.review_revision ? ` in disabled revision ${applied.review_revision}` : ""}.`,
     ...(plan.manual_resources.length
       ? [`${plan.manual_resources.length} ambiguous or unresolved table${plan.manual_resources.length === 1 ? " remains" : "s remain"} outside mapping; use the manual editor to review them.`]
@@ -3684,8 +3897,9 @@ async function prepareJobMappingCatalog(input: {
       ? [`${skippedSharedCount} unrelated optional shared-reference table${skippedSharedCount === 1 ? " remains" : "s remain"} outside mapping.`]
       : []),
     "No Read Boundary, Action Boundary, proposal, approval, or apply authority was activated.",
-    "",
-  ].join("\n"));
+  ];
+  if (input.write) input.write("MAPPING CATALOG READY", readyLines, "success");
+  else process.stdout.write(["", "MAPPING CATALOG READY", ...readyLines, ""].join("\n"));
   return true;
 }
 
@@ -3907,6 +4121,37 @@ function representativeReadCoverage(analysis: ReadWorkloadView["analysis"]): {
     supported: requested.filter((entry) => entry.status === "supported").length,
     total: requested.length,
   };
+}
+
+function modelReadPlanSummary(plan: ReadWorkloadSet["allowed"][number]["plan"]): string {
+  const resource = typeof plan.resource === "string" ? plan.resource : "reviewed resource";
+  if (plan.kind === "rows") {
+    const selected = Array.isArray(plan.select)
+      ? plan.select.filter((field): field is string => typeof field === "string")
+      : [];
+    return `${resource}: return ${selected.join(", ") || "reviewed rows"}`;
+  }
+  const dimensions = Array.isArray(plan.dimensions)
+    ? plan.dimensions.flatMap((dimension) => {
+        if (!isCliRecord(dimension) || typeof dimension.field !== "string") return [];
+        return [typeof dimension.relationship === "string"
+          ? `${dimension.relationship} -> ${dimension.field}`
+          : dimension.field];
+      })
+    : [];
+  const measures = Array.isArray(plan.measures)
+    ? plan.measures.flatMap((measure) => {
+        if (!isCliRecord(measure) || typeof measure.function !== "string") return [];
+        return [typeof measure.field === "string" && measure.field
+          ? `${measure.function}(${measure.field})`
+          : `${measure.function}(*)`];
+      })
+    : [];
+  const summary = [
+    ...(dimensions.length ? [`group by ${dimensions.join(", ")}`] : []),
+    ...measures,
+  ].join("; ");
+  return `${resource}: ${summary || "reviewed aggregate"}`;
 }
 
 function parseReadWorkloadCardSelection(input: string, ids: string[]): string[] {
@@ -5405,17 +5650,19 @@ async function confirmActivateAndKeepAccessOpen(input: {
       keepAccessOpen: true,
     });
   } catch (error) {
-    process.stdout.write([
+    const lines = [
       "Boundary activation did not complete.",
       redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
       "Any completed review remains saved, but the previously active authority is unchanged.",
       "You are still in /access. Correct the reported issue, then press C to review and activate again.",
-      "",
-    ].join("\n"));
+    ];
+    if (input.session.present) input.session.present(lines[0]!, lines.slice(1), "danger");
+    else process.stdout.write([...lines, ""].join("\n"));
     return 0;
   }
   if (result !== 0) return result;
   if (input.prepareDependentActions) return 0;
+  if (input.session.presentationMode === "conversation") return 0;
   process.stdout.write([
     "/access is still open.",
     "Continue setting up this boundary, switch boundaries, or press Q/Esc when finished to return to Ask.",
@@ -5479,7 +5726,9 @@ async function confirmAndActivateFocusedBoundary(input: {
       "K  Keep the counted row and show an empty group value",
       "E  Exclude the counted row from analyses using this relationship",
     ];
-    process.stdout.write([...relationshipChoiceContext, ""].join("\n"));
+    if (input.session.presentationMode !== "conversation") {
+      process.stdout.write([...relationshipChoiceContext, ""].join("\n"));
+    }
     let answer = "";
     while (!["k", "keep", "e", "exclude", "q", "quit"].includes(answer)) {
       const entered = await input.session.promptText(
@@ -5531,13 +5780,15 @@ async function confirmAndActivateFocusedBoundary(input: {
     process.stdout.isTTY === true && !("NO_COLOR" in process.env),
     true,
   );
-  process.stdout.write(activationReview);
+  if (input.session.presentationMode !== "conversation") {
+    process.stdout.write(activationReview);
+  }
   const activationReviewNotice = input.activationReviewNotice?.({
     projectRoot: input.projectRoot,
     boundaryName: context.candidate.pack.name,
     boundaryDigest: context.bundle.candidate_digest,
   });
-  if (activationReviewNotice) {
+  if (activationReviewNotice && input.session.presentationMode !== "conversation") {
     process.stdout.write(
       activationReviewNotice.endsWith("\n")
         ? activationReviewNotice
@@ -5555,6 +5806,7 @@ async function confirmAndActivateFocusedBoundary(input: {
       {
         defaultValue: true,
         context: [
+          ...(input.session.presentationMode === "conversation" ? [...activationContext, ""] : []),
           "CONTINUE TO ACTION BOUNDARY",
           `Read Boundary: ${context.candidate.pack.name}`,
           "Yes freezes this exact reviewed revision without granting read authority, then continues the same agent job.",
@@ -5570,14 +5822,14 @@ async function confirmAndActivateFocusedBoundary(input: {
         actor,
         reason: "Confirmed the complete exact Read Boundary as the disabled dependency for the linked Action Boundary.",
       });
-      process.stdout.write([
-        "READ REVIEW COMPLETE - NOT ACTIVE",
+      const reviewedLines = [
         `Read Boundary: ${context.candidate.pack.name}`,
         "Next: continue this same job into Action Boundary decisions.",
         "EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF",
         "Source database changed: no",
-        "",
-      ].join("\n"));
+      ];
+      if (input.session.present) input.session.present("READ REVIEW COMPLETE - NOT ACTIVE", reviewedLines, "success");
+      else process.stdout.write(["READ REVIEW COMPLETE - NOT ACTIVE", ...reviewedLines, ""].join("\n"));
       return 0;
     }
     process.stdout.write([
@@ -5623,14 +5875,14 @@ async function confirmAndActivateFocusedBoundary(input: {
         actor,
         reason: "Confirmed the complete exact boundary while keeping read authority disabled.",
       });
-      process.stdout.write([
-        "READ REVIEW COMPLETE - NOT ACTIVE",
+      const reviewedLines = [
         `Boundary: ${context.candidate.pack.name}`,
         "Agent read authority: unchanged",
         "Source database changed: no",
         "Press Y in /access to prepare and rehearse a proposal action against this exact pending revision, or C to activate reads.",
-        "",
-      ].join("\n"));
+      ];
+      if (input.session.present) input.session.present("READ REVIEW COMPLETE - NOT ACTIVE", reviewedLines, "success");
+      else process.stdout.write(["READ REVIEW COMPLETE - NOT ACTIVE", ...reviewedLines, ""].join("\n"));
       return 0;
     }
     process.stdout.write([
@@ -5978,7 +6230,7 @@ async function confirmBoundaryReviewInteractively(input: {
   }
   const finalReview = formatBoundaryFinalReview(input.context.bundle);
   const finalReviewContext = finalReview.trimEnd().split("\n");
-  process.stdout.write(finalReview);
+  if (input.session.presentationMode !== "conversation") process.stdout.write(finalReview);
   const actor = input.actor
     || await input.session.promptText(
       "Human reviewer identity (audit label, not a password): ",
@@ -5998,7 +6250,7 @@ async function confirmBoundaryReviewInteractively(input: {
   if (boundaryDecisions.length) {
     const settingsSignoff = formatBoundarySettingsSignoff(input.context.bundle);
     const settingsContext = settingsSignoff.trimEnd().split("\n");
-    process.stdout.write(settingsSignoff);
+    if (input.session.presentationMode !== "conversation") process.stdout.write(settingsSignoff);
     const accepted = await input.session.confirm(
       input.context.candidate.deployment_profile === "production"
         ? "Confirm these boundary-wide production HTTP and trusted JWT scope settings?"
@@ -6019,7 +6271,7 @@ async function confirmBoundaryReviewInteractively(input: {
     if (!decisions.length) continue;
     const resourceSignoff = formatBoundaryResourceSignoff(resource, decisions.length);
     const resourceContext = resourceSignoff.trimEnd().split("\n");
-    process.stdout.write(resourceSignoff);
+    if (input.session.presentationMode !== "conversation") process.stdout.write(resourceSignoff);
     const accepted = await input.session.confirm(
       `Sign off ${resource.id} exactly as shown?`,
       { defaultValue: true, context: resourceContext },
@@ -8097,19 +8349,21 @@ export async function boundaryActivateCommand(
         ? "Activation makes this boundary eligible only for an explicitly configured secured production HTTP Explore runtime."
         : "Activation adds this reviewed boundary to local read-only Explore. Each query remains inside exactly one active boundary.",
     ];
-    process.stdout.write([...activationContext, ""].join("\n"));
+    if (session.presentationMode !== "conversation") {
+      process.stdout.write([...activationContext, ""].join("\n"));
+    }
     if (!confirmation) {
       const approved = await session.confirm(
         `Activate "${context.candidate.pack.name}" now?`,
         { defaultValue: true, context: activationContext },
       );
       if (!approved) {
-        process.stdout.write([
-          "Boundary remains reviewed and inactive.",
+        const lines = [
           "No agent authority or source data changed.",
           `Resume: ${cliCommandName()} boundary activate`,
-          "",
-        ].join("\n"));
+        ];
+        if (session.present) session.present("BOUNDARY REMAINS REVIEWED AND INACTIVE", lines, "warning");
+        else process.stdout.write(["Boundary remains reviewed and inactive.", ...lines, ""].join("\n"));
         return 0;
       }
       confirmation = expectedConfirmation;
@@ -8119,11 +8373,12 @@ export async function boundaryActivateCommand(
     }
     if (confirmation !== expectedConfirmation) throw new Error(`Activation requires the exact confirmation ${expectedConfirmation}.`);
     if (!actor) {
-      process.stdout.write([
-        "Returned to boundary review. The reviewed boundary remains inactive.",
+      const lines = [
+        "The reviewed boundary remains inactive.",
         "No agent authority or source data changed.",
-        "",
-      ].join("\n"));
+      ];
+      if (session.present) session.present("RETURNED TO BOUNDARY REVIEW", lines, "warning");
+      else process.stdout.write(["Returned to boundary review. The reviewed boundary remains inactive.", ...lines.slice(1), ""].join("\n"));
       return 0;
     }
     operator = { subject: actor, provider: "interactive_terminal", verified: false };
@@ -8216,15 +8471,23 @@ export async function boundaryActivateCommand(
     const activationMessage = active.deployment_profile === "production"
       ? `Reviewed boundary "${active.pack.name}" is active for secured production HTTP Explore.`
       : `Reviewed boundary "${active.pack.name}" is active for local read-only Explore.`;
-    process.stdout.write(args.includes("--json")
-      ? `${JSON.stringify(payload, null, 2)}\n`
-      : [
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    } else if (interactiveSession?.present) {
+      interactiveSession.present("READ BOUNDARY ACTIVATED", [
+        activationMessage,
+        `Exact fingerprint: ${active.activation.digest}`,
+        "Source database changed: no",
+      ], "success");
+    } else {
+      process.stdout.write([
         theme.success("\uD83D\uDC90 ACTIVATION SUCCEEDED"),
         theme.success(activationMessage),
         `Exact fingerprint: ${active.activation.digest}`,
         "Source database changed: no",
         "",
       ].join("\n"));
+    }
     activatedBoundary = active;
   } catch (error) {
     if (consumedDecision) {
