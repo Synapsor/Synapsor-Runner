@@ -18,6 +18,7 @@ import { ProposalStore, type ProposalRuntimeStore } from "@synapsor-runner/propo
 import { canonicalJsonDigest, protocolVersions } from "@synapsor-runner/protocol";
 import {
   bindPostgresTrustedScope,
+  buildProposalReviewView,
   CloudLinkedSynchronizer,
   createMcpRuntime,
   createSynapsorMcpServer,
@@ -2546,6 +2547,13 @@ describe("local Synapsor MCP runtime", () => {
       });
       const proposal = store.getProposal(String(result.proposal_id));
       expect(proposal?.state).toBe("approved");
+      expect(buildProposalReviewView(proposal!)).toMatchObject({
+        proposal: { status: "approved" },
+        policy_and_risk: {
+          approval: { status: "approved", mode: "policy" },
+          decision: "approved",
+        },
+      });
       expect(store.events(String(result.proposal_id))).toEqual(expect.arrayContaining([
         expect.objectContaining({
           kind: "proposal_approved",

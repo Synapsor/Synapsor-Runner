@@ -87,6 +87,13 @@ import { selectActiveExploreBoundary } from "./scoped-explore-boundary-set.js";
 import { inspectProductionExploreStartup } from "./mcp-runtime.js";
 import { askIntentCheckModeForBoundary } from "./ask-intent-preferences.js";
 import { runActionControlPlane } from "./action-tui.js";
+import {
+  activateGuidedAction,
+  createGuidedActionDraft,
+  guidedActionStatus,
+  recordGuidedActionPreview,
+  type GuidedActionInput,
+} from "./guided-action.js";
 
 describe("boundary operator-plane CLI", () => {
   afterEach(() => {
@@ -114,7 +121,7 @@ describe("boundary operator-plane CLI", () => {
     });
 
     expect(prompts.map(({ label }) => label)).toEqual([
-      "Provider [1]",
+      "Provider (1-3)",
       "Local model endpoint [http://127.0.0.1:11434/v1]",
       "Local model [qwen2.5:7b]",
     ]);
@@ -122,13 +129,14 @@ describe("boundary operator-plane CLI", () => {
   });
 
   it("selects a detected loopback model from the TUI without endpoint or model text prompts", async () => {
-    const choices: Array<{ title: string; values: string[]; initial?: string }> = [];
+    const choices: Array<{ title: string; values: string[]; initial?: string; explicit?: boolean }> = [];
     await expect(promptBoundaryMappingModel({
       chooseOption: async (title, options, promptOptions) => {
         choices.push({
           title,
           values: options.map((option) => option.value),
           ...(promptOptions?.initialValue ? { initial: promptOptions.initialValue } : {}),
+          ...(promptOptions?.requireExplicitSelection ? { explicit: true } : {}),
         });
         return "detected_local";
       },
@@ -146,12 +154,45 @@ describe("boundary operator-plane CLI", () => {
     expect(choices).toEqual([{
       title: "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
       values: ["detected_local", "openai", "anthropic", "openai_compatible"],
-      initial: "detected_local",
+      explicit: true,
     }]);
   });
 
-  it("keeps the configured OpenAI drafting model as a one-key default", async () => {
-    const choices: Array<{ title: string; values: string[]; initial?: string; labels: string[] }> = [];
+  it("does not infer a drafting provider from ready credentials or a detected local model", async () => {
+    const prompts: Array<{ title: string; explicit?: boolean; labels: string[] }> = [];
+    await expect(promptBoundaryMappingModel({
+      chooseOption: async (title, options, promptOptions) => {
+        prompts.push({
+          title,
+          labels: options.map((option) => option.label),
+          ...(promptOptions?.requireExplicitSelection ? { explicit: true } : {}),
+        });
+        return undefined;
+      },
+      promptText: async () => {
+        throw new Error("Canceling explicit provider selection must not open provider setup.");
+      },
+    }, undefined, {
+      discoverModels: async () => ["qwen2.5:7b"],
+      env: {
+        OPENAI_API_KEY: "session-openai-key",
+        ANTHROPIC_API_KEY: "session-anthropic-key",
+      },
+    })).resolves.toBeUndefined();
+    expect(prompts).toEqual([{
+      title: "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
+      explicit: true,
+      labels: [
+        "Local Ollama qwen2.5:7b  [detected]",
+        "OpenAI  [ready]",
+        "Anthropic  [ready]",
+        "Another local OpenAI-compatible endpoint",
+      ],
+    }]);
+  });
+
+  it("requires an explicit choice before reusing the configured OpenAI drafting model", async () => {
+    const choices: Array<{ title: string; values: string[]; initial?: string; explicit?: boolean; labels: string[] }> = [];
     const current = {
       provider: "openai" as const,
       model: "gpt-5.6-luna",
@@ -164,6 +205,7 @@ describe("boundary operator-plane CLI", () => {
           values: options.map((option) => option.value),
           labels: options.map((option) => option.label),
           ...(promptOptions?.initialValue ? { initial: promptOptions.initialValue } : {}),
+          ...(promptOptions?.requireExplicitSelection ? { explicit: true } : {}),
         });
         return "current";
       },
@@ -175,11 +217,11 @@ describe("boundary operator-plane CLI", () => {
       title: "MODEL FOR BOUNDARY DRAFTING",
       values: ["current", "change_model", "change_provider"],
       labels: [
-        "Use openai[gpt-5.6-luna]  [default]",
+        "Use openai[gpt-5.6-luna]",
         "Change the model for openai",
         "Choose another provider",
       ],
-      initial: "current",
+      explicit: true,
     }]);
   });
 
@@ -1851,7 +1893,7 @@ describe("boundary operator-plane CLI", () => {
         "saved",
       ]]);
       expect(output).toContain("READ CANDIDATE READY");
-      expect(output).toContain("EXPLORE OFF | PROPOSE OFF | DELEGATE OFF | APPLY OFF");
+      expect(output).toContain("EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF");
       expect(output).toContain("REVIEW EXACT BOUNDARY");
       expect(output).toContain("READ REVIEW COMPLETE - NOT ACTIVE");
       expect(output).toContain("Press Y in /access to prepare and rehearse a proposal action");
@@ -1920,6 +1962,7 @@ describe("boundary operator-plane CLI", () => {
           return "Explain service activity to support staff.";
         }
         if (prompt.includes("Mapping method")) return "";
+        if (prompt.includes("Choice (1-3)")) return "1";
         throw new Error(`Unexpected job-first prompt: ${prompt}`);
       },
       confirm: async (prompt) => {
@@ -1953,6 +1996,7 @@ describe("boundary operator-plane CLI", () => {
       expect(prompts).toEqual([
         "What job are you giving this agent?",
         "Mapping method [1]",
+        "Choice (1-3)",
       ]);
       expect(confirmations).toHaveLength(2);
       expect(modelReadWorkloadGenerator).toHaveBeenCalledWith(expect.objectContaining({
@@ -2354,6 +2398,163 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("continues one agent job through separate Read and Action activation before MCP handoff", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-complete-job-"));
+    const inspection = actionTargetInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const action: GuidedActionInput = {
+      capability_name: "maintenance_request.propose_insert_maintenance_requests",
+      description: "Propose one bounded maintenance request.",
+      resource: "public.maintenance_requests",
+      operation: "insert",
+      patches: [
+        { column: "request_kind", value_source: "argument", argument_name: "request_kind" },
+        { column: "estimated_hours", value_source: "argument", argument_name: "estimated_hours", minimum: 1, maximum: 16 },
+      ],
+      dedup_proposal_column: "id",
+      approval_role: "action_reviewer",
+      required_approvals: 1,
+      authority_posture: "proposal_only",
+      writeback: { mode: "none" },
+      supervised_worker_execution: false,
+      reversible: false,
+      confirmed_trusted_scope: true,
+    };
+    const actionCalls: Array<Parameters<typeof runActionControlPlane>[0]> = [];
+    const runDelegationActionReview = vi.fn(async (
+      actionInput: Parameters<typeof runActionControlPlane>[0],
+    ) => {
+      actionCalls.push(actionInput);
+      if (actionInput.prepareOnly) {
+        const created = await createGuidedActionDraft({
+          projectRoot: root,
+          action,
+          inspection,
+          boundaryName: "reviewed_staging",
+          allowReviewedPending: true,
+          actionBoundaryJobIntent: "Explain service visits and propose creating a bounded maintenance request.",
+        });
+        await recordGuidedActionPreview({
+          projectRoot: root,
+          capabilityName: created.draft.capability,
+          contractDigest: created.draft.contract_digest,
+          proposalId: "rehearsal-maintenance-request",
+          proposalHash: `sha256:${"b".repeat(64)}`,
+          sourceDatabaseChanged: false,
+        });
+        return { state: "closed" as const, source_database_changed: false as const, activated_actions: [] };
+      }
+      expect(actionInput).toMatchObject({
+        initialDraftCapability: action.capability_name,
+        exitAfterInitialDraft: true,
+      });
+      const draft = (await guidedActionStatus(root)).drafts.find((candidate) =>
+        candidate.capability === action.capability_name)!;
+      const active = await activateGuidedAction({
+        projectRoot: root,
+        capabilityName: draft.capability,
+        expectedDigest: draft.contract_digest,
+        confirmation: `ACTIVATE ${draft.contract_digest}`,
+        actor: "job-owner",
+        inspection,
+      });
+      return {
+        state: "closed" as const,
+        source_database_changed: false as const,
+        activated_actions: [active.capability],
+      };
+    });
+    const activationHandoff = vi.fn(async () => 0);
+    let boundaryListFallbacks = 0;
+    let fallbackNotice: BoundaryAccessNotice | undefined;
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async (_resources, _overview, options) => {
+        boundaryListFallbacks += 1;
+        fallbackNotice = options?.notice;
+        return undefined;
+      },
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) {
+          return "Explain service visits and propose creating a bounded maintenance request.";
+        }
+        throw new Error(`Unexpected one-job text prompt: ${prompt}`);
+      },
+      chooseOption: async (title, _choices, options) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") {
+          expect(options?.initialValue).toBe("cards");
+          return "cards";
+        }
+        if (title === "RUNNER-GUIDED READ DRAFT") return "use";
+        throw new Error(`Unexpected one-job choice: ${title}`);
+      },
+      confirm: async (prompt, options) => {
+        if (prompt.includes("Should this job include an Action Boundary")) {
+          expect(options?.defaultValue).toBe(true);
+          return true;
+        }
+        if (prompt.includes("disabled dependency for its Action Boundary")) {
+          expect(options?.defaultValue).toBe(true);
+          return true;
+        }
+        throw new Error(`Unexpected one-job confirmation: ${prompt}`);
+      },
+      confirmActivation: async (prompt) => {
+        expect(prompt).toContain('Activate "reviewed_staging" exactly as shown now');
+        return true;
+      },
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.8.0" });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        activationHandoff,
+        {
+          startWithAgentJob: true,
+          actionProjectInspector: async () => inspection,
+          runDelegationActionReview,
+        },
+      )).resolves.toBe(0);
+
+      expect(actionCalls).toHaveLength(2);
+      expect(boundaryListFallbacks, JSON.stringify(fallbackNotice, null, 2)).toBe(0);
+      expect(actionCalls[0]).toMatchObject({ prepareOnly: true });
+      expect(actionCalls[1]).toMatchObject({
+        initialDraftCapability: action.capability_name,
+        exitAfterInitialDraft: true,
+      });
+      expect(activationHandoff).toHaveBeenCalledOnce();
+      await expect(loadActivatedExplorationBoundaries(root)).resolves.toHaveLength(1);
+      const actionStatus = await guidedActionStatus(root);
+      expect(actionStatus.activations.map((activation) => activation.capability))
+        .toEqual([action.capability_name]);
+      expect(output).toContain("NEXT AUTHORITY REVIEW - READ BOUNDARY");
+      expect(output).toContain("NEXT AUTHORITY REVIEW - ACTION BOUNDARY");
+      expect(output).toContain("EXPLORE ON | PROPOSE ON | APPROVE OFF | APPLY OFF");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
   it("reuses the current Ask model for workload mapping without asking for provider setup again", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-current-model-"));
     const inspection = boundaryInspection();
@@ -2405,7 +2606,8 @@ describe("boundary operator-plane CLI", () => {
           return "model";
         }
         expect(title).toBe("MODEL FOR BOUNDARY DRAFTING");
-        expect(promptOptions?.initialValue).toBe("current");
+        expect(promptOptions?.initialValue).toBeUndefined();
+        expect(promptOptions?.requireExplicitSelection).toBe(true);
         modelChoices.push(...options.map((option) => option.label));
         return "current";
       },
@@ -2435,7 +2637,7 @@ describe("boundary operator-plane CLI", () => {
       )).resolves.toBe(0);
 
       expect(prompts[0]).toContain("What job are you giving this agent?");
-      expect(modelChoices).toContain("Use anthropic[claude-current]  [default]");
+      expect(modelChoices).toContain("Use anthropic[claude-current]");
       expect(prompts.some((prompt) => /Provider:|Model \[|API key environment/.test(prompt))).toBe(false);
       expect(confirms).toHaveLength(1);
       expect(confirms[0]).toContain("anthropic[claude-current]");

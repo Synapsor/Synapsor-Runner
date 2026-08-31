@@ -1380,6 +1380,15 @@ export default defineCapability({
           },
         };
       },
+      askGatewayFactory: async () => ({
+        mode: "authoring",
+        listTools: async () => [
+          { name: "app.describe_data", description: "Describe", input_schema: {} },
+          { name: "app.explore_data", description: "Explore", input_schema: {} },
+        ],
+        callTool: async () => ({ ok: false, value: { error: "not used" } }),
+        close: async () => undefined,
+      }),
     });
     const baseUrl = `http://${server.host}:${server.port}`;
     const headers = { "x-synapsor-ui-token": "guided-action-token" };
@@ -1549,6 +1558,15 @@ export default defineCapability({
         source_database_changed: false,
         draft: { state: "disabled", capability: "membership.set_loyalty_balance" },
       });
+      const boundaryWithActionDraft = await getJson(`${baseUrl}/api/boundary`, headers);
+      expect(boundaryWithActionDraft.action_boundary_overview).toMatchObject({
+        name: "default_action_boundary",
+        state: "disabled",
+        action_count: 1,
+        active_action_count: 0,
+        disabled_action_count: 1,
+        read_boundaries: ["reviewed_staging"],
+      });
       const policyAllows = await postJson(`${baseUrl}/api/actions/guided/policy/simulate`, mutationHeaders, {
         capability_name: "membership.set_loyalty_balance",
         patch: { loyalty_balance: 25 },
@@ -1621,6 +1639,15 @@ export default defineCapability({
           writeback_mode: "none",
         },
       });
+      const boundaryWithActiveAction = await getJson(`${baseUrl}/api/boundary`, headers);
+      expect(boundaryWithActiveAction.action_boundary_overview).toMatchObject({
+        name: "default_action_boundary",
+        state: "active",
+        action_count: 1,
+        active_action_count: 1,
+        disabled_action_count: 0,
+        read_boundaries: ["reviewed_staging"],
+      });
       expect(await fs.readFile(guided.config_path, "utf8")).toBe(baseConfigBefore);
       const actionConfigPath = path.join(tempDir, "synapsor.actions.runner.json");
       const proposalOnlyConfig = JSON.parse(await fs.readFile(actionConfigPath, "utf8"));
@@ -1635,6 +1662,33 @@ export default defineCapability({
       expect(proposalOnlyConfig.proposal_freshness).toBeUndefined();
       expect(proposalOnlyConfig.sources.local_postgres.write_url_env).toBeUndefined();
       expect(proposalOnlyConfig.contracts).toEqual([activated.active.contract_path]);
+
+      const installedMcp = await postJson(`${baseUrl}/api/mcp/install`, mutationHeaders, {
+        client: "claude-code",
+      });
+      expect(installedMcp).toMatchObject({
+        ok: true,
+        client: "claude-code",
+        includes_action_boundary: true,
+        tools: ["app.describe_data", "app.explore_data"],
+        action_tools: ["membership.set_loyalty_balance"],
+        entries: [
+          {
+            name: "synapsor",
+            boundary_type: "read",
+            tools: ["app.describe_data", "app.explore_data"],
+          },
+          {
+            name: "synapsor-actions",
+            boundary_type: "action",
+            tools: ["membership.set_loyalty_balance"],
+          },
+        ],
+      });
+      const claudeProject = JSON.parse(await fs.readFile(path.join(tempDir, ".mcp.json"), "utf8"));
+      expect(claudeProject.mcpServers.synapsor.args).toContain("--authoring");
+      expect(claudeProject.mcpServers["synapsor-actions"].args).toContain("./synapsor.actions.runner.json");
+      expect(JSON.stringify(claudeProject)).not.toContain("tenant-from-database-role");
 
       const actionBoundaryOptions = await getJson(`${baseUrl}/api/actions/guided`, headers);
       expect(actionBoundaryOptions.action_boundary_limit_options).toEqual([{
@@ -2381,6 +2435,13 @@ export default defineCapability({
         client_name: "Cursor",
         destination: ".cursor/mcp.json",
         tools: ["app.describe_data", "app.explore_data"],
+        action_tools: [],
+        includes_action_boundary: false,
+        entries: [{
+          name: "synapsor",
+          boundary_type: "read",
+          tools: ["app.describe_data", "app.explore_data"],
+        }],
         credentials_in_client_config: false,
         model_can_install: false,
         client_command_detected: expect.any(Boolean),

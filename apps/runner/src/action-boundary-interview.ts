@@ -95,12 +95,16 @@ export function actionBoundaryDecisionQuestion(
   target?: string,
 ): { label: string; context: string[] } {
   if (decision.kind === "numeric_bounds") {
+    const action = target ?? "this proposal action";
     return {
       label: `What is the smallest and largest ${humanizeIdentifier(decision.field)} the agent may propose?`,
       context: [
         ...(target ? [`Action: ${target}`] : []),
         `Reviewed proposal field: ${decision.field}`,
+        `Where used: every ${action} proposal may supply ${decision.field} only inside the confirmed range.`,
+        "Runner rejects a proposal outside the range before approval. A later auto-approval rule may be narrower.",
         "Answer in ordinary language, for example: between five minutes and two hours.",
+        "This sets an allowed proposal range, not a default value, approval, activation, or database write.",
         "The model only translates this answer. Runner validates and shows the exact numeric range before saving it.",
       ],
     };
@@ -111,16 +115,24 @@ export function actionBoundaryDecisionQuestion(
       context: [
         ...(target ? [`Action: ${target}`] : []),
         `Reviewed choices: ${decision.choices.map((choice) => choice.label).join("; ")}`,
+        "Where used: confirmed fields become the only business values the agent may supply in this proposal action.",
+        "Trusted tenant/principal scope, approval, and apply remain Runner-controlled.",
         "Describe the needed values in ordinary language. Runner will show the exact reviewed field IDs before saving them.",
       ],
     };
   }
+  const usage = decision.kind === "operation"
+    ? "Where used: this selects the proposal effect (INSERT, UPDATE, or DELETE); it does not execute that effect."
+    : decision.kind === "resource"
+      ? "Where used: this selects the one reviewed table the proposal action may target."
+      : "Where used: this reviewed key prevents duplicate INSERT proposals or detects a stale UPDATE proposal.";
   return {
     label: decision.title,
     context: [
       ...(target ? [`Action: ${target}`] : []),
       decision.help,
       `Reviewed choices: ${decision.choices.map((choice) => choice.label).join("; ")}`,
+      usage,
       "Answer in ordinary language. Runner will show the exact reviewed choice before saving it.",
     ],
   };

@@ -4,7 +4,13 @@ import path from "node:path";
 import { applyEdits, modify, parse, printParseErrorCode, type ParseError } from "jsonc-parser";
 import runnerPackage from "../package.json" with { type: "json" };
 
-const serverName = "synapsor" as const;
+const managedServerNames = {
+  explore: "synapsor",
+  actions: "synapsor-actions",
+} as const;
+
+export type ManagedMcpProjectEntryKind = keyof typeof managedServerNames;
+type ManagedMcpProjectServerName = typeof managedServerNames[ManagedMcpProjectEntryKind];
 
 type JsonRecord = Record<string, unknown>;
 
@@ -58,6 +64,8 @@ const managedClientCommands: Record<ManagedMcpProjectClient, string[]> = {
 
 export type ManagedMcpProjectPaths = {
   client: ManagedMcpProjectClient;
+  entryKind: ManagedMcpProjectEntryKind;
+  serverName: ManagedMcpProjectServerName;
   projectRoot: string;
   destination: string;
   marker: string;
@@ -80,7 +88,7 @@ export type ManagedMcpProjectPreview = ManagedMcpProjectStatus & {
 
 type ManagedInstallMarker = {
   schema_version: string;
-  server_name: typeof serverName;
+  server_name: ManagedMcpProjectServerName;
   destination: string;
   entry_digest: `sha256:${string}`;
   config_path: string;
@@ -137,11 +145,12 @@ export async function previewManagedMcpProjectInstall(input: {
   storePath?: string;
   packageSpec?: string;
   authoring?: boolean;
+  entryKind?: ManagedMcpProjectEntryKind;
 }): Promise<ManagedMcpProjectPreview> {
   const definition = managedClients[input.client];
   const paths = await resolveInstallPaths(input, definition);
   const existing = await readOptionalJsonDocument(paths.destination);
-  const marker = await readMarker(paths.marker, definition);
+  const marker = await readMarker(paths.marker, definition, paths.serverName);
   const entry = managedEntry(paths.configArgument, paths.storeArgument, input.packageSpec, input.authoring === true);
   assertSecretFree(entry, definition);
   const existingServersValue = existing?.value[definition.serversKey];
@@ -149,24 +158,25 @@ export async function previewManagedMcpProjectInstall(input: {
     throw new Error(`${displayPath(paths.projectRoot, paths.destination)} must contain an object at ${definition.serversKey}.`);
   }
   const existingServers = isRecord(existingServersValue) ? existingServersValue : {};
-  const existingEntry = isRecord(existingServers[serverName]) ? existingServers[serverName] : undefined;
+  const existingEntryValue = existingServers[paths.serverName];
+  const existingEntry = isRecord(existingEntryValue) ? existingEntryValue : undefined;
 
   if (marker && !existingEntry) {
-    throw new Error(`Runner ownership marker exists, but the ${definition.displayName} ${serverName} MCP entry is missing. Review the files manually.`);
+    throw new Error(`Runner ownership marker exists, but the ${definition.displayName} ${paths.serverName} MCP entry is missing. Review the files manually.`);
   }
   if (existingEntry && !marker) {
     if (!deepEqual(existingEntry, entry)) {
-      throw new Error(`${definition.displayName} project already has an unowned ${serverName} MCP entry at ${displayPath(paths.projectRoot, paths.destination)}. Rename it or remove it explicitly before installing.`);
+      throw new Error(`${definition.displayName} project already has an unowned ${paths.serverName} MCP entry at ${displayPath(paths.projectRoot, paths.destination)}. Rename it or remove it explicitly before installing.`);
     }
-    throw new Error(`${definition.displayName} project has a matching but unowned ${serverName} MCP entry. Remove it explicitly or restore ${displayPath(paths.projectRoot, paths.marker)} before Runner manages it.`);
+    throw new Error(`${definition.displayName} project has a matching but unowned ${paths.serverName} MCP entry. Remove it explicitly or restore ${displayPath(paths.projectRoot, paths.marker)} before Runner manages it.`);
   }
   if (existingEntry && marker && digest(existingEntry) !== marker.entry_digest) {
-    throw new Error(`${definition.displayName} ${serverName} MCP entry changed after Runner installed it. Refusing to overwrite user edits; review ${displayPath(paths.projectRoot, paths.destination)}.`);
+    throw new Error(`${definition.displayName} ${paths.serverName} MCP entry changed after Runner installed it. Refusing to overwrite user edits; review ${displayPath(paths.projectRoot, paths.destination)}.`);
   }
 
   const merged = {
     ...(existing?.value ?? {}),
-    [definition.serversKey]: { ...existingServers, [serverName]: entry },
+    [definition.serversKey]: { ...existingServers, [paths.serverName]: entry },
   };
   const unchanged = Boolean(existingEntry && marker && deepEqual(existingEntry, entry));
   return {
@@ -178,7 +188,7 @@ export async function previewManagedMcpProjectInstall(input: {
       : `${definition.displayName} project MCP entry is ready to install.`,
     action: unchanged ? "unchanged" : existingEntry ? "update" : "install",
     merged,
-    updatedDocument: setManagedEntry(existing?.text, definition, entry),
+    updatedDocument: setManagedEntry(existing?.text, definition, paths.serverName, entry),
   };
 }
 
@@ -189,6 +199,7 @@ export async function installManagedMcpProject(input: {
   storePath?: string;
   packageSpec?: string;
   authoring?: boolean;
+  entryKind?: ManagedMcpProjectEntryKind;
   now?: string;
 }): Promise<ManagedMcpProjectPreview & { backup?: string }> {
   const definition = managedClients[input.client];
@@ -198,7 +209,7 @@ export async function installManagedMcpProject(input: {
   const backup = hadDestination ? await backupFile(preview.paths.destination, input.now) : undefined;
   const marker: ManagedInstallMarker = {
     schema_version: definition.markerVersion,
-    server_name: serverName,
+    server_name: preview.paths.serverName,
     destination: definition.destination,
     entry_digest: digest(preview.entry),
     config_path: preview.paths.configArgument,
@@ -216,34 +227,113 @@ export async function installManagedMcpProject(input: {
   return { ...preview, state: "installed", ...(backup ? { backup } : {}) };
 }
 
+export async function installManagedMcpProjectSet(input: {
+  client: ManagedMcpProjectClient;
+  projectRoot?: string;
+  entries: Array<{
+    configPath?: string;
+    storePath?: string;
+    packageSpec?: string;
+    authoring?: boolean;
+    entryKind: ManagedMcpProjectEntryKind;
+  }>;
+  now?: string;
+}): Promise<{ previews: ManagedMcpProjectPreview[]; backup?: string }> {
+  if (input.entries.length === 0) throw new Error("Managed MCP project install set requires at least one entry");
+  const entryKinds = input.entries.map((entry) => entry.entryKind);
+  if (new Set(entryKinds).size !== entryKinds.length) {
+    throw new Error("Managed MCP project install set contains a duplicate entry kind");
+  }
+  const definition = managedClients[input.client];
+  const previews = [];
+  for (const entry of input.entries) {
+    previews.push(await previewManagedMcpProjectInstall({
+      client: input.client,
+      projectRoot: input.projectRoot,
+      ...entry,
+    }));
+  }
+  const destination = previews[0]!.paths.destination;
+  if (previews.some((preview) => preview.paths.destination !== destination)) {
+    throw new Error("Managed MCP project entries must share one project client configuration");
+  }
+  const changed = previews.filter((preview) => preview.action !== "unchanged");
+  if (changed.length === 0) return { previews };
+
+  const existing = await readOptionalJsonDocument(destination);
+  let updatedDocument = existing?.text ?? "{}\n";
+  for (const preview of changed) {
+    updatedDocument = setManagedEntry(
+      updatedDocument,
+      definition,
+      preview.paths.serverName,
+      preview.entry!,
+    );
+  }
+  const backup = existing ? await backupFile(destination, input.now) : undefined;
+  const priorMarkers = new Map<string, string | undefined>();
+  for (const preview of changed) {
+    priorMarkers.set(preview.paths.marker, await readOptionalText(preview.paths.marker));
+  }
+  try {
+    await writeTextAtomic(destination, updatedDocument);
+    for (const preview of changed) {
+      const marker: ManagedInstallMarker = {
+        schema_version: definition.markerVersion,
+        server_name: preview.paths.serverName,
+        destination: definition.destination,
+        entry_digest: digest(preview.entry),
+        config_path: preview.paths.configArgument,
+        store_path: preview.paths.storeArgument,
+        installed_at: input.now ?? new Date().toISOString(),
+      };
+      await writeJsonAtomic(preview.paths.marker, marker);
+    }
+  } catch (error) {
+    if (backup) await fs.copyFile(backup, destination);
+    else await fs.rm(destination, { force: true });
+    for (const [markerPath, previous] of priorMarkers) {
+      if (previous === undefined) await fs.rm(markerPath, { force: true });
+      else await writeTextAtomic(markerPath, previous);
+    }
+    throw error;
+  }
+  return {
+    previews: previews.map((preview) => ({ ...preview, state: "installed" })),
+    ...(backup ? { backup } : {}),
+  };
+}
+
 export async function uninstallManagedMcpProject(input: {
   client: ManagedMcpProjectClient;
   projectRoot?: string;
+  entryKind?: ManagedMcpProjectEntryKind;
   now?: string;
 }): Promise<{ changed: boolean; paths: ManagedMcpProjectPaths; backup?: string }> {
   const definition = managedClients[input.client];
-  const base = await resolveBasePaths(input.projectRoot, definition);
+  const base = await resolveBasePaths(input.projectRoot, definition, input.entryKind);
   const existing = await readOptionalJsonDocument(base.destination);
-  const marker = await readMarker(base.marker, definition);
+  const marker = await readMarker(base.marker, definition, base.serverName);
   const paths = marker ? await pathsFromMarker(base, marker, definition) : defaultPaths(base);
   if (!existing && !marker) return { changed: false, paths };
   if (!marker) {
-    throw new Error(`Refusing to uninstall an unowned ${definition.displayName} ${serverName} entry without ${displayPath(paths.projectRoot, paths.marker)}.`);
+    throw new Error(`Refusing to uninstall an unowned ${definition.displayName} ${paths.serverName} entry without ${displayPath(paths.projectRoot, paths.marker)}.`);
   }
   const serversValue = existing?.value[definition.serversKey];
   if (serversValue !== undefined && !isRecord(serversValue)) {
     throw new Error(`${displayPath(paths.projectRoot, paths.destination)} must contain an object at ${definition.serversKey}.`);
   }
   const servers = isRecord(serversValue) ? serversValue : {};
-  const entry = isRecord(servers[serverName]) ? servers[serverName] : undefined;
+  const entryValue = servers[paths.serverName];
+  const entry = isRecord(entryValue) ? entryValue : undefined;
   if (!entry) {
-    throw new Error(`Runner ownership marker exists, but ${definition.displayName} ${serverName} entry is missing. Review the files manually.`);
+    throw new Error(`Runner ownership marker exists, but ${definition.displayName} ${paths.serverName} entry is missing. Review the files manually.`);
   }
   if (digest(entry) !== marker.entry_digest) {
-    throw new Error(`${definition.displayName} ${serverName} entry changed after installation. Refusing to remove user edits.`);
+    throw new Error(`${definition.displayName} ${paths.serverName} entry changed after installation. Refusing to remove user edits.`);
   }
   const backup = await backupFile(paths.destination, input.now);
-  const updatedDocument = removeManagedEntry(existing?.text ?? "{}\n", definition);
+  const updatedDocument = removeManagedEntry(existing?.text ?? "{}\n", definition, paths.serverName);
   await writeTextAtomic(paths.destination, updatedDocument);
   await fs.rm(paths.marker, { force: true });
   return { changed: true, paths, backup };
@@ -252,18 +342,20 @@ export async function uninstallManagedMcpProject(input: {
 export async function managedMcpProjectStatus(
   client: ManagedMcpProjectClient,
   projectRoot = process.cwd(),
+  entryKind: ManagedMcpProjectEntryKind = "explore",
 ): Promise<ManagedMcpProjectStatus> {
   const definition = managedClients[client];
-  const base = await resolveBasePaths(projectRoot, definition);
+  const base = await resolveBasePaths(projectRoot, definition, entryKind);
   const existing = await readOptionalJsonDocument(base.destination);
-  const marker = await readMarker(base.marker, definition);
+  const marker = await readMarker(base.marker, definition, base.serverName);
   const paths = marker ? await pathsFromMarker(base, marker, definition) : defaultPaths(base);
   const serversValue = existing?.value[definition.serversKey];
   if (serversValue !== undefined && !isRecord(serversValue)) {
     return { state: "tampered", paths, message: `${definition.displayName} ${definition.serversKey} is not a JSON object.` };
   }
   const servers = isRecord(serversValue) ? serversValue : {};
-  const entry = isRecord(servers[serverName]) ? servers[serverName] : undefined;
+  const entryValue = servers[paths.serverName];
+  const entry = isRecord(entryValue) ? entryValue : undefined;
   if (!entry && !marker) {
     return { state: "not_installed", paths, message: `No Runner-owned ${definition.displayName} project entry is installed.` };
   }
@@ -291,7 +383,10 @@ export async function managedMcpProjectStatus(
   };
 }
 
-type ManagedBasePaths = Pick<ManagedMcpProjectPaths, "client" | "projectRoot" | "destination" | "marker">;
+type ManagedBasePaths = Pick<
+  ManagedMcpProjectPaths,
+  "client" | "entryKind" | "serverName" | "projectRoot" | "destination" | "marker"
+>;
 
 async function resolveInstallPaths(
   input: {
@@ -300,10 +395,11 @@ async function resolveInstallPaths(
     configPath?: string;
     storePath?: string;
     authoring?: boolean;
+    entryKind?: ManagedMcpProjectEntryKind;
   },
   definition: ManagedMcpProjectDefinition,
 ): Promise<ManagedMcpProjectPaths> {
-  const base = await resolveBasePaths(input.projectRoot, definition);
+  const base = await resolveBasePaths(input.projectRoot, definition, input.entryKind);
   const config = resolveContained(base.projectRoot, input.configPath ?? "./synapsor.runner.json", "Runner config", definition);
   const store = resolveContained(base.projectRoot, input.storePath ?? "./.synapsor/local.db", "Runner store", definition);
   await rejectSymlinkChain(base.projectRoot, config, "Runner config");
@@ -319,14 +415,25 @@ async function resolveInstallPaths(
 async function resolveBasePaths(
   projectRootInput: string | undefined,
   definition: ManagedMcpProjectDefinition,
+  entryKind: ManagedMcpProjectEntryKind = "explore",
 ): Promise<ManagedBasePaths> {
   const projectRoot = path.resolve(projectRootInput ?? process.cwd());
   await requireRealDirectory(projectRoot, `${definition.displayName} project root`);
   const destination = path.join(projectRoot, definition.destination);
-  const marker = path.join(projectRoot, definition.marker);
+  const marker = path.join(projectRoot, entryKind === "explore"
+    ? definition.marker
+    : definition.marker.replace(/\.json$/u, "-actions.json"));
+  const serverName = managedServerNames[entryKind];
   await rejectSymlinkChain(projectRoot, destination, `${definition.displayName} project config`);
   await rejectSymlinkChain(projectRoot, marker, `${definition.displayName} ownership marker`);
-  return { client: definition.client, projectRoot, destination, marker };
+  return {
+    client: definition.client,
+    entryKind,
+    serverName,
+    projectRoot,
+    destination,
+    marker,
+  };
 }
 
 function defaultPaths(base: ManagedBasePaths): ManagedMcpProjectPaths {
@@ -385,6 +492,7 @@ function managedEntry(
 function setManagedEntry(
   existingText: string | undefined,
   definition: ManagedMcpProjectDefinition,
+  serverName: ManagedMcpProjectServerName,
   entry: JsonRecord,
 ): string {
   const source = existingText ?? "{}\n";
@@ -394,7 +502,11 @@ function setManagedEntry(
   return finalNewline(applyEdits(source, edits));
 }
 
-function removeManagedEntry(existingText: string, definition: ManagedMcpProjectDefinition): string {
+function removeManagedEntry(
+  existingText: string,
+  definition: ManagedMcpProjectDefinition,
+  serverName: ManagedMcpProjectServerName,
+): string {
   const edits = modify(existingText, [definition.serversKey, serverName], undefined, {
     formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" },
   });
@@ -460,9 +572,19 @@ async function readOptionalJsonDocument(value: string): Promise<JsonDocument | u
   }
 }
 
+async function readOptionalText(value: string): Promise<string | undefined> {
+  try {
+    return await fs.readFile(value, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
 async function readMarker(
   value: string,
   definition: ManagedMcpProjectDefinition,
+  serverName: ManagedMcpProjectServerName,
 ): Promise<ManagedInstallMarker | undefined> {
   const document = await readOptionalJsonDocument(value);
   const parsed = document?.value;

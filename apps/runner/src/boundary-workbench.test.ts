@@ -55,6 +55,13 @@ describe("Auto Boundary Workbench renderer", () => {
 
     expect(html).toContain("Delegate one job");
     expect(html).toContain("Prepare one agent job");
+    expect(html).toContain("Reviewed agent authority");
+    expect(html).toContain("<th>Name</th><th>Type</th><th>Status</th><th>Contents</th><th>Agent authority</th><th>Actions</th>");
+    expect(html).toContain("Read Boundaries</strong> control what Explore may inspect");
+    expect(html).toContain("Action Boundaries</strong> control what changes an agent may propose");
+    expect(script).toContain("payload.action_boundary_overview||null");
+    expect(script).toContain('id="open-action-boundary"');
+    expect(script).toContain('setView("action")');
     expect(html).toContain("What job are you giving this agent?");
     expect(html).toContain("Reviewed mapping catalog");
     expect(html).toContain(".workload-layout>*{min-width:0}");
@@ -169,7 +176,7 @@ describe("Auto Boundary Workbench renderer", () => {
   it("keeps the 1.7.0 reviewed-access controls discoverable in both Workbench and CLI", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const parityMarkers: Array<[string, string[]]> = [
-      ["independent boundary lifecycle", ["Your boundaries", "New boundary", "Deactivate selected boundary", "Review and activate now"]],
+      ["independent boundary lifecycle", ["Your boundaries", "New Read Boundary", "Deactivate selected Read Boundary", "Review and activate now"]],
       ["field tiers and sensitive widening", ["Model + Runner", "Withheld from model", "Kept out", "Changing a tier opens a recorded human review"]],
       ["reviewed enum allowlists", ["Allowed values", "Save allowed values", "Removed values are refused even if guessed"]],
       ["reviewed labels and descriptions", ["Reviewed label", "Reviewed description", "Save reviewed metadata", "plans still use the exact id"]],
@@ -600,17 +607,18 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Step 1 of 2 · Edit access");
     expect(html).toContain("Scoped Explore");
     expect(html).toContain('id="boundary-overview-title">Your boundaries');
-    expect(html).toContain("Each boundary is an independently reviewed set of tables, columns, relationships, and limits.");
-    expect(html).toContain('<th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th>');
+    expect(html).toContain("Read Boundaries</strong> control what Explore may inspect.");
+    expect(html).toContain("Action Boundaries</strong> control what changes an agent may propose.");
+    expect(html).toContain('<th>Name</th><th>Type</th><th>Status</th><th>Contents</th><th>Agent authority</th><th>Actions</th>');
     expect(html).toContain("Disabled draft");
     expect(html).toContain("Reviewed · not active");
-    expect(html).toContain("An active boundary adds choices to the same two Explore tools");
-    expect(html).toContain("Active boundaries never merge relationship graphs.");
+    expect(html).toContain("Read Boundaries never merge relationship graphs.");
+    expect(html).toContain("An Action Boundary stays bound to its reviewed Read dependency.");
     expect(html).toContain('id="boundary-overview" class="boundary-overview"');
     expect(html).toContain('id="edit-boundary-tables" ');
-    expect(html).toContain('type="button">Edit selected boundary</button>');
+    expect(html).toContain('type="button">Edit selected Read Boundary</button>');
     expect(html).toContain("pendingBoundaryChange?'class=\"secondary\" '");
-    expect(html).toContain('id="new-boundary" class="secondary" type="button">New boundary</button>');
+    expect(html).toContain('id="new-boundary" class="secondary" type="button">New Read Boundary</button>');
     expect(html).toContain("Choose its first table. Nothing is copied from another boundary");
     expect(html).toContain('id="new-boundary-table"');
     expect(html).toContain("Showing all '+esc(inspectedStartingTables.length)+' inspected tables");
@@ -667,7 +675,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("DISCARD REVIEW ");
     expect(html).toContain("discard_curated_review:true");
     expect(html).toContain("Runner config, ledger, evidence, and source data were preserved");
-    expect(html).toContain('<details class="boundary-options"><summary>Rename selected boundary</summary>');
+    expect(html).toContain('<details class="boundary-options"><summary>Rename selected Read Boundary</summary>');
     expect(html).toContain('<details id="overview-table-details" class="band">');
     expect(html).toContain('id="boundary-pack-name"');
     expect(html).toContain('id="save-boundary-name"');
@@ -694,7 +702,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("new relationship is available to review");
     expect(html).toContain("Active authority did not change.");
     expect(html).toContain('id="disable-active-boundary"');
-    expect(html).toContain("Deactivate selected boundary");
+    expect(html).toContain("Deactivate selected Read Boundary");
     expect(html).toContain("Other active boundaries, protected capabilities, evidence, ledger, and source data stay unchanged.");
     expect(html).toContain('post("/api/explore/disable",{boundary_name:selectedEntry.name})');
     expect(html).not.toContain("data-boundary-add");
@@ -1036,7 +1044,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Generic stdio MCP");
     expect(html).toContain("Managed project installers");
     expect(html).toContain("Prepare this project");
-    expect(html).toContain("The client starts the local stdio server when it opens this project.");
+    expect(html).toContain("The client starts each local stdio runtime when it opens this project.");
     expect(html).toContain("Prepare Claude Code");
     expect(html).toContain("No live client session is connected yet");
     expect(html).not.toContain("is connected.</strong>");
@@ -1044,7 +1052,11 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('data-install-mcp="claude-code"');
     expect(html).toContain('data-install-mcp="vscode"');
     expect(html).toContain('post("/api/mcp/install"');
-    expect(html).toContain("Verifying the two-tool authoring boundary");
+    expect(html).toContain("Validating the active Read");
+    expect(html).toContain("async function installManagedMcpClient(button){");
+    expect(html).toContain("const includeActions=Boolean(actionBoundaryOverview");
+    expect(html).toContain("--include-actions");
+    expect(html).toContain("synapsor-actions");
     expect(html).toContain("mcp install cursor");
     expect(html).toContain("mcp install claude-code");
     expect(html).toContain("mcp install vscode");

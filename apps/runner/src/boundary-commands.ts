@@ -1559,7 +1559,10 @@ async function interactiveBoundaryReviewLoop(input: {
           modelActionSuggestionSetGenerator: input.modelActionSuggestionSetGenerator,
           actionProjectInspector: input.actionProjectInspector,
           runDelegationActionReview: input.runDelegationActionReview,
-          completeReadReview: async () => confirmActivateAndKeepAccessOpen(accessActivationInput),
+          completeReadReview: async (mode) => confirmActivateAndKeepAccessOpen({
+            ...accessActivationInput,
+            prepareDependentActions: mode === "prepare_actions",
+          }),
           jobFirst: true,
         });
         if (assist.activation_ready) {
@@ -1570,6 +1573,15 @@ async function interactiveBoundaryReviewLoop(input: {
             "The exact disabled draft is saved. Nothing is active until you review and activate it.",
             "",
           ].join("\n"));
+        }
+        if (assist.handoff_ready && input.activationHandoff) {
+          writeBoundaryAccessNotice(assist.notice);
+          const reviewed = await loadBoundaryReviewContext(input.projectRoot);
+          return input.activationHandoff(deferredActivationHandoff ?? {
+            projectRoot: input.projectRoot,
+            boundaryName: reviewed.candidate.pack.name,
+            boundaryDigest: reviewed.bundle.candidate_digest,
+          });
         }
         accessNotice = assist.notice;
       } catch (error) {
@@ -1638,7 +1650,10 @@ async function interactiveBoundaryReviewLoop(input: {
           modelActionSuggestionGenerator: input.modelActionSuggestionGenerator,
           actionProjectInspector: input.actionProjectInspector,
           runDelegationActionReview: input.runDelegationActionReview,
-          completeReadReview: async () => confirmActivateAndKeepAccessOpen(accessActivationInput),
+          completeReadReview: async (mode) => confirmActivateAndKeepAccessOpen({
+            ...accessActivationInput,
+            prepareDependentActions: mode === "prepare_actions",
+          }),
           jobFirst: true,
         });
         if (assist.activation_ready) {
@@ -1652,6 +1667,14 @@ async function interactiveBoundaryReviewLoop(input: {
           ].join("\n"));
           const activationResult = await confirmActivateAndKeepAccessOpen(accessActivationInput);
           if (activationResult !== 0) return activationResult;
+        } else if (assist.handoff_ready && input.activationHandoff) {
+          writeBoundaryAccessNotice(assist.notice);
+          const reviewed = await loadBoundaryReviewContext(input.projectRoot);
+          return input.activationHandoff(deferredActivationHandoff ?? {
+            projectRoot: input.projectRoot,
+            boundaryName: reviewed.candidate.pack.name,
+            boundaryDigest: reviewed.bundle.candidate_digest,
+          });
         } else {
           accessNotice = assist.notice;
         }
@@ -2198,35 +2221,57 @@ export async function promptBoundaryMappingModel(
   } = {},
 ): Promise<ActionModelSuggestionSession | undefined> {
   if (currentModel) {
-    if (!session.chooseOption) return currentModel;
     const currentLabel = boundaryModelLabel(currentModel);
-    const selected = await session.chooseOption(
-      "MODEL FOR BOUNDARY DRAFTING",
-      [
-        {
-          value: "current",
-          label: `Use ${currentLabel}  [default]`,
-          detail: "One Enter keeps this model. The egress review is still required before any request.",
-        },
-        {
-          value: "change_model",
-          label: `Change the model for ${currentModel.provider}`,
-          detail: `Keeps the current provider and credential source; current model is ${currentModel.model}.`,
-        },
-        {
-          value: "change_provider",
-          label: "Choose another provider",
-          detail: "Select OpenAI, Anthropic, or a detected loopback model, then review its exact setup.",
-        },
-      ],
+    const choices = [
       {
-        initialValue: "current",
-        context: [
-          `${currentLabel} is the default for this job, not fixed authority.`,
-          "Changing it affects only this untrusted drafting request. No model can activate either Boundary.",
-        ],
+        value: "current",
+        label: `Use ${currentLabel}`,
+        detail: "Select this exact configured model, then review metadata egress before any request.",
       },
-    );
+      {
+        value: "change_model",
+        label: `Change the model for ${currentModel.provider}`,
+        detail: `Keeps the current provider and credential source; current model is ${currentModel.model}.`,
+      },
+      {
+        value: "change_provider",
+        label: "Choose another provider",
+        detail: "Select OpenAI, Anthropic, or a detected loopback model, then review its exact setup.",
+      },
+    ];
+    let selected: "current" | "change_model" | "change_provider" | undefined;
+    if (session.chooseOption) {
+      selected = await session.chooseOption(
+          "MODEL FOR BOUNDARY DRAFTING",
+          choices,
+          {
+            requireExplicitSelection: true,
+            context: [
+              "Choose the exact model/provider for this job; Runner does not select one for you.",
+              "The choice affects only this untrusted drafting request. No model can activate either Boundary.",
+            ],
+          },
+        ) as typeof selected;
+    } else {
+      const answer = await session.promptText("Choice (1-3)", {
+        context: [
+          "MODEL FOR BOUNDARY DRAFTING",
+          `1  Use ${currentLabel}`,
+          `2  Change the model for ${currentModel.provider}`,
+          "3  Choose another provider",
+          "Choose explicitly; blank input does not select a model or provider.",
+        ],
+      });
+      if (answer === undefined) return undefined;
+      selected = ({
+        "1": "current",
+        "2": "change_model",
+        "3": "change_provider",
+      } as const)[answer.trim() as "1" | "2" | "3"];
+      if (selected === undefined) {
+        throw new Error("Choose 1, 2, or 3; Runner does not select a model or provider implicitly.");
+      }
+    }
     if (selected === undefined) return undefined;
     if (selected === "current") return currentModel;
     if (selected === "change_model") {
@@ -2253,22 +2298,13 @@ export async function promptBoundaryMappingModel(
   let providerChoice: string;
   if (session.chooseOption) {
     const detectedModel = detectedModels[0];
-    const initialValue = detectedModel && !openAiReady && !anthropicReady
-      ? "detected_local"
-      : openAiReady && !anthropicReady
-        ? "openai"
-        : anthropicReady && !openAiReady
-          ? "anthropic"
-          : detectedModel
-            ? "detected_local"
-            : "openai";
     const selected = await session.chooseOption(
       "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
       [
         ...(detectedModel
           ? [{
               value: "detected_local",
-              label: `Local Ollama ${detectedModel}${initialValue === "detected_local" ? "  [recommended; detected]" : "  [detected]"}`,
+              label: `Local Ollama ${detectedModel}  [detected]`,
               detail: "Uses the bounded loopback endpoint; no API key or extra setup prompt.",
             }]
           : []),
@@ -2289,8 +2325,9 @@ export async function promptBoundaryMappingModel(
         },
       ],
       {
-        initialValue,
+        requireExplicitSelection: true,
         context: [
+          "Choose the provider explicitly; Runner does not select one from detected credentials or local models.",
           "The model receives reviewed structural metadata only after your egress confirmation.",
           "Its result is an untrusted draft. Runner revalidates every exact identifier, operation, bound, and policy.",
         ],
@@ -2307,7 +2344,7 @@ export async function promptBoundaryMappingModel(
     providerChoice = selected;
   } else {
     const providerText = await session.promptText(
-      "Provider [1]",
+      "Provider (1-3)",
       {
         context: [
           "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
@@ -2320,7 +2357,7 @@ export async function promptBoundaryMappingModel(
       },
     );
     if (providerText === undefined) return undefined;
-    providerChoice = providerText.trim().toLowerCase() || "1";
+    providerChoice = providerText.trim().toLowerCase();
   }
   const provider = providerChoice === "1" || providerChoice === "openai"
     ? "openai"
@@ -2647,9 +2684,9 @@ async function interactiveReadWorkloadAssist(input: {
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
-  completeReadReview?: () => Promise<number>;
+  completeReadReview?: (mode: "prepare_actions" | "activate") => Promise<number>;
   jobFirst?: boolean;
-}): Promise<{ notice: BoundaryAccessNotice; activation_ready: boolean }> {
+}): Promise<{ notice: BoundaryAccessNotice; activation_ready: boolean; handoff_ready: boolean }> {
   const currentModel = input.modelAuthoringSession
     ?? conventionalModelAuthoringSession(process.env);
   const jobIntent = await input.session.promptText(
@@ -3322,21 +3359,35 @@ async function interactiveReadWorkloadAssist(input: {
       "No proposal, approval, apply, or source-write authority is active.",
       "",
     ].join("\n"));
-    const reviewResult = await input.completeReadReview();
+    const reviewResult = await input.completeReadReview("prepare_actions");
     if (reviewResult !== 0) {
       throw new Error("DELEGATION_READ_REVIEW_INCOMPLETE: the exact Read Boundary review did not complete.");
+    }
+    const reviewed = await loadBoundaryReviewContext(input.projectRoot);
+    if (!exactReadBoundaryIsFullyReviewed(reviewed)) {
+      return boundaryAssistResult({
+        tone: "warning",
+        title: "Agent job setup paused at Read Boundary review.",
+        lines: [
+          `Read Boundary ${reviewed.candidate.pack.name} remains disabled and incomplete.`,
+          "No Action Boundary was prepared, and no agent authority or source data changed.",
+        ],
+        footer: "Press W to continue this job or edit the Read Boundary manually.",
+      });
     }
   }
   const actionDrafts: Array<{
     intent: string;
     draft: Awaited<ReturnType<typeof guidedActionStatus>>["drafts"][number];
   }> = [];
+  const runActionReview = input.runDelegationActionReview ?? runActionControlPlane;
+  let resolvedActionInspection = actionInspection;
   if (actionIntents.length) {
-    const inspection = actionInspection ?? await (input.actionProjectInspector ?? inspectActionProject)(
+    const inspection = resolvedActionInspection ?? await (input.actionProjectInspector ?? inspectActionProject)(
       input.projectRoot,
       process.env,
     );
-    const runActionReview = input.runDelegationActionReview ?? runActionControlPlane;
+    resolvedActionInspection = inspection;
     for (const [actionIndex, actionIntent] of actionIntents.entries()) {
       const before = new Set((await guidedActionStatus(input.projectRoot)).drafts.map((draft) =>
         `${draft.capability}:${draft.contract_digest}`));
@@ -3397,9 +3448,70 @@ async function interactiveReadWorkloadAssist(input: {
     ...(modelAssistRecord ? { modelAssist: modelAssistRecord } : {}),
   });
   await writeDelegationDraft(input.projectRoot, delegation);
+  let readBoundaryActive = await exactReadBoundaryIsActive({
+    projectRoot: input.projectRoot,
+    boundaryName: context.candidate.pack.name,
+    candidateDigest: committed.candidate_digest,
+  });
+  if (actionDrafts.length && !readBoundaryActive && input.completeReadReview) {
+    process.stdout.write([
+      "",
+      "NEXT AUTHORITY REVIEW - READ BOUNDARY",
+      `Read Boundary: ${context.candidate.pack.name}`,
+      "The job draft is complete. Review the exact Read authority now; activation remains your decision.",
+      "After Read activation, Runner opens each rehearsed Action Boundary revision for its own separate confirmation.",
+      "",
+    ].join("\n"));
+    const reviewResult = await input.completeReadReview("activate");
+    if (reviewResult !== 0) {
+      throw new Error("DELEGATION_READ_ACTIVATION_REVIEW_INCOMPLETE: the final Read Boundary review did not complete.");
+    }
+    readBoundaryActive = await exactReadBoundaryIsActive({
+      projectRoot: input.projectRoot,
+      boundaryName: context.candidate.pack.name,
+      candidateDigest: committed.candidate_digest,
+    });
+  }
+  if (readBoundaryActive && actionDrafts.length) {
+    const inspection = resolvedActionInspection ?? await (input.actionProjectInspector ?? inspectActionProject)(
+      input.projectRoot,
+      process.env,
+    );
+    for (const { draft } of actionDrafts) {
+      process.stdout.write([
+        "",
+        "NEXT AUTHORITY REVIEW - ACTION BOUNDARY",
+        `Action: ${draft.capability}`,
+        "Runner will show the exact proposal fields, bounds, policy, and rehearsal before asking for activation.",
+        "Activating proposal authority still grants no approval or apply authority and performs no source write.",
+        "",
+      ].join("\n"));
+      await runActionReview({
+        projectRoot: input.projectRoot,
+        boundaryName: context.candidate.pack.name,
+        inspection,
+        env: process.env,
+        initialDraftCapability: draft.capability,
+        exitAfterInitialDraft: true,
+        returnToAsk: false,
+      });
+    }
+  }
+  const finalActionStatus = await guidedActionStatus(input.projectRoot);
+  const activeActionCapabilities = new Set(
+    finalActionStatus.activations.map((activation) => activation.capability),
+  );
+  const activatedPreparedActions = actionDrafts.filter(({ draft }) =>
+    activeActionCapabilities.has(draft.capability)).length;
+  const allPreparedActionsActive = actionDrafts.length > 0
+    && activatedPreparedActions === actionDrafts.length;
+  const setupComplete = readBoundaryActive
+    && (actionDrafts.length === 0 || allPreparedActionsActive);
   return boundaryAssistResult({
     tone: "success",
-    title: "Delegation drafts are ready for separate authority review.",
+    title: setupComplete
+      ? "Read and Action Boundaries are active for this job."
+      : "Delegation drafts are saved for separate authority review.",
     lines: [
       `${requestedReadCoverage.supported}/${requestedReadCoverage.total} requested read plans are supported.`,
       ...(coverage.forbidden_total
@@ -3407,14 +3519,23 @@ async function interactiveReadWorkloadAssist(input: {
         : []),
       `${exposure.candidate_resources} resources | ${exposure.candidate_return_fields} return fields | `
         + `${exposure.candidate_relationships} relationships`,
+      `Read Boundary ${context.candidate.pack.name}: ${readBoundaryActive ? "ACTIVE" : "REVIEWED - NOT ACTIVE"}.`,
       actionIntents.length
-        ? `${actionDrafts.length}/${actionIntents.length} proposal actions are saved as disabled drafts${actionDrafts.some(({ draft }) => draft.effect_preview) ? "; disposable rehearsal passed where shown" : ""}.`
+        ? `Action Boundary ${finalActionStatus.action_boundary.active?.name ?? finalActionStatus.action_boundary.draft?.name ?? "default_action_boundary"}: `
+          + `${activatedPreparedActions}/${actionDrafts.length} prepared proposal actions active; `
+          + `${finalActionStatus.drafts.length} disabled draft(s) remain.`
         : "Proposal authority: OFF (this is a read-only job).",
-      "EXPLORE OFF | PROPOSE OFF | DELEGATE OFF | APPLY OFF",
-      `Review revision ${committed.review_revision}; no agent authority changed.`,
+      `EXPLORE ${readBoundaryActive ? "ON" : "OFF"} | PROPOSE ${allPreparedActionsActive ? "ON" : "OFF"} | APPROVE OFF | APPLY OFF`,
+      setupComplete
+        ? `Review revision ${committed.review_revision}; authority changed only through the exact confirmations above.`
+        : `Review revision ${committed.review_revision}; no additional agent authority changed.`,
     ],
-    footer: "The exact Read Boundary activation review opens next. Action activation remains separate.",
-  }, actionIntents.length === 0);
+    footer: setupComplete
+      ? "Choose terminal Ask, local stdio MCP, or production HTTP MCP next."
+      : readBoundaryActive
+        ? "Use Y to review any remaining disabled Action Boundary revision."
+        : "Use Enter/C to activate the Read Boundary; its Action Boundary remains separately reviewable with Y.",
+  }, actionIntents.length === 0 && !readBoundaryActive, setupComplete);
 }
 
 async function promptDelegationActionIntents(
@@ -3623,8 +3744,42 @@ function boundaryAssistBackNotice(detail = "Boundary Assist closed."): BoundaryA
 function boundaryAssistResult(
   notice: BoundaryAccessNotice,
   activationReady = false,
-): { notice: BoundaryAccessNotice; activation_ready: boolean } {
-  return { notice, activation_ready: activationReady };
+  handoffReady = false,
+): { notice: BoundaryAccessNotice; activation_ready: boolean; handoff_ready: boolean } {
+  return { notice, activation_ready: activationReady, handoff_ready: handoffReady };
+}
+
+function writeBoundaryAccessNotice(notice: BoundaryAccessNotice): void {
+  process.stdout.write([
+    "",
+    notice.title,
+    ...notice.lines,
+    ...(notice.footer ? [notice.footer] : []),
+    "",
+  ].join("\n"));
+}
+
+async function exactReadBoundaryIsActive(input: {
+  projectRoot: string;
+  boundaryName: string;
+  candidateDigest: `sha256:${string}`;
+}): Promise<boolean> {
+  try {
+    const active = await loadActivatedExplorationBoundaries(input.projectRoot);
+    return active.some((boundary) =>
+      boundary.pack.name === input.boundaryName
+      && boundary.activation.digest === input.candidateDigest);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function exactReadBoundaryIsFullyReviewed(
+  context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>,
+): boolean {
+  const confirmed = new Set(context.progress?.confirmed_decisions ?? []);
+  return context.candidate.unresolved_decisions.every((decision) => confirmed.has(decision));
 }
 
 function uniqueWorkloadEntryId(base: string, existingIds: string[]): string {
@@ -5241,6 +5396,7 @@ async function confirmActivateAndKeepAccessOpen(input: {
   session: BoundaryReviewInteractiveSession;
   activationHandoff?: BoundaryActivationHandoff;
   activationReviewNotice?: BoundaryReviewCommandOptions["activationReviewNotice"];
+  prepareDependentActions?: boolean;
 }): Promise<number> {
   let result: number;
   try {
@@ -5259,6 +5415,7 @@ async function confirmActivateAndKeepAccessOpen(input: {
     return 0;
   }
   if (result !== 0) return result;
+  if (input.prepareDependentActions) return 0;
   process.stdout.write([
     "/access is still open.",
     "Continue setting up this boundary, switch boundaries, or press Q/Esc when finished to return to Ask.",
@@ -5274,6 +5431,7 @@ async function confirmAndActivateFocusedBoundary(input: {
   activationHandoff?: BoundaryActivationHandoff;
   activationReviewNotice?: BoundaryReviewCommandOptions["activationReviewNotice"];
   keepAccessOpen?: boolean;
+  prepareDependentActions?: boolean;
 }): Promise<number> {
   let context = await loadBoundaryReviewContext(input.projectRoot);
   const boundaryLibrary = await synchronizeBoundaryLibrary({
@@ -5391,6 +5549,44 @@ async function confirmAndActivateFocusedBoundary(input: {
     ...(activationReviewNotice ? activationReviewNotice.trimEnd().split("\n") : []),
   ];
   const actor = localInteractiveActor();
+  if (input.prepareDependentActions) {
+    const accepted = await input.session.confirm(
+      `Use this exact Read Boundary as the disabled dependency for its Action Boundary?`,
+      {
+        defaultValue: true,
+        context: [
+          "CONTINUE TO ACTION BOUNDARY",
+          `Read Boundary: ${context.candidate.pack.name}`,
+          "Yes freezes this exact reviewed revision without granting read authority, then continues the same agent job.",
+          "The final Read activation and Action activation remain separate confirmations after proposal rehearsal.",
+          "No model, proposal, approval, apply, or source-write authority is granted here.",
+        ],
+      },
+    );
+    if (accepted) {
+      await saveReviewedDisabledBoundary({
+        projectRoot: input.projectRoot,
+        context,
+        actor,
+        reason: "Confirmed the complete exact Read Boundary as the disabled dependency for the linked Action Boundary.",
+      });
+      process.stdout.write([
+        "READ REVIEW COMPLETE - NOT ACTIVE",
+        `Read Boundary: ${context.candidate.pack.name}`,
+        "Next: continue this same job into Action Boundary decisions.",
+        "EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF",
+        "Source database changed: no",
+        "",
+      ].join("\n"));
+      return 0;
+    }
+    process.stdout.write([
+      "Agent job paused before Action Boundary setup.",
+      "The Read Boundary remains disabled and incomplete. No authority or source data changed.",
+      "",
+    ].join("\n"));
+    return 0;
+  }
   const activationPrompt = context.candidate.deployment_profile === "production"
     ? input.keepAccessOpen
       ? `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore now? You will stay in /access.`
@@ -5421,16 +5617,12 @@ async function confirmAndActivateFocusedBoundary(input: {
         )
       : false;
     if (keepReviewedDisabled) {
-      const progress = createBoundaryReviewProgress({
-        draft: context.draft,
-        candidate: context.candidate,
-        confirmedDecisions: context.candidate.unresolved_decisions,
-        ...(context.progress ? { previous: context.progress } : {}),
+      await saveReviewedDisabledBoundary({
+        projectRoot: input.projectRoot,
+        context,
         actor,
         reason: "Confirmed the complete exact boundary while keeping read authority disabled.",
-        revision: (context.progress?.revision ?? 0) + 1,
       });
-      await saveBoundaryReviewProgress(input.projectRoot, progress);
       process.stdout.write([
         "READ REVIEW COMPLETE - NOT ACTIVE",
         `Boundary: ${context.candidate.pack.name}`,
@@ -5473,6 +5665,24 @@ async function confirmAndActivateFocusedBoundary(input: {
     input.session,
     input.activationHandoff,
   );
+}
+
+async function saveReviewedDisabledBoundary(input: {
+  projectRoot: string;
+  context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>;
+  actor: string;
+  reason: string;
+}): Promise<void> {
+  const progress = createBoundaryReviewProgress({
+    draft: input.context.draft,
+    candidate: input.context.candidate,
+    confirmedDecisions: input.context.candidate.unresolved_decisions,
+    ...(input.context.progress ? { previous: input.context.progress } : {}),
+    actor: input.actor,
+    reason: input.reason,
+    revision: (input.context.progress?.revision ?? 0) + 1,
+  });
+  await saveBoundaryReviewProgress(input.projectRoot, progress);
 }
 
 export function formatFocusedBoundaryActivationReview(

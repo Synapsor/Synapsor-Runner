@@ -283,6 +283,8 @@ describe("Safe Action terminal control plane", () => {
 
   it("asks for unresolved Action bounds in natural language and confirms the exact interpretation", async () => {
     const textLabels: string[] = [];
+    const textContexts: string[][] = [];
+    const confirmationContexts: string[][] = [];
     const decisionInterpreter = vi.fn(async () => ({
       state: "resolved" as const,
       decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } } },
@@ -295,7 +297,15 @@ describe("Safe Action terminal control plane", () => {
       choices: ["confirm", "create"],
       texts: ["From zero through twenty-five dollars."],
       confirms: [],
-      onText: (label) => textLabels.push(label),
+      onText: (label, options) => {
+        textLabels.push(label);
+        textContexts.push(options?.context ?? []);
+      },
+      onChoose: (title, _choices, context) => {
+        if (title === "CONFIRM INTERPRETED DECISION") {
+          confirmationContexts.push(context ?? []);
+        }
+      },
     });
 
     const action = await collectQuickProposalActionInput(
@@ -315,6 +325,14 @@ describe("Safe Action terminal control plane", () => {
     expect(textLabels).toEqual([
       "What is the smallest and largest credit cents the agent may propose?",
     ]);
+    expect(textContexts[0]).toEqual(expect.arrayContaining([
+      "Where used: every UPDATE public.orders proposal may supply credit_cents only inside the confirmed range.",
+      "Runner rejects a proposal outside the range before approval. A later auto-approval rule may be narrower.",
+    ]));
+    expect(confirmationContexts[0]).toEqual(expect.arrayContaining([
+      "Runner-validated interpretation: credit_cents: 0 through 2500",
+      "Authority granted: no | source database changed: no",
+    ]));
     expect(decisionInterpreter).toHaveBeenCalledWith(expect.objectContaining({
       answer: "From zero through twenty-five dollars.",
       decision: expect.objectContaining({ kind: "numeric_bounds", field: "credit_cents" }),
@@ -1415,6 +1433,20 @@ describe("Safe Action terminal control plane", () => {
 
     terminal.input.write("5\n");
     await expect(text).resolves.toBe("5");
+    expect(terminal.input.isRaw).toBe(false);
+
+    const confirmation = prompter.choose("CONFIRM INTERPRETED DECISION", [
+      { value: "confirm", label: "Confirm this exact reviewed value" },
+    ], [
+      "You said: Between five minutes and two hours.",
+      "Runner-validated interpretation: estimated_minutes: 5 through 120",
+      "Authority granted: no | source database changed: no",
+    ], "confirm");
+    await nextTurn();
+    const confirmationFrame = terminal.output.read()?.toString() ?? "";
+    expect(confirmationFrame).toContain("\u001b[1;32mestimated_minutes: 5 through 120\u001b[0m");
+    await emitKey(terminal.input, { name: "escape", sequence: "\u001b" });
+    await expect(confirmation).resolves.toBeUndefined();
     expect(terminal.input.isRaw).toBe(false);
   });
 });

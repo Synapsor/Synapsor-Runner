@@ -2,11 +2,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parse } from "jsonc-parser";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import runnerPackage from "../package.json" with { type: "json" };
+import { mcp } from "./mcp-project.js";
 import {
   detectManagedMcpClientCommand,
   installManagedMcpProject,
+  installManagedMcpProjectSet,
   managedMcpProjectStatus,
   parseManagedMcpProjectClient,
   previewManagedMcpProjectInstall,
@@ -182,6 +184,57 @@ describe("managed MCP project client names", () => {
     expect((await managedMcpProjectStatus("vscode", root)).state).toBe("installed");
   });
 
+  it("keeps Claude Code Explore and Action runtimes independently owned in one project", async () => {
+    const root = await projectFixture();
+    await fs.writeFile(path.join(root, "synapsor.actions.runner.json"), "{}\n", "utf8");
+    const destination = path.join(root, ".mcp.json");
+    await fs.writeFile(destination, JSON.stringify({
+      mcpServers: {
+        existing: { command: "node", args: ["existing.mjs"] },
+      },
+      projectSetting: true,
+    }, null, 2), "utf8");
+
+    const installedSet = await installManagedMcpProjectSet({
+      client: "claude-code",
+      projectRoot: root,
+      now: "2026-07-26T00:00:00.000Z",
+      entries: [{
+        authoring: true,
+        entryKind: "explore",
+      }, {
+        configPath: "./synapsor.actions.runner.json",
+        entryKind: "actions",
+      }],
+    });
+    expect(installedSet.backup).toBeDefined();
+    expect((await fs.readdir(root)).filter((name) => name.includes(".mcp.json.bak."))).toHaveLength(1);
+
+    const installed = parse(await fs.readFile(destination, "utf8"));
+    expect(installed.mcpServers.existing.command).toBe("node");
+    expect(installed.mcpServers.synapsor.args).toContain("--authoring");
+    expect(installed.mcpServers["synapsor-actions"].args).toContain("./synapsor.actions.runner.json");
+    expect(installed.projectSetting).toBe(true);
+    expect((await managedMcpProjectStatus("claude-code", root, "explore")).state).toBe("installed");
+    expect((await managedMcpProjectStatus("claude-code", root, "actions")).state).toBe("installed");
+    expect(JSON.parse(await fs.readFile(
+      path.join(root, ".synapsor/claude-code-project-actions.json"),
+      "utf8",
+    ))).toMatchObject({ server_name: "synapsor-actions" });
+
+    await uninstallManagedMcpProject({
+      client: "claude-code",
+      projectRoot: root,
+      entryKind: "actions",
+    });
+    const withoutActions = parse(await fs.readFile(destination, "utf8"));
+    expect(withoutActions.mcpServers.synapsor.command).toBe("npx");
+    expect(withoutActions.mcpServers["synapsor-actions"]).toBeUndefined();
+    expect(withoutActions.mcpServers.existing.command).toBe("node");
+    expect((await managedMcpProjectStatus("claude-code", root, "explore")).state).toBe("installed");
+    expect((await managedMcpProjectStatus("claude-code", root, "actions")).state).toBe("not_installed");
+  });
+
   it("preserves VS Code JSONC comments and trailing-comma settings", async () => {
     const root = await projectFixture();
     const destination = path.join(root, ".vscode/mcp.json");
@@ -217,6 +270,42 @@ describe("managed MCP project client names", () => {
     expect(removed).toContain("// Keep this unrelated server.");
     expect(parse(removed).servers.existing.command).toBe("node");
     expect(parse(removed).servers.synapsor).toBeUndefined();
+  });
+});
+
+describe("managed MCP project command surface", () => {
+  it("requires explicit authoring for the combined Read and Action install", async () => {
+    const root = await projectFixture();
+    await expect(mcp([
+      "install", "claude-code",
+      "--project", "--include-actions",
+      "--project-root", root,
+    ])).rejects.toThrow(/--include-actions requires --authoring/);
+  });
+
+  it("reports both independently owned entries through the public status command", async () => {
+    const root = await projectFixture();
+    const output: string[] = [];
+    const write = vi.spyOn(process.stdout, "write").mockImplementation((value) => {
+      output.push(String(value));
+      return true;
+    });
+    try {
+      await expect(mcp([
+        "status", "claude-code",
+        "--project", "--include-actions", "--json",
+        "--project-root", root,
+      ])).resolves.toBe(1);
+    } finally {
+      write.mockRestore();
+    }
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      ok: false,
+      runtimes: [
+        { role: "read", entry: "synapsor", state: "not_installed" },
+        { role: "action", entry: "synapsor-actions", state: "not_installed" },
+      ],
+    });
   });
 });
 

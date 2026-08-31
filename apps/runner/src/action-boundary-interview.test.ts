@@ -54,6 +54,23 @@ const action: GuidedActionInput = {
 };
 
 describe("conversational Action Boundary interview", () => {
+  it("explains exactly where a natural-language numeric decision is enforced", () => {
+    expect(actionBoundaryDecisionQuestion({
+      kind: "numeric_bounds",
+      title: "Set duration",
+      help: "Finite bounds are required.",
+      field: "estimated_minutes",
+    }, "INSERT support_ops.follow_up_tasks")).toEqual({
+      label: "What is the smallest and largest estimated minutes the agent may propose?",
+      context: expect.arrayContaining([
+        "Action: INSERT support_ops.follow_up_tasks",
+        "Where used: every INSERT support_ops.follow_up_tasks proposal may supply estimated_minutes only inside the confirmed range.",
+        "Runner rejects a proposal outside the range before approval. A later auto-approval rule may be narrower.",
+        "This sets an allowed proposal range, not a default value, approval, activation, or database write.",
+      ]),
+    });
+  });
+
   it("blocks obvious secret material before an operator answer reaches a provider", async () => {
     const requestJson = vi.fn();
     await expect(interpretActionBoundaryDecision({

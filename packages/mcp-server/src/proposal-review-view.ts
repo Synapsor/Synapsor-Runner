@@ -88,6 +88,13 @@ export function buildProposalReviewView(
     ? changeSet.guards.expected_version
     : undefined;
   const capability = proposal.capability ?? proposal.action;
+  const approvalStatus = proposal.state === "approved" || proposal.state === "applied"
+    ? "approved"
+    : proposal.state === "rejected"
+      ? "rejected"
+      : proposal.state === "canceled"
+        ? "canceled"
+        : changeSet.approval.status;
 
   return {
     schema_version: "synapsor.proposal-review-view.v1",
@@ -124,7 +131,10 @@ export function buildProposalReviewView(
     },
     expected_source_version: expectedVersion ?? null,
     policy_and_risk: {
-      approval: changeSet.approval,
+      approval: {
+        ...changeSet.approval,
+        status: approvalStatus,
+      },
       decision: proposal.state,
     },
     expiration: {

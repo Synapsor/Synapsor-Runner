@@ -874,7 +874,10 @@ describe("boundary review terminal picker", () => {
     const rendered = output.read()?.toString() ?? "";
     expect(rendered).toContain("YOUR DATA BOUNDARY");
     expect(rendered).toContain("NAME");
-    expect(rendered).toContain("AI ACCESS");
+    expect(rendered).toContain("TYPE");
+    expect(rendered).toContain("AGENT AUTHORITY");
+    expect(rendered).toContain("READ");
+    expect(rendered).toContain("ACTION");
     expect(rendered).toContain("reviewed_staging");
     expect(rendered).toContain("NOT ACTIVE");
     expect(rendered).not.toContain("Active   -");
@@ -901,8 +904,11 @@ describe("boundary review terminal picker", () => {
     expect(firstViewPlain).toContain("BOUNDARIES");
     expect(firstViewPlain).toContain("NAME");
     expect(firstViewPlain).toContain("STATUS");
-    expect(firstViewPlain).toContain("TABLES");
-    expect(firstViewPlain).toContain("READ ACCESS");
+    expect(firstViewPlain).toContain("TYPE");
+    expect(firstViewPlain).toContain("CONTENT");
+    expect(firstViewPlain).toContain("AGENT AUTHORITY");
+    expect(firstViewPlain).toContain("READ");
+    expect(firstViewPlain).toContain("ACTION");
     expect(firstViewPlain).toContain("reviewed_staging");
     expect(firstViewPlain).toContain("DRAFT - NO ACCESS");
     expect(firstViewPlain).toContain("A New boundary");
@@ -1054,12 +1060,14 @@ describe("boundary review terminal picker", () => {
     );
 
     const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
-    expect(rendered).toContain("READ BOUNDARIES - EXPLORE");
-    expect(rendered).toContain("READ ACCESS");
-    expect(rendered).toContain("ACTION BOUNDARY - PROPOSALS (SEPARATE)");
-    expect(rendered).toContain('Action Boundary "default_action_boundary": ACTIVE');
-    expect(rendered).toContain("2 active | 0 disabled");
-    expect(rendered).toContain("Linked to reviewed_staging. Y opens it");
+    expect(rendered).toContain("BOUNDARIES");
+    expect(rendered).toContain("TYPE");
+    expect(rendered).toContain("READ");
+    expect(rendered).toContain("ACTION");
+    expect(rendered).toContain("default_action_boundary");
+    expect(rendered).toContain("2 actions");
+    expect(rendered).toContain("Linked Read Boundary: reviewed_staging");
+    expect(rendered).toContain("Y reviews active proposal authority");
     expect(rendered).toContain("Y Safe actions - 2 active proposal actions [ACTIVE]");
     expect(rendered).not.toContain("Y Safe actions - prepare proposal [AVAILABLE]");
 

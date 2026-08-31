@@ -33,10 +33,11 @@ import { inspectDatabase } from "@synapsor-runner/schema-inspector";
 import { cursorProjectStatus } from "./cursor-project.js";
 import {
   detectManagedMcpClientCommand,
-  installManagedMcpProject,
+  installManagedMcpProjectSet,
   managedMcpProjectDefinition,
   parseManagedMcpProjectClient,
 } from "./managed-mcp-project.js";
+import { inspectMcpToolBoundary } from "./mcp-runtime.js";
 import { renderBoundaryWorkbench } from "./boundary-workbench.js";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
@@ -957,6 +958,25 @@ async function handleRequest(input: {
       ?? (hasReviewableResource ? recommendedBoundaryReviewCandidate(draft) : structuredClone(draft));
     const active = activeBoundaries.find((boundary) =>
       boundary.pack.name === candidate.pack.name) ?? null;
+    const guidedActions = await guidedActionStatus(projectRoot);
+    const actionBoundary = guidedActions.action_boundary.draft
+      ?? guidedActions.action_boundary.active;
+    const actionBoundaryOverview = actionBoundary
+      ? {
+          name: actionBoundary.name,
+          label: actionBoundary.label,
+          state: guidedActions.action_boundary.draft
+            ? guidedActions.action_boundary.active
+              ? "active_with_draft"
+              : "disabled"
+            : "active",
+          action_count: actionBoundary.authority.capabilities.length,
+          active_action_count: guidedActions.activations.length,
+          disabled_action_count: guidedActions.drafts.length,
+          read_boundaries: actionBoundary.authority.read_dependencies
+            .map((dependency) => dependency.name),
+        }
+      : null;
     const reviewDecisions = boundaryReviewDecisions(candidate);
     const confirmedDecisions = progress?.confirmed_decisions ?? [];
     sendJson(response, 200, {
@@ -986,6 +1006,7 @@ async function handleRequest(input: {
       boundary_rescan_report: await readBoundaryRescanReport(projectRoot),
       active,
       active_boundaries: activeBoundaries,
+      action_boundary_overview: actionBoundaryOverview,
       boundary_catalog: boundaryCatalog,
       boundary_mermaid: renderBoundaryCatalogMermaid(boundaryCatalog),
       boundary_diagrams: buildBoundaryCatalogDiagramExports(boundaryCatalog),
@@ -3716,23 +3737,65 @@ async function handleRequest(input: {
       if (tools.join("\n") !== ["app.describe_data", "app.explore_data"].sort().join("\n")) {
         throw new Error("Managed client setup refused because the live authoring tool boundary was not exactly the reviewed Explore pair.");
       }
-      const installed = await installManagedMcpProject({
+      const actionStatus = await guidedActionStatus(projectRoot);
+      const includeActions = Boolean(
+        actionStatus.action_boundary.active?.authority.capabilities.length,
+      );
+      const actionConfigPath = path.join(projectRoot, "synapsor.actions.runner.json");
+      let actionTools: string[] = [];
+      if (includeActions) {
+        const actionBoundary = await inspectMcpToolBoundary([
+          "--config", actionConfigPath,
+          "--store", ":memory:",
+        ]);
+        const nonProposalTools = actionBoundary.capabilityDetails
+          .filter((detail) => detail.kind !== "proposal")
+          .map((detail) => detail.name);
+        if (!actionBoundary.ok || actionBoundary.names.length === 0 || nonProposalTools.length > 0) {
+          const failures = [
+            ...actionBoundary.checks.filter((check) => !check.ok).map((check) => check.name),
+            ...(actionBoundary.names.length === 0 ? ["no active proposal tools"] : []),
+            ...(nonProposalTools.length ? [`non-proposal tools present: ${nonProposalTools.join(", ")}`] : []),
+          ];
+          throw new Error(`Managed client setup refused because the active Action runtime is not proposal-only: ${failures.join(", ")}`);
+        }
+        actionTools = actionBoundary.names.sort();
+      }
+      const installed = await installManagedMcpProjectSet({
         client,
         projectRoot,
-        configPath,
-        storePath,
-        authoring: true,
+        entries: [{
+          configPath,
+          storePath,
+          authoring: true,
+          entryKind: "explore",
+        }, ...(includeActions ? [{
+          configPath: actionConfigPath,
+          storePath,
+          authoring: false,
+          entryKind: "actions" as const,
+        }] : [])],
       });
+      const installedRead = installed.previews[0]!;
+      const installedAction = installed.previews[1];
       const definition = managedMcpProjectDefinition(client);
       const detectedCommand = await detectManagedMcpClientCommand(client);
       sendJson(response, 200, {
         ok: true,
         client,
         client_name: definition.displayName,
-        action: installed.action,
-        destination: path.relative(projectRoot, installed.paths.destination),
-        backup: installed.backup ? path.relative(projectRoot, installed.backup) : null,
+        action: installedAction?.action ?? installedRead.action,
+        destination: path.relative(projectRoot, installedRead.paths.destination),
+        backups: installed.backup ? [path.relative(projectRoot, installed.backup)] : [],
         tools,
+        action_tools: actionTools,
+        includes_action_boundary: includeActions,
+        entries: [
+          { name: "synapsor", boundary_type: "read", tools },
+          ...(includeActions
+            ? [{ name: "synapsor-actions", boundary_type: "action", tools: actionTools }]
+            : []),
+        ],
         credentials_in_client_config: false,
         model_can_install: false,
         client_command_detected: Boolean(detectedCommand),

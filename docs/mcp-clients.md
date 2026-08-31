@@ -50,6 +50,28 @@ authoring tools. `--authoring` remains available when you want to state the
 mode explicitly. Omitting it no longer creates a zero-tool entry: Runner either
 detects the active local boundary or refuses with activation guidance.
 
+When the same project also has an active reviewed Action Boundary, explicitly
+request both local runtimes:
+
+```bash
+synapsor-runner mcp install claude-code \
+  --project \
+  --authoring \
+  --include-actions \
+  --project-root .
+```
+
+Runner first shows one combined preview and asks once. It then owns two
+separate entries in the selected client's project file:
+
+- `synapsor`: exactly `app.describe_data` and `app.explore_data`;
+- `synapsor-actions`: only the active reviewed proposal tools.
+
+The split is deliberate. Approval, apply, revert, policy editing, boundary
+activation, credentials, trusted identity arguments, and SQL are in neither
+entry. Trusted tenant and principal values are inherited from the process that
+launches the client; Runner does not write them to project configuration.
+
 ## Stdio
 
 Use stdio for Claude Code, Claude Desktop, Cursor, VS Code, and other local MCP
@@ -118,11 +140,19 @@ synapsor-runner mcp install claude-code --project --yes \
 synapsor-runner mcp status claude-code --project --check-launch
 ```
 
+For an active Read plus Action Boundary, use the combined form for both install
+and launch verification:
+
+```bash
+synapsor-runner mcp install claude-code --project --authoring --include-actions --yes
+synapsor-runner mcp status claude-code --project --include-actions --check-launch
+```
+
 | Client | Managed project file | Server map |
 | --- | --- | --- |
-| Cursor | `.cursor/mcp.json` | `mcpServers.synapsor` |
-| Claude Code | `.mcp.json` | `mcpServers.synapsor` |
-| VS Code | `.vscode/mcp.json` | `servers.synapsor` |
+| Cursor | `.cursor/mcp.json` | `mcpServers.synapsor` and optional `mcpServers.synapsor-actions` |
+| Claude Code | `.mcp.json` | `mcpServers.synapsor` and optional `mcpServers.synapsor-actions` |
+| VS Code | `.vscode/mcp.json` | `servers.synapsor` and optional `servers.synapsor-actions` |
 
 Runner previews the merge, backs up an existing file, preserves unrelated
 servers and settings, writes an exact-version `npx` invocation, and tracks only
@@ -130,6 +160,8 @@ its own entry with a client-specific integrity marker under `.synapsor/`.
 Repeating install is idempotent. VS Code JSON-with-comments, comments, and
 trailing commas are preserved. `mcp uninstall <client> --project --yes`
 removes only an intact Runner-owned entry and creates another backup.
+Pass `--include-actions` to status or uninstall when both independently owned
+entries should be checked or removed together.
 
 No managed client file contains a database URL, credential, trusted tenant or
 principal value, approval authority, or apply authority. Claude Code asks the

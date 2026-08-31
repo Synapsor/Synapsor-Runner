@@ -189,6 +189,7 @@ export type BoundaryPromptChoice = {
 
 type BoundaryChoicePromptOptions = BoundaryPromptOptions & {
   initialValue?: string;
+  requireExplicitSelection?: boolean;
 };
 
 export type BoundaryReviewInteractiveSession = {
@@ -308,18 +309,34 @@ function linkedActionBoundaryLines(
       : state === "disabled"
         ? "DISABLED DRAFT"
         : "OFF";
-  const name = global?.name ? ` "${safeTerminalText(global.name)}"` : "";
-  const status = `Action Boundary${name}: ${stateLabel} | ${activeCount} active | ${draftCount} disabled`;
-  const styledStatus = state === "active"
-    ? theme.success(status)
+  const name = global?.name ?? "default_action_boundary";
+  const actionCount = activeCount + draftCount;
+  const access = activeCount > 0
+    ? draftCount > 0
+      ? "ACTIVE + CHANGES"
+      : "ACTIVE"
+    : "NOT ACTIVE";
+  const row = savedBoundaryRow(
+    "Y",
+    name,
+    "ACTION",
+    stateLabel,
+    `${actionCount} ${plural(actionCount, "action", "actions")}`,
+    access,
+  );
+  const styledRow = state === "active"
+    ? theme.success(row)
     : state === "off"
-      ? theme.dim(status)
-      : theme.warning(status);
-  const linked = `Linked to ${safeTerminalText(boundary.name)}. Y opens it; approval and apply stay outside the agent.`;
+      ? theme.dim(row)
+      : theme.warning(row);
   return [
-    theme.bold("ACTION BOUNDARY - PROPOSALS (SEPARATE)"),
-    styledStatus,
-    linked,
+    styledRow,
+    theme.dim(`  Linked Read Boundary: ${safeTerminalText(boundary.name)}`),
+    activeCount > 0
+      ? "  Y reviews active proposal authority or any disabled replacement. Approval and apply remain outside the agent."
+      : draftCount > 0
+        ? "  Y reviews and activates this proposal authority. Approval and apply remain outside the agent."
+        : "  Y prepares one proposal action after the Read Boundary review is complete.",
   ];
 }
 
@@ -438,9 +455,11 @@ async function chooseBoundaryPromptOption(
     ? -1
     : choices.findIndex((choice) =>
         choice.value === options.initialValue && choice.disabled !== true);
-  let selected = requested >= 0
-    ? requested
-    : Math.max(0, choices.findIndex((choice) => choice.disabled !== true));
+  let selected = options?.requireExplicitSelection
+    ? -1
+    : requested >= 0
+      ? requested
+      : Math.max(0, choices.findIndex((choice) => choice.disabled !== true));
   return withRawKeys(input, output, async (nextKey, render) => {
     while (true) {
       render([
@@ -472,6 +491,17 @@ async function chooseBoundaryPromptOption(
       }
       if (key.name === "up" || key.name === "down") {
         const direction = key.name === "up" ? -1 : 1;
+        if (selected < 0) {
+          const start = direction > 0 ? -1 : 0;
+          for (let offset = 1; offset <= choices.length; offset += 1) {
+            const candidate = (start + direction * offset + choices.length) % choices.length;
+            if (choices[candidate]!.disabled !== true) {
+              selected = candidate;
+              break;
+            }
+          }
+          continue;
+        }
         for (let offset = 1; offset <= choices.length; offset += 1) {
           const candidate = (selected + direction * offset + choices.length) % choices.length;
           if (choices[candidate]!.disabled !== true) {
@@ -480,7 +510,8 @@ async function chooseBoundaryPromptOption(
           }
         }
       }
-      if ((key.name === "return" || key.name === "enter")
+      if (selected >= 0
+        && (key.name === "return" || key.name === "enter")
         && choices[selected]!.disabled !== true) {
         return choices[selected]!.value;
       }
@@ -1113,13 +1144,18 @@ async function chooseResource(
             "that your AI cannot exceed.",
             ...(boundaryListCompatibility ? [boundaryListCompatibility] : []),
             "",
-            theme.bold(firstRunBoundaryRow("NAME", "STATUS", "TABLES", "AI ACCESS")),
-            theme.focus(firstRunBoundaryRow(
+            theme.bold("BOUNDARIES"),
+            theme.dim("READ controls Explore. ACTION controls proposals; approval and apply remain separate."),
+            theme.bold(savedBoundaryRow("KEY", "NAME", "TYPE", "STATUS", "CONTENT", "AGENT AUTHORITY")),
+            theme.focus(savedBoundaryRow(
+              ">",
               candidateBoundaryName,
+              "READ",
               "DRAFT",
-              includedCount,
+              `${includedCount} ${plural(includedCount, "table", "tables")}`,
               "NOT ACTIVE",
             )),
+            ...linkedActionBoundaryLines(overview, highlightedBoundary, theme),
             "",
             highlightedBoundary.ask_intent_check_mode === "boundary_only"
               ? theme.warning("Local Ask plan check: BOUNDARY ONLY")
@@ -1154,8 +1190,6 @@ async function chooseResource(
               `${theme.key("Q")} Quit`,
             ], terminalContentWidth(output.columns)),
             ...(actionNotice ? [theme.warning(actionNotice)] : []),
-            "",
-            ...linkedActionBoundaryLines(overview, highlightedBoundary, theme),
             "",
             theme.dim(
               "Activation returns here so you can keep editing. Press Q when finished " +
@@ -1242,19 +1276,21 @@ async function chooseResource(
           const line = savedBoundaryRow(
             index === selectedBoundary ? ">" : "",
             entry.name,
+            "READ",
             status,
-            entry.table_count,
+            `${entry.table_count} ${plural(entry.table_count, "table", "tables")}`,
             entry.active ? "ACTIVE" : "NONE",
           );
           return index === selectedBoundary ? theme.focus(line) : line;
         });
         render([
-          theme.title("READ BOUNDARIES - EXPLORE"),
-          "Each row controls reviewed Explore reads. Proposal authority is separate below.",
+          theme.title("BOUNDARIES"),
+          "READ controls Explore. ACTION controls proposals; approval and apply remain separate.",
           ...(boundaryListCompatibility ? [boundaryListCompatibility] : []),
           "",
-          theme.bold(savedBoundaryRow("", "NAME", "STATUS", "TABLES", "READ ACCESS")),
+          theme.bold(savedBoundaryRow("KEY", "NAME", "TYPE", "STATUS", "CONTENT", "AGENT AUTHORITY")),
           ...rows,
+          ...linkedActionBoundaryLines(overview, highlightedBoundary, theme),
           "",
           highlightedBoundary.ask_intent_check_mode === "boundary_only"
             ? theme.warning(
@@ -1269,8 +1305,6 @@ async function chooseResource(
               : "Runner refuses a valid but contradictory model plan before Explore execution.",
           ),
           modelOutputStatus,
-          "",
-          ...linkedActionBoundaryLines(overview, highlightedBoundary, theme),
           ...(options?.notice
             ? ["", ...formatBoundaryAccessNotice(theme, options.notice)]
             : []),
@@ -3590,30 +3624,18 @@ function boundaryReviewLeft(
 function savedBoundaryRow(
   marker: string,
   name: string,
+  type: string,
   status: string,
-  tables: number | string,
+  content: string,
   authority: string,
 ): string {
   return [
-    fitTerminalCell(marker, 1),
-    fitTerminalCell(safeTerminalText(name), 20),
-    fitTerminalCell(status, 21),
-    fitTerminalCell(String(tables), 6),
+    fitTerminalCell(marker, 3),
+    fitTerminalCell(safeTerminalText(name), 24),
+    fitTerminalCell(type, 7),
+    fitTerminalCell(status, 24),
+    fitTerminalCell(content, 12),
     safeTerminalText(authority),
-  ].join("  ");
-}
-
-function firstRunBoundaryRow(
-  name: string,
-  status: string,
-  tables: number | string,
-  access: string,
-): string {
-  return [
-    fitTerminalCell(safeTerminalText(name), 20),
-    fitTerminalCell(status, 10),
-    fitTerminalCell(String(tables), 7),
-    access,
   ].join("  ");
 }
 

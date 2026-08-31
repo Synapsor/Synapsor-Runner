@@ -222,6 +222,8 @@ export async function runActionControlPlane(input: {
   modelSuggestionSession?: ActionModelSuggestionSession;
   modelInterviewEgressAcknowledged?: boolean;
   initialIntent?: string;
+  initialDraftCapability?: string;
+  exitAfterInitialDraft?: boolean;
   prepareOnly?: boolean;
   actionBoundaryJobIntent?: string;
   returnToAsk?: boolean;
@@ -250,6 +252,7 @@ export async function runActionControlPlane(input: {
     let notice: string[] = [];
     let initialSuggestionId = input.initialSuggestionId;
     let initialIntent = input.initialIntent?.trim();
+    let initialDraftCapability = input.initialDraftCapability?.trim();
     while (true) {
       const options = await guidedActionOptions({
         projectRoot,
@@ -259,6 +262,32 @@ export async function runActionControlPlane(input: {
       });
       const status = await guidedActionStatus(projectRoot);
       const suggestions = await listActionSuggestions({ projectRoot, options });
+      if (initialDraftCapability) {
+        const capability = initialDraftCapability;
+        initialDraftCapability = undefined;
+        const draft = status.drafts.find((item) => item.capability === capability);
+        if (!draft) {
+          await prompter.message("PROPOSAL ACTION DRAFT NOT FOUND", [
+            `Action: ${capability}`,
+            "The prepared draft is no longer current. No authority or source data changed.",
+          ]);
+        } else {
+          const activated = await reviewActionDraft({
+            projectRoot,
+            inspection,
+            draft,
+            prompter,
+            env,
+            ...(input.configPath ? { baseConfigPath: input.configPath } : {}),
+            operatorSession,
+            returnToAsk: input.returnToAsk,
+            quickStart: actionDraftUsesQuickResume(draft),
+          });
+          if (activated) activatedActions.add(activated);
+        }
+        if (input.exitAfterInitialDraft) break;
+        continue;
+      }
       if (initialSuggestionId) {
         const suggestion = await readActionSuggestion({ projectRoot, suggestionId: initialSuggestionId, options });
         initialSuggestionId = undefined;
@@ -1887,6 +1916,18 @@ function formatActionPromptContextLine(
     && trimmed === trimmed.toUpperCase()
     && /^[A-Z0-9][A-Z0-9 +&/():.'-]*$/u.test(trimmed)) {
     return theme.title(line);
+  }
+  const emphasized = [
+    { prefix: "Runner-validated interpretation:", style: theme.success },
+    { prefix: "Reviewed proposal field:", style: theme.value },
+    { prefix: "Where used:", style: theme.value },
+    { prefix: "Action:", style: theme.value },
+    { prefix: "Target:", style: theme.value },
+    { prefix: "You said:", style: theme.value },
+  ].find(({ prefix }) => trimmed.startsWith(prefix));
+  if (emphasized) {
+    const value = trimmed.slice(emphasized.prefix.length).trimStart();
+    return `${theme.dim(emphasized.prefix)} ${emphasized.style(value)}`;
   }
   return theme.dim(line);
 }
@@ -3947,8 +3988,8 @@ function actionRuntimeLines(active: { capability: string; config_path: string })
   return [
     `Test the exact tool: ${cli} try call ${active.capability} --sample --config ${active.config_path} --json`,
     `Inspect the model-facing surface: ${cli} try call --list --config ${active.config_path} --format json`,
-    `Install for a client: ${cli} mcp install <claude-code|cursor|vscode> --project --config ${active.config_path} --yes`,
-    "That runtime exposes reviewed semantic tools only. Approval, apply, activation, credentials, and SQL remain outside MCP.",
+    `Connect Read + Action to one local client: ${cli} mcp install <claude-code|cursor|vscode> --project --authoring --include-actions --yes`,
+    "Runner installs separate Read and Action stdio entries. Approval, apply, activation, credentials, and SQL remain outside both.",
   ];
 }
 

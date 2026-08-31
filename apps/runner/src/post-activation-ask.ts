@@ -19,6 +19,9 @@ import {
   DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
 } from "./terminal-ask-defaults.js";
 import { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
+import { guidedActionStatus } from "./guided-action.js";
+import { mcp } from "./mcp-project.js";
+import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
 
 export { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
 
@@ -27,6 +30,7 @@ export type PostActivationAskRoute =
   | "anthropic"
   | "openai-compatible"
   | "mcp-client"
+  | "mcp-http"
   | "later";
 
 export type PostActivationAskSelection =
@@ -45,6 +49,10 @@ export type PostActivationAskSelection =
     }
   | {
       route: "mcp-client";
+      client: ManagedMcpProjectClient;
+    }
+  | {
+      route: "mcp-http";
     }
   | {
       route: "later";
@@ -59,6 +67,9 @@ export type PostActivationAskDependencies = {
     defaultValue: string,
   ) => Promise<string | undefined>;
   listOpenAiCompatibleModels?: (baseUrl: string) => Promise<string[]>;
+  chooseMcpClient?: () => Promise<ManagedMcpProjectClient | undefined>;
+  hasActiveActions?: (projectRoot: string) => Promise<boolean>;
+  runMcpInstall?: (args: string[]) => Promise<number>;
   runAsk?: (
     args: string[],
     options?: { consentOnFirstQuestion?: boolean },
@@ -92,8 +103,13 @@ const routeOptions: RouteOption[] = [
   },
   {
     id: "mcp-client",
-    label: "Existing MCP client",
-    detail: "Cursor, Claude Code, VS Code, or another stdio client",
+    label: "Local stdio MCP",
+    detail: "Choose Claude Code, Cursor, or VS Code next",
+  },
+  {
+    id: "mcp-http",
+    label: "Production HTTP MCP",
+    detail: "OAuth/JWT, TLS, and shared accounting deployment steps",
   },
   {
     id: "later",
@@ -105,6 +121,7 @@ const routeOptions: RouteOption[] = [
 export async function runPostActivationAskHandoff(
   input: {
     projectRoot: string;
+    includeActions?: boolean;
     autoStartConfiguredProvider?: boolean;
     consentOnFirstQuestion?: boolean;
     requestTimeoutSeconds?: number;
@@ -149,7 +166,31 @@ export async function runPostActivationAskHandoff(
   }
 
   if (route === "mcp-client") {
-    write(formatMcpClientHandoff(input.projectRoot));
+    const includeActions = input.includeActions
+      ?? await (dependencies.hasActiveActions ?? hasActiveActionRuntime)(input.projectRoot);
+    const installArgs = [
+      "install", selection.client,
+      "--project", "--authoring",
+      "--project-root", input.projectRoot,
+      ...(includeActions ? ["--include-actions"] : []),
+    ];
+    try {
+      const code = await (dependencies.runMcpInstall ?? mcp)(installArgs);
+      if (code !== 0) return code;
+      write(formatMcpClientHandoff(input.projectRoot, selection.client, includeActions));
+      return 0;
+    } catch (error) {
+      stderr.write([
+        `Local MCP setup did not complete: ${safeErrorMessage(error)}`,
+        "The reviewed Read and Action boundaries are unchanged.",
+        `Retry: ${cliCommandName()} mcp ${formatRetryArgs([...installArgs, "--yes"])}`,
+        "",
+      ].join("\n"));
+      return 1;
+    }
+  }
+  if (route === "mcp-http") {
+    write(formatHttpMcpHandoff(input.projectRoot));
     return 0;
   }
 
@@ -230,6 +271,7 @@ export async function runPostActivationAskHandoff(
       ].join("\n"));
       return runPostActivationAskHandoff({
         projectRoot: input.projectRoot,
+        includeActions: input.includeActions,
         consentOnFirstQuestion: input.consentOnFirstQuestion,
         requestTimeoutSeconds: input.requestTimeoutSeconds,
         sessionTokenBudget: input.sessionTokenBudget,
@@ -290,7 +332,8 @@ export function soleConfiguredHostedSelection(
 export function formatPostActivationAskSelection(
   selection: PostActivationAskSelection,
 ): string {
-  if (selection.route === "mcp-client") return "Existing MCP client";
+  if (selection.route === "mcp-client") return `Local stdio MCP / ${managedMcpClientLabel(selection.client)}`;
+  if (selection.route === "mcp-http") return "Production HTTP MCP";
   if (selection.route === "later") return "Choose later";
   if (selection.route === "openai") return `OpenAI / ${selection.model}`;
   if (selection.route === "anthropic") return `Anthropic / ${selection.model}`;
@@ -300,7 +343,7 @@ export function formatPostActivationAskSelection(
 export async function choosePostActivationAskSelection(
   dependencies: Pick<
     PostActivationAskDependencies,
-    "chooseRoute" | "promptWithDefault" | "listOpenAiCompatibleModels" | "env"
+    "chooseRoute" | "chooseMcpClient" | "promptWithDefault" | "listOpenAiCompatibleModels" | "env"
   > = {},
 ): Promise<PostActivationAskSelection | undefined> {
   const env = dependencies.env ?? process.env;
@@ -316,7 +359,17 @@ export async function choosePostActivationAskSelection(
         process.stderr as WriteStream,
       );
     if (!route) return undefined;
-    if (route === "mcp-client" || route === "later") return { route };
+    if (route === "mcp-client") {
+      const client = dependencies.chooseMcpClient
+        ? await dependencies.chooseMcpClient()
+        : await chooseMcpClientInTerminal(
+          process.stdin as ReadStream,
+          process.stderr as WriteStream,
+        );
+      if (!client) continue;
+      return { route, client };
+    }
+    if (route === "mcp-http" || route === "later") return { route };
     if (route === "openai") {
       const model = await prompt("OpenAI model", DEFAULT_TERMINAL_OPENAI_ASK_MODEL);
       if (model === undefined) continue;
@@ -346,20 +399,72 @@ export async function choosePostActivationAskSelection(
   }
 }
 
-export function formatMcpClientHandoff(projectRoot: string): string {
+export function formatMcpClientHandoff(
+  projectRoot: string,
+  client: ManagedMcpProjectClient,
+  includeActions: boolean,
+): string {
+  const cmd = cliCommandName();
+  const root = shellToken(projectRoot);
+  const launch = client === "claude-code"
+    ? "claude"
+    : client === "cursor"
+      ? `cursor ${root}`
+      : `code ${root}`;
+  return [
+    "LOCAL STDIO MCP READY",
+    `Client: ${managedMcpClientLabel(client)}`,
+    "Read entry: synapsor -> app.describe_data + app.explore_data",
+    ...(includeActions
+      ? ["Action entry: synapsor-actions -> active reviewed proposal tools"]
+      : ["Action entry: not installed because no active Action Boundary was found"]),
+    "Do not start a separate server: the stdio client launches Runner for each MCP session.",
+    "Start or restart the client from the same trusted environment so tenant and principal values are inherited.",
+    "",
+    `  cd ${root}`,
+    `  ${launch}`,
+    "",
+    "Verify the exact tool split after the client reloads:",
+    `  ${cmd} mcp status ${client} --project${includeActions ? " --include-actions" : ""} --check-launch`,
+    "The agent may read and create proposals. It cannot activate boundaries, approve proposals, or apply source changes.",
+    "",
+  ].join("\n");
+}
+
+async function hasActiveActionRuntime(projectRoot: string): Promise<boolean> {
+  const status = await guidedActionStatus(projectRoot);
+  return Boolean(status.action_boundary.active?.authority.capabilities.length);
+}
+
+function managedMcpClientLabel(client: ManagedMcpProjectClient): string {
+  if (client === "claude-code") return "Claude Code";
+  if (client === "cursor") return "Cursor";
+  return "VS Code";
+}
+
+export function formatHttpMcpHandoff(projectRoot: string): string {
   const cmd = cliCommandName();
   const root = shellToken(projectRoot);
   return [
-    "Your reviewed boundaries are ready for an MCP client.",
-    "If the client is already connected, refresh its tools and ask your question now.",
+    "PRODUCTION HTTP MCP",
+    "Production HTTP needs operator-owned identity-provider, TLS, and shared PostgreSQL accounting inputs.",
+    "Runner verifies OAuth/JWT access tokens; it never issues, refreshes, prints, or stores token values.",
     "",
-    "Managed project setup (run only for the client you use):",
-    `  ${cmd} mcp install cursor --project --authoring --project-root ${root} --yes`,
-    `  ${cmd} mcp install claude-code --project --authoring --project-root ${root} --yes`,
-    `  ${cmd} mcp install vscode --project --authoring --project-root ${root} --yes`,
+    "1. Scaffold the production config (the command requires your engine, claims, issuer, audience, and accounting namespace):",
+    `   ${cmd} config init --production-explore --help`,
+    `   Project root: ${root}`,
     "",
-    "Other stdio clients:",
-    `  ${cmd} mcp config generic --absolute-paths`,
+    "2. Review and activate the production Read Boundary, then run the complete preflight:",
+    `   ${cmd} doctor --config ./synapsor.runner.json --transport streamable-http --preflight --host 0.0.0.0 --trusted-tls-proxy`,
+    "",
+    "3. Serve the exact two-tool production surface behind the trusted TLS proxy:",
+    `   ${cmd} mcp serve --transport streamable-http --production-explore --host 0.0.0.0 --trusted-tls-proxy --config ./synapsor.runner.json`,
+    "",
+    "4. Prefer the MCP client's OAuth discovery flow. For a bounded environment-token fallback, generate a secret-free client config:",
+    `   ${cmd} mcp client-config --client claude-code --transport streamable-http --config ./synapsor.runner.json`,
+    "   Replace claude-code with cursor or vscode for those clients.",
+    "",
+    "Full guide: docs/production-scoped-explore-http.md",
     "",
   ].join("\n");
 }
@@ -413,9 +518,9 @@ async function chooseRouteInTerminal(
   const render = () => {
     const width = Math.min(terminalContentWidth(output.columns), 116);
     const lines = [
-      theme.title("ASK YOUR REVIEWED DATA"),
-      "Choose how you want to ask with this reviewed boundary.",
-      theme.dim("The model receives only the reviewed analytics tools and fields."),
+      theme.title("USE YOUR REVIEWED BOUNDARIES"),
+      "Choose how you want an agent to use this project.",
+      theme.dim("Only reviewed tools are exposed. Activation, approval, and apply stay outside the agent."),
       "",
       ...routeOptions.map((option, index) => formatPostActivationRouteLine({
         option,
@@ -447,6 +552,89 @@ async function chooseRouteInTerminal(
       } else if (key.name === "escape" || (key.ctrl && key.name === "c")) {
         return undefined;
       }
+    }
+  } finally {
+    input.off("keypress", onKey);
+    renderer.clear();
+    output.write("\u001b[?25h");
+    input.setRawMode(wasRaw);
+    if (!wasFlowing) input.pause();
+  }
+}
+
+async function chooseMcpClientInTerminal(
+  input: ReadStream,
+  output: WriteStream,
+): Promise<ManagedMcpProjectClient | undefined> {
+  if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
+    throw new Error("The local MCP client choice requires a real terminal.");
+  }
+  const options: Array<{
+    id: ManagedMcpProjectClient;
+    label: string;
+    detail: string;
+  }> = [
+    { id: "claude-code", label: "Claude Code", detail: "Project-scoped .mcp.json" },
+    { id: "cursor", label: "Cursor", detail: "Project-scoped .cursor/mcp.json" },
+    { id: "vscode", label: "VS Code", detail: "Project-scoped .vscode/mcp.json" },
+  ];
+  let selected: number | undefined;
+  const wasRaw = input.isRaw;
+  const wasFlowing = input.readableFlowing === true;
+  const renderer = createInPlaceTerminalRenderer(output, { maxRows: () => output.rows });
+  const queued: Array<{ name?: string; ctrl?: boolean }> = [];
+  const waiters: Array<(key: { name?: string; ctrl?: boolean }) => void> = [];
+  const onKey = (_text: string, key: { name?: string; ctrl?: boolean }) => {
+    const waiter = waiters.shift();
+    if (waiter) waiter(key);
+    else queued.push(key);
+  };
+  readline.emitKeypressEvents(input);
+  input.on("keypress", onKey);
+  input.setRawMode(true);
+  input.resume();
+  output.write("\u001b[?25l");
+  const theme = terminalTheme(!("NO_COLOR" in process.env));
+  const render = () => {
+    const width = Math.min(terminalContentWidth(output.columns), 116);
+    const lines = [
+      theme.title("CONNECT A LOCAL MCP CLIENT"),
+      "Choose the client Runner may configure for this project.",
+      theme.dim("Nothing is selected or installed until you press Enter and confirm the exact preview."),
+      "",
+      ...options.map((option, index) => formatPostActivationRouteLine({
+        option,
+        selected: index === selected,
+        color: !("NO_COLOR" in process.env),
+      })),
+      "",
+      `${theme.key("Up/Down")} Choose   ${theme.key("1/2/3")} Choose directly   ${theme.key("Enter")} Review install   ${theme.key("Esc")} Back`,
+    ].flatMap((line) =>
+      wrapStyledTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
+    renderer.render(lines);
+  };
+  const nextKey = () => {
+    const key = queued.shift();
+    if (key) return Promise.resolve(key);
+    return new Promise<{ name?: string; ctrl?: boolean }>((resolve) => waiters.push(resolve));
+  };
+
+  try {
+    while (true) {
+      render();
+      const key = await nextKey();
+      if (key.name === "up") selected = selected === undefined
+        ? options.length - 1
+        : (selected - 1 + options.length) % options.length;
+      else if (key.name === "down") selected = selected === undefined
+        ? 0
+        : (selected + 1) % options.length;
+      else if (["1", "2", "3"].includes(key.name ?? "")) {
+        return options[Number(key.name) - 1]!.id;
+      } else if ((key.name === "return" || key.name === "enter") && selected !== undefined) {
+        return options[selected]!.id;
+      }
+      else if (key.name === "escape" || (key.ctrl && key.name === "c")) return undefined;
     }
   } finally {
     input.off("keypress", onKey);

@@ -510,7 +510,7 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary disable --project-root . --confirm "DISABLE sha256:..." --json
   ${cmd} boundary status [--project-root .] [--json]
   ${cmd} boundary diff [--project-root .] [--json]
-  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring --project-root . --yes
+  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring --include-actions --project-root . --yes
 
 Draft the whole deterministic application boundary without opening a browser,
 inspect/export its disabled review state, and compare the generation lock with
@@ -895,9 +895,10 @@ Drizzle input is parsed as a bounded TypeScript AST and is never imported or run
   ${cmd} mcp client-config --client vscode --transport streamable-http --config ./synapsor.runner.json
   ${cmd} mcp client-config --client openai-agents --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring [--project-root .] [--dry-run]
+  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring --include-actions [--action-config ./synapsor.actions.runner.json] [--project-root .] [--dry-run]
   ${cmd} mcp install <cursor|claude-code|vscode> --project [--dry-run] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
-  ${cmd} mcp status <cursor|claude-code|vscode> --project [--check-launch]
-  ${cmd} mcp uninstall <cursor|claude-code|vscode> --project [--dry-run]
+  ${cmd} mcp status <cursor|claude-code|vscode> --project [--include-actions] [--check-launch]
+  ${cmd} mcp uninstall <cursor|claude-code|vscode> --project [--include-actions] [--dry-run]
   ${cmd} mcp audit --example dangerous-db-mcp
   ${cmd} mcp audit ./tools-list.json
   ${cmd} mcp audit generate ./tools-list.json --output ./synapsor-audit-candidates
@@ -908,6 +909,7 @@ MCP clients see semantic tools. They do not receive raw SQL, write credentials, 
 `,
     "mcp install": `Usage:
   ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring [--project-root .] [--dry-run] [--yes]
+  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring --include-actions [--action-config ./synapsor.actions.runner.json] [--project-root .] [--dry-run] [--yes]
   ${cmd} mcp install <cursor|claude-code|vscode> --project [--project-root .] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db] [--dry-run] [--yes]
 
 Preview, confirm, and merge a project-scoped Synapsor entry into
@@ -924,19 +926,32 @@ New managed entries still include --authoring so their intent is visible. An
 inactive Explore-only project refuses installation instead of writing a
 zero-tool entry. Re-run after Protect activates a named capability to install
 that narrower runtime surface.
+
+--include-actions is the local agent handoff for a project with both boundary
+types active. Runner validates both surfaces before changing the client file,
+then installs two independently owned stdio entries: synapsor exposes exactly
+app.describe_data + app.explore_data, while synapsor-actions exposes only the
+active reviewed proposal tools from synapsor.actions.runner.json. Trusted
+tenant/principal values are inherited from the client process environment and
+are never written to the project config. Approval, apply, policy editing,
+activation, credentials, and SQL remain outside both MCP entries.
 `,
     "mcp status": `Usage:
-  ${cmd} mcp status <cursor|claude-code|vscode> --project [--project-root .] [--check-launch] [--timeout-ms 10000] [--json]
+  ${cmd} mcp status <cursor|claude-code|vscode> --project [--project-root .] [--include-actions] [--check-launch] [--timeout-ms 10000] [--json]
 
 Verify Runner's project-scoped client ownership marker and print the exact
 reviewed model-facing tools. --check-launch performs a real stdio initialize +
 tools/list handshake with the configured command.
+--include-actions checks the independently owned Read and Action entries and
+prints their exact tool lists separately.
 `,
     "mcp uninstall": `Usage:
-  ${cmd} mcp uninstall <cursor|claude-code|vscode> --project [--project-root .] [--dry-run] [--yes] [--json]
+  ${cmd} mcp uninstall <cursor|claude-code|vscode> --project [--project-root .] [--include-actions] [--dry-run] [--yes] [--json]
 
 Remove only the Runner-owned Synapsor entry. Other client MCP servers and
 project settings are preserved, and edited/unowned entries fail closed.
+--include-actions removes both independently owned entries and neither touches
+any other client server.
 `,
     tools: `Usage:
   ${cmd} tools list --config ./synapsor.runner.json --store ./.synapsor/local.db

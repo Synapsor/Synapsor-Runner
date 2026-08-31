@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   choosePostActivationAskSelection,
   defaultPostActivationAskSelection,
+  formatHttpMcpHandoff,
   formatMcpClientHandoff,
   formatPostActivationAskSelection,
   formatPostActivationRouteLine,
@@ -282,13 +283,17 @@ describe("post-activation Ask handoff", () => {
   });
 
   it("supports an existing MCP client and a clean later exit without starting Ask", async () => {
-    for (const route of ["mcp-client", "later"] as PostActivationAskRoute[]) {
+    for (const route of ["mcp-client", "mcp-http", "later"] as PostActivationAskRoute[]) {
       const output: string[] = [];
       const runAsk = vi.fn(async () => 0);
+      const runMcpInstall = vi.fn(async () => 0);
       await expect(runPostActivationAskHandoff(
         { projectRoot: "/tmp/reviewed-project" },
         {
           chooseRoute: async () => route,
+          chooseMcpClient: async () => "claude-code",
+          hasActiveActions: async () => true,
+          runMcpInstall,
           runAsk,
           stdout: { write: (value) => {
             output.push(String(value));
@@ -298,16 +303,48 @@ describe("post-activation Ask handoff", () => {
         },
       )).resolves.toBe(0);
       expect(runAsk).not.toHaveBeenCalled();
+      if (route === "mcp-client") {
+        expect(runMcpInstall).toHaveBeenCalledWith([
+          "install", "claude-code",
+          "--project", "--authoring",
+          "--project-root", "/tmp/reviewed-project",
+          "--include-actions",
+        ]);
+      } else {
+        expect(runMcpInstall).not.toHaveBeenCalled();
+      }
       expect(output.join("")).toMatch(
         route === "mcp-client"
-          ? /Cursor|cursor/
+          ? /Claude Code/
+          : route === "mcp-http"
+            ? /production HTTP/i
           : /boundaries remain active/i,
       );
     }
-    expect(formatMcpClientHandoff("/tmp/reviewed-project"))
-      .toContain("mcp install claude-code");
-    expect(formatMcpClientHandoff("/tmp/reviewed-project"))
-      .toContain("--project-root /tmp/reviewed-project");
+    expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
+      .toContain("Client: Claude Code");
+    expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
+      .toContain("synapsor-actions -> active reviewed proposal tools");
+    expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
+      .toContain("Do not start a separate server");
+    expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
+      .toContain("cannot activate boundaries, approve proposals, or apply source changes");
+    expect(formatHttpMcpHandoff("/tmp/reviewed-project"))
+      .toContain("mcp serve --transport streamable-http --production-explore");
+    expect(formatHttpMcpHandoff("/tmp/reviewed-project"))
+      .toContain("mcp client-config --client claude-code --transport streamable-http");
+    expect(formatHttpMcpHandoff("/tmp/reviewed-project"))
+      .not.toMatch(/Bearer\s+[A-Za-z0-9_-]/u);
+  });
+
+  it("requires an explicit local MCP client choice", async () => {
+    const routes: Array<PostActivationAskRoute | undefined> = ["mcp-client", "later"];
+    const chooseMcpClient = vi.fn(async () => undefined);
+    await expect(choosePostActivationAskSelection({
+      chooseRoute: async () => routes.shift(),
+      chooseMcpClient,
+    })).resolves.toEqual({ route: "later" });
+    expect(chooseMcpClient).toHaveBeenCalledOnce();
   });
 
   it("reports Ask setup failure without claiming activation was rolled back", async () => {
