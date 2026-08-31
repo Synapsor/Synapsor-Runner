@@ -174,7 +174,7 @@ describe("Boundary authoring chat", () => {
     ], "success");
 
     const streamed = memory.writes.slice(initialWrites).join("");
-    expect(memory.writes.slice(initialWrites).length).toBeGreaterThan(8);
+    expect(memory.writes.slice(initialWrites).length).toBeGreaterThan(25);
     expect(streamed.match(/model>/gu)).toHaveLength(1);
     expect(streamed.match(/runner>/gu)).toHaveLength(1);
     expect(streamed).toContain("support.tickets: count(*)");

@@ -38,6 +38,9 @@ type ChoiceInput = {
   initialValue?: string;
 };
 
+const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 50;
+const DEFAULT_TRANSCRIPT_STREAM_VISIBLE_CHARS = 8;
+
 function stripTerminalAnsi(value: string): string {
   return value.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
 }
@@ -46,7 +49,10 @@ function transcriptText(value: string): string {
   return safeTerminalText(stripTerminalAnsi(value));
 }
 
-function terminalOutputChunks(value: string, visibleLimit = 24): string[] {
+function terminalOutputChunks(
+  value: string,
+  visibleLimit = DEFAULT_TRANSCRIPT_STREAM_VISIBLE_CHARS,
+): string[] {
   const tokens = value.match(/\u001b\[[0-?]*[ -/]*[@-~]|[\s\S]/gu) ?? [];
   const chunks: string[] = [];
   let current = "";
@@ -95,7 +101,7 @@ export function createBoundaryAuthoringChat(input: {
   const color = input.color ?? (io.isTerminal?.() === true && !("NO_COLOR" in process.env));
   const theme = terminalTheme(color, { brand: true });
   const streamLineDelayMs = input.streamLineDelayMs
-    ?? (input.io ? 0 : io.isTerminal?.() === true ? 28 : 0);
+    ?? (input.io ? 0 : io.isTerminal?.() === true ? DEFAULT_TRANSCRIPT_STREAM_DELAY_MS : 0);
   let modelLabel = input.modelLabel;
   let closed = false;
   let streamedCharacters = 0;
