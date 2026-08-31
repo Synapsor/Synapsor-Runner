@@ -51,7 +51,7 @@ try {
     assert.ok(resource, `${fixture.engine} did not activate ${fixture.resource}`);
     assert.equal(resource.primary_key, fixture.identity);
     assert.equal(resource.tenant_key, fixture.tenant);
-    assert.equal(active.deployment_profile, "development");
+    assert.equal(active.deployment_profile, "staging");
     assertProjectHasNoCredential(projectRoot, fixture.databaseUrl);
 
     results.push({
@@ -60,6 +60,8 @@ try {
       packed_artifact: true,
       missing_trusted_scope_paused_with_guidance: true,
       trusted_scope_supplied_outside_model: true,
+      job_first_entry: true,
+      manual_controls_reachable: true,
       column_review_remained_open: true,
       boundary_activated: true,
       reached_model_choice: true,
@@ -187,9 +189,8 @@ async function runFirstUseJourney({ cli, fixture, projectRoot }) {
   };
 
   try {
-    await checkpoint(/YOUR FIRST SAFE QUESTION/i, "resumed Quick Start review");
-    await checkpoint(/ENTER Start asking\s+E Change access/i, "Quick Start decision");
-    child.stdin.write("e\r");
+    await checkpoint(/SET UP ONE AGENT JOB[\s\S]*What job are you giving this agent\?/i, "job-first Boundary prompt");
+    child.stdin.write("m\r");
 
     await checkpoint(new RegExp(`EDIT ACCESS - reviewed_staging[\\s\\S]*${escapeRegExp(fixture.resource)}`), "focused boundary editor");
     child.stdin.write("\r");
@@ -214,8 +215,8 @@ async function runFirstUseJourney({ cli, fixture, projectRoot }) {
     await checkpoint(/\/access is still open\./i, "access editor after activation");
     child.stdin.write("q");
 
-    await checkpoint(/ASK YOUR REVIEWED DATA/i, "model and MCP continuation chooser");
-    child.stdin.write("\u001b[B\u001b[B\u001b[B\u001b[B\r");
+    await checkpoint(/USE YOUR REVIEWED BOUNDARIES/i, "model and MCP continuation chooser");
+    child.stdin.write("\u001b[B\u001b[B\u001b[B\u001b[B\u001b[B\r");
     await checkpoint(/Your reviewed boundaries remain active\./i, "Later handoff");
 
     const result = await waitForExit(child, 15_000, () =>

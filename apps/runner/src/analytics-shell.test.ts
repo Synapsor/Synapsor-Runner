@@ -1911,6 +1911,10 @@ describe("Synapsor Analytics shell", () => {
     terminalIo.write("Heading\nBody\n");
     expect(terminalChunks.join("")).toContain("  Heading\n  Body\n");
     expect(terminalIo.columns()).toBe(76);
+    const streamOffset = terminalChunks.join("").length;
+    terminalIo.writeChunk?.("runner> SET UP ONE ");
+    terminalIo.writeChunk?.("AGENT JOB\n");
+    expect(terminalChunks.join("").slice(streamOffset)).toBe("runner> SET UP ONE AGENT JOB\n");
     terminalIo.close();
 
     const pipedReadable = new PassThrough();

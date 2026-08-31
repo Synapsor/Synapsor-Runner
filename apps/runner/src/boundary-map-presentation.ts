@@ -53,9 +53,15 @@ export function boundaryMapOperationLegend(): string[] {
 export function renderBoundaryMapTable(
   headers: string[],
   rows: string[][],
-  options: { widths: number[]; indent?: string },
+  options: { widths: number[]; indent?: string; rowSeparators?: boolean },
 ): string[] {
-  return renderAsciiTable(headers, rows, options.widths, options.indent ?? "");
+  return renderAsciiTable(
+    headers,
+    rows,
+    options.widths,
+    options.indent ?? "",
+    options.rowSeparators ?? true,
+  );
 }
 
 function renderWideTable(
@@ -156,12 +162,15 @@ function renderAsciiTable(
   rows: string[][],
   widths: number[],
   indent: string,
+  rowSeparators = true,
 ): string[] {
   const border = indent + "+" + widths.map((width) => "-".repeat(width + 2)).join("+") + "+";
   const lines = [border, ...renderAsciiRow(headers, widths, indent), border];
   for (const row of rows) {
-    lines.push(...renderAsciiRow(row, widths, indent), border);
+    lines.push(...renderAsciiRow(row, widths, indent));
+    if (rowSeparators) lines.push(border);
   }
+  if (!rowSeparators) lines.push(border);
   return lines;
 }
 

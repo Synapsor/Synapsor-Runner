@@ -12,6 +12,9 @@ for the Synapsor Cloud CLI.
 
 ## 1.8.0 (unreleased)
 
+Prepared package versions: `@synapsor/runner@1.8.0`,
+`@synapsor/spec@1.11.0`, and `@synapsor/dsl@1.11.0`.
+
 ### Boundary Assist And Unified Read-to-Action Onboarding
 
 - Fresh terminal onboarding now starts with one agent job. Model-assisted
@@ -58,6 +61,15 @@ for the Synapsor Cloud CLI.
   suggestions. Standalone TUI use auto-selects exactly one conventional OpenAI
   or Anthropic environment. Metadata egress remains separately confirmed, and
   no credential value is displayed or persisted.
+- Model-assisted Boundary authoring now streams provider liveness and paced
+  validated `model>` / `runner>` turns for OpenAI, Anthropic, and loopback
+  OpenAI-compatible providers. Partial structured arguments remain hidden and
+  cannot become a draft; incomplete streams fail closed.
+- The model route keeps proposal bounds and deterministic approval changes in
+  one natural-language accept-or-correct conversation. Read review, Action
+  review, and final state use compact bordered tables, with exact identifiers,
+  provenance, and fingerprints available on demand instead of repeated output
+  dumps.
 
 ### Safe Action Human Control Plane
 

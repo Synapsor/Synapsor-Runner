@@ -539,6 +539,11 @@ export type McpRuntimeOptions = {
   clock?: () => number;
   sharedResources?: McpRuntimeSharedResources;
   generatedAuthorityInspector?: (input: InspectOptions) => Promise<SchemaInspection>;
+  /**
+   * Defaults to true. Interactive callers may disable the duplicate machine
+   * log only when they render the same safe rejection inline.
+   */
+  logToolRejections?: boolean;
 };
 
 export type TenantCredentialResolver = {

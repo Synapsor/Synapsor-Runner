@@ -1895,7 +1895,8 @@ describe("boundary operator-plane CLI", () => {
         "saved",
       ]]);
       expect(output).toContain("READ CANDIDATE READY");
-      expect(output).toContain("EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF");
+      expect(output).toMatch(/\| Read\s+\| reviewed_staging\s+\| DRAFT\s+\| None/u);
+      expect(output).toMatch(/\| Apply\s+\| Source writeback\s+\| OFF\s+\| Cannot apply/u);
       expect(output).toContain("REVIEW EXACT BOUNDARY");
       expect(output).toContain("READ REVIEW COMPLETE - NOT ACTIVE");
       expect(output).toContain("Press Y in /access to prepare and rehearse a proposal action");
@@ -2011,6 +2012,9 @@ describe("boundary operator-plane CLI", () => {
             setModel: vi.fn(),
             runner: chatRunner,
             model: chatModel,
+            streamRunner: async (...args) => { chatRunner(...args); },
+            streamModel: async (lines) => { chatModel(lines); },
+            providerStream: vi.fn(),
             progress: chatProgress,
             close: chatClose,
           }),
@@ -2147,6 +2151,9 @@ describe("boundary operator-plane CLI", () => {
             setModel: vi.fn(),
             runner: vi.fn(),
             model: vi.fn(),
+            streamRunner: async () => undefined,
+            streamModel: async () => undefined,
+            providerStream: vi.fn(),
             progress: async <T>(_message: string, operation: () => Promise<T>) => operation(),
             close: chatClose,
           }),
@@ -2690,7 +2697,9 @@ describe("boundary operator-plane CLI", () => {
         .toEqual([action.capability_name]);
       expect(output).toContain("NEXT AUTHORITY REVIEW - READ BOUNDARY");
       expect(output).toContain("NEXT AUTHORITY REVIEW - ACTION BOUNDARY");
-      expect(output).toContain("EXPLORE ON | PROPOSE ON | APPROVE OFF | APPLY OFF");
+      expect(output).toMatch(/\| Read\s+\| reviewed_staging\s+\| ACTIVE\s+\| Explore/u);
+      expect(output).toMatch(/\| Action\s+\| default_action_boundary\s+\| ACTIVE\s+\| Propose/u);
+      expect(output).toMatch(/\| Apply\s+\| Source writeback\s+\| OFF\s+\| Cannot apply/u);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -3964,10 +3973,15 @@ describe("boundary operator-plane CLI", () => {
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
       const review = formatBoundaryChatReviewSummary((await loadBoundaryReviewContext(root)).bundle);
-      expect(review.join("\n")).toContain("TABLE");
-      expect(review.join("\n")).toContain("MODEL");
-      expect(review.join("\n")).toContain("Writes: none");
+      expect(review.join("\n")).toContain("Reviewed table");
+      expect(review.join("\n")).toContain("Model fields");
+      expect(review.join("\n")).toContain("Schema: public");
+      expect(review.join("\n")).toContain("Trusted scope:");
+      expect(review.join("\n")).not.toContain("| public.products");
+      expect(review.join("\n")).not.toContain("| Trusted scope");
+      expect(review.join("\n")).toContain("source writes: NONE");
       expect(review.join("\n")).not.toContain("sha256:");
+      expect(review.filter((line) => /^[+|]/u.test(line)).every((line) => line.length <= 72)).toBe(true);
       await expect(boundaryReviewCommandInternal(
         ["--project-root", root],
         async () => inspection,

@@ -93,6 +93,10 @@ import { listProtectedPlans } from "./scoped-explore.js";
 import { ui } from "./ui-command.js";
 import { padTerminalBlock } from "./terminal-layout.js";
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
+import {
+  ExploreTrustedScopeError,
+  resolveExploreTrustedScope,
+} from "./explore-trusted-scope.js";
 
 
 export type GuidedStartDependencies = {
@@ -115,6 +119,7 @@ export type GuidedStartDependencies = {
     selection?: PostActivationAskSelection;
   }) => Promise<number>;
   openWorkbench?: (args: string[]) => Promise<number>;
+  resolveTrustedScope?: typeof resolveExploreTrustedScope;
   interactive?: boolean;
 };
 
@@ -561,6 +566,27 @@ async function startAutoBoundary(
     inspectedSchema: optionalArg(args, "--schema"),
     ...(singleOrganization ? { singleOrganization: { organizationId: organizationId! } } : {}),
   });
+  const shouldPreflightTrustedScope = cliMode && (
+    dependencies.resolveTrustedScope !== undefined
+    || (dependencies.runInstantCliBoundary === undefined
+      && dependencies.runBoundaryReview === undefined)
+  );
+  if (shouldPreflightTrustedScope) {
+    try {
+      await (dependencies.resolveTrustedScope ?? resolveExploreTrustedScope)({
+        boundary: build.exploration_boundary,
+        lock: build.lock,
+        inspection,
+        env: process.env,
+      });
+    } catch (error) {
+      writeGuidedOutput(formatCliTrustedScopePause({
+        error,
+        sourceEnv,
+      }));
+      return 0;
+    }
+  }
   let result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>> | undefined;
   let guided: Awaited<ReturnType<typeof initializeGuidedProject>>;
   try {
@@ -639,6 +665,37 @@ async function startAutoBoundary(
     "--instant-onboarding",
     ...(args.includes("--no-graduation-tip") ? ["--no-graduation-tip"] : []),
   ]);
+}
+
+function formatCliTrustedScopePause(input: {
+  error: unknown;
+  sourceEnv: string;
+}): string {
+  const missingBindings = input.error instanceof ExploreTrustedScopeError
+    ? input.error.missingBindings
+    : [];
+  const reason = input.error instanceof Error
+    ? input.error.message
+    : "Runner could not verify the database credential's row scope.";
+  return [
+    "Quick Start needs trusted row scope before Boundary authoring can continue.",
+    ...(missingBindings.length > 0
+      ? [`Missing operator binding: ${missingBindings.join(", ")}`]
+      : []),
+    reason,
+    "Trusted values stay outside model arguments; Runner will not guess them from source rows.",
+    "Quick Start paused. Nothing was activated.",
+    ...(missingBindings.length > 0
+      ? [
+          "Set the missing value in the operator environment, then resume:",
+          ...missingBindings.map((binding) => `  export ${binding}='<trusted value>'`),
+        ]
+      : ["Correct the trusted database-role or operator binding, then resume:"]),
+    `  ${cliCommandName()} start --from-env ${input.sourceEnv} --cli`,
+    "Workbench enforces the same requirement and keeps activation disabled until its process receives the value.",
+    "No model request was made, no project artifact was written, and no source row was read or changed.",
+    "",
+  ].join("\n");
 }
 
 async function guidedActiveBoundaryExists(projectRoot: string): Promise<boolean> {

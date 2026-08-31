@@ -7,6 +7,7 @@ import {
   actionBoundaryApprovalStatusLine,
   actionBoundaryLimitSummary,
   actionActivationReviewLines,
+  conversationalActionActivationReviewLines,
   actionDraftUsesQuickResume,
   actionReviewLines,
   collectGuidedActionInput,
@@ -234,6 +235,56 @@ describe("Safe Action terminal control plane", () => {
     expect(rendered).not.toContain("rows hidden");
   });
 
+  it("keeps conversational Action activation compact while preserving exact policy authority", () => {
+    const action = {
+      capability_name: "orders.propose_credit",
+      description: "Propose one bounded order credit.",
+      business_object: "order",
+      resource: "public.orders",
+      operation: "update" as const,
+      conflict_column: "version",
+      patches: [
+        { column: "status", value_source: "argument" as const, argument_name: "status" },
+        { column: "credit_cents", value_source: "argument" as const, argument_name: "credit_cents", minimum: 0, maximum: 2500 },
+      ],
+      approval_role: "action_reviewer",
+      required_approvals: 1,
+      auto_approval: {
+        conditions: [
+          { field: "status", operator: "in" as const, values: ["open"] },
+          { field: "credit_cents", operator: "lte" as const, value: 500 },
+        ],
+        max_per_day: 3,
+        max_total_per_day: 1000,
+        total_field: "credit_cents",
+      },
+      authority_posture: "proposal_only" as const,
+      writeback: { mode: "none" as const },
+      confirmed_trusted_scope: true,
+    };
+    const lines = conversationalActionActivationReviewLines(action, orders, [{
+      id: "credit-per-principal",
+      kind: "count",
+      scope: "tenant_principal",
+      maximum: 3,
+      window_seconds: 86_400,
+      capability: action.capability_name,
+    }]);
+    const rendered = lines.join("\n");
+
+    expect(rendered).toContain("Target: UPDATE public.orders");
+    expect(rendered).toContain("| Field or scope");
+    expect(rendered).toContain("| Proposal allowed");
+    expect(rendered).toContain("| Auto-approved when");
+    expect(rendered).toContain("credit_cents");
+    expect(rendered).toContain("0 through 2500");
+    expect(rendered).toContain("<= 500");
+    expect(rendered).toContain("Tenant + principal");
+    expect(rendered).toContain("Approval OFF | apply OFF | writeback OFF");
+    expect(rendered).not.toContain("Auto-approve proposal credit_cents |");
+    expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(76);
+  });
+
   it("prepares one consolidated proposal-only action from unique reviewed intent", async () => {
     const textPrompts: Array<{
       label: string;
@@ -294,16 +345,14 @@ describe("Safe Action terminal control plane", () => {
       source_database_changed: false as const,
     }));
     const prompter = scriptedPrompter({
-      choices: ["confirm", "create"],
-      texts: ["From zero through twenty-five dollars."],
+      choices: [],
+      texts: ["From zero through twenty-five dollars.", "yes", "human review"],
       confirms: [],
       onText: (label, options) => {
         textLabels.push(label);
         textContexts.push(options?.context ?? []);
-      },
-      onChoose: (title, _choices, context) => {
-        if (title === "CONFIRM PROPOSAL RANGE") {
-          confirmationContexts.push(context ?? []);
+        if (options?.title === "CONFIRM PROPOSAL RANGE") {
+          confirmationContexts.push(options.context ?? []);
         }
       },
     });
@@ -324,6 +373,8 @@ describe("Safe Action terminal control plane", () => {
 
     expect(textLabels).toEqual([
       "What is the smallest and largest credit cents the agent may propose?",
+      "Press Enter to accept, or describe what should change",
+      "Press Enter to accept, or describe what should change",
     ]);
     expect(textContexts[0]).toEqual(expect.arrayContaining([
       "Where used: every UPDATE public.orders proposal may supply credit_cents only inside the confirmed range.",
@@ -421,8 +472,8 @@ describe("Safe Action terminal control plane", () => {
           };
     });
     const prompter = scriptedPrompter({
-      choices: ["provide", "send", "confirm", "create"],
-      texts: ["Use our ordinary low-credit class.", "0, 2500"],
+      choices: ["provide", "send"],
+      texts: ["Use our ordinary low-credit class.", "0, 2500", "yes", "human review"],
       confirms: [],
     });
 
@@ -479,14 +530,18 @@ describe("Safe Action terminal control plane", () => {
       label: string;
       options: Parameters<ActionControlPrompter["text"]>[1];
     }> = [];
+    const choiceTitles: string[] = [];
     const prompter = scriptedPrompter({
-      choices: ["confirm", "delegate", "change", "confirm"],
+      choices: [],
       texts: [
         "From zero through twenty-five dollars.",
+        "yes",
         "Credits up to five dollars, at most three per support agent each day and ten dollars total.",
+        "yes",
       ],
       confirms: [],
       onText: (label, options) => textPrompts.push({ label, options }),
+      onChoose: (title) => choiceTitles.push(title),
     });
 
     const action = await collectQuickProposalActionInput(
@@ -531,18 +586,26 @@ describe("Safe Action terminal control plane", () => {
       source: "model_interview",
       shared_limits: [{ scope: "tenant_principal", maximum: 3, window_seconds: 86400 }],
     });
-    expect(textPrompts.find((prompt) =>
-      prompt.label === "Describe exactly which proposals may auto-approve and the rolling limits."))
-      .toMatchObject({
+    const policyPrompt = textPrompts.find((prompt) =>
+      prompt.options?.title === "CONFIRM AUTO-APPROVAL POLICY"
+      && prompt.label === "Press Enter to accept, or describe what should change"
+      && prompt.options.context?.some((line) => line.includes("| Field or scope")));
+    expect(policyPrompt).toMatchObject({
         options: {
-          title: "DESCRIBE THE AUTO-APPROVAL RULE",
+          title: "CONFIRM AUTO-APPROVAL POLICY",
           context: expect.arrayContaining([
-            "PROPOSAL ENVELOPE - ALWAYS ENFORCED",
-            "  credit_cents | 0 through 2500",
-            expect.stringContaining("narrower automatic-approval subset"),
+            expect.stringContaining("| Field or scope"),
+            expect.stringContaining("| credit_cents"),
+            expect.stringContaining("describe the change in ordinary language"),
           ]),
         },
       });
+    expect(policyPrompt?.options?.context?.join("\n")).not.toContain("Proposal envelope");
+    expect(policyPrompt?.options?.context
+      ?.filter((line) => /^[+|]/u.test(line))
+      .every((line) => line.length <= 72)).toBe(true);
+    expect(choiceTitles).not.toContain("REVIEW EXACT AUTO-APPROVAL POLICY");
+    expect(choiceTitles).not.toContain("REVIEW PROPOSAL ACTION");
   });
 
   it("reviews a validated model Action draft without reselecting its target, operation, or fields", async () => {
@@ -595,16 +658,21 @@ describe("Safe Action terminal control plane", () => {
     expect(firstChoiceLabels[0]).toContain("model-proposed deterministic approval rules");
     expect(firstChoiceLabels[1]).toContain("exact disabled policy");
     expect(choiceContexts.get("REVIEW EXACT AUTO-APPROVAL POLICY")).toEqual(expect.arrayContaining([
-      "AUTO-APPROVE ONLY WHEN - ALL RULES PASS",
-      "  proposal credit_cents | <= 500",
-      "CIRCUIT BREAKERS",
-      "  Per action | 3 approvals / 24 hours",
-      "  Aggregate | 1000 total credit_cents / 24 hours",
+      expect.stringContaining("| Control"),
+      expect.stringContaining("| Proposal envelope | credit_cents"),
+      expect.stringContaining("| Auto-approve"),
+      expect.stringContaining("proposal credit_cents"),
+      expect.stringContaining("| Circuit breaker"),
+      expect.stringContaining("3 approvals / 24 hours"),
+      expect.stringContaining("1000 total / 24 hours"),
       "Approval authority: DISABLED | apply authority: NONE | source database changed: no",
     ]));
     expect(choiceContexts.get("REVIEW EXACT AUTO-APPROVAL POLICY")).not.toEqual(expect.arrayContaining([
       expect.stringMatching(/^Why:/u),
     ]));
+    expect(choiceContexts.get("REVIEW EXACT AUTO-APPROVAL POLICY")
+      ?.filter((line) => /^[+|]/u.test(line))
+      .every((line) => line.length <= 72)).toBe(true);
     expect(action).toMatchObject({
       resource: "public.orders",
       operation: "update",

@@ -596,6 +596,7 @@ export type AnalyticsShellIo = {
     }>;
   }): Promise<string | undefined>;
   write(value: string): void;
+  writeChunk?(value: string): void;
   setStatus?(value: string): void;
   clearStatus?(): void;
   isTerminal?(): boolean;
@@ -1209,6 +1210,9 @@ export function createTerminalAnalyticsShellIo(input: {
     choose,
     write: (value) => {
       writable.write(terminal ? padTerminalBlock(value) : value);
+    },
+    writeChunk: (value) => {
+      writable.write(value);
     },
     setStatus: (value) => {
       if (!terminal) return;

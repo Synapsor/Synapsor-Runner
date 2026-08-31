@@ -1602,6 +1602,32 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("lets an interactive caller suppress only its duplicate rejection log", async () => {
+    const logs: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      logs.push(String(chunk));
+      return true;
+    });
+    const runtime = createMcpRuntime({ ...config, result_format: 2 }, {
+      logToolRejections: false,
+      readRow: async () => {
+        throw new Error("connect ECONNREFUSED 127.0.0.1:5433");
+      },
+    });
+    try {
+      const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "TEMPORARILY_UNAVAILABLE" },
+        source_database_changed: false,
+      });
+      expect(logs).toEqual([]);
+    } finally {
+      runtime.close();
+      vi.restoreAllMocks();
+    }
+  });
+
   it.each([
     {
       name: "PostgreSQL connection saturation",

@@ -34,6 +34,7 @@ function memoryIo(input: {
       return selected.shift();
     },
     write: (value) => writes.push(value),
+    writeChunk: (value) => writes.push(value),
     setStatus,
     clearStatus,
     isTerminal: () => true,
@@ -150,5 +151,37 @@ describe("Boundary authoring chat", () => {
     expect(transcript.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, ""))
       .toContain("Runner-validated interpretation: estimated_minutes: 5 through 120");
     expect(transcript).toContain("\u001b[1;32m5 through 120\u001b[0m");
+  });
+
+  it("streams one retained role turn and exposes only provider liveness before validation", async () => {
+    const memory = memoryIo();
+    const chat = createBoundaryAuthoringChat({
+      io: memory.io,
+      modelLabel: "openai[gpt-5.6-luna]",
+      color: false,
+      streamLineDelayMs: 1,
+    });
+    const initialWrites = memory.writes.length;
+
+    chat.providerStream({ phase: "started" });
+    chat.providerStream({ phase: "tool_started", tool: "submit_boundary_draft" });
+    chat.providerStream({ phase: "tool_delta", characters: 31 });
+    chat.providerStream({ phase: "completed" });
+    await chat.streamModel(["I drafted one reviewed read plan.", "- support.tickets: count(*)"]);
+    await chat.streamRunner("Runner validation", [
+      "The complete draft passed exact identifier and grammar checks.",
+      "No authority is active.",
+    ], "success");
+
+    const streamed = memory.writes.slice(initialWrites).join("");
+    expect(memory.writes.slice(initialWrites).length).toBeGreaterThan(8);
+    expect(streamed.match(/model>/gu)).toHaveLength(1);
+    expect(streamed.match(/runner>/gu)).toHaveLength(1);
+    expect(streamed).toContain("support.tickets: count(*)");
+    expect(streamed).not.toContain("submit_boundary_draft");
+    expect(memory.setStatus).toHaveBeenCalledWith(
+      "openai[gpt-5.6-luna] is responding... 31 characters received; Runner has not accepted them",
+    );
+    expect(memory.setStatus).toHaveBeenLastCalledWith("Runner is validating the complete streamed draft...");
   });
 });

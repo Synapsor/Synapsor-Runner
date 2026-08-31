@@ -893,7 +893,6 @@ describe("guided start surfaces", () => {
     const schemaInspector = vi.fn(async () => inspection());
     const runBoundaryReview = vi.fn(async () => 0);
     const runPostActivationHandoff = vi.fn(async () => 0);
-    const promptText = vi.fn(async () => "e");
     let output = "";
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
       output += String(chunk);
@@ -907,16 +906,11 @@ describe("guided start surfaces", () => {
         {
           interactive: true,
           schemaInspector,
-          runInstantCliBoundary: (input) => activateInstantCliBoundary({
-            ...input,
-            env: { ...process.env, SYNAPSOR_TENANT_ID: undefined },
-            resolveTrustedScopeFn: vi.fn(async () => {
-              throw new ExploreTrustedScopeError(
-                "Scoped Explore requires trusted SYNAPSOR_TENANT_ID outside model arguments.",
-                ["SYNAPSOR_TENANT_ID"],
-              );
-            }),
-            session: { promptText },
+          resolveTrustedScope: vi.fn(async () => {
+            throw new ExploreTrustedScopeError(
+              "Scoped Explore requires trusted SYNAPSOR_TENANT_ID outside model arguments.",
+              ["SYNAPSOR_TENANT_ID"],
+            );
           }),
           runBoundaryReview,
           runPostActivationHandoff,
@@ -924,7 +918,6 @@ describe("guided start surfaces", () => {
         },
       )).resolves.toBe(0);
 
-      expect(promptText).not.toHaveBeenCalled();
       expect(runBoundaryReview).not.toHaveBeenCalled();
       expect(runPostActivationHandoff).not.toHaveBeenCalled();
       expect(output).toContain("Missing operator binding: SYNAPSOR_TENANT_ID");
@@ -932,6 +925,8 @@ describe("guided start surfaces", () => {
       expect(output).toContain("export SYNAPSOR_TENANT_ID='<trusted value>'");
       expect(output).toContain("synapsor-runner start --from-env DATABASE_URL --cli");
       expect(output).toContain("Workbench enforces the same requirement");
+      expect(output).toContain("No model request was made, no project artifact was written");
+      expect(output).not.toContain("SET UP ONE AGENT JOB");
       expect(output).not.toContain("Opening the detailed boundary editor");
       await expect(fs.access(path.join(
         projectRoot,

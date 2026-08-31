@@ -54,6 +54,7 @@ export async function executeGuidedActionPreview(input: {
       const runtime = createMcpRuntime(config, {
         env,
         storePath: previewStorePath,
+        logToolRejections: false,
         ...(trustedContext ? { trustedContext } : {}),
       });
       try {

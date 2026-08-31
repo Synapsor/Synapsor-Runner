@@ -8140,6 +8140,222 @@ describe("Workbench BYOM Ask", () => {
     })).rejects.toMatchObject({ code: "ASK_PROVIDER_REDIRECT_REFUSED" });
   });
 
+  it("assembles bounded provider streams without exposing partial tool arguments", async () => {
+    const receivedBodies: Record<string, unknown>[] = [];
+    const streamServer = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        receivedBodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>);
+        response.statusCode = 200;
+        response.setHeader("content-type", "text/event-stream");
+        const send = (value: unknown) => response.write(`data: ${JSON.stringify(value)}\n\n`);
+        if (request.url === "/responses") {
+          send({ type: "response.created", response: { id: "resp_stream" } });
+          send({
+            type: "response.output_item.added",
+            item: { type: "function_call", id: "fc_1", name: "submit_boundary_draft", arguments: "" },
+          });
+          send({ type: "response.function_call_arguments.delta", delta: "{\"plans\":" });
+          send({ type: "response.function_call_arguments.delta", delta: "[]}" });
+          send({
+            type: "response.completed",
+            response: {
+              id: "resp_stream",
+              output: [{
+                type: "function_call",
+                id: "fc_1",
+                call_id: "call_1",
+                name: "submit_boundary_draft",
+                arguments: "{\"plans\":[]}",
+              }],
+              usage: { input_tokens: 10, output_tokens: 4 },
+            },
+          });
+          response.end();
+          return;
+        }
+        if (request.url === "/messages") {
+          send({ type: "message_start", message: { usage: { input_tokens: 9 } } });
+          send({
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "tool_use", id: "tool_1", name: "submit_boundary_draft", input: {} },
+          });
+          send({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"plans\":" } });
+          send({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "[]}" } });
+          send({ type: "content_block_stop", index: 0 });
+          send({ type: "message_delta", usage: { output_tokens: 4 } });
+          send({ type: "message_stop" });
+          response.end();
+          return;
+        }
+        send({
+          choices: [{
+            index: 0,
+            delta: {
+              tool_calls: [{
+                index: 0,
+                id: "call_local",
+                function: { name: "submit_boundary_draft", arguments: "{\"plans\":" },
+              }],
+            },
+          }],
+        });
+        send({
+          choices: [{
+            index: 0,
+            delta: { tool_calls: [{ index: 0, function: { arguments: "[]}" } }] },
+            finish_reason: "tool_calls",
+          }],
+          usage: { total_tokens: 13 },
+        });
+        response.write("data: [DONE]\n\n");
+        response.end();
+      });
+    });
+    servers.push(streamServer);
+    await new Promise<void>((resolve) => streamServer.listen(0, "127.0.0.1", resolve));
+    const port = (streamServer.address() as AddressInfo).port;
+    const request = (
+      path: string,
+      format: "openai_responses" | "openai_chat" | "anthropic",
+    ) => {
+      const events: Array<{ phase: string; characters?: number; tool?: string }> = [];
+      return secureAskJsonRequest({
+        endpoint: new URL(`http://127.0.0.1:${port}${path}`),
+        scope: "custom_loopback",
+        headers: {},
+        body: { model: "stream-test", messages: [] },
+        signal: new AbortController().signal,
+        stream: { format, onEvent: (event) => events.push(event) },
+      }).then((result) => ({ result, events }));
+    };
+
+    const responses = await request("/responses", "openai_responses");
+    expect(responses.result.body).toMatchObject({
+      id: "resp_stream",
+      output: [{ name: "submit_boundary_draft", arguments: "{\"plans\":[]}" }],
+    });
+    expect(responses.events.map((event) => event.phase)).toEqual([
+      "started", "tool_started", "tool_delta", "tool_delta", "completed",
+    ]);
+
+    const chat = await request("/chat", "openai_chat");
+    expect(chat.result.body).toMatchObject({
+      choices: [{ message: { tool_calls: [{ function: { name: "submit_boundary_draft", arguments: "{\"plans\":[]}" } }] } }],
+    });
+    expect(chat.events.map((event) => event.phase)).toEqual([
+      "started", "tool_started", "tool_delta", "tool_delta", "completed",
+    ]);
+
+    const anthropic = await request("/messages", "anthropic");
+    expect(anthropic.result.body).toMatchObject({
+      content: [{ type: "tool_use", name: "submit_boundary_draft", input: { plans: [] } }],
+    });
+    expect(anthropic.events.map((event) => event.phase)).toEqual([
+      "started", "tool_started", "tool_delta", "tool_delta", "completed",
+    ]);
+    expect(receivedBodies).toHaveLength(3);
+    expect(receivedBodies.every((body) => body.stream === true)).toBe(true);
+    expect(JSON.stringify(responses.events)).not.toContain("plans");
+    expect(JSON.stringify(chat.events)).not.toContain("plans");
+    expect(JSON.stringify(anthropic.events)).not.toContain("plans");
+  });
+
+  it("cancels an incomplete provider stream without returning a partial draft", async () => {
+    const streamServer = createServer((request, response) => {
+      request.resume();
+      request.on("end", () => {
+        response.statusCode = 200;
+        response.setHeader("content-type", "text/event-stream");
+        response.write(`data: ${JSON.stringify({
+          choices: [{
+            index: 0,
+            delta: {
+              tool_calls: [{
+                index: 0,
+                id: "partial_call",
+                function: { name: "submit_boundary_draft", arguments: "{\"plans\":" },
+              }],
+            },
+          }],
+        })}\n\n`);
+      });
+    });
+    servers.push(streamServer);
+    await new Promise<void>((resolve) => streamServer.listen(0, "127.0.0.1", resolve));
+    const port = (streamServer.address() as AddressInfo).port;
+    const controller = new AbortController();
+    const events: Array<{ phase: string; characters?: number }> = [];
+    let partialReceived!: () => void;
+    const receivedPartial = new Promise<void>((resolve) => {
+      partialReceived = resolve;
+    });
+    const request = secureAskJsonRequest({
+      endpoint: new URL(`http://127.0.0.1:${port}/chat`),
+      scope: "custom_loopback",
+      headers: {},
+      body: { model: "stream-test", messages: [] },
+      signal: controller.signal,
+      stream: {
+        format: "openai_chat",
+        onEvent: (event) => {
+          events.push(event);
+          if (event.phase === "tool_delta") partialReceived();
+        },
+      },
+    });
+
+    await receivedPartial;
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    expect(events.map((event) => event.phase)).toEqual(["started", "tool_started", "tool_delta"]);
+    expect(events).not.toEqual(expect.arrayContaining([expect.objectContaining({ phase: "completed" })]));
+    expect(JSON.stringify(events)).not.toContain("plans");
+  });
+
+  it("fails closed when an OpenAI-compatible stream closes before its completion marker", async () => {
+    const streamServer = createServer((request, response) => {
+      request.resume();
+      request.on("end", () => {
+        response.statusCode = 200;
+        response.setHeader("content-type", "text/event-stream");
+        response.end(`data: ${JSON.stringify({
+          choices: [{
+            index: 0,
+            delta: {
+              tool_calls: [{
+                index: 0,
+                id: "partial_call",
+                function: { name: "submit_boundary_draft", arguments: "{\"plans\":[]}" },
+              }],
+            },
+          }],
+        })}\n\n`);
+      });
+    });
+    servers.push(streamServer);
+    await new Promise<void>((resolve) => streamServer.listen(0, "127.0.0.1", resolve));
+    const port = (streamServer.address() as AddressInfo).port;
+    const events: Array<{ phase: string; characters?: number }> = [];
+
+    await expect(secureAskJsonRequest({
+      endpoint: new URL(`http://127.0.0.1:${port}/chat`),
+      scope: "custom_loopback",
+      headers: {},
+      body: { model: "stream-test", messages: [] },
+      signal: new AbortController().signal,
+      stream: {
+        format: "openai_chat",
+        onEvent: (event) => events.push(event),
+      },
+    })).rejects.toMatchObject({ code: "ASK_PROVIDER_RESPONSE_INVALID" });
+    expect(events.map((event) => event.phase)).toEqual(["started", "tool_started", "tool_delta"]);
+    expect(events).not.toEqual(expect.arrayContaining([expect.objectContaining({ phase: "completed" })]));
+  });
+
   it("classifies provider authentication, permission, and quota failures without exposing response bodies", async () => {
     const providerFailure = createServer((request, response) => {
       const status = Number(new URL(request.url ?? "/", "http://localhost").pathname.slice(1));

@@ -133,7 +133,9 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
           args,
         });
       } catch (error) {
-        logToolRejection(error, config, env, capability, name, trustedContext);
+        if (options.logToolRejections !== false) {
+          logToolRejection(error, config, env, capability, name, trustedContext);
+        }
         if (resultFormat === 2) return errorEnvelopeFromError(error, capability, name);
         throw error;
       }

@@ -227,6 +227,7 @@ export async function runActionControlPlane(input: {
   prepareOnly?: boolean;
   actionBoundaryJobIntent?: string;
   returnToAsk?: boolean;
+  suppressActivationSummary?: boolean;
   terminalInput?: ReadStream;
   terminalOutput?: WriteStream;
 }): Promise<ActionControlPlaneResult> {
@@ -282,6 +283,7 @@ export async function runActionControlPlane(input: {
             operatorSession,
             returnToAsk: input.returnToAsk,
             quickStart: actionDraftUsesQuickResume(draft),
+            suppressActivationSummary: input.suppressActivationSummary,
           });
           if (activated) activatedActions.add(activated);
         }
@@ -1270,7 +1272,8 @@ export async function collectQuickProposalActionInput(
       const proposedApproval = preparation.deterministic_approval_template;
       const proposedByModel = proposedApproval?.source === "model_suggestion"
         || proposedApproval?.source === "model_interview";
-      const decision = await prompter.choose("REVIEW PROPOSAL ACTION", [
+      const conversationalPolicyReview = Boolean(modelInterview && proposedApproval);
+      const decision = conversationalPolicyReview ? "delegate" : await prompter.choose("REVIEW PROPOSAL ACTION", [
         ...(proposedApproval
           ? [{
               value: "delegate",
@@ -1326,7 +1329,10 @@ export async function collectQuickProposalActionInput(
             ...(modelInterview ? { modelInterview } : {}),
             env: assisted.env ?? process.env,
           });
-          if (reviewed === "back") continue;
+          if (reviewed === "back") {
+            if (conversationalPolicyReview) return undefined;
+            continue;
+          }
           if (reviewed === "human") return preparation.action;
           if (reviewed === "manual") {
             const autoApproval = await collectDeterministicAutoApproval({
@@ -1487,6 +1493,7 @@ async function collectConversationalProposalDecision(input: {
           egressAcknowledged: input.modelInterview.egressAcknowledged,
           ...(operatorApprovedValues ? { operatorApprovedValues } : {}),
         }),
+        input.modelInterview.session,
       );
     } catch (error) {
       const recovery = await input.prompter.choose("MODEL INTERPRETATION NOT USED", [
@@ -1545,24 +1552,47 @@ async function collectConversationalProposalDecision(input: {
       notice = [`Exact operator-supplied value context approved for ${resolution.field}; no source query ran.`];
       continue;
     }
-    const choice = await input.prompter.choose(conversationalDecisionTitle(input.decision, "confirmation"), [
-      { value: "confirm", label: "Confirm this exact reviewed value [recommended]", detail: "Adds it only to the disabled draft being prepared." },
-      { value: "retry", label: "Answer again in natural language", detail: "Discard this interpretation and restate the business rule." },
-      { value: "manual", label: "Continue this Action setup with exact controls", detail: "Discard this interpretation and make the remaining decisions without another provider request." },
-      { value: "back", label: "Back", detail: "Save no value for this unresolved decision." },
-    ], [
-      `Operator answer: ${answer}`,
-      `Runner-validated interpretation: ${resolution.summary}`,
-      conversationalDecisionEnforcement(input.decision, target),
-      ...(resolution.rationale ? [`Model rationale: ${resolution.rationale}`] : []),
-      ...(resolution.correction_used ? ["The provider needed its one bounded structured-output correction."] : []),
-      "Authority granted: no | source database changed: no",
-    ], "confirm");
-    if (choice === "confirm") return resolution.decisions;
-    if (choice === "manual") return "manual";
-    if (!choice || choice === "back") return "back";
-    notice = ["The prior interpretation was discarded. Your next answer replaces it."];
+    const confirmation = await input.prompter.text(
+      "Press Enter to accept, or describe what should change",
+      {
+        defaultValue: "yes",
+        title: conversationalDecisionTitle(input.decision, "confirmation"),
+        context: [
+          `Operator answer: ${answer}`,
+          `Runner-validated interpretation: ${resolution.summary}`,
+          conversationalDecisionEnforcement(input.decision, target),
+          ...(resolution.rationale ? [`Model rationale: ${resolution.rationale}`] : []),
+          ...(resolution.correction_used ? ["The provider needed its one bounded structured-output correction."] : []),
+          "Say yes to add only this value to the disabled draft. You can also say exact controls or back.",
+          "Authority granted: no | source database changed: no",
+        ],
+      },
+    );
+    if (confirmation === undefined || conversationalReviewCommand(confirmation) === "back") return "back";
+    const command = conversationalReviewCommand(confirmation);
+    if (command === "accept") return resolution.decisions;
+    if (command === "manual") return "manual";
+    prompt = actionBoundaryDecisionQuestion(input.decision, target);
+    if (command === "retry") {
+      notice = ["The prior interpretation was discarded. State the replacement business rule."];
+      continue;
+    }
+    pendingAnswer = confirmation;
+    notice = ["The prior interpretation was discarded. Runner will validate this replacement answer."];
   }
+}
+
+function conversationalReviewCommand(
+  value: string,
+): "accept" | "retry" | "manual" | "back" | "replace" {
+  const normalized = value.trim().toLowerCase().replace(/\s+/gu, " ");
+  if (!normalized || /^(?:y|yes|ok|okay|accept|confirm|correct|looks good|use this|use it)$/u.test(normalized)) {
+    return "accept";
+  }
+  if (/^(?:m|manual|advanced|exact controls?|use exact controls?)$/u.test(normalized)) return "manual";
+  if (/^(?:b|back|pause|cancel|stop)$/u.test(normalized)) return "back";
+  if (/^(?:n|no|nope|retry|again|change|change it|answer again)$/u.test(normalized)) return "retry";
+  return "replace";
 }
 
 function conversationalDecisionTitle(
@@ -1599,6 +1629,175 @@ function conversationalModelFailure(error: unknown): string {
   return `The selected model returned invalid structured output${reason ? `: ${reason}` : "."}`;
 }
 
+function conversationalPolicyCommand(
+  value: string,
+): "accept" | "change" | "human" | "details" | "manual" | "back" | "replace" {
+  const normalized = value.trim().toLowerCase().replace(/\s+/gu, " ");
+  if (!normalized || /^(?:y|yes|ok|okay|accept|confirm|correct|looks good|use this|use it|use current)$/u.test(normalized)) {
+    return "accept";
+  }
+  if (/^(?:change|change it|no|n|nope|retry|again|describe change)$/u.test(normalized)) return "change";
+  if (/^(?:human|human review|keep human review)$/u.test(normalized)) return "human";
+  if (/^(?:details|show details|provenance|show provenance)$/u.test(normalized)) return "details";
+  if (/^(?:manual|advanced|exact controls?|use exact controls?)$/u.test(normalized)) return "manual";
+  if (/^(?:back|pause|cancel|stop)$/u.test(normalized)) return "back";
+  return "replace";
+}
+
+async function reviewPreparedDeterministicApprovalInConversation(input: {
+  prompter: ActionControlPrompter;
+  preparation: Extract<QuickProposalPreparation, { state: "ready" }>;
+  resource: GuidedActionResourceOption;
+  template: QuickDeterministicApprovalTemplate;
+  modelInterview: ActionBoundaryInterviewContext;
+  env: NodeJS.ProcessEnv;
+}): Promise<QuickDeterministicApprovalTemplate | "human" | "manual" | "back"> {
+  let template = input.template;
+  let prompt = "Press Enter to accept, or describe what should change";
+  let reviewingExactPolicy = true;
+  let notice: string[] = [];
+  let pendingAnswer: string | undefined;
+  let pendingApprovedValues: OperatorApprovedValueContext | undefined;
+  while (true) {
+    const source = template.source === "reviewed_structure"
+      ? "Runner-derived from reviewed proposal bounds"
+      : template.source === "model_interview"
+        ? "Natural-language policy interpreted by the selected model and validated by Runner"
+        : "Model-proposed from structural metadata and validated by Runner";
+    const answer = pendingAnswer ?? await input.prompter.text(prompt, {
+      ...(reviewingExactPolicy ? { defaultValue: "yes" } : {}),
+      title: reviewingExactPolicy ? "CONFIRM AUTO-APPROVAL POLICY" : "REFINE AUTO-APPROVAL POLICY",
+      context: reviewingExactPolicy
+        ? [
+            `Target: ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
+            ...conversationalDeterministicApprovalPolicyLines(template, input.preparation.summary.arguments),
+            "Press Enter or say yes to save this only as a disabled policy draft.",
+            "Otherwise describe the change in ordinary language. You can also say human review, show details, exact controls, or back.",
+            "Approval authority: DISABLED | apply authority: NONE | source database changed: no",
+            ...notice,
+          ]
+        : [
+            `Target: ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
+            "Describe the narrower proposals that may auto-approve and their rolling limits.",
+            "The reviewed proposal envelope remains a hard outer limit. Runner validates the replacement before showing it again.",
+            "You can instead say use current, human review, show details, exact controls, or back.",
+            ...notice,
+          ],
+    });
+    const operatorApprovedValues = pendingApprovedValues;
+    pendingAnswer = undefined;
+    pendingApprovedValues = undefined;
+    notice = [];
+    if (answer === undefined) return "back";
+    const command = conversationalPolicyCommand(answer);
+    if (command === "accept") return template;
+    if (command === "human") return "human";
+    if (command === "manual") return "manual";
+    if (command === "back") return "back";
+    if (command === "details") {
+      await input.prompter.message("AUTO-APPROVAL POLICY DETAILS", [
+        `Source: ${source}`,
+        `Why: ${template.rationale}`,
+        ...(template.normalizations?.length
+          ? ["RUNNER NORMALIZED", ...template.normalizations.map((line) => `  ${line}`)]
+          : ["Runner normalization: none"]),
+        ...template.shared_limits.map((limit) => actionBoundaryLimitSummary(limit)),
+        "No policy authority, apply authority, or source write was granted.",
+      ], "Back to policy conversation");
+      reviewingExactPolicy = true;
+      prompt = "Press Enter to accept, or describe what should change";
+      continue;
+    }
+    if (command === "change") {
+      reviewingExactPolicy = false;
+      prompt = "What should the automatic-approval policy allow?";
+      notice = ["State the business rule in ordinary language; the current exact policy remains unchanged until you confirm a replacement."];
+      continue;
+    }
+
+    let resolution: ActionBoundaryPolicyResolution;
+    try {
+      resolution = await withActionInterviewProgress(
+        "Interpreting the deterministic policy",
+        () => (input.modelInterview.policyInterpreter ?? interpretActionBoundaryPolicy)({
+          session: input.modelInterview.session,
+          action: input.preparation.action,
+          resource: input.resource,
+          answer,
+          current: {
+            auto_approval: template.auto_approval,
+            shared_limits: template.shared_limits,
+          },
+          env: input.env,
+          egressAcknowledged: input.modelInterview.egressAcknowledged,
+          ...(operatorApprovedValues ? { operatorApprovedValues } : {}),
+        }),
+        input.modelInterview.session,
+      );
+    } catch (error) {
+      reviewingExactPolicy = false;
+      prompt = "Restate the policy, or say use current, human review, exact controls, or back";
+      notice = [
+        conversationalModelFailure(error),
+        "Runner discarded that interpretation. The current disabled policy and source data are unchanged.",
+      ];
+      continue;
+    }
+    if (resolution.state === "clarification") {
+      reviewingExactPolicy = false;
+      prompt = resolution.question;
+      notice = ["The model asked one clarification. Runner will still validate the complete replacement."];
+      continue;
+    }
+    if (resolution.state === "value_request") {
+      const valueContext = await collectOperatorApprovedValueContext({
+        prompter: input.prompter,
+        session: input.modelInterview.session,
+        field: resolution.field,
+        reason: resolution.reason,
+        question: resolution.question,
+      });
+      if (valueContext === "manual") return "manual";
+      if (valueContext === "back") return "back";
+      if (valueContext === "without_values") {
+        reviewingExactPolicy = false;
+        prompt = "Describe the deterministic rule without sending observed source values.";
+        continue;
+      }
+      pendingAnswer = answer;
+      pendingApprovedValues = valueContext;
+      reviewingExactPolicy = false;
+      notice = [`Exact operator-supplied value context approved for ${resolution.field}; no source query ran.`];
+      continue;
+    }
+    try {
+      const interpreted = applyInterpretedDeterministicApproval(input.preparation, {
+        source: "model_interview",
+        auto_approval: resolution.auto_approval,
+        shared_limits: resolution.shared_limits,
+        rationale: resolution.rationale,
+      });
+      if (interpreted.state !== "ready" || !interpreted.deterministic_approval_template) {
+        throw new Error("Runner did not produce a complete deterministic policy template.");
+      }
+      template = interpreted.deterministic_approval_template;
+      reviewingExactPolicy = true;
+      prompt = "Press Enter to accept, or describe what should change";
+      notice = [
+        "Runner validated the replacement. Review the exact conditions below; they are still disabled.",
+        ...(resolution.correction_used ? ["The provider used its one bounded structured-output correction."] : []),
+      ];
+    } catch (error) {
+      reviewingExactPolicy = false;
+      prompt = "Describe a narrower policy, or say use current, human review, exact controls, or back";
+      notice = [
+        error instanceof Error ? error.message : String(error),
+        "Runner saved no replacement. Empty intersections and uncovered model fields cannot auto-approve.",
+      ];
+    }
+  }
+}
+
 async function reviewPreparedDeterministicApproval(input: {
   prompter: ActionControlPrompter;
   preparation: Extract<QuickProposalPreparation, { state: "ready" }>;
@@ -1607,6 +1806,12 @@ async function reviewPreparedDeterministicApproval(input: {
   modelInterview?: ActionBoundaryInterviewContext;
   env: NodeJS.ProcessEnv;
 }): Promise<QuickDeterministicApprovalTemplate | "human" | "manual" | "back"> {
+  if (input.modelInterview) {
+    return reviewPreparedDeterministicApprovalInConversation({
+      ...input,
+      modelInterview: input.modelInterview,
+    });
+  }
   let template = input.template;
   let notice: string[] = [];
   while (true) {
@@ -1617,9 +1822,6 @@ async function reviewPreparedDeterministicApproval(input: {
         : "Model-proposed from structural metadata and validated by Runner";
     const choice = await input.prompter.choose("REVIEW EXACT AUTO-APPROVAL POLICY", [
       { value: "confirm", label: "Use this exact disabled policy [recommended]", detail: "Saves policy conditions and shown circuit breakers together; it approves nothing now." },
-      ...(input.modelInterview
-        ? [{ value: "change", label: "Change the policy in natural language", detail: "Describe the business rule; Runner will validate and show the exact replacement." }]
-        : []),
       { value: "human", label: "Keep human approval", detail: "Prepare the action without deterministic auto-approval." },
       { value: "details", label: "View provenance and validation details", detail: "Show the model/Runner source, rationale, and any normalization without changing the policy." },
       { value: "manual", label: "Use advanced exact policy controls", detail: "Review every condition and limit with low-level controls." },
@@ -1647,120 +1849,6 @@ async function reviewPreparedDeterministicApproval(input: {
       continue;
     }
     if (!choice || choice === "back") return "back";
-    if (choice !== "change" || !input.modelInterview) continue;
-    let policyQuestion = "Describe exactly which proposals may auto-approve and the rolling limits.";
-    let pendingPolicyAnswer: string | undefined;
-    let pendingApprovedValues: OperatorApprovedValueContext | undefined;
-    while (true) {
-      const answer = pendingPolicyAnswer ?? await input.prompter.text(policyQuestion, {
-          title: "DESCRIBE THE AUTO-APPROVAL RULE",
-        context: [
-          `Target: ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
-            "PROPOSAL ENVELOPE - ALWAYS ENFORCED",
-            ...input.preparation.summary.arguments.map((argument) =>
-              `  ${argument.label ? `${argument.label} (${argument.field})` : argument.field} | ${argument.constraint}`),
-            "Describe a narrower automatic-approval subset; the proposal envelope above still applies first.",
-            "Example: routine or elevated follow-ups up to 30 minutes, at most 3 per agent per day and 60 minutes total.",
-            "Runner will validate exact fields, values, thresholds, trusted scope, and windows before showing a replacement.",
-            "Schema-declared enum/check values are reviewed metadata. Observed row values are never queried or sent automatically.",
-            "The model cannot approve, activate, execute, apply, choose identity, or write source data.",
-          ],
-        });
-      const operatorApprovedValues = pendingApprovedValues;
-      pendingPolicyAnswer = undefined;
-      pendingApprovedValues = undefined;
-      if (answer === undefined) break;
-      let resolution: ActionBoundaryPolicyResolution;
-      try {
-        resolution = await withActionInterviewProgress(
-          "Interpreting the deterministic policy",
-          () => (input.modelInterview!.policyInterpreter ?? interpretActionBoundaryPolicy)({
-            session: input.modelInterview!.session,
-            action: input.preparation.action,
-            resource: input.resource,
-            answer,
-            current: {
-              auto_approval: template.auto_approval,
-              shared_limits: template.shared_limits,
-            },
-            env: input.env,
-            egressAcknowledged: input.modelInterview!.egressAcknowledged,
-            ...(operatorApprovedValues ? { operatorApprovedValues } : {}),
-          }),
-        );
-      } catch (error) {
-        const recovery = await input.prompter.choose("POLICY INTERPRETATION NOT USED", [
-          { value: "retry", label: "Describe the policy again", detail: "Keep the same action and bounded fields." },
-          { value: "current", label: "Keep the current exact policy", detail: "Return to its review without changing it." },
-          { value: "manual", label: "Use advanced exact policy controls" },
-          { value: "human", label: "Keep human approval" },
-          { value: "back", label: "Back" },
-        ], [
-          error instanceof Error ? error.message : String(error),
-          "Runner discarded the model output. No policy, authority, or source data changed.",
-        ]);
-        if (recovery === "retry") continue;
-        if (recovery === "manual") return "manual";
-        if (recovery === "human") return "human";
-        if (!recovery || recovery === "back") return "back";
-        break;
-      }
-      if (resolution.state === "clarification") {
-        policyQuestion = resolution.question;
-        continue;
-      }
-      if (resolution.state === "value_request") {
-        const valueContext = await collectOperatorApprovedValueContext({
-          prompter: input.prompter,
-          session: input.modelInterview.session,
-          field: resolution.field,
-          reason: resolution.reason,
-          question: resolution.question,
-        });
-        if (valueContext === "manual") return "manual";
-        if (valueContext === "back") return "back";
-        if (valueContext === "without_values") {
-          policyQuestion = "Describe the deterministic rule without sending observed source values.";
-          continue;
-        }
-        pendingPolicyAnswer = answer;
-        pendingApprovedValues = valueContext;
-        continue;
-      }
-      try {
-        const interpreted = applyInterpretedDeterministicApproval(input.preparation, {
-          source: "model_interview",
-          auto_approval: resolution.auto_approval,
-          shared_limits: resolution.shared_limits,
-          rationale: resolution.rationale,
-        });
-        if (interpreted.state !== "ready" || !interpreted.deterministic_approval_template) {
-          throw new Error("Runner did not produce a complete deterministic policy template.");
-        }
-        template = interpreted.deterministic_approval_template;
-        notice = [
-          "The prior policy was replaced only in this review screen. Confirm the exact result below to save it.",
-          ...(resolution.correction_used ? ["The provider used its one bounded structured-output correction."] : []),
-        ];
-        break;
-      } catch (error) {
-        const recovery = await input.prompter.choose("POLICY DOES NOT FIT THE PROPOSAL ENVELOPE", [
-          { value: "retry", label: "Describe a narrower policy", detail: "Keep the same action and reviewed proposal bounds." },
-          { value: "current", label: "Keep the current exact policy" },
-          { value: "manual", label: "Use advanced exact policy controls" },
-          { value: "human", label: "Keep human approval" },
-          { value: "back", label: "Back" },
-        ], [
-          error instanceof Error ? error.message : String(error),
-          "Runner saved no interpreted policy. Empty intersections and uncovered model fields cannot auto-approve.",
-        ]);
-        if (recovery === "retry") continue;
-        if (recovery === "manual") return "manual";
-        if (recovery === "human") return "human";
-        if (!recovery || recovery === "back") return "back";
-        break;
-      }
-    }
   }
 }
 
@@ -1769,7 +1857,7 @@ function compactDeterministicApprovalPolicyLines(
   proposalArguments: Array<{ field: string; label?: string; constraint: string }> = [],
 ): string[] {
   const conditions = template.auto_approval.conditions ?? [];
-  const shared = template.shared_limits.map((limit) => {
+  const sharedRows = template.shared_limits.map((limit) => {
     const scope = {
       tenant: "Trusted tenant",
       tenant_principal: "Tenant + principal",
@@ -1780,45 +1868,242 @@ function compactDeterministicApprovalPolicyLines(
     const ceiling = limit.kind === "count"
       ? `${limit.maximum} approvals`
       : `${limit.maximum} total ${limit.field}`;
-    return `  ${scope} | ${ceiling} / ${formatLimitWindow(limit.window_seconds)}`;
+    return ["Circuit breaker", scope, `${ceiling} / ${formatLimitWindow(limit.window_seconds)}`];
   });
-  return [
-    ...(proposalArguments.length
-      ? [
-          "PROPOSAL ENVELOPE - ALWAYS ENFORCED",
-          ...proposalArguments.map((argument) =>
-            `  ${argument.label ? `${argument.label} (${argument.field})` : argument.field} | ${argument.constraint}`),
-        ]
-      : []),
-    "AUTO-APPROVE ONLY WHEN - ALL RULES PASS",
-    "  FIELD / SOURCE | EXACT RULE",
-    "  ---------------+-----------",
-    ...conditions.map((condition) => `  ${compactApprovalConditionSummary(condition)}`),
-    "CIRCUIT BREAKERS",
-    `  Per action | ${template.auto_approval.max_per_day} approvals / 24 hours`,
+  const rows = [
+    ...proposalArguments.map((argument) => [
+      "Proposal envelope",
+      argument.label ? `${argument.label} (${argument.field})` : argument.field,
+      argument.constraint,
+    ]),
+    ...conditions.map((condition) => {
+      const [field, rule] = compactApprovalConditionCells(condition);
+      return ["Auto-approve", field, rule];
+    }),
+    ["Circuit breaker", "This action", `${template.auto_approval.max_per_day} approvals / 24 hours`],
     ...(template.auto_approval.max_total_per_day === undefined
       ? []
-      : [`  Aggregate | ${template.auto_approval.max_total_per_day} total ${template.auto_approval.total_field} / 24 hours`]),
-    ...(shared.length ? shared : ["  Trusted scope | no additional shared ceiling"]),
-    "Fallback | human review on failed, missing, uncertain, or exhausted checks",
+      : [[
+          "Circuit breaker",
+          template.auto_approval.total_field ?? "Aggregate value",
+          `${template.auto_approval.max_total_per_day} total / 24 hours`,
+        ]]),
+    ...sharedRows,
+    ["Fallback", "Any failed check", "Human review"],
+  ];
+  return [
+    "The proposal envelope always applies first. Auto-approval requires every listed rule.",
+    ...renderBoundaryMapTable(
+      ["Control", "Field or scope", "Exact rule"],
+      rows,
+      { widths: [17, 21, 22], rowSeparators: false },
+    ),
   ];
 }
 
-function compactApprovalConditionSummary(condition: GuidedActionAutoApprovalCondition): string {
+function conversationalDeterministicApprovalPolicyLines(
+  template: QuickDeterministicApprovalTemplate,
+  proposalArguments: Array<{ field: string; label?: string; constraint: string }> = [],
+): string[] {
+  const envelopes = new Map(proposalArguments.map((argument) => [argument.field, argument.constraint]));
+  const conditionRows = (template.auto_approval.conditions ?? []).map((condition) => {
+    const [, rule] = compactApprovalConditionCells(condition);
+    const field = condition.source === "before" ? `Current ${condition.field}` : condition.field;
+    return [field, envelopes.get(condition.field) ?? "reviewed current row", rule];
+  });
+  const limitRows = [
+    ["This action", "24 hours", `${template.auto_approval.max_per_day} approvals`],
+    ...(template.auto_approval.max_total_per_day === undefined
+      ? []
+      : [[
+          template.auto_approval.total_field ?? "Aggregate value",
+          "24 hours",
+          `${template.auto_approval.max_total_per_day} total`,
+        ]]),
+    ...template.shared_limits.map((limit) => {
+      const scope = {
+        tenant: "Trusted tenant",
+        tenant_principal: "Tenant + principal",
+        tenant_object: "Tenant + target row",
+        capability: "This action",
+        boundary: "Action Boundary",
+      }[limit.scope];
+      const ceiling = limit.kind === "count"
+        ? `${limit.maximum} approvals`
+        : `${limit.maximum} total ${limit.field}`;
+      return [scope, formatLimitWindow(limit.window_seconds), ceiling];
+    }),
+    ["Any failed check", "-", "Human review"],
+  ];
+  return [
+    "Every condition must pass. The hard proposal envelope is enforced before auto-approval.",
+    ...renderBoundaryMapTable(
+      ["Field or scope", "Hard envelope", "Auto-approve when"],
+      [...conditionRows, ...limitRows],
+      { widths: [18, 18, 24], rowSeparators: false },
+    ),
+  ];
+}
+
+export function conversationalActionActivationReviewLines(
+  action: GuidedActionInput,
+  resource: GuidedActionResourceOption,
+  sharedLimits: ActionBoundarySharedLimitV1[] = [],
+): string[] {
+  const fieldByName = new Map(resource.structurally_eligible_fields.map((field) => [field.name, field]));
+  const conditionsByField = new Map<string, GuidedActionAutoApprovalCondition[]>();
+  for (const condition of action.auto_approval ? reviewedAutoApprovalConditions(action.auto_approval) : []) {
+    const key = condition.source === "before" ? `Current ${condition.field}` : condition.field;
+    conditionsByField.set(key, [...(conditionsByField.get(key) ?? []), condition]);
+  }
+  const proposalRows = action.operation === "delete"
+    ? [["Exact reviewed row", "No agent fields", "Human review"]]
+    : (action.patches ?? []).map((patch) => {
+        const field = fieldByName.get(patch.column);
+        const label = field?.label ? `${field.label} (${patch.column})` : patch.column;
+        const conditions = conditionsByField.get(patch.column) ?? [];
+        return [
+          label,
+          compactActivationProposalEnvelope(patch, field),
+          action.auto_approval
+            ? compactActivationApprovalRule(patch, field, conditions)
+            : "Human review",
+        ];
+      });
+  const patchFields = new Set((action.patches ?? []).map((patch) => patch.column));
+  const currentRowConditions = [...conditionsByField.entries()]
+    .filter(([field]) => field.startsWith("Current ") || !patchFields.has(field))
+    .map(([field, conditions]) => [
+      field,
+      "reviewed current row",
+      conditions.map(compactActivationConditionRule).join(" and "),
+    ]);
+  const approvalLimitRows = action.auto_approval
+    ? [
+        ["This action", "24 hours", `${action.auto_approval.max_per_day} approvals`],
+        ...(action.auto_approval.max_total_per_day === undefined
+          ? []
+          : [[
+              action.auto_approval.total_field ?? "Aggregate value",
+              "24 hours",
+              `${action.auto_approval.max_total_per_day} total`,
+            ]]),
+        ...sharedLimits.map((limit) => {
+          const scope = {
+            tenant: "Trusted tenant",
+            tenant_principal: "Tenant + principal",
+            tenant_object: "Tenant + target row",
+            capability: "This action",
+            boundary: "Action Boundary",
+          }[limit.scope];
+          const ceiling = limit.kind === "count"
+            ? `${limit.maximum} approvals`
+            : `${limit.maximum} total ${limit.field}`;
+          return [scope, formatLimitWindow(limit.window_seconds), ceiling];
+        }),
+      ]
+    : [];
+  const trustedScope = resource.organization_scope
+    ? `whole organization ${resource.organization_scope.organization_id}`
+    : resource.principal_key
+      ? "tenant + principal"
+      : "tenant (no principal restriction)";
+  const guard = [
+    `identity ${resource.primary_key}`,
+    action.conflict_column ? `conflict ${action.conflict_column}` : undefined,
+    action.dedup_proposal_column ? `retry ${action.dedup_proposal_column}` : undefined,
+  ].filter((value): value is string => Boolean(value)).join("; ");
+  return [
+    `Target: ${action.operation.toUpperCase()} ${resource.id}`,
+    `Trusted scope: ${trustedScope} (Runner only)`,
+    `Guards: ${guard}`,
+    ...renderBoundaryMapTable(
+      ["Field or scope", "Proposal allowed", "Auto-approved when"],
+      [...proposalRows, ...currentRowConditions, ...approvalLimitRows],
+      { widths: [18, 18, 24], rowSeparators: false },
+    ),
+    action.auto_approval ? "Fallback: human review." : `Approval: ${action.required_approvals ?? 1} x ${action.approval_role}; human review.`,
+    ...(action.auto_approval
+      ? ["Used when a condition, evidence check, or circuit breaker fails."]
+      : []),
+    "After activation: agent may propose only.",
+    "Approval OFF | apply OFF | writeback OFF.",
+  ];
+}
+
+function compactActivationProposalEnvelope(
+  patch: GuidedActionPatchInput,
+  field: GuidedActionResourceOption["structurally_eligible_fields"][number] | undefined,
+): string {
+  if (patch.value_source === "fixed") return `fixed ${formatActionValue(patch.fixed_value)}`;
+  if (patch.minimum !== undefined || patch.maximum !== undefined) {
+    return `${patch.minimum ?? "-infinity"} through ${patch.maximum ?? "infinity"}`;
+  }
+  if (patch.max_length) return `at most ${patch.max_length} chars`;
+  if (field?.enum_values.length) {
+    return `${field.enum_values.length} reviewed value${field.enum_values.length === 1 ? "" : "s"}`;
+  }
+  return "reviewed typed value";
+}
+
+function compactActivationApprovalRule(
+  patch: GuidedActionPatchInput,
+  field: GuidedActionResourceOption["structurally_eligible_fields"][number] | undefined,
+  conditions: GuidedActionAutoApprovalCondition[],
+): string {
+  if (!conditions.length) return "Human review";
+  const enumCondition = conditions.length === 1 && conditions[0]?.operator === "in"
+    ? conditions[0]
+    : undefined;
+  if (enumCondition && field?.enum_values.length) {
+    const approved = [...(enumCondition.values ?? [])].map(String).sort();
+    const envelope = [...field.enum_values].map(String).sort();
+    if (approved.length === envelope.length && approved.every((value, index) => value === envelope[index])) {
+      return "same envelope";
+    }
+    return `${approved.length} of ${envelope.length} values`;
+  }
+  const lower = conditions.find((condition) => condition.operator === "gte")?.value;
+  const upper = conditions.find((condition) => condition.operator === "lte")?.value;
+  if (conditions.every((condition) => condition.operator === "gte" || condition.operator === "lte")
+    && lower === patch.minimum
+    && upper === patch.maximum) {
+    return "same envelope";
+  }
+  return conditions.map(compactActivationConditionRule).join(" and ");
+}
+
+function compactActivationConditionRule(condition: GuidedActionAutoApprovalCondition): string {
+  if (condition.operator === "in") {
+    const values = condition.values ?? [];
+    return `${values.length} reviewed value${values.length === 1 ? "" : "s"}`;
+  }
+  if (condition.operator === "max_length") return `at most ${formatActionValue(condition.value)} chars`;
+  return `${condition.operator === "lte" ? "<=" : condition.operator === "gte" ? ">=" : "="} ${formatActionValue(condition.value)}`;
+}
+
+function compactApprovalConditionCells(
+  condition: GuidedActionAutoApprovalCondition,
+): [string, string] {
   const source = condition.source === "before" ? "current row" : "proposal";
   const field = `${source} ${condition.field}`;
   if (condition.operator === "in") {
-    return `${field} | one of ${(condition.values ?? []).map(formatActionValue).join(", ")}`;
+    return [field, `one of ${(condition.values ?? []).map(formatActionValue).join(", ")}`];
   }
   if (condition.operator === "max_length") {
-    return `${field} | at most ${formatActionValue(condition.value)} characters`;
+    return [field, `at most ${formatActionValue(condition.value)} characters`];
   }
   const operator = condition.operator === "lte"
     ? "<="
     : condition.operator === "gte"
       ? ">="
       : "=";
-  return `${field} | ${operator} ${formatActionValue(condition.value)}`;
+  return [field, `${operator} ${formatActionValue(condition.value)}`];
+}
+
+function compactApprovalConditionSummary(condition: GuidedActionAutoApprovalCondition): string {
+  const [field, rule] = compactApprovalConditionCells(condition);
+  return `${field} | ${rule}`;
 }
 
 async function collectOperatorApprovedValueContext(input: {
@@ -1906,8 +2191,12 @@ function modelSessionLabel(session: ActionBoundaryInterviewSession): string {
   return `${session.provider}[${session.model}]`;
 }
 
-function withActionInterviewProgress<T>(message: string, operation: () => Promise<T>): Promise<T> {
-  return process.stderr.isTTY
+function withActionInterviewProgress<T>(
+  message: string,
+  operation: () => Promise<T>,
+  session?: ActionBoundaryInterviewSession,
+): Promise<T> {
+  return process.stderr.isTTY && !session?.dependencies?.onStream
     ? withTerminalProgress(process.stderr, message, operation)
     : operation();
 }
@@ -2520,6 +2809,7 @@ export async function reviewActionDraft(input: {
   quickStart?: boolean;
   prepareOnly?: boolean;
   actionBoundaryJobIntent?: string;
+  suppressActivationSummary?: boolean;
 }): Promise<string | undefined> {
   let draft = input.draft;
   const operatorSession = input.operatorSession ?? {};
@@ -2601,6 +2891,12 @@ export async function reviewActionDraft(input: {
       ]);
       return undefined;
     }
+    const actionBoundary = await guidedActionStatus(input.projectRoot);
+    const sharedLimits = actionBoundary.action_boundary.draft?.authority.shared_limits
+      .filter((limit) => !limit.capability || limit.capability === draft.capability) ?? [];
+    const activationReview = input.suppressActivationSummary
+      ? conversationalActionActivationReviewLines(design, resource, sharedLimits)
+      : actionActivationReviewLines(design, resource, sharedLimits);
     const choice = await input.prompter.choose("ACTIVATE PROPOSAL ACTION", [
       {
         value: "activate",
@@ -2614,12 +2910,7 @@ export async function reviewActionDraft(input: {
       },
       { value: "back", label: "Leave disabled" },
     ], [
-      ...actionActivationReviewLines(
-        design,
-        resource,
-        (await guidedActionStatus(input.projectRoot)).action_boundary.draft?.authority.shared_limits
-          .filter((limit) => !limit.capability || limit.capability === draft.capability) ?? [],
-      ),
+      ...activationReview,
       "Rehearsal: passed for this exact disabled revision; source database changed: no.",
     ], "back");
     if (choice === "activate") {
@@ -2737,6 +3028,7 @@ async function activateActionDraft(input: {
   baseConfigPath?: string;
   returnToAsk?: boolean;
   quickStart?: boolean;
+  suppressActivationSummary?: boolean;
 }): Promise<string> {
   const active = await activateGuidedAction({
     projectRoot: input.projectRoot,
@@ -2748,7 +3040,7 @@ async function activateActionDraft(input: {
     ...(input.baseConfigPath ? { configPath: input.baseConfigPath } : {}),
   });
   const actionBoundary = (await guidedActionStatus(input.projectRoot)).action_boundary.active;
-  await input.prompter.message(input.quickStart ? "SETUP COMPLETE" : "SAFE ACTION ACTIVATED", input.quickStart
+  if (!input.suppressActivationSummary) await input.prompter.message(input.quickStart ? "SETUP COMPLETE" : "SAFE ACTION ACTIVATED", input.quickStart
     ? [
         "Read boundary: ACTIVE",
         `Proposal action: ACTIVE (${active.capability})`,

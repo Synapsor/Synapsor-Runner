@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import dns from "node:dns/promises";
-import http from "node:http";
+import http, { type IncomingMessage } from "node:http";
 import https from "node:https";
 import net from "node:net";
+import { StringDecoder } from "node:string_decoder";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { openaiToolNameAlias, toolNameExposures } from "@synapsor-runner/mcp-server";
 import type { RelativeTimeWindow } from "./relative-time-window.js";
@@ -234,11 +235,21 @@ type ProviderHttpInput = {
   body: Record<string, unknown>;
   signal: AbortSignal;
   timeoutMs?: number;
+  stream?: {
+    format: "openai_responses" | "openai_chat" | "anthropic";
+    onEvent?: (event: AskProviderStreamEvent) => void;
+  };
 };
 
 type ProviderHttpResult = {
   body: Record<string, unknown>;
   status: number;
+};
+
+export type AskProviderStreamEvent = {
+  phase: "started" | "text_delta" | "tool_started" | "tool_delta" | "completed";
+  characters?: number;
+  tool?: string;
 };
 
 export type AskProviderDependencies = {
@@ -248,6 +259,7 @@ export type AskProviderDependencies = {
     phase: "provider" | "tool";
     tool?: string;
   }) => void;
+  onStream?: (event: AskProviderStreamEvent) => void;
 };
 
 export class AskError extends Error {
@@ -612,6 +624,7 @@ export async function runAskProviderTurn(input: {
         requestJson,
         currentUtcDate,
         onProgress: input.dependencies?.onProgress,
+        onStream: input.dependencies?.onStream,
       })
     : runOpenAiCompatibleTurn({
         ...input,
@@ -619,11 +632,14 @@ export async function runAskProviderTurn(input: {
         requestJson,
         currentUtcDate,
         onProgress: input.dependencies?.onProgress,
+        onStream: input.dependencies?.onStream,
       });
 }
 
 export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<ProviderHttpResult> {
-  const serialized = JSON.stringify(input.body);
+  const serialized = JSON.stringify(input.stream
+    ? { ...input.body, stream: true }
+    : input.body);
   if (Buffer.byteLength(serialized) > MAX_PROVIDER_REQUEST_BYTES) {
     throw new AskError("ASK_PROVIDER_REQUEST_TOO_LARGE", "The provider request exceeded the bounded Ask request size.");
   }
@@ -638,6 +654,12 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
   return new Promise<ProviderHttpResult>((resolve, reject) => {
     let settled = false;
     let deadline: NodeJS.Timeout | undefined;
+    const finishResolve = (body: Record<string, unknown>, status: number) => {
+      if (settled) return;
+      settled = true;
+      if (deadline) clearTimeout(deadline);
+      resolve({ body, status });
+    };
     const finishReject = (error: unknown) => {
       if (settled) return;
       settled = true;
@@ -651,7 +673,7 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
       method: "POST",
       path: `${input.endpoint.pathname}${input.endpoint.search}`,
       headers: {
-        accept: "application/json",
+        accept: input.stream ? "text/event-stream, application/json" : "application/json",
         "accept-encoding": "identity",
         "content-type": "application/json",
         "content-length": String(Buffer.byteLength(serialized)),
@@ -679,40 +701,20 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
         finishReject(new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider response exceeded the bounded Ask response size.", 502));
         return;
       }
-      const chunks: Buffer[] = [];
-      let total = 0;
-      response.on("data", (chunk: Buffer | string) => {
-        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        total += buffer.length;
-        if (total > MAX_PROVIDER_RESPONSE_BYTES) {
-          response.destroy(new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider response exceeded the bounded Ask response size.", 502));
-          return;
-        }
-        chunks.push(buffer);
-      });
-      response.on("error", finishReject);
-      response.on("end", () => {
-        if (settled) return;
-        const status = response.statusCode ?? 500;
-        if (status < 200 || status >= 300) {
-          finishReject(providerHttpError(status, Buffer.concat(chunks).toString("utf8")));
-          return;
-        }
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        } catch {
-          finishReject(new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider returned malformed JSON.", 502));
-          return;
-        }
-        if (!isRecord(parsed)) {
-          finishReject(new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider response was not a JSON object.", 502));
-          return;
-        }
-        settled = true;
-        if (deadline) clearTimeout(deadline);
-        resolve({ body: parsed, status });
-      });
+      const status = response.statusCode ?? 500;
+      const contentType = String(response.headers["content-type"] ?? "").toLowerCase();
+      const readResponse = status >= 200 && status < 300
+        && input.stream
+        && contentType.includes("text/event-stream")
+        ? readProviderEventStream(response, input.stream)
+        : readProviderJsonResponse(response, status).then((body) => {
+            if (input.stream && status >= 200 && status < 300) {
+              emitProviderStream(input.stream.onEvent, { phase: "started" });
+              emitProviderStream(input.stream.onEvent, { phase: "completed" });
+            }
+            return body;
+          });
+      void readResponse.then((body) => finishResolve(body, status), finishReject);
     });
 
     const abort = () => request.destroy(new AskError("ASK_CANCELLED", "The Ask request was cancelled.", 499));
@@ -732,6 +734,314 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
   });
 }
 
+async function readProviderJsonResponse(
+  response: IncomingMessage,
+  status: number,
+): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of response) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+    total += buffer.length;
+    if (total > MAX_PROVIDER_RESPONSE_BYTES) {
+      throw new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider response exceeded the bounded Ask response size.", 502);
+    }
+    chunks.push(buffer);
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+  if (status < 200 || status >= 300) throw providerHttpError(status, text);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider returned malformed JSON.", 502);
+  }
+  if (!isRecord(parsed)) {
+    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider response was not a JSON object.", 502);
+  }
+  return parsed;
+}
+
+type ProviderStreamAssembler = {
+  push(data: string): void;
+  finish(): Record<string, unknown>;
+};
+
+async function readProviderEventStream(
+  response: IncomingMessage,
+  stream: NonNullable<ProviderHttpInput["stream"]>,
+): Promise<Record<string, unknown>> {
+  const assembler = createProviderStreamAssembler(stream);
+  const decoder = new StringDecoder("utf8");
+  let pending = "";
+  let total = 0;
+  for await (const chunk of response) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+    total += buffer.length;
+    if (total > MAX_PROVIDER_RESPONSE_BYTES) {
+      throw new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider response exceeded the bounded streamed response size.", 502);
+    }
+    pending += decoder.write(buffer);
+    pending = pending.replace(/\r\n/gu, "\n").replace(/\r/gu, "\n");
+    let separator = pending.indexOf("\n\n");
+    while (separator >= 0) {
+      const block = pending.slice(0, separator);
+      pending = pending.slice(separator + 2);
+      consumeProviderSseBlock(block, assembler);
+      separator = pending.indexOf("\n\n");
+    }
+  }
+  pending += decoder.end();
+  if (pending.trim()) consumeProviderSseBlock(pending, assembler);
+  return assembler.finish();
+}
+
+function consumeProviderSseBlock(block: string, assembler: ProviderStreamAssembler): void {
+  const data = block.split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n");
+  if (data) assembler.push(data);
+}
+
+function createProviderStreamAssembler(
+  stream: NonNullable<ProviderHttpInput["stream"]>,
+): ProviderStreamAssembler {
+  if (stream.format === "openai_responses") return openAiResponsesStreamAssembler(stream.onEvent);
+  if (stream.format === "anthropic") return anthropicStreamAssembler(stream.onEvent);
+  return openAiChatStreamAssembler(stream.onEvent);
+}
+
+function emitProviderStream(
+  callback: ((event: AskProviderStreamEvent) => void) | undefined,
+  event: AskProviderStreamEvent,
+): void {
+  try {
+    callback?.(event);
+  } catch {
+    // Streaming presentation cannot change provider execution or validation.
+  }
+}
+
+function parsedProviderStreamEvent(data: string): Record<string, unknown> | undefined {
+  if (data === "[DONE]") return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data);
+  } catch {
+    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider returned a malformed streaming event.", 502);
+  }
+  if (!isRecord(parsed)) {
+    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider returned an invalid streaming event.", 502);
+  }
+  return parsed;
+}
+
+function openAiResponsesStreamAssembler(
+  onEvent: ((event: AskProviderStreamEvent) => void) | undefined,
+): ProviderStreamAssembler {
+  let started = false;
+  let completed = false;
+  let response: Record<string, unknown> | undefined;
+  const start = () => {
+    if (started) return;
+    started = true;
+    emitProviderStream(onEvent, { phase: "started" });
+  };
+  return {
+    push(data) {
+      const event = parsedProviderStreamEvent(data);
+      if (!event) return;
+      start();
+      const type = typeof event.type === "string" ? event.type : "";
+      if (type === "response.output_text.delta" && typeof event.delta === "string") {
+        emitProviderStream(onEvent, { phase: "text_delta", characters: event.delta.length });
+      } else if (type === "response.output_item.added" && isRecord(event.item)
+        && event.item.type === "function_call" && typeof event.item.name === "string") {
+        emitProviderStream(onEvent, { phase: "tool_started", tool: event.item.name });
+      } else if (type === "response.function_call_arguments.delta" && typeof event.delta === "string") {
+        emitProviderStream(onEvent, { phase: "tool_delta", characters: event.delta.length });
+      } else if (type === "response.completed" && isRecord(event.response)) {
+        response = event.response;
+        completed = true;
+      } else if (type === "response.failed" || type === "error") {
+        throw new AskError("ASK_PROVIDER_STREAM_FAILED", "The provider stopped before completing its streamed response.", 502);
+      }
+    },
+    finish() {
+      if (!completed || !response) {
+        throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider stream ended before a complete response was received.", 502);
+      }
+      emitProviderStream(onEvent, { phase: "completed" });
+      return response;
+    },
+  };
+}
+
+function openAiChatStreamAssembler(
+  onEvent: ((event: AskProviderStreamEvent) => void) | undefined,
+): ProviderStreamAssembler {
+  let started = false;
+  let done = false;
+  let content = "";
+  let usage: Record<string, unknown> | undefined;
+  const tools = new Map<number, { id?: string; name?: string; arguments: string }>();
+  const start = () => {
+    if (started) return;
+    started = true;
+    emitProviderStream(onEvent, { phase: "started" });
+  };
+  return {
+    push(data) {
+      if (data === "[DONE]") {
+        done = true;
+        return;
+      }
+      const event = parsedProviderStreamEvent(data);
+      if (!event) return;
+      start();
+      if (isRecord(event.error)) {
+        throw new AskError("ASK_PROVIDER_STREAM_FAILED", "The provider stopped before completing its streamed response.", 502);
+      }
+      if (isRecord(event.usage)) usage = event.usage;
+      if (!Array.isArray(event.choices)) return;
+      for (const choice of event.choices) {
+        if (!isRecord(choice)) continue;
+        if (choice.finish_reason !== undefined && choice.finish_reason !== null) done = true;
+        if (!isRecord(choice.delta)) continue;
+        if (typeof choice.delta.content === "string" && choice.delta.content) {
+          content += choice.delta.content;
+          emitProviderStream(onEvent, { phase: "text_delta", characters: choice.delta.content.length });
+        }
+        if (!Array.isArray(choice.delta.tool_calls)) continue;
+        for (const raw of choice.delta.tool_calls) {
+          if (!isRecord(raw)) continue;
+          const index = Number.isSafeInteger(raw.index) ? Number(raw.index) : tools.size;
+          const current = tools.get(index) ?? { arguments: "" };
+          if (typeof raw.id === "string" && raw.id) current.id = raw.id;
+          if (isRecord(raw.function)) {
+            if (typeof raw.function.name === "string" && raw.function.name) {
+              if (!current.name) {
+                emitProviderStream(onEvent, { phase: "tool_started", tool: raw.function.name });
+              }
+              current.name = raw.function.name;
+            }
+            if (typeof raw.function.arguments === "string" && raw.function.arguments) {
+              current.arguments += raw.function.arguments;
+              if (current.arguments.length > 32_768) {
+                throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", "Streamed tool arguments exceeded the bounded size.", 422);
+              }
+              emitProviderStream(onEvent, { phase: "tool_delta", characters: raw.function.arguments.length });
+            }
+          }
+          tools.set(index, current);
+        }
+      }
+    },
+    finish() {
+      if (!started || !done) {
+        throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider stream ended before a complete response was received.", 502);
+      }
+      const toolCalls = [...tools.entries()].sort(([left], [right]) => left - right).map(([index, tool]) => {
+        if (!tool.name) {
+          throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider streamed a tool call without a name.", 502);
+        }
+        return {
+          id: tool.id ?? `stream_tool_${index}`,
+          type: "function",
+          function: { name: tool.name, arguments: tool.arguments || "{}" },
+        };
+      });
+      emitProviderStream(onEvent, { phase: "completed" });
+      return {
+        choices: [{
+          message: {
+            role: "assistant",
+            content: content || null,
+            ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+          },
+        }],
+        ...(usage ? { usage } : {}),
+      };
+    },
+  };
+}
+
+function anthropicStreamAssembler(
+  onEvent: ((event: AskProviderStreamEvent) => void) | undefined,
+): ProviderStreamAssembler {
+  let started = false;
+  let stopped = false;
+  const usage: Record<string, unknown> = {};
+  const blocks = new Map<number, Record<string, unknown>>();
+  const partialInputs = new Map<number, string>();
+  const start = () => {
+    if (started) return;
+    started = true;
+    emitProviderStream(onEvent, { phase: "started" });
+  };
+  return {
+    push(data) {
+      const event = parsedProviderStreamEvent(data);
+      if (!event) return;
+      start();
+      const type = typeof event.type === "string" ? event.type : "";
+      if (type === "error") {
+        throw new AskError("ASK_PROVIDER_STREAM_FAILED", "Anthropic stopped before completing its streamed response.", 502);
+      }
+      if (type === "message_start" && isRecord(event.message) && isRecord(event.message.usage)) {
+        Object.assign(usage, event.message.usage);
+      } else if (type === "message_delta") {
+        if (isRecord(event.usage)) Object.assign(usage, event.usage);
+      } else if (type === "message_stop") {
+        stopped = true;
+      }
+      if (type === "content_block_start" && Number.isSafeInteger(event.index) && isRecord(event.content_block)) {
+        const index = Number(event.index);
+        const block = { ...event.content_block };
+        blocks.set(index, block);
+        if (block.type === "tool_use" && typeof block.name === "string") {
+          emitProviderStream(onEvent, { phase: "tool_started", tool: block.name });
+        }
+      }
+      if (type !== "content_block_delta" || !Number.isSafeInteger(event.index) || !isRecord(event.delta)) return;
+      const index = Number(event.index);
+      const block = blocks.get(index);
+      if (!block) return;
+      if (event.delta.type === "text_delta" && typeof event.delta.text === "string") {
+        block.text = `${typeof block.text === "string" ? block.text : ""}${event.delta.text}`;
+        emitProviderStream(onEvent, { phase: "text_delta", characters: event.delta.text.length });
+      } else if (event.delta.type === "input_json_delta" && typeof event.delta.partial_json === "string") {
+        const next = `${partialInputs.get(index) ?? ""}${event.delta.partial_json}`;
+        if (next.length > 32_768) {
+          throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", "Streamed tool arguments exceeded the bounded size.", 422);
+        }
+        partialInputs.set(index, next);
+        emitProviderStream(onEvent, { phase: "tool_delta", characters: event.delta.partial_json.length });
+      }
+    },
+    finish() {
+      if (!started || !stopped || blocks.size === 0) {
+        throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "Anthropic's stream ended before a complete response was received.", 502);
+      }
+      const content = [...blocks.entries()].sort(([left], [right]) => left - right).map(([index, block]) => {
+        if (block.type !== "tool_use") return block;
+        const partial = partialInputs.get(index);
+        if (!partial) return block;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(partial);
+        } catch {
+          throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", "Anthropic returned malformed streamed tool arguments.", 422);
+        }
+        return { ...block, input: safeToolArguments(parsed) };
+      });
+      emitProviderStream(onEvent, { phase: "completed" });
+      return { content, ...(Object.keys(usage).length ? { usage } : {}) };
+    },
+  };
+}
+
 async function runOpenAiCompatibleTurn(input: {
   configuration: ResolvedAskProviderConfiguration;
   question: string;
@@ -742,6 +1052,7 @@ async function runOpenAiCompatibleTurn(input: {
   requestJson: (input: ProviderHttpInput) => Promise<ProviderHttpResult>;
   currentUtcDate: string;
   onProgress?: AskProviderDependencies["onProgress"];
+  onStream?: AskProviderDependencies["onStream"];
   authorityDigest: `sha256:${string}`;
   authorityGuard?: AskAuthorityGuard;
   providerSystemPrompt?: string;
@@ -807,6 +1118,16 @@ async function runOpenAiCompatibleTurn(input: {
       }),
       signal: input.signal,
       timeoutMs: input.configuration.request_timeout_seconds * 1_000,
+      ...(input.onStream
+        ? {
+            stream: {
+              format: input.configuration.provider === "openai"
+                ? "openai_responses" as const
+                : "openai_chat" as const,
+              onEvent: input.onStream,
+            },
+          }
+        : {}),
     });
     if (input.authorityGuard) {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
@@ -1663,6 +1984,7 @@ async function runAnthropicTurn(input: {
   requestJson: (input: ProviderHttpInput) => Promise<ProviderHttpResult>;
   currentUtcDate: string;
   onProgress?: AskProviderDependencies["onProgress"];
+  onStream?: AskProviderDependencies["onStream"];
   authorityDigest: `sha256:${string}`;
   authorityGuard?: AskAuthorityGuard;
   providerSystemPrompt?: string;
@@ -1734,6 +2056,9 @@ async function runAnthropicTurn(input: {
       },
       signal: input.signal,
       timeoutMs: input.configuration.request_timeout_seconds * 1_000,
+      ...(input.onStream
+        ? { stream: { format: "anthropic" as const, onEvent: input.onStream } }
+        : {}),
     });
     if (input.authorityGuard) {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
