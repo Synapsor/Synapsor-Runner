@@ -57,7 +57,10 @@ import {
 } from "./derived-scope-display.js";
 import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
-import { formatExploreVocabularyCoverage } from "./explore-vocabulary.js";
+import {
+  exploreModelFacingFieldIds,
+  formatExploreVocabularyCoverage,
+} from "./explore-vocabulary.js";
 import {
   DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
   DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
@@ -1706,13 +1709,21 @@ async function interactiveBoundaryReviewLoop(input: {
       const actionStatus = await guidedActionStatus(input.projectRoot);
       const rehearsedDrafts = actionStatus.drafts.filter((draft) =>
         draft.boundary_name === selected.boundary_name && draft.effect_preview);
+      const reviewed = await loadBoundaryReviewContext(input.projectRoot);
+      const readBoundaryActive = await exactReadBoundaryIsActive({
+        projectRoot: input.projectRoot,
+        boundaryName: selected.boundary_name,
+        candidateDigest: reviewed.bundle.candidate_digest,
+      });
       accessNotice = rehearsedDrafts.length
         ? {
             tone: "success",
             title: "Proposal rehearsal passed. Source data is unchanged.",
             lines: [
               `${rehearsedDrafts.length} proposal-only action${rehearsedDrafts.length === 1 ? " is" : "s are"} ready for authority review.`,
-              "Press C to review and activate this read boundary. Then press Y to review the exact rehearsed proposal action.",
+              readBoundaryActive
+                ? `Read Boundary ${selected.boundary_name} is already active. Press Y to review the exact rehearsed proposal action.`
+                : "Press C to review and activate this Read Boundary. Then press Y to review the exact rehearsed proposal action.",
             ],
             footer: "No proposal action, approval, apply, or writeback authority is active yet.",
           }
@@ -2789,6 +2800,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   }
   type MappingMode = "model" | "cards" | "exact" | "intent_model" | "saved";
   let mode: MappingMode | undefined;
+  let routeSelectedModel: ActionModelSuggestionSession | undefined;
   let manualSelected = false;
   if (input.session.chooseOption) {
     const conversationalJobChoices = [
@@ -2798,7 +2810,14 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ? `Continue with ${boundaryModelLabel(currentModel)}  [recommended]`
           : "Choose a drafting model  [recommended]",
         detail: "Talk through the job; Runner validates every suggested Read and Action decision.",
-      },
+        },
+      ...(currentModel
+        ? [{
+            value: "choose_model",
+            label: "Choose a different drafting model",
+            detail: "Keep this job, then choose another provider or exact model before metadata egress review.",
+          }]
+        : []),
       {
         value: "cards",
         label: "Continue without a model",
@@ -2934,7 +2953,14 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     }
     manualSelected = input.jobFirst === true && selected === "manual";
     if (!manualSelected) {
-      mode = selected as MappingMode;
+      if (selected === "choose_model") {
+        mode = "model";
+      } else {
+        mode = selected as MappingMode;
+        if (input.authoringChat && selected === "model" && currentModel) {
+          routeSelectedModel = { ...currentModel };
+        }
+      }
     }
   } else {
     const choice = await input.session.promptText(
@@ -3135,9 +3161,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         await readJsonFileWithLocation<unknown>(path.resolve(file.trim()), "read workload intent"),
       );
     }
-    const selectedModel = await promptBoundaryMappingModel(input.session, currentModel);
+    const selectedModel = routeSelectedModel
+      ?? await promptBoundaryMappingModel(input.session, currentModel);
     if (!selectedModel) return boundaryAssistResult(boundaryAssistBackNotice());
-    input.authoringChat?.setModel(boundaryModelLabel(selectedModel));
+    if (!routeSelectedModel) input.authoringChat?.setModel(boundaryModelLabel(selectedModel));
     const confirmModelEgress = (session: ActionModelSuggestionSession) => input.session.confirm([
       `Send this job, its read questions${actionIntents.length ? ", its proposal intents," : ""} and only reviewed structural names, types, relationships, labels, descriptions, and schema-declared ENUM/CHECK allowlists to ${boundaryModelLabel(session)}?`,
       input.jobFirst
@@ -5654,7 +5681,9 @@ async function confirmActivateAndKeepAccessOpen(input: {
       "Boundary activation did not complete.",
       redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
       "Any completed review remains saved, but the previously active authority is unchanged.",
-      "You are still in /access. Correct the reported issue, then press C to review and activate again.",
+      input.session.presentationMode === "conversation"
+        ? "You are still in Boundary authoring. Correct the reported issue, then review the exact authority again."
+        : "You are still in /access. Correct the reported issue, then press C to review and activate again.",
     ];
     if (input.session.present) input.session.present(lines[0]!, lines.slice(1), "danger");
     else process.stdout.write([...lines, ""].join("\n"));
@@ -5775,9 +5804,10 @@ async function confirmAndActivateFocusedBoundary(input: {
     );
     context = await loadBoundaryReviewContext(input.projectRoot);
   }
+  const conversation = input.session.presentationMode === "conversation";
   const activationReview = formatFocusedBoundaryActivationReview(
     context.bundle,
-    process.stdout.isTTY === true && !("NO_COLOR" in process.env),
+    conversation ? false : process.stdout.isTTY === true && !("NO_COLOR" in process.env),
     true,
   );
   if (input.session.presentationMode !== "conversation") {
@@ -5799,22 +5829,61 @@ async function confirmAndActivateFocusedBoundary(input: {
     ...activationReview.trimEnd().split("\n"),
     ...(activationReviewNotice ? activationReviewNotice.trimEnd().split("\n") : []),
   ];
+  const compactReviewContext = [
+    ...formatBoundaryChatReviewSummary(context.bundle),
+    ...(activationReviewNotice ? ["", ...activationReviewNotice.trimEnd().split("\n")] : []),
+  ];
   const actor = localInteractiveActor();
   if (input.prepareDependentActions) {
-    const accepted = await input.session.confirm(
-      `Use this exact Read Boundary as the disabled dependency for its Action Boundary?`,
-      {
-        defaultValue: true,
-        context: [
-          ...(input.session.presentationMode === "conversation" ? [...activationContext, ""] : []),
+    let accepted: boolean | undefined;
+    if (conversation && input.session.chooseOption) {
+      while (accepted === undefined) {
+        const choice = await input.session.chooseOption(
           "CONTINUE TO ACTION BOUNDARY",
-          `Read Boundary: ${context.candidate.pack.name}`,
-          "Yes freezes this exact reviewed revision without granting read authority, then continues the same agent job.",
-          "The final Read activation and Action activation remain separate confirmations after proposal rehearsal.",
-          "No model, proposal, approval, apply, or source-write authority is granted here.",
-        ],
-      },
-    );
+          [
+            {
+              value: "continue",
+              label: "Continue to Action Boundary  [recommended]",
+              detail: "Freeze this exact Read revision as a disabled dependency; grant no Read or proposal authority.",
+            },
+            {
+              value: "details",
+              label: "View exact Read Boundary details",
+              detail: "Show every reviewed field, allowlist, scope path, limit, and fingerprint.",
+            },
+            {
+              value: "back",
+              label: "Pause this job",
+              detail: "Keep the Read draft incomplete and grant no authority.",
+            },
+          ],
+          {
+            initialValue: "continue",
+            context: compactReviewContext,
+          },
+        );
+        if (choice === "details") {
+          input.session.present?.("EXACT READ BOUNDARY DETAILS", activationContext, "normal");
+          continue;
+        }
+        accepted = choice === "continue" ? true : false;
+      }
+    } else {
+      accepted = await input.session.confirm(
+        `Use this exact Read Boundary as the disabled dependency for its Action Boundary?`,
+        {
+          defaultValue: true,
+          context: [
+            ...(conversation ? [...activationContext, ""] : []),
+            "CONTINUE TO ACTION BOUNDARY",
+            `Read Boundary: ${context.candidate.pack.name}`,
+            "Yes freezes this exact reviewed revision without granting read authority, then continues the same agent job.",
+            "The final Read activation and Action activation remain separate confirmations after proposal rehearsal.",
+            "No model, proposal, approval, apply, or source-write authority is granted here.",
+          ],
+        },
+      );
+    }
     if (accepted) {
       await saveReviewedDisabledBoundary({
         projectRoot: input.projectRoot,
@@ -5832,27 +5901,77 @@ async function confirmAndActivateFocusedBoundary(input: {
       else process.stdout.write(["READ REVIEW COMPLETE - NOT ACTIVE", ...reviewedLines, ""].join("\n"));
       return 0;
     }
-    process.stdout.write([
+    const pausedLines = [
       "Agent job paused before Action Boundary setup.",
       "The Read Boundary remains disabled and incomplete. No authority or source data changed.",
-      "",
-    ].join("\n"));
+    ];
+    if (input.session.present) input.session.present("AGENT JOB PAUSED", pausedLines.slice(1), "warning");
+    else process.stdout.write([...pausedLines, ""].join("\n"));
     return 0;
   }
   const activationPrompt = context.candidate.deployment_profile === "production"
     ? input.keepAccessOpen
-      ? `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore now? You will stay in /access.`
+      ? conversation
+        ? `Activate "${context.candidate.pack.name}" for secured production HTTP Explore and continue this Boundary authoring conversation?`
+        : `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore now? You will stay in /access.`
       : `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore?`
     : input.keepAccessOpen
-      ? `Activate "${context.candidate.pack.name}" exactly as shown now? You will stay in /access.`
+      ? conversation
+        ? `Activate "${context.candidate.pack.name}" for local read-only Explore and continue this Boundary authoring conversation?`
+        : `Activate "${context.candidate.pack.name}" exactly as shown now? You will stay in /access.`
       : `Activate "${context.candidate.pack.name}" exactly as shown and continue to Ask?`;
-  const accepted = input.keepAccessOpen && input.session.confirmActivation
-    ? await input.session.confirmActivation(activationPrompt, { context: activationContext })
-    : await input.session.confirm(activationPrompt, {
-        defaultValue: input.keepAccessOpen !== true,
-        context: activationContext,
-      });
+  let accepted: boolean | undefined;
+  if (conversation && input.session.chooseOption) {
+    let decided = false;
+    while (!decided) {
+      const choice = await input.session.chooseOption(
+        "ACTIVATE READ BOUNDARY",
+        [
+          {
+            value: "activate",
+            label: "Activate this exact Read Boundary",
+            detail: "Grant only the reviewed Explore authority summarized above.",
+          },
+          {
+            value: "details",
+            label: "View exact Read Boundary details",
+            detail: "Show every reviewed field, allowlist, scope path, limit, and fingerprint.",
+          },
+          {
+            value: "back",
+            label: "Keep Read Boundary disabled  [recommended]",
+            detail: "Grant no Read authority; the reviewed draft remains saved.",
+          },
+        ],
+        {
+          initialValue: "back",
+          context: compactReviewContext,
+        },
+      );
+      if (choice === "details") {
+        input.session.present?.("EXACT READ BOUNDARY DETAILS", activationContext, "normal");
+        continue;
+      }
+      accepted = choice === "activate";
+      decided = true;
+    }
+  } else {
+    accepted = input.keepAccessOpen && input.session.confirmActivation
+      ? await input.session.confirmActivation(activationPrompt, { context: activationContext })
+      : await input.session.confirm(activationPrompt, {
+          defaultValue: input.keepAccessOpen !== true,
+          context: activationContext,
+        });
+  }
   if (!accepted) {
+    if (conversation) {
+      input.session.present?.("READ BOUNDARY LEFT DISABLED", [
+        `Boundary: ${context.candidate.pack.name}`,
+        "No Read authority or source data changed.",
+        "The reviewed draft remains available in Boundary authoring.",
+      ], "warning");
+      return 0;
+    }
     const keepReviewedDisabled = accepted === false
       && input.keepAccessOpen
       && input.session.confirmReviewedDisabled
@@ -6069,6 +6188,57 @@ export function formatFocusedBoundaryActivationReview(
     theme.success("Source database changed: no. The model cannot perform this confirmation."),
     "",
   ].join("\n");
+}
+
+export function formatBoundaryChatReviewSummary(
+  bundle: BoundaryReviewBundle,
+): string[] {
+  const resources = bundle.candidate.pack.resources;
+  const rows = resources.map((resource) => {
+    const modelFields = exploreModelFacingFieldIds(resource).filter(
+      (field) => !(resource.model_withheld_fields ?? []).includes(field),
+    );
+    const scope = bundle.candidate.organization_scope
+      ? "organization"
+      : resource.shared_reference_scope
+        ? "shared"
+        : resource.principal_key || resource.principal_scope
+          ? "tenant + principal"
+          : "tenant";
+    return [
+      resource.label ? `${resource.label} (${resource.id})` : resource.id,
+      String(modelFields.length),
+      String(resource.kept_out_fields.length),
+      scope,
+    ];
+  });
+  const modelFieldCount = resources.reduce(
+    (total, resource) => total + exploreModelFacingFieldIds(resource).filter(
+      (field) => !(resource.model_withheld_fields ?? []).includes(field),
+    ).length,
+    0,
+  );
+  const relationshipCount = resources.reduce(
+    (total, resource) => total + resource.relationships.length,
+    0,
+  );
+  const cohortSizes = [...new Set(resources.map((resource) => resource.minimum_cohort_size))]
+    .sort((left, right) => left - right)
+    .join(", ");
+  return [
+    `Boundary: ${bundle.candidate.pack.name} | REVIEWED DRAFT | NOT ACTIVE`,
+    ...formatTextTable(
+      ["TABLE", "MODEL", "OUT", "SCOPE"],
+      rows,
+      [36, 7, 7, 20],
+    ),
+    `Model-facing fields: ${modelFieldCount} | reviewed relationships: ${relationshipCount}`,
+    `Privacy: minimum group ${cohortSizes || "not applicable"} | top ${bundle.candidate.budgets.max_top_n} after suppression`,
+    `Usage limits: ${bundle.candidate.budgets.max_queries_per_session} queries and `
+      + `${bundle.candidate.budgets.max_extracted_cells_per_session} cells per trusted scope / 24h`,
+    "Writes: none | source database changed: no",
+    "View exact details for every field, allowlist, scope path, limit, and fingerprint.",
+  ];
 }
 
 function styleReviewTable(lines: string[], theme: ReturnType<typeof terminalTheme>): string[] {

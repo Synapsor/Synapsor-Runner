@@ -229,8 +229,8 @@ describe("Safe Action terminal control plane", () => {
     const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
     expect(rendered).toContain("Target: UPDATE public.orders");
     expect(rendered).toContain("tenant tenant_id + principal rep_id");
-    expect(rendered).toContain("Conditions:");
-    expect(rendered).toContain("writeback none");
+    expect(rendered).toContain("Auto-approve proposal credit_cents | <= 500");
+    expect(rendered).toContain("State | proposal_only | writeback none");
     expect(rendered).not.toContain("rows hidden");
   });
 
@@ -302,7 +302,7 @@ describe("Safe Action terminal control plane", () => {
         textContexts.push(options?.context ?? []);
       },
       onChoose: (title, _choices, context) => {
-        if (title === "CONFIRM INTERPRETED DECISION") {
+        if (title === "CONFIRM PROPOSAL RANGE") {
           confirmationContexts.push(context ?? []);
         }
       },
@@ -327,10 +327,12 @@ describe("Safe Action terminal control plane", () => {
     ]);
     expect(textContexts[0]).toEqual(expect.arrayContaining([
       "Where used: every UPDATE public.orders proposal may supply credit_cents only inside the confirmed range.",
-      "Runner rejects a proposal outside the range before approval. A later auto-approval rule may be narrower.",
+      "Outside this range: Runner refuses the proposal before approval. Auto-approval may use a narrower range later.",
     ]));
     expect(confirmationContexts[0]).toEqual(expect.arrayContaining([
+      "Operator answer: From zero through twenty-five dollars.",
       "Runner-validated interpretation: credit_cents: 0 through 2500",
+      "Where enforced: every UPDATE public.orders proposal; values outside this range are refused before approval.",
       "Authority granted: no | source database changed: no",
     ]));
     expect(decisionInterpreter).toHaveBeenCalledWith(expect.objectContaining({
@@ -473,6 +475,10 @@ describe("Safe Action terminal control plane", () => {
       source_database_changed: false as const,
     }));
     let acceptedTemplate: QuickDeterministicApprovalTemplate | undefined;
+    const textPrompts: Array<{
+      label: string;
+      options: Parameters<ActionControlPrompter["text"]>[1];
+    }> = [];
     const prompter = scriptedPrompter({
       choices: ["confirm", "delegate", "change", "confirm"],
       texts: [
@@ -480,6 +486,7 @@ describe("Safe Action terminal control plane", () => {
         "Credits up to five dollars, at most three per support agent each day and ten dollars total.",
       ],
       confirms: [],
+      onText: (label, options) => textPrompts.push({ label, options }),
     });
 
     const action = await collectQuickProposalActionInput(
@@ -524,6 +531,18 @@ describe("Safe Action terminal control plane", () => {
       source: "model_interview",
       shared_limits: [{ scope: "tenant_principal", maximum: 3, window_seconds: 86400 }],
     });
+    expect(textPrompts.find((prompt) =>
+      prompt.label === "Describe exactly which proposals may auto-approve and the rolling limits."))
+      .toMatchObject({
+        options: {
+          title: "DESCRIBE THE AUTO-APPROVAL RULE",
+          context: expect.arrayContaining([
+            "PROPOSAL ENVELOPE - ALWAYS ENFORCED",
+            "  credit_cents | 0 through 2500",
+            expect.stringContaining("narrower automatic-approval subset"),
+          ]),
+        },
+      });
   });
 
   it("reviews a validated model Action draft without reselecting its target, operation, or fields", async () => {
@@ -545,13 +564,15 @@ describe("Safe Action terminal control plane", () => {
     expect(suggestion.status, suggestion.blockers.join("; ")).toBe("suggested");
     const choiceTitles: string[] = [];
     const firstChoiceLabels: string[] = [];
+    const choiceContexts = new Map<string, string[]>();
     const prompter = scriptedPrompter({
       choices: ["delegate", "confirm"],
       texts: ["0,2500"],
       confirms: [],
-      onChoose: (title, choices) => {
+      onChoose: (title, choices, context = []) => {
         choiceTitles.push(title);
         firstChoiceLabels.push(choices[0]?.label ?? "");
+        choiceContexts.set(title, context);
       },
     });
 
@@ -570,9 +591,20 @@ describe("Safe Action terminal control plane", () => {
       },
     );
 
-    expect(choiceTitles).toEqual(["REVIEW PROPOSAL ACTION", "EXACT DETERMINISTIC APPROVAL POLICY"]);
+    expect(choiceTitles).toEqual(["REVIEW PROPOSAL ACTION", "REVIEW EXACT AUTO-APPROVAL POLICY"]);
     expect(firstChoiceLabels[0]).toContain("model-proposed deterministic approval rules");
     expect(firstChoiceLabels[1]).toContain("exact disabled policy");
+    expect(choiceContexts.get("REVIEW EXACT AUTO-APPROVAL POLICY")).toEqual(expect.arrayContaining([
+      "AUTO-APPROVE ONLY WHEN - ALL RULES PASS",
+      "  proposal credit_cents | <= 500",
+      "CIRCUIT BREAKERS",
+      "  Per action | 3 approvals / 24 hours",
+      "  Aggregate | 1000 total credit_cents / 24 hours",
+      "Approval authority: DISABLED | apply authority: NONE | source database changed: no",
+    ]));
+    expect(choiceContexts.get("REVIEW EXACT AUTO-APPROVAL POLICY")).not.toEqual(expect.arrayContaining([
+      expect.stringMatching(/^Why:/u),
+    ]));
     expect(action).toMatchObject({
       resource: "public.orders",
       operation: "update",

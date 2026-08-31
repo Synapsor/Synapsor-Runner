@@ -120,7 +120,7 @@ describe("Boundary authoring chat", () => {
     const answer = await chat.actionPrompter.text(
       "What is the smallest and largest duration the agent may propose?",
       {
-        title: "ANSWER ONE BUSINESS QUESTION",
+        title: "SET PROPOSAL RANGE",
         context: [
           "Action: INSERT support.follow_up_tasks",
           "Interpreter: openai[gpt-5.6-luna]",
@@ -133,6 +133,22 @@ describe("Boundary authoring chat", () => {
     expect(memory.writes.join("")).toContain("model> What is the smallest and largest duration");
     expect(memory.setStatus).toHaveBeenCalledWith("Interpreting the reviewed range");
     expect(memory.clearStatus).toHaveBeenCalled();
-    expect(memory.writes.join("")).toContain("runner> Completed");
+    expect(memory.writes.join("")).not.toContain("runner> Completed");
+  });
+
+  it("strips inherited terminal formatting and emphasizes the validated value", () => {
+    const memory = memoryIo();
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: true });
+
+    chat.runner("READ REVIEW", [
+      "\u001b[1mExact fingerprint:\u001b[0m \u001b[1;35msha256:abc123\u001b[0m",
+      "Runner-validated interpretation: estimated_minutes: 5 through 120",
+    ]);
+
+    const transcript = memory.writes.join("");
+    expect(transcript).not.toContain("\\u001b");
+    expect(transcript.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, ""))
+      .toContain("Runner-validated interpretation: estimated_minutes: 5 through 120");
+    expect(transcript).toContain("\u001b[1;32m5 through 120\u001b[0m");
   });
 });

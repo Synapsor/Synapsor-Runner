@@ -342,7 +342,10 @@ function linkedActionBoundaryLines(
     activeCount > 0
       ? "  Y reviews active proposal authority or any disabled replacement. Approval and apply remain outside the agent."
       : draftCount > 0
-        ? "  Y reviews and activates this proposal authority. Approval and apply remain outside the agent."
+        ? theme.warning(
+          `  Next: Y reviews ${draftCount} disabled Action ${plural(draftCount, "draft", "drafts")}; `
+          + "W opens model-guided Read + Action setup.",
+        )
         : "  Y prepares one proposal action after the Read Boundary review is complete.",
   ];
 }
@@ -834,6 +837,13 @@ function exactModelOutputConfirmationLines(theme: TerminalTheme): string[] {
   ];
 }
 
+function modelGuidedSetupHint(theme: TerminalTheme): string[] {
+  return [
+    theme.bold(`${theme.key("W")} Model-guided Read + Action setup is always available.`),
+    theme.dim("The model drafts; Runner validates; only you review and activate. Manual controls stay available."),
+  ];
+}
+
 function exactModelOutputConfirmationDecision(
   key: Keypress,
 ): "accept" | "cancel" | "wait" {
@@ -1173,6 +1183,7 @@ async function chooseResource(
                 : "Runner refuses a valid but contradictory model plan before Explore execution.",
             ),
             modelOutputStatus,
+            ...modelGuidedSetupHint(theme),
             "",
             theme.bold(
               `${theme.key("Enter/C")} Review + activate`,
@@ -1182,7 +1193,7 @@ async function chooseResource(
               `${theme.key("A")} New boundary`,
               `${theme.key("P")} Privacy for all tables`,
               `${theme.key("L")} Limits`,
-              `${theme.key("W")} Agent job - prepare reads + proposals`,
+              `${theme.key("W")} Model-guided setup - Read + Action`,
               `${theme.key("Y")} ${safeActionAccessLabel(
                 highlightedBoundary.proposal_action_state,
                 reviewLeft === "Complete" && !highlightedBoundary.policy_review_required,
@@ -1312,6 +1323,7 @@ async function chooseResource(
               : "Runner refuses a valid but contradictory model plan before Explore execution.",
           ),
           modelOutputStatus,
+          ...modelGuidedSetupHint(theme),
           ...(options?.notice
             ? ["", ...formatBoundaryAccessNotice(theme, options.notice)]
             : []),
@@ -1339,7 +1351,7 @@ async function chooseResource(
             `${theme.key("A")} New boundary`,
             `${theme.key("P")} Privacy for all tables`,
             `${theme.key("L")} Limits`,
-            `${theme.key("W")} Agent job - prepare reads + proposals`,
+            `${theme.key("W")} Model-guided setup - Read + Action`,
             `${theme.key("Y")} ${safeActionAccessLabel(
               highlightedBoundary.proposal_action_state,
               highlightedActionAvailable,
@@ -1566,7 +1578,7 @@ async function chooseResource(
         `${theme.key("M")} Map`,
         `${theme.key("N")} Rename`,
         `${theme.key("L")} Limits`,
-        `${theme.key("W")} Agent job - prepare reads + proposals`,
+        `${theme.key("W")} Model-guided setup - Read + Action`,
         `${theme.key("Y")} ${safeActionAccessLabel(
           overview?.boundaries?.find((entry) => entry.selected)?.proposal_action_state,
           candidateActionAvailable,
@@ -1597,6 +1609,7 @@ async function chooseResource(
             : [theme.success("Local Ask plan check: BALANCED")];
         })(),
         modelOutputStatus,
+        ...modelGuidedSetupHint(theme),
         ...(candidateHasPendingChange
           ? [
             theme.warning("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),

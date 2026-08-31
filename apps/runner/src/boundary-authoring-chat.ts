@@ -34,14 +34,22 @@ type ChoiceInput = {
   initialValue?: string;
 };
 
+function stripTerminalAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
+}
+
+function transcriptText(value: string): string {
+  return safeTerminalText(stripTerminalAnsi(value));
+}
+
 function meaningfulContext(context: string[] | undefined): string[] {
-  return (context ?? []).map((line) => safeTerminalText(line)).filter((line, index, lines) =>
+  return (context ?? []).map((line) => transcriptText(line)).filter((line, index, lines) =>
     line.trim() || (index > 0 && index < lines.length - 1));
 }
 
 function isModelQuestion(title: string | undefined, context: string[] | undefined): boolean {
   const heading = title ?? context?.[0] ?? "";
-  return /^(?:ANSWER ONE BUSINESS QUESTION|CLARIFY ONE REVIEWED NAME|MODEL QUESTION|DESCRIBE THE AUTO-APPROVAL RULE)/iu
+  return /^(?:ANSWER ONE BUSINESS QUESTION|SET (?:PROPOSAL RANGE|PROPOSAL FIELDS|ACTION TARGET|PROPOSAL EFFECT|CONFLICT AND RETRY GUARD)|CLARIFY ONE REVIEWED NAME|MODEL QUESTION|DESCRIBE THE AUTO-APPROVAL RULE)/iu
     .test(heading.trim());
 }
 
@@ -78,8 +86,31 @@ export function createBoundaryAuthoringChat(input: {
     const prefix = role(speaker);
     const continuation = " ".repeat(speaker === "model" ? 7 : 8);
     io.write(`${lines.map((line, index) => {
-      const safe = safeTerminalText(line);
-      const content = index === 0 && firstStyle ? firstStyle(safe) : safe;
+      const safe = transcriptText(line);
+      let content = index === 0 && firstStyle ? firstStyle(safe) : safe;
+      if (speaker === "runner" && index > 0) {
+        const interpreted = safe.match(/^Runner-validated interpretation:\s*([^:]+):\s*(.+)$/iu);
+        if (interpreted) {
+          content = `${theme.dim("Runner-validated interpretation:")} `
+            + `${theme.scope(interpreted[1]!.trim())}: ${theme.success(interpreted[2]!.trim())}`;
+        } else {
+          const emphasized = [
+            "Boundary:",
+            "Action:",
+            "Target:",
+            "Reviewed proposal field:",
+            "Where used:",
+            "You said:",
+            "Operator answer:",
+            "Validated decision:",
+          ].find((prefix) => safe.trimStart().startsWith(prefix));
+          if (emphasized) {
+            const offset = safe.indexOf(emphasized);
+            const value = safe.slice(offset + emphasized.length).trimStart();
+            content = `${theme.dim(emphasized)} ${theme.value(value)}`;
+          }
+        }
+      }
       return `${index === 0 ? prefix : continuation} ${content}`;
     }).join("\n")}\n`);
   };
@@ -199,9 +230,13 @@ export function createBoundaryAuthoringChat(input: {
     },
     chooseOption: async (title, choices, options) => {
       writeContext(options?.context);
+      const permission = /^(?:ACTIVATE|APPROVE|APPLY|GRANT)\b/iu.test(title.trim());
+      if (permission) runner("Permission request", [title]);
       return choose({
-        title,
-        message: "Choose one path. The highlighted choice is not applied until you press Enter.",
+        title: permission ? "PERMISSION REQUIRED" : title,
+        message: permission
+          ? "Choose the exact authority change. The safe choice is highlighted."
+          : "Choose one path. The highlighted choice is not applied until you press Enter.",
         options: choices,
         ...(options?.initialValue ? { initialValue: options.initialValue } : {}),
       });
@@ -274,7 +309,6 @@ export function createBoundaryAuthoringChat(input: {
       try {
         const result = await operation();
         io.clearStatus?.();
-        runner("Completed", [message], "success");
         return result;
       } catch (error) {
         io.clearStatus?.();

@@ -954,7 +954,9 @@ describe("boundary review terminal picker", () => {
     const session = createBoundaryReviewInteractiveSession(input, output);
     const selected = session.chooseResource([summary("public.orders", 0)]);
     const firstView = stripAnsi(output.read()?.toString() ?? "");
-    expect(firstView).toContain("W Agent job - prepare reads + proposals");
+    expect(firstView).toContain("W Model-guided setup - Read + Action");
+    expect(firstView).toContain("W Model-guided Read + Action setup is always available.");
+    expect(firstView).toContain("The model drafts; Runner validates; only you review and activate.");
     await send(input, "w");
     await expect(selected).resolves.toEqual({ action: "workloads" });
   });
@@ -1069,6 +1071,9 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Linked Read Boundary: reviewed_staging");
     expect(rendered).toContain("Y reviews active proposal authority");
     expect(rendered).toContain("Y Safe actions - 2 active proposal actions [ACTIVE]");
+    expect(rendered).toContain("W Model-guided setup - Read + Action");
+    expect(rendered).toContain("W Model-guided Read + Action setup is always available.");
+    expect(rendered).toContain("Manual controls stay available.");
     expect(rendered).not.toContain("Y Safe actions - prepare proposal [AVAILABLE]");
 
     await send(terminal.input, "q");

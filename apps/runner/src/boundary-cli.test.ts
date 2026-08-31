@@ -26,6 +26,7 @@ import {
   boundaryAssistCommand,
   boundaryActivateCommand as boundaryActivateCommandInternal,
   boundaryReviewCommand as boundaryReviewCommandInternal,
+  formatBoundaryChatReviewSummary,
   formatFocusedBoundaryActivationReview,
   loadBoundaryReviewContext,
   promptBoundaryMappingModel,
@@ -2156,6 +2157,7 @@ describe("boundary operator-plane CLI", () => {
         "MODEL REQUEST NOT STARTED",
         "RUNNER-GUIDED READ DRAFT",
       ]));
+      expect(choices).not.toContain("MODEL FOR BOUNDARY DRAFTING");
       expect(modelReadWorkloadGenerator).not.toHaveBeenCalled();
       expect(chatClose).toHaveBeenCalledOnce();
       const delegation = await readDelegationDraft(root, "explain_service_activity_to_support_staff");
@@ -3961,6 +3963,11 @@ describe("boundary operator-plane CLI", () => {
     });
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const review = formatBoundaryChatReviewSummary((await loadBoundaryReviewContext(root)).bundle);
+      expect(review.join("\n")).toContain("TABLE");
+      expect(review.join("\n")).toContain("MODEL");
+      expect(review.join("\n")).toContain("Writes: none");
+      expect(review.join("\n")).not.toContain("sha256:");
       await expect(boundaryReviewCommandInternal(
         ["--project-root", root],
         async () => inspection,

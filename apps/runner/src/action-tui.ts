@@ -1462,7 +1462,7 @@ async function collectConversationalProposalDecision(input: {
   let operatorRetryUsed = false;
   while (true) {
     const answer = pendingAnswer ?? await input.prompter.text(prompt.label, {
-        title: "ANSWER ONE BUSINESS QUESTION",
+        title: conversationalDecisionTitle(input.decision, "question"),
         context: [
           ...prompt.context,
           `Interpreter: ${modelSessionLabel(input.modelInterview.session)} | one bounded structured result`,
@@ -1545,14 +1545,15 @@ async function collectConversationalProposalDecision(input: {
       notice = [`Exact operator-supplied value context approved for ${resolution.field}; no source query ran.`];
       continue;
     }
-    const choice = await input.prompter.choose("CONFIRM INTERPRETED DECISION", [
+    const choice = await input.prompter.choose(conversationalDecisionTitle(input.decision, "confirmation"), [
       { value: "confirm", label: "Confirm this exact reviewed value [recommended]", detail: "Adds it only to the disabled draft being prepared." },
       { value: "retry", label: "Answer again in natural language", detail: "Discard this interpretation and restate the business rule." },
       { value: "manual", label: "Continue this Action setup with exact controls", detail: "Discard this interpretation and make the remaining decisions without another provider request." },
       { value: "back", label: "Back", detail: "Save no value for this unresolved decision." },
     ], [
-      `You said: ${answer}`,
+      `Operator answer: ${answer}`,
       `Runner-validated interpretation: ${resolution.summary}`,
+      conversationalDecisionEnforcement(input.decision, target),
       ...(resolution.rationale ? [`Model rationale: ${resolution.rationale}`] : []),
       ...(resolution.correction_used ? ["The provider needed its one bounded structured-output correction."] : []),
       "Authority granted: no | source database changed: no",
@@ -1562,6 +1563,34 @@ async function collectConversationalProposalDecision(input: {
     if (!choice || choice === "back") return "back";
     notice = ["The prior interpretation was discarded. Your next answer replaces it."];
   }
+}
+
+function conversationalDecisionTitle(
+  decision: Exclude<QuickProposalDecision, { kind: "delete_confirmation" }>,
+  stage: "question" | "confirmation",
+): string {
+  const prefix = stage === "confirmation" ? "CONFIRM" : "SET";
+  if (decision.kind === "numeric_bounds") return `${prefix} PROPOSAL RANGE`;
+  if (decision.kind === "fields") return `${prefix} PROPOSAL FIELDS`;
+  if (decision.kind === "resource") return `${prefix} ACTION TARGET`;
+  if (decision.kind === "operation") return `${prefix} PROPOSAL EFFECT`;
+  return `${prefix} CONFLICT AND RETRY GUARD`;
+}
+
+function conversationalDecisionEnforcement(
+  decision: Exclude<QuickProposalDecision, { kind: "delete_confirmation" }>,
+  target: string | undefined,
+): string {
+  const action = target ?? "this proposal action";
+  if (decision.kind === "numeric_bounds") {
+    return `Where enforced: every ${action} proposal; values outside this range are refused before approval.`;
+  }
+  if (decision.kind === "fields") {
+    return `Where enforced: ${action}; the agent may supply only the confirmed business fields.`;
+  }
+  if (decision.kind === "resource") return "Where enforced: this Action Boundary may target only the confirmed table.";
+  if (decision.kind === "operation") return "Where enforced: proposals may express only the confirmed INSERT, UPDATE, or DELETE effect.";
+  return `Where enforced: ${action}; duplicate or stale proposals are refused using this reviewed guard.`;
 }
 
 function conversationalModelFailure(error: unknown): string {
@@ -1586,31 +1615,18 @@ async function reviewPreparedDeterministicApproval(input: {
       : template.source === "model_interview"
         ? "Natural-language policy interpreted by the selected model and validated by Runner"
         : "Model-proposed from structural metadata and validated by Runner";
-    const choice = await input.prompter.choose("EXACT DETERMINISTIC APPROVAL POLICY", [
+    const choice = await input.prompter.choose("REVIEW EXACT AUTO-APPROVAL POLICY", [
       { value: "confirm", label: "Use this exact disabled policy [recommended]", detail: "Saves policy conditions and shown circuit breakers together; it approves nothing now." },
       ...(input.modelInterview
         ? [{ value: "change", label: "Change the policy in natural language", detail: "Describe the business rule; Runner will validate and show the exact replacement." }]
         : []),
       { value: "human", label: "Keep human approval", detail: "Prepare the action without deterministic auto-approval." },
+      { value: "details", label: "View provenance and validation details", detail: "Show the model/Runner source, rationale, and any normalization without changing the policy." },
       { value: "manual", label: "Use advanced exact policy controls", detail: "Review every condition and limit with low-level controls." },
       { value: "back", label: "Back", detail: "Return to the proposal-action review." },
     ], [
       `Target: ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
-      `Source: ${source}`,
-      "All conditions must pass. Any failed, missing, or uncertain check returns the proposal to human review.",
-      "CONDITIONS",
-      ...(template.auto_approval.conditions ?? []).map((condition) => `  ${approvalConditionSummary(condition)}`),
-      `Per-action circuit breaker: ${template.auto_approval.max_per_day} auto-approval(s) per rolling 24 hours`,
-      ...(template.auto_approval.max_total_per_day === undefined
-        ? []
-        : [`Aggregate circuit breaker: ${template.auto_approval.max_total_per_day} ${template.auto_approval.total_field} per rolling 24 hours`]),
-      ...(template.shared_limits.length
-        ? ["TRUSTED-SCOPE CIRCUIT BREAKERS", ...template.shared_limits.map((limit) => `  ${actionBoundaryLimitSummary(limit)}`)]
-        : ["Trusted-scope circuit breakers: none beyond the per-action policy ceiling"]),
-      ...(template.normalizations?.length
-        ? ["RUNNER NORMALIZED", ...template.normalizations.map((line) => `  ${line}`)]
-        : []),
-      `Why: ${template.rationale}`,
+      ...compactDeterministicApprovalPolicyLines(template, input.preparation.summary.arguments),
       "Approval authority: DISABLED | apply authority: NONE | source database changed: no",
       ...notice,
     ], "confirm");
@@ -1618,6 +1634,18 @@ async function reviewPreparedDeterministicApproval(input: {
     if (choice === "confirm") return template;
     if (choice === "human") return "human";
     if (choice === "manual") return "manual";
+    if (choice === "details") {
+      await input.prompter.message("AUTO-APPROVAL POLICY DETAILS", [
+        `Source: ${source}`,
+        `Why: ${template.rationale}`,
+        ...(template.normalizations?.length
+          ? ["RUNNER NORMALIZED", ...template.normalizations.map((line) => `  ${line}`)]
+          : ["Runner normalization: none"]),
+        ...template.shared_limits.map((limit) => actionBoundaryLimitSummary(limit)),
+        "No policy authority, apply authority, or source write was granted.",
+      ], "Back to exact policy review");
+      continue;
+    }
     if (!choice || choice === "back") return "back";
     if (choice !== "change" || !input.modelInterview) continue;
     let policyQuestion = "Describe exactly which proposals may auto-approve and the rolling limits.";
@@ -1626,9 +1654,12 @@ async function reviewPreparedDeterministicApproval(input: {
     while (true) {
       const answer = pendingPolicyAnswer ?? await input.prompter.text(policyQuestion, {
           title: "DESCRIBE THE AUTO-APPROVAL RULE",
-          context: [
-            `Target: ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
-            `Proposal fields: ${input.preparation.summary.arguments.map((argument) => `${argument.field} (${argument.constraint})`).join("; ")}`,
+        context: [
+          `Target: ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
+            "PROPOSAL ENVELOPE - ALWAYS ENFORCED",
+            ...input.preparation.summary.arguments.map((argument) =>
+              `  ${argument.label ? `${argument.label} (${argument.field})` : argument.field} | ${argument.constraint}`),
+            "Describe a narrower automatic-approval subset; the proposal envelope above still applies first.",
             "Example: routine or elevated follow-ups up to 30 minutes, at most 3 per agent per day and 60 minutes total.",
             "Runner will validate exact fields, values, thresholds, trusted scope, and windows before showing a replacement.",
             "Schema-declared enum/check values are reviewed metadata. Observed row values are never queried or sent automatically.",
@@ -1733,6 +1764,63 @@ async function reviewPreparedDeterministicApproval(input: {
   }
 }
 
+function compactDeterministicApprovalPolicyLines(
+  template: QuickDeterministicApprovalTemplate,
+  proposalArguments: Array<{ field: string; label?: string; constraint: string }> = [],
+): string[] {
+  const conditions = template.auto_approval.conditions ?? [];
+  const shared = template.shared_limits.map((limit) => {
+    const scope = {
+      tenant: "Trusted tenant",
+      tenant_principal: "Tenant + principal",
+      tenant_object: "Tenant + target row",
+      capability: "This action",
+      boundary: "Action Boundary",
+    }[limit.scope];
+    const ceiling = limit.kind === "count"
+      ? `${limit.maximum} approvals`
+      : `${limit.maximum} total ${limit.field}`;
+    return `  ${scope} | ${ceiling} / ${formatLimitWindow(limit.window_seconds)}`;
+  });
+  return [
+    ...(proposalArguments.length
+      ? [
+          "PROPOSAL ENVELOPE - ALWAYS ENFORCED",
+          ...proposalArguments.map((argument) =>
+            `  ${argument.label ? `${argument.label} (${argument.field})` : argument.field} | ${argument.constraint}`),
+        ]
+      : []),
+    "AUTO-APPROVE ONLY WHEN - ALL RULES PASS",
+    "  FIELD / SOURCE | EXACT RULE",
+    "  ---------------+-----------",
+    ...conditions.map((condition) => `  ${compactApprovalConditionSummary(condition)}`),
+    "CIRCUIT BREAKERS",
+    `  Per action | ${template.auto_approval.max_per_day} approvals / 24 hours`,
+    ...(template.auto_approval.max_total_per_day === undefined
+      ? []
+      : [`  Aggregate | ${template.auto_approval.max_total_per_day} total ${template.auto_approval.total_field} / 24 hours`]),
+    ...(shared.length ? shared : ["  Trusted scope | no additional shared ceiling"]),
+    "Fallback | human review on failed, missing, uncertain, or exhausted checks",
+  ];
+}
+
+function compactApprovalConditionSummary(condition: GuidedActionAutoApprovalCondition): string {
+  const source = condition.source === "before" ? "current row" : "proposal";
+  const field = `${source} ${condition.field}`;
+  if (condition.operator === "in") {
+    return `${field} | one of ${(condition.values ?? []).map(formatActionValue).join(", ")}`;
+  }
+  if (condition.operator === "max_length") {
+    return `${field} | at most ${formatActionValue(condition.value)} characters`;
+  }
+  const operator = condition.operator === "lte"
+    ? "<="
+    : condition.operator === "gte"
+      ? ">="
+      : "=";
+  return `${field} | ${operator} ${formatActionValue(condition.value)}`;
+}
+
 async function collectOperatorApprovedValueContext(input: {
   prompter: ActionControlPrompter;
   session: ActionBoundaryInterviewSession;
@@ -1827,16 +1915,17 @@ function withActionInterviewProgress<T>(message: string, operation: () => Promis
 function quickActionCardLines(
   summary: Extract<ReturnType<typeof prepareQuickProposalAction>, { state: "ready" }>["summary"],
 ): string[] {
-  const argumentsSummary = summary.arguments.length
-    ? summary.arguments.map((argument) =>
-        `${argument.label ?? argument.field} (${argument.constraint})`).join("; ")
-    : "none";
   return [
     `Target: ${summary.operation.toUpperCase()} ${summary.resource_label ?? summary.resource}`,
-    `Agent supplies: ${argumentsSummary}`,
-    `Runner supplies: ${summary.trusted_context.join("; ") || "no trusted scope fields"}`,
-    `Retry guard: ${summary.retry_or_conflict_guard} | Approval: ${summary.approval}`,
-    `PROPOSAL ONLY | writes ${summary.writeback.toUpperCase()} | no SQL, scope, activation, approval, or apply authority`,
+    "AGENT-SUPPLIED PROPOSAL ENVELOPE",
+    ...(summary.arguments.length
+      ? summary.arguments.map((argument) =>
+          `  ${argument.label ? `${argument.label} (${argument.field})` : argument.field} | ${argument.constraint}`)
+      : ["  none | one exact reviewed row only"]),
+    `Trusted context | ${summary.trusted_context.join("; ") || "no trusted scope fields"}`,
+    `Retry/conflict guard | ${summary.retry_or_conflict_guard}`,
+    `Approval | ${summary.approval}`,
+    `State | PROPOSAL ONLY | writes ${summary.writeback.toUpperCase()} | no SQL, activation, approval, or apply authority`,
   ];
 }
 
@@ -1930,6 +2019,7 @@ function formatActionPromptContextLine(
     { prefix: "Action:", style: theme.value },
     { prefix: "Target:", style: theme.value },
     { prefix: "You said:", style: theme.value },
+    { prefix: "Operator answer:", style: theme.value },
   ].find(({ prefix }) => trimmed.startsWith(prefix));
   if (emphasized) {
     const value = trimmed.slice(emphasized.prefix.length).trimStart();
@@ -2524,9 +2614,14 @@ export async function reviewActionDraft(input: {
       },
       { value: "back", label: "Leave disabled" },
     ], [
-      ...actionActivationReviewLines(design, resource),
+      ...actionActivationReviewLines(
+        design,
+        resource,
+        (await guidedActionStatus(input.projectRoot)).action_boundary.draft?.authority.shared_limits
+          .filter((limit) => !limit.capability || limit.capability === draft.capability) ?? [],
+      ),
       "Rehearsal: passed for this exact disabled revision; source database changed: no.",
-    ]);
+    ], "back");
     if (choice === "activate") {
       const actor = input.env.SYNAPSOR_OPERATOR_ACTOR ?? input.env.USER ?? "local_operator";
       operatorSession.actor = actor;
@@ -3565,13 +3660,11 @@ async function reviewImportedSuggestion(input: {
     input.prompter,
     proposed.intent,
     [
-      "MODEL-SUGGESTED ACTION DRAFT",
-      `Target: ${proposed.operation.toUpperCase()} ${proposed.resource}`,
-      `Proposed fields: ${proposed.operation === "delete" ? "none" : (proposed.fields ?? []).join(", ") || "none"}`,
+      "ACTION DRAFT READY - NOT ACTIVE",
       proposed.approval_policy_proposal
-        ? "Deterministic conditions were proposed from structural metadata and revalidated by Runner; they are not authority."
+        ? "Model-proposed approval rules were revalidated by Runner; review their exact conditions separately."
         : "Approval remains human by default.",
-      "Review unresolved business bounds below. Nothing activates, approves, applies, or writes in this step.",
+      "Nothing activates, approves, applies, or writes in this step.",
     ],
     {
       initialDecisions: {
@@ -3843,21 +3936,22 @@ export function actionReviewLines(
 export function actionActivationReviewLines(
   action: GuidedActionInput,
   resource: GuidedActionResourceOption,
+  sharedLimits: ActionBoundarySharedLimitV1[] = [],
 ): string[] {
   const fieldByName = new Map(resource.structurally_eligible_fields.map((field) => [field.name, field]));
   const supplied = action.operation === "delete"
-    ? "none (one exact reviewed row only)"
+    ? ["Agent fields | none; one exact reviewed row only"]
     : (action.patches ?? []).map((patch) => {
         const field = fieldByName.get(patch.column);
         const name = field?.label ? `${field.label} (${patch.column})` : patch.column;
-        if (patch.value_source === "fixed") return `${name}=${formatActionValue(patch.fixed_value)}`;
+        if (patch.value_source === "fixed") return `Agent field ${name} | fixed ${formatActionValue(patch.fixed_value)}`;
         if (patch.minimum !== undefined || patch.maximum !== undefined) {
-          return `${name} ${patch.minimum ?? "-infinity"}..${patch.maximum ?? "infinity"}`;
+          return `Agent field ${name} | ${patch.minimum ?? "-infinity"}..${patch.maximum ?? "infinity"}`;
         }
-        if (patch.max_length) return `${name} <=${patch.max_length} chars`;
-        if (field?.enum_values.length) return `${name} in ${field.enum_values.join("|")}`;
-        return name;
-      }).join("; ");
+        if (patch.max_length) return `Agent field ${name} | at most ${patch.max_length} chars`;
+        if (field?.enum_values.length) return `Agent field ${name} | one of ${field.enum_values.join(", ")}`;
+        return `Agent field ${name} | reviewed typed value`;
+      });
   const trustedScope = resource.organization_scope
     ? `whole organization ${resource.organization_scope.organization_id}`
     : `tenant ${resource.tenant_key}`;
@@ -3868,21 +3962,22 @@ export function actionActivationReviewLines(
   ].filter((value): value is string => Boolean(value)).join("; ");
   const approvalLines = action.auto_approval
     ? [
-        "Approval: deterministic reviewed subset with human fallback.",
-        `Conditions: ${reviewedAutoApprovalConditions(action.auto_approval)
-          .map(approvalConditionSummary).join("; ")}.`,
-        `Circuit breakers: ${action.auto_approval.max_per_day}/day${action.auto_approval.max_total_per_day !== undefined
-          ? `; ${action.auto_approval.max_total_per_day} total ${action.auto_approval.total_field}/day`
-          : ""}.`,
+        ...reviewedAutoApprovalConditions(action.auto_approval)
+          .map((condition) => `Auto-approve ${compactApprovalConditionSummary(condition)}`),
+        `Action limits | ${action.auto_approval.max_per_day} approvals / 24 hours${action.auto_approval.max_total_per_day !== undefined
+          ? `; ${action.auto_approval.max_total_per_day} total ${action.auto_approval.total_field} / 24 hours`
+          : ""}`,
+        ...sharedLimits.map((limit) => `Shared limit | ${actionBoundaryLimitSummary(limit)}`),
+        "Fallback | human review on failed, missing, uncertain, or exhausted checks",
       ]
-    : [`Approval: ${action.required_approvals ?? 1} x ${action.approval_role}; human review.`];
+    : [`Approval | ${action.required_approvals ?? 1} x ${action.approval_role}; human review`];
   return [
     `Target: ${action.operation.toUpperCase()} ${resource.id}`,
-    `Agent supplies: ${supplied || "none"}`,
-    `Runner supplies: ${trustedScope}${resource.principal_key ? ` + principal ${resource.principal_key}` : ""}; never model arguments.`,
-    `Guards: ${guard}.`,
+    ...supplied,
+    `Trusted context | ${trustedScope}${resource.principal_key ? ` + principal ${resource.principal_key}` : ""}; never model arguments`,
+    `Guards | ${guard}`,
     ...approvalLines,
-    `Authority: ${action.authority_posture ?? "proposal_only"}; writeback ${action.writeback?.mode ?? "none"}.`,
+    `State | ${action.authority_posture ?? "proposal_only"} | writeback ${action.writeback?.mode ?? "none"}`,
   ];
 }
 

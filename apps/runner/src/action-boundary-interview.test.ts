@@ -64,9 +64,10 @@ describe("conversational Action Boundary interview", () => {
       label: "What is the smallest and largest estimated minutes the agent may propose?",
       context: expect.arrayContaining([
         "Action: INSERT support_ops.follow_up_tasks",
+        "Reviewed proposal field: estimated_minutes",
         "Where used: every INSERT support_ops.follow_up_tasks proposal may supply estimated_minutes only inside the confirmed range.",
-        "Runner rejects a proposal outside the range before approval. A later auto-approval rule may be narrower.",
-        "This sets an allowed proposal range, not a default value, approval, activation, or database write.",
+        "Outside this range: Runner refuses the proposal before approval. Auto-approval may use a narrower range later.",
+        "Result: one disabled proposal bound for your exact confirmation; no activation or database write.",
       ]),
     });
   });

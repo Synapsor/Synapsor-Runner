@@ -102,10 +102,9 @@ export function actionBoundaryDecisionQuestion(
         ...(target ? [`Action: ${target}`] : []),
         `Reviewed proposal field: ${decision.field}`,
         `Where used: every ${action} proposal may supply ${decision.field} only inside the confirmed range.`,
-        "Runner rejects a proposal outside the range before approval. A later auto-approval rule may be narrower.",
+        "Outside this range: Runner refuses the proposal before approval. Auto-approval may use a narrower range later.",
         "Answer in ordinary language, for example: between five minutes and two hours.",
-        "This sets an allowed proposal range, not a default value, approval, activation, or database write.",
-        "The model only translates this answer. Runner validates and shows the exact numeric range before saving it.",
+        "Result: one disabled proposal bound for your exact confirmation; no activation or database write.",
       ],
     };
   }
