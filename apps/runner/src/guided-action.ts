@@ -169,6 +169,8 @@ export type GuidedActionDraft = {
   generation_lock_fingerprint: `sha256:${string}`;
   action_boundary_name?: string;
   action_boundary_digest?: `sha256:${string}`;
+  /** Trusted-scope limits reviewed for this exact disabled action revision. */
+  action_boundary_shared_limits?: ActionBoundarySharedLimitV1[];
   contract_digest: `sha256:${string}`;
   dsl_path: string;
   contract_path: string;
@@ -1291,6 +1293,30 @@ export async function guidedActionStatus(projectRootInput: string): Promise<Guid
   };
 }
 
+/**
+ * Persists the trusted-scope limits that belong to one exact disabled action.
+ * The Action Boundary draft remains the authority; this copy lets a later
+ * multi-action review reconstruct each disabled prospective revision without
+ * borrowing limits from whichever draft happens to be current.
+ */
+export async function recordGuidedActionBoundaryLimits(input: {
+  projectRoot: string;
+  capabilityName: string;
+  limits?: ActionBoundarySharedLimitV1[];
+}): Promise<GuidedActionDraft> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const draft = await readGuidedActionDraft(projectRoot, input.capabilityName);
+  const updated: GuidedActionDraft = {
+    ...draft,
+    ...(input.limits === undefined
+      ? { action_boundary_shared_limits: undefined }
+      : { action_boundary_shared_limits: structuredClone(input.limits) }),
+  };
+  await writeAtomic(path.join(actionDraftRoot(projectRoot, draft.capability), "draft.json"), json(updated));
+  await updateActionIndex(projectRoot, updated);
+  return updated;
+}
+
 export async function reviseGuidedActionBoundary(input: {
   projectRoot: string;
   inspection: SchemaInspection;
@@ -1523,6 +1549,15 @@ async function prospectiveActionBoundaryDraft(input: {
     ),
   });
   const current = status.action_boundary.draft ?? status.action_boundary.active;
+  const includedCapabilities = new Set([
+    ...existingCandidates.map((item) => item.capability.capability),
+    candidate.capability.capability,
+  ]);
+  const sharedLimits = uniqueSharedLimits([
+    ...(current?.authority.shared_limits.filter((limit) =>
+      !limit.capability || includedCapabilities.has(limit.capability)) ?? []),
+    ...(input.candidateDraft.action_boundary_shared_limits ?? []),
+  ]);
   return buildActionBoundaryDraft({
     name: current?.name ?? DEFAULT_ACTION_BOUNDARY_NAME,
     label: current?.label ?? "Default action boundary",
@@ -1530,9 +1565,15 @@ async function prospectiveActionBoundaryDraft(input: {
       ?? input.jobIntent
       ?? "Allow the reviewed agent actions collected for this project.",
     candidates: [...existingCandidates, candidate],
-    sharedLimits: current?.authority.shared_limits ?? [],
+    sharedLimits,
     ...(input.now ? { now: input.now } : {}),
   });
+}
+
+function uniqueSharedLimits(limits: ActionBoundarySharedLimitV1[]): ActionBoundarySharedLimitV1[] {
+  const byId = new Map<string, ActionBoundarySharedLimitV1>();
+  for (const limit of limits) byId.set(limit.id, limit);
+  return [...byId.values()];
 }
 
 async function actionBoundaryCandidateForActivation(

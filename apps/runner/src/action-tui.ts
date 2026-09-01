@@ -20,6 +20,7 @@ import {
   guidedActionStatus,
   readGuidedActionDraft,
   readGuidedActionDesignInput,
+  recordGuidedActionBoundaryLimits,
   recordGuidedActionPreview,
   reviseGuidedActionAuthority,
   reviseGuidedActionBoundary,
@@ -123,6 +124,7 @@ export type ActionControlPrompter = {
   text(label: string, options?: ActionTextPromptOptions): Promise<string | undefined>;
   confirm(label: string, defaultValue?: boolean): Promise<boolean | undefined>;
   message(title: string, lines: string[], backLabel?: string): Promise<void>;
+  rememberDetails?(title: string, lines: string[]): void;
 };
 
 export type ActionControlPlaneResult = {
@@ -1989,11 +1991,11 @@ function conversationalDeterministicApprovalModelLines(
     : template.source === "reviewed_structure"
       ? `Runner prepared this conservative starting auto-approval policy for ${target}:`
       : `I drafted this starting auto-approval policy for ${target}:`;
-  const limitLines = [
-    `- This action: at most ${template.auto_approval.max_per_day} approvals per 24 hours`,
+  const limitPhrases = [
+    `this action at most ${template.auto_approval.max_per_day} approvals per 24 hours`,
     ...(template.auto_approval.max_total_per_day === undefined
       ? []
-      : [`- Aggregate: at most ${template.auto_approval.max_total_per_day} total ${template.auto_approval.total_field ?? "value"} per 24 hours`]),
+      : [`aggregate at most ${template.auto_approval.max_total_per_day} total ${template.auto_approval.total_field ?? "value"} per 24 hours`]),
     ...template.shared_limits.map((limit) => {
       const scope = {
         tenant: "trusted tenant",
@@ -2005,13 +2007,15 @@ function conversationalDeterministicApprovalModelLines(
       const ceiling = limit.kind === "count"
         ? `${limit.maximum} approvals`
         : `${limit.maximum} total ${limit.field}`;
-      return `- ${scope}: at most ${ceiling} per ${formatLimitWindow(limit.window_seconds)}`;
+      return `${scope} at most ${ceiling} per ${formatLimitWindow(limit.window_seconds)}`;
     }),
   ];
+  const conditionPhrases = [...conditionsByField]
+    .map(([field, rules]) => `${field} ${rules.join(" and ")}`);
   return [
     sourceLine,
-    ...[...conditionsByField].map(([field, rules]) => `- ${field}: ${rules.join(" and ")}`),
-    ...limitLines,
+    `Conditions: ${conditionPhrases.join("; ") || "human review only"}.`,
+    `Circuit breakers: ${limitPhrases.join("; ")}.`,
     "Anything else requires human review.",
     "Press Enter to use it, or describe what should change. Say show details for the full exact policy.",
   ];
@@ -2100,6 +2104,40 @@ export function conversationalActionActivationReviewLines(
       : []),
     "After activation: agent may propose only.",
     "Approval OFF | apply OFF | writeback OFF.",
+  ];
+}
+
+export function conciseConversationalActionActivationReviewLines(
+  action: GuidedActionInput,
+  resource: GuidedActionResourceOption,
+  sharedLimits: ActionBoundarySharedLimitV1[] = [],
+): string[] {
+  const fieldByName = new Map(resource.structurally_eligible_fields.map((field) => [field.name, field]));
+  const proposalFields = action.operation === "delete"
+    ? "one exact reviewed row; no agent-supplied fields"
+    : (action.patches ?? []).map((patch) => {
+        const field = fieldByName.get(patch.column);
+        return `${field?.label ?? patch.column}: ${compactActivationProposalEnvelope(patch, field)}`;
+      }).join("; ") || "no agent-supplied fields";
+  const approvalConditions = action.auto_approval
+    ? reviewedAutoApprovalConditions(action.auto_approval).map(approvalConditionSummary).join("; ")
+    : `${action.required_approvals ?? 1} x ${action.approval_role}; human review`;
+  const shared = sharedLimits.map(actionBoundaryLimitSummary).join(" ");
+  const trustedScope = resource.organization_scope
+    ? `whole organization ${resource.organization_scope.organization_id}`
+    : resource.principal_key
+      ? "tenant + principal"
+      : "tenant (no principal restriction)";
+  return [
+    `Action: ${action.operation.toUpperCase()} ${resource.id}`,
+    `Agent proposal: ${proposalFields}`,
+    `Trusted scope: ${trustedScope}; supplied only by Runner`,
+    action.auto_approval
+      ? `Auto-approve only when: ${approvalConditions || "no deterministic condition"}`
+      : `Approval: ${approvalConditions}`,
+    ...(shared ? [`Shared circuit breaker: ${shared}`] : []),
+    action.auto_approval ? "Anything outside the exact policy requires human review." : "Every proposal requires human review.",
+    "After activation: propose only; approval, apply, and writeback remain outside the agent.",
   ];
 }
 
@@ -2553,6 +2591,7 @@ async function reviewAndStageActionBoundaryLimits(input: {
 async function stageActionBoundaryLimits(input: {
   projectRoot: string;
   inspection: SchemaInspection;
+  capability: string;
   limits: ActionBoundarySharedLimitV1[];
 }): Promise<void> {
   const status = await guidedActionStatus(input.projectRoot);
@@ -2561,14 +2600,29 @@ async function stageActionBoundaryLimits(input: {
     throw new Error("ACTION_BOUNDARY_DRAFT_REQUIRED: the proposed shared limits need one disabled Action Boundary revision.");
   }
   const proposedIds = new Set(input.limits.map((limit) => limit.id));
-  await reviseGuidedActionBoundary({
+  const previousDraft = await readGuidedActionDraft(input.projectRoot, input.capability);
+  await recordGuidedActionBoundaryLimits({
     projectRoot: input.projectRoot,
-    inspection: input.inspection,
-    sharedLimits: [
-      ...current.authority.shared_limits.filter((limit) => !proposedIds.has(limit.id)),
-      ...input.limits,
-    ],
+    capabilityName: input.capability,
+    limits: input.limits,
   });
+  try {
+    await reviseGuidedActionBoundary({
+      projectRoot: input.projectRoot,
+      inspection: input.inspection,
+      sharedLimits: [
+        ...current.authority.shared_limits.filter((limit) => !proposedIds.has(limit.id)),
+        ...input.limits,
+      ],
+    });
+  } catch (error) {
+    await recordGuidedActionBoundaryLimits({
+      projectRoot: input.projectRoot,
+      capabilityName: input.capability,
+      limits: previousDraft.action_boundary_shared_limits,
+    }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export function suggestedActionBoundaryLimits(
@@ -2966,9 +3020,16 @@ export async function reviewActionDraft(input: {
     const actionBoundary = await guidedActionStatus(input.projectRoot);
     const sharedLimits = actionBoundary.action_boundary.draft?.authority.shared_limits
       .filter((limit) => !limit.capability || limit.capability === draft.capability) ?? [];
-    const activationReview = input.suppressActivationSummary
+    const exactActivationReview = input.suppressActivationSummary
       ? conversationalActionActivationReviewLines(design, resource, sharedLimits)
       : actionActivationReviewLines(design, resource, sharedLimits);
+    const activationReview = input.suppressActivationSummary
+      ? conciseConversationalActionActivationReviewLines(design, resource, sharedLimits)
+      : exactActivationReview;
+    input.prompter.rememberDetails?.("Exact Action activation review", [
+      ...exactActivationReview,
+      "Rehearsal: passed for this exact disabled revision; source database changed: no.",
+    ]);
     const choice = await input.prompter.choose("ACTIVATE PROPOSAL ACTION", [
       {
         value: "activate",

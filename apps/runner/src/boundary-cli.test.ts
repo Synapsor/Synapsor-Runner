@@ -2016,6 +2016,8 @@ describe("boundary operator-plane CLI", () => {
             streamRunner: async (...args) => { chatRunner(...args); },
             streamCheckpoint: async (...args) => { chatRunner(...args); },
             streamModel: async (lines) => { chatModel(lines); },
+            rememberDetails: vi.fn(),
+            showDetails: vi.fn(),
             providerStream: vi.fn(),
             progress: chatProgress,
             close: chatClose,
@@ -2157,6 +2159,8 @@ describe("boundary operator-plane CLI", () => {
             streamRunner: async () => undefined,
             streamCheckpoint: async () => undefined,
             streamModel: async () => undefined,
+            rememberDetails: vi.fn(),
+            showDetails: vi.fn(),
             providerStream: vi.fn(),
             progress: async <T>(_message: string, operation: () => Promise<T>) => operation(),
             close: chatClose,
@@ -2942,6 +2946,8 @@ describe("boundary operator-plane CLI", () => {
             streamModel: async (lines) => {
               transcript.push({ speaker: "model", lines });
             },
+            rememberDetails: vi.fn(),
+            showDetails: vi.fn(),
             providerStream: vi.fn(),
             progress: async (_message, operation) => operation(),
             close: vi.fn(),
@@ -2973,9 +2979,8 @@ describe("boundary operator-plane CLI", () => {
         speaker: "check",
         lines: expect.arrayContaining([
           "Runner verified",
-          expect.stringContaining("Read plan"),
-          expect.stringContaining("Action target"),
-          "Read and Action authority remain off",
+          "1 Read plan and 1 Action suggestion passed exact structure checks",
+          "Read and Action authority remain off · /details shows the exact plans and checks",
         ]),
       });
       expect(transcript.filter((entry) => entry.lines[0] === "Runner verified")).toHaveLength(1);

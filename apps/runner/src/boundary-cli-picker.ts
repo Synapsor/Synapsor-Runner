@@ -200,6 +200,8 @@ export type BoundaryReviewInteractiveSession = {
     lines: string[],
     tone?: "normal" | "success" | "warning" | "danger",
   ): void;
+  /** Retain exact deterministic context for an operator-requested details view. */
+  rememberDetails?(title: string, lines: string[]): void;
   chooseResource(
     resources: BoundaryResourceReviewSummary[],
     overview?: BoundaryReviewOverview,

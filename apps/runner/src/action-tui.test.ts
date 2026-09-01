@@ -7,6 +7,7 @@ import {
   actionBoundaryApprovalStatusLine,
   actionBoundaryLimitSummary,
   actionActivationReviewLines,
+  conciseConversationalActionActivationReviewLines,
   conversationalActionActivationReviewLines,
   actionDraftUsesQuickResume,
   actionReviewLines,
@@ -283,6 +284,50 @@ describe("Safe Action terminal control plane", () => {
     expect(rendered).toContain("Approval OFF | apply OFF | writeback OFF");
     expect(rendered).not.toContain("Auto-approve proposal credit_cents |");
     expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(76);
+  });
+
+  it("summarizes the Action activation gate while retaining exact trusted-scope limits", () => {
+    const action = {
+      capability_name: "orders.propose_credit",
+      description: "Propose one bounded order credit.",
+      business_object: "order",
+      resource: "public.orders",
+      operation: "update" as const,
+      conflict_column: "version",
+      patches: [
+        { column: "status", value_source: "argument" as const, argument_name: "status" },
+        { column: "credit_cents", value_source: "argument" as const, argument_name: "credit_cents", minimum: 0, maximum: 2500 },
+      ],
+      approval_role: "action_reviewer",
+      required_approvals: 1,
+      auto_approval: {
+        conditions: [
+          { field: "status", operator: "in" as const, values: ["open"] },
+          { field: "credit_cents", operator: "lte" as const, value: 500 },
+        ],
+        max_per_day: 3,
+      },
+      authority_posture: "proposal_only" as const,
+      writeback: { mode: "none" as const },
+      confirmed_trusted_scope: true,
+    };
+    const lines = conciseConversationalActionActivationReviewLines(action, orders, [{
+      id: "credit-per-principal",
+      kind: "count",
+      scope: "tenant_principal",
+      maximum: 3,
+      window_seconds: 86_400,
+      capability: action.capability_name,
+    }]);
+    const rendered = lines.join("\n");
+
+    expect(rendered).toContain("Action: UPDATE public.orders");
+    expect(rendered).toContain("credit_cents: 0 through 2500");
+    expect(rendered).toContain("proposal status must be one of \"open\"");
+    expect(rendered).toContain("At most 3 deterministic approvals");
+    expect(rendered).toContain("trusted tenant + principal in 1 day");
+    expect(rendered).toContain("propose only; approval, apply, and writeback remain outside the agent");
+    expect(rendered).not.toContain("+----------------");
   });
 
   it("prepares one consolidated proposal-only action from unique reviewed intent", async () => {
@@ -620,7 +665,7 @@ describe("Safe Action terminal control plane", () => {
     const interpretedPolicyPrompt = textPrompts.find((candidate) =>
       candidate.options?.conversation?.modelLines[0]?.startsWith("I interpreted your auto-approval policy"));
     expect(interpretedPolicyPrompt?.options?.conversation?.modelLines).toEqual(expect.arrayContaining([
-      expect.stringContaining("credit_cents: <= 500"),
+      expect.stringContaining("Conditions: credit_cents <= 500"),
       expect.stringContaining("3 approvals per 24 hours"),
       expect.stringContaining("1000 total credit_cents"),
       expect.stringContaining("trusted tenant + principal"),

@@ -103,7 +103,7 @@ export function actionBoundaryDecisionQuestion(
         `Reviewed proposal field: ${decision.field}`,
         `Where used: every ${action} proposal may supply ${decision.field} only inside the confirmed range.`,
         "Outside this range: Runner refuses the proposal before approval. Auto-approval may use a narrower range later.",
-        "Answer in ordinary language, for example: between five minutes and two hours.",
+        "Answer in ordinary language. State both ends and include the business unit when it matters.",
         "Result: one disabled proposal bound for your exact confirmation; no activation or database write.",
       ],
     };
@@ -296,7 +296,7 @@ export async function interpretActionBoundaryPolicy(input: {
         return interviewRefusal("Runner accepts one policy interpretation and one bounded correction only.");
       }
       try {
-        resolution = parsePolicyResolution(args, input.action, input.resource, requiredLimitScope);
+        resolution = parsePolicyResolution(args, input.action, input.resource, requiredLimitScope, answer);
         return {
           ok: true,
           value: {
@@ -737,6 +737,7 @@ function parsePolicyResolution(
   action: GuidedActionInput,
   resource: GuidedActionResourceOption,
   requiredLimitScope?: RequiredTrustedPolicyScope,
+  operatorAnswer?: string,
 ): ActionBoundaryPolicyResolution {
   if (value.status === "clarification") {
     return {
@@ -801,6 +802,7 @@ function parsePolicyResolution(
       `The operator said ${requiredLimitScope.phrase}, so shared_limits must include trusted scope ${requiredLimitScope.scope}; max_per_day alone is not scoped that way.`,
     );
   }
+  assertExplicitPolicyDurationsPreserved(operatorAnswer, sharedLimits, Boolean(requiredLimitScope));
   const rationale = optionalShortText(value.rationale, "rationale");
   return {
     state: "resolved",
@@ -815,6 +817,62 @@ function parsePolicyResolution(
     authority_granted: false,
     source_database_changed: false,
   };
+}
+
+function assertExplicitPolicyDurationsPreserved(
+  operatorAnswer: string | undefined,
+  sharedLimits: Array<Omit<ActionBoundarySharedLimitV1, "id" | "capability">>,
+  requireSharedLimitMatch: boolean,
+): void {
+  if (!operatorAnswer) return;
+  const explicit = explicitDurationSeconds(operatorAnswer);
+  if (!explicit.length) return;
+  const available = new Set(sharedLimits.map((limit) => limit.window_seconds));
+  if (!requireSharedLimitMatch) available.add(86_400); // max_per_day is always a rolling 24-hour action limit.
+  const missing = explicit.find((duration) => !available.has(duration.seconds));
+  if (!missing) return;
+  const interpreted = [...available].map(formatDurationSeconds).join(", ") || "no matching window";
+  throw new Error(
+    `The operator explicitly stated a window of ${formatDurationSeconds(missing.seconds)} (${missing.phrase}), but the interpreted policy uses ${interpreted}. Preserve the exact duration in window_seconds or ask for clarification.`,
+  );
+}
+
+function explicitDurationSeconds(value: string): Array<{ seconds: number; phrase: string }> {
+  const multipliers: Record<string, number> = {
+    second: 1,
+    sec: 1,
+    minute: 60,
+    min: 60,
+    hour: 3_600,
+    hr: 3_600,
+    day: 86_400,
+    week: 604_800,
+  };
+  const found = new Map<number, string>();
+  const duration = "(\\d+(?:\\.\\d+)?)\\s*(?:-|\\s)?\\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?)";
+  const patterns = [
+    new RegExp(`\\b(?:rolling|per|every|within|over|during|in\\s+(?:the\\s+)?last|last)\\s+${duration}\\b`, "gi"),
+    new RegExp(`\\b${duration}\\s+(?:rolling\\s+)?(?:window|period)\\b`, "gi"),
+  ];
+  for (const pattern of patterns) {
+    for (const match of value.matchAll(pattern)) {
+      const amount = Number(match[1]);
+      const unit = String(match[2]).toLowerCase().replace(/s$/, "");
+      const multiplier = multipliers[unit];
+      const seconds = multiplier === undefined ? NaN : amount * multiplier;
+      if (!Number.isSafeInteger(seconds) || seconds < 60 || seconds > 31_536_000) continue;
+      found.set(seconds, match[0]);
+    }
+  }
+  return [...found].map(([seconds, phrase]) => ({ seconds, phrase }));
+}
+
+function formatDurationSeconds(seconds: number): string {
+  if (seconds % 604_800 === 0) return `${seconds / 604_800} week${seconds === 604_800 ? "" : "s"}`;
+  if (seconds % 86_400 === 0) return `${seconds / 86_400} day${seconds === 86_400 ? "" : "s"}`;
+  if (seconds % 3_600 === 0) return `${seconds / 3_600} hour${seconds === 3_600 ? "" : "s"}`;
+  if (seconds % 60 === 0) return `${seconds / 60} minute${seconds === 60 ? "" : "s"}`;
+  return `${seconds} seconds`;
 }
 
 function parsePolicyCondition(
@@ -929,7 +987,7 @@ function requiredTrustedPolicyScope(
   resource: GuidedActionResourceOption,
 ): RequiredTrustedPolicyScope | undefined {
   const principalMatch = answer.match(
-    /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:authenticated\s+)?(?:agent|operator|principal|user)\b/i,
+    /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:authenticated\s+)?(?:agent|operator|principal|user|customer)\b/i,
   );
   const tenantMatch = answer.match(
     /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:tenant|org|organization|organisation)\b/i,

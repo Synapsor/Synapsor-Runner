@@ -27,6 +27,7 @@ import {
   guidedActionOptionsFromCandidate,
   prepareGuidedActionPreview,
   readGuidedActionDesignInput,
+  recordGuidedActionBoundaryLimits,
   recordGuidedActionPreview,
   reviseGuidedActionBoundary,
   reviseGuidedActionAuthority,
@@ -1164,6 +1165,94 @@ describe("guided write actions", () => {
         field: "loyalty_balance",
       }),
     ]);
+  }, 30_000);
+
+  it("keeps separate trusted-scope limits with two disabled action revisions", async () => {
+    const fixture = await activatedFitFlowFixture();
+    const create = (capabilityName: string, maximum: number) => createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: capabilityName,
+        description: `Propose one bounded loyalty balance up to ${maximum}.`,
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum,
+        }],
+        auto_approval: {
+          conditions: [{ field: "loyalty_balance", operator: "lte", value: maximum }],
+          max_per_day: 1,
+        },
+        confirmed_trusted_scope: true,
+      },
+    });
+
+    const first = await create("membership.propose_small_balance", 100);
+    const firstLimits = [{
+      id: "small_balance_per_principal",
+      kind: "count" as const,
+      scope: "tenant_principal" as const,
+      capability: first.draft.capability,
+      maximum: 1,
+      window_seconds: 1_296_000,
+    }];
+    await recordGuidedActionBoundaryLimits({
+      projectRoot: fixture.root,
+      capabilityName: first.draft.capability,
+      limits: firstLimits,
+    });
+    await reviseGuidedActionBoundary({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      sharedLimits: firstLimits,
+    });
+
+    const second = await create("membership.propose_routine_balance", 50);
+    let status = await guidedActionStatus(fixture.root);
+    expect(status.action_boundary.draft?.authority.capabilities.map((entry) => entry.capability))
+      .toEqual([second.draft.capability]);
+    expect(status.action_boundary.draft?.authority.shared_limits).toEqual([]);
+
+    const secondLimits = [{
+      id: "routine_balance_per_principal",
+      kind: "count" as const,
+      scope: "tenant_principal" as const,
+      capability: second.draft.capability,
+      maximum: 3,
+      window_seconds: 86_400,
+    }];
+    await recordGuidedActionBoundaryLimits({
+      projectRoot: fixture.root,
+      capabilityName: second.draft.capability,
+      limits: secondLimits,
+    });
+    await expect(reviseGuidedActionBoundary({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      sharedLimits: secondLimits,
+    })).resolves.toBeDefined();
+
+    status = await guidedActionStatus(fixture.root);
+    expect(status.drafts.find((draft) => draft.capability === first.draft.capability)?.action_boundary_shared_limits)
+      .toEqual(firstLimits);
+    expect(status.drafts.find((draft) => draft.capability === second.draft.capability)?.action_boundary_shared_limits)
+      .toEqual(secondLimits);
+    await expect(prepareGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: first.draft.capability,
+    })).resolves.toBeDefined();
+    await expect(prepareGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: second.draft.capability,
+    })).resolves.toBeDefined();
   }, 30_000);
 
   it("activates proposal-only first and promotes execution only through a new immutable revision", async () => {

@@ -72,6 +72,20 @@ describe("conversational Action Boundary interview", () => {
     });
   });
 
+  it("does not describe a domain-neutral numeric field with an unrelated unit", () => {
+    const question = actionBoundaryDecisionQuestion({
+      kind: "numeric_bounds",
+      title: "Set refund amount",
+      help: "Finite bounds are required.",
+      field: "amount",
+    }, "INSERT support_ops.refund_requests");
+
+    expect(question.context).toContain(
+      "Answer in ordinary language. State both ends and include the business unit when it matters.",
+    );
+    expect(question.context.join("\n")).not.toContain("minutes");
+  });
+
   it("blocks obvious secret material before an operator answer reaches a provider", async () => {
     const requestJson = vi.fn();
     await expect(interpretActionBoundaryDecision({
@@ -484,6 +498,60 @@ describe("conversational Action Boundary interview", () => {
     expect(requestJson).toHaveBeenCalledTimes(2);
     expect(requests[0]).toContain("explicitly scoped the limit");
     expect(requests[1]).toContain("shared_limits must include trusted scope tenant_principal");
+  });
+
+  it("corrects a model that changes an explicit customer rolling window", async () => {
+    let attempt = 0;
+    const requests: string[] = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(JSON.stringify(request.body));
+      attempt += 1;
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "function_call",
+            call_id: `call_action_duration_${attempt}`,
+            name: "runner__interpret_action_approval_policy",
+            arguments: JSON.stringify({
+              status: "resolved",
+              conditions: [
+                { field: "estimated_minutes", operator: "lte", value: 30 },
+                { field: "priority", operator: "in", values: ["routine", "elevated"] },
+              ],
+              max_per_day: 1,
+              shared_limits: [{
+                kind: "count",
+                scope: "tenant_principal",
+                maximum: 1,
+                window_seconds: attempt === 1 ? 129_600 : 1_296_000,
+              }],
+            }),
+          }],
+        },
+      };
+    });
+
+    const result = await interpretActionBoundaryPolicy({
+      session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      action,
+      resource: followUps,
+      answer: "Auto-approve at most one routine request per customer in a rolling 15-day window.",
+      egressAcknowledged: true,
+    });
+
+    expect(result).toMatchObject({
+      state: "resolved",
+      correction_used: true,
+      shared_limits: [{
+        scope: "tenant_principal",
+        maximum: 1,
+        window_seconds: 1_296_000,
+      }],
+    });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(requests[1]).toContain("explicitly stated a window of 15 days");
+    expect(requests[1]).toContain("15 days");
   });
 
   it("requires explicit egress acknowledgement before sending an operator answer", async () => {

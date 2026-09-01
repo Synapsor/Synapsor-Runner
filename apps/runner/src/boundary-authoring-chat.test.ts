@@ -262,6 +262,28 @@ describe("Boundary authoring chat", () => {
     expect(memory.prompts).toEqual(["you> [yes] "]);
   });
 
+  it("shows retained exact validation through /details without consuming the operator answer", async () => {
+    const memory = memoryIo({ reads: ["/details", "Between five and thirty minutes."] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    chat.rememberDetails("Validated Action policy", [
+      "Target: INSERT support.refund_requests",
+      "Trusted tenant + principal: at most 1 approval per rolling 15 days",
+      "Approval authority: disabled",
+    ]);
+
+    const answer = await chat.actionPrompter.text(
+      "What policy should apply?",
+      { title: "DESCRIBE THE AUTO-APPROVAL RULE" },
+    );
+
+    expect(answer).toBe("Between five and thirty minutes.");
+    expect(memory.prompts).toEqual(["you> ", "you> "]);
+    const transcript = memory.writes.join("");
+    expect(transcript).toContain("DETAILS - Validated Action policy");
+    expect(transcript).toContain("at most 1 approval per rolling 15 days");
+    expect(transcript).toContain("Type /details at a you> prompt");
+  });
+
   it("strips inherited terminal formatting and emphasizes the validated value", () => {
     const memory = memoryIo();
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: true });
@@ -290,7 +312,7 @@ describe("Boundary authoring chat", () => {
 
     chat.providerStream({ phase: "started" });
     chat.providerStream({ phase: "tool_started", tool: "submit_boundary_draft" });
-    chat.providerStream({ phase: "tool_delta", characters: 31 });
+    chat.providerStream({ phase: "tool_delta", characters: 64 });
     chat.providerStream({ phase: "completed" });
     await chat.streamModel(["I drafted one reviewed read plan.", "- support.tickets: count(*)"]);
     await chat.streamCheckpoint("Runner verified", [
@@ -299,14 +321,14 @@ describe("Boundary authoring chat", () => {
     ], "success");
 
     const streamed = memory.writes.slice(initialWrites).join("");
-    expect(memory.writes.slice(initialWrites).length).toBeGreaterThan(15);
+    expect(memory.writes.slice(initialWrites).length).toBeGreaterThan(10);
     expect(streamed.match(/model>/gu)).toHaveLength(1);
     expect(streamed).toContain("✓ Runner verified");
     expect(streamed).not.toContain("runner>");
     expect(streamed).toContain("support.tickets: count(*)");
     expect(streamed).not.toContain("submit_boundary_draft");
     expect(memory.setStatus).toHaveBeenCalledWith(
-      "openai[gpt-5.6-luna] is responding... 31 characters received; Runner has not accepted them",
+      "openai[gpt-5.6-luna] is responding... 64 characters received; Runner has not accepted them",
     );
     expect(memory.setStatus).toHaveBeenLastCalledWith("Runner is validating the complete streamed draft...");
   });

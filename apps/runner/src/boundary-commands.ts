@@ -3388,12 +3388,17 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       let mappedAnalysis = mapped.analysis;
       const representativeReadPlanCount = mappedWorkload.allowed.length;
       let actionSupportPlanCount = 0;
+      const readResourceNames = [...new Set(mappedWorkload.allowed.map((entry) => entry.plan.resource))];
+      const compactReadResources = readResourceNames.length <= 4
+        ? readResourceNames.join(", ")
+        : `${readResourceNames.slice(0, 4).join(", ")}, and ${readResourceNames.length - 4} more`;
+      const exactModelDraftLines = [
+        `Read plans (${mappedWorkload.allowed.length})`,
+        ...mappedWorkload.allowed.map((entry) => `- ${modelReadPlanSummary(entry.plan)}`),
+      ];
       const modelDraftLines = [
-        `I drafted ${mappedWorkload.allowed.length} representative read plan${mappedWorkload.allowed.length === 1 ? "" : "s"} for this job.`,
-        ...mappedWorkload.allowed.slice(0, 6).map((entry) => `- ${modelReadPlanSummary(entry.plan)}`),
-        ...(mappedWorkload.allowed.length > 6
-          ? [`- and ${mappedWorkload.allowed.length - 6} more`]
-          : []),
+        `I drafted ${mappedWorkload.allowed.length} representative read plan${mappedWorkload.allowed.length === 1 ? "" : "s"} across ${readResourceNames.length} reviewed table${readResourceNames.length === 1 ? "" : "s"}.`,
+        `- Reads: ${compactReadResources}`,
       ];
       if (actionIntents.length) {
       actionInspection = await (input.actionProjectInspector ?? inspectActionProject)(
@@ -3507,12 +3512,17 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         }
       }
       if (preMappedActions.length) {
+        const actionSummaries = preMappedActions.map(({ result }) => {
+          const suggestion = result.assessment.suggestion;
+          return `${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}`;
+        });
+        exactModelDraftLines.push(
+          `Action suggestions (${preMappedActions.length})`,
+          ...actionSummaries.map((summary) => `- ${summary}`),
+        );
         modelDraftLines.push(
-          `I drafted ${preMappedActions.length} bounded Action suggestion${preMappedActions.length === 1 ? "" : "s"}.`,
-          ...preMappedActions.slice(0, 6).map(({ result }) => {
-            const suggestion = result.assessment.suggestion;
-            return `- ${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}`;
-          }),
+          `I also drafted ${preMappedActions.length} bounded Action suggestion${preMappedActions.length === 1 ? "" : "s"}.`,
+          `- Proposals: ${actionSummaries.slice(0, 4).join("; ")}${actionSummaries.length > 4 ? `; and ${actionSummaries.length - 4} more` : ""}`,
         );
       }
       const supportEntries: ReadWorkloadSet["allowed"] = [];
@@ -3563,10 +3573,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
       }
       if (input.authoringChat) {
-        await input.authoringChat.streamModel(modelDraftLines);
-        await input.authoringChat.streamCheckpoint("Runner verified", [
+        const verificationDetails = [
           mappedAnalysis.status === "ready"
-            ? `${representativeReadPlanCount} displayed Read plan${representativeReadPlanCount === 1 ? "" : "s"} use reviewed identifiers and compiler-valid grammar`
+            ? `${representativeReadPlanCount} Read plan${representativeReadPlanCount === 1 ? "" : "s"} use reviewed identifiers and compiler-valid grammar`
             : "Read draft blocked; no candidate was accepted",
           ...(actionSupportPlanCount
             ? [`${actionSupportPlanCount} reviewed support plan${actionSupportPlanCount === 1 ? "" : "s"} added for exact Action review`]
@@ -3577,6 +3586,17 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           actionIntents.length
             ? "Read and Action authority remain off"
             : "Read authority remains off",
+        ];
+        input.authoringChat.rememberDetails("Validated model draft", [
+          ...exactModelDraftLines,
+          "",
+          "Runner validation",
+          ...verificationDetails,
+        ]);
+        await input.authoringChat.streamModel(modelDraftLines);
+        await input.authoringChat.streamCheckpoint("Runner verified", [
+          `${representativeReadPlanCount} Read plan${representativeReadPlanCount === 1 ? "" : "s"}${preMappedActions.length ? ` and ${preMappedActions.length} Action suggestion${preMappedActions.length === 1 ? "" : "s"}` : ""} passed exact structure checks`,
+          `${actionIntents.length ? "Read and Action authority" : "Read authority"} remain${actionIntents.length ? "" : "s"} off · /details shows the exact plans and checks`,
         ], mappedAnalysis.status === "ready" ? "success" : "warning");
       }
       workload = await storeReadWorkloadAnalysis({
@@ -3854,11 +3874,21 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         : "Next: activate the Read draft when its exact authority is correct; Action remains separate.",
   };
   if (input.authoringChat) {
-    await input.authoringChat.streamRunner(
+    input.authoringChat.rememberDetails(
       finalNotice.title,
       [...finalNotice.lines, ...(finalNotice.footer ? [finalNotice.footer] : [])],
-      finalNotice.tone,
     );
+    const readState = readBoundaryActive ? "ACTIVE - agent may Explore" : "DRAFT - no agent access";
+    const actionState = actionIntents.length === 0
+      ? "not requested"
+      : allPreparedActionsActive
+        ? `ACTIVE - ${activatedPreparedActions} proposal action${activatedPreparedActions === 1 ? "" : "s"}`
+        : `DRAFT - ${actionDrafts.length - activatedPreparedActions} action${actionDrafts.length - activatedPreparedActions === 1 ? "" : "s"} not active`;
+    await input.authoringChat.streamCheckpoint(finalNotice.title, [
+      `Read ${readState} · Action ${actionState}`,
+      `Approval ${deterministicPolicyActive ? "deterministic policy with human fallback" : "human review"} · apply outside agent authority · source unchanged`,
+      `${finalNotice.footer ?? "Continue from the Boundary screen."} · /details shows the exact authority record`,
+    ], finalNotice.tone);
   }
   return boundaryAssistResult(
     finalNotice,
@@ -5930,6 +5960,13 @@ async function confirmAndActivateFocusedBoundary(input: {
     ...formatBoundaryChatReviewSummary(context.bundle),
     ...(activationReviewNotice ? ["", ...activationReviewNotice.trimEnd().split("\n")] : []),
   ];
+  const conversationReviewContext = [
+    ...compactReviewContext.filter((line) => /^(?:Boundary:|Schema:|Trusted scope:|Reviewed:|Privacy:|Agent access:)/u.test(line)),
+    "Type /details at the next you> prompt, or choose the details row, for every field, path, limit, and fingerprint.",
+  ];
+  if (conversation) {
+    input.session.rememberDetails?.("Exact Read Boundary review", activationContext);
+  }
   const actor = localInteractiveActor();
   if (input.prepareDependentActions) {
     let accepted: boolean | undefined;
@@ -5956,7 +5993,7 @@ async function confirmAndActivateFocusedBoundary(input: {
           ],
           {
             initialValue: "continue",
-            context: compactReviewContext,
+            context: conversationReviewContext,
           },
         );
         if (choice === "details") {
@@ -6042,7 +6079,7 @@ async function confirmAndActivateFocusedBoundary(input: {
         ],
         {
           initialValue: "back",
-          context: compactReviewContext,
+          context: conversationReviewContext,
         },
       );
       if (choice === "details") {
