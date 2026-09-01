@@ -1,5 +1,6 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionBoundarySharedLimitV1 } from "@synapsor-runner/protocol";
+import type { ArgumentSpec, JsonScalar } from "@synapsor/spec";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
 import type {
   GuidedActionAutoApprovalCondition,
@@ -26,6 +27,7 @@ import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 
 const INTERPRET_DECISION_TOOL = "runner.interpret_action_boundary_answer";
 const INTERPRET_POLICY_TOOL = "runner.interpret_action_approval_policy";
+const INTERPRET_REHEARSAL_TOOL = "runner.interpret_action_rehearsal_values";
 
 export type ActionBoundaryInterviewSession = {
   provider: AskProvider;
@@ -96,6 +98,26 @@ export type ActionBoundaryPolicyResolution =
       state: "value_request";
       field: string;
       reason: string;
+      question: string;
+      model_message?: string;
+      correction_used: boolean;
+      authority_granted: false;
+      source_database_changed: false;
+    };
+
+export type ActionRehearsalResolution =
+  | {
+      state: "resolved";
+      args: Record<string, JsonScalar>;
+      summary: string[];
+      rationale?: string;
+      model_message?: string;
+      correction_used: boolean;
+      authority_granted: false;
+      source_database_changed: false;
+    }
+  | {
+      state: "clarification";
       question: string;
       model_message?: string;
       correction_used: boolean;
@@ -415,6 +437,138 @@ export async function interpretActionBoundaryPolicy(input: {
   };
 }
 
+/**
+ * Converts one ordinary-language rehearsal example into the exact scalar
+ * arguments already defined by the compiled disabled contract. This creates
+ * no proposal and grants no authority; the caller separately confirms and
+ * executes the disposable rehearsal.
+ */
+export async function interpretActionRehearsalArgs(input: {
+  session: ActionBoundaryInterviewSession;
+  capability: string;
+  target: string;
+  args: Record<string, ArgumentSpec>;
+  answer: string;
+  env?: NodeJS.ProcessEnv;
+  egressAcknowledged: boolean;
+  signal?: AbortSignal;
+}): Promise<ActionRehearsalResolution> {
+  const answer = safeOperatorText(input.answer, "Action rehearsal answer", 3_000);
+  const catalog = rehearsalCatalog(input.capability, input.target, input.args);
+  const tools: AskToolDefinition[] = [rehearsalToolDefinition(catalog)];
+  const authorityDigest = askToolSurfaceDigest(tools);
+  const configuration = interviewConfiguration(
+    input.session,
+    authorityDigest,
+    input.egressAcknowledged,
+    input.env,
+  );
+  let resolution: ActionRehearsalResolution | undefined;
+  let issue = "The model did not submit complete rehearsal values.";
+  let callCount = 0;
+  const gateway: AskToolGateway = {
+    mode: "authoring",
+    listTools: () => tools,
+    async callTool(name, args) {
+      callCount += 1;
+      if (name !== INTERPRET_REHEARSAL_TOOL || callCount > 2) {
+        return interviewRefusal("Runner accepts one rehearsal interpretation and one bounded correction only.");
+      }
+      try {
+        resolution = parseRehearsalResolution(args, input.args);
+        return {
+          ok: true,
+          value: {
+            status: resolution.state,
+            authority_granted: false,
+            source_database_changed: false,
+          },
+        };
+      } catch (error) {
+        issue = error instanceof Error ? error.message : String(error);
+        return interviewRefusal(issue);
+      }
+    },
+    async close() {},
+  };
+  const baseQuestion = [
+    "Translate one operator-provided disposable rehearsal example into exact arguments for one disabled Synapsor proposal action.",
+    `Capability: ${input.capability}`,
+    `Target: ${input.target}`,
+    `Exact compiled argument catalog: ${JSON.stringify(catalog.arguments)}`,
+    `Operator answer: ${JSON.stringify(answer)}`,
+    `Call ${INTERPRET_REHEARSAL_TOOL} exactly once.`,
+    "Submit every exact argument key in the catalog and no other key.",
+    "Use only listed enum values and stay inside every numeric and text bound.",
+    "If one required value is missing or ambiguous, submit one short clarification question instead of inventing it.",
+    "These are disposable proposal arguments only. Do not emit or request trusted tenant/principal values, credentials, SQL, approval, activation, apply, or source-write authority.",
+  ].join("\n");
+  const run = (question: string) => runAskProviderTurn({
+    configuration,
+    question,
+    history: modelAuthoringHistory(input.session.conversation),
+    gateway,
+    tools,
+    signal: input.signal ?? new AbortController().signal,
+    dependencies: input.session.dependencies,
+    authorityDigest,
+    providerSystemPrompt: [
+      "You translate one natural-language example into one required typed rehearsal tool call.",
+      "Use only the exact compiled argument names, types, enum values, and bounds supplied by Runner.",
+      "Ask one concise clarification question rather than guessing a missing value.",
+      "Never include trusted identity, credentials, SQL, authority, approval, apply, or source-write instructions.",
+    ].join(" "),
+    skipRunnerQuestionContext: true,
+    requiredInitialToolName: INTERPRET_REHEARSAL_TOOL,
+    completeAfterRequiredTool: true,
+    authorityGuard: () => canonicalJsonDigest(catalog) === canonicalJsonDigest(
+      rehearsalCatalog(input.capability, input.target, input.args),
+    ) ? authorityDigest : canonicalJsonDigest({ stale: true }),
+  });
+  const initial = await runRequiredAuthoringToolCall({
+    run,
+    question: baseQuestion,
+    toolName: INTERPRET_REHEARSAL_TOOL,
+  });
+  let correctionUsed = initial.correction_used;
+  if (!resolution && !correctionUsed) {
+    correctionUsed = true;
+    await run([
+      "Runner rejected the first rehearsal interpretation. Do not repeat it.",
+      `Validation issue: ${issue.slice(0, 700)}`,
+      "Call the required tool once with corrected exact arguments, or ask one clarification question.",
+      baseQuestion,
+    ].join("\n"));
+  }
+  if (!resolution) throw new Error(`ACTION_REHEARSAL_INTERVIEW_INVALID: ${issue}`);
+  if (resolution.state === "clarification") {
+    return {
+      ...resolution,
+      model_message: resolution.question,
+      correction_used: correctionUsed,
+    };
+  }
+  const modelMessage = await narrateValidatedAuthoringStep({
+    session: input.session,
+    operatorMessage: answer,
+    validatedFacts: [
+      `Disposable rehearsal target: ${input.target}`,
+      ...resolution.summary,
+      "Runner will inject trusted context separately; it was not supplied by the model.",
+      "No proposal, authority, approval, apply, source query, or source write has occurred.",
+    ],
+    nextQuestion: "Should I run this exact disposable rehearsal?",
+    env: input.env,
+    egressAcknowledged: input.egressAcknowledged,
+    signal: input.signal,
+  });
+  return {
+    ...resolution,
+    ...(modelMessage ? { model_message: modelMessage } : {}),
+    correction_used: correctionUsed,
+  };
+}
+
 async function decisionModelMessage(input: {
   session: ActionBoundaryInterviewSession;
   resolution: ActionBoundaryDecisionResolution;
@@ -702,6 +856,162 @@ function parseDecisionResolution(
     authority_granted: false,
     source_database_changed: false,
   };
+}
+
+function rehearsalCatalog(
+  capability: string,
+  target: string,
+  args: Record<string, ArgumentSpec>,
+) {
+  const entries = Object.entries(args);
+  if (!entries.length || entries.length > 64) {
+    throw new Error("ACTION_REHEARSAL_ARGUMENTS_INVALID: a guided rehearsal needs 1 through 64 scalar arguments.");
+  }
+  return {
+    schema_version: "synapsor.action-rehearsal-interview.v1",
+    capability,
+    target,
+    arguments: Object.fromEntries(entries.map(([name, definition]) => {
+      if (definition.type === "object_array") {
+        throw new Error("ACTION_REHEARSAL_ARGUMENT_SHAPE_UNSUPPORTED: conversational rehearsal accepts scalar arguments only.");
+      }
+      return [name, {
+        type: definition.type,
+        required: true,
+        ...(definition.description ? { description: definition.description.slice(0, 500) } : {}),
+        ...(definition.enum?.length ? { enum: definition.enum } : {}),
+        ...(definition.minimum !== undefined ? { minimum: definition.minimum } : {}),
+        ...(definition.maximum !== undefined ? { maximum: definition.maximum } : {}),
+        ...(definition.max_length !== undefined ? { max_length: definition.max_length } : {}),
+      }];
+    })),
+  };
+}
+
+function rehearsalToolDefinition(
+  catalog: ReturnType<typeof rehearsalCatalog>,
+): AskToolDefinition {
+  const properties = Object.fromEntries(Object.entries(catalog.arguments).map(([name, definition]) => [
+    name,
+    {
+      type: definition.type,
+      ...(definition.enum?.length ? { enum: definition.enum } : {}),
+      ...(definition.minimum !== undefined ? { minimum: definition.minimum } : {}),
+      ...(definition.maximum !== undefined ? { maximum: definition.maximum } : {}),
+      ...(definition.max_length !== undefined ? { maxLength: definition.max_length } : {}),
+      ...(definition.description ? { description: definition.description } : {}),
+    },
+  ]));
+  return {
+    name: INTERPRET_REHEARSAL_TOOL,
+    title: "Interpret one disposable Action rehearsal example",
+    description: "Submit exact compiled proposal arguments or one clarification question. This never creates authority or changes source data.",
+    input_schema: {
+      oneOf: [
+        {
+          type: "object",
+          additionalProperties: false,
+          required: ["status", "arguments"],
+          properties: {
+            status: { type: "string", enum: ["resolved"] },
+            arguments: {
+              type: "object",
+              additionalProperties: false,
+              required: Object.keys(catalog.arguments),
+              properties,
+            },
+            rationale: { type: "string", minLength: 1, maxLength: 500 },
+          },
+        },
+        {
+          type: "object",
+          additionalProperties: false,
+          required: ["status", "question"],
+          properties: {
+            status: { type: "string", enum: ["clarification"] },
+            question: { type: "string", minLength: 1, maxLength: 500 },
+          },
+        },
+      ],
+    },
+    metadata: {
+      "synapsor.authority_granted": false,
+      "synapsor.source_database_changed": false,
+    },
+  };
+}
+
+function parseRehearsalResolution(
+  value: Record<string, unknown>,
+  definitions: Record<string, ArgumentSpec>,
+): ActionRehearsalResolution {
+  if (value.status === "clarification") {
+    return {
+      state: "clarification",
+      question: interpretationQuestion(value),
+      correction_used: false,
+      authority_granted: false,
+      source_database_changed: false,
+    };
+  }
+  if (value.status !== "resolved") throw new Error("status must be resolved or clarification.");
+  const submittedArguments = value.arguments;
+  if (!isRecord(submittedArguments)) throw new Error("arguments must be one exact object.");
+  const expected = Object.keys(definitions);
+  const actual = Object.keys(submittedArguments);
+  const missing = expected.filter((name) => !Object.hasOwn(submittedArguments, name));
+  const extra = actual.filter((name) => !Object.hasOwn(definitions, name));
+  if (missing.length || extra.length) {
+    throw new Error([
+      missing.length ? `missing ${missing.join(", ")}` : "",
+      extra.length ? `unexpected ${extra.join(", ")}` : "",
+    ].filter(Boolean).join("; "));
+  }
+  const args = Object.fromEntries(expected.map((name) => [
+    name,
+    parseRehearsalArgument(name, submittedArguments[name], definitions[name]!),
+  ]));
+  const rationale = optionalShortText(value.rationale, "rationale");
+  return {
+    state: "resolved",
+    args,
+    summary: Object.entries(args).map(([name, argument]) =>
+      `${name}: ${typeof argument === "string" ? JSON.stringify(argument) : String(argument)}`),
+    ...(rationale ? { rationale } : {}),
+    correction_used: false,
+    authority_granted: false,
+    source_database_changed: false,
+  };
+}
+
+function parseRehearsalArgument(
+  name: string,
+  value: unknown,
+  definition: ArgumentSpec,
+): JsonScalar {
+  if (definition.type === "object_array") {
+    throw new Error(`${name} uses an unsupported object-array argument.`);
+  }
+  if (definition.type === "number") {
+    if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${name} must be a finite number.`);
+    if (definition.minimum !== undefined && value < definition.minimum) {
+      throw new Error(`${name} must be at least ${definition.minimum}.`);
+    }
+    if (definition.maximum !== undefined && value > definition.maximum) {
+      throw new Error(`${name} must be at most ${definition.maximum}.`);
+    }
+  } else if (definition.type === "boolean") {
+    if (typeof value !== "boolean") throw new Error(`${name} must be true or false.`);
+  } else {
+    if (typeof value !== "string") throw new Error(`${name} must be text.`);
+    if (definition.max_length !== undefined && value.length > definition.max_length) {
+      throw new Error(`${name} exceeds ${definition.max_length} characters.`);
+    }
+  }
+  if (definition.enum?.length && !definition.enum.some((candidate) => Object.is(candidate, value))) {
+    throw new Error(`${name} must be one exact reviewed enum value.`);
+  }
+  return value as JsonScalar;
 }
 
 function policyCatalog(

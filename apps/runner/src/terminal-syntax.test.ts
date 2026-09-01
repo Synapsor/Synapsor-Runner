@@ -7,6 +7,8 @@ import {
   renderTerminalJsonFrame,
   renderTerminalSql,
   renderTerminalSqlFrame,
+  renderTerminalSynapsorDsl,
+  renderTerminalSynapsorDslFrame,
   renderTerminalToolName,
   terminalSyntaxColorEnabled,
 } from "./terminal-syntax.js";
@@ -155,6 +157,42 @@ describe("terminal syntax rendering", () => {
     expect(colored).toContain("\u001b[1;33m?\u001b[0m");
     expect(colored).toContain("\u001b[1;33m:count\u001b[0m");
     expect(stripAnsi(colored)).toBe(sql);
+  });
+
+  it("highlights generated Synapsor DSL without changing its exact source", () => {
+    const dsl = [
+      "CREATE CAPABILITY refund_request.propose_insert_refund_requests",
+      "DESCRIPTION 'Propose a bounded refund request.'",
+      "ON support_ops.refund_requests",
+      "ARG amount NUMBER REQUIRED MIN 0.01 MAX 25",
+      "AUTO APPROVE WHEN amount <= 25",
+      "END",
+    ].join("\n");
+    const formatted = [
+      "CREATE CAPABILITY refund_request.propose_insert_refund_requests",
+      "  DESCRIPTION 'Propose a bounded refund request.'",
+      "  ON support_ops.refund_requests",
+      "  ARG amount NUMBER REQUIRED MIN 0.01 MAX 25",
+      "  AUTO APPROVE WHEN amount <= 25",
+      "END",
+    ].join("\n");
+    expect(renderTerminalSynapsorDsl(dsl)).toBe(formatted);
+    const colored = renderTerminalSynapsorDsl(dsl, true);
+    expect(stripAnsi(colored)).toBe(formatted);
+    expect(colored).toContain("\u001b[1;36mCREATE\u001b[0m");
+    expect(colored).toContain("\u001b[1;34msupport_ops.refund_requests\u001b[0m");
+    expect(colored).toContain("\u001b[1;32m'Propose a bounded refund request.'\u001b[0m");
+    expect(colored).toContain("\u001b[1;33m25\u001b[0m");
+
+    const frame = renderTerminalSynapsorDslFrame(dsl, {
+      title: "GENERATED ACTION DSL",
+      metadata: ["Authority: proposal_only", "Writeback: none"],
+      columns: 72,
+    });
+    expect(frame).toContain("+-- GENERATED ACTION DSL");
+    expect(frame).toContain("| CREATE CAPABILITY");
+    expect(frame).toContain("Authority: proposal_only");
+    expect(new Set(frame.split("\n").map((line) => line.length)).size).toBe(1);
   });
 
   it("formats compiled PostgreSQL aggregates without splitting protected tokens", () => {

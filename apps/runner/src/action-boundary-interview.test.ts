@@ -3,6 +3,7 @@ import {
   actionBoundaryDecisionQuestion,
   interpretActionBoundaryDecision,
   interpretActionBoundaryPolicy,
+  interpretActionRehearsalArgs,
 } from "./action-boundary-interview.js";
 import type { GuidedActionInput, GuidedActionResourceOption } from "./guided-action.js";
 import type { AskProvider, AskProviderDependencies } from "./model-ask.js";
@@ -179,6 +180,97 @@ describe("conversational Action Boundary interview", () => {
       expect(serialized).not.toContain("tenant_id");
     });
   }
+
+  it("translates one rehearsal example into only exact compiled arguments", async () => {
+    const requests: string[] = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(JSON.stringify(request.body));
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "function_call",
+            call_id: "call_rehearsal_values",
+            name: "runner__interpret_action_rehearsal_values",
+            arguments: JSON.stringify({
+              status: "resolved",
+              arguments: {
+                amount: 12.5,
+                method: "account_credit",
+                reason: "duplicate_charge",
+              },
+              rationale: "Mapped the operator's exact disposable example.",
+            }),
+          }],
+        },
+      };
+    });
+
+    await expect(interpretActionRehearsalArgs({
+      session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      capability: "refund_request.propose_insert_refund_requests",
+      target: "INSERT support_ops.refund_requests",
+      args: {
+        amount: { type: "number", required: true, minimum: 0.01, maximum: 25 },
+        method: { type: "string", required: true, enum: ["account_credit", "original_payment"] },
+        reason: { type: "string", required: true, enum: ["duplicate_charge", "billing_error"] },
+      },
+      answer: "Use a $12.50 duplicate-charge refund as account credit.",
+      egressAcknowledged: true,
+    })).resolves.toMatchObject({
+      state: "resolved",
+      args: {
+        amount: 12.5,
+        method: "account_credit",
+        reason: "duplicate_charge",
+      },
+      authority_granted: false,
+      source_database_changed: false,
+    });
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(requests[0]).toContain("0.01");
+    expect(requests[0]).toContain("original_payment");
+    expect(requests[0]).not.toContain("tenant_id");
+    expect(requests[0]).not.toContain("principal_id");
+  });
+
+  it("uses one bounded correction when rehearsal arguments exceed the compiled contract", async () => {
+    let attempt = 0;
+    const requestJson = vi.fn(async () => {
+      attempt += 1;
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "function_call",
+            call_id: `call_rehearsal_values_${attempt}`,
+            name: "runner__interpret_action_rehearsal_values",
+            arguments: JSON.stringify({
+              status: "resolved",
+              arguments: { amount: attempt === 1 ? 30 : 20, method: "account_credit" },
+            }),
+          }],
+        },
+      };
+    });
+
+    await expect(interpretActionRehearsalArgs({
+      session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      capability: "refund_request.propose_insert_refund_requests",
+      target: "INSERT support_ops.refund_requests",
+      args: {
+        amount: { type: "number", required: true, minimum: 0.01, maximum: 25 },
+        method: { type: "string", required: true, enum: ["account_credit"] },
+      },
+      answer: "Use a twenty-dollar account credit.",
+      egressAcknowledged: true,
+    })).resolves.toMatchObject({
+      state: "resolved",
+      args: { amount: 20, method: "account_credit" },
+      correction_used: true,
+    });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
 
   it("asks one clarification instead of guessing an ambiguous range", async () => {
     const requestJson = vi.fn(async () => ({

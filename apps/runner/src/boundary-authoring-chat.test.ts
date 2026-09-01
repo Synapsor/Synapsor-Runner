@@ -405,6 +405,55 @@ describe("Boundary authoring chat", () => {
     expect(transcript).toContain("\u001b[1;32m5 through 120\u001b[0m");
   });
 
+  it("renders a safe Markdown subset in model turns without exposing delimiters", () => {
+    const memory = memoryIo();
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: true });
+
+    chat.model([
+      "The **disabled proposal** constrains `amount`; *review it* before continuing.",
+      "?**What is the smallest and largest amount the agent may propose?**",
+      "Escaped \\**markers\\** remain literal.",
+    ]);
+
+    const transcript = memory.writes.join("");
+    const plain = transcript.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
+    expect(plain).toContain("The disabled proposal constrains amount; review it before continuing.");
+    expect(plain).toContain("Escaped **markers** remain literal.");
+    expect(plain).toContain("What is the smallest and largest amount the agent may propose?");
+    expect(plain).not.toContain("?What is the smallest");
+    expect(plain).not.toContain("`amount`");
+    expect(plain).not.toContain("**disabled proposal**");
+    expect(transcript).toMatch(/\u001b\[[0-9;]+mdisabled proposal\u001b\[0m/u);
+    expect(transcript).toMatch(/\u001b\[[0-9;]+mamount\u001b\[0m/u);
+    expect(transcript).toMatch(/\u001b\[[0-9;]+mreview it\u001b\[0m/u);
+  });
+
+  it("renders generated Action DSL as a highlighted, indented terminal artifact", async () => {
+    const memory = memoryIo({ columns: () => 72 });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: true });
+    const dsl = [
+      "CREATE CAPABILITY refund_request.propose_insert_refund_requests",
+      "ARG amount NUMBER REQUIRED MIN 0.01 MAX 25",
+      "ON support_ops.refund_requests",
+      "END",
+    ].join("\n");
+
+    await chat.actionPrompter.syntax?.(
+      "GENERATED ACTION DSL",
+      dsl,
+      "synapsor-dsl",
+      ["Authority: proposal_only", "Writeback: none"],
+    );
+
+    const transcript = memory.writes.join("");
+    const plain = transcript.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
+    expect(plain).toContain("+-- GENERATED ACTION DSL");
+    expect(plain).toContain("|   ARG amount NUMBER REQUIRED MIN 0.01 MAX 25");
+    expect(plain).toContain("Authority: proposal_only");
+    expect(transcript).toContain("\u001b[1;36mCREATE\u001b[0m");
+    expect(transcript).toContain("\u001b[1;34msupport_ops.refund_requests\u001b[0m");
+  });
+
   it("streams one retained role turn and exposes only provider liveness before validation", async () => {
     const memory = memoryIo();
     const chat = createBoundaryAuthoringChat({

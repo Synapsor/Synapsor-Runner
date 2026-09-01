@@ -174,6 +174,46 @@ export function renderTerminalSqlFrame(
   });
 }
 
+export function renderTerminalSynapsorDsl(value: string, color = false): string {
+  const source = formatSynapsorDslForDisplay(safeTerminalText(value));
+  return color ? highlightTerminalSynapsorDsl(source) : source;
+}
+
+export function formatSynapsorDslForDisplay(value: string): string {
+  let insideBlock = false;
+  return value.trimEnd().split("\n").map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return "";
+    if (/^END\b/iu.test(trimmed)) {
+      insideBlock = false;
+      return trimmed;
+    }
+    if (/^CREATE\s+(?:AGENT\s+CONTEXT|CAPABILITY)\b/iu.test(trimmed)) {
+      insideBlock = true;
+      return trimmed;
+    }
+    return insideBlock ? `  ${trimmed}` : line.trimEnd();
+  }).join("\n");
+}
+
+export function renderTerminalSynapsorDslFrame(
+  value: string,
+  options: {
+    title: string;
+    metadata?: string[];
+    color?: boolean;
+    columns?: number;
+  },
+): string {
+  return renderTerminalSyntaxFrame(renderTerminalSynapsorDsl(value, false), {
+    title: options.title,
+    metadata: options.metadata,
+    color: options.color,
+    columns: options.columns,
+    highlight: highlightTerminalSynapsorDsl,
+  });
+}
+
 export function renderTerminalCommandFrame(
   commands: string[],
   options: {
@@ -249,6 +289,19 @@ function highlightTerminalCommand(value: string): string {
     if (match.startsWith("<")) return style("1;33", match);
     if (match.startsWith("'")) return style("1;35", match);
     return match;
+  });
+}
+
+function highlightTerminalSynapsorDsl(value: string): string {
+  const token = /--[^\n]*|\/\*[\s\S]*?\*\/|'(?:''|\\.|[^'\\])*'|\bsha256:[a-f0-9]{16,}\b|\b[A-Z][A-Z0-9_]*\b|\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|(?:\.\.|<=|>=|!=|=|<|>)/g;
+  return value.replace(token, (match) => {
+    if (match.startsWith("--") || match.startsWith("/*")) return style("2", match);
+    if (match.startsWith("'")) return style("1;32", match);
+    if (match.startsWith("sha256:")) return style("2", match);
+    if (/^-?\d/u.test(match)) return style("1;33", match);
+    if (/^[A-Z][A-Z0-9_]*$/u.test(match)) return style("1;36", match);
+    if (/^[A-Za-z_][A-Za-z0-9_]*\./u.test(match)) return style("1;34", match);
+    return style("1;35", match);
   });
 }
 

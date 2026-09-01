@@ -4032,6 +4032,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         exitAfterInitialDraft: true,
         returnToAsk: false,
         suppressActivationSummary: Boolean(input.authoringChat),
+        ...(modelInterviewSession ? { modelSuggestionSession: modelInterviewSession } : {}),
+        ...(modelInterviewSession ? { modelInterviewEgressAcknowledged: true } : {}),
         ...(input.authoringChat ? { prompter: input.authoringChat.actionPrompter } : {}),
       });
     }

@@ -15,6 +15,7 @@ import type { AskProviderStreamEvent } from "./model-ask.js";
 import {
   wrapStyledTerminalLine,
 } from "./terminal-layout.js";
+import { renderTerminalSynapsorDslFrame } from "./terminal-syntax.js";
 
 export type BoundaryAuthoringSpeaker = "runner" | "model";
 type BoundaryAuthoringTone = "normal" | "success" | "warning" | "danger";
@@ -81,6 +82,59 @@ function stripTerminalAnsi(value: string): string {
 
 function transcriptText(value: string): string {
   return safeTerminalText(stripTerminalAnsi(value));
+}
+
+function renderInlineModelMarkdown(
+  value: string,
+  theme: ReturnType<typeof terminalTheme>,
+): string {
+  value = value.replace(/\?\s*\*\*([^*\n]+\?)\*\*/gu, "**$1**");
+  let rendered = "";
+  let plain = "";
+  const flush = () => {
+    rendered += plain;
+    plain = "";
+  };
+  for (let index = 0; index < value.length;) {
+    if (value[index] === "\\" && (value.startsWith("**", index + 1)
+      || value.startsWith("__", index + 1))) {
+      plain += value.slice(index + 1, index + 3);
+      index += 3;
+      continue;
+    }
+    if (value[index] === "\\" && index + 1 < value.length
+      && ["*", "_", "`", "\\"].includes(value[index + 1]!)) {
+      plain += value[index + 1];
+      index += 2;
+      continue;
+    }
+    const marker = value.startsWith("**", index) ? "**"
+      : value.startsWith("__", index) ? "__"
+        : value[index] === "`" ? "`"
+          : value[index] === "*" ? "*"
+            : undefined;
+    if (!marker) {
+      plain += value[index];
+      index += 1;
+      continue;
+    }
+    const close = value.indexOf(marker, index + marker.length);
+    if (close <= index + marker.length) {
+      plain += marker;
+      index += marker.length;
+      continue;
+    }
+    flush();
+    const content = value.slice(index + marker.length, close);
+    rendered += marker === "`"
+      ? theme.value(content)
+      : marker === "*"
+        ? theme.italic(content)
+        : theme.bold(content);
+    index = close + marker.length;
+  }
+  flush();
+  return rendered;
 }
 
 function terminalOutputChunks(
@@ -257,7 +311,8 @@ export function createBoundaryAuthoringChat(input: {
     firstStyle?: (value: string) => string,
   ): string => {
     const safe = transcriptText(line);
-    let content = index === 0 && firstStyle ? firstStyle(safe) : safe;
+    let content = speaker === "model" ? renderInlineModelMarkdown(safe, theme) : safe;
+    if (index === 0 && firstStyle) content = firstStyle(content);
     if (speaker === "model") {
       const interpreted = safe.match(/^I interpreted that as\s+([^:]+):\s*(.+)\.$/iu);
       if (interpreted) {
@@ -771,6 +826,18 @@ export function createBoundaryAuthoringChat(input: {
       if (modelRationale) await streamModel([modelRationale.replace(/^Model rationale:\s*/iu, "")]);
       if (modelRationale) checkpoint(title, runnerLines);
       else await streamRunner(title, runnerLines);
+    },
+    syntax: async (title, source, language, metadata = []) => {
+      rememberDetails(title, [...metadata, "", ...source.trimEnd().split("\n")]);
+      const rendered = language === "synapsor-dsl"
+        ? renderTerminalSynapsorDslFrame(source, {
+            title,
+            metadata,
+            color,
+            columns: transcriptWidth(),
+          })
+        : source;
+      writeTranscript(`${rendered}\n\n`);
     },
   };
 

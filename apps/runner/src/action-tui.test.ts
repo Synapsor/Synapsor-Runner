@@ -1269,6 +1269,117 @@ describe("Safe Action terminal control plane", () => {
     });
   });
 
+  it("keeps model-assisted rehearsal in one natural-language exchange", async () => {
+    const prompts: string[] = [];
+    const prompter = scriptedPrompter({
+      choices: [],
+      texts: ["Use closed, 750 credits, notifications on, with note reviewed.", ""],
+      confirms: [],
+      onText: (label) => prompts.push(label),
+    });
+    const details = {
+      draft: {
+        capability: "orders.propose_typed_rehearsal",
+        operation: "insert",
+      },
+      preview_args: { status: "open", credit_cents: 100, notify: false, note: "preview" },
+      contract: {
+        capabilities: [{
+          name: "orders.propose_typed_rehearsal",
+          subject: { schema: "public", table: "orders" },
+          args: {
+            status: { type: "string", enum: ["open", "closed"] },
+            credit_cents: { type: "number", minimum: 0, maximum: 1000 },
+            notify: { type: "boolean" },
+            note: { type: "string", max_length: 32 },
+          },
+        }],
+      },
+    } as unknown as Parameters<typeof collectGuidedRehearsalArgs>[0];
+    const rehearsalInterpreter = vi.fn(async (_input: unknown) => ({
+      state: "resolved" as const,
+      args: { status: "closed", credit_cents: 750, notify: true, note: "reviewed" },
+      summary: [
+        'status: "closed"',
+        "credit_cents: 750",
+        "notify: true",
+        'note: "reviewed"',
+      ],
+      model_message: "I mapped that to closed status, 750 credits, notifications on, and note `reviewed`. Should I run this exact disposable rehearsal?",
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const modelInterview: ActionBoundaryInterviewContext = {
+      session: { provider: "openai", model: "gpt-test" },
+      egressAcknowledged: true,
+      rehearsalInterpreter,
+    };
+
+    await expect(collectGuidedRehearsalArgs(details, prompter, modelInterview, {})).resolves.toEqual({
+      status: "closed",
+      credit_cents: 750,
+      notify: true,
+      note: "reviewed",
+    });
+    expect(prompts).toEqual([
+      "What example values should I use for the disposable rehearsal?",
+      "Press Enter to run this exact disposable rehearsal, or describe what should change",
+    ]);
+    expect(rehearsalInterpreter).toHaveBeenCalledWith(expect.objectContaining({
+      capability: "orders.propose_typed_rehearsal",
+      target: "INSERT public.orders",
+      answer: "Use closed, 750 credits, notifications on, with note reviewed.",
+      egressAcknowledged: true,
+    }));
+  });
+
+  it("keeps an UPDATE rehearsal identity local while the model interprets other values", async () => {
+    const prompter = scriptedPrompter({
+      choices: [],
+      texts: ["order-1042", "Set the credit to 500.", ""],
+      confirms: [],
+    });
+    const details = {
+      draft: { capability: "orders.propose_update_credit", operation: "update" },
+      preview_args: { order_id: "replace-with-order-id", credit_cents: 100 },
+      contract: {
+        capabilities: [{
+          name: "orders.propose_update_credit",
+          subject: { schema: "public", table: "orders" },
+          lookup: { id_from_arg: "order_id" },
+          args: {
+            order_id: { type: "string", max_length: 128 },
+            credit_cents: { type: "number", minimum: 0, maximum: 1000 },
+          },
+        }],
+      },
+    } as unknown as Parameters<typeof collectGuidedRehearsalArgs>[0];
+    const rehearsalInterpreter = vi.fn(async (_input: unknown) => ({
+      state: "resolved" as const,
+      args: { credit_cents: 500 },
+      summary: ["credit_cents: 500"],
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+
+    await expect(collectGuidedRehearsalArgs(details, prompter, {
+      session: { provider: "openai", model: "gpt-test" },
+      egressAcknowledged: true,
+      rehearsalInterpreter,
+    }, {})).resolves.toEqual({
+      order_id: "order-1042",
+      credit_cents: 500,
+    });
+    expect(rehearsalInterpreter).toHaveBeenCalledWith(expect.objectContaining({
+      args: { credit_cents: expect.objectContaining({ type: "number" }) },
+      answer: "Set the credit to 500.",
+    }));
+    const interpreted = rehearsalInterpreter.mock.calls[0]?.[0] as { args?: Record<string, unknown> } | undefined;
+    expect(interpreted?.args).not.toHaveProperty("order_id");
+  });
+
   it("generates bounded rehearsal values from the compiled contract", () => {
     const details = {
       draft: { capability: "orders.propose_generated_rehearsal" },
