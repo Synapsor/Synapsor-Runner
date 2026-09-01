@@ -17,6 +17,12 @@ import {
   type AskToolDefinition,
   type AskToolGateway,
 } from "./model-ask.js";
+import {
+  modelAuthoringHistory,
+  rememberModelAuthoringTurn,
+  type ModelAuthoringConversation,
+} from "./model-authoring-conversation.js";
+import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 
 const INTERPRET_DECISION_TOOL = "runner.interpret_action_boundary_answer";
 const INTERPRET_POLICY_TOOL = "runner.interpret_action_approval_policy";
@@ -28,6 +34,7 @@ export type ActionBoundaryInterviewSession = {
   apiKeyEnv?: string;
   baseUrl?: string;
   dependencies?: AskProviderDependencies;
+  conversation?: ModelAuthoringConversation;
 };
 
 export type OperatorApprovedValueContext = {
@@ -42,6 +49,7 @@ export type ActionBoundaryDecisionResolution =
       decisions: QuickProposalDecisions;
       summary: string;
       rationale?: string;
+      model_message?: string;
       correction_used: boolean;
       authority_granted: false;
       source_database_changed: false;
@@ -49,6 +57,7 @@ export type ActionBoundaryDecisionResolution =
   | {
       state: "clarification";
       question: string;
+      model_message?: string;
       correction_used: boolean;
       authority_granted: false;
       source_database_changed: false;
@@ -58,6 +67,7 @@ export type ActionBoundaryDecisionResolution =
       field: string;
       reason: string;
       question: string;
+      model_message?: string;
       correction_used: boolean;
       authority_granted: false;
       source_database_changed: false;
@@ -69,6 +79,7 @@ export type ActionBoundaryPolicyResolution =
       auto_approval: GuidedActionAutoApprovalInput;
       shared_limits: Array<Omit<ActionBoundarySharedLimitV1, "id" | "capability">>;
       rationale?: string;
+      model_message?: string;
       correction_used: boolean;
       authority_granted: false;
       source_database_changed: false;
@@ -76,6 +87,7 @@ export type ActionBoundaryPolicyResolution =
   | {
       state: "clarification";
       question: string;
+      model_message?: string;
       correction_used: boolean;
       authority_granted: false;
       source_database_changed: false;
@@ -85,6 +97,7 @@ export type ActionBoundaryPolicyResolution =
       field: string;
       reason: string;
       question: string;
+      model_message?: string;
       correction_used: boolean;
       authority_granted: false;
       source_database_changed: false;
@@ -210,7 +223,7 @@ export async function interpretActionBoundaryDecision(input: {
   const run = (question: string) => runAskProviderTurn({
     configuration,
     question,
-    history: [],
+    history: modelAuthoringHistory(input.session.conversation),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,
@@ -249,7 +262,21 @@ export async function interpretActionBoundaryDecision(input: {
   if (!resolution) {
     throw new Error(`ACTION_BOUNDARY_INTERVIEW_INVALID: ${issue}`);
   }
-  return { ...resolution, correction_used: correctionUsed };
+  const modelMessage = await decisionModelMessage({
+    session: input.session,
+    resolution,
+    answer,
+    intent,
+    target: input.target,
+    env: input.env,
+    egressAcknowledged: input.egressAcknowledged,
+    signal: input.signal,
+  });
+  return {
+    ...resolution,
+    correction_used: correctionUsed,
+    ...(modelMessage ? { model_message: modelMessage } : {}),
+  };
 }
 
 /**
@@ -333,7 +360,7 @@ export async function interpretActionBoundaryPolicy(input: {
   const run = (question: string) => runAskProviderTurn({
     configuration,
     question,
-    history: [],
+    history: modelAuthoringHistory(input.session.conversation),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,
@@ -372,7 +399,93 @@ export async function interpretActionBoundaryPolicy(input: {
   if (!resolution) {
     throw new Error(`ACTION_BOUNDARY_POLICY_INTERVIEW_INVALID: ${issue}`);
   }
-  return { ...resolution, correction_used: correctionUsed };
+  const modelMessage = await policyModelMessage({
+    session: input.session,
+    resolution,
+    answer,
+    action: input.action,
+    env: input.env,
+    egressAcknowledged: input.egressAcknowledged,
+    signal: input.signal,
+  });
+  return {
+    ...resolution,
+    correction_used: correctionUsed,
+    ...(modelMessage ? { model_message: modelMessage } : {}),
+  };
+}
+
+async function decisionModelMessage(input: {
+  session: ActionBoundaryInterviewSession;
+  resolution: ActionBoundaryDecisionResolution;
+  answer: string;
+  intent: string;
+  target?: string;
+  env?: NodeJS.ProcessEnv;
+  egressAcknowledged: boolean;
+  signal?: AbortSignal;
+}): Promise<string | undefined> {
+  if (input.resolution.state !== "resolved") {
+    rememberModelAuthoringTurn(
+      input.session.conversation,
+      input.answer,
+      input.resolution.question,
+    );
+    return input.resolution.question;
+  }
+  const narration = await narrateValidatedAuthoringStep({
+    session: input.session,
+    operatorMessage: input.answer,
+    validatedFacts: [
+      `Business action: ${input.intent}`,
+      ...(input.target ? [`Current exact action target: ${input.target}`] : []),
+      `Runner accepted this interpretation for the disabled draft: ${input.resolution.summary}`,
+      "No authority was granted and no source row changed.",
+    ],
+    nextQuestion: "Should I use this exact interpretation in the disabled draft?",
+    env: input.env,
+    egressAcknowledged: input.egressAcknowledged,
+    signal: input.signal,
+  });
+  return narration ?? input.resolution.rationale;
+}
+
+async function policyModelMessage(input: {
+  session: ActionBoundaryInterviewSession;
+  resolution: ActionBoundaryPolicyResolution;
+  answer: string;
+  action: GuidedActionInput;
+  env?: NodeJS.ProcessEnv;
+  egressAcknowledged: boolean;
+  signal?: AbortSignal;
+}): Promise<string | undefined> {
+  if (input.resolution.state !== "resolved") {
+    rememberModelAuthoringTurn(
+      input.session.conversation,
+      input.answer,
+      input.resolution.question,
+    );
+    return input.resolution.question;
+  }
+  const target = `${input.action.operation.toUpperCase()} ${input.action.resource}`;
+  const conditions = input.resolution.auto_approval.conditions ?? [];
+  const narration = await narrateValidatedAuthoringStep({
+    session: input.session,
+    operatorMessage: input.answer,
+    validatedFacts: [
+      `Current exact action target: ${target}.`,
+      `${conditions.length} deterministic condition${conditions.length === 1 ? "" : "s"} passed Runner validation.`,
+      `Per-action rolling 24-hour maximum: ${input.resolution.auto_approval.max_per_day}.`,
+      ...input.resolution.shared_limits.map((limit) =>
+        `Trusted ${limit.scope} ${limit.kind} limit: ${limit.maximum} per ${limit.window_seconds} seconds${limit.kind === "total" ? ` on ${limit.field}` : ""}.`),
+      "Any failed, missing, or uncertain check falls back to human review. Approval and apply authority remain off.",
+    ],
+    nextQuestion: "Should I use this exact policy in the disabled draft?",
+    env: input.env,
+    egressAcknowledged: input.egressAcknowledged,
+    signal: input.signal,
+  });
+  return narration ?? input.resolution.rationale;
 }
 
 function interviewConfiguration(

@@ -67,7 +67,7 @@ describe("Boundary authoring chat", () => {
     expect(answer).toBe("Explain ticket trends and propose follow-ups.");
     expect(memory.prompts).toEqual(["you> "]);
     const transcript = memory.writes.join("");
-    expect(transcript).toContain("runner> BOUNDARY AUTHORING");
+    expect(transcript).toContain("runner> BOUNDARY DRAFTING");
     expect(transcript).toContain("runner> SET UP ONE AGENT JOB");
     expect(transcript).toContain("runner> What job are you giving this agent?");
     expect(transcript).toContain("model> I mapped ticket trends");
@@ -122,6 +122,12 @@ describe("Boundary authoring chat", () => {
       "What is the smallest and largest duration the agent may propose?",
       {
         title: "SET PROPOSAL RANGE",
+        conversation: {
+          modelLines: [
+            "What is the smallest and largest duration the agent may propose?",
+            "This is the hard proposal range for INSERT support.follow_up_tasks. Auto-approval can be narrower.",
+          ],
+        },
         context: [
           "Action: INSERT support.follow_up_tasks",
           "Interpreter: openai[gpt-5.6-luna]",
@@ -140,6 +146,24 @@ describe("Boundary authoring chat", () => {
     expect(memory.writes.join("")).not.toContain("runner> Completed");
   });
 
+  it("never labels a deterministic fallback question as model output", async () => {
+    const memory = memoryIo({ reads: ["between five and thirty"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+
+    await expect(chat.actionPrompter.text(
+      "What is the reviewed range?",
+      {
+        title: "SET PROPOSAL RANGE",
+        context: ["The provider narration failed; Runner still needs this exact bound."],
+      },
+    )).resolves.toBe("between five and thirty");
+
+    const transcript = memory.writes.join("");
+    expect(transcript).toContain("runner> SET PROPOSAL RANGE");
+    expect(transcript).toContain("runner> What is the reviewed range?");
+    expect(transcript).not.toContain("model>");
+  });
+
   it("keeps interpreted decisions in the model conversation and reduces Runner to one verification checkpoint", async () => {
     const memory = memoryIo({ reads: [""] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
@@ -149,6 +173,12 @@ describe("Boundary authoring chat", () => {
       {
         defaultValue: "yes",
         title: "CONFIRM PROPOSAL RANGE",
+        conversation: {
+          modelLines: [
+            "I interpreted that as estimated_minutes: 5 through 120.",
+            "Press Enter to use it, or tell me what should change.",
+          ],
+        },
         context: [
           "Operator answer: Between five minutes and two hours.",
           "Runner-validated interpretation: estimated_minutes: 5 through 120",
@@ -164,16 +194,15 @@ describe("Boundary authoring chat", () => {
     const transcript = memory.writes.join("");
     expect(transcript).toContain("model> I interpreted that as estimated_minutes: 5 through 120.");
     expect(transcript).toContain("Press Enter to use it, or tell me what should change.");
-    expect(transcript).toContain("✓ Runner verified");
-    expect(transcript).toContain("Hard range: INSERT support.follow_up_tasks");
+    expect(transcript).not.toContain("✓ Runner verified");
     expect(transcript).not.toContain("runner> Operator answer:");
     expect(transcript).not.toContain("runner> CONFIRM PROPOSAL RANGE");
     expect(transcript).not.toContain("Model rationale:");
     expect(memory.prompts).toEqual(["you> [yes] "]);
   });
 
-  it("renders routine Read handoffs as status checkpoints rather than new chat turns", () => {
-    const memory = memoryIo();
+  it("keeps routine Read handoffs quiet and makes their exact record available through /details", async () => {
+    const memory = memoryIo({ reads: ["/details", "continue"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
 
     chat.session.present?.("READ REVIEW COMPLETE - NOT ACTIVE", [
@@ -183,10 +212,16 @@ describe("Boundary authoring chat", () => {
       "Source database changed: no",
     ], "success");
 
+    await expect(chat.actionPrompter.text("What should happen next?", {
+      conversation: { modelLines: ["The Read draft is ready. What would you like to do next?"] },
+    })).resolves.toBe("continue");
+
     const transcript = memory.writes.join("");
-    expect(transcript).toContain("✓ Read draft saved");
-    expect(transcript).toContain("reviewed_staging · not active · source unchanged");
+    expect(transcript).not.toContain("✓ Read draft saved");
     expect(transcript).not.toContain("runner> READ REVIEW COMPLETE");
+    expect(transcript).toContain("RUNNER DETAILS");
+    expect(transcript).toContain("READ REVIEW COMPLETE - NOT ACTIVE");
+    expect(transcript).toContain("reviewed_staging");
   });
 
   it("lets mixed model context finish before a quiet Runner checkpoint", async () => {
@@ -279,9 +314,10 @@ describe("Boundary authoring chat", () => {
     expect(answer).toBe("Between five and thirty minutes.");
     expect(memory.prompts).toEqual(["you> ", "you> "]);
     const transcript = memory.writes.join("");
-    expect(transcript).toContain("DETAILS - Validated Action policy");
+    expect(transcript).toContain("RUNNER DETAILS");
+    expect(transcript).toContain("Validated Action policy");
     expect(transcript).toContain("at most 1 approval per rolling 15 days");
-    expect(transcript).toContain("Type /details at a you> prompt");
+    expect(transcript).toContain("No model request, authority change, source query, or source write occurred.");
   });
 
   it("strips inherited terminal formatting and emphasizes the validated value", () => {

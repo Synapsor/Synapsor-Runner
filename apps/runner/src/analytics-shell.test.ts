@@ -1746,6 +1746,36 @@ describe("Synapsor Analytics shell", () => {
     io.close();
   });
 
+  it("supports a bounded custom slash surface for Boundary authoring chat", async () => {
+    const readable = new PassThrough();
+    const writable = new PassThrough();
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({
+      readable,
+      writable,
+      terminal: true,
+      slashSuggestions: [
+        { label: "/details", completion: "/details", description: "Show exact Runner validation" },
+        { label: "/help", completion: "/help", description: "Show authoring commands" },
+      ],
+    });
+    const answer = io.read("you> ");
+
+    readable.write("/d");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const menu = chunks.join("");
+    expect(menu).toContain("/details");
+    expect(menu).toContain("Show exact Runner validation");
+    expect(menu).not.toContain("/access");
+
+    readable.write("\t");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    readable.write("\r");
+    await expect(answer).resolves.toBe("/details");
+    io.close();
+  });
+
   it("keeps accepted argument commands valid in the live slash menu", async () => {
     const readable = new PassThrough();
     const writable = new PassThrough();
@@ -1873,28 +1903,63 @@ describe("Synapsor Analytics shell", () => {
   });
 
   it("renders one animated TTY status line and erases it before normal output", () => {
-    const readable = new PassThrough();
-    const writable = new PassThrough();
-    const chunks: string[] = [];
-    writable.on("data", (chunk) => chunks.push(String(chunk)));
-    const io = createTerminalAnalyticsShellIo({
-      readable,
-      writable,
-      terminal: true,
-    });
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    try {
+      const readable = new PassThrough();
+      const writable = new PassThrough();
+      const chunks: string[] = [];
+      writable.on("data", (chunk) => chunks.push(String(chunk)));
+      const io = createTerminalAnalyticsShellIo({
+        readable,
+        writable,
+        terminal: true,
+      });
 
-    io.setStatus?.("Waiting for the provider...");
-    io.setStatus?.("Running a reviewed data tool...");
-    io.clearStatus?.();
-    io.write("Answer\n");
-    io.close();
+      io.setStatus?.("Waiting for the provider...");
+      io.setStatus?.("Running a reviewed data tool...");
+      io.clearStatus?.();
+      io.write("Answer\n");
+      io.close();
 
-    const output = chunks.join("");
-    expect(output).toContain("\r\u001b[2K\u001b[2m  - Waiting for the provider...\u001b[0m");
-    expect(output).toContain("\r\u001b[2K\u001b[2m  - Running a reviewed data tool...\u001b[0m");
-    expect(output).toContain("\r\u001b[2K  Answer\n");
-    expect(output).not.toContain("Waiting for the provider...\n");
-    expect(output).not.toContain("Running a reviewed data tool...\n");
+      const output = chunks.join("");
+      const plainOutput = stripAnsi(output);
+      expect(plainOutput).toContain("\r\u001b[2K  - Waiting for the provider...");
+      expect(plainOutput).toContain("\r\u001b[2K  - Running a reviewed data tool...");
+      expect(output).toContain("\u001b[1;32m-\u001b[0m");
+      expect(output).toContain("\u001b[22;1;37mWaiting\u001b[0;2m");
+      expect(output).toContain("\r\u001b[2K  Answer\n");
+      expect(output).not.toContain("Waiting for the provider...\n");
+      expect(output).not.toContain("Running a reviewed data tool...\n");
+    } finally {
+      if (previousNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = previousNoColor;
+    }
+  });
+
+  it("keeps TTY status unstyled and single-line with NO_COLOR", () => {
+    const previousNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = "1";
+    try {
+      const readable = new PassThrough();
+      const writable = new PassThrough() as PassThrough & { columns: number };
+      writable.columns = 40;
+      const chunks: string[] = [];
+      writable.on("data", (chunk) => chunks.push(String(chunk)));
+      const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+
+      io.setStatus?.("Building a complete structured draft that must stay on one line...");
+      io.clearStatus?.();
+      io.close();
+
+      const output = chunks.join("");
+      expect(output).not.toMatch(/\u001b\[[0-9;]*m/u);
+      expect(output).toContain("\r\u001b[2K  - Building a complete structured dr…");
+      expect(output).not.toContain("\n");
+    } finally {
+      if (previousNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = previousNoColor;
+    }
   });
 
   it("adds breathing room only for interactive terminals", () => {

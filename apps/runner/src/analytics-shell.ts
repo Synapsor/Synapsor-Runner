@@ -102,7 +102,7 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/exit": "Close the analytics shell",
 };
 
-type SlashCommandSuggestion = {
+export type SlashCommandSuggestion = {
   label: string;
   description: string;
   completion?: string;
@@ -534,12 +534,28 @@ function slashMenuSuggestions(line: string): SlashCommandSuggestion[] {
     entries.findIndex((candidate) => candidate.label === entry.label) === index);
 }
 
+function customSlashMenuSuggestions(
+  line: string,
+  commands: SlashCommandSuggestion[],
+): SlashCommandSuggestion[] {
+  if (!line.startsWith("/")) return [];
+  const normalized = line.toLowerCase();
+  return commands.filter((entry) => entry.label.toLowerCase().startsWith(normalized));
+}
+
 export function slashCommandSuggestions(line: string): string[] {
   return slashMenuSuggestions(line).map((entry) => entry.label);
 }
 
 export function renderSlashCommandMenu(line: string, color = false): string {
-  const matches = slashMenuSuggestions(line);
+  return renderSlashCommandSuggestionMenu(line, slashMenuSuggestions(line), color);
+}
+
+function renderSlashCommandSuggestionMenu(
+  line: string,
+  matches: SlashCommandSuggestion[],
+  color = false,
+): string {
   if (!line.startsWith("/")) return "";
   const theme = terminalTheme(color);
   if (!matches.length) {
@@ -899,11 +915,17 @@ export function createTerminalAnalyticsShellIo(input: {
   writable?: Writable;
   terminal?: boolean;
   slashCommands?: boolean;
+  slashSuggestions?: SlashCommandSuggestion[];
 } = {}): AnalyticsShellIo {
   const readable = input.readable ?? process.stdin;
   const writable = input.writable ?? process.stdout;
   const terminal = input.terminal ?? Boolean((readable as NodeJS.ReadStream).isTTY);
   const slashCommands = input.slashCommands ?? true;
+  const menuSuggestions = (line: string) => input.slashSuggestions
+    ? customSlashMenuSuggestions(line, input.slashSuggestions)
+    : slashMenuSuggestions(line);
+  const recognizedCommands = input.slashSuggestions?.map((entry) => entry.completion ?? entry.label)
+    ?? COMMANDS;
   let interrupt: (() => void) | undefined;
   const rl = readline.createInterface({
     input: readable,
@@ -913,11 +935,11 @@ export function createTerminalAnalyticsShellIo(input: {
     removeHistoryDuplicates: true,
     completer: (line: string): [string[], string] => {
       if (!slashCommands) return [[], line];
-      const matches = slashMenuSuggestions(line)
+      const matches = menuSuggestions(line)
         .flatMap((entry) => entry.completion ? [entry.completion] : []);
-      const recognizedAction = COMMANDS.some((command) =>
+      const recognizedAction = recognizedCommands.some((command) =>
         line === command || line.startsWith(`${command} `));
-      return [matches.length ? matches : recognizedAction ? [] : COMMANDS, line];
+      return [matches.length ? matches : recognizedAction ? [] : recognizedCommands, line];
     },
   });
   rl.on("SIGINT", () => interrupt?.());
@@ -932,6 +954,7 @@ export function createTerminalAnalyticsShellIo(input: {
   let statusValue = "";
   let statusFrame = 0;
   const statusFrames = ["-", "\\", "|", "/"];
+  const statusColor = terminal && !("NO_COLOR" in process.env);
   const terminalColumns = () => {
     const columns = (writable as NodeJS.WriteStream).columns;
     return typeof columns === "number" && columns > 0 ? columns : 100;
@@ -1001,8 +1024,9 @@ export function createTerminalAnalyticsShellIo(input: {
   const renderSlashMenu = () => {
     if (!slashCommands || !questionActive || closed) return;
     const line = rl.line;
-    const menu = renderSlashCommandMenu(
+    const menu = renderSlashCommandSuggestionMenu(
       line,
+      menuSuggestions(line),
       terminal && !("NO_COLOR" in process.env),
     );
     if (!menu && !slashMenuVisible) return;
@@ -1169,11 +1193,25 @@ export function createTerminalAnalyticsShellIo(input: {
   };
   const renderStatus = () => {
     if (!terminal || !statusValue) return;
-    const frame = statusFrames[statusFrame % statusFrames.length];
+    const frame = statusFrames[statusFrame % statusFrames.length]!;
+    const available = Math.max(1, terminalContentWidth(terminalColumns()) - frame.length - 1);
+    const characters = Array.from(statusValue);
+    const visibleStatus = characters.length <= available
+      ? statusValue
+      : `${characters.slice(0, Math.max(1, available - 1)).join("")}…`;
+    const shimmerWidth = Math.min(7, Math.max(1, Array.from(visibleStatus).length));
+    const shimmerStart = Math.floor(statusFrame / 2)
+      % Math.max(1, Array.from(visibleStatus).length + shimmerWidth);
+    const statusCharacters = Array.from(visibleStatus);
+    const before = statusCharacters.slice(0, shimmerStart).join("");
+    const highlight = statusCharacters.slice(shimmerStart, shimmerStart + shimmerWidth).join("");
+    const after = statusCharacters.slice(shimmerStart + shimmerWidth).join("");
     statusFrame += 1;
-    writable.write(
-      `\r\u001b[2K\u001b[2m${padTerminalLine(`${frame} ${statusValue}`)}\u001b[0m`,
-    );
+    const rendered = statusColor
+      ? `${padTerminalLine(`\u001b[1;32m${frame}\u001b[0m \u001b[2m${before}`)}`
+        + `\u001b[22;1;37m${highlight}\u001b[0;2m${after}\u001b[0m`
+      : padTerminalLine(`${frame} ${visibleStatus}`);
+    writable.write(`\r\u001b[2K${rendered}`);
   };
   const readQuestion = async (
     prompt: string,

@@ -3,10 +3,73 @@ import {
   generateModelActionSuggestion,
   generateModelActionSuggestionSet,
 } from "./action-suggestion-model.js";
+import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
 import type { AskProviderDependencies } from "./model-ask.js";
 import type { GuidedActionOptions } from "./guided-action.js";
 
 describe("model-assisted Safe Action suggestions", () => {
+  it("tells Action narration that the separately validated Read draft remains intact", async () => {
+    const requests: Array<Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]> = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(request);
+      if (requests.length === 1) {
+        return {
+          status: 200,
+          body: {
+            output: [{
+              type: "function_call",
+              call_id: "call_action_set_with_read_context",
+              name: "runner__suggest_safe_actions",
+              arguments: JSON.stringify({
+                suggestions: [{
+                  intent: "Propose creating one order.",
+                  operation: "insert",
+                  resource: "public.orders",
+                  fields: ["status"],
+                }],
+              }),
+            }],
+          },
+        };
+      }
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "message",
+            role: "assistant",
+            content: [{
+              type: "output_text",
+              text: "The Action draft is ready, and the separate Read draft remains unchanged.",
+            }],
+          }],
+        },
+      };
+    });
+
+    const result = await generateModelActionSuggestionSet({
+      jobIntent: "Review orders and propose creating replacements.",
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      options: actionOptions(),
+      env: { OPENAI_API_KEY: "provider-test-key" },
+      egressAcknowledged: true,
+      dependencies: { requestJson },
+      conversation: createModelAuthoringConversation(),
+    });
+
+    expect(result.model_message).toBe(
+      "The Action draft is ready, and the separate Read draft remains unchanged.",
+    );
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(requests[1]?.body)).toContain(
+      "The separately validated Read draft remains unchanged",
+    );
+    expect(JSON.stringify(requests[1]?.body)).toContain(
+      "previously validated work disappeared",
+    );
+  });
+
   it("gives a local model one bounded correction when an action set is returned as prose", async () => {
     let attempt = 0;
     const requests: string[] = [];

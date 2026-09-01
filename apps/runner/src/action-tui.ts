@@ -58,6 +58,8 @@ import {
 import { terminalContentWidth } from "./terminal-layout.js";
 import { safeTerminalText } from "./analytics-shell-render.js";
 import type { AskProvider, AskProviderDependencies } from "./model-ask.js";
+import type { ModelAuthoringConversation } from "./model-authoring-conversation.js";
+import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import {
   applyInterpretedDeterministicApproval,
@@ -140,6 +142,7 @@ export type ActionModelSuggestionSession = {
   apiKeyEnv?: string;
   baseUrl?: string;
   dependencies?: AskProviderDependencies;
+  conversation?: ModelAuthoringConversation;
 };
 
 export type ActionBoundaryInterviewContext = {
@@ -1476,15 +1479,30 @@ async function collectConversationalProposalDecision(input: {
   let pendingAnswer: string | undefined;
   let pendingApprovedValues: OperatorApprovedValueContext | undefined;
   let operatorRetryUsed = false;
+  let pendingModelMessage = await narrateValidatedAuthoringStep({
+    session: input.modelInterview.session,
+    operatorMessage: `Continue authoring ${target ?? input.intent}.`,
+    validatedFacts: [
+      ...prompt.context,
+      "Runner needs this one business decision before it can finish the disabled proposal draft.",
+    ],
+    nextQuestion: prompt.label,
+    env: input.env,
+    egressAcknowledged: input.modelInterview.egressAcknowledged,
+  });
   while (true) {
     const answer = pendingAnswer ?? await input.prompter.text(prompt.label, {
         title: conversationalDecisionTitle(input.decision, "question"),
+        ...(pendingModelMessage
+          ? { conversation: { modelLines: [pendingModelMessage] } }
+          : {}),
         context: [
           ...prompt.context,
           `Interpreter: ${modelSessionLabel(input.modelInterview.session)} | one bounded structured result`,
           ...notice,
         ],
       });
+    pendingModelMessage = undefined;
     const operatorApprovedValues = pendingApprovedValues;
     pendingAnswer = undefined;
     pendingApprovedValues = undefined;
@@ -1533,6 +1551,7 @@ async function collectConversationalProposalDecision(input: {
         ],
       };
       notice = [];
+      pendingModelMessage = resolution.model_message ?? resolution.question;
       continue;
     }
     if (resolution.state === "value_request") {
@@ -1555,6 +1574,7 @@ async function collectConversationalProposalDecision(input: {
           ],
         };
         notice = [];
+        pendingModelMessage = resolution.model_message ?? resolution.question;
         continue;
       }
       pendingAnswer = answer;
@@ -1567,6 +1587,9 @@ async function collectConversationalProposalDecision(input: {
       {
         defaultValue: "yes",
         title: conversationalDecisionTitle(input.decision, "confirmation"),
+        ...(resolution.model_message
+          ? { conversation: { modelLines: [resolution.model_message] } }
+          : {}),
         context: [
           `Operator answer: ${answer}`,
           `Runner-validated interpretation: ${resolution.summary}`,
@@ -1668,6 +1691,22 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
   let notice: string[] = [];
   let pendingAnswer: string | undefined;
   let pendingApprovedValues: OperatorApprovedValueContext | undefined;
+  let pendingModelMessage: string | undefined;
+  let validatedModelMessage = await narrateValidatedAuthoringStep({
+    session: input.modelInterview.session,
+    operatorMessage: `Review the starting auto-approval policy for ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}.`,
+    validatedFacts: [
+      ...conversationalDeterministicApprovalPolicyLines(
+        template,
+        input.preparation.summary.arguments,
+      ),
+      "This is a disabled starting policy. Anything outside it requires human review; approval and apply authority remain off.",
+    ],
+    nextQuestion: "Should I use this exact starting policy, or what should change?",
+    env: input.env,
+    egressAcknowledged: input.modelInterview.egressAcknowledged,
+  });
+  let clarificationCount = 0;
   while (true) {
     const source = template.source === "reviewed_structure"
       ? "Runner-derived from reviewed proposal bounds"
@@ -1677,26 +1716,11 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
     const answer = pendingAnswer ?? await input.prompter.text(prompt, {
       ...(reviewingExactPolicy ? { defaultValue: "yes" } : {}),
       title: reviewingExactPolicy ? "CONFIRM AUTO-APPROVAL POLICY" : "REFINE AUTO-APPROVAL POLICY",
-      ...(reviewingExactPolicy
-        ? {
-            conversation: {
-              modelLines: conversationalDeterministicApprovalModelLines(
-                template,
-                `${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
-              ),
-              checkpoint: {
-                title: "Runner verified",
-                lines: [
-                  `${(template.auto_approval.conditions ?? []).length} exact condition${(template.auto_approval.conditions ?? []).length === 1 ? "" : "s"} stay inside the hard proposal envelope`,
-                  `${template.shared_limits.length} trusted-scope circuit breaker${template.shared_limits.length === 1 ? "" : "s"} · human fallback`,
-                  "Disabled policy draft · approval off · apply off · source unchanged",
-                  ...notice,
-                ],
-                tone: "success",
-              },
-            },
-          }
-        : {}),
+      ...(reviewingExactPolicy && validatedModelMessage
+        ? { conversation: { modelLines: [validatedModelMessage] } }
+        : pendingModelMessage
+          ? { conversation: { modelLines: [pendingModelMessage] } }
+          : {}),
       context: reviewingExactPolicy
         ? [
             `Target: ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
@@ -1717,6 +1741,7 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
     const operatorApprovedValues = pendingApprovedValues;
     pendingAnswer = undefined;
     pendingApprovedValues = undefined;
+    pendingModelMessage = undefined;
     notice = [];
     if (answer === undefined) return "back";
     const command = conversationalPolicyCommand(answer);
@@ -1774,9 +1799,48 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
       continue;
     }
     if (resolution.state === "clarification") {
+      clarificationCount += 1;
+      if (clarificationCount > 1) {
+        const recovery = await input.prompter.choose("POLICY DOES NOT FIT THIS ACTION", [
+          {
+            value: "restate",
+            label: "Describe a policy for this exact action",
+            detail: `Keep ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource} and use only its reviewed proposal fields.`,
+          },
+          {
+            value: "human",
+            label: "Keep human approval [recommended]",
+            detail: "Save no deterministic auto-approval rule for this action.",
+          },
+          {
+            value: "manual",
+            label: "Use exact policy controls",
+            detail: "Review the current action's available fields and limits directly.",
+          },
+          {
+            value: "back",
+            label: "Skip this action and continue",
+            detail: "Save no draft for this action; other prepared drafts remain unchanged.",
+          },
+        ], [
+          `Model question: ${resolution.model_message ?? resolution.question}`,
+          `Current action: ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
+          "Runner will not map a missing amount, method, status, or other business concept onto an unrelated reviewed field.",
+          "Choose exact policy controls to inspect the current proposal envelope directly.",
+        ], "human");
+        if (recovery === "restate") {
+          reviewingExactPolicy = false;
+          prompt = `Describe the auto-approval rule for ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`;
+          pendingModelMessage = `That rule still does not fit the current ${input.preparation.action.resource} action. Please use this action's reviewed fields, or skip this action without saving it.`;
+          continue;
+        }
+        if (recovery === "manual") return "manual";
+        if (recovery === "back" || !recovery) return "back";
+        return "human";
+      }
       reviewingExactPolicy = false;
       prompt = resolution.question;
-      notice = ["The model asked one clarification. Runner will still validate the complete replacement."];
+      pendingModelMessage = resolution.model_message ?? resolution.question;
       continue;
     }
     if (resolution.state === "value_request") {
@@ -1792,6 +1856,7 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
       if (valueContext === "without_values") {
         reviewingExactPolicy = false;
         prompt = "Describe the deterministic rule without sending observed source values.";
+        pendingModelMessage = resolution.model_message ?? resolution.question;
         continue;
       }
       pendingAnswer = answer;
@@ -1813,6 +1878,7 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
       template = interpreted.deterministic_approval_template;
       reviewingExactPolicy = true;
       prompt = "Press Enter to accept, or describe what should change";
+      validatedModelMessage = resolution.model_message;
       notice = resolution.correction_used
         ? ["Provider correction used once; the corrected result passed validation."]
         : [];

@@ -15,6 +15,11 @@ import {
 } from "./action-design.js";
 import type { GuidedActionOptions } from "./guided-action.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
+import {
+  modelAuthoringHistory,
+  type ModelAuthoringConversation,
+} from "./model-authoring-conversation.js";
+import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 
 const SUBMIT_SUGGESTION_TOOL = "runner.suggest_safe_action";
 const SUBMIT_SUGGESTION_SET_TOOL = "runner.suggest_safe_actions";
@@ -25,6 +30,7 @@ export type ModelActionSuggestionResult = {
   model: string;
   authority_granted: false;
   source_database_changed: false;
+  model_message?: string;
   discarded_approval_policy_proposals?: number;
   usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
 };
@@ -35,6 +41,7 @@ export type ModelActionSuggestionSetResult = {
   model: string;
   authority_granted: false;
   source_database_changed: false;
+  model_message?: string;
   discarded_approval_policy_proposals?: number;
   usage?: ModelActionSuggestionResult["usage"];
 };
@@ -55,6 +62,7 @@ export async function generateModelActionSuggestion(input: {
   baseUrl?: string;
   egressAcknowledged: boolean;
   dependencies?: AskProviderDependencies;
+  conversation?: ModelAuthoringConversation;
   signal?: AbortSignal;
 }): Promise<ModelActionSuggestionResult> {
   const intent = safeIntent(input.intent);
@@ -144,7 +152,7 @@ export async function generateModelActionSuggestion(input: {
   const run = (question: string) => runAskProviderTurn({
     configuration,
     question,
-    history: [],
+    history: modelAuthoringHistory(input.conversation),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,
@@ -182,12 +190,23 @@ export async function generateModelActionSuggestion(input: {
   }
   const recovered = recoverSuggestionWithoutInvalidApprovalPolicy(assessment, input.options.resources);
   assessment = recovered.assessment;
+  const modelMessage = assessment.status === "suggested"
+    ? await narrateValidatedAuthoringStep({
+        session: narrationSession(input),
+        operatorMessage: intent,
+        validatedFacts: actionSuggestionNarrationFacts([assessment]),
+        env: input.env,
+        egressAcknowledged: input.egressAcknowledged,
+        signal: input.signal,
+      })
+    : undefined;
   return {
     assessment,
     provider: input.provider,
     model: input.model,
     authority_granted: false,
     source_database_changed: false,
+    ...(modelMessage ? { model_message: modelMessage } : {}),
     ...(recovered.discarded ? { discarded_approval_policy_proposals: 1 } : {}),
     ...(usage ? { usage } : {}),
   };
@@ -209,6 +228,7 @@ export async function generateModelActionSuggestionSet(input: {
   baseUrl?: string;
   egressAcknowledged: boolean;
   dependencies?: AskProviderDependencies;
+  conversation?: ModelAuthoringConversation;
   signal?: AbortSignal;
 }): Promise<ModelActionSuggestionSetResult> {
   const jobIntent = safeIntent(input.jobIntent);
@@ -307,7 +327,7 @@ export async function generateModelActionSuggestionSet(input: {
   const run = (question: string) => runAskProviderTurn({
     configuration,
     question,
-    history: [],
+    history: modelAuthoringHistory(input.conversation),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,
@@ -358,17 +378,60 @@ export async function generateModelActionSuggestionSet(input: {
       `ACTION_SUGGESTION_SET_BLOCKED: ${submissionIssues.slice(0, 8).join(" ")}`,
     );
   }
+  const modelMessage = await narrateValidatedAuthoringStep({
+    session: narrationSession(input),
+    operatorMessage: jobIntent,
+    validatedFacts: actionSuggestionNarrationFacts(assessments),
+    env: input.env,
+    egressAcknowledged: input.egressAcknowledged,
+    signal: input.signal,
+  });
   return {
     assessments,
     provider: input.provider,
     model: input.model,
     authority_granted: false,
     source_database_changed: false,
+    ...(modelMessage ? { model_message: modelMessage } : {}),
     ...(discardedApprovalPolicyProposals
       ? { discarded_approval_policy_proposals: discardedApprovalPolicyProposals }
       : {}),
     ...(usage ? { usage } : {}),
   };
+}
+
+function narrationSession(input: {
+  provider: AskProvider;
+  model: string;
+  apiKey?: string;
+  apiKeyEnv?: string;
+  baseUrl?: string;
+  dependencies?: AskProviderDependencies;
+  conversation?: ModelAuthoringConversation;
+}) {
+  return {
+    provider: input.provider,
+    model: input.model,
+    ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+    ...(input.apiKeyEnv ? { apiKeyEnv: input.apiKeyEnv } : {}),
+    ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+    ...(input.dependencies ? { dependencies: input.dependencies } : {}),
+    ...(input.conversation ? { conversation: input.conversation } : {}),
+  };
+}
+
+function actionSuggestionNarrationFacts(assessments: ActionSuggestionAssessment[]): string[] {
+  return [
+    `${assessments.length} Action suggestion${assessments.length === 1 ? "" : "s"} passed exact catalog validation.`,
+    ...assessments.map((assessment) => {
+      const suggestion = assessment.suggestion;
+      const fields = suggestion.fields?.length ? suggestion.fields.join(", ") : "no agent-supplied fields";
+      return `${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}; agent fields: ${fields}.`;
+    }),
+    "Every suggestion is still a disabled proposal-only draft. Approval, apply, and source writes remain off.",
+    "This record describes only the Action-suggestion step. The separately validated Read draft remains unchanged; do not describe its reads as absent or rolled back.",
+    "If a requested business change is absent from these Action targets or fields, explain that mismatch now instead of treating another action as a substitute.",
+  ];
 }
 
 function suggestionSetIssues(assessments: ActionSuggestionAssessment[]): string[] {

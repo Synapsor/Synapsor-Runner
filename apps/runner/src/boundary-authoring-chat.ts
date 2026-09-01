@@ -3,6 +3,7 @@ import type { ActionControlPrompter } from "./action-tui.js";
 import {
   createTerminalAnalyticsShellIo,
   type AnalyticsShellIo,
+  type SlashCommandSuggestion,
 } from "./analytics-shell.js";
 import { safeTerminalText } from "./analytics-shell-render.js";
 import {
@@ -43,8 +44,20 @@ type ChoiceInput = {
   initialValue?: string;
 };
 
-const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 50;
-const DEFAULT_TRANSCRIPT_STREAM_VISIBLE_CHARS = 8;
+const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 40;
+const DEFAULT_TRANSCRIPT_STREAM_VISIBLE_CHARS = 10;
+const AUTHORING_SLASH_SUGGESTIONS: SlashCommandSuggestion[] = [
+  {
+    label: "/details",
+    completion: "/details",
+    description: "Show the latest exact Runner validation; no model request",
+  },
+  {
+    label: "/help",
+    completion: "/help",
+    description: "Show Boundary-authoring chat controls",
+  },
+];
 
 function stripTerminalAnsi(value: string): string {
   return value.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
@@ -112,25 +125,6 @@ function modelQuestionTurn(
             ? ["This guard rejects duplicate or stale proposals before approval."]
             : undefined;
   return [prompt.replace(/:\s*$/u, ""), ...(purpose ?? [])];
-}
-
-function modelConfirmationTurn(context: string[] | undefined): string[] | undefined {
-  const interpretation = contextValue(context, "Runner-validated interpretation:");
-  if (!interpretation) return undefined;
-  return [
-    `I interpreted that as ${interpretation}.`,
-    "Press Enter to use it, or tell me what should change.",
-  ];
-}
-
-function confirmationScopeLine(title: string | undefined, target: string | undefined): string | undefined {
-  const heading = title?.trim() ?? "";
-  if (/PROPOSAL RANGE$/iu.test(heading)) return target ? `Hard range: ${target}` : "Hard proposal range";
-  if (/PROPOSAL FIELDS$/iu.test(heading)) return target ? `Agent fields: ${target}` : "Agent-supplied fields";
-  if (/ACTION TARGET$/iu.test(heading)) return "One reviewed Action target";
-  if (/PROPOSAL EFFECT$/iu.test(heading)) return "One reviewed proposal effect";
-  if (/CONFLICT AND RETRY GUARD$/iu.test(heading)) return target ? `Retry guard: ${target}` : "Conflict and retry guard";
-  return undefined;
 }
 
 function compactRoutineCheckpoint(
@@ -213,7 +207,10 @@ export function createBoundaryAuthoringChat(input: {
   color?: boolean;
   streamLineDelayMs?: number;
 } = {}): BoundaryAuthoringChat {
-  const io = input.io ?? createTerminalAnalyticsShellIo({ slashCommands: false });
+  const io = input.io ?? createTerminalAnalyticsShellIo({
+    slashCommands: true,
+    slashSuggestions: AUTHORING_SLASH_SUGGESTIONS,
+  });
   const color = input.color ?? (io.isTerminal?.() === true && !("NO_COLOR" in process.env));
   const theme = terminalTheme(color, { brand: true });
   const streamLineDelayMs = input.streamLineDelayMs
@@ -318,7 +315,7 @@ export function createBoundaryAuthoringChat(input: {
   ) => {
     const routine = compactRoutineCheckpoint(title, lines);
     if (routine) {
-      checkpoint(routine.title, routine.lines, tone === "normal" ? "success" : tone);
+      rememberDetails(title, lines);
       return;
     }
     const titleStyle = tone === "success"
@@ -346,7 +343,41 @@ export function createBoundaryAuthoringChat(input: {
       ], "warning");
       return;
     }
-    runner(`DETAILS - ${latestDetails.title}`, latestDetails.lines);
+    const detailLines = latestDetails.lines.map((line) => {
+      const safe = transcriptText(line);
+      if (!safe.trim()) return "";
+      if (/^[A-Z][A-Z0-9 /+_-]{2,}:?$/u.test(safe.trim())) {
+        return theme.title(safe.trim().replace(/:$/u, ""));
+      }
+      if (/^[+|`-]/u.test(safe.trimStart())) return safe;
+      const fact = safe.match(/^([^:]{1,40}):\s+(.+)$/u);
+      if (fact) return `${theme.dim(`${fact[1]!.trim()}:`)} ${theme.value(fact[2]!.trim())}`;
+      if (/^[-*]\s+/u.test(safe.trimStart())) {
+        return `  ${theme.key("-")} ${safe.trimStart().replace(/^[-*]\s+/u, "")}`;
+      }
+      return `  ${safe}`;
+    });
+    writeTranscript([
+      "",
+      theme.title("RUNNER DETAILS"),
+      theme.scope(latestDetails.title),
+      ...detailLines,
+      "",
+      theme.dim("No model request, authority change, source query, or source write occurred."),
+      "",
+    ].join("\n"));
+  };
+  const showHelp = () => {
+    writeTranscript([
+      "",
+      theme.title("BOUNDARY AUTHORING COMMANDS"),
+      `${theme.key("/details")}  ${theme.dim("Show the latest exact Runner validation or permission record")}`,
+      `${theme.key("/help")}     ${theme.dim("Show these commands")}`,
+      `${theme.key("Esc")}       ${theme.dim("Pause safely at an input prompt")}`,
+      "",
+      theme.dim("Press Tab after / to complete a command. Manual editors remain available from the Boundary screen."),
+      "",
+    ].join("\n"));
   };
   const waitForNextStreamChunk = () => streamLineDelayMs > 0
     ? new Promise<void>((resolve) => setTimeout(resolve, streamLineDelayMs))
@@ -379,7 +410,7 @@ export function createBoundaryAuthoringChat(input: {
   ) => {
     const routine = compactRoutineCheckpoint(title, lines);
     if (routine) {
-      await streamCheckpoint(routine.title, routine.lines, tone === "normal" ? "success" : tone);
+      rememberDetails(title, lines);
       return;
     }
     const titleStyle = tone === "success"
@@ -429,8 +460,16 @@ export function createBoundaryAuthoringChat(input: {
       const answer = io.readWithEscape
         ? await io.readWithEscape(`${theme.focus("you>")} ${defaultHint}`)
         : await io.read(`${theme.focus("you>")} ${defaultHint}`);
-      if (answer?.trim().toLowerCase() !== "/details") return answer;
-      showDetails();
+      const command = answer?.trim().toLowerCase();
+      if (command === "/details") {
+        showDetails();
+        continue;
+      }
+      if (command === "/help") {
+        showHelp();
+        continue;
+      }
+      return answer;
     }
   };
   const choose = async (choice: ChoiceInput): Promise<string | undefined> => {
@@ -577,27 +616,10 @@ export function createBoundaryAuthoringChat(input: {
         const answer = await readAnswer(options.defaultValue);
         return answer === "" && options.defaultValue ? options.defaultValue : answer;
       }
-      const speaker = isModelQuestion(options?.title, options?.context) ? "model" : "runner";
-      if (speaker === "model") {
-        const confirmation = modelConfirmationTurn(options?.context);
-        await streamModel(confirmation ?? modelQuestionTurn(label, options?.title, options?.context));
-        if (confirmation) {
-          const target = contextValue(options?.context, "Action:") ?? contextValue(options?.context, "Target:");
-          const interpretation = contextValue(options?.context, "Runner-validated interpretation:");
-          const scopeLine = confirmationScopeLine(options?.title, target);
-          checkpoint("Runner verified", [
-            ...(interpretation ? [interpretation] : []),
-            ...(scopeLine ? [scopeLine] : []),
-            "Disabled draft only · authority off · source unchanged",
-          ]);
-        }
-        const answer = await readAnswer(options?.defaultValue);
-        return answer === "" && options?.defaultValue ? options.defaultValue : answer;
-      }
       await writeContext(options?.context);
       if (options?.title) runner(options.title);
       const suffix = options?.defaultValue ? ` [${options.defaultValue}]` : "";
-      const answer = await read(`${label}${suffix}`, speaker);
+      const answer = await read(`${label}${suffix}`, "runner");
       return answer === "" && options?.defaultValue ? options.defaultValue : answer;
     },
     confirm: (label, defaultValue) => confirm(label, { defaultValue }),
@@ -611,11 +633,9 @@ export function createBoundaryAuthoringChat(input: {
     },
   };
 
-  runner("BOUNDARY AUTHORING", [
-    `${modelLabel ? `Drafting model: ${modelLabel}. ` : ""}State one agent job, then answer only the business questions Runner cannot prove from schema structure.`,
-    "Model suggestions are untrusted. Runner validates exact structure and asks separately before Read or Action authority is activated.",
-    "Type /details at a you> prompt to inspect the latest exact Runner validation. It makes no request and changes no authority.",
-    "Esc pauses safely. Manual editors remain available without discarding saved disabled drafts.",
+  runner("BOUNDARY DRAFTING", [
+    `${modelLabel ? `${modelLabel} will guide the setup after metadata permission. ` : ""}Describe one agent job in ordinary language.`,
+    "Runner stays behind the conversation, validates every draft, and appears directly only for permission, ambiguity, or refusal. /details shows exact records; Esc pauses safely.",
   ]);
 
   return {

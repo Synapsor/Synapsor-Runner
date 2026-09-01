@@ -5,9 +5,80 @@ import {
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
 import type { AskProviderDependencies } from "./model-ask.js";
+import {
+  createModelAuthoringConversation,
+  rememberModelAuthoringTurn,
+} from "./model-authoring-conversation.js";
 import { generateModelReadWorkload, readWorkloadCatalog } from "./read-workload-model.js";
 
 describe("model-assisted Read workload mapping", () => {
+  it("carries prior authoring history into mapping and returns actual validated model prose", async () => {
+    const conversation = createModelAuthoringConversation();
+    rememberModelAuthoringTurn(
+      conversation,
+      "Help customers understand their support history.",
+      "I will map that job to reviewed structure.",
+    );
+    const requests: Array<Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]> = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(request);
+      if (requests.length === 1) {
+        return {
+          status: 200,
+          body: {
+            output: [{
+              type: "function_call",
+              call_id: "call_read_history",
+              name: "runner__submit_read_workloads",
+              arguments: JSON.stringify({
+                allowed: [{
+                  id: "orders_by_status",
+                  description: "Count orders by status",
+                  plan: {
+                    kind: "aggregate",
+                    resource: "public.orders",
+                    measures: [{ function: "count" }],
+                    dimensions: [{ field: "status" }],
+                  },
+                }],
+                forbidden: [],
+              }),
+            }],
+          },
+        };
+      }
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "I mapped one reviewed status summary. It is not active yet." }],
+          }],
+        },
+      };
+    });
+
+    const result = await generateModelReadWorkload({
+      name: "support_reads",
+      allowedQuestions: ["How many orders are in each status?"],
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      generatedBoundary: generatedBoundary(),
+      env: { TEST_PROVIDER_KEY: "provider-test-key" },
+      apiKeyEnv: "TEST_PROVIDER_KEY",
+      egressAcknowledged: true,
+      dependencies: { requestJson },
+      conversation,
+    });
+
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(result.model_message).toBe("I mapped one reviewed status summary. It is not active yet.");
+    expect(JSON.stringify(requests[0]?.body)).toContain("Help customers understand their support history.");
+    expect(JSON.stringify(requests[1]?.body)).toContain("Count orders by status");
+    expect(JSON.stringify(requests[1]?.body)).not.toContain("provider-test-key");
+  });
+
   it.each(["openai", "anthropic"] as const)(
     "uses one ephemeral structured workload tool with %s and grants no authority",
     async (provider) => {

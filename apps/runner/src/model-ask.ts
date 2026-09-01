@@ -212,7 +212,7 @@ type ResolvedAskProviderConfiguration = AskProviderPublicConfiguration & {
   apiKey?: string;
 };
 
-type AskHistoryTurn = {
+export type AskHistoryTurn = {
   question: string;
   answer: string;
   runner_context?: string;
@@ -598,7 +598,16 @@ export async function runAskProviderTurn(input: {
   skipRunnerQuestionContext?: boolean;
   requiredInitialToolName?: string;
   completeAfterRequiredTool?: boolean;
+  allowToolFreeAuthoringResponse?: boolean;
 }): Promise<AskTurnResult> {
+  if (input.allowToolFreeAuthoringResponse
+    && (input.gateway.mode !== "authoring" || input.tools.length !== 0 || input.requiredInitialToolName)) {
+    throw new AskError(
+      "ASK_TOOL_FREE_AUTHORING_INVALID",
+      "A tool-free provider response is available only for an authoring narration pass with no tool authority.",
+      500,
+    );
+  }
   if (input.completeAfterRequiredTool && !input.requiredInitialToolName) {
     throw new AskError(
       "ASK_REQUIRED_TOOL_INVALID",
@@ -614,7 +623,7 @@ export async function runAskProviderTurn(input: {
       409,
     );
   }
-  const prepared = prepareProviderTools(input.tools);
+  const prepared = prepareProviderTools(input.tools, input.allowToolFreeAuthoringResponse === true);
   const requestJson = input.dependencies?.requestJson ?? secureAskJsonRequest;
   const currentUtcDate = (input.dependencies?.now?.() ?? new Date()).toISOString().slice(0, 10);
   return input.configuration.provider === "anthropic"
@@ -1059,6 +1068,7 @@ async function runOpenAiCompatibleTurn(input: {
   skipRunnerQuestionContext?: boolean;
   requiredInitialToolName?: string;
   completeAfterRequiredTool?: boolean;
+  allowToolFreeAuthoringResponse?: boolean;
 }): Promise<AskTurnResult> {
   const messages: Array<Record<string, unknown>> = [
     { role: "system", content: input.providerSystemPrompt ?? askSystemPrompt() },
@@ -1166,6 +1176,20 @@ async function runOpenAiCompatibleTurn(input: {
       ...(toolCalls.length ? { tool_calls: toolCalls.map((call) => call.raw) } : {}),
     });
     if (toolCalls.length === 0) {
+      if (input.allowToolFreeAuthoringResponse) {
+        const answer = safeAnswerIfPresent(message.content);
+        if (!answer) {
+          throw new AskError(
+            "ASK_AUTHORING_NARRATION_MISSING",
+            "The provider returned no text for the tool-free authoring narration.",
+            502,
+          );
+        }
+        return rememberProviderHistory(
+          completeProviderAnswer(input.configuration, answer, traces, usage),
+          providerHistory,
+        );
+      }
       if (input.configuration.provider !== "openai_compatible"
         && traces.length === 0
         && shouldRecoverLocalDataQuestion(input.question)) {
@@ -1991,6 +2015,7 @@ async function runAnthropicTurn(input: {
   skipRunnerQuestionContext?: boolean;
   requiredInitialToolName?: string;
   completeAfterRequiredTool?: boolean;
+  allowToolFreeAuthoringResponse?: boolean;
 }): Promise<AskTurnResult> {
   const messages: Array<Record<string, unknown>> = [
     ...historyMessages(input.history),
@@ -2045,11 +2070,15 @@ async function runAnthropicTurn(input: {
         ),
         system: input.providerSystemPrompt ?? askSystemPrompt(),
         messages,
-        tools: providerTools.map((tool) => ({
-          name: tool.providerName,
-          description: tool.definition.description.slice(0, 1_024),
-          input_schema: tool.definition.input_schema,
-        })),
+        ...(providerTools.length
+          ? {
+              tools: providerTools.map((tool) => ({
+                name: tool.providerName,
+                description: tool.definition.description.slice(0, 1_024),
+                input_schema: tool.definition.input_schema,
+              })),
+            }
+          : {}),
         ...(forcedProviderName
           ? { tool_choice: { type: "tool", name: forcedProviderName } }
           : {}),
@@ -2078,6 +2107,23 @@ async function runAnthropicTurn(input: {
     }
     messages.push({ role: "assistant", content: blocks });
     if (calls.length === 0) {
+      if (input.allowToolFreeAuthoringResponse) {
+        const answer = safeAnswerIfPresent(blocks
+          .filter((block) => block.type === "text")
+          .map((block) => String(block.text ?? ""))
+          .join("\n"));
+        if (!answer) {
+          throw new AskError(
+            "ASK_AUTHORING_NARRATION_MISSING",
+            "The provider returned no text for the tool-free authoring narration.",
+            502,
+          );
+        }
+        return rememberProviderHistory(
+          completeProviderAnswer(input.configuration, answer, traces, usage),
+          providerHistory,
+        );
+      }
       if (traces.length === 0 && shouldRecoverLocalDataQuestion(input.question)) {
         if (!dataToolGroundingCorrectionSent) {
           dataToolGroundingCorrectionSent = true;
@@ -2453,8 +2499,13 @@ type PreparedProviderTools = {
   definitionByCanonical: Map<string, AskToolDefinition>;
 };
 
-function prepareProviderTools(tools: AskToolDefinition[]): PreparedProviderTools {
-  if (tools.length === 0) throw new AskError("ASK_NO_ACTIVE_TOOLS", "Activate a reviewed tool before using Ask.", 409);
+function prepareProviderTools(
+  tools: AskToolDefinition[],
+  allowEmpty = false,
+): PreparedProviderTools {
+  if (tools.length === 0 && !allowEmpty) {
+    throw new AskError("ASK_NO_ACTIVE_TOOLS", "Activate a reviewed tool before using Ask.", 409);
+  }
   if (tools.length > 64) throw new AskError("ASK_TOOL_SURFACE_TOO_LARGE", "Ask refuses tool surfaces larger than 64 reviewed tools.", 409);
   const names = tools.map((tool) => tool.name);
   if (new Set(names).size !== names.length) throw new AskError("ASK_TOOL_NAME_COLLISION", "The reviewed tool surface contains duplicate names.", 409);

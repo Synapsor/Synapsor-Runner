@@ -18,6 +18,11 @@ import {
 import { RELATIVE_TIME_COMPARISONS, RELATIVE_TIME_WINDOWS } from "./relative-time-window.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
 import { isClearlyOpaqueExploreIdentifier } from "./explore-vocabulary.js";
+import {
+  modelAuthoringHistory,
+  type ModelAuthoringConversation,
+} from "./model-authoring-conversation.js";
+import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 
 const SUBMIT_READ_WORKLOAD_TOOL = "runner.submit_read_workloads";
 
@@ -30,6 +35,7 @@ export type ModelReadWorkloadResult = {
   source_query_executed: false;
   explore_budget_consumed: false;
   source_database_changed: false;
+  model_message?: string;
   usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
 };
 
@@ -85,6 +91,7 @@ export async function generateModelReadWorkload(input: {
     request: ModelReadClarificationRequest,
   ) => Promise<ModelReadClarificationDecision>;
   dependencies?: AskProviderDependencies;
+  conversation?: ModelAuthoringConversation;
   signal?: AbortSignal;
 }): Promise<ModelReadWorkloadResult> {
   const name = boundedText(input.name, "workload name", 80);
@@ -375,7 +382,7 @@ export async function generateModelReadWorkload(input: {
   const run = (question: string) => runAskProviderTurn({
     configuration,
     question,
-    history: [],
+    history: modelAuthoringHistory(input.conversation),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,
@@ -506,6 +513,30 @@ export async function generateModelReadWorkload(input: {
       ? "READ_WORKLOAD_ASSISTANCE_REQUEST_REPEATED: the model requested another clarification or database-value context after the one bounded operator decision. Runner sent nothing else and accepted no draft."
       : "READ_WORKLOAD_NOT_SUBMITTED: the model did not submit one bounded structured workload.");
   }
+  const modelMessage = await narrateValidatedAuthoringStep({
+    session: {
+      provider: input.provider,
+      model: input.model,
+      ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+      ...(input.apiKeyEnv ? { apiKeyEnv: input.apiKeyEnv } : {}),
+      ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+      ...(input.dependencies ? { dependencies: input.dependencies } : {}),
+      ...(input.conversation ? { conversation: input.conversation } : {}),
+    },
+    operatorMessage: allowedQuestions.join("\n"),
+    validatedFacts: [
+      `${workload.allowed.length} representative Read plan${workload.allowed.length === 1 ? "" : "s"} passed Runner grammar validation.`,
+      ...workload.allowed.slice(0, 8).map((entry) =>
+        `${entry.plan.resource}: ${entry.description}`),
+      ...(workload.allowed.length > 8
+        ? [`${workload.allowed.length - 8} additional validated Read plans are in Runner details.`]
+        : []),
+      "Read authority remains disabled and the source database was not changed.",
+    ],
+    env: input.env,
+    egressAcknowledged: input.egressAcknowledged,
+    signal: input.signal,
+  });
   return {
     workload,
     analysis,
@@ -515,6 +546,7 @@ export async function generateModelReadWorkload(input: {
     source_query_executed: false,
     explore_budget_consumed: false,
     source_database_changed: false,
+    ...(modelMessage ? { model_message: modelMessage } : {}),
     ...(usage ? { usage } : {}),
   };
 }

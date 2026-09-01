@@ -1950,6 +1950,7 @@ describe("boundary operator-plane CLI", () => {
         analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
         provider: input.provider,
         model: input.model,
+        model_message: "I drafted one representative Read plan from the reviewed service structure.",
         authority_granted: false,
         source_query_executed: false,
         explore_budget_consumed: false,
@@ -1971,7 +1972,7 @@ describe("boundary operator-plane CLI", () => {
       confirm: async (prompt) => {
         confirmations.push(prompt);
         if (prompt.includes("Action Boundary")) return false;
-        if (prompt.includes("structural names")) return true;
+        if (prompt.includes("reviewed authoring context")) return true;
         throw new Error(`Unexpected job-first confirmation: ${prompt}`);
       },
       confirmActivation: async () => {
@@ -1981,6 +1982,7 @@ describe("boundary operator-plane CLI", () => {
     const chatClose = vi.fn();
     const chatModel = vi.fn();
     const chatRunner = vi.fn();
+    const chatDetails = vi.fn();
     const chatProgressCalls: string[] = [];
     const chatProgress = async <T>(message: string, operation: () => Promise<T>): Promise<T> => {
       chatProgressCalls.push(message);
@@ -2016,7 +2018,7 @@ describe("boundary operator-plane CLI", () => {
             streamRunner: async (...args) => { chatRunner(...args); },
             streamCheckpoint: async (...args) => { chatRunner(...args); },
             streamModel: async (lines) => { chatModel(lines); },
-            rememberDetails: vi.fn(),
+            rememberDetails: chatDetails,
             showDetails: vi.fn(),
             providerStream: vi.fn(),
             progress: chatProgress,
@@ -2038,15 +2040,20 @@ describe("boundary operator-plane CLI", () => {
         egressAcknowledged: true,
         valueRequestHandler: expect.any(Function),
         clarificationHandler: expect.any(Function),
+        conversation: expect.objectContaining({ turns: expect.any(Array) }),
       }));
       expect(chatProgressCalls).toEqual(["Mapping requested reads with the selected model"]);
       expect(chatModel).toHaveBeenCalledWith(expect.arrayContaining([
-        expect.stringContaining("representative read plan"),
+        expect.stringMatching(/representative Read plan/iu),
       ]));
-      expect(chatRunner).toHaveBeenCalledWith(
-        "Runner verified",
-        expect.any(Array),
-        "success",
+      expect(chatRunner).not.toHaveBeenCalledWith("Runner verified", expect.any(Array), "success");
+      expect(chatDetails).toHaveBeenCalledWith(
+        "MODEL METADATA EGRESS",
+        expect.arrayContaining([
+          expect.stringContaining("schema-declared ENUM/CHECK allowlists"),
+          expect.stringContaining("Never sent automatically: rows, observed values"),
+          expect.stringContaining("Observed values require their own exact preview and permission"),
+        ]),
       );
       expect(chatClose).toHaveBeenCalledOnce();
       const context = await loadBoundaryReviewContext(root);
@@ -2123,7 +2130,7 @@ describe("boundary operator-plane CLI", () => {
       },
       confirm: async (prompt) => {
         if (prompt.includes("Action Boundary")) return false;
-        if (prompt.includes("structural names")) return false;
+        if (prompt.includes("reviewed authoring context")) return false;
         throw new Error(`Unexpected denied-egress confirmation: ${prompt}`);
       },
       confirmActivation: async () => false,
@@ -2734,7 +2741,7 @@ describe("boundary operator-plane CLI", () => {
     ];
     const prompts: string[] = [];
     const modelChoices: string[] = [];
-    const confirms: string[] = [];
+    const confirms: Array<{ prompt: string; context: string[] }> = [];
     const modelReadWorkloadGenerator = vi.fn(async (
       input: Parameters<typeof generateModelReadWorkload>[0],
     ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
@@ -2769,9 +2776,9 @@ describe("boundary operator-plane CLI", () => {
         modelChoices.push(...options.map((option) => option.label));
         return "current";
       },
-      confirm: async (prompt) => {
+      confirm: async (prompt, options) => {
         if (prompt.includes("Action Boundary")) return false;
-        confirms.push(prompt);
+        confirms.push({ prompt, context: options?.context ?? [] });
         return true;
       },
       confirmActivation: async () => false,
@@ -2798,10 +2805,12 @@ describe("boundary operator-plane CLI", () => {
       expect(modelChoices).toContain("Use anthropic[claude-current]");
       expect(prompts.some((prompt) => /Provider:|Model \[|API key environment/.test(prompt))).toBe(false);
       expect(confirms).toHaveLength(1);
-      expect(confirms[0]).toContain("anthropic[claude-current]");
-      expect(confirms[0]).toContain("schema-declared ENUM/CHECK allowlists");
-      expect(confirms[0]).toContain("observed database values");
-      expect(confirms[0]).toContain("exact preview and confirmation");
+      expect(confirms[0]?.prompt).toContain("anthropic[claude-current]");
+      expect(confirms[0]?.context).toEqual(expect.arrayContaining([
+        expect.stringContaining("reviewed structural metadata"),
+        expect.stringContaining("Does not send: rows, SQL, credentials, kept-out fields, or trusted identity values"),
+        expect.stringContaining("Model suggestions remain untrusted"),
+      ]));
       expect(modelReadWorkloadGenerator).toHaveBeenCalledWith(expect.objectContaining({
         provider: "anthropic",
         model: "claude-current",
@@ -2851,6 +2860,7 @@ describe("boundary operator-plane CLI", () => {
         analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
         provider: input.provider,
         model: input.model,
+        model_message: "I drafted one representative Read plan for reviewed service visits.",
         authority_granted: false,
         source_query_executed: false,
         explore_budget_consumed: false,
@@ -2966,24 +2976,23 @@ describe("boundary operator-plane CLI", () => {
       ]);
       expect(actionAssessment?.status, actionAssessment?.blockers.join("; ")).toBe("suggested");
       expect(runDelegationActionReview).toHaveBeenCalledOnce();
-      const modelDraftIndex = transcript.findIndex((entry) =>
+      const readModelIndex = transcript.findIndex((entry) =>
         entry.speaker === "model"
-        && entry.lines.some((line) => line.includes("representative read plan")));
-      expect(modelDraftIndex).toBeGreaterThanOrEqual(0);
-      expect(transcript[modelDraftIndex]?.lines).toEqual(expect.arrayContaining([
-        expect.stringContaining("representative read plan"),
-        expect.stringContaining("bounded Action suggestion"),
-        expect.stringContaining("INSERT public.maintenance_requests"),
+        && entry.lines.some((line) => /representative Read plan/iu.test(line)));
+      const actionModelIndex = transcript.findIndex((entry) =>
+        entry.speaker === "model"
+        && entry.lines.some((line) => line.includes("INSERT public.maintenance_requests")));
+      const actionFallbackIndex = transcript.findIndex((entry) =>
+        entry.speaker === "check"
+        && entry.lines[0] === "Action drafts validated; model summary unavailable");
+      expect(readModelIndex).toBeGreaterThanOrEqual(0);
+      expect(actionModelIndex).toBe(-1);
+      expect(actionFallbackIndex).toBeGreaterThan(readModelIndex);
+      expect(transcript[actionFallbackIndex]?.lines).toEqual(expect.arrayContaining([
+        "1 exact suggestion remains disabled",
+        "No proposal, approval, apply, or source-write authority changed",
       ]));
-      expect(transcript[modelDraftIndex + 1]).toEqual({
-        speaker: "check",
-        lines: expect.arrayContaining([
-          "Runner verified",
-          "1 Read plan and 1 Action suggestion passed exact structure checks",
-          "Read and Action authority remain off · /details shows the exact plans and checks",
-        ]),
-      });
-      expect(transcript.filter((entry) => entry.lines[0] === "Runner verified")).toHaveLength(1);
+      expect(transcript.filter((entry) => entry.lines[0] === "Runner verified")).toHaveLength(0);
       const reviewed = await loadBoundaryReviewContext(root);
       expect(reviewed.candidate.pack.resources.map((resource) => resource.id).sort()).toEqual([
         "public.maintenance_requests",
@@ -3210,7 +3219,7 @@ describe("boundary operator-plane CLI", () => {
         throw new Error(`Unexpected Action Boundary replacement choice: ${title}`);
       },
       confirm: async (prompt) => {
-        if (prompt.includes("structural names")) egressPrompts.push(prompt);
+        if (prompt.includes("reviewed authoring context")) egressPrompts.push(prompt);
         return true;
       },
       confirmActivation: async () => false,
@@ -3658,7 +3667,7 @@ describe("boundary operator-plane CLI", () => {
       },
       confirm: async (prompt) => {
         if (prompt.includes("Action Boundary")) return false;
-        if (prompt.includes("structural names")) {
+        if (prompt.includes("reviewed authoring context")) {
           egressPrompts.push(prompt);
           return true;
         }

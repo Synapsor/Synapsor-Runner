@@ -649,29 +649,70 @@ describe("Safe Action terminal control plane", () => {
     expect(policyPrompt?.options?.context
       ?.filter((line) => /^[+|]/u.test(line))
       .every((line) => line.length <= 72)).toBe(true);
-    expect(policyPrompt?.options?.conversation?.modelLines).toEqual(expect.arrayContaining([
-      expect.stringContaining("auto-approval policy"),
-      expect.stringContaining("credit_cents"),
-      expect.stringContaining("trusted tenant + principal"),
-      "Anything else requires human review.",
-    ]));
-    expect(policyPrompt?.options?.conversation?.checkpoint).toMatchObject({
-      title: "Runner verified",
-      lines: expect.arrayContaining([
-        expect.stringContaining("hard proposal envelope"),
-        expect.stringContaining("Disabled policy draft"),
-      ]),
-    });
-    const interpretedPolicyPrompt = textPrompts.find((candidate) =>
-      candidate.options?.conversation?.modelLines[0]?.startsWith("I interpreted your auto-approval policy"));
-    expect(interpretedPolicyPrompt?.options?.conversation?.modelLines).toEqual(expect.arrayContaining([
-      expect.stringContaining("Conditions: credit_cents <= 500"),
-      expect.stringContaining("3 approvals per 24 hours"),
-      expect.stringContaining("1000 total credit_cents"),
-      expect.stringContaining("trusted tenant + principal"),
-    ]));
+    expect(policyPrompt?.options?.conversation).toBeUndefined();
+    expect(textPrompts.every((candidate) => candidate.options?.conversation === undefined)).toBe(true);
     expect(choiceTitles).not.toContain("REVIEW EXACT AUTO-APPROVAL POLICY");
     expect(choiceTitles).not.toContain("REVIEW PROPOSAL ACTION");
+  });
+
+  it("stops an incompatible policy after one clarification and offers bounded recovery", async () => {
+    const policyInterpreter = vi.fn(async () => ({
+      state: "clarification" as const,
+      question: "Which reviewed ticket field represents the refund amount?",
+      model_message: "This refund rule does not fit the current ticket action because it has no amount or payment-method field.",
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const choiceRecords: Array<{ title: string; labels: string[] }> = [];
+    const prompter = scriptedPrompter({
+      choices: ["human"],
+      texts: [
+        "From zero through twenty-five dollars.",
+        "yes",
+        "Auto-approve refunds up to twenty-five dollars.",
+        "Use an account credit.",
+      ],
+      confirms: [],
+      onChoose: (title, choices) => choiceRecords.push({
+        title,
+        labels: choices.map((choice) => choice.label),
+      }),
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Let support update an order credit_cents within a reviewed limit.",
+      [],
+      {
+        modelInterview: {
+          session: { provider: "openai", model: "gpt-5.6-luna" },
+          egressAcknowledged: true,
+          decisionInterpreter: async () => ({
+            state: "resolved",
+            decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } } },
+            summary: "credit_cents: 0 through 2500",
+            correction_used: false,
+            authority_granted: false,
+            source_database_changed: false,
+          }),
+          policyInterpreter,
+        },
+      },
+    );
+
+    expect(policyInterpreter).toHaveBeenCalledTimes(2);
+    expect(choiceRecords).toContainEqual(expect.objectContaining({
+      title: "POLICY DOES NOT FIT THIS ACTION",
+      labels: expect.arrayContaining([
+        "Describe a policy for this exact action",
+        "Keep human approval [recommended]",
+        "Use exact policy controls",
+        "Skip this action and continue",
+      ]),
+    }));
+    expect(action).not.toHaveProperty("auto_approval");
   });
 
   it("reviews a validated model Action draft without reselecting its target, operation, or fields", async () => {
