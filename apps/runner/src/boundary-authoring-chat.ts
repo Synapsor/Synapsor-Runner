@@ -12,14 +12,30 @@ import {
   type BoundaryReviewInteractiveSession,
 } from "./boundary-cli-picker.js";
 import type { AskProviderStreamEvent } from "./model-ask.js";
+import {
+  wrapStyledTerminalLine,
+} from "./terminal-layout.js";
 
 export type BoundaryAuthoringSpeaker = "runner" | "model";
 type BoundaryAuthoringTone = "normal" | "success" | "warning" | "danger";
+
+export type BoundaryAuthoringPermissionGuideInput = {
+  title: string;
+  prompt: string;
+  context: string[];
+  choices: Array<Pick<BoundaryPromptChoice, "value" | "label" | "detail">>;
+  operatorQuestion?: string;
+};
+
+export type BoundaryAuthoringPermissionGuide = (
+  input: BoundaryAuthoringPermissionGuideInput,
+) => Promise<string | undefined>;
 
 export type BoundaryAuthoringChat = {
   session: BoundaryReviewInteractiveSession;
   actionPrompter: ActionControlPrompter;
   setModel(label: string): void;
+  setPermissionGuide?(guide: BoundaryAuthoringPermissionGuide | undefined): void;
   runner(title: string, lines?: string[], tone?: BoundaryAuthoringTone): void;
   model(lines: string[]): void;
   checkpoint(title: string, lines?: string[], tone?: BoundaryAuthoringTone): void;
@@ -91,6 +107,13 @@ function terminalOutputChunks(
 function meaningfulContext(context: string[] | undefined): string[] {
   return (context ?? []).map((line) => transcriptText(line)).filter((line, index, lines) =>
     line.trim() || (index > 0 && index < lines.length - 1));
+}
+
+function permissionQuestion(value: string): string {
+  return value
+    .split(/\r?\n/u)
+    .map((line) => transcriptText(line).trim())
+    .find(Boolean) ?? "Review this exact permission.";
 }
 
 function isModelQuestion(title: string | undefined, context: string[] | undefined): boolean {
@@ -185,7 +208,7 @@ function compactRoutineCheckpoint(
       lines: [contextValue(lines, "Action:") ?? "The exact proposal action is ready."],
     };
   }
-  if (title === "Drafting model selected" || title === "Model choice unchanged") {
+  if (title === "Model choice unchanged") {
     return { title, lines: lines.slice(0, 1) };
   }
   return undefined;
@@ -220,7 +243,9 @@ export function createBoundaryAuthoringChat(input: {
   let streamedCharacters = 0;
   let lastProviderStatusCharacters = 0;
   let latestDetails: { title: string; lines: string[] } | undefined;
+  let permissionGuide: BoundaryAuthoringPermissionGuide | undefined;
   const transcriptIndent = io.isTerminal?.() === true ? "  " : "";
+  const transcriptWidth = () => Math.max(24, io.columns());
 
   const role = (speaker: BoundaryAuthoringSpeaker): string => speaker === "model"
     ? theme.scope("model>")
@@ -265,16 +290,24 @@ export function createBoundaryAuthoringChat(input: {
     }
     return content;
   };
-  const roleLine = (
+  const roleLines = (
     speaker: BoundaryAuthoringSpeaker,
     line: string,
     index: number,
     firstStyle?: (value: string) => string,
-  ): string => {
-    const prefix = index === 0
+  ): string[] => {
+    const firstPrefix = index === 0
       ? `${transcriptIndent}${role(speaker)}`
       : `${transcriptIndent}${" ".repeat(speaker === "model" ? 6 : 7)}`;
-    return `${prefix} ${roleContent(speaker, line, index, firstStyle)}`;
+    const prefix = `${firstPrefix} `;
+    const prefixWidth = Array.from(stripTerminalAnsi(prefix)).length;
+    const continuation = " ".repeat(prefixWidth);
+    const available = Math.max(12, transcriptWidth() - prefixWidth);
+    return wrapStyledTerminalLine(
+      roleContent(speaker, line, index, firstStyle),
+      available,
+    ).map((wrapped, wrappedIndex) =>
+      `${wrappedIndex === 0 ? prefix : continuation}${wrapped}`);
   };
   const writeTranscript = (value: string) => {
     if (io.writeChunk) io.writeChunk(value);
@@ -294,11 +327,12 @@ export function createBoundaryAuthoringChat(input: {
           ? theme.danger
           : theme.key;
     const facts = meaningfulContext(lines);
-    writeTranscript([
+    const rendered = [
       `${transcriptIndent}${style(`${marker} ${transcriptText(title)}`)}`,
       ...facts.map((line, index) => `${transcriptIndent}  ${index === 0 ? theme.value(line) : theme.dim(line)}`),
       "",
-    ].join("\n"));
+    ].flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
+    writeTranscript(rendered.join("\n"));
   };
   const writeRole = (
     speaker: BoundaryAuthoringSpeaker,
@@ -306,7 +340,8 @@ export function createBoundaryAuthoringChat(input: {
     firstStyle?: (value: string) => string,
   ) => {
     if (!lines.length) return;
-    writeTranscript(`${lines.map((line, index) => roleLine(speaker, line, index, firstStyle)).join("\n")}\n`);
+    writeTranscript(`${lines.flatMap((line, index) =>
+      roleLines(speaker, line, index, firstStyle)).join("\n")}\n`);
   };
   const runner = (
     title: string,
@@ -357,7 +392,7 @@ export function createBoundaryAuthoringChat(input: {
       }
       return `  ${safe}`;
     });
-    writeTranscript([
+    const rendered = [
       "",
       theme.title("RUNNER DETAILS"),
       theme.scope(latestDetails.title),
@@ -365,10 +400,11 @@ export function createBoundaryAuthoringChat(input: {
       "",
       theme.dim("No model request, authority change, source query, or source write occurred."),
       "",
-    ].join("\n"));
+    ].flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
+    writeTranscript(rendered.join("\n"));
   };
   const showHelp = () => {
-    writeTranscript([
+    const rendered = [
       "",
       theme.title("BOUNDARY AUTHORING COMMANDS"),
       `${theme.key("/details")}  ${theme.dim("Show the latest exact Runner validation or permission record")}`,
@@ -377,7 +413,8 @@ export function createBoundaryAuthoringChat(input: {
       "",
       theme.dim("Press Tab after / to complete a command. Manual editors remain available from the Boundary screen."),
       "",
-    ].join("\n"));
+    ].flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
+    writeTranscript(rendered.join("\n"));
   };
   const waitForNextStreamChunk = () => streamLineDelayMs > 0
     ? new Promise<void>((resolve) => setTimeout(resolve, streamLineDelayMs))
@@ -394,13 +431,18 @@ export function createBoundaryAuthoringChat(input: {
       return;
     }
     for (const [lineIndex, line] of lines.entries()) {
-      const chunks = terminalOutputChunks(roleLine(speaker, line, lineIndex, firstStyle));
-      for (const [chunkIndex, chunk] of chunks.entries()) {
-        writeTranscript(chunk);
-        const finalChunk = lineIndex === lines.length - 1 && chunkIndex === chunks.length - 1;
-        if (!finalChunk) await waitForNextStreamChunk();
+      const physicalLines = roleLines(speaker, line, lineIndex, firstStyle);
+      for (const [physicalIndex, physicalLine] of physicalLines.entries()) {
+        const chunks = terminalOutputChunks(physicalLine);
+        for (const [chunkIndex, chunk] of chunks.entries()) {
+          writeTranscript(chunk);
+          const finalChunk = lineIndex === lines.length - 1
+            && physicalIndex === physicalLines.length - 1
+            && chunkIndex === chunks.length - 1;
+          if (!finalChunk) await waitForNextStreamChunk();
+        }
+        writeTranscript("\n");
       }
-      writeTranscript("\n");
     }
   };
   const streamRunner = async (
@@ -506,6 +548,78 @@ export function createBoundaryAuthoringChat(input: {
     if (!Number.isSafeInteger(index) || index < 0 || index >= available.length) return undefined;
     return available[index]!.value;
   };
+  const askModelChoiceValue = "__ask_boundary_model__";
+  const viewRunnerDetailsChoiceValue = "__view_runner_details__";
+  const choosePermission = async (
+    choice: ChoiceInput,
+    context: string[] = [],
+  ): Promise<string | undefined> => {
+    const exactChoices = choice.options.filter((option) => !option.disabled);
+    const request = {
+      title: choice.title,
+      prompt: choice.message,
+      context: meaningfulContext(context),
+      choices: exactChoices.map(({ value, label, detail }) => ({
+        value,
+        label: transcriptText(label),
+        ...(detail ? { detail: transcriptText(detail) } : {}),
+      })),
+    } satisfies BoundaryAuthoringPermissionGuideInput;
+    let explanationShown = false;
+    const hasExactDetailsChoice = choice.options.some((option) =>
+      /\b(?:details|inspect exact|view exact)\b/iu.test(`${option.label} ${option.detail ?? ""}`));
+
+    const explain = async (operatorQuestion?: string): Promise<void> => {
+      if (!permissionGuide) return;
+      const answer = await permissionGuide({
+        ...request,
+        ...(operatorQuestion ? { operatorQuestion } : {}),
+      });
+      if (answer?.trim()) {
+        await streamModel(answer.trim().split(/\r?\n/u));
+        explanationShown = true;
+        return;
+      }
+      checkpoint("Model explanation unavailable", [
+        "The exact Runner permission is unchanged. Use /details, decide now, or try again later.",
+      ], "warning");
+    };
+
+    await explain();
+    while (true) {
+      const selected = await choose({
+        ...choice,
+        options: [
+          ...choice.options.slice(0, 1),
+          ...(permissionGuide
+            ? [{
+                value: askModelChoiceValue,
+                label: "Ask the model before deciding",
+                detail: "Ask why this permission is needed or have the model break it down.",
+              }]
+            : []),
+          ...(!hasExactDetailsChoice
+            ? [{
+                value: viewRunnerDetailsChoiceValue,
+                label: "View exact Runner details",
+                detail: "Inspect the deterministic record without changing authority.",
+              }]
+            : []),
+          ...choice.options.slice(1),
+        ],
+      });
+      if (selected === viewRunnerDetailsChoiceValue) {
+        showDetails();
+        continue;
+      }
+      if (selected !== askModelChoiceValue) return selected;
+
+      const operatorQuestion = await readAnswer();
+      if (operatorQuestion === undefined || !operatorQuestion.trim()) continue;
+      await explain(operatorQuestion.trim());
+      if (!explanationShown) continue;
+    }
+  };
   const confirm = async (
     prompt: string,
     options: { context?: string[]; defaultValue?: boolean } = {},
@@ -513,13 +627,16 @@ export function createBoundaryAuthoringChat(input: {
   ): Promise<boolean | undefined> => {
     const permission = kind === "permission";
     if (permission) {
-      runner("Permission request", [...meaningfulContext(options.context), prompt]);
+      rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options.context), prompt]);
     } else await writeContext(options.context);
     const yesLabel = permission ? "Allow this exact step" : "Yes, continue";
     const noLabel = permission ? "Not now; keep authority unchanged" : "No; go back";
-    const selected = await choose({
+    const permissionContext = meaningfulContext(options.context);
+    const choice = {
       title: permission ? "PERMISSION REQUIRED" : "CONFIRM REVIEWED DECISION",
-      message: permission ? "Allow the exact step described above?" : prompt,
+      message: permission
+        ? permissionQuestion(prompt)
+        : prompt,
       initialValue: options.defaultValue === true ? "yes" : "no",
       options: [
         {
@@ -535,7 +652,10 @@ export function createBoundaryAuthoringChat(input: {
           detail: "No source data or active authority changes.",
         },
       ],
-    });
+    } satisfies ChoiceInput;
+    const selected = permission
+      ? await choosePermission(choice, permissionContext)
+      : await choose(choice);
     return selected === undefined ? undefined : selected === "yes";
   };
 
@@ -546,6 +666,12 @@ export function createBoundaryAuthoringChat(input: {
     chooseResource: async () => undefined,
     editFieldTiers: async () => undefined,
     promptText: async (prompt, options) => {
+      const firstJobPrompt = prompt.trim() === "What job are you giving this agent?"
+        && options?.context?.some((line) => line.trim() === "SET UP ONE AGENT JOB");
+      if (firstJobPrompt) {
+        rememberDetails("SET UP ONE AGENT JOB", options?.context ?? []);
+        return readAnswer();
+      }
       const speaker = isModelQuestion(undefined, options?.context) ? "model" : "runner";
       if (speaker === "model") {
         await streamModel(modelQuestionTurn(prompt, options?.context?.[0], options?.context));
@@ -556,16 +682,25 @@ export function createBoundaryAuthoringChat(input: {
     },
     chooseOption: async (title, choices, options) => {
       const permission = /^(?:ACTIVATE|APPROVE|APPLY|GRANT)\b/iu.test(title.trim());
-      if (permission) runner("Permission request", [...meaningfulContext(options?.context), title]);
-      else if (title !== "CONTINUE TO ACTION BOUNDARY") await writeContext(options?.context);
-      return choose({
+      if (permission) {
+        rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options?.context), title]);
+      } else if (options?.context?.length) {
+        const hasModelContext = options.context.some((line) =>
+          /^(?:Model rationale|Model question|Model suggestion):/iu.test(line.trim()));
+        if (hasModelContext) await writeContext(options.context);
+        else rememberDetails(title, options.context);
+      }
+      const choice = {
         title: permission ? "PERMISSION REQUIRED" : title,
         message: permission
-          ? "Choose the exact authority change. The safe choice is highlighted."
+          ? permissionQuestion(title)
           : "Choose one path. The highlighted choice is not applied until you press Enter.",
         options: choices,
         ...(options?.initialValue ? { initialValue: options.initialValue } : {}),
-      });
+      } satisfies ChoiceInput;
+      return permission
+        ? choosePermission(choice, options?.context)
+        : choose(choice);
     },
     confirm: (prompt, options) => confirm(prompt, options),
     confirmActivation: (prompt, options) => confirm(prompt, {
@@ -582,15 +717,18 @@ export function createBoundaryAuthoringChat(input: {
     rememberDetails,
     choose: async (title, choices, context, initialValue) => {
       const permission = /^(?:ACTIVATE|APPROVE|APPLY)\b/iu.test(title.trim());
-      if (permission) runner("Permission request", [...meaningfulContext(context), title]);
-      else await writeContext(context);
+      if (permission) {
+        rememberDetails("PERMISSION REQUEST", [...meaningfulContext(context), title]);
+      } else if (context?.length) {
+        rememberDetails(title, context);
+      }
       const safePermissionChoice = permission
         ? choices.find((choice) => !choice.disabled && /^(?:back|no|cancel|decline|disabled|leave)$/iu.test(choice.value))
         : undefined;
-      return choose({
+      const choice = {
         title: permission ? "PERMISSION REQUIRED" : title,
         message: permission
-          ? `${title}. Only the exact selected authority may change.`
+          ? permissionQuestion(title)
           : "Review the exact choices, then select one.",
         options: choices,
         ...(safePermissionChoice
@@ -598,7 +736,10 @@ export function createBoundaryAuthoringChat(input: {
           : initialValue
             ? { initialValue }
             : {}),
-      });
+      } satisfies ChoiceInput;
+      return permission
+        ? choosePermission(choice, context)
+        : choose(choice);
     },
     text: async (label, options) => {
       if (options?.context?.length) {
@@ -633,17 +774,20 @@ export function createBoundaryAuthoringChat(input: {
     },
   };
 
-  runner("BOUNDARY DRAFTING", [
-    `${modelLabel ? `${modelLabel} will guide the setup after metadata permission. ` : ""}Describe one agent job in ordinary language.`,
-    "Runner stays behind the conversation, validates every draft, and appears directly only for permission, ambiguity, or refusal. /details shows exact records; Esc pauses safely.",
-  ]);
+  const intro = [
+    `${theme.title("Boundary drafting")}${modelLabel ? theme.dim(` · ${modelLabel}`) : ""}`,
+    "",
+  ].flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
+  writeTranscript(intro.join("\n"));
 
   return {
     session,
     actionPrompter,
     setModel: (label) => {
       modelLabel = label;
-      checkpoint("Drafting model selected", [label]);
+    },
+    setPermissionGuide: (guide) => {
+      permissionGuide = guide;
     },
     runner,
     model,

@@ -910,6 +910,44 @@ export function renderAnalyticsPrompt(color = false): string {
   return `${theme.key("synapsor")}${theme.dim(">")} `;
 }
 
+function formatTransientStatusElapsed(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1_000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (totalMinutes < 60) return `${totalMinutes}m ${String(seconds).padStart(2, "0")}s`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function truncateTransientStatus(value: string, width: number): string {
+  const characters = Array.from(value);
+  if (characters.length <= width) return value;
+  if (width <= 1) return "…";
+  return `${characters.slice(0, width - 1).join("")}…`;
+}
+
+function shimmerTransientStatusLabel(value: string, elapsedMs: number): string {
+  const characters = Array.from(value);
+  const padding = 10;
+  const period = characters.length + (padding * 2);
+  const position = ((elapsedMs % 2_000) / 2_000) * period - padding;
+  const halfBand = 5;
+  return characters.map((character, index) => {
+    const distance = Math.abs(index - position);
+    const intensity = distance >= halfBand
+      ? 0
+      : (Math.cos((distance / halfBand) * Math.PI) + 1) / 2;
+    const style = intensity < 0.2
+      ? "\u001b[2m"
+      : intensity < 0.6
+        ? "\u001b[22m"
+        : "\u001b[1m";
+    return `${style}${character}`;
+  }).join("") + "\u001b[0m";
+}
+
 export function createTerminalAnalyticsShellIo(input: {
   readable?: Readable;
   writable?: Writable;
@@ -952,8 +990,7 @@ export function createTerminalAnalyticsShellIo(input: {
   let escapeSubmitted = false;
   let statusTimer: NodeJS.Timeout | undefined;
   let statusValue = "";
-  let statusFrame = 0;
-  const statusFrames = ["-", "\\", "|", "/"];
+  let statusStartedAt: number | undefined;
   const statusColor = terminal && !("NO_COLOR" in process.env);
   const terminalColumns = () => {
     const columns = (writable as NodeJS.WriteStream).columns;
@@ -1189,28 +1226,30 @@ export function createTerminalAnalyticsShellIo(input: {
     }
     if (terminal && statusValue) writable.write("\r\u001b[2K");
     statusValue = "";
-    statusFrame = 0;
+    statusStartedAt = undefined;
   };
   const renderStatus = () => {
     if (!terminal || !statusValue) return;
-    const frame = statusFrames[statusFrame % statusFrames.length]!;
-    const available = Math.max(1, terminalContentWidth(terminalColumns()) - frame.length - 1);
-    const characters = Array.from(statusValue);
-    const visibleStatus = characters.length <= available
-      ? statusValue
-      : `${characters.slice(0, Math.max(1, available - 1)).join("")}…`;
-    const shimmerWidth = Math.min(7, Math.max(1, Array.from(visibleStatus).length));
-    const shimmerStart = Math.floor(statusFrame / 2)
-      % Math.max(1, Array.from(visibleStatus).length + shimmerWidth);
-    const statusCharacters = Array.from(visibleStatus);
-    const before = statusCharacters.slice(0, shimmerStart).join("");
-    const highlight = statusCharacters.slice(shimmerStart, shimmerStart + shimmerWidth).join("");
-    const after = statusCharacters.slice(shimmerStart + shimmerWidth).join("");
-    statusFrame += 1;
+    const elapsedMs = Date.now() - (statusStartedAt ?? Date.now());
+    const elapsed = formatTransientStatusElapsed(elapsedMs);
+    const bullet = statusColor && Math.floor(elapsedMs / 600) % 2 === 1 ? "◦" : "•";
+    const core = `${bullet} Working (${elapsed} • esc to interrupt)`;
+    const width = terminalContentWidth(terminalColumns());
+    const contextWidth = width - Array.from(core).length - 3;
+    const plain = contextWidth >= 4
+      ? `${core} · ${truncateTransientStatus(statusValue, contextWidth)}`
+      : truncateTransientStatus(core, width);
     const rendered = statusColor
-      ? `${padTerminalLine(`\u001b[1;32m${frame}\u001b[0m \u001b[2m${before}`)}`
-        + `\u001b[22;1;37m${highlight}\u001b[0;2m${after}\u001b[0m`
-      : padTerminalLine(`${frame} ${visibleStatus}`);
+      ? padTerminalLine(
+          plain.replace(
+            "Working",
+            shimmerTransientStatusLabel("Working", elapsedMs),
+          ).replace(
+            / · ([^\u001b]*)$/u,
+            (_match, context: string) => ` \u001b[2m· ${context}\u001b[0m`,
+          ),
+        )
+      : padTerminalLine(plain);
     writable.write(`\r\u001b[2K${rendered}`);
   };
   const readQuestion = async (
@@ -1255,10 +1294,10 @@ export function createTerminalAnalyticsShellIo(input: {
     setStatus: (value) => {
       if (!terminal) return;
       statusValue = safeTerminalText(value);
-      statusFrame = 0;
+      statusStartedAt ??= Date.now();
       renderStatus();
       if (!statusTimer) {
-        statusTimer = setInterval(renderStatus, 120);
+        statusTimer = setInterval(renderStatus, statusColor ? 64 : 1_000);
         statusTimer.unref();
       }
     },

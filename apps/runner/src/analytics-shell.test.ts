@@ -1902,7 +1902,7 @@ describe("Synapsor Analytics shell", () => {
     io.close();
   });
 
-  it("renders one animated TTY status line and erases it before normal output", () => {
+  it("renders one Codex-style TTY status row and erases it before normal output", () => {
     const previousNoColor = process.env.NO_COLOR;
     delete process.env.NO_COLOR;
     try {
@@ -1924,10 +1924,11 @@ describe("Synapsor Analytics shell", () => {
 
       const output = chunks.join("");
       const plainOutput = stripAnsi(output);
-      expect(plainOutput).toContain("\r\u001b[2K  - Waiting for the provider...");
-      expect(plainOutput).toContain("\r\u001b[2K  - Running a reviewed data tool...");
-      expect(output).toContain("\u001b[1;32m-\u001b[0m");
-      expect(output).toContain("\u001b[22;1;37mWaiting\u001b[0;2m");
+      expect(plainOutput).toContain("\r\u001b[2K  • Working (0s • esc to interrupt) · Waiting for the provider...");
+      expect(plainOutput).toContain("\r\u001b[2K  • Working (0s • esc to interrupt) · Running a reviewed data tool...");
+      expect(output).toContain("\u001b[2mW");
+      expect(output).toContain("\u001b[2m· Running a reviewed data tool...\u001b[0m");
+      expect(plainOutput).not.toContain("- Waiting for the provider");
       expect(output).toContain("\r\u001b[2K  Answer\n");
       expect(output).not.toContain("Waiting for the provider...\n");
       expect(output).not.toContain("Running a reviewed data tool...\n");
@@ -1954,7 +1955,8 @@ describe("Synapsor Analytics shell", () => {
 
       const output = chunks.join("");
       expect(output).not.toMatch(/\u001b\[[0-9;]*m/u);
-      expect(output).toContain("\r\u001b[2K  - Building a complete structured dr…");
+      expect(output).toContain("\r\u001b[2K  • Working (0s • esc to interrupt)");
+      expect(output).not.toContain("Building a complete structured draft");
       expect(output).not.toContain("\n");
     } finally {
       if (previousNoColor === undefined) delete process.env.NO_COLOR;

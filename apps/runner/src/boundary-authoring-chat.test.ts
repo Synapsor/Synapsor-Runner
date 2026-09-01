@@ -7,10 +7,11 @@ import type { AnalyticsShellIo } from "./analytics-shell.js";
 function memoryIo(input: {
   reads?: Array<string | undefined>;
   choices?: Array<string | undefined>;
+  columns?: number | (() => number);
 } = {}) {
   const writes: string[] = [];
   const prompts: string[] = [];
-  const choices: Array<{ title: string; initialValue?: string; labels: string[] }> = [];
+  const choices: Array<{ title: string; message: string; initialValue?: string; labels: string[] }> = [];
   const reads = [...(input.reads ?? [])];
   const selected = [...(input.choices ?? [])];
   const setStatus = vi.fn();
@@ -28,6 +29,7 @@ function memoryIo(input: {
     choose: async (choice) => {
       choices.push({
         title: choice.title,
+        message: choice.message,
         ...(choice.initialValue ? { initialValue: choice.initialValue } : {}),
         labels: choice.options.map((option) => option.label),
       });
@@ -38,7 +40,9 @@ function memoryIo(input: {
     setStatus,
     clearStatus,
     isTerminal: () => true,
-    columns: () => 100,
+    columns: () => typeof input.columns === "function"
+      ? input.columns()
+      : input.columns ?? 100,
     onInterrupt: () => () => undefined,
     close,
   };
@@ -67,9 +71,10 @@ describe("Boundary authoring chat", () => {
     expect(answer).toBe("Explain ticket trends and propose follow-ups.");
     expect(memory.prompts).toEqual(["you> "]);
     const transcript = memory.writes.join("");
-    expect(transcript).toContain("runner> BOUNDARY DRAFTING");
-    expect(transcript).toContain("runner> SET UP ONE AGENT JOB");
-    expect(transcript).toContain("runner> What job are you giving this agent?");
+    expect(transcript).toContain("Boundary drafting · openai[gpt-5.6-luna]");
+    expect(transcript).not.toContain("runner> BOUNDARY DRAFTING");
+    expect(transcript).not.toContain("runner> SET UP ONE AGENT JOB");
+    expect(transcript).not.toContain("runner> What job are you giving this agent?");
     expect(transcript).toContain("model> I mapped ticket trends");
     expect(transcript).not.toContain("synapsor>");
     expect(memory.close).toHaveBeenCalledOnce();
@@ -97,7 +102,11 @@ describe("Boundary authoring chat", () => {
       expect.objectContaining({
         title: "PERMISSION REQUIRED",
         initialValue: "no",
-        labels: ["Allow this exact step", "Not now; keep authority unchanged"],
+        labels: [
+          "Allow this exact step",
+          "View exact Runner details",
+          "Not now; keep authority unchanged",
+        ],
       }),
       expect.objectContaining({
         title: "PERMISSION REQUIRED",
@@ -110,8 +119,68 @@ describe("Boundary authoring chat", () => {
     ]);
     expect(memory.writes.join("")).toContain("you> Allow this exact step");
     expect(memory.writes.join("")).toContain("you> Not now; keep authority unchanged");
-    expect(memory.writes.join("")).toContain("runner> Permission request");
-    expect(memory.writes.join("")).toContain("Activate \"reviewed_support\" exactly as shown now?");
+    expect(memory.writes.join("")).not.toContain("runner> Permission request");
+    expect(memory.choices[0]?.message).toContain("Activate \"reviewed_support\" exactly as shown now?");
+    for (const choice of memory.choices) {
+      expect(choice.message).not.toMatch(/[\r\n]/u);
+    }
+  });
+
+  it("changes the selected model without printing a redundant checkpoint", () => {
+    const memory = memoryIo();
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+
+    chat.setModel("openai[gpt-5.6-luna]");
+
+    const transcript = memory.writes.join("");
+    expect(transcript).not.toContain("Drafting model selected");
+    expect(transcript).not.toContain("openai[gpt-5.6-luna]");
+  });
+
+  it("lets the selected model explain a real permission and answer questions without becoming authority", async () => {
+    const memory = memoryIo({
+      choices: ["__ask_boundary_model__", "yes"],
+      reads: ["Why does this need a separate activation?"],
+    });
+    const chat = createBoundaryAuthoringChat({
+      io: memory.io,
+      modelLabel: "openai[gpt-5.6-luna]",
+      color: false,
+    });
+    const guide = vi.fn(async (input: { operatorQuestion?: string }) => input.operatorQuestion
+      ? "Because this is the point where a reviewed draft becomes agent-readable authority. Runner will still require the exact unchanged permission."
+      : "The Read draft is reviewed but still unavailable to the agent. Would you like Runner to activate this exact Read authority now?");
+    chat.setPermissionGuide?.(guide);
+
+    await expect(chat.session.confirmActivation?.(
+      'Activate "reviewed_support" for local read-only Explore?',
+      { context: ["READ BOUNDARY AUTHORITY", "3 reviewed tables; minimum cohort 5"] },
+    )).resolves.toBe(true);
+
+    expect(guide).toHaveBeenCalledTimes(2);
+    expect(guide).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      prompt: expect.stringContaining('Activate "reviewed_support"'),
+    }));
+    expect(guide.mock.calls[0]?.[0]).not.toHaveProperty("operatorQuestion");
+    expect(guide).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      operatorQuestion: "Why does this need a separate activation?",
+    }));
+    expect(memory.choices).toHaveLength(2);
+    for (const choice of memory.choices) {
+      expect(choice.initialValue).toBe("no");
+      expect(choice.labels).toEqual([
+        "Allow this exact step",
+        "Ask the model before deciding",
+        "View exact Runner details",
+        "Not now; keep authority unchanged",
+      ]);
+    }
+    const transcript = memory.writes.join("");
+    expect(transcript).toContain("model> The Read draft is reviewed");
+    expect(transcript).toContain("you> Ask the model before deciding");
+    expect(transcript).toContain("model> Because this is the point");
+    expect(transcript).toContain("you> Allow this exact step");
+    expect(transcript).not.toContain("runner> Permission request");
   });
 
   it("presents model-interpreted business questions in chat and uses a spinner only during work", async () => {
@@ -367,5 +436,34 @@ describe("Boundary authoring chat", () => {
       "openai[gpt-5.6-luna] is responding... 64 characters received; Runner has not accepted them",
     );
     expect(memory.setStatus).toHaveBeenLastCalledWith("Runner is validating the complete streamed draft...");
+  });
+
+  it("wraps every retained role and detail line to the live terminal width", async () => {
+    let columns = 46;
+    const memory = memoryIo({ columns: () => columns });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+
+    chat.model([
+      "A long model explanation stays inside the terminal and continuation text aligns under the model content.",
+    ]);
+    columns = 58;
+    chat.runner("REFUSAL", [
+      "A later Runner explanation uses the resized terminal width and never begins a wrapped continuation at column zero.",
+    ], "danger");
+    chat.rememberDetails("EXACT REVIEW", [
+      "Reviewed relationship: customer_accounts_support_tickets_interactions_messages",
+    ]);
+    chat.showDetails();
+
+    const plain = memory.writes.join("").replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
+    for (const line of plain.split("\n")) {
+      expect(Array.from(line).length).toBeLessThanOrEqual(58);
+    }
+    const modelLines = plain.split("\n").filter((line) =>
+      line.includes("A long model") || /^\s{9,}\S/u.test(line));
+    expect(modelLines.length).toBeGreaterThan(1);
+    expect(modelLines.slice(1)).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^\s{9,}\S/u),
+    ]));
   });
 });

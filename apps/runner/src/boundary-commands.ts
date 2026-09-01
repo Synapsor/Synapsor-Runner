@@ -117,6 +117,7 @@ import {
   type BoundaryAuthoringChatFactory,
 } from "./boundary-authoring-chat.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
+import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { renderBoundaryMapTable } from "./boundary-map-presentation.js";
 import {
   importActionSuggestion,
@@ -247,6 +248,7 @@ export type BoundaryReviewCommandOptions = {
   modelReadWorkloadGenerator?: typeof generateModelReadWorkload;
   modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
+  modelAuthoringNarrator?: typeof narrateValidatedAuthoringStep;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
   /** Overrides the persistent model-assisted authoring surface in tests or embedded clients. */
@@ -784,6 +786,7 @@ export async function boundaryReviewCommand(
       modelReadWorkloadGenerator: options.modelReadWorkloadGenerator,
       modelActionSuggestionGenerator: options.modelActionSuggestionGenerator,
       modelActionSuggestionSetGenerator: options.modelActionSuggestionSetGenerator,
+      modelAuthoringNarrator: options.modelAuthoringNarrator,
       actionProjectInspector: options.actionProjectInspector,
       runDelegationActionReview: options.runDelegationActionReview,
       boundaryAuthoringChatFactory: options.boundaryAuthoringChatFactory,
@@ -1237,6 +1240,7 @@ async function boundaryResourceReviewCommand(
         modelReadWorkloadGenerator: options.modelReadWorkloadGenerator,
         modelActionSuggestionGenerator: options.modelActionSuggestionGenerator,
         modelActionSuggestionSetGenerator: options.modelActionSuggestionSetGenerator,
+        modelAuthoringNarrator: options.modelAuthoringNarrator,
         actionProjectInspector: options.actionProjectInspector,
         runDelegationActionReview: options.runDelegationActionReview,
         boundaryAuthoringChatFactory: options.boundaryAuthoringChatFactory,
@@ -1505,6 +1509,7 @@ async function interactiveBoundaryReviewLoop(input: {
   modelReadWorkloadGenerator?: typeof generateModelReadWorkload;
   modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
+  modelAuthoringNarrator?: typeof narrateValidatedAuthoringStep;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
   boundaryAuthoringChatFactory?: BoundaryAuthoringChatFactory;
@@ -1572,6 +1577,7 @@ async function interactiveBoundaryReviewLoop(input: {
           modelReadWorkloadGenerator: input.modelReadWorkloadGenerator,
           modelActionSuggestionGenerator: input.modelActionSuggestionGenerator,
           modelActionSuggestionSetGenerator: input.modelActionSuggestionSetGenerator,
+          modelAuthoringNarrator: input.modelAuthoringNarrator,
           actionProjectInspector: input.actionProjectInspector,
           runDelegationActionReview: input.runDelegationActionReview,
           boundaryAuthoringChatFactory: input.boundaryAuthoringChatFactory,
@@ -1665,6 +1671,8 @@ async function interactiveBoundaryReviewLoop(input: {
           modelAuthoringSession: input.modelAuthoringSession,
           modelReadWorkloadGenerator: input.modelReadWorkloadGenerator,
           modelActionSuggestionGenerator: input.modelActionSuggestionGenerator,
+          modelActionSuggestionSetGenerator: input.modelActionSuggestionSetGenerator,
+          modelAuthoringNarrator: input.modelAuthoringNarrator,
           actionProjectInspector: input.actionProjectInspector,
           runDelegationActionReview: input.runDelegationActionReview,
           boundaryAuthoringChatFactory: input.boundaryAuthoringChatFactory,
@@ -2459,6 +2467,18 @@ function boundaryModelLabel(model: Pick<ActionModelSuggestionSession, "provider"
   return `${model.provider}[${model.model}]`;
 }
 
+function modelSafePermissionFacts(lines: string[]): string[] {
+  return lines
+    .map((line) => line
+      .replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "")
+      .replace(/sha256:[a-f0-9]+/giu, "[operator-only digest]")
+      .trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !/(?:fingerprint|\bdigest\b|proposal hash|credential|password|api[_ -]?key|endpoint|database url|\bsql\b)/iu.test(line))
+    .filter((line) => !/\b(?:tenant|principal)(?:[_ -]?id)?\b/iu.test(line))
+    .slice(0, 10);
+}
+
 function boundaryAuthoringProviderDependencies(
   dependencies: AskProviderDependencies | undefined,
   chat: BoundaryAuthoringChat | undefined,
@@ -2745,6 +2765,7 @@ type InteractiveReadWorkloadAssistInput = {
   modelReadWorkloadGenerator?: typeof generateModelReadWorkload;
   modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
+  modelAuthoringNarrator?: typeof narrateValidatedAuthoringStep;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
   boundaryAuthoringChatFactory?: BoundaryAuthoringChatFactory;
@@ -2810,6 +2831,224 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     process.stdout.write(["", title, ...lines, ""].join("\n"));
     return Promise.resolve();
   };
+  const authoringConversation = input.authoringChat
+    ? createModelAuthoringConversation()
+    : undefined;
+  type MappingMode = "model" | "cards" | "exact" | "intent_model" | "saved";
+  let mode: MappingMode | undefined;
+  let routeSelectedModel: ActionModelSuggestionSession | undefined;
+  let preselectedMappingSession: ActionModelSuggestionSession | undefined;
+  let modelEgressAcknowledged = false;
+  let manualSelected = false;
+  const conversationalJobChoices = [
+    {
+      value: "model",
+      label: currentModel
+        ? `Continue with ${boundaryModelLabel(currentModel)}  [recommended]`
+        : "Choose a drafting model  [recommended]",
+      detail: "Talk through the job; Runner validates every suggested Read and Action decision.",
+    },
+    ...(currentModel
+      ? [{
+          value: "choose_model",
+          label: "Choose a different drafting model",
+          detail: "Choose another provider or exact model before metadata egress review.",
+        }]
+      : []),
+    {
+      value: "cards",
+      label: "Continue without a model",
+      detail: "Runner prepares explainable exact plan cards from reviewed schema evidence.",
+    },
+    {
+      value: "manual",
+      label: "Open the manual Boundary editors",
+      detail: "Review exact tables, fields, relationships, limits, and actions yourself.",
+    },
+    {
+      value: "advanced",
+      label: "Advanced inputs",
+      detail: "Import exact plan JSON, question-intent JSON, or a saved analysis.",
+    },
+  ];
+  const confirmModelEgress = (session: ActionModelSuggestionSession) => {
+    const exact = [
+      `Provider: ${boundaryModelLabel(session)}`,
+      "Sends: the job you type, its read and proposal intents, reviewed structural names/types/relationships/labels/descriptions, and schema-declared ENUM/CHECK allowlists.",
+      "Later in this same job, business-policy answers and reviewed-name clarifications you type may be sent for translation into an exact draft.",
+      "Never sent automatically: rows, observed values, kept-out fields, credentials, endpoint URLs, SQL, or trusted tenant/principal values.",
+      "Observed values require their own exact preview and permission. Model output remains untrusted and cannot activate, approve, apply, or write.",
+      "Bounded requests: one short welcome, Read mapping, Action mapping, concise validated chat replies, and one correction only after a refusal.",
+    ];
+    input.authoringChat?.rememberDetails("MODEL METADATA EGRESS", exact);
+    return input.session.confirm(
+      `Send this Boundary-authoring conversation and reviewed structural context to ${boundaryModelLabel(session)}?`,
+      {
+        defaultValue: false,
+        context: [
+          `Provider: ${boundaryModelLabel(session)}`,
+          "Sends: your job and business answers + reviewed structural metadata.",
+          "Does not send: rows, SQL, credentials, kept-out fields, or trusted identity values.",
+          "Model suggestions remain untrusted. /details shows the complete egress record.",
+        ],
+      },
+    );
+  };
+  const installPermissionGuide = (session: ActionModelSuggestionSession) => {
+    if (!input.authoringChat) return;
+    const narrator = input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep;
+    const label = boundaryModelLabel(session);
+    input.authoringChat.setPermissionGuide?.(async (request) => {
+      const positiveChoice = request.choices[0]?.label
+        .replace(/\s+\[(?:recommended|ready[^\]]*|available)[^\]]*\]/giu, "")
+        .trim();
+      const nextQuestion = positiveChoice && positiveChoice !== "Allow this exact step"
+        ? `Would you like Runner to ${positiveChoice.charAt(0).toLowerCase()}${positiveChoice.slice(1)}?`
+        : /\bactivate\b/iu.test(request.prompt)
+          ? "Would you like Runner to activate this exact reviewed authority now?"
+          : /\bapprove\b/iu.test(request.prompt)
+            ? "Would you like Runner to approve this exact reviewed action now?"
+            : /\bapply\b/iu.test(request.prompt)
+              ? "Would you like Runner to apply this exact reviewed action now?"
+              : "Would you like to allow this exact Runner permission now?";
+      const safeContext = modelSafePermissionFacts(request.context);
+      const safeChoices = modelSafePermissionFacts(
+        request.choices.map((choice) => `Operator choice: ${choice.label}${choice.detail ? ` - ${choice.detail}` : ""}`),
+      );
+      return runWithProgress(
+        request.operatorQuestion ? `Asking ${label}` : `${label} is explaining the permission`,
+        () => narrator({
+          session: boundaryAuthoringModelSession(session, input.authoringChat),
+          operatorMessage: request.operatorQuestion
+            ? `Operator question about the unchanged pending permission: ${request.operatorQuestion}`
+            : "Explain this unchanged pending Runner permission before the operator decides.",
+          validatedFacts: [
+            `Pending gate: ${request.title}`,
+            ...safeContext,
+            ...safeChoices,
+            "Trusted tenant and principal values remain Runner-injected and outside model arguments.",
+            "Allowing changes only the exact authority in this gate; declining leaves current authority and source data unchanged.",
+          ],
+          nextQuestion,
+          egressAcknowledged: true,
+          responseStyle: "permission",
+        }),
+      );
+    });
+  };
+
+  if (input.authoringChat && input.session.chooseOption) {
+    let selected = await input.session.chooseOption(
+      "START BOUNDARY DRAFTING",
+      conversationalJobChoices,
+      {
+        initialValue: "model",
+        context: [
+          "Choose how to draft this job. No choice grants Read, proposal, approval, apply, or write authority.",
+        ],
+      },
+    );
+    if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    if (selected === "advanced") {
+      selected = await input.session.chooseOption(
+        "ADVANCED BOUNDARY INPUT",
+        [
+          { value: "exact", label: "Exact read-workload JSON", detail: "Supply compiler-shaped representative plans directly." },
+          { value: "intent_model", label: "Question-intent JSON plus model", detail: "Supply exact allowed and refused examples for model mapping." },
+          { value: "saved", label: "Reopen a saved workload analysis", detail: "Continue a prior disabled analysis." },
+        ],
+        {
+          initialValue: "saved",
+          context: ["These paths import or resume disabled review artifacts. None activates authority."],
+        },
+      );
+      if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    }
+    if (selected === "manual") {
+      return boundaryAssistResult({
+        tone: "success",
+        title: "Manual Boundary setup selected.",
+        lines: ["No model request was made and no disabled draft was changed."],
+        footer: "Use the table list now. W reopens model-guided setup.",
+      });
+    }
+    mode = selected === "choose_model" ? "model" : selected as MappingMode;
+    if (mode === "model") {
+      routeSelectedModel = selected === "choose_model" || !currentModel
+        ? await promptBoundaryMappingModel(input.session, currentModel)
+        : { ...currentModel };
+      if (!routeSelectedModel) return boundaryAssistResult(boundaryAssistBackNotice());
+      input.authoringChat.setModel(boundaryModelLabel(routeSelectedModel));
+      preselectedMappingSession = {
+        ...routeSelectedModel,
+        ...(authoringConversation ? { conversation: authoringConversation } : {}),
+      };
+      while (!modelEgressAcknowledged) {
+        modelEgressAcknowledged = await confirmModelEgress(preselectedMappingSession) === true;
+        if (modelEgressAcknowledged) break;
+        const recovery = await input.session.chooseOption(
+          "MODEL REQUEST NOT STARTED",
+          [
+            { value: "runner", label: "Continue without a model  [recommended]", detail: "Prepare exact plan cards from reviewed schema evidence." },
+            { value: "review", label: "Review the same permission again", detail: "No provider request starts unless you allow the exact egress." },
+            { value: "change_model", label: "Choose another model", detail: "Keep this setup, then review the replacement provider." },
+            { value: "back", label: "Pause setup", detail: "Keep active authority and source data unchanged." },
+          ],
+          {
+            initialValue: "runner",
+            context: ["Nothing was sent to a provider. Choose how to continue."],
+          },
+        );
+        if (recovery === "runner") {
+          mode = "cards";
+          preselectedMappingSession = undefined;
+          routeSelectedModel = undefined;
+          break;
+        }
+        if (recovery === "review") continue;
+        if (recovery === "change_model") {
+          const replacement = await promptBoundaryMappingModel(input.session, preselectedMappingSession);
+          if (!replacement) continue;
+          routeSelectedModel = replacement;
+          preselectedMappingSession = {
+            ...replacement,
+            ...(authoringConversation ? { conversation: authoringConversation } : {}),
+          };
+          input.authoringChat.setModel(boundaryModelLabel(replacement));
+          continue;
+        }
+        return boundaryAssistResult(boundaryAssistBackNotice(
+          "Boundary setup paused. No provider request was made and no authority changed.",
+        ));
+      }
+      if (modelEgressAcknowledged && preselectedMappingSession) {
+        installPermissionGuide(preselectedMappingSession);
+        const narrator = input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep;
+        const greeting = await runWithProgress(
+          `Starting ${boundaryModelLabel(preselectedMappingSession)}`,
+          () => narrator({
+            session: boundaryAuthoringModelSession(preselectedMappingSession!, input.authoringChat),
+            operatorMessage: "Start a new model-guided Boundary drafting conversation.",
+            validatedFacts: [
+              "Metadata egress for this selected provider was explicitly approved.",
+              "No Read or Action Boundary draft has been created or activated yet.",
+              "Runner will validate every suggestion before the operator reviews authority.",
+            ],
+            nextQuestion: "What should this agent be able to read or propose?",
+            egressAcknowledged: true,
+          }),
+        );
+        if (greeting) {
+          await input.authoringChat.streamModel(greeting.split(/\r?\n/u));
+        } else {
+          await input.authoringChat.streamRunner("MODEL GREETING UNAVAILABLE", [
+            "The provider did not return a usable greeting. You can still describe the job; Runner will keep validation fail-closed.",
+            "What should this agent be able to read or propose?",
+          ], "warning");
+        }
+      }
+    }
+  }
   const jobIntent = await input.session.promptText(
     "What job are you giving this agent?",
     {
@@ -2842,45 +3081,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       lines: ["Runner uses the job to keep the read and proposal drafts together; it does not infer authority from this sentence."],
     });
   }
-  const authoringConversation = input.authoringChat
-    ? createModelAuthoringConversation()
-    : undefined;
-  type MappingMode = "model" | "cards" | "exact" | "intent_model" | "saved";
-  let mode: MappingMode | undefined;
-  let routeSelectedModel: ActionModelSuggestionSession | undefined;
-  let manualSelected = false;
-  if (input.session.chooseOption) {
-    const conversationalJobChoices = [
-      {
-        value: "model",
-        label: currentModel
-          ? `Continue with ${boundaryModelLabel(currentModel)}  [recommended]`
-          : "Choose a drafting model  [recommended]",
-        detail: "Talk through the job; Runner validates every suggested Read and Action decision.",
-        },
-      ...(currentModel
-        ? [{
-            value: "choose_model",
-            label: "Choose a different drafting model",
-            detail: "Keep this job, then choose another provider or exact model before metadata egress review.",
-          }]
-        : []),
-      {
-        value: "cards",
-        label: "Continue without a model",
-        detail: "Runner prepares explainable exact plan cards from reviewed schema evidence.",
-      },
-      {
-        value: "manual",
-        label: "Open the manual Boundary editors",
-        detail: "Review exact tables, fields, relationships, limits, and actions yourself.",
-      },
-      {
-        value: "advanced",
-        label: "Advanced inputs",
-        detail: "Import exact plan JSON, question-intent JSON, or a saved analysis.",
-      },
-    ];
+  if (!mode && input.session.chooseOption) {
     let selected = await input.session.chooseOption(
       input.jobFirst ? "MAP THE JOB TO REVIEWED STRUCTURE" : "HOW SHOULD RUNNER MAP THIS JOB?",
       input.jobFirst
@@ -3009,7 +3210,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         }
       }
     }
-  } else {
+  } else if (!mode) {
     const choice = await input.session.promptText(
       input.jobFirst ? `Mapping method [${currentModel ? "1" : "2"}]` : "Choose 1-5",
       {
@@ -3068,7 +3269,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     });
   }
   const promptedActionIntents = input.jobFirst
-    ? await promptJobFirstActionIntents(input.session, jobIntent.trim())
+    ? input.authoringChat && mode === "model"
+      ? jobAppearsToChangeState(jobIntent.trim()) ? [jobIntent.trim()] : []
+      : await promptJobFirstActionIntents(input.session, jobIntent.trim())
     : await promptDelegationActionIntents(input.session);
   if (!promptedActionIntents) return boundaryAssistResult(boundaryAssistBackNotice("Delegation setup closed."));
   let actionIntents: string[] = promptedActionIntents;
@@ -3213,36 +3416,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       ?? await promptBoundaryMappingModel(input.session, currentModel);
     if (!selectedModel) return boundaryAssistResult(boundaryAssistBackNotice());
     if (!routeSelectedModel) input.authoringChat?.setModel(boundaryModelLabel(selectedModel));
-    const confirmModelEgress = (session: ActionModelSuggestionSession) => {
-      const exact = [
-        `Provider: ${boundaryModelLabel(session)}`,
-        `Sends: this job, its read questions${actionIntents.length ? ", proposal intents" : ""}, reviewed structural names/types/relationships/labels/descriptions, and schema-declared ENUM/CHECK allowlists.`,
-        "Later in this same job, business-policy answers and reviewed-name clarifications you type may be sent for translation into an exact draft.",
-        "Never sent automatically: rows, observed values, kept-out fields, credentials, endpoint URLs, SQL, or trusted tenant/principal values.",
-        "Observed values require their own exact preview and permission. Model output remains untrusted and cannot activate, approve, apply, or write.",
-        input.jobFirst
-          ? "Bounded requests: Read mapping, Action mapping, concise validated chat replies, and one correction only after a refusal."
-          : "Bounded requests: Read mapping, one Action mapping per action, concise validated chat replies, and one correction only after a refusal.",
-      ];
-      input.authoringChat?.rememberDetails("MODEL METADATA EGRESS", exact);
-      return input.session.confirm(
-        `Send the exact reviewed authoring context to ${boundaryModelLabel(session)}?`,
-        {
-          defaultValue: false,
-          context: [
-            `Provider: ${boundaryModelLabel(session)}`,
-            "Sends: job wording + reviewed structural metadata + business answers you type.",
-            "Does not send: rows, SQL, credentials, kept-out fields, or trusted identity values.",
-            "Model suggestions remain untrusted. /details shows the complete egress record.",
-          ],
-        },
-      );
-    };
-    let mappingSession: ActionModelSuggestionSession = {
-      ...selectedModel,
-      ...(authoringConversation ? { conversation: authoringConversation } : {}),
-    };
-    let acknowledged = await confirmModelEgress(mappingSession);
+    let mappingSession: ActionModelSuggestionSession = preselectedMappingSession ?? {
+        ...selectedModel,
+        ...(authoringConversation ? { conversation: authoringConversation } : {}),
+      };
+    let acknowledged = modelEgressAcknowledged || await confirmModelEgress(mappingSession);
     while (!acknowledged) {
       if (!input.authoringChat || !input.session.chooseOption) {
         return boundaryAssistResult(boundaryAssistBackNotice("Model mapping was not started."));
@@ -3309,6 +3487,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         "Agent job paused by the operator. No provider request was made and no authority changed.",
       ));
     }
+    if (acknowledged) installPermissionGuide(mappingSession);
     if (!workload) {
       modelAssistSession = boundaryAuthoringModelSession(mappingSession, input.authoringChat);
       modelInterviewSession = modelAssistSession;
@@ -3408,6 +3587,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             "Replacement-model egress was not approved. The refused draft remains discarded and no authority changed.",
           ));
         }
+        installPermissionGuide(mappingSession);
         modelAssistSession = boundaryAuthoringModelSession(mappingSession, input.authoringChat);
         modelInterviewSession = modelAssistSession;
         modelAssistRecord = {
@@ -3418,16 +3598,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
     }
     if (mapped) {
-      if (input.authoringChat) {
-        if (mapped.model_message) {
-          await input.authoringChat.streamModel(mapped.model_message.split(/\r?\n/u));
-        } else {
-          await input.authoringChat.streamCheckpoint("Read draft validated; model summary unavailable", [
-            `${mapped.workload.allowed.length} exact Read plan${mapped.workload.allowed.length === 1 ? "" : "s"} ${mapped.workload.allowed.length === 1 ? "remains" : "remain"} in the disabled draft`,
-            "Use the Read details row before continuing; no authority or source data changed",
-          ], "warning");
-        }
-      }
+      const modelDraftMessages = mapped.model_message ? [mapped.model_message] : [];
       let mappedWorkload = mapped.workload;
       let mappedAnalysis = mapped.analysis;
       const representativeReadPlanCount = mappedWorkload.allowed.length;
@@ -3469,16 +3640,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                 egressAcknowledged: true,
               }),
             );
-            if (input.authoringChat) {
-              if (set.model_message) {
-                await input.authoringChat.streamModel(set.model_message.split(/\r?\n/u));
-              } else {
-                await input.authoringChat.streamCheckpoint("Action drafts validated; model summary unavailable", [
-                  `${set.assessments.length} exact suggestion${set.assessments.length === 1 ? "" : "s"} ${set.assessments.length === 1 ? "remains" : "remain"} disabled`,
-                  "No proposal, approval, apply, or source-write authority changed",
-                ], "warning");
-              }
-            }
+            if (set.model_message) modelDraftMessages.push(set.model_message);
             actionIntents = set.assessments.map((assessment) => assessment.suggestion.intent);
             for (const assessment of set.assessments) {
               preMappedActions.push({
@@ -3510,16 +3672,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   egressAcknowledged: true,
                 }),
               );
-              if (input.authoringChat) {
-                if (result.model_message) {
-                  await input.authoringChat.streamModel(result.model_message.split(/\r?\n/u));
-                } else {
-                  await input.authoringChat.streamCheckpoint("Action draft validated; model summary unavailable", [
-                    "1 exact suggestion remains disabled",
-                    "No proposal, approval, apply, or source-write authority changed",
-                  ], "warning");
-                }
-              }
+              if (result.model_message) modelDraftMessages.push(result.model_message);
               preMappedActions.push({ intent: actionIntent, result });
             }
           }
@@ -3568,6 +3721,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
               "Replacement-model egress was not approved. The refused action draft remains discarded and no authority changed.",
             ));
           }
+          installPermissionGuide(mappingSession);
           modelAssistSession = boundaryAuthoringModelSession(mappingSession, input.authoringChat);
           modelInterviewSession = modelAssistSession;
         }
@@ -3630,6 +3784,20 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
       }
       if (input.authoringChat) {
+        if (modelDraftMessages.length) {
+          await input.authoringChat.streamModel(modelDraftMessages.flatMap((message, index) => [
+            ...(index > 0 ? [""] : []),
+            ...message.split(/\r?\n/u),
+          ]));
+        } else {
+          await input.authoringChat.streamCheckpoint("Draft validated; model summary unavailable", [
+            `${representativeReadPlanCount} exact Read plan${representativeReadPlanCount === 1 ? "" : "s"} ${representativeReadPlanCount === 1 ? "remains" : "remain"} in the disabled draft`,
+            ...(preMappedActions.length
+              ? [`${preMappedActions.length} exact Action suggestion${preMappedActions.length === 1 ? " remains" : "s remain"} disabled`]
+              : []),
+            "No authority or source data changed",
+          ], "warning");
+        }
         const verificationDetails = [
           mappedAnalysis.status === "ready"
             ? `${representativeReadPlanCount} Read plan${representativeReadPlanCount === 1 ? "" : "s"} use reviewed identifiers and compiler-valid grammar`
@@ -3823,11 +3991,16 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     boundaryName: context.candidate.pack.name,
     candidateDigest: committed.candidate_digest,
   });
-  if (actionDrafts.length && !readBoundaryActive && input.completeReadReview) {
+  const modelGuidedReadReviewReady = Boolean(input.authoringChat && modelAssistRecord);
+  if ((actionDrafts.length || modelGuidedReadReviewReady)
+    && !readBoundaryActive
+    && input.completeReadReview) {
     await writeRunner("NEXT AUTHORITY REVIEW - READ BOUNDARY", [
       `Read Boundary: ${context.candidate.pack.name}`,
       "The job draft is complete. Review the exact Read authority now; activation remains your decision.",
-      "After Read activation, Runner opens each rehearsed Action Boundary revision for its own separate confirmation.",
+      ...(actionDrafts.length
+        ? ["After Read activation, Runner opens each rehearsed Action Boundary revision for its own separate confirmation."]
+        : ["This read-only job has no Action Boundary draft. Declining keeps the reviewed Read draft disabled."]),
     ]);
     const reviewResult = await input.completeReadReview("activate", input.session);
     if (reviewResult !== 0) {
@@ -3972,12 +4145,16 @@ async function promptDelegationActionIntents(
   return intents;
 }
 
+function jobAppearsToChangeState(jobIntent: string): boolean {
+  return /\b(?:propose|create|open|schedule|assign|update|change|close|cancel|approve|issue|send|record|mark|waive|refund|credit|delete|remove)\b/iu
+    .test(jobIntent);
+}
+
 async function promptJobFirstActionIntents(
   session: BoundaryReviewInteractiveSession,
   jobIntent: string,
 ): Promise<string[] | undefined> {
-  const appearsToChangeState = /\b(?:propose|create|schedule|assign|update|change|close|cancel|approve|issue|send|record|mark|waive|refund|credit|delete|remove)\b/i
-    .test(jobIntent);
+  const appearsToChangeState = jobAppearsToChangeState(jobIntent);
   const prepareActions = await session.confirm(
     "Should this job include an Action Boundary for structured proposals?",
     {
@@ -6027,38 +6204,11 @@ async function confirmAndActivateFocusedBoundary(input: {
   const actor = localInteractiveActor();
   if (input.prepareDependentActions) {
     let accepted: boolean | undefined;
-    if (conversation && input.session.chooseOption) {
-      while (accepted === undefined) {
-        const choice = await input.session.chooseOption(
-          "CONTINUE TO ACTION BOUNDARY",
-          [
-            {
-              value: "continue",
-              label: "Continue to Action Boundary  [recommended]",
-              detail: "Freeze this exact Read revision as a disabled dependency; grant no Read or proposal authority.",
-            },
-            {
-              value: "details",
-              label: "View exact Read Boundary details",
-              detail: "Show every reviewed field, allowlist, scope path, limit, and fingerprint.",
-            },
-            {
-              value: "back",
-              label: "Pause this job",
-              detail: "Keep the Read draft incomplete and grant no authority.",
-            },
-          ],
-          {
-            initialValue: "continue",
-            context: conversationReviewContext,
-          },
-        );
-        if (choice === "details") {
-          input.session.present?.("EXACT READ BOUNDARY DETAILS", activationContext, "normal");
-          continue;
-        }
-        accepted = choice === "continue" ? true : false;
-      }
+    if (conversation) {
+      // Retaining a validated Read revision as a disabled dependency grants no
+      // authority. The model-led flow continues without presenting this local
+      // draft write as though it were an activation permission.
+      accepted = true;
     } else {
       accepted = await input.session.confirm(
         `Use this exact Read Boundary as the disabled dependency for its Action Boundary?`,

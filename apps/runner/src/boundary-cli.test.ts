@@ -66,6 +66,7 @@ import { AskError } from "./model-ask.js";
 import {
   generateModelActionSuggestionSet,
 } from "./action-suggestion-model.js";
+import type { BoundaryAuthoringPermissionGuide } from "./boundary-authoring-chat.js";
 import { ACTION_SUGGESTION_VERSION, assessActionSuggestion } from "./action-design.js";
 import {
   commitReadWorkloadCandidate,
@@ -1923,7 +1924,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("starts fresh onboarding from one model-assisted job without activating authority", async () => {
+  it("keeps a read-only model job in chat through its explicit activation gate", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-first-model-"));
     const inspection = boundaryInspection();
     const build = buildAutoBoundary({
@@ -1940,6 +1941,7 @@ describe("boundary operator-plane CLI", () => {
     });
     const prompts: string[] = [];
     const confirmations: string[] = [];
+    const activationPrompts: string[] = [];
     const modelReadWorkloadGenerator = vi.fn(async (
       input: Parameters<typeof generateModelReadWorkload>[0],
     ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
@@ -1972,11 +1974,12 @@ describe("boundary operator-plane CLI", () => {
       confirm: async (prompt) => {
         confirmations.push(prompt);
         if (prompt.includes("Action Boundary")) return false;
-        if (prompt.includes("reviewed authoring context")) return true;
+        if (prompt.includes("reviewed structural context")) return true;
         throw new Error(`Unexpected job-first confirmation: ${prompt}`);
       },
-      confirmActivation: async () => {
-        throw new Error("Job-first drafting must not open activation implicitly.");
+      confirmActivation: async (prompt) => {
+        activationPrompts.push(prompt);
+        return false;
       },
     };
     const chatClose = vi.fn();
@@ -2004,7 +2007,7 @@ describe("boundary operator-plane CLI", () => {
           },
           modelReadWorkloadGenerator,
           boundaryAuthoringChatFactory: () => ({
-            session,
+            session: { ...session, presentationMode: "conversation" },
             actionPrompter: {
               choose: async () => undefined,
               text: async () => undefined,
@@ -2032,7 +2035,10 @@ describe("boundary operator-plane CLI", () => {
         "Mapping method [1]",
         "Choice (1-3)",
       ]);
-      expect(confirmations).toHaveLength(2);
+      expect(confirmations).toHaveLength(1);
+      expect(activationPrompts).toEqual([
+        expect.stringContaining('Activate "reviewed_staging" for local read-only Explore'),
+      ]);
       expect(modelReadWorkloadGenerator).toHaveBeenCalledWith(expect.objectContaining({
         provider: "openai",
         model: "gpt-job-mapper",
@@ -2100,6 +2106,7 @@ describe("boundary operator-plane CLI", () => {
       inspectedSchema: "public",
     });
     const modelReadWorkloadGenerator = vi.fn();
+    const modelAuthoringNarrator = vi.fn();
     const choices: string[] = [];
     const chatClose = vi.fn();
     const session: BoundaryReviewInteractiveSession = {
@@ -2113,7 +2120,7 @@ describe("boundary operator-plane CLI", () => {
       },
       chooseOption: async (title, options, promptOptions) => {
         choices.push(title);
-        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         if (title === "MODEL REQUEST NOT STARTED") {
           expect(promptOptions?.initialValue).toBe("runner");
@@ -2130,7 +2137,7 @@ describe("boundary operator-plane CLI", () => {
       },
       confirm: async (prompt) => {
         if (prompt.includes("Action Boundary")) return false;
-        if (prompt.includes("reviewed authoring context")) return false;
+        if (prompt.includes("reviewed structural context")) return false;
         throw new Error(`Unexpected denied-egress confirmation: ${prompt}`);
       },
       confirmActivation: async () => false,
@@ -2151,6 +2158,7 @@ describe("boundary operator-plane CLI", () => {
             apiKey: "session-only-secret",
           },
           modelReadWorkloadGenerator,
+          modelAuthoringNarrator,
           boundaryAuthoringChatFactory: () => ({
             session,
             actionPrompter: {
@@ -2181,6 +2189,7 @@ describe("boundary operator-plane CLI", () => {
       ]));
       expect(choices).not.toContain("MODEL FOR BOUNDARY DRAFTING");
       expect(modelReadWorkloadGenerator).not.toHaveBeenCalled();
+      expect(modelAuthoringNarrator).not.toHaveBeenCalled();
       expect(chatClose).toHaveBeenCalledOnce();
       const delegation = await readDelegationDraft(root, "explain_service_activity_to_support_staff");
       expect(delegation).toMatchObject({
@@ -2900,13 +2909,19 @@ describe("boundary operator-plane CLI", () => {
     });
     const transcript: Array<{ speaker: "model" | "runner" | "check"; lines: string[] }> = [];
     const mappingChoices: string[] = [];
+    let installedPermissionGuide: BoundaryAuthoringPermissionGuide | undefined;
+    const modelAuthoringNarrator = vi.fn(async (
+      input: Parameters<typeof import("./model-authoring-narration.js").narrateValidatedAuthoringStep>[0],
+    ) => input.responseStyle === "permission"
+      ? "This activates only the reviewed authority. Would you like Runner to activate it?"
+      : "What should this agent be able to read or propose?");
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => undefined,
       editFieldTiers: async () => undefined,
       promptText: async () => answers.shift(),
       chooseOption: async (title, choices, options) => {
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
-        expect(title).toBe("MAP THE JOB TO REVIEWED STRUCTURE");
+        expect(title).toBe("START BOUNDARY DRAFTING");
         expect(options?.initialValue).toBe("model");
         mappingChoices.push(...choices.map((choice) => choice.value));
         return "model";
@@ -2931,6 +2946,7 @@ describe("boundary operator-plane CLI", () => {
           },
           modelReadWorkloadGenerator,
           modelActionSuggestionSetGenerator,
+          modelAuthoringNarrator,
           actionProjectInspector: async () => inspection,
           runDelegationActionReview,
           boundaryAuthoringChatFactory: () => ({
@@ -2942,6 +2958,9 @@ describe("boundary operator-plane CLI", () => {
               message: async () => undefined,
             },
             setModel: vi.fn(),
+            setPermissionGuide: (guide) => {
+              installedPermissionGuide = guide;
+            },
             runner: vi.fn(),
             model: vi.fn(),
             checkpoint: (title, lines = []) => {
@@ -2967,6 +2986,31 @@ describe("boundary operator-plane CLI", () => {
 
       expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
       expect(modelActionSuggestionSetGenerator).toHaveBeenCalledOnce();
+      expect(installedPermissionGuide).toBeTypeOf("function");
+      await expect(installedPermissionGuide?.({
+        title: "PERMISSION REQUIRED",
+        prompt: "Activate exact digest sha256:deadbeef for this Read Boundary?",
+        context: [
+          "Boundary: reviewed_staging",
+          "Exact fingerprint: sha256:deadbeef",
+          "Tenant ID: northstar-mobile",
+          "Three reviewed resources; source unchanged",
+        ],
+        choices: [
+          { value: "activate", label: "Activate this exact Read Boundary" },
+          { value: "back", label: "Keep disabled" },
+        ],
+        operatorQuestion: "Why is activation separate?",
+      })).resolves.toContain("activates only the reviewed authority");
+      const permissionNarration = modelAuthoringNarrator.mock.calls
+        .map(([call]) => call)
+        .find((call) => call.responseStyle === "permission");
+      expect(permissionNarration).toMatchObject({
+        operatorMessage: expect.stringContaining("Why is activation separate?"),
+        egressAcknowledged: true,
+        responseStyle: "permission",
+      });
+      expect(permissionNarration?.validatedFacts.join("\n")).not.toMatch(/deadbeef|northstar-mobile/iu);
       expect(mappingChoices).toEqual([
         "model",
         "choose_model",
@@ -2982,16 +3026,11 @@ describe("boundary operator-plane CLI", () => {
       const actionModelIndex = transcript.findIndex((entry) =>
         entry.speaker === "model"
         && entry.lines.some((line) => line.includes("INSERT public.maintenance_requests")));
-      const actionFallbackIndex = transcript.findIndex((entry) =>
-        entry.speaker === "check"
-        && entry.lines[0] === "Action drafts validated; model summary unavailable");
       expect(readModelIndex).toBeGreaterThanOrEqual(0);
       expect(actionModelIndex).toBe(-1);
-      expect(actionFallbackIndex).toBeGreaterThan(readModelIndex);
-      expect(transcript[actionFallbackIndex]?.lines).toEqual(expect.arrayContaining([
-        "1 exact suggestion remains disabled",
-        "No proposal, approval, apply, or source-write authority changed",
-      ]));
+      expect(transcript.some((entry) =>
+        entry.speaker === "check"
+        && entry.lines[0] === "Action drafts validated; model summary unavailable")).toBe(false);
       expect(transcript.filter((entry) => entry.lines[0] === "Runner verified")).toHaveLength(0);
       const reviewed = await loadBoundaryReviewContext(root);
       expect(reviewed.candidate.pack.resources.map((resource) => resource.id).sort()).toEqual([
@@ -3219,7 +3258,7 @@ describe("boundary operator-plane CLI", () => {
         throw new Error(`Unexpected Action Boundary replacement choice: ${title}`);
       },
       confirm: async (prompt) => {
-        if (prompt.includes("reviewed authoring context")) egressPrompts.push(prompt);
+        if (prompt.includes("reviewed structural context")) egressPrompts.push(prompt);
         return true;
       },
       confirmActivation: async () => false,
@@ -3667,7 +3706,7 @@ describe("boundary operator-plane CLI", () => {
       },
       confirm: async (prompt) => {
         if (prompt.includes("Action Boundary")) return false;
-        if (prompt.includes("reviewed authoring context")) {
+        if (prompt.includes("reviewed structural context")) {
           egressPrompts.push(prompt);
           return true;
         }

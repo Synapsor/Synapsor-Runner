@@ -30,6 +30,7 @@ export async function narrateValidatedAuthoringStep(input: {
   env?: NodeJS.ProcessEnv;
   egressAcknowledged: boolean;
   signal?: AbortSignal;
+  responseStyle?: "validated_result" | "permission";
 }): Promise<string | undefined> {
   if (!input.session.conversation) return undefined;
   const tools: [] = [];
@@ -67,13 +68,16 @@ export async function narrateValidatedAuthoringStep(input: {
     }),
     async close() {},
   };
+  const permission = input.responseStyle === "permission";
   const question = [
     `Operator message: ${JSON.stringify(input.operatorMessage)}`,
     "Runner-validated record:",
     ...input.validatedFacts.map((fact) => `- ${fact}`),
     ...(input.nextQuestion ? [`Exact next question: ${JSON.stringify(input.nextQuestion)}`] : []),
     "Respond as the selected Boundary-drafting model, not as Runner.",
-    "Use at most four short sentences. Explain the validated result in ordinary business language.",
+    permission
+      ? "Use at most three short sentences. Answer the operator's question when one was supplied, then explain why this permission is needed and what allowing or declining changes."
+      : "Use at most four short sentences. Explain the validated result in ordinary business language.",
     input.nextQuestion
       ? "End by asking the exact next question without changing its meaning."
       : "State the next useful operator choice only when the validated record names one.",
