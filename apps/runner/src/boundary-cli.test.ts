@@ -2012,7 +2012,9 @@ describe("boundary operator-plane CLI", () => {
             setModel: vi.fn(),
             runner: chatRunner,
             model: chatModel,
+            checkpoint: chatRunner,
             streamRunner: async (...args) => { chatRunner(...args); },
+            streamCheckpoint: async (...args) => { chatRunner(...args); },
             streamModel: async (lines) => { chatModel(lines); },
             providerStream: vi.fn(),
             progress: chatProgress,
@@ -2040,7 +2042,7 @@ describe("boundary operator-plane CLI", () => {
         expect.stringContaining("representative read plan"),
       ]));
       expect(chatRunner).toHaveBeenCalledWith(
-        "Runner validation",
+        "Runner verified",
         expect.any(Array),
         "success",
       );
@@ -2151,7 +2153,9 @@ describe("boundary operator-plane CLI", () => {
             setModel: vi.fn(),
             runner: vi.fn(),
             model: vi.fn(),
+            checkpoint: vi.fn(),
             streamRunner: async () => undefined,
+            streamCheckpoint: async () => undefined,
             streamModel: async () => undefined,
             providerStream: vi.fn(),
             progress: async <T>(_message: string, operation: () => Promise<T>) => operation(),
@@ -2880,6 +2884,7 @@ describe("boundary operator-plane CLI", () => {
       ]));
       return { state: "closed" as const, source_database_changed: false as const, activated_actions: [] };
     });
+    const transcript: Array<{ speaker: "model" | "runner" | "check"; lines: string[] }> = [];
     const mappingChoices: string[] = [];
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => undefined,
@@ -2914,6 +2919,33 @@ describe("boundary operator-plane CLI", () => {
           modelActionSuggestionSetGenerator,
           actionProjectInspector: async () => inspection,
           runDelegationActionReview,
+          boundaryAuthoringChatFactory: () => ({
+            session,
+            actionPrompter: {
+              choose: async () => undefined,
+              text: async () => undefined,
+              confirm: async () => undefined,
+              message: async () => undefined,
+            },
+            setModel: vi.fn(),
+            runner: vi.fn(),
+            model: vi.fn(),
+            checkpoint: (title, lines = []) => {
+              transcript.push({ speaker: "check", lines: [title, ...lines] });
+            },
+            streamRunner: async (title, lines = []) => {
+              transcript.push({ speaker: "runner", lines: [title, ...lines] });
+            },
+            streamCheckpoint: async (title, lines = []) => {
+              transcript.push({ speaker: "check", lines: [title, ...lines] });
+            },
+            streamModel: async (lines) => {
+              transcript.push({ speaker: "model", lines });
+            },
+            providerStream: vi.fn(),
+            progress: async (_message, operation) => operation(),
+            close: vi.fn(),
+          }),
         },
       )).resolves.toBe(0);
 
@@ -2921,14 +2953,32 @@ describe("boundary operator-plane CLI", () => {
       expect(modelActionSuggestionSetGenerator).toHaveBeenCalledOnce();
       expect(mappingChoices).toEqual([
         "model",
+        "choose_model",
         "cards",
         "manual",
-        "exact",
-        "intent_model",
-        "saved",
+        "advanced",
       ]);
       expect(actionAssessment?.status, actionAssessment?.blockers.join("; ")).toBe("suggested");
       expect(runDelegationActionReview).toHaveBeenCalledOnce();
+      const modelDraftIndex = transcript.findIndex((entry) =>
+        entry.speaker === "model"
+        && entry.lines.some((line) => line.includes("representative read plan")));
+      expect(modelDraftIndex).toBeGreaterThanOrEqual(0);
+      expect(transcript[modelDraftIndex]?.lines).toEqual(expect.arrayContaining([
+        expect.stringContaining("representative read plan"),
+        expect.stringContaining("bounded Action suggestion"),
+        expect.stringContaining("INSERT public.maintenance_requests"),
+      ]));
+      expect(transcript[modelDraftIndex + 1]).toEqual({
+        speaker: "check",
+        lines: expect.arrayContaining([
+          "Runner verified",
+          expect.stringContaining("Read plan"),
+          expect.stringContaining("Action target"),
+          "Read and Action authority remain off",
+        ]),
+      });
+      expect(transcript.filter((entry) => entry.lines[0] === "Runner verified")).toHaveLength(1);
       const reviewed = await loadBoundaryReviewContext(root);
       expect(reviewed.candidate.pack.resources.map((resource) => resource.id).sort()).toEqual([
         "public.maintenance_requests",

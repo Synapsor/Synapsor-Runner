@@ -13,14 +13,17 @@ import {
 import type { AskProviderStreamEvent } from "./model-ask.js";
 
 export type BoundaryAuthoringSpeaker = "runner" | "model";
+type BoundaryAuthoringTone = "normal" | "success" | "warning" | "danger";
 
 export type BoundaryAuthoringChat = {
   session: BoundaryReviewInteractiveSession;
   actionPrompter: ActionControlPrompter;
   setModel(label: string): void;
-  runner(title: string, lines?: string[], tone?: "normal" | "success" | "warning" | "danger"): void;
+  runner(title: string, lines?: string[], tone?: BoundaryAuthoringTone): void;
   model(lines: string[]): void;
-  streamRunner(title: string, lines?: string[], tone?: "normal" | "success" | "warning" | "danger"): Promise<void>;
+  checkpoint(title: string, lines?: string[], tone?: BoundaryAuthoringTone): void;
+  streamRunner(title: string, lines?: string[], tone?: BoundaryAuthoringTone): Promise<void>;
+  streamCheckpoint(title: string, lines?: string[], tone?: BoundaryAuthoringTone): Promise<void>;
   streamModel(lines: string[]): Promise<void>;
   providerStream(event: AskProviderStreamEvent): void;
   progress<T>(message: string, operation: () => Promise<T>): Promise<T>;
@@ -39,7 +42,7 @@ type ChoiceInput = {
 };
 
 const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 50;
-const DEFAULT_TRANSCRIPT_STREAM_VISIBLE_CHARS = 8;
+const DEFAULT_TRANSCRIPT_STREAM_VISIBLE_CHARS = 4;
 
 function stripTerminalAnsi(value: string): string {
   return value.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
@@ -77,8 +80,75 @@ function meaningfulContext(context: string[] | undefined): string[] {
 
 function isModelQuestion(title: string | undefined, context: string[] | undefined): boolean {
   const heading = title ?? context?.[0] ?? "";
-  return /^(?:ANSWER ONE BUSINESS QUESTION|SET (?:PROPOSAL RANGE|PROPOSAL FIELDS|ACTION TARGET|PROPOSAL EFFECT|CONFLICT AND RETRY GUARD)|CLARIFY ONE REVIEWED NAME|MODEL QUESTION|DESCRIBE THE AUTO-APPROVAL RULE)/iu
+  return /^(?:ANSWER ONE BUSINESS QUESTION|(?:SET|CONFIRM) (?:PROPOSAL RANGE|PROPOSAL FIELDS|ACTION TARGET|PROPOSAL EFFECT|CONFLICT AND RETRY GUARD)|CLARIFY ONE REVIEWED NAME|MODEL QUESTION|DESCRIBE THE AUTO-APPROVAL RULE)/iu
     .test(heading.trim());
+}
+
+function contextValue(context: string[] | undefined, prefix: string): string | undefined {
+  const line = context?.find((candidate) => candidate.trimStart().startsWith(prefix));
+  return line?.trimStart().slice(prefix.length).trim() || undefined;
+}
+
+function modelQuestionTurn(
+  prompt: string,
+  title: string | undefined,
+  context: string[] | undefined,
+): string[] {
+  const target = contextValue(context, "Action:") ?? contextValue(context, "Target:");
+  const heading = title?.trim() ?? "";
+  const purpose = /PROPOSAL RANGE$/iu.test(heading)
+    ? target
+      ? [`This is the hard proposal range for ${target}.`, "Auto-approval can be narrower."]
+      : ["This is the hard proposal range. Auto-approval can be narrower."]
+    : /PROPOSAL FIELDS$/iu.test(heading)
+      ? ["Only these business fields may come from the agent.", "Trusted scope stays with Runner."]
+      : /ACTION TARGET$/iu.test(heading)
+        ? ["This selects one reviewed table; it grants no authority."]
+        : /PROPOSAL EFFECT$/iu.test(heading)
+          ? ["This selects a proposal effect; it does not execute the change."]
+          : /CONFLICT AND RETRY GUARD$/iu.test(heading)
+            ? ["This guard rejects duplicate or stale proposals before approval."]
+            : undefined;
+  return [prompt.replace(/:\s*$/u, ""), ...(purpose ?? [])];
+}
+
+function modelConfirmationTurn(context: string[] | undefined): string[] | undefined {
+  const interpretation = contextValue(context, "Runner-validated interpretation:");
+  if (!interpretation) return undefined;
+  return [
+    `I interpreted that as ${interpretation}.`,
+    "Press Enter to use it, or tell me what should change.",
+  ];
+}
+
+function confirmationScopeLine(title: string | undefined, target: string | undefined): string | undefined {
+  const heading = title?.trim() ?? "";
+  if (/PROPOSAL RANGE$/iu.test(heading)) return target ? `Hard range: ${target}` : "Hard proposal range";
+  if (/PROPOSAL FIELDS$/iu.test(heading)) return target ? `Agent fields: ${target}` : "Agent-supplied fields";
+  if (/ACTION TARGET$/iu.test(heading)) return "One reviewed Action target";
+  if (/PROPOSAL EFFECT$/iu.test(heading)) return "One reviewed proposal effect";
+  if (/CONFLICT AND RETRY GUARD$/iu.test(heading)) return target ? `Retry guard: ${target}` : "Conflict and retry guard";
+  return undefined;
+}
+
+function compactRoutineCheckpoint(
+  title: string,
+  lines: string[],
+): { title: string; lines: string[] } | undefined {
+  if (title === "READ REVIEW COMPLETE - NOT ACTIVE") {
+    const boundary = contextValue(lines, "Read Boundary:") ?? contextValue(lines, "Boundary:");
+    return {
+      title: "Read draft saved",
+      lines: [
+        [boundary, "not active", "source unchanged"].filter(Boolean).join(" · "),
+        "Next: Action Boundary",
+      ],
+    };
+  }
+  if (title === "Drafting model selected" || title === "Model choice unchanged") {
+    return { title, lines: lines.slice(0, 1) };
+  }
+  return undefined;
 }
 
 function isPermissionPrompt(prompt: string, context: string[] | undefined): boolean {
@@ -118,6 +188,13 @@ export function createBoundaryAuthoringChat(input: {
   ): string => {
     const safe = transcriptText(line);
     let content = index === 0 && firstStyle ? firstStyle(safe) : safe;
+    if (speaker === "model") {
+      const interpreted = safe.match(/^I interpreted that as\s+([^:]+):\s*(.+)\.$/iu);
+      if (interpreted) {
+        content = `I interpreted that as ${theme.scope(interpreted[1]!.trim())}: `
+          + `${theme.success(interpreted[2]!.trim())}.`;
+      }
+    }
     if (speaker === "runner" && index > 0) {
       const interpreted = safe.match(/^Runner-validated interpretation:\s*([^:]+):\s*(.+)$/iu);
       if (interpreted) {
@@ -158,6 +235,26 @@ export function createBoundaryAuthoringChat(input: {
     if (io.writeChunk) io.writeChunk(value);
     else io.write(value);
   };
+  const checkpoint = (
+    title: string,
+    lines: string[] = [],
+    tone: BoundaryAuthoringTone = "success",
+  ) => {
+    const marker = tone === "success" ? "✓" : tone === "warning" ? "!" : tone === "danger" ? "×" : "·";
+    const style = tone === "success"
+      ? theme.success
+      : tone === "warning"
+        ? theme.warning
+        : tone === "danger"
+          ? theme.danger
+          : theme.key;
+    const facts = meaningfulContext(lines);
+    writeTranscript([
+      `${transcriptIndent}${style(`${marker} ${transcriptText(title)}`)}`,
+      ...facts.map((line, index) => `${transcriptIndent}  ${index === 0 ? theme.value(line) : theme.dim(line)}`),
+      "",
+    ].join("\n"));
+  };
   const writeRole = (
     speaker: BoundaryAuthoringSpeaker,
     lines: string[],
@@ -169,8 +266,13 @@ export function createBoundaryAuthoringChat(input: {
   const runner = (
     title: string,
     lines: string[] = [],
-    tone: "normal" | "success" | "warning" | "danger" = "normal",
+    tone: BoundaryAuthoringTone = "normal",
   ) => {
+    const routine = compactRoutineCheckpoint(title, lines);
+    if (routine) {
+      checkpoint(routine.title, routine.lines, tone === "normal" ? "success" : tone);
+      return;
+    }
     const titleStyle = tone === "success"
       ? theme.success
       : tone === "warning"
@@ -208,7 +310,7 @@ export function createBoundaryAuthoringChat(input: {
   const streamRunner = async (
     title: string,
     lines: string[] = [],
-    tone: "normal" | "success" | "warning" | "danger" = "normal",
+    tone: BoundaryAuthoringTone = "normal",
   ) => {
     const titleStyle = tone === "success"
       ? theme.success
@@ -218,6 +320,14 @@ export function createBoundaryAuthoringChat(input: {
           ? theme.danger
           : theme.bold;
     await streamRole("runner", [title, ...lines], titleStyle);
+  };
+  const streamCheckpoint = async (
+    title: string,
+    lines: string[] = [],
+    tone: BoundaryAuthoringTone = "success",
+  ) => {
+    io.clearStatus?.();
+    checkpoint(title, lines, tone);
   };
   const streamModel = (lines: string[]) => streamRole("model", lines);
   const writeContext = async (context: string[] | undefined, speaker: BoundaryAuthoringSpeaker = "runner") => {
@@ -232,14 +342,22 @@ export function createBoundaryAuthoringChat(input: {
       .map((line) => line.replace(/^Model (?:rationale|question|suggestion):\s*/iu, ""));
     const runnerLines = lines.filter((line) =>
       !/^(?:Model rationale|Model question|Model suggestion):/iu.test(line));
-    if (runnerLines.length) await streamRunner(runnerLines[0]!, runnerLines.slice(1));
     if (modelLines.length) await streamModel(modelLines);
+    if (modelLines.length && runnerLines.length) {
+      checkpoint(runnerLines[0]!, runnerLines.slice(1));
+    } else if (runnerLines.length) {
+      await streamRunner(runnerLines[0]!, runnerLines.slice(1));
+    }
   };
   const read = async (prompt: string, speaker: BoundaryAuthoringSpeaker = "runner") => {
     writeRole(speaker, [prompt]);
+    return readAnswer();
+  };
+  const readAnswer = async (defaultValue?: string) => {
+    const defaultHint = defaultValue ? `${theme.dim(`[${defaultValue}]`)} ` : "";
     return io.readWithEscape
-      ? io.readWithEscape(`${theme.focus("you>")} `)
-      : io.read(`${theme.focus("you>")} `);
+      ? io.readWithEscape(`${theme.focus("you>")} ${defaultHint}`)
+      : io.read(`${theme.focus("you>")} ${defaultHint}`);
   };
   const choose = async (choice: ChoiceInput): Promise<string | undefined> => {
     const available = choice.options.filter((option) => !option.disabled);
@@ -280,11 +398,10 @@ export function createBoundaryAuthoringChat(input: {
     options: { context?: string[]; defaultValue?: boolean } = {},
     kind: "decision" | "permission" = isPermissionPrompt(prompt, options.context) ? "permission" : "decision",
   ): Promise<boolean | undefined> => {
-    await writeContext(options.context);
     const permission = kind === "permission";
     if (permission) {
-      runner("Permission request", [prompt]);
-    }
+      runner("Permission request", [...meaningfulContext(options.context), prompt]);
+    } else await writeContext(options.context);
     const yesLabel = permission ? "Allow this exact step" : "Yes, continue";
     const noLabel = permission ? "Not now; keep authority unchanged" : "No; go back";
     const selected = await choose({
@@ -316,13 +433,17 @@ export function createBoundaryAuthoringChat(input: {
     editFieldTiers: async () => undefined,
     promptText: async (prompt, options) => {
       const speaker = isModelQuestion(undefined, options?.context) ? "model" : "runner";
-      await writeContext(options?.context, speaker === "model" ? "runner" : "runner");
+      if (speaker === "model") {
+        await streamModel(modelQuestionTurn(prompt, options?.context?.[0], options?.context));
+        return readAnswer();
+      }
+      await writeContext(options?.context);
       return read(prompt.replace(/:\s*$/u, ""), speaker);
     },
     chooseOption: async (title, choices, options) => {
-      await writeContext(options?.context);
       const permission = /^(?:ACTIVATE|APPROVE|APPLY|GRANT)\b/iu.test(title.trim());
-      if (permission) runner("Permission request", [title]);
+      if (permission) runner("Permission request", [...meaningfulContext(options?.context), title]);
+      else await writeContext(options?.context);
       return choose({
         title: permission ? "PERMISSION REQUIRED" : title,
         message: permission
@@ -345,8 +466,9 @@ export function createBoundaryAuthoringChat(input: {
 
   const actionPrompter: ActionControlPrompter = {
     choose: async (title, choices, context, initialValue) => {
-      await writeContext(context);
       const permission = /^(?:ACTIVATE|APPROVE|APPLY)\b/iu.test(title.trim());
+      if (permission) runner("Permission request", [...meaningfulContext(context), title]);
+      else await writeContext(context);
       const safePermissionChoice = permission
         ? choices.find((choice) => !choice.disabled && /^(?:back|no|cancel|decline|disabled|leave)$/iu.test(choice.value))
         : undefined;
@@ -364,7 +486,35 @@ export function createBoundaryAuthoringChat(input: {
       });
     },
     text: async (label, options) => {
+      if (options?.conversation) {
+        await streamModel(options.conversation.modelLines);
+        if (options.conversation.checkpoint) {
+          checkpoint(
+            options.conversation.checkpoint.title,
+            options.conversation.checkpoint.lines,
+            options.conversation.checkpoint.tone,
+          );
+        }
+        const answer = await readAnswer(options.defaultValue);
+        return answer === "" && options.defaultValue ? options.defaultValue : answer;
+      }
       const speaker = isModelQuestion(options?.title, options?.context) ? "model" : "runner";
+      if (speaker === "model") {
+        const confirmation = modelConfirmationTurn(options?.context);
+        await streamModel(confirmation ?? modelQuestionTurn(label, options?.title, options?.context));
+        if (confirmation) {
+          const target = contextValue(options?.context, "Action:") ?? contextValue(options?.context, "Target:");
+          const interpretation = contextValue(options?.context, "Runner-validated interpretation:");
+          const scopeLine = confirmationScopeLine(options?.title, target);
+          checkpoint("Runner verified", [
+            ...(interpretation ? [interpretation] : []),
+            ...(scopeLine ? [scopeLine] : []),
+            "Disabled draft only · authority off · source unchanged",
+          ]);
+        }
+        const answer = await readAnswer(options?.defaultValue);
+        return answer === "" && options?.defaultValue ? options.defaultValue : answer;
+      }
       await writeContext(options?.context);
       if (options?.title) runner(options.title);
       const suffix = options?.defaultValue ? ` [${options.defaultValue}]` : "";
@@ -375,8 +525,9 @@ export function createBoundaryAuthoringChat(input: {
     message: async (title, lines) => {
       const modelRationale = lines.find((line) => /^Model rationale:/iu.test(line));
       const runnerLines = modelRationale ? lines.filter((line) => line !== modelRationale) : lines;
-      await streamRunner(title, runnerLines);
       if (modelRationale) await streamModel([modelRationale.replace(/^Model rationale:\s*/iu, "")]);
+      if (modelRationale) checkpoint(title, runnerLines);
+      else await streamRunner(title, runnerLines);
     },
   };
 
@@ -391,11 +542,13 @@ export function createBoundaryAuthoringChat(input: {
     actionPrompter,
     setModel: (label) => {
       modelLabel = label;
-      runner("Drafting model selected", [label]);
+      checkpoint("Drafting model selected", [label]);
     },
     runner,
     model,
+    checkpoint,
     streamRunner,
+    streamCheckpoint,
     streamModel,
     providerStream: (event) => {
       if (event.phase === "started") {

@@ -604,6 +604,27 @@ describe("Safe Action terminal control plane", () => {
     expect(policyPrompt?.options?.context
       ?.filter((line) => /^[+|]/u.test(line))
       .every((line) => line.length <= 72)).toBe(true);
+    expect(policyPrompt?.options?.conversation?.modelLines).toEqual(expect.arrayContaining([
+      expect.stringContaining("auto-approval policy"),
+      expect.stringContaining("credit_cents"),
+      expect.stringContaining("trusted tenant + principal"),
+      "Anything else requires human review.",
+    ]));
+    expect(policyPrompt?.options?.conversation?.checkpoint).toMatchObject({
+      title: "Runner verified",
+      lines: expect.arrayContaining([
+        expect.stringContaining("hard proposal envelope"),
+        expect.stringContaining("Disabled policy draft"),
+      ]),
+    });
+    const interpretedPolicyPrompt = textPrompts.find((candidate) =>
+      candidate.options?.conversation?.modelLines[0]?.startsWith("I interpreted your auto-approval policy"));
+    expect(interpretedPolicyPrompt?.options?.conversation?.modelLines).toEqual(expect.arrayContaining([
+      expect.stringContaining("credit_cents: <= 500"),
+      expect.stringContaining("3 approvals per 24 hours"),
+      expect.stringContaining("1000 total credit_cents"),
+      expect.stringContaining("trusted tenant + principal"),
+    ]));
     expect(choiceTitles).not.toContain("REVIEW EXACT AUTO-APPROVAL POLICY");
     expect(choiceTitles).not.toContain("REVIEW PROPOSAL ACTION");
   });

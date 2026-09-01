@@ -3265,7 +3265,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       if (recovery === "change_model") {
         const replacement = await promptBoundaryMappingModel(input.session, mappingSession);
         if (!replacement) {
-          await input.authoringChat.streamRunner("Model choice unchanged", [
+          await input.authoringChat.streamCheckpoint("Model choice unchanged", [
             "No provider request was made. The same job is still waiting for a drafting path.",
           ], "warning");
           continue;
@@ -3386,21 +3386,15 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     if (mapped) {
       let mappedWorkload = mapped.workload;
       let mappedAnalysis = mapped.analysis;
-      if (input.authoringChat) {
-        await input.authoringChat.streamModel([
-          `I drafted ${mappedWorkload.allowed.length} representative read plan${mappedWorkload.allowed.length === 1 ? "" : "s"} for this job.`,
-          ...mappedWorkload.allowed.slice(0, 6).map((entry) => `- ${modelReadPlanSummary(entry.plan)}`),
-          ...(mappedWorkload.allowed.length > 6
-            ? [`- and ${mappedWorkload.allowed.length - 6} more`]
-            : []),
-        ]);
-        await input.authoringChat.streamRunner("Runner validation", [
-          mappedAnalysis.status === "ready"
-            ? "Every displayed plan uses exact reviewed identifiers and compiler-valid grammar."
-            : "The draft is not eligible to become a candidate; blockers remain below.",
-          "No Read authority is active.",
-        ], mappedAnalysis.status === "ready" ? "success" : "warning");
-      }
+      const representativeReadPlanCount = mappedWorkload.allowed.length;
+      let actionSupportPlanCount = 0;
+      const modelDraftLines = [
+        `I drafted ${mappedWorkload.allowed.length} representative read plan${mappedWorkload.allowed.length === 1 ? "" : "s"} for this job.`,
+        ...mappedWorkload.allowed.slice(0, 6).map((entry) => `- ${modelReadPlanSummary(entry.plan)}`),
+        ...(mappedWorkload.allowed.length > 6
+          ? [`- and ${mappedWorkload.allowed.length - 6} more`]
+          : []),
+      ];
       if (actionIntents.length) {
       actionInspection = await (input.actionProjectInspector ?? inspectActionProject)(
         input.projectRoot,
@@ -3513,19 +3507,13 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         }
       }
       if (preMappedActions.length) {
-        if (input.authoringChat) {
-          await input.authoringChat.streamModel([
-            `I drafted ${preMappedActions.length} bounded Action suggestion${preMappedActions.length === 1 ? "" : "s"}.`,
-            ...preMappedActions.slice(0, 6).map(({ result }) => {
-              const suggestion = result.assessment.suggestion;
-              return `- ${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}`;
-            }),
-          ]);
-          await input.authoringChat.streamRunner("Runner validation", [
-            "The targets and operations shown above exist in the inspected Action catalog.",
-            "They are suggestions only. Exact fields, bounds, policy, rehearsal, and activation remain ahead.",
-          ], "success");
-        }
+        modelDraftLines.push(
+          `I drafted ${preMappedActions.length} bounded Action suggestion${preMappedActions.length === 1 ? "" : "s"}.`,
+          ...preMappedActions.slice(0, 6).map(({ result }) => {
+            const suggestion = result.assessment.suggestion;
+            return `- ${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}`;
+          }),
+        );
       }
       const supportEntries: ReadWorkloadSet["allowed"] = [];
       if (actionMappingFellBack) {
@@ -3563,6 +3551,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         });
       }
       if (supportEntries.length) {
+        actionSupportPlanCount = supportEntries.length;
         mappedWorkload = normalizeReadWorkloadSet({
           ...mappedWorkload,
           allowed: [...mappedWorkload.allowed, ...supportEntries],
@@ -3572,6 +3561,23 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           generatedBoundary: mappingBoundary,
         });
       }
+      }
+      if (input.authoringChat) {
+        await input.authoringChat.streamModel(modelDraftLines);
+        await input.authoringChat.streamCheckpoint("Runner verified", [
+          mappedAnalysis.status === "ready"
+            ? `${representativeReadPlanCount} displayed Read plan${representativeReadPlanCount === 1 ? "" : "s"} use reviewed identifiers and compiler-valid grammar`
+            : "Read draft blocked; no candidate was accepted",
+          ...(actionSupportPlanCount
+            ? [`${actionSupportPlanCount} reviewed support plan${actionSupportPlanCount === 1 ? "" : "s"} added for exact Action review`]
+            : []),
+          ...(preMappedActions.length
+            ? [`${preMappedActions.length} Action target${preMappedActions.length === 1 ? "" : "s"} and operation${preMappedActions.length === 1 ? "" : "s"} exist in the inspected catalog`]
+            : []),
+          actionIntents.length
+            ? "Read and Action authority remain off"
+            : "Read authority remains off",
+        ], mappedAnalysis.status === "ready" ? "success" : "warning");
       }
       workload = await storeReadWorkloadAnalysis({
         projectRoot: input.projectRoot,

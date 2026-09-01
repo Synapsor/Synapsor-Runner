@@ -132,9 +132,134 @@ describe("Boundary authoring chat", () => {
 
     expect(answer).toBe("between five minutes and two hours");
     expect(memory.writes.join("")).toContain("model> What is the smallest and largest duration");
+    expect(memory.writes.join("")).toContain("hard proposal range for INSERT support.follow_up_tasks");
+    expect(memory.writes.join("")).not.toContain("runner> SET PROPOSAL RANGE");
+    expect(memory.writes.join("")).not.toContain("runner> Action: INSERT");
     expect(memory.setStatus).toHaveBeenCalledWith("Interpreting the reviewed range");
     expect(memory.clearStatus).toHaveBeenCalled();
     expect(memory.writes.join("")).not.toContain("runner> Completed");
+  });
+
+  it("keeps interpreted decisions in the model conversation and reduces Runner to one verification checkpoint", async () => {
+    const memory = memoryIo({ reads: [""] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+
+    const answer = await chat.actionPrompter.text(
+      "Press Enter to accept, or describe what should change",
+      {
+        defaultValue: "yes",
+        title: "CONFIRM PROPOSAL RANGE",
+        context: [
+          "Operator answer: Between five minutes and two hours.",
+          "Runner-validated interpretation: estimated_minutes: 5 through 120",
+          "Where enforced: every INSERT support.follow_up_tasks proposal; values outside this range are refused before approval.",
+          "Model rationale: Two hours converts to 120 minutes.",
+          "Authority granted: no | source database changed: no",
+          "Action: INSERT support.follow_up_tasks",
+        ],
+      },
+    );
+
+    expect(answer).toBe("yes");
+    const transcript = memory.writes.join("");
+    expect(transcript).toContain("model> I interpreted that as estimated_minutes: 5 through 120.");
+    expect(transcript).toContain("Press Enter to use it, or tell me what should change.");
+    expect(transcript).toContain("✓ Runner verified");
+    expect(transcript).toContain("Hard range: INSERT support.follow_up_tasks");
+    expect(transcript).not.toContain("runner> Operator answer:");
+    expect(transcript).not.toContain("runner> CONFIRM PROPOSAL RANGE");
+    expect(transcript).not.toContain("Model rationale:");
+    expect(memory.prompts).toEqual(["you> [yes] "]);
+  });
+
+  it("renders routine Read handoffs as status checkpoints rather than new chat turns", () => {
+    const memory = memoryIo();
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+
+    chat.session.present?.("READ REVIEW COMPLETE - NOT ACTIVE", [
+      "Read Boundary: reviewed_staging",
+      "Next: continue this same job into Action Boundary decisions.",
+      "EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF",
+      "Source database changed: no",
+    ], "success");
+
+    const transcript = memory.writes.join("");
+    expect(transcript).toContain("✓ Read draft saved");
+    expect(transcript).toContain("reviewed_staging · not active · source unchanged");
+    expect(transcript).not.toContain("runner> READ REVIEW COMPLETE");
+  });
+
+  it("lets mixed model context finish before a quiet Runner checkpoint", async () => {
+    const memory = memoryIo({ choices: ["yes"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+
+    await chat.session.chooseOption?.(
+      "USE THE INTERPRETATION",
+      [
+        { value: "yes", label: "Use it" },
+        { value: "no", label: "Back" },
+      ],
+      {
+        context: [
+          "Validated interpretation",
+          "Exact reviewed identifiers only.",
+          "Model rationale: The requested label maps uniquely to support_tickets.",
+        ],
+      },
+    );
+
+    const transcript = memory.writes.join("");
+    const modelIndex = transcript.indexOf("model> The requested label maps uniquely to support_tickets.");
+    const checkpointIndex = transcript.indexOf("\u2713 Validated interpretation");
+    expect(modelIndex).toBeGreaterThanOrEqual(0);
+    expect(checkpointIndex).toBeGreaterThan(modelIndex);
+    expect(transcript).not.toContain("runner> Validated interpretation");
+  });
+
+  it("keeps model-assisted policy review in the conversation and hides the manual policy table", async () => {
+    const memory = memoryIo({ reads: [""] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+
+    const answer = await chat.actionPrompter.text(
+      "Press Enter to accept, or describe what should change",
+      {
+        defaultValue: "yes",
+        title: "CONFIRM AUTO-APPROVAL POLICY",
+        conversation: {
+          modelLines: [
+            "I interpreted your auto-approval policy as:",
+            "- estimated_minutes: <= 30",
+            "- trusted tenant + principal: at most 3 approvals per 1 day",
+            "Anything else requires human review.",
+            "Press Enter to use it, or describe what should change.",
+          ],
+          checkpoint: {
+            title: "Runner verified",
+            lines: [
+              "2 exact conditions stay inside the hard proposal envelope",
+              "Disabled policy draft · approval off · apply off · source unchanged",
+            ],
+            tone: "success",
+          },
+        },
+        context: [
+          "Target: INSERT support.follow_up_tasks",
+          "+--------------------+--------------------+",
+          "| Field or scope     | Hard envelope      |",
+          "+--------------------+--------------------+",
+        ],
+      },
+    );
+
+    expect(answer).toBe("yes");
+    const transcript = memory.writes.join("");
+    const modelIndex = transcript.indexOf("model> I interpreted your auto-approval policy as:");
+    const checkpointIndex = transcript.indexOf("✓ Runner verified");
+    expect(modelIndex).toBeGreaterThanOrEqual(0);
+    expect(checkpointIndex).toBeGreaterThan(modelIndex);
+    expect(transcript).not.toContain("runner> CONFIRM AUTO-APPROVAL POLICY");
+    expect(transcript).not.toContain("Field or scope");
+    expect(memory.prompts).toEqual(["you> [yes] "]);
   });
 
   it("strips inherited terminal formatting and emphasizes the validated value", () => {
@@ -168,15 +293,16 @@ describe("Boundary authoring chat", () => {
     chat.providerStream({ phase: "tool_delta", characters: 31 });
     chat.providerStream({ phase: "completed" });
     await chat.streamModel(["I drafted one reviewed read plan.", "- support.tickets: count(*)"]);
-    await chat.streamRunner("Runner validation", [
+    await chat.streamCheckpoint("Runner verified", [
       "The complete draft passed exact identifier and grammar checks.",
       "No authority is active.",
     ], "success");
 
     const streamed = memory.writes.slice(initialWrites).join("");
-    expect(memory.writes.slice(initialWrites).length).toBeGreaterThan(25);
+    expect(memory.writes.slice(initialWrites).length).toBeGreaterThan(15);
     expect(streamed.match(/model>/gu)).toHaveLength(1);
-    expect(streamed.match(/runner>/gu)).toHaveLength(1);
+    expect(streamed).toContain("✓ Runner verified");
+    expect(streamed).not.toContain("runner>");
     expect(streamed).toContain("support.tickets: count(*)");
     expect(streamed).not.toContain("submit_boundary_draft");
     expect(memory.setStatus).toHaveBeenCalledWith(

@@ -92,6 +92,14 @@ type ActionTextPromptOptions = {
   secret?: boolean;
   title?: string;
   context?: string[];
+  conversation?: {
+    modelLines: string[];
+    checkpoint?: {
+      title: string;
+      lines?: string[];
+      tone?: "normal" | "success" | "warning" | "danger";
+    };
+  };
 };
 
 class ActionPromptBack extends Error {
@@ -1667,6 +1675,26 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
     const answer = pendingAnswer ?? await input.prompter.text(prompt, {
       ...(reviewingExactPolicy ? { defaultValue: "yes" } : {}),
       title: reviewingExactPolicy ? "CONFIRM AUTO-APPROVAL POLICY" : "REFINE AUTO-APPROVAL POLICY",
+      ...(reviewingExactPolicy
+        ? {
+            conversation: {
+              modelLines: conversationalDeterministicApprovalModelLines(
+                template,
+                `${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
+              ),
+              checkpoint: {
+                title: "Runner verified",
+                lines: [
+                  `${(template.auto_approval.conditions ?? []).length} exact condition${(template.auto_approval.conditions ?? []).length === 1 ? "" : "s"} stay inside the hard proposal envelope`,
+                  `${template.shared_limits.length} trusted-scope circuit breaker${template.shared_limits.length === 1 ? "" : "s"} · human fallback`,
+                  "Disabled policy draft · approval off · apply off · source unchanged",
+                  ...notice,
+                ],
+                tone: "success",
+              },
+            },
+          }
+        : {}),
       context: reviewingExactPolicy
         ? [
             `Target: ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}`,
@@ -1783,10 +1811,9 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
       template = interpreted.deterministic_approval_template;
       reviewingExactPolicy = true;
       prompt = "Press Enter to accept, or describe what should change";
-      notice = [
-        "Runner validated the replacement. Review the exact conditions below; they are still disabled.",
-        ...(resolution.correction_used ? ["The provider used its one bounded structured-output correction."] : []),
-      ];
+      notice = resolution.correction_used
+        ? ["Provider correction used once; the corrected result passed validation."]
+        : [];
     } catch (error) {
       reviewingExactPolicy = false;
       prompt = "Describe a narrower policy, or say use current, human review, exact controls, or back";
@@ -1942,6 +1969,51 @@ function conversationalDeterministicApprovalPolicyLines(
       [...conditionRows, ...limitRows],
       { widths: [18, 18, 24], rowSeparators: false },
     ),
+  ];
+}
+
+function conversationalDeterministicApprovalModelLines(
+  template: QuickDeterministicApprovalTemplate,
+  target: string,
+): string[] {
+  const conditionsByField = new Map<string, string[]>();
+  for (const condition of template.auto_approval.conditions ?? []) {
+    const field = condition.source === "before" ? `current ${condition.field}` : condition.field;
+    const values = conditionsByField.get(field) ?? [];
+    const [, rule] = compactApprovalConditionCells(condition);
+    values.push(rule);
+    conditionsByField.set(field, values);
+  }
+  const sourceLine = template.source === "model_interview"
+    ? `I interpreted your auto-approval policy for ${target} as:`
+    : template.source === "reviewed_structure"
+      ? `Runner prepared this conservative starting auto-approval policy for ${target}:`
+      : `I drafted this starting auto-approval policy for ${target}:`;
+  const limitLines = [
+    `- This action: at most ${template.auto_approval.max_per_day} approvals per 24 hours`,
+    ...(template.auto_approval.max_total_per_day === undefined
+      ? []
+      : [`- Aggregate: at most ${template.auto_approval.max_total_per_day} total ${template.auto_approval.total_field ?? "value"} per 24 hours`]),
+    ...template.shared_limits.map((limit) => {
+      const scope = {
+        tenant: "trusted tenant",
+        tenant_principal: "trusted tenant + principal",
+        tenant_object: "trusted tenant + target row",
+        capability: "this action",
+        boundary: "Action Boundary",
+      }[limit.scope];
+      const ceiling = limit.kind === "count"
+        ? `${limit.maximum} approvals`
+        : `${limit.maximum} total ${limit.field}`;
+      return `- ${scope}: at most ${ceiling} per ${formatLimitWindow(limit.window_seconds)}`;
+    }),
+  ];
+  return [
+    sourceLine,
+    ...[...conditionsByField].map(([field, rules]) => `- ${field}: ${rules.join(" and ")}`),
+    ...limitLines,
+    "Anything else requires human review.",
+    "Press Enter to use it, or describe what should change. Say show details for the full exact policy.",
   ];
 }
 
