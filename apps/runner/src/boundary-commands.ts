@@ -2719,7 +2719,7 @@ async function promptRunnerGuidedModelFallback(input: {
         {
           value: "runner",
           label: "Continue this job with Runner's deterministic recommendation [recommended]",
-          detail: "No new job entry, provider setup, or metadata egress is required.",
+          detail: "No further model requests. Runner uses the same job and reviewed structural catalog.",
         },
         ...(input.allowModelRetry
           ? [
@@ -3028,10 +3028,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           `Starting ${boundaryModelLabel(preselectedMappingSession)}`,
           () => narrator({
             session: boundaryAuthoringModelSession(preselectedMappingSession!, input.authoringChat),
-            operatorMessage: "Start a new model-guided Boundary drafting conversation.",
+            operatorMessage: "Start a new model-guided job against the preserved disabled Boundary draft.",
             validatedFacts: [
               "Metadata egress for this selected provider was explicitly approved.",
-              "No Read or Action Boundary draft has been created or activated yet.",
+              "Runner preserved the current disabled Boundary state. This is a new conversation, not a resumed model transcript.",
+              "No new Read or Action authority was activated by starting this job.",
               "Runner will validate every suggestion before the operator reviews authority.",
             ],
             nextQuestion: "What should this agent be able to read or propose?",
@@ -3562,8 +3563,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         workload = guided;
         mapped = undefined;
         modelAssistSession = undefined;
+        modelInterviewSession = undefined;
         modelAssistRecord = undefined;
         preMappedActions.length = 0;
+        input.authoringChat?.setPermissionGuide?.(undefined);
         break;
       }
 
@@ -3698,7 +3701,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         if (recovery === "runner") {
           actionMappingFellBack = true;
           modelAssistSession = undefined;
+          modelInterviewSession = undefined;
           preMappedActions.length = 0;
+          input.authoringChat?.setPermissionGuide?.(undefined);
           break;
         }
 
@@ -3729,7 +3734,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       if (preMappedActions.length) {
         const actionSummaries = preMappedActions.map(({ result }) => {
           const suggestion = result.assessment.suggestion;
-          return `${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}`;
+          const fields = suggestion.fields?.length
+            ? `; reviewed proposal fields ${suggestion.fields.join(", ")}`
+            : "";
+          return `${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}${fields}`;
         });
         exactModelDraftLines.push(
           `Action suggestions (${preMappedActions.length})`,
@@ -3784,20 +3792,6 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
       }
       if (input.authoringChat) {
-        if (modelDraftMessages.length) {
-          await input.authoringChat.streamModel(modelDraftMessages.flatMap((message, index) => [
-            ...(index > 0 ? [""] : []),
-            ...message.split(/\r?\n/u),
-          ]));
-        } else {
-          await input.authoringChat.streamCheckpoint("Draft validated; model summary unavailable", [
-            `${representativeReadPlanCount} exact Read plan${representativeReadPlanCount === 1 ? "" : "s"} ${representativeReadPlanCount === 1 ? "remains" : "remain"} in the disabled draft`,
-            ...(preMappedActions.length
-              ? [`${preMappedActions.length} exact Action suggestion${preMappedActions.length === 1 ? " remains" : "s remain"} disabled`]
-              : []),
-            "No authority or source data changed",
-          ], "warning");
-        }
         const verificationDetails = [
           mappedAnalysis.status === "ready"
             ? `${representativeReadPlanCount} Read plan${representativeReadPlanCount === 1 ? "" : "s"} use reviewed identifiers and compiler-valid grammar`
@@ -3812,6 +3806,28 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ? "Read and Action authority remain off"
             : "Read authority remains off",
         ];
+        if (actionIntents.length && modelInterviewSession) {
+          modelInterviewSession.openingValidatedFacts = [
+            "Runner completed and validated the combined Read and Action draft for this job.",
+            ...exactModelDraftLines,
+            ...verificationDetails,
+            "Summarize these validated facts as one coherent update before asking the next unresolved Action question.",
+          ];
+          modelInterviewSession.openingValidatedFactsConsumed = false;
+        } else if (modelDraftMessages.length) {
+          await input.authoringChat.streamModel(modelDraftMessages.flatMap((message, index) => [
+            ...(index > 0 ? [""] : []),
+            ...message.split(/\r?\n/u),
+          ]));
+        } else {
+          await input.authoringChat.streamCheckpoint("Draft validated; model summary unavailable", [
+            `${representativeReadPlanCount} exact Read plan${representativeReadPlanCount === 1 ? "" : "s"} ${representativeReadPlanCount === 1 ? "remains" : "remain"} in the disabled draft`,
+            ...(preMappedActions.length
+              ? [`${preMappedActions.length} exact Action suggestion${preMappedActions.length === 1 ? " remains" : "s remain"} disabled`]
+              : []),
+            "No authority or source data changed",
+          ], "warning");
+        }
         input.authoringChat.rememberDetails("Validated model draft", [
           ...exactModelDraftLines,
           "",
@@ -3908,7 +3924,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           `Read Boundary ${reviewed.candidate.pack.name} remains disabled and incomplete.`,
           "No Action Boundary was prepared, and no agent authority or source data changed.",
         ],
-        footer: "Press W to continue this job or edit the Read Boundary manually.",
+        footer: "Press W to start a new guided job against this preserved disabled Read draft, or edit it manually.",
       });
     }
   }

@@ -106,12 +106,14 @@ export async function narrateValidatedAuthoringStep(input: {
       allowToolFreeAuthoringResponse: true,
     });
     if (result.answer_source !== "model" || !result.answer.trim()) return undefined;
+    const answer = result.answer.trim();
+    if (narrationContradictsValidatedRecord(answer, input.validatedFacts)) return undefined;
     rememberModelAuthoringTurn(
       input.session.conversation,
       input.operatorMessage,
-      result.answer,
+      answer,
     );
-    return result.answer.trim();
+    return answer;
   } catch {
     // Narration is presentation only. A provider failure must not discard an
     // already validated disabled draft or change authority state.
@@ -119,4 +121,26 @@ export async function narrateValidatedAuthoringStep(input: {
   } finally {
     await gateway.close().catch(() => undefined);
   }
+}
+
+function narrationContradictsValidatedRecord(answer: string, facts: string[]): boolean {
+  const normalizedAnswer = answer.toLowerCase().replace(/\s+/gu, " ");
+  const record = facts.join(" ").toLowerCase().replace(/\s+/gu, " ");
+  const scopeResolved = /(?:trusted (?:tenant\/principal )?scope|target row identity)[^.]{0,120}(?:already resolved|are separate runner-validated controls|remain unchanged|passed runner validation)/u.test(record)
+    || /scope[^.]{0,80}(?:is|was|has been) (?:resolved|validated)/u.test(record);
+  const claimsMissingScope = /(?:scope|tenant|principal|row identity)[^.]{0,80}(?:incomplete|unresolved|missing|not (?:yet )?(?:resolved|validated)|still (?:needs|requires))/u.test(normalizedAnswer);
+  const questionsResolvedScope = /(?:is|are|was|were|has|have|whether|confirm|check|clarify|need(?:s|ed)? to know)[^.?!]{0,90}(?:scope|tenant|principal|row identity)[^.?!]{0,90}(?:resolved|validated|available|known|provided|complete)[?!]/u.test(normalizedAnswer)
+    || /(?:scope|tenant|principal|row identity)[^.?!]{0,90}(?:already )?(?:resolved|validated|available|known|provided|complete)[?!]/u.test(normalizedAnswer);
+  if (scopeResolved && (claimsMissingScope || questionsResolvedScope)) return true;
+
+  const authorityOff = /(?:no authority|authority[^.]{0,60}(?:off|disabled|unchanged|not active)|approval and apply authority remain off)/u.test(record);
+  const claimsAuthorityOn = (/(?:(?:read|action|proposal|approval|apply) )?authority[^.]{0,40}(?:active|enabled|granted|approved)/u.test(normalizedAnswer)
+    || /(?:proposal|approval|apply|writeback)[^.]{0,30}(?:is|was|has been) (?:active|enabled|granted|approved)/u.test(normalizedAnswer))
+    && !/(?:no|not|never|without)[^.]{0,30}(?:authority|proposal|approval|apply|writeback)[^.]{0,30}(?:active|enabled|granted|approved)/u.test(normalizedAnswer);
+  if (authorityOff && claimsAuthorityOn) return true;
+
+  const sourceUnchanged = /(?:source (?:database|data|row|rows)[^.]{0,60}(?:unchanged|changed: no|did not change)|no source[^.]{0,50}(?:change|write))/u.test(record);
+  const claimsSourceChanged = /(?:source (?:database|data|row|rows)|database)[^.]{0,50}(?:changed|updated|written|mutated)/u.test(normalizedAnswer)
+    && !/(?:not|no|never|without)[^.]{0,24}(?:changed|updated|written|mutated)/u.test(normalizedAnswer);
+  return sourceUnchanged && claimsSourceChanged;
 }

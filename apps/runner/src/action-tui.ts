@@ -151,6 +151,8 @@ export type ActionModelSuggestionSession = {
   baseUrl?: string;
   dependencies?: AskProviderDependencies;
   conversation?: ModelAuthoringConversation;
+  openingValidatedFacts?: string[];
+  openingValidatedFactsConsumed?: boolean;
 };
 
 export type ActionBoundaryInterviewContext = {
@@ -1283,6 +1285,15 @@ export async function collectQuickProposalActionInput(
       : context;
   };
   while (true) {
+    if (decisions.guard_column && decisions.fields?.includes(decisions.guard_column)) {
+      const guardColumn = decisions.guard_column;
+      decisions.fields = decisions.fields.filter((field) => field !== guardColumn);
+      prompter.rememberDetails?.("RUNNER NORMALIZED PROPOSAL FIELDS", [
+        `${guardColumn} is the reviewed stale-proposal or retry guard for this action.`,
+        `Runner removed ${guardColumn} from model-supplied proposal fields so the agent cannot also change its own guard.`,
+        "The target, remaining proposal fields, trusted scope, and authority state are unchanged.",
+      ]);
+    }
     let preparation = prepareQuickProposalAction({ options, intent, decisions });
     if (assisted.suggestion) {
       try {
@@ -1401,11 +1412,14 @@ export async function collectQuickProposalActionInput(
         env: assisted.env ?? process.env,
       });
       if (interpreted === "back") return undefined;
-      if (interpreted !== "manual") {
+      if (typeof interpreted === "object" && "mode" in interpreted) {
+        if (interpreted.decisions) mergeQuickProposalDecisions(decisions, interpreted.decisions);
+        modelInterview = undefined;
+        continue;
+      } else {
         mergeQuickProposalDecisions(decisions, interpreted);
         continue;
       }
-      modelInterview = undefined;
     }
     if (unresolved.kind === "resource" || unresolved.kind === "operation" || unresolved.kind === "guard_column") {
       const value = await prompter.choose(
@@ -1420,13 +1434,42 @@ export async function collectQuickProposalActionInput(
       continue;
     }
     if (unresolved.kind === "fields") {
-      const value = await prompter.choose(
-        unresolved.title.toUpperCase(),
-        unresolved.choices,
-        choiceContext([unresolved.help]),
-      );
-      if (!value) return undefined;
-      decisions.fields = [value];
+      const selected = new Set(decisions.fields ?? []);
+      while (true) {
+        const choices = [
+          ...unresolved.choices.map((choice) => ({
+            ...choice,
+            label: `${selected.has(choice.value) ? "[x]" : "[ ]"} ${choice.label}`,
+            detail: selected.has(choice.value)
+              ? `Selected. ${choice.detail ?? "Press Enter to remove it."}`
+              : choice.detail,
+          })),
+          {
+            value: "__done__",
+            label: `Done selecting (${selected.size})`,
+            detail: selected.size
+              ? "Continue with exactly the checked fields."
+              : "Select at least one reviewed field first.",
+            disabled: selected.size === 0,
+          },
+        ];
+        const value = await prompter.choose(
+          unresolved.title.toUpperCase(),
+          choices,
+          choiceContext([
+            unresolved.help,
+            "Press Enter to check or uncheck a field, then choose Done selecting.",
+          ]),
+          unresolved.choices.find((choice) => !selected.has(choice.value))?.value ?? "__done__",
+        );
+        if (!value) return undefined;
+        if (value === "__done__") {
+          decisions.fields = [...selected];
+          break;
+        }
+        if (selected.has(value)) selected.delete(value);
+        else selected.add(value);
+      }
       continue;
     }
     if (unresolved.kind === "numeric_bounds") {
@@ -1443,29 +1486,45 @@ export async function collectQuickProposalActionInput(
       const target = preparation.selected.resource
         ? `${preparation.selected.operation?.toUpperCase() ?? "PROPOSAL"} ${preparation.selected.resource}`
         : "reviewed proposal target";
-      const raw = await prompter.text(`Allowed ${unresolved.field} range (minimum,maximum)`, {
-        ...(defaultRange ? { defaultValue: defaultRange } : {}),
-        title: unresolved.title.toUpperCase(),
-        context: [
-          `Target: ${target}`,
-          ...(selectedResource?.label && selectedResource.label !== selectedResource.id
-            ? [`Table label: ${selectedResource.label}`]
-            : []),
-          `Agent-supplied field: ${unresolved.field}`,
-          unresolved.help,
-          `Enter two numbers separated by a comma, for example ${rangeExample}.`,
-          "These bounds constrain every proposal; they do not auto-approve or write anything.",
-        ],
-      });
-      if (raw === undefined) return undefined;
-      const values = raw.split(",").map((value) => Number(value.trim()));
-      if (values.length !== 2 || !values.every(Number.isFinite) || values[0]! > values[1]!) {
-        throw new Error(`${unresolved.field} needs a finite minimum,maximum range with minimum <= maximum.`);
+      let invalidRange: string | undefined;
+      while (true) {
+        const raw = await prompter.text(`Allowed ${unresolved.field} range (minimum,maximum)`, {
+          ...(defaultRange ? { defaultValue: defaultRange } : {}),
+          title: unresolved.title.toUpperCase(),
+          context: [
+            `Target: ${target}`,
+            ...(selectedResource?.label && selectedResource.label !== selectedResource.id
+              ? [`Table label: ${selectedResource.label}`]
+              : []),
+            `Agent-supplied field: ${unresolved.field}`,
+            unresolved.help,
+            `Enter two numbers separated by a comma, for example ${rangeExample}.`,
+            ...(unresolved.integer ? ["This source column is integer-valued, so both bounds must be whole numbers."] : []),
+            "These bounds constrain every proposal; they do not auto-approve or write anything.",
+            ...(invalidRange ? [`Not accepted: ${invalidRange}`] : []),
+          ],
+        });
+        if (raw === undefined) return undefined;
+        const parts = raw.split(",").map((value) => value.trim());
+        const values = parts.map(Number);
+        if (parts.length !== 2 || parts.some((value) => !value) || !values.every(Number.isFinite)) {
+          invalidRange = `enter exactly two finite numbers separated by a comma, such as ${rangeExample}.`;
+          continue;
+        }
+        if (values[0]! > values[1]!) {
+          invalidRange = "the minimum must be less than or equal to the maximum.";
+          continue;
+        }
+        if (unresolved.integer && !values.every(Number.isSafeInteger)) {
+          invalidRange = "this integer source column requires whole-number bounds.";
+          continue;
+        }
+        decisions.numeric_bounds = {
+          ...(decisions.numeric_bounds ?? {}),
+          [unresolved.field]: { minimum: values[0]!, maximum: values[1]! },
+        };
+        break;
       }
-      decisions.numeric_bounds = {
-        ...(decisions.numeric_bounds ?? {}),
-        [unresolved.field]: { minimum: values[0]!, maximum: values[1]! },
-      };
       continue;
     }
     if (unresolved.kind !== "delete_confirmation") {
@@ -1484,7 +1543,7 @@ async function collectConversationalProposalDecision(input: {
   decision: Exclude<QuickProposalDecision, { kind: "delete_confirmation" }>;
   modelInterview: ActionBoundaryInterviewContext;
   env: NodeJS.ProcessEnv;
-}): Promise<QuickProposalDecisions | "manual" | "back"> {
+}): Promise<QuickProposalDecisions | { mode: "manual"; decisions?: QuickProposalDecisions } | "back"> {
   const target = input.preparation.selected.resource
     ? `${input.preparation.selected.operation?.toUpperCase() ?? "PROPOSAL"} ${input.preparation.selected.resource}`
     : undefined;
@@ -1493,11 +1552,20 @@ async function collectConversationalProposalDecision(input: {
   let pendingAnswer: string | undefined;
   let pendingApprovedValues: OperatorApprovedValueContext | undefined;
   let operatorRetryUsed = false;
+  const openingValidatedFacts = takeOpeningValidatedFacts(input.modelInterview);
   let pendingModelMessage = await narrateValidatedAuthoringStep({
     session: input.modelInterview.session,
     operatorMessage: `Continue authoring ${target ?? input.intent}.`,
     validatedFacts: [
+      ...openingValidatedFacts,
       ...prompt.context,
+      ...(target
+        ? [
+            `Runner already validated the exact target ${target}.`,
+            "Target row identity and trusted tenant/principal scope are separate Runner controls and are unchanged by this decision.",
+            "Do not ask the operator to provide identity or scope while resolving this one business decision.",
+          ]
+        : []),
       "Runner needs this one business decision before it can finish the disabled proposal draft.",
     ],
     nextQuestion: prompt.label,
@@ -1549,7 +1617,7 @@ async function collectConversationalProposalDecision(input: {
         "Runner accepted no model output. No authority or source data changed.",
         ...(operatorRetryUsed ? ["The one operator-requested retry was also refused."] : []),
       ], "manual");
-      if (recovery === "manual") return "manual";
+      if (recovery === "manual") return { mode: "manual" };
       if (!recovery || recovery === "back") return "back";
       operatorRetryUsed = true;
       notice = ["The previous interpretation was discarded. Rephrase the same business decision."];
@@ -1576,7 +1644,7 @@ async function collectConversationalProposalDecision(input: {
         reason: resolution.reason,
         question: resolution.question,
       });
-      if (valueContext === "manual") return "manual";
+      if (valueContext === "manual") return { mode: "manual" };
       if (valueContext === "back") return "back";
       if (valueContext === "without_values") {
         prompt = {
@@ -1596,37 +1664,120 @@ async function collectConversationalProposalDecision(input: {
       notice = [`Exact operator-supplied value context approved for ${resolution.field}; no source query ran.`];
       continue;
     }
-    const confirmation = await input.prompter.text(
-      "Press Enter to accept, or describe what should change",
-      {
-        defaultValue: "yes",
-        title: conversationalDecisionTitle(input.decision, "confirmation"),
-        ...(resolution.model_message
-          ? { conversation: { modelLines: [resolution.model_message] } }
-          : {}),
-        context: [
-          `Operator answer: ${answer}`,
-          `Runner-validated interpretation: ${resolution.summary}`,
-          conversationalDecisionEnforcement(input.decision, target),
-          ...(resolution.rationale ? [`Model rationale: ${resolution.rationale}`] : []),
-          ...(resolution.correction_used ? ["The provider needed its one bounded structured-output correction."] : []),
-          "Say yes to add only this value to the disabled draft. You can also say exact controls or back.",
-          "Authority granted: no | source database changed: no",
+    const confirmationContext = [
+      `Operator answer: ${answer}`,
+      `Runner-validated interpretation: ${resolution.summary}`,
+      conversationalDecisionEnforcement(input.decision, target),
+      ...(resolution.correction_used ? ["The provider needed its one bounded structured-output correction."] : []),
+      "Say yes to add only this value to the disabled draft. You can also say exact controls or back.",
+      "Authority granted: no | source database changed: no",
+    ];
+    let confirmationModelMessage = resolution.model_message;
+    let confirmationCheckpoint:
+      | NonNullable<NonNullable<ActionTextPromptOptions["conversation"]>["checkpoint"]>
+      | undefined = undefined;
+    let followUpQuestions = 0;
+    while (true) {
+      const confirmation = await input.prompter.text(
+        "Press Enter to accept, or describe what should change",
+        {
+          defaultValue: "yes",
+          title: conversationalDecisionTitle(input.decision, "confirmation"),
+          ...(confirmationModelMessage || confirmationCheckpoint
+            ? {
+                conversation: {
+                  modelLines: confirmationModelMessage ? [confirmationModelMessage] : [],
+                  ...(confirmationCheckpoint ? { checkpoint: confirmationCheckpoint } : {}),
+                },
+              }
+            : {}),
+          context: confirmationContext,
+        },
+      );
+      confirmationModelMessage = undefined;
+      confirmationCheckpoint = undefined;
+      if (confirmation === undefined || conversationalReviewCommand(confirmation) === "back") return "back";
+      const command = conversationalReviewCommand(confirmation);
+      if (command === "accept") return resolution.decisions;
+      if (command === "manual") return { mode: "manual", decisions: resolution.decisions };
+      prompt = actionBoundaryDecisionQuestion(input.decision, target);
+      if (command === "retry") {
+        notice = ["The prior interpretation was discarded. State the replacement business rule."];
+        break;
+      }
+      if (decisionTextNamesReplacement(input.decision, confirmation)) {
+        pendingAnswer = confirmation;
+        notice = ["The prior interpretation was discarded. Runner will validate this replacement answer."];
+        break;
+      }
+
+      followUpQuestions += 1;
+      if (followUpQuestions > 2) {
+        confirmationCheckpoint = unchangedDecisionCheckpoint(input.decision, resolution.summary, target);
+        continue;
+      }
+      const narratedFollowUp = await narrateValidatedAuthoringStep({
+        session: input.modelInterview.session,
+        operatorMessage: `Operator question about the unchanged pending decision: ${confirmation}`,
+        validatedFacts: [
+          ...(target ? [`Current exact action target: ${target}.`] : []),
+          `Pending reviewed decision: ${input.decision.title}.`,
+          `Runner-validated interpretation awaiting confirmation: ${resolution.summary}.`,
+          "Target row identity and trusted tenant/principal scope are separate Runner-validated controls and are already resolved for this action.",
+          "This follow-up cannot change the decision, grant authority, or change source data.",
         ],
-      },
-    );
-    if (confirmation === undefined || conversationalReviewCommand(confirmation) === "back") return "back";
-    const command = conversationalReviewCommand(confirmation);
-    if (command === "accept") return resolution.decisions;
-    if (command === "manual") return "manual";
-    prompt = actionBoundaryDecisionQuestion(input.decision, target);
-    if (command === "retry") {
-      notice = ["The prior interpretation was discarded. State the replacement business rule."];
-      continue;
+        nextQuestion: "Answer the operator briefly, then ask whether to accept this exact decision or name a reviewed replacement.",
+        env: input.env,
+        egressAcknowledged: input.modelInterview.egressAcknowledged,
+      });
+      if (narratedFollowUp) confirmationModelMessage = narratedFollowUp;
+      else confirmationCheckpoint = unchangedDecisionCheckpoint(input.decision, resolution.summary, target);
     }
-    pendingAnswer = confirmation;
-    notice = ["The prior interpretation was discarded. Runner will validate this replacement answer."];
   }
+}
+
+function unchangedDecisionCheckpoint(
+  decision: Exclude<QuickProposalDecision, { kind: "delete_confirmation" }>,
+  summary: string,
+  target: string | undefined,
+): NonNullable<NonNullable<ActionTextPromptOptions["conversation"]>["checkpoint"]> {
+  const explanation = decision.kind === "guard_column"
+    ? "The guard rejects a proposal if the source row changed after the proposal was prepared. Trusted scope and target identity are already resolved separately."
+    : "The exact Runner-validated decision remains unchanged; this follow-up did not replace it.";
+  return {
+    title: "Model explanation not used",
+    lines: [
+      ...(target ? [`Action: ${target}`] : []),
+      `Pending decision: ${summary}`,
+      explanation,
+      "Press Enter to accept, name one reviewed replacement, use exact controls, or go back.",
+    ],
+    tone: "warning",
+  };
+}
+
+function takeOpeningValidatedFacts(context: ActionBoundaryInterviewContext): string[] {
+  if (context.session.openingValidatedFactsConsumed) return [];
+  context.session.openingValidatedFactsConsumed = true;
+  return context.session.openingValidatedFacts ?? [];
+}
+
+function decisionTextNamesReplacement(
+  decision: Exclude<QuickProposalDecision, { kind: "delete_confirmation" }>,
+  value: string,
+): boolean {
+  const normalized = value.toLowerCase().replace(/[_-]+/gu, " ").replace(/\s+/gu, " ").trim();
+  if (!normalized) return false;
+  const explanatoryQuestion = /\?\s*$/u.test(normalized)
+    || /^(?:why|how|what|when|where|who|which|is|are|was|were|do|does|did|can|could|would|should|will|explain|tell me)\b/u.test(normalized);
+  if (explanatoryQuestion) return false;
+  if (decision.kind === "numeric_bounds") return true;
+  if (decision.kind === "operation") return /\b(?:insert|update|delete)\b/u.test(normalized);
+  const choices = decision.choices.flatMap((choice) => [choice.value, choice.label]);
+  return choices.some((candidate) => {
+    const reviewed = candidate.toLowerCase().replace(/[_-]+/gu, " ").replace(/\s+/gu, " ").trim();
+    return reviewed.length >= 2 && normalized.includes(reviewed);
+  });
 }
 
 function conversationalReviewCommand(
@@ -1706,10 +1857,12 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
   let pendingAnswer: string | undefined;
   let pendingApprovedValues: OperatorApprovedValueContext | undefined;
   let pendingModelMessage: string | undefined;
+  const openingValidatedFacts = takeOpeningValidatedFacts(input.modelInterview);
   let validatedModelMessage = await narrateValidatedAuthoringStep({
     session: input.modelInterview.session,
     operatorMessage: `Review the starting auto-approval policy for ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}.`,
     validatedFacts: [
+      ...openingValidatedFacts,
       ...conversationalDeterministicApprovalPolicyLines(
         template,
         input.preparation.summary.arguments,
@@ -1890,6 +2043,7 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
         throw new Error("Runner did not produce a complete deterministic policy template.");
       }
       template = interpreted.deterministic_approval_template;
+      clarificationCount = 0;
       reviewingExactPolicy = true;
       prompt = "Press Enter to accept, or describe what should change";
       validatedModelMessage = resolution.model_message;
@@ -3499,8 +3653,9 @@ async function collectConversationalGuidedRehearsalArgs(input: {
   });
   let clarificationCount = 0;
   let operatorRetryUsed = false;
+  let pendingAnswer: string | undefined;
   while (true) {
-    const answer = await input.prompter.text(prompt, {
+    const answer = pendingAnswer ?? await input.prompter.text(prompt, {
       title: "PROPOSAL REHEARSAL",
       ...(modelMessage ? { conversation: { modelLines: [modelMessage] } } : {}),
       context: [
@@ -3511,6 +3666,7 @@ async function collectConversationalGuidedRehearsalArgs(input: {
         "Trusted tenant/principal values are injected by Runner and never requested here.",
       ],
     });
+    pendingAnswer = undefined;
     modelMessage = undefined;
     if (answer === undefined || /^(?:back|pause|cancel|stop)$/iu.test(answer.trim())) return undefined;
     if (/^(?:exact controls?|typed values?|manual)$/iu.test(answer.trim())) {
@@ -3588,7 +3744,7 @@ async function collectConversationalGuidedRehearsalArgs(input: {
       continue;
     }
     const confirmation = await input.prompter.text(
-      "Press Enter to run this exact disposable rehearsal, or describe what should change",
+      "Press Enter to run this exact disposable rehearsal, or restate the complete example",
       {
         defaultValue: "yes",
         title: "CONFIRM REHEARSAL VALUES",
@@ -3608,7 +3764,8 @@ async function collectConversationalGuidedRehearsalArgs(input: {
     if (/^(?:|y|yes|ok|okay|run|confirm|use it|use this)$/iu.test(confirmation.trim())) {
       return { ...localArgs, ...resolution.args };
     }
-    prompt = "What should I change in the disposable rehearsal example?";
+    pendingAnswer = confirmation;
+    prompt = "Restate the complete disposable example with every required value";
     modelMessage = undefined;
   }
 }

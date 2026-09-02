@@ -26,6 +26,10 @@ function memoryIo(input: {
       prompts.push(prompt);
       return reads.shift();
     },
+    readConversation: async (prompt) => {
+      prompts.push(prompt);
+      return reads.shift();
+    },
     choose: async (choice) => {
       choices.push({
         title: choice.title,
@@ -50,6 +54,19 @@ function memoryIo(input: {
 }
 
 describe("Boundary authoring chat", () => {
+  it("caps wide transcripts and keeps continuation text aligned below the role", () => {
+    const memory = memoryIo({ columns: 220 });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+
+    chat.model([
+      "The validated telecom draft covers accounts, subscriptions, service lines, recent usage, invoices, payments, preferences, and support cases while trusted scope stays outside model arguments.",
+    ]);
+
+    const lines = memory.writes.join("").split("\n").filter(Boolean);
+    expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(116);
+    expect(lines.some((line) => /^ {9}\S/u.test(line))).toBe(true);
+  });
+
   it("keeps operator, model, and Runner roles distinct in one transcript", async () => {
     const memory = memoryIo({ reads: ["Explain ticket trends and propose follow-ups."] });
     const chat = createBoundaryAuthoringChat({

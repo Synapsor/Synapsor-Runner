@@ -299,7 +299,7 @@ export function createBoundaryAuthoringChat(input: {
   let latestDetails: { title: string; lines: string[] } | undefined;
   let permissionGuide: BoundaryAuthoringPermissionGuide | undefined;
   const transcriptIndent = io.isTerminal?.() === true ? "  " : "";
-  const transcriptWidth = () => Math.max(24, io.columns());
+  const transcriptWidth = () => Math.min(116, Math.max(24, io.columns()));
 
   const role = (speaker: BoundaryAuthoringSpeaker): string => speaker === "model"
     ? theme.scope("model>")
@@ -554,9 +554,12 @@ export function createBoundaryAuthoringChat(input: {
   const readAnswer = async (defaultValue?: string) => {
     const defaultHint = defaultValue ? `${theme.dim(`[${defaultValue}]`)} ` : "";
     while (true) {
-      const answer = io.readWithEscape
-        ? await io.readWithEscape(`${theme.focus("you>")} ${defaultHint}`)
-        : await io.read(`${theme.focus("you>")} ${defaultHint}`);
+      const prompt = `${theme.focus("you>")} ${defaultHint}`;
+      const answer = io.readConversation
+        ? await io.readConversation(prompt)
+        : io.readWithEscape
+          ? await io.readWithEscape(prompt)
+          : await io.read(prompt);
       const command = answer?.trim().toLowerCase();
       if (command === "/details") {
         showDetails();

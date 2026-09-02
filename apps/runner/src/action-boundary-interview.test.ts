@@ -157,6 +157,7 @@ describe("conversational Action Boundary interview", () => {
           title: "Set the reviewed range for estimated minutes",
           help: "Numeric proposal arguments require finite bounds.",
           field: "estimated_minutes",
+          integer: true,
         },
         answer: "Between five minutes and two hours.",
         intent: "Create customer follow-up tasks.",
@@ -176,10 +177,53 @@ describe("conversational Action Boundary interview", () => {
       const serialized = JSON.stringify(requests[0]);
       expect(serialized).toContain("Between five minutes and two hours.");
       expect(serialized).toContain("estimated_minutes");
+      expect(serialized).toContain('"type":"integer"');
       expect(serialized).not.toContain("secret-provider-key");
       expect(serialized).not.toContain("tenant_id");
     });
   }
+
+  it("refuses fractional bounds for an integer proposal field after one bounded correction", async () => {
+    let call = 0;
+    const requestJson = vi.fn(async () => {
+      call += 1;
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "function_call",
+            call_id: `call_fractional_${call}`,
+            name: "runner__interpret_action_boundary_answer",
+            arguments: JSON.stringify({
+              status: "resolved",
+              minimum: 5.5,
+              maximum: 120,
+            }),
+          }],
+        },
+      };
+    });
+
+    await expect(interpretActionBoundaryDecision({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-luna",
+        apiKey: "memory-key",
+        dependencies: { requestJson },
+      },
+      decision: {
+        kind: "numeric_bounds",
+        title: "Set the reviewed range for estimated minutes",
+        help: "Numeric proposal arguments require finite whole-number bounds.",
+        field: "estimated_minutes",
+        integer: true,
+      },
+      answer: "Between five and a half and 120 minutes.",
+      intent: "Create customer follow-up tasks.",
+      egressAcknowledged: true,
+    })).rejects.toThrow(/integer source column and requires whole-number bounds/);
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
 
   it("translates one rehearsal example into only exact compiled arguments", async () => {
     const requests: string[] = [];

@@ -43,6 +43,7 @@ export type QuickProposalDecision =
       title: string;
       help: string;
       field: string;
+      integer?: boolean;
       suggested_minimum?: number;
       suggested_maximum?: number;
     }
@@ -266,6 +267,7 @@ export function prepareQuickProposalAction(input: {
           title: `Set the reviewed range for ${field.label ?? name}`,
           help: "Numeric proposal arguments require a finite minimum and maximum. Runner will enforce both server-side.",
           field: name,
+          integer: isIntegerType(field.data_type),
           ...(field.suggested_numeric_minimum !== undefined
             ? { suggested_minimum: field.suggested_numeric_minimum }
             : {}),
@@ -276,6 +278,10 @@ export function prepareQuickProposalAction(input: {
       }
       if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum > maximum) {
         throw new Error(`${name} requires finite numeric bounds with minimum <= maximum.`);
+      }
+      if (isIntegerType(field.data_type)
+        && (!Number.isSafeInteger(minimum) || !Number.isSafeInteger(maximum))) {
+        throw new Error(`${name} uses an integer source column and requires whole-number bounds.`);
       }
       patches.push({
         column: name,
@@ -375,10 +381,9 @@ export function applyInterpretedDeterministicApproval(
         capability: preparation.action.capability_name,
         ...(limit.field ? { field: limit.field } : {}),
       })),
-      rationale: input.rationale
-        ?? (input.source === "model_interview"
-          ? "Runner translated the operator's business-policy answer through a bounded model tool, then revalidated every exact field, operator, range, and trusted scope."
-          : "A model proposed these bounded inputs from structural metadata. Runner revalidated every exact field, operator, and trusted scope."),
+      rationale: input.source === "model_interview"
+        ? "Runner translated the operator's business-policy answer through a bounded model tool, then revalidated every exact field, operator, range, and trusted scope."
+        : "A model proposed these bounded inputs from structural metadata. Runner revalidated every exact field, operator, and trusted scope.",
       ...(normalized.normalizations.length
         ? { normalizations: normalized.normalizations }
         : {}),
@@ -667,10 +672,14 @@ function deterministicApprovalTemplate(
   resource: GuidedActionResourceOption,
 ): QuickDeterministicApprovalTemplate | undefined {
   if (action.operation === "delete") return undefined;
+  const argumentPatches = (action.patches ?? []).filter((patch) => patch.value_source === "argument");
+  // Independent field predicates describe a Cartesian product, not a reviewed
+  // cross-field pairing. Keep multi-field actions on human review unless an
+  // operator or model supplies a separately validated exact policy.
+  if (argumentPatches.length !== 1) return undefined;
   const fields = new Map(resource.structurally_eligible_fields.map((field) => [field.name, field]));
   const conditions: NonNullable<GuidedActionAutoApprovalInput["conditions"]> = [];
-  for (const patch of action.patches ?? []) {
-    if (patch.value_source !== "argument") continue;
+  for (const patch of argumentPatches) {
     const field = fields.get(patch.column);
     if (!field) return undefined;
     if (isNumericType(field.data_type)) {
@@ -810,6 +819,11 @@ function reviewedTypeLength(dataType: string): number | undefined {
 
 function isNumericType(dataType: string): boolean {
   return /(?:^|\b)(?:smallint|integer|bigint|int|decimal|numeric|real|double|float|money)(?:\b|$)/i.test(dataType);
+}
+
+function isIntegerType(dataType: string): boolean {
+  return /(?:^|\b)(?:tinyint|smallint|mediumint|integer|bigint|int|int2|int4|int8|smallserial|serial|bigserial)(?:\b|$)/i.test(dataType)
+    && !/(?:^|\b)tinyint\s*\(\s*1\s*\)/i.test(dataType);
 }
 
 function isBooleanType(dataType: string): boolean {

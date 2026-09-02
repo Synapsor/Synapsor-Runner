@@ -600,6 +600,7 @@ export type ShellAnalysisRecord = {
 export type AnalyticsShellIo = {
   read(prompt: string): Promise<string | undefined>;
   readWithEscape?(prompt: string): Promise<string | undefined>;
+  readConversation?(prompt: string): Promise<string | undefined>;
   choose?(input: {
     title: string;
     message: string;
@@ -948,6 +949,62 @@ function shimmerTransientStatusLabel(value: string, elapsedMs: number): string {
   }).join("") + "\u001b[0m";
 }
 
+const CONVERSATION_COMPOSER_MAX_WIDTH = 116;
+
+type ConversationComposerFrame = {
+  lines: string[];
+  inputLines: string[];
+  cursorRow: number;
+  cursorColumn: number;
+};
+
+function visibleTerminalLength(value: string): number {
+  return Array.from(value.replace(/\u001b\[[0-9;]*m/gu, "")).length;
+}
+
+export function renderConversationComposerFrame(input: {
+  prompt: string;
+  value: string;
+  cursor: number;
+  columns?: number;
+  menu?: string;
+}): ConversationComposerFrame {
+  const contentWidth = Math.min(
+    CONVERSATION_COMPOSER_MAX_WIDTH,
+    terminalContentWidth(input.columns),
+  );
+  const prompt = input.prompt;
+  const promptWidth = Math.min(contentWidth - 2, visibleTerminalLength(prompt));
+  const answerWidth = Math.max(1, contentWidth - promptWidth - 1);
+  const characters = Array.from(safeTerminalText(input.value).replace(/[\r\n\t]+/gu, " "));
+  const cursor = Math.max(0, Math.min(characters.length, Math.trunc(input.cursor)));
+  const chunks: string[] = [];
+  for (let offset = 0; offset < characters.length; offset += answerWidth) {
+    chunks.push(characters.slice(offset, offset + answerWidth).join(""));
+  }
+  if (!chunks.length || (cursor === characters.length && cursor > 0 && cursor % answerWidth === 0)) {
+    chunks.push("");
+  }
+  const continuation = " ".repeat(promptWidth);
+  const inputLines = chunks.map((chunk, index) => padTerminalLine(
+    `${index === 0 ? prompt : continuation}${chunk}`,
+  ));
+  const menuLines = input.menu
+    ? input.menu.split("\n").flatMap((line) =>
+        wrapStyledTerminalLine(line, contentWidth).map((wrapped) => padTerminalLine(wrapped)))
+    : [];
+  const cursorRow = Math.min(chunks.length - 1, Math.floor(cursor / answerWidth));
+  const cursorOffset = cursorRow === chunks.length - 1 && cursor === characters.length
+    ? cursor - (cursorRow * answerWidth)
+    : cursor % answerWidth;
+  return {
+    lines: [...inputLines, ...menuLines],
+    inputLines,
+    cursorRow,
+    cursorColumn: 2 + promptWidth + cursorOffset,
+  };
+}
+
 export function createTerminalAnalyticsShellIo(input: {
   readable?: Readable;
   writable?: Writable;
@@ -991,6 +1048,7 @@ export function createTerminalAnalyticsShellIo(input: {
   let statusTimer: NodeJS.Timeout | undefined;
   let statusValue = "";
   let statusStartedAt: number | undefined;
+  const conversationHistory: string[] = [];
   const statusColor = terminal && !("NO_COLOR" in process.env);
   const terminalColumns = () => {
     const columns = (writable as NodeJS.WriteStream).columns;
@@ -1281,9 +1339,191 @@ export function createTerminalAnalyticsShellIo(input: {
         return undefined;
       }
   };
+  const readConversation = async (prompt: string): Promise<string | undefined> => {
+    const ttyInput = readable as Readable & {
+      isRaw?: boolean;
+      setRawMode?: (enabled: boolean) => void;
+    };
+    const ttyOutput = writable as NodeJS.WriteStream;
+    if (!terminal || typeof ttyInput.setRawMode !== "function") {
+      return readQuestion(prompt, true);
+    }
+    if (closed) return undefined;
+    if (questionActive) throw new Error("A conversation prompt cannot open while another question is active.");
+
+    clearStatus();
+    questionActive = true;
+    const existingKeypressListeners = readable.listeners("keypress");
+    readable.removeAllListeners("keypress");
+    readlineCore.emitKeypressEvents(readable as NodeJS.ReadStream);
+    const wasRaw = ttyInput.isRaw === true;
+    const wasFlowing = readable.readableFlowing === true;
+    const renderer = createInPlaceTerminalRenderer(ttyOutput);
+    let value: string[] = [];
+    let cursor = 0;
+    let pasteActive = false;
+    let historyIndex = conversationHistory.length;
+    let settled = false;
+    let resolveAnswer: ((value: string | undefined) => void) | undefined;
+
+    const currentValue = () => value.join("");
+    const replaceValue = (next: string) => {
+      value = Array.from(safeTerminalText(next).replace(/[\r\n\t]+/gu, " "));
+      cursor = value.length;
+    };
+    const insert = (text: string) => {
+      const safe = Array.from(safeTerminalText(text).replace(/[\r\n\t]+/gu, " "));
+      if (!safe.length) return;
+      value.splice(cursor, 0, ...safe);
+      cursor += safe.length;
+    };
+    const frame = () => renderConversationComposerFrame({
+      prompt,
+      value: currentValue(),
+      cursor,
+      columns: ttyOutput.columns,
+      menu: slashCommands
+        ? renderSlashCommandSuggestionMenu(
+            currentValue(),
+            menuSuggestions(currentValue()),
+            terminal && !("NO_COLOR" in process.env),
+          )
+        : "",
+    });
+    const render = () => {
+      const rendered = frame();
+      renderer.render(rendered.lines);
+      const rowsBack = rendered.lines.length - 1 - rendered.cursorRow;
+      readlineCore.cursorTo(ttyOutput, 0);
+      if (rowsBack > 0) readlineCore.moveCursor(ttyOutput, 0, -rowsBack);
+      readlineCore.cursorTo(ttyOutput, rendered.cursorColumn);
+    };
+    const finish = (answer: string | undefined) => {
+      if (settled) return;
+      settled = true;
+      readable.off("keypress", onKeypress);
+      readable.off("end", onClose);
+      readable.off("close", onClose);
+      readable.off("error", onClose);
+      renderer.clear();
+      ttyOutput.write("\u001b[?2004l");
+      if (answer !== undefined) {
+        const submitted = renderConversationComposerFrame({
+          prompt,
+          value: answer,
+          cursor: Array.from(answer).length,
+          columns: ttyOutput.columns,
+          menu: "",
+        });
+        ttyOutput.write(`${submitted.inputLines.join("\n")}\n`);
+        if (answer.trim()) {
+          conversationHistory.push(answer);
+          if (conversationHistory.length > 100) conversationHistory.shift();
+        }
+      }
+      ttyInput.setRawMode?.(wasRaw);
+      if (!wasFlowing) readable.pause();
+      for (const listener of existingKeypressListeners) {
+        readable.on("keypress", listener as (...args: unknown[]) => void);
+      }
+      questionActive = false;
+      activePrompt = "";
+      resolveAnswer?.(answer);
+    };
+    const onClose = () => finish(undefined);
+    const onKeypress = (text: string, key: {
+      name?: string;
+      sequence?: string;
+      ctrl?: boolean;
+      meta?: boolean;
+    }) => {
+      if (key.sequence === "\u001b[200~" || key.name === "paste-start") {
+        pasteActive = true;
+        return;
+      }
+      if (key.sequence === "\u001b[201~" || key.name === "paste-end") {
+        pasteActive = false;
+        render();
+        return;
+      }
+      if (pasteActive && text && key.name !== "return" && key.name !== "enter") {
+        insert(text);
+        return;
+      }
+      if (pasteActive && (key.name === "return" || key.name === "enter")) {
+        insert(" ");
+        return;
+      }
+      if (key.name === "return" || key.name === "enter") {
+        finish(currentValue());
+        return;
+      }
+      if (key.name === "escape" || (key.ctrl && key.name === "c")) {
+        finish(undefined);
+        return;
+      }
+      if (key.ctrl && key.name === "d" && !value.length) {
+        finish(undefined);
+        return;
+      }
+      if (key.name === "backspace") {
+        if (cursor > 0) value.splice(--cursor, 1);
+      } else if (key.name === "delete") {
+        if (cursor < value.length) value.splice(cursor, 1);
+      } else if (key.name === "left") {
+        cursor = Math.max(0, cursor - 1);
+      } else if (key.name === "right") {
+        cursor = Math.min(value.length, cursor + 1);
+      } else if (key.name === "home" || (key.ctrl && key.name === "a")) {
+        cursor = 0;
+      } else if (key.name === "end" || (key.ctrl && key.name === "e")) {
+        cursor = value.length;
+      } else if (key.ctrl && key.name === "u") {
+        value.splice(0, cursor);
+        cursor = 0;
+      } else if (key.ctrl && key.name === "w") {
+        while (cursor > 0 && /\s/u.test(value[cursor - 1]!)) value.splice(--cursor, 1);
+        while (cursor > 0 && !/\s/u.test(value[cursor - 1]!)) value.splice(--cursor, 1);
+      } else if (key.name === "up") {
+        if (conversationHistory.length) {
+          historyIndex = Math.max(0, historyIndex - 1);
+          replaceValue(conversationHistory[historyIndex] ?? "");
+        }
+      } else if (key.name === "down") {
+        if (conversationHistory.length) {
+          historyIndex = Math.min(conversationHistory.length, historyIndex + 1);
+          replaceValue(historyIndex === conversationHistory.length
+            ? ""
+            : conversationHistory[historyIndex] ?? "");
+        }
+      } else if (key.name === "tab" && slashCommands) {
+        const completion = menuSuggestions(currentValue())
+          .flatMap((entry) => entry.completion ? [entry.completion] : [])[0];
+        if (completion) replaceValue(completion);
+      } else if (!key.ctrl && !key.meta && text && !/[\r\n]/u.test(text)) {
+        insert(text);
+      } else {
+        return;
+      }
+      render();
+    };
+
+    readable.on("keypress", onKeypress);
+    readable.once("end", onClose);
+    readable.once("close", onClose);
+    readable.once("error", onClose);
+    ttyInput.setRawMode(true);
+    readable.resume();
+    ttyOutput.write("\u001b[?2004h");
+    render();
+    return new Promise<string | undefined>((resolve) => {
+      resolveAnswer = resolve;
+    });
+  };
   return {
     read: (prompt) => readQuestion(prompt, false),
     readWithEscape: (prompt) => readQuestion(prompt, true),
+    readConversation,
     choose,
     write: (value) => {
       writable.write(terminal ? padTerminalBlock(value) : value);

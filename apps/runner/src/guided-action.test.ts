@@ -752,6 +752,52 @@ describe("guided write actions", () => {
       projectRoot: fixture.root,
       inspection: fixture.inspection,
     };
+    await expect(createGuidedActionDraft({
+      ...base,
+      action: {
+        capability_name: "membership.bad_fractional_integer_bounds",
+        description: "Invalid fractional bounds for an integer source column.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0.5,
+          maximum: 500,
+        }],
+        confirmed_trusted_scope: true,
+      },
+    })).rejects.toThrow(/GUIDED_ACTION_INTEGER_BOUNDS_REQUIRED/);
+
+    await expect(createGuidedActionDraft({
+      ...base,
+      action: {
+        capability_name: "membership.bad_fractional_integer_policy",
+        description: "Invalid fractional policy value for an integer source column.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum: 500,
+        }],
+        auto_approval: {
+          conditions: [{ field: "loyalty_balance", operator: "lte", value: 100.5 }],
+          max_per_day: 10,
+        },
+        confirmed_trusted_scope: true,
+      },
+    })).rejects.toThrow(/GUIDED_ACTION_AUTO_APPROVAL_INTEGER_REQUIRED/);
+
     const freeze = await createGuidedActionDraft({
       ...base,
       action: {

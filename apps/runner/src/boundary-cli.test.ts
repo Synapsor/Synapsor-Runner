@@ -2897,13 +2897,18 @@ describe("boundary operator-plane CLI", () => {
         source_database_changed: false,
       };
     });
-    const runDelegationActionReview = vi.fn(async () => {
+    const runDelegationActionReview = vi.fn(async (reviewInput: Parameters<typeof runActionControlPlane>[0]) => {
       const reviewed = await loadBoundaryReviewContext(root);
       const target = reviewed.candidate.pack.resources.find((resource) =>
         resource.id === "public.maintenance_requests");
       expect(target?.selectable_fields).toEqual(expect.arrayContaining([
         "request_kind",
         "estimated_hours",
+      ]));
+      expect(reviewInput.modelSuggestionSession?.openingValidatedFacts).toEqual(expect.arrayContaining([
+        expect.stringContaining("Read plans (1)"),
+        expect.stringContaining("INSERT public.maintenance_requests"),
+        expect.stringContaining("Read and Action authority remain off"),
       ]));
       return { state: "closed" as const, source_database_changed: false as const, activated_actions: [] };
     });
@@ -3020,13 +3025,22 @@ describe("boundary operator-plane CLI", () => {
       ]);
       expect(actionAssessment?.status, actionAssessment?.blockers.join("; ")).toBe("suggested");
       expect(runDelegationActionReview).toHaveBeenCalledOnce();
+      const greetingCall = modelAuthoringNarrator.mock.calls
+        .map(([call]) => call)
+        .find((call) => call.operatorMessage.includes("preserved disabled Boundary draft"));
+      expect(greetingCall?.validatedFacts.join("\n")).toContain(
+        "This is a new conversation, not a resumed model transcript.",
+      );
+      expect(greetingCall?.validatedFacts.join("\n")).not.toContain(
+        "No Read or Action Boundary draft has been created",
+      );
       const readModelIndex = transcript.findIndex((entry) =>
         entry.speaker === "model"
         && entry.lines.some((line) => /representative Read plan/iu.test(line)));
       const actionModelIndex = transcript.findIndex((entry) =>
         entry.speaker === "model"
         && entry.lines.some((line) => line.includes("INSERT public.maintenance_requests")));
-      expect(readModelIndex).toBeGreaterThanOrEqual(0);
+      expect(readModelIndex).toBe(-1);
       expect(actionModelIndex).toBe(-1);
       expect(transcript.some((entry) =>
         entry.speaker === "check"
@@ -3109,7 +3123,9 @@ describe("boundary operator-plane CLI", () => {
       };
     });
     const recoveryChoices: string[][] = [];
-    const runDelegationActionReview = vi.fn(async () => ({
+    const runDelegationActionReview = vi.fn(async (
+      _reviewInput: Parameters<typeof runActionControlPlane>[0],
+    ) => ({
       state: "closed" as const,
       source_database_changed: false as const,
       activated_actions: [],
@@ -3230,7 +3246,9 @@ describe("boundary operator-plane CLI", () => {
     let modelChooserCount = 0;
     const egressPrompts: string[] = [];
     const recoveryContexts: string[][] = [];
-    const runDelegationActionReview = vi.fn(async () => ({
+    const runDelegationActionReview = vi.fn(async (
+      _reviewInput: Parameters<typeof runActionControlPlane>[0],
+    ) => ({
       state: "closed" as const,
       source_database_changed: false as const,
       activated_actions: [],
@@ -3315,7 +3333,10 @@ describe("boundary operator-plane CLI", () => {
       inspectedSchema: "public",
     });
     const fallbackChoices: string[] = [];
-    const runDelegationActionReview = vi.fn(async () => ({
+    const installedPermissionGuides: Array<BoundaryAuthoringPermissionGuide | undefined> = [];
+    const runDelegationActionReview = vi.fn(async (
+      _reviewInput: Parameters<typeof runActionControlPlane>[0],
+    ) => ({
       state: "closed" as const,
       source_database_changed: false as const,
       activated_actions: [],
@@ -3336,6 +3357,7 @@ describe("boundary operator-plane CLI", () => {
         throw new Error(`Unexpected model-fallback text prompt: ${prompt}`);
       },
       chooseOption: async (title, _choices, options) => {
+        if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         if (title === "MODEL COULD NOT PRODUCE A STRUCTURED DRAFT") {
@@ -3367,6 +3389,28 @@ describe("boundary operator-plane CLI", () => {
           modelReadWorkloadGenerator,
           actionProjectInspector: async () => inspection,
           runDelegationActionReview,
+          boundaryAuthoringChatFactory: () => ({
+            session,
+            actionPrompter: {
+              choose: async () => undefined,
+              text: async () => undefined,
+              confirm: async () => undefined,
+              message: async () => undefined,
+            },
+            setModel: vi.fn(),
+            setPermissionGuide: (guide) => installedPermissionGuides.push(guide),
+            runner: vi.fn(),
+            model: vi.fn(),
+            checkpoint: vi.fn(),
+            streamRunner: async () => undefined,
+            streamCheckpoint: async () => undefined,
+            streamModel: async () => undefined,
+            rememberDetails: vi.fn(),
+            showDetails: vi.fn(),
+            providerStream: vi.fn(),
+            progress: async (_message, operation) => operation(),
+            close: vi.fn(),
+          }),
         },
       )).resolves.toBe(0);
 
@@ -3376,12 +3420,12 @@ describe("boundary operator-plane CLI", () => {
       expect(runDelegationActionReview).toHaveBeenCalledWith(expect.objectContaining({
         initialIntent: "Explain service visits and propose creating a maintenance request.",
         prepareOnly: true,
-        modelSuggestionSession: expect.objectContaining({
-          provider: "openai_compatible",
-          model: "qwen2.5:7b",
-        }),
-        modelInterviewEgressAcknowledged: true,
       }));
+      const reviewInput = runDelegationActionReview.mock.calls[0]?.[0];
+      expect(reviewInput).not.toHaveProperty("modelSuggestionSession");
+      expect(reviewInput).not.toHaveProperty("modelInterviewEgressAcknowledged");
+      expect(installedPermissionGuides[0]).toBeTypeOf("function");
+      expect(installedPermissionGuides.at(-1)).toBeUndefined();
       const reviewed = await loadBoundaryReviewContext(root);
       expect(reviewed.candidate.pack.resources.map((resource) => resource.id)).toContain(
         "public.maintenance_requests",

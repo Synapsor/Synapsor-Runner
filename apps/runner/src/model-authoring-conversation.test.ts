@@ -99,4 +99,72 @@ describe("model-assisted Boundary authoring conversation", () => {
     })).resolves.toBeUndefined();
     expect(modelAuthoringHistory(conversation)).toEqual([]);
   });
+
+  it("drops model narration that contradicts Runner-validated scope and authority facts", async () => {
+    const conversation = createModelAuthoringConversation();
+    const requestJson = vi.fn(async () => ({
+      status: 200,
+      body: {
+        output: [{
+          type: "message",
+          role: "assistant",
+          content: [{
+            type: "output_text",
+            text: "The target scope remains incomplete and Action authority has been granted.",
+          }],
+        }],
+      },
+    }));
+
+    await expect(narrateValidatedAuthoringStep({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-luna",
+        apiKey: "memory-key",
+        dependencies: { requestJson },
+        conversation,
+      },
+      operatorMessage: "Use version as the stale-row guard.",
+      validatedFacts: [
+        "Target row identity and trusted tenant/principal scope are separate Runner-validated controls and are already resolved.",
+        "No authority was granted and no source row changed.",
+      ],
+      egressAcknowledged: true,
+    })).resolves.toBeUndefined();
+    expect(modelAuthoringHistory(conversation)).toEqual([]);
+  });
+
+  it("drops model narration that reopens an already resolved trusted-scope decision", async () => {
+    const conversation = createModelAuthoringConversation();
+    const requestJson = vi.fn(async () => ({
+      status: 200,
+      body: {
+        output: [{
+          type: "message",
+          role: "assistant",
+          content: [{
+            type: "output_text",
+            text: "Should I use version, and is the trusted customer scope already resolved?",
+          }],
+        }],
+      },
+    }));
+
+    await expect(narrateValidatedAuthoringStep({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-luna",
+        apiKey: "memory-key",
+        dependencies: { requestJson },
+        conversation,
+      },
+      operatorMessage: "Why is version needed?",
+      validatedFacts: [
+        "Target row identity and trusted tenant/principal scope are separate Runner-validated controls and are already resolved.",
+        "The pending reviewed decision is conflict guard version.",
+      ],
+      egressAcknowledged: true,
+    })).resolves.toBeUndefined();
+    expect(modelAuthoringHistory(conversation)).toEqual([]);
+  });
 });

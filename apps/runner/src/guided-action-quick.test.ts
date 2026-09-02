@@ -66,21 +66,96 @@ describe("quick proposal action preparation", () => {
           { column: "residency" },
         ],
       },
+    });
+    if (result.state !== "ready") throw new Error("expected ready action");
+    expect(result).not.toHaveProperty("deterministic_approval_template");
+    expect(result.summary.trusted_context).toEqual(["tenant_id from trusted Runner context"]);
+    expect(result.summary.arguments.map((item) => item.field)).toEqual(["entry_cohort", "residency"]);
+  });
+
+  it("keeps multi-field proposal combinations on human review unless an exact policy is separately reviewed", () => {
+    const subscriptions: GuidedActionResourceOption = {
+      ...students,
+      id: "telecom.subscriptions",
+      schema: "telecom",
+      table: "subscriptions",
+      label: "Subscriptions",
+      writable_fields: [
+        { name: "plan_code", data_type: "text", enum_values: ["starter", "unlimited", "unlimited_plus", "family_premium"], nullable: false, required_for_insert: false },
+        { name: "base_monthly_cents", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false },
+      ],
+      structurally_eligible_fields: [
+        { name: "plan_code", data_type: "text", enum_values: ["starter", "unlimited", "unlimited_plus", "family_premium"], nullable: false, required_for_insert: false },
+        { name: "base_monthly_cents", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false },
+      ],
+      conflict_candidates: ["version"],
+    };
+    const result = prepareQuickProposalAction({
+      options: { ...options, resources: [subscriptions] },
+      intent: "Propose a reviewed subscription plan change.",
+      decisions: {
+        resource: subscriptions.id,
+        operation: "update",
+        guard_column: "version",
+        fields: ["plan_code", "base_monthly_cents"],
+        numeric_bounds: { base_monthly_cents: { minimum: 4500, maximum: 16500 } },
+      },
+    });
+
+    expect(result).toMatchObject({ state: "ready", action: { patches: expect.any(Array) } });
+    expect(result).not.toHaveProperty("deterministic_approval_template");
+  });
+
+  it("still offers a conservative structural starting policy for one bounded field", () => {
+    const cohortOnly: GuidedActionResourceOption = {
+      ...students,
+      writable_fields: [students.writable_fields.find((field) => field.name === "entry_cohort")!],
+      structurally_eligible_fields: [students.structurally_eligible_fields.find((field) => field.name === "entry_cohort")!],
+    };
+    const result = prepareQuickProposalAction({
+      options: { ...options, resources: [cohortOnly] },
+      intent: "Update the reviewed entry cohort.",
+      decisions: {
+        resource: cohortOnly.id,
+        operation: "update",
+        guard_column: "student_id",
+        fields: ["entry_cohort"],
+      },
+    });
+
+    expect(result).toMatchObject({
+      state: "ready",
       deterministic_approval_template: {
         source: "reviewed_structure",
         auto_approval: {
-          conditions: [
-            { field: "entry_cohort", operator: "lte", value: 2030 },
-            { field: "residency", operator: "in", values: ["in_state", "out_of_state"] },
-          ],
-          max_per_day: 10,
+          conditions: [{ field: "entry_cohort", operator: "lte", value: 2030 }],
         },
-        shared_limits: [{ scope: "tenant", maximum: 10, window_seconds: 86_400 }],
       },
     });
-    if (result.state !== "ready") throw new Error("expected ready action");
-    expect(result.summary.trusted_context).toEqual(["tenant_id from trusted Runner context"]);
-    expect(result.summary.arguments.map((item) => item.field)).toEqual(["entry_cohort", "residency"]);
+  });
+
+  it("keeps fractional bounds available for a decimal source column", () => {
+    const decimalResource: GuidedActionResourceOption = {
+      ...students,
+      writable_fields: [{ name: "requested_hours", data_type: "numeric(6,2)", enum_values: [], nullable: false, required_for_insert: false }],
+      structurally_eligible_fields: [{ name: "requested_hours", data_type: "numeric(6,2)", enum_values: [], nullable: false, required_for_insert: false }],
+    };
+    const result = prepareQuickProposalAction({
+      options: { ...options, resources: [decimalResource] },
+      intent: "Update requested hours.",
+      decisions: {
+        resource: decimalResource.id,
+        operation: "update",
+        guard_column: "student_id",
+        fields: ["requested_hours"],
+        numeric_bounds: { requested_hours: { minimum: 0.5, maximum: 16.25 } },
+      },
+    });
+
+    expect(result).toMatchObject({
+      state: "ready",
+      action: { patches: [{ column: "requested_hours", minimum: 0.5, maximum: 16.25 }] },
+    });
   });
 
   it("replaces the structural template with one validated model policy proposal without granting authority", () => {

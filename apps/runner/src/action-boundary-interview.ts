@@ -37,6 +37,8 @@ export type ActionBoundaryInterviewSession = {
   baseUrl?: string;
   dependencies?: AskProviderDependencies;
   conversation?: ModelAuthoringConversation;
+  openingValidatedFacts?: string[];
+  openingValidatedFactsConsumed?: boolean;
 };
 
 export type OperatorApprovedValueContext = {
@@ -594,6 +596,8 @@ async function decisionModelMessage(input: {
       `Business action: ${input.intent}`,
       ...(input.target ? [`Current exact action target: ${input.target}`] : []),
       `Runner accepted this interpretation for the disabled draft: ${input.resolution.summary}`,
+      "Target row identity and trusted tenant/principal scope are separate Runner-validated controls and remain unchanged.",
+      "Do not describe target identity or trusted scope as incomplete; this confirmation concerns only the interpreted business decision above.",
       "No authority was granted and no source row changed.",
     ],
     nextQuestion: "Should I use this exact interpretation in the disabled draft?",
@@ -601,7 +605,7 @@ async function decisionModelMessage(input: {
     egressAcknowledged: input.egressAcknowledged,
     signal: input.signal,
   });
-  return narration ?? input.resolution.rationale;
+  return narration;
 }
 
 async function policyModelMessage(input: {
@@ -639,7 +643,7 @@ async function policyModelMessage(input: {
     egressAcknowledged: input.egressAcknowledged,
     signal: input.signal,
   });
-  return narration ?? input.resolution.rationale;
+  return narration;
 }
 
 function interviewConfiguration(
@@ -678,6 +682,7 @@ function decisionCatalog(decision: Exclude<QuickProposalDecision, { kind: "delet
     ...(decision.kind === "numeric_bounds"
       ? {
           field: decision.field,
+          integer: decision.integer === true,
           suggested_minimum: decision.suggested_minimum ?? null,
           suggested_maximum: decision.suggested_maximum ?? null,
         }
@@ -705,8 +710,8 @@ function decisionToolDefinition(
         required: ["status", "minimum", "maximum"],
         properties: {
           status: { type: "string", enum: ["resolved"] },
-          minimum: { type: "number" },
-          maximum: { type: "number" },
+          minimum: { type: decision.integer ? "integer" : "number" },
+          maximum: { type: decision.integer ? "integer" : "number" },
           rationale,
         },
       }
@@ -813,6 +818,9 @@ function parseDecisionResolution(
     const minimum = finiteNumber(value.minimum, "minimum");
     const maximum = finiteNumber(value.maximum, "maximum");
     if (minimum > maximum) throw new Error("minimum must be less than or equal to maximum.");
+    if (decision.integer && (!Number.isSafeInteger(minimum) || !Number.isSafeInteger(maximum))) {
+      throw new Error(`${decision.field} uses an integer source column and requires whole-number bounds.`);
+    }
     return {
       state: "resolved",
       decisions: { numeric_bounds: { [decision.field]: { minimum, maximum } } },

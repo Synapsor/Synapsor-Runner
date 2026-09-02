@@ -493,6 +493,151 @@ describe("Safe Action terminal control plane", () => {
     });
   });
 
+  it("preserves a validated model decision when the operator switches the remaining setup to exact controls", async () => {
+    const multiGuardOptions = {
+      ...options,
+      resources: [{ ...orders, conflict_candidates: ["updated_at", "version"] }],
+    };
+    const choiceTitles: string[] = [];
+    const decisionInterpreter = vi.fn(async () => ({
+      state: "resolved" as const,
+      decisions: { guard_column: "version" },
+      summary: "conflict guard: version",
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const prompter = scriptedPrompter({
+      choices: ["create"],
+      texts: ["Use version.", "exact controls"],
+      confirms: [],
+      onChoose: (title) => choiceTitles.push(title),
+    });
+
+    const action = await collectQuickProposalActionInput(
+      multiGuardOptions,
+      prompter,
+      "Let support update an order credit within a reviewed limit.",
+      [],
+      {
+        initialDecisions: {
+          resource: "public.orders",
+          operation: "update",
+          fields: ["credit_cents"],
+          numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } },
+        },
+        modelInterview: {
+          session: { provider: "openai", model: "gpt-5.6-luna" },
+          egressAcknowledged: true,
+          decisionInterpreter,
+        },
+      },
+    );
+
+    expect(action).toMatchObject({ conflict_column: "version" });
+    expect(choiceTitles).not.toContain("WHICH COLUMN DETECTS STALE PROPOSALS?");
+    expect(decisionInterpreter).toHaveBeenCalledOnce();
+  });
+
+  it("removes a selected stale-row guard from model-writable fields", async () => {
+    const guardedOrders: GuidedActionResourceOption = {
+      ...orders,
+      structurally_eligible_fields: [
+        ...orders.structurally_eligible_fields,
+        { name: "version", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false },
+      ],
+      conflict_candidates: ["updated_at", "version"],
+    };
+    const action = await collectQuickProposalActionInput(
+      { ...options, resources: [guardedOrders] },
+      scriptedPrompter({ choices: ["create"], texts: [], confirms: [] }),
+      "Propose a reviewed order update.",
+      [],
+      {
+        initialDecisions: {
+          resource: "public.orders",
+          operation: "update",
+          guard_column: "version",
+          fields: ["credit_cents", "version"],
+          numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } },
+        },
+      },
+    );
+
+    expect(action).toMatchObject({
+      conflict_column: "version",
+      patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
+    });
+    expect(action).not.toMatchObject({
+      patches: expect.arrayContaining([expect.objectContaining({ column: "version" })]),
+    });
+  });
+
+  it("lets exact controls select more than one reviewed proposal field", async () => {
+    const prompter = scriptedPrompter({
+      choices: ["status", "credit_cents", "__done__", "create"],
+      texts: ["0,2500"],
+      confirms: [],
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Update one reviewed order.",
+      [],
+      {
+        initialDecisions: {
+          resource: "public.orders",
+          operation: "update",
+          guard_column: "version",
+        },
+      },
+    );
+
+    expect(action).toMatchObject({
+      patches: expect.arrayContaining([
+        expect.objectContaining({ column: "status" }),
+        expect.objectContaining({ column: "credit_cents", minimum: 0, maximum: 2500 }),
+      ]),
+    });
+  });
+
+  it("reprompts malformed and fractional integer bounds instead of abandoning Action drafting", async () => {
+    const prompts: Array<Parameters<ActionControlPrompter["text"]>[1]> = [];
+    const prompter = scriptedPrompter({
+      choices: ["create"],
+      texts: ["4500 16500", "4500.5,16500", "4500,16500"],
+      confirms: [],
+      onText: (_label, promptOptions) => prompts.push(promptOptions),
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Update the reviewed order credit.",
+      [],
+      {
+        initialDecisions: {
+          resource: "public.orders",
+          operation: "update",
+          guard_column: "version",
+          fields: ["credit_cents"],
+        },
+      },
+    );
+
+    expect(action).toMatchObject({
+      patches: [{ column: "credit_cents", minimum: 4500, maximum: 16500 }],
+    });
+    expect(prompts).toHaveLength(3);
+    expect(prompts[1]?.context).toEqual(expect.arrayContaining([
+      expect.stringContaining("exactly two finite numbers separated by a comma"),
+    ]));
+    expect(prompts[2]?.context).toEqual(expect.arrayContaining([
+      expect.stringContaining("integer source column requires whole-number bounds"),
+    ]));
+  });
+
   it("requires a separate exact confirmation before operator-supplied value context reaches the model", async () => {
     let attempt = 0;
     const decisionInterpreter = vi.fn(async (input: Parameters<NonNullable<ActionBoundaryInterviewContext["decisionInterpreter"]>>[0]) => {
@@ -549,6 +694,87 @@ describe("Safe Action terminal control plane", () => {
       patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
       authority_posture: "proposal_only",
     });
+  });
+
+  it("answers an unrelated scope follow-up without reinterpreting the pending stale-row guard", async () => {
+    const multiGuardOrders: GuidedActionResourceOption = {
+      ...orders,
+      conflict_candidates: ["updated_at", "version"],
+    };
+    const multiGuardOptions = {
+      ...options,
+      resources: [multiGuardOrders],
+    };
+    const decisionInterpreter = vi.fn(async () => ({
+      state: "resolved" as const,
+      decisions: { guard_column: "version" },
+      summary: "conflict guard: version",
+      model_message: "Use version to reject a stale proposal. Should I keep that exact guard?",
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const modelSession: ActionBoundaryInterviewContext["session"] = {
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      openingValidatedFacts: [
+        "The combined Read and Action draft passed Runner validation.",
+      ],
+    };
+    const textRecords: Array<{
+      label: string;
+      options: Parameters<ActionControlPrompter["text"]>[1];
+    }> = [];
+    const prompter = scriptedPrompter({
+      choices: ["create"],
+      texts: [
+        "Use version.",
+        "Why is version needed, and is trusted account scope already resolved?",
+        "yes",
+        "human review",
+      ],
+      confirms: [],
+      onText: (label, promptOptions) => textRecords.push({ label, options: promptOptions }),
+    });
+
+    const action = await collectQuickProposalActionInput(
+      multiGuardOptions,
+      prompter,
+      "Let an authenticated customer propose a reviewed plan change.",
+      [],
+      {
+        initialDecisions: {
+          resource: "public.orders",
+          operation: "update",
+          fields: ["credit_cents"],
+          numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } },
+        },
+        modelInterview: {
+          session: modelSession,
+          egressAcknowledged: true,
+          decisionInterpreter,
+        },
+      },
+    );
+
+    expect(decisionInterpreter).toHaveBeenCalledOnce();
+    expect(action).toMatchObject({
+      resource: "public.orders",
+      operation: "update",
+      conflict_column: "version",
+    });
+    const confirmations = textRecords.filter((record) =>
+      record.options?.title === "CONFIRM CONFLICT AND RETRY GUARD");
+    expect(confirmations).toHaveLength(2);
+    expect(confirmations[1]?.options?.conversation?.modelLines).toEqual([]);
+    expect(confirmations[1]?.options?.conversation?.checkpoint).toMatchObject({
+      title: "Model explanation not used",
+      lines: expect.arrayContaining([
+        expect.stringContaining("Trusted scope and target identity are already resolved separately"),
+      ]),
+      tone: "warning",
+    });
+    expect(modelSession.openingValidatedFactsConsumed).toBe(true);
   });
 
   it("lets the operator replace a prepared approval policy in natural language before one exact confirmation", async () => {
@@ -713,6 +939,82 @@ describe("Safe Action terminal control plane", () => {
       ]),
     }));
     expect(action).not.toHaveProperty("auto_approval");
+  });
+
+  it("resets the bounded clarification count after a policy revision resolves", async () => {
+    let attempt = 0;
+    const policyInterpreter = vi.fn(async () => {
+      attempt += 1;
+      if (attempt === 1 || attempt === 3) {
+        return {
+          state: "clarification" as const,
+          question: attempt === 1
+            ? "What exact credit ceiling should apply?"
+            : "What lower revised credit ceiling should apply?",
+          correction_used: false,
+          authority_granted: false as const,
+          source_database_changed: false as const,
+        };
+      }
+      const maximum = attempt === 2 ? 500 : 400;
+      return {
+        state: "resolved" as const,
+        auto_approval: {
+          conditions: [{ field: "credit_cents", operator: "lte" as const, value: maximum }],
+          max_per_day: 3,
+        },
+        shared_limits: [],
+        correction_used: false,
+        authority_granted: false as const,
+        source_database_changed: false as const,
+      };
+    });
+    const choiceTitles: string[] = [];
+    const prompter = scriptedPrompter({
+      choices: [],
+      texts: [
+        "From zero through twenty-five dollars.",
+        "yes",
+        "Use a bounded policy.",
+        "Five dollars.",
+        "change",
+        "Use a lower bounded policy.",
+        "Four dollars.",
+        "yes",
+      ],
+      confirms: [],
+      onChoose: (title) => choiceTitles.push(title),
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Let support update an order credit_cents within a reviewed limit.",
+      [],
+      {
+        modelInterview: {
+          session: { provider: "openai", model: "gpt-5.6-luna" },
+          egressAcknowledged: true,
+          decisionInterpreter: async () => ({
+            state: "resolved",
+            decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } } },
+            summary: "credit_cents: 0 through 2500",
+            correction_used: false,
+            authority_granted: false,
+            source_database_changed: false,
+          }),
+          policyInterpreter,
+        },
+      },
+    );
+
+    expect(policyInterpreter).toHaveBeenCalledTimes(4);
+    expect(choiceTitles).not.toContain("POLICY DOES NOT FIT THIS ACTION");
+    expect(action).toMatchObject({
+      auto_approval: {
+        conditions: [{ field: "credit_cents", operator: "lte", value: 400 }],
+      },
+    });
   });
 
   it("reviews a validated model Action draft without reselecting its target, operation, or fields", async () => {
@@ -1324,7 +1626,7 @@ describe("Safe Action terminal control plane", () => {
     });
     expect(prompts).toEqual([
       "What example values should I use for the disposable rehearsal?",
-      "Press Enter to run this exact disposable rehearsal, or describe what should change",
+      "Press Enter to run this exact disposable rehearsal, or restate the complete example",
     ]);
     expect(rehearsalInterpreter).toHaveBeenCalledWith(expect.objectContaining({
       capability: "orders.propose_typed_rehearsal",
@@ -1332,6 +1634,70 @@ describe("Safe Action terminal control plane", () => {
       answer: "Use closed, 750 credits, notifications on, with note reviewed.",
       egressAcknowledged: true,
     }));
+  });
+
+  it("requires and immediately validates a complete replacement rehearsal example", async () => {
+    const prompts: string[] = [];
+    const replacement = "Use open, 500 credits, notifications off, with note revised.";
+    const prompter = scriptedPrompter({
+      choices: [],
+      texts: [
+        "Use closed, 750 credits, notifications on, with note reviewed.",
+        replacement,
+        "",
+      ],
+      confirms: [],
+      onText: (label) => prompts.push(label),
+    });
+    const details = {
+      draft: { capability: "orders.propose_typed_rehearsal", operation: "insert" },
+      preview_args: { status: "open", credit_cents: 100, notify: false, note: "preview" },
+      contract: {
+        capabilities: [{
+          name: "orders.propose_typed_rehearsal",
+          subject: { schema: "public", table: "orders" },
+          args: {
+            status: { type: "string", enum: ["open", "closed"] },
+            credit_cents: { type: "number", minimum: 0, maximum: 1000 },
+            notify: { type: "boolean" },
+            note: { type: "string", max_length: 32 },
+          },
+        }],
+      },
+    } as unknown as Parameters<typeof collectGuidedRehearsalArgs>[0];
+    const rehearsalInterpreter = vi.fn(async (input: { answer: string }) => {
+      const revised = input.answer === replacement;
+      return {
+        state: "resolved" as const,
+        args: revised
+          ? { status: "open", credit_cents: 500, notify: false, note: "revised" }
+          : { status: "closed", credit_cents: 750, notify: true, note: "reviewed" },
+        summary: revised
+          ? ["status: open", "credit_cents: 500", "notify: false", "note: revised"]
+          : ["status: closed", "credit_cents: 750", "notify: true", "note: reviewed"],
+        correction_used: false,
+        authority_granted: false as const,
+        source_database_changed: false as const,
+      };
+    });
+
+    await expect(collectGuidedRehearsalArgs(details, prompter, {
+      session: { provider: "openai", model: "gpt-test" },
+      egressAcknowledged: true,
+      rehearsalInterpreter: rehearsalInterpreter as ActionBoundaryInterviewContext["rehearsalInterpreter"],
+    }, {})).resolves.toEqual({
+      status: "open",
+      credit_cents: 500,
+      notify: false,
+      note: "revised",
+    });
+    expect(rehearsalInterpreter).toHaveBeenCalledTimes(2);
+    expect(rehearsalInterpreter.mock.calls[1]?.[0]).toMatchObject({ answer: replacement });
+    expect(prompts).toEqual([
+      "What example values should I use for the disposable rehearsal?",
+      "Press Enter to run this exact disposable rehearsal, or restate the complete example",
+      "Press Enter to run this exact disposable rehearsal, or restate the complete example",
+    ]);
   });
 
   it("keeps an UPDATE rehearsal identity local while the model interprets other values", async () => {

@@ -2267,6 +2267,9 @@ function validateAutoApprovalLiteralForColumn(field: string, value: JsonScalar |
   if (isNumericType(column.data_type) && typeof value !== "number") {
     throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_TYPE_MISMATCH: ${field} requires numeric policy values.`);
   }
+  if (isIntegerType(column.data_type) && typeof value === "number" && !Number.isSafeInteger(value)) {
+    throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_INTEGER_REQUIRED: ${field} requires whole-number policy values.`);
+  }
   if (isBooleanType(column.data_type) && typeof value !== "boolean") {
     throw new Error(`GUIDED_ACTION_AUTO_APPROVAL_TYPE_MISMATCH: ${field} requires boolean policy values.`);
   }
@@ -2304,6 +2307,10 @@ function validatePatchType(
     if (numeric && (!Number.isFinite(patch.minimum) || !Number.isFinite(patch.maximum))) {
       throw new Error(`GUIDED_ACTION_NUMERIC_BOUNDS_REQUIRED: ${patch.column} needs a reviewed minimum and maximum.`);
     }
+    if (isIntegerType(column.data_type)
+      && (!Number.isSafeInteger(patch.minimum) || !Number.isSafeInteger(patch.maximum))) {
+      throw new Error(`GUIDED_ACTION_INTEGER_BOUNDS_REQUIRED: ${patch.column} uses an integer source column and needs whole-number bounds.`);
+    }
     if (!numeric && !isBooleanType(column.data_type) && !(column.enum_values?.length) && !positiveInteger(patch.max_length)) {
       throw new Error(`GUIDED_ACTION_TEXT_BOUND_REQUIRED: ${patch.column} needs a max length or inspected enum.`);
     }
@@ -2311,6 +2318,9 @@ function validatePatchType(
   if (patch.value_source === "fixed") {
     const value = patch.fixed_value;
     if (numeric && typeof value !== "number") throw new Error(`GUIDED_ACTION_FIXED_TYPE_MISMATCH: ${patch.column} requires a numeric fixed value.`);
+    if (isIntegerType(column.data_type) && typeof value === "number" && !Number.isSafeInteger(value)) {
+      throw new Error(`GUIDED_ACTION_FIXED_INTEGER_REQUIRED: ${patch.column} uses an integer source column and requires a whole-number fixed value.`);
+    }
     if (isBooleanType(column.data_type) && typeof value !== "boolean") throw new Error(`GUIDED_ACTION_FIXED_TYPE_MISMATCH: ${patch.column} requires true or false.`);
     if (!numeric && !isBooleanType(column.data_type) && value !== null && typeof value !== "string") {
       throw new Error(`GUIDED_ACTION_FIXED_TYPE_MISMATCH: ${patch.column} requires a string or null fixed value.`);
@@ -2939,6 +2949,11 @@ function singular(value: string): string {
 
 function isNumericType(value: string): boolean {
   return /(?:int|numeric|decimal|real|double|float|money|number)/i.test(value);
+}
+
+function isIntegerType(value: string): boolean {
+  return /(?:^|\b)(?:tinyint|smallint|mediumint|integer|bigint|int|int2|int4|int8|smallserial|serial|bigserial)(?:\b|$)/i.test(value)
+    && !/(?:^|\b)tinyint\s*\(\s*1\s*\)/i.test(value);
 }
 
 function isBooleanType(value: string): boolean {
