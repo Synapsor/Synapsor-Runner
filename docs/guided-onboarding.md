@@ -254,9 +254,8 @@ digest.
 
 Workbench then offers a fast lane:
 
-1. verify the required trusted tenant/principal bindings are already supplied
-   by the operator-owned environment or identity integration, outside
-   Workbench and outside model arguments;
+1. verify the reviewed trusted-scope definitions: environment-variable or JWT
+   claim names, tenant/principal columns, and any database-enforced RLS proof;
 2. inspect the conservative starter-boundary summary and select **Activate
    this boundary**.
 
@@ -265,11 +264,12 @@ rechecks schema and read-only role posture, activates only the exact reviewed
 tables, fields, relationships, operations, and limits, and keeps sensitive and
 uncertain fields out before routing to the model-first Ask setup. The request
 cannot select or change the profile.
-Direct `ui`, explicit production/unknown profiles, shared/remote surfaces,
-widening, and write paths do not gain this shortcut. If a required binding is
-absent, Quick Start remains unavailable and points to one operator-owned
-identity setup action; it never asks the developer to type a raw tenant or
-principal ID into the analytics UI.
+Direct `ui`, explicit production/unknown profiles, shared/remote surfaces, and
+widening do not gain this shortcut. Concrete tenant and principal values are
+not required to author, review, or activate reusable authority, and Workbench
+never asks the developer to type them into the analytics UI. The first scoped
+read or proposal resolves the reviewed bindings and fails closed, before source
+access, when the runtime identity is absent or invalid.
 
 After that proof, the primary action is **Ask here with a model**. Workbench
 uses an available `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` by environment-variable
@@ -624,18 +624,21 @@ not identify one exact reviewed target, operation, guard, field set, or numeric
 bound. The card shows model-supplied arguments, Runner-controlled scope,
 idempotency/conflict posture, human approval, and `WRITEBACK NONE` together.
 
-Runner saves the disabled revision automatically after that review and derives
-bounded rehearsal values from the compiled contract. The rehearsal uses the
-real proposal runtime with a disposable ledger, cannot mutate the source, and
-destroys its proposal. It may run while the fully reviewed read revision is
-still pending. The next explicit gesture activates only that exact proposal
-capability and matching Action Boundary revision, and is unavailable until the
-bound read digest is active. Approval, apply, and writeback remain unavailable.
+Runner saves the disabled revision automatically after that review. Its default
+rehearsal is structural: Runner recompiles the persisted DSL and validates the
+exact contract, expanded runtime config, argument bounds, and generated safety
+assertions without resolving a concrete tenant, principal, or source row. It may
+run while the fully reviewed read revision is still pending. A live scoped
+proposal through a disposable ledger remains available as an advanced
+diagnostic after runtime identity is configured. The next explicit gesture
+activates only that exact proposal capability and matching Action Boundary
+revision, and is unavailable until the bound read digest is active. Approval,
+apply, and writeback remain unavailable.
 
 Choose **Advanced action design** only when the action needs fixed values,
 state transitions, custom approval policy, automatic approval, execution,
-receipts, supervised workers, manual rehearsal values, or exact artifact
-inspection.
+receipts, supervised workers, an optional live scoped rehearsal, or exact
+artifact inspection.
 
 The TUI can also import a bounded ActionSuggestion or request one suggestion
 from OpenAI, Anthropic, or an OpenAI-compatible provider after explicit

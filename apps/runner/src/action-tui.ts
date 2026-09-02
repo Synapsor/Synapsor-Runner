@@ -22,6 +22,7 @@ import {
   readGuidedActionDesignInput,
   recordGuidedActionBoundaryLimits,
   recordGuidedActionPreview,
+  recordGuidedActionStructuralPreview,
   reviseGuidedActionAuthority,
   reviseGuidedActionBoundary,
   type GuidedActionAuthorityRevisionInput,
@@ -3247,67 +3248,24 @@ export async function reviewActionDraft(input: {
   let draft = input.draft;
   const operatorSession = input.operatorSession ?? {};
   if (input.quickStart && !draft.effect_preview) {
-    const targetContext: GuidedRehearsalTargetContext = {
-      projectRoot: input.projectRoot,
-      inspection: input.inspection,
-      env: input.env,
-      ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}),
-    };
-    const runPreview = async (args: Record<string, unknown>): Promise<void> => {
-      const preview = await executeGuidedActionPreview({
-        projectRoot: input.projectRoot,
-        ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}),
-        capabilityName: draft.capability,
-        args,
-        env: input.env,
-      });
-      draft = await recordGuidedActionPreview({
-        projectRoot: input.projectRoot,
-        capabilityName: draft.capability,
-        contractDigest: preview.draft_digest,
-        proposalId: preview.proposal_id,
-        proposalHash: preview.proposal_hash,
-        sourceDatabaseChanged: preview.source_database_changed,
-      });
-    };
     try {
-      const details = await guidedActionDraftDetails(input.projectRoot, draft.capability);
-      const args = await collectQuickGuidedRehearsalArgs(details, input.prompter, targetContext);
-      if (!args) {
-        await input.prompter.message("PROPOSAL ACTION KEPT DISABLED", [
-          `Action: ${draft.capability}`,
-          "No authorized local rehearsal target was selected.",
-          "No rehearsal ran, no authority activated, and no source row changed.",
-          "Open this disabled draft later to choose one authorized row and rehearse it.",
-        ]);
-        return undefined;
-      }
-      await runPreview(args);
-    } catch (error) {
-      input.prompter.rememberDetails?.("AUTOMATIC REHEARSAL NEEDS ATTENTION", [
-        error instanceof Error ? error.message : String(error),
-        "The action remains a disabled draft. No source row or active tool changed.",
-        "Runner discarded the generated disposable example and opened one guided correction.",
+      draft = await recordGuidedActionStructuralPreview({
+        projectRoot: input.projectRoot,
+        capabilityName: draft.capability,
+        ...(input.baseConfigPath ? { configPath: input.baseConfigPath } : {}),
+      });
+      input.prompter.rememberDetails?.("Structural Action rehearsal", [
+        `Action: ${draft.capability}`,
+        "Validated: exact DSL, contract, runtime config, argument envelope, and generated safety assertions.",
+        "Runtime tenant/principal values used: no",
+        "Source rows read: no",
+        "Source database changed: no",
       ]);
-      const details = await guidedActionDraftDetails(input.projectRoot, draft.capability);
-      const corrected = await collectGuidedRehearsalArgs(
-        details,
-        input.prompter,
-        input.modelInterview,
-        input.env,
-        targetContext,
-      );
-      if (corrected) {
-        try {
-          await runPreview(corrected);
-        } catch (guidedError) {
-          await input.prompter.message("REHEARSAL REFUSED", [
-            guidedError instanceof Error ? guidedError.message : String(guidedError),
-            "The corrected disposable example was discarded.",
-            "The action remains disabled; no authority or source data changed.",
-          ]);
-        }
-      }
+    } catch (error) {
+      input.prompter.rememberDetails?.("STRUCTURAL REHEARSAL NEEDS ATTENTION", [
+        error instanceof Error ? error.message : String(error),
+        "The action remains a disabled draft. No runtime identity, source row, or active tool was used.",
+      ]);
     }
   }
   if (input.prepareOnly) {
@@ -3321,7 +3279,7 @@ export async function reviewActionDraft(input: {
     }
     await input.prompter.message("PROPOSAL ACTION DRAFT SAVED", [
       `Action: ${draft.capability}`,
-      `Rehearsal: ${draft.effect_preview ? "passed in a disposable ledger" : "still required"}`,
+      `Rehearsal: ${actionRehearsalSummary(draft)}`,
       "Proposal action: DISABLED",
       `Approval: ${deterministicApproval ? "DETERMINISTIC POLICY (DISABLED)" : "HUMAN"}`,
       "Writeback: OFF",
@@ -3344,7 +3302,7 @@ export async function reviewActionDraft(input: {
       await input.prompter.message("PROPOSAL ACTION READY", [
         `Action: ${draft.capability}`,
         `Read dependency: ${options.boundary_name} (${shortDigest(options.boundary_digest)})`,
-        "Rehearsal: passed in a disposable ledger",
+        `Rehearsal: ${actionRehearsalSummary(draft)}`,
         "Proposal action: DISABLED",
         "Source database changed: no",
         "",
@@ -3363,7 +3321,7 @@ export async function reviewActionDraft(input: {
       : exactActivationReview;
     input.prompter.rememberDetails?.("Exact Action activation review", [
       ...exactActivationReview,
-      "Rehearsal: passed for this exact disabled revision; source database changed: no.",
+      `${actionRehearsalSummary(draft)} for this exact disabled revision; source database changed: no.`,
     ]);
     const choice = await input.prompter.choose("ACTIVATE PROPOSAL ACTION", [
       {
@@ -3379,7 +3337,7 @@ export async function reviewActionDraft(input: {
       { value: "back", label: "Leave disabled" },
     ], [
       ...activationReview,
-      "Rehearsal: passed for this exact disabled revision; source database changed: no.",
+      `${actionRehearsalSummary(draft)} for this exact disabled revision; source database changed: no.`,
     ], "back");
     if (choice === "activate") {
       const actor = input.env.SYNAPSOR_OPERATOR_ACTOR ?? input.env.USER ?? "local_operator";
@@ -3391,11 +3349,16 @@ export async function reviewActionDraft(input: {
   while (true) {
     const choice = await input.prompter.choose("DISABLED ACTION REVISION", [
       {
+        value: "structural",
+        label: "Run identity-free structural rehearsal (recommended)",
+        detail: "Validates the exact generated authority without a tenant, principal, or source-row read.",
+      },
+      {
         value: "preview",
-        label: "Run guided proposal rehearsal",
+        label: "Run live scoped proposal rehearsal (advanced)",
         detail: input.modelInterview
-          ? "Ask the selected model for one ordinary-language example; Runner validates the exact values."
-          : "Collects typed values, uses a disposable ledger, and never applies the proposal.",
+          ? "Uses the current runtime identity and asks the selected model for one example; no proposal is applied."
+          : "Uses the current runtime identity and one source row in a disposable ledger; no proposal is applied.",
       },
       { value: "activate", label: "Activate this exact rehearsed revision", detail: draft.effect_preview ? "Runner binds confirmation to the selected digest and rechecks it at activation." : "Unavailable until the exact digest has a successful rehearsal.", disabled: !draft.effect_preview },
       { value: "edit", label: "Edit or replace this reviewed design", detail: "Creates a disabled replacement digest. Active authority remains unchanged." },
@@ -3458,6 +3421,20 @@ export async function reviewActionDraft(input: {
         "Source database changed: no",
       ]);
       return undefined;
+    }
+    if (choice === "structural") {
+      draft = await recordGuidedActionStructuralPreview({
+        projectRoot: input.projectRoot,
+        capabilityName: draft.capability,
+        ...(input.baseConfigPath ? { configPath: input.baseConfigPath } : {}),
+      });
+      await input.prompter.message("STRUCTURAL REHEARSAL VERIFIED", [
+        "Exact DSL, contract, runtime config, argument envelope, and generated safety assertions passed.",
+        "Runtime tenant/principal values used: no",
+        "Source rows read: no",
+        "Source database changed: no",
+      ]);
+      continue;
     }
     if (choice === "preview") {
       const details = await guidedActionDraftDetails(input.projectRoot, draft.capability);
@@ -4298,7 +4275,7 @@ function actionHomeChoices(
       label: draft.effect_preview
         ? "Continue rehearsed proposal action [READY FOR REVIEW]"
         : "Continue proposal action setup [DISABLED]",
-      detail: `${draft.operation.toUpperCase()} ${draft.resource} | ${draft.capability} | ${draft.effect_preview ? "rehearsal passed" : "rehearsal needed"}`,
+      detail: `${draft.operation.toUpperCase()} ${draft.resource} | ${draft.capability} | ${actionRehearsalSummary(draft)}`,
     })),
     ...suggestions.map((suggestion) => ({
       value: `suggestion:${suggestion.suggestion_id}`,
@@ -5268,6 +5245,13 @@ function actionRuntimeLines(active: { capability: string; config_path: string })
   ];
 }
 
+function actionRehearsalSummary(draft: GuidedActionDraft): string {
+  if (!draft.effect_preview) return "rehearsal required";
+  return draft.effect_preview.mode === "structural"
+    ? "structural rehearsal passed; no runtime identity or source row used"
+    : "live disposable proposal rehearsal passed";
+}
+
 function actionDraftLines(draft: GuidedActionDraft): string[] {
   return [
     `Capability: ${draft.capability}`,
@@ -5275,7 +5259,7 @@ function actionDraftLines(draft: GuidedActionDraft): string[] {
     `Authority: ${draft.authority_posture}`,
     `Writeback: ${draft.writeback_mode}`,
     `Digest: ${draft.contract_digest}`,
-    `Preview: ${draft.effect_preview ? "verified; source unchanged" : "required"}`,
+    `Rehearsal: ${actionRehearsalSummary(draft)}`,
     "Current state: disabled. Active tools and source data are unchanged.",
   ];
 }

@@ -101,6 +101,7 @@ import {
   guidedActionStatus,
   readGuidedActionDraft,
   recordGuidedActionPreview,
+  recordGuidedActionStructuralPreview,
   reviseGuidedActionAuthority,
   type GuidedActionAuthorityRevisionInput,
   type GuidedActionInput,
@@ -11025,7 +11026,7 @@ async function draftGuidedActionCommand(
     `Writeback: ${created.draft.writeback_mode}`,
     `Exact digest: ${created.draft.contract_digest}`,
     "Source database changed: no",
-    `Next: ${cliCommandName()} action preview --capability ${created.draft.capability} --args <json-file> --project-root ${shellQuote(projectRoot)}`,
+    `Next: ${cliCommandName()} action preview --capability ${created.draft.capability} --project-root ${shellQuote(projectRoot)}`,
     "",
   ].join("\n"));
   return 0;
@@ -11074,7 +11075,33 @@ async function previewGuidedActionCommand(args: string[]): Promise<number> {
   assertKnownOptions(args, new Set(["--capability", "--args", "--config", "--project-root", "--token-env", "--json"]), "action preview");
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   const capabilityName = requiredActionArg(args, "--capability", "action preview");
-  const previewArgs = await readContainedActionJson(projectRoot, requiredActionArg(args, "--args", "action preview"));
+  const argsPath = optionalArg(args, "--args");
+  if (!argsPath) {
+    const draft = await recordGuidedActionStructuralPreview({
+      projectRoot,
+      capabilityName,
+      ...(optionalArg(args, "--config") ? { configPath: optionalArg(args, "--config") } : {}),
+    });
+    const payload = {
+      ok: true,
+      preview: draft.effect_preview,
+      rehearsal_mode: "structural",
+      runtime_identity_resolved: false,
+      source_rows_read: false,
+      source_database_changed: false,
+    };
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else process.stdout.write([
+      `Exact structural rehearsal verified for ${capabilityName}.`,
+      "Runtime tenant/principal values used: no",
+      "Source rows read: no",
+      "Source database changed: no",
+      "Use --args <json-file> only when you deliberately want an optional live scoped proposal rehearsal.",
+      "",
+    ].join("\n"));
+    return 0;
+  }
+  const previewArgs = await readContainedActionJson(projectRoot, argsPath);
   const preview = await executeGuidedActionPreview({
     projectRoot,
     capabilityName,
@@ -11142,7 +11169,7 @@ async function activateGuidedActionCommand(
       throw new Error(`Headless Safe Action activation requires the exact confirmation ACTIVATE ${draft.contract_digest}.`);
     }
     if (!draft.effect_preview || draft.effect_preview.contract_digest !== draft.contract_digest) {
-      throw new Error("Headless Safe Action activation requires an exact successful proposal rehearsal for this digest.");
+      throw new Error("Headless Safe Action activation requires an exact successful structural rehearsal for this digest.");
     }
     const resolvedProject = await resolveSynapsorProject(projectRoot, process.env);
     const configPath = optionalArg(args, "--config") ?? resolvedProject?.config_path;

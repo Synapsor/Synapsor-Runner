@@ -358,19 +358,21 @@ review finishes.
 
 ### 5. Rehearse The Exact Disabled Revision
 
-The TUI derives typed prompts from the generated contract: enum pickers,
-booleans, bounded numbers, and length-bounded text. Raw JSON remains an
-advanced option for repeatable fixtures. Runner then runs the actual semantic
-proposal path against the current schema and scope using a disposable ledger
-and verifies:
+The default rehearsal is reusable and identity-free. Runner recompiles the
+persisted DSL and verifies:
 
-- the generated action validates;
-- the expected target and proposed effect are produced;
-- trusted tenant/principal values came from runtime context;
-- the source database did not change;
-- the proposal digest belongs to this exact ActionRevision.
+- it produces the exact reviewed contract digest;
+- the expanded runtime configuration validates;
+- generated arguments stay inside the reviewed type, enum, and numeric bounds;
+- generated safety assertions belong to this exact Action revision;
+- no runtime tenant or principal is resolved;
+- no source row is read or changed.
 
-The rehearsal proposal is destroyed. It cannot later be approved or applied.
+An operator can later provide `--args` to run the actual semantic proposal path
+against a configured runtime identity using a disposable ledger. That advanced
+diagnostic derives typed values from the contract, validates the expected
+target and proposal effect, and destroys the rehearsal proposal so it can never
+be approved or applied.
 
 ### 6. Activate The Exact Action Boundary
 
@@ -525,10 +527,13 @@ The same managed compiler accepts a bounded answer file:
 synapsor-runner action draft --answers action.json --project-root . --json
 synapsor-runner action preview \
   --capability support.propose_plan_credit \
-  --args proposal-args.json \
   --project-root . \
   --json
 ```
+
+That command performs identity-free structural rehearsal. To deliberately run
+the optional live scoped proposal diagnostic after runtime identity is
+configured, add `--args proposal-args.json`.
 
 JSON commands emit one JSON value on stdout. Input files must remain inside the
 project root. Non-interactive activation is intentionally stronger than an

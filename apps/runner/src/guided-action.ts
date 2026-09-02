@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { compileAgentDsl, formatAgentDsl } from "@synapsor/dsl";
-import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
+import {
+  loadRuntimeConfigFromFile,
+  validateToolArgs,
+} from "@synapsor-runner/mcp-server";
 import {
   canonicalJsonDigest,
   type ActionBoundarySharedLimitV1,
@@ -187,9 +190,12 @@ export type GuidedActionDraft = {
   runtime_config_path: string;
   created_at: string;
   effect_preview?: {
+    /** Missing on legacy drafts, which always used a live disposable proposal. */
+    mode?: "live_proposal" | "structural";
     contract_digest: `sha256:${string}`;
     proposal_id: string;
     proposal_hash: string;
+    source_rows_read?: boolean;
     source_database_changed: false;
     previewed_at: string;
   };
@@ -791,6 +797,101 @@ export async function recordGuidedActionPreview(input: {
   sourceDatabaseChanged: boolean;
   now?: string;
 }): Promise<GuidedActionDraft> {
+  return recordGuidedActionRehearsal({
+    ...input,
+    mode: "live_proposal",
+  });
+}
+
+/**
+ * Rehearses reusable proposal authority without resolving one tenant,
+ * principal, or source row. This validates the exact generated artifacts and
+ * model-facing argument envelope; actual runtime calls still resolve trusted
+ * scope and read any required target row fail-closed.
+ */
+export async function recordGuidedActionStructuralPreview(input: {
+  projectRoot: string;
+  capabilityName: string;
+  configPath?: string;
+  now?: string;
+}): Promise<GuidedActionDraft> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const prepared = await prepareGuidedActionPreview({
+    projectRoot,
+    capabilityName: input.capabilityName,
+    ...(input.configPath ? { configPath: input.configPath } : {}),
+  });
+  const details = await guidedActionDraftDetails(projectRoot, input.capabilityName);
+  const compiledContract = compileAgentDsl(details.dsl);
+  assertValidContract(compiledContract);
+  if (canonicalJsonDigest(compiledContract) !== details.draft.contract_digest) {
+    throw new Error(
+      "GUIDED_ACTION_STRUCTURAL_REHEARSAL_INVALID: generated DSL does not compile to the exact reviewed contract.",
+    );
+  }
+  const config = loadRuntimeConfigFromFile(containedProjectPath(projectRoot, prepared.config_path));
+  const capability = config.capabilities?.find((candidate) =>
+    candidate.name === prepared.capability);
+  if (!capability || capability.kind !== "proposal") {
+    throw new Error(
+      "GUIDED_ACTION_STRUCTURAL_REHEARSAL_INVALID: the expanded runtime does not contain the exact proposal capability.",
+    );
+  }
+  if (capability.operation?.kind !== details.draft.operation
+    || `${capability.target.schema}.${capability.target.table}` !== details.draft.resource) {
+    throw new Error(
+      "GUIDED_ACTION_STRUCTURAL_REHEARSAL_INVALID: the expanded runtime effect differs from the reviewed action draft.",
+    );
+  }
+  validateToolArgs(capability, details.preview_args);
+  if (details.tests.schema_version !== "synapsor.contract-tests.v1"
+    || details.tests.capability !== details.draft.capability
+    || !Array.isArray(details.tests.tests)
+    || details.tests.tests.length === 0) {
+    throw new Error(
+      "GUIDED_ACTION_STRUCTURAL_REHEARSAL_INVALID: generated safety assertions are missing or belong to another action.",
+    );
+  }
+  const proofHash = canonicalJsonDigest({
+    schema_version: "synapsor.guided-action-structural-rehearsal.v1",
+    capability: details.draft.capability,
+    contract_digest: details.draft.contract_digest,
+    runtime_config: canonicalJsonDigest(jsonWithoutUndefined(config)),
+    argument_envelope: canonicalJsonDigest(jsonWithoutUndefined(capability.args)),
+    generated_assertions: canonicalJsonDigest(jsonWithoutUndefined(details.tests)),
+    source_rows_read: false,
+    source_database_changed: false,
+  });
+  return recordGuidedActionRehearsal({
+    projectRoot,
+    capabilityName: input.capabilityName,
+    contractDigest: prepared.draft_digest,
+    proposalId: `structural:${proofHash.slice("sha256:".length)}`,
+    proposalHash: proofHash,
+    sourceDatabaseChanged: false,
+    mode: "structural",
+    ...(input.now ? { now: input.now } : {}),
+  });
+}
+
+function jsonWithoutUndefined(value: unknown): unknown {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) {
+    throw new Error("GUIDED_ACTION_STRUCTURAL_REHEARSAL_INVALID: generated authority is not JSON serializable.");
+  }
+  return JSON.parse(serialized) as unknown;
+}
+
+async function recordGuidedActionRehearsal(input: {
+  projectRoot: string;
+  capabilityName: string;
+  contractDigest: string;
+  proposalId: string;
+  proposalHash: string;
+  sourceDatabaseChanged: boolean;
+  mode: "live_proposal" | "structural";
+  now?: string;
+}): Promise<GuidedActionDraft> {
   const projectRoot = path.resolve(input.projectRoot);
   const draft = await readGuidedActionDraft(projectRoot, input.capabilityName);
   if (input.contractDigest !== draft.contract_digest) throw new Error("GUIDED_ACTION_PREVIEW_DIGEST_MISMATCH: preview belongs to another draft.");
@@ -804,9 +905,11 @@ export async function recordGuidedActionPreview(input: {
   const updated: GuidedActionDraft = {
     ...draft,
     effect_preview: {
+      mode: input.mode,
       contract_digest: draft.contract_digest,
       proposal_id: input.proposalId,
       proposal_hash: input.proposalHash,
+      source_rows_read: input.mode === "live_proposal" && draft.operation !== "insert",
       source_database_changed: false,
       previewed_at: input.now ?? new Date().toISOString(),
     },
@@ -847,7 +950,7 @@ export async function activateGuidedAction(input: {
     throw new Error(`GUIDED_ACTION_CONFIRMATION_REQUIRED: enter ACTIVATE ${digest}.`);
   }
   if (!draft.effect_preview || draft.effect_preview.contract_digest !== digest || draft.effect_preview.source_database_changed) {
-    throw new Error("GUIDED_ACTION_EFFECT_PREVIEW_REQUIRED: run one exact staging proposal preview for this digest before activation.");
+    throw new Error("GUIDED_ACTION_EFFECT_PREVIEW_REQUIRED: run the exact structural rehearsal for this digest before activation.");
   }
   const prospectiveBoundary = await prospectiveActionBoundaryDraft({
     projectRoot,
@@ -2747,7 +2850,8 @@ function guidedActionReview(
     "",
     "The model can call this capability only after exact-digest activation.",
     "The call creates a proposal and cannot approve or apply it.",
-    "Activation requires a real staging proposal preview with the source unchanged.",
+    "Activation requires an exact structural rehearsal of the generated authority.",
+    "That rehearsal uses no concrete tenant, principal, or source row; a live scoped proposal rehearsal remains an optional diagnostic.",
     "",
     `Contract digest: ${draft.contract_digest}`,
     "",

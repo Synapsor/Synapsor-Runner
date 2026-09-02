@@ -1318,16 +1318,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const missing=instantOnboarding?.missing_bindings||[];
       const scopeError=instantOnboarding?.scope_error||"";
       const status=byId("instant-status");
-      button.textContent=missing.length||scopeError
-        ?"Resolve trusted scope first →"
-        :"Review and start asking →";
+      button.textContent="Review and activate →";
       button.disabled=!instantOnboarding?.eligible;
       button.setAttribute("aria-describedby","instant-status");
-      status.className=missing.length||scopeError?"status-message blocked":"status-message";
+      status.className=scopeError?"status-message blocked":missing.length?"status-message warn":"status-message";
       status.textContent=scopeError
-        ?scopeError+" No analytical authority is active."
+        ?scopeError+" The Boundary cannot be activated until its symbolic scope definition is valid."
         :missing.length
-        ?"Configure "+missing.join(" and ")+" through your application identity, then reopen Quick Start. No analytical authority is active."
+        ?"You can review and activate this reusable Boundary now. Configure "+missing.join(" and ")+" before the first runtime data call."
         :"";
     }
 
@@ -1337,7 +1335,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const nextSurface="model";
       button.disabled=true;
       status.className="status-message";
-      status.textContent="Rechecking the read-only role, exact schema, and trusted scope before activating this boundary...";
+      status.textContent="Rechecking the read-only role, exact schema, and symbolic scope bindings before activating this boundary...";
       try{
 		        const payload=await post("/api/instant/activate",{
 	            next_surface:nextSurface
@@ -7580,15 +7578,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               ...(candidate.suggestion_id?{suggestion_id:candidate.suggestion_id}:{})
             });
             if(selected==="deterministic")stagedLimits.push(...structuredClone(template.shared_limits||[]));
-            const capability=(drafted.contract?.capabilities||[]).find(item=>item.name===drafted.draft.capability);
             let rehearsal="required";
-            if(!capability?.lookup?.id_from_arg){
-              try{
-                const preview=await post("/api/actions/guided/preview",{capability_name:drafted.draft.capability,args:drafted.preview_args||{}});
-                drafted.draft.effect_preview=preview.preview;
-                rehearsal="passed";
-              }catch(error){rehearsal="required"}
-            }
+            try{
+              const preview=await post("/api/actions/guided/preview",{capability_name:drafted.draft.capability,structural:true});
+              drafted.draft.effect_preview=preview.preview;
+              rehearsal="passed";
+            }catch(error){rehearsal="required"}
             preparedActions.push({
               intent:candidate.intent,
               capability:drafted.draft.capability,
@@ -7953,8 +7948,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           const details=await getJson("/api/actions/guided/draft?capability="+encodeURIComponent(drafts[0].capability));
           showGuidedActionDraft(details);
           status.textContent=drafts[0].effect_preview
-            ?"Resumed the existing exact-previewed draft. Next: activate its reviewed digest."
-            :"Resumed the existing disabled draft. Next: enter real staging arguments and preview one proposal.";
+            ?"Resumed the existing rehearsed draft. Next: activate its reviewed digest."
+            :"Resumed the existing disabled draft. Next: run its identity-free structural rehearsal.";
         }
         if(payload.options?.boundary_state==="active"&&quickActionPreparation?.state==="ready"&&guidedActionDraft?.draft?.effect_preview){
           renderQuickActionActivation(quickActionPreparation.summary,guidedActionDraft.draft);
@@ -8094,35 +8089,21 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           await post("/api/actions/guided/boundary/limits",{shared_limits:sharedLimits,job_intent:quickActionPreparation.intent});
           draftPayload=await getJson("/api/actions/guided/draft?capability="+encodeURIComponent(draftPayload.draft.capability));
         }
-        const capability=(draftPayload.contract?.capabilities||[]).find(item=>item.name===draftPayload.draft.capability);
-        const lookupArgument=capability?.lookup?.id_from_arg;
-        if(lookupArgument){
-          guidedActionDraft=draftPayload;
-          const resource=(capability.subject?.schema||"")+"."+(capability.subject?.table||"");
-          byId("action-quick-card").innerHTML='<section class="band notice"><p class="instant-kicker">One rehearsal value needed</p><h3>Use an existing reviewed row</h3><p>Runner cannot invent or sample an existing '+esc(resource)+' ID. It reads this row once to freeze the proposal effect; the source row is never changed.</p><label class="field">Existing row ID<input id="action-quick-lookup" type="text" maxlength="256" autocomplete="off" spellcheck="false"></label><div class="actions"><button id="action-quick-rehearse" type="button">Run disposable rehearsal</button><button id="action-quick-leave" class="secondary" type="button">Leave action disabled</button></div></section>';
-          byId("action-quick-rehearse").onclick=()=>rehearseQuickAction(draftPayload,lookupArgument);
-          byId("action-quick-leave").onclick=()=>{status.className="status-message";status.textContent="The action remains disabled. No rehearsal, authority change, or source mutation occurred."};
-          status.className="status-message";
-          status.textContent="Enter one existing row ID to run the exact proposal rehearsal.";
-          return;
-        }
         await rehearseQuickAction(draftPayload);
       }catch(error){status.className="status-message error";status.textContent=error.message}
     }
 
-    async function rehearseQuickAction(draftPayload,lookupArgument){
+    async function rehearseQuickAction(draftPayload){
       const status=byId("action-quick-status");
       try{
-        const args={...(draftPayload.preview_args||{})};
-        if(lookupArgument)args[lookupArgument]=requiredGuidedText("action-quick-lookup","Existing row ID");
         status.className="status-message loading";
-        status.textContent="Rehearsing the exact proposal in a disposable ledger...";
-        const previewPayload=await post("/api/actions/guided/preview",{capability_name:draftPayload.draft.capability,args});
+        status.textContent="Validating the exact generated Action authority without resolving a runtime identity...";
+        const previewPayload=await post("/api/actions/guided/preview",{capability_name:draftPayload.draft.capability,structural:true});
         draftPayload.draft.effect_preview=previewPayload.preview;
         guidedActionDraft=draftPayload;
         renderQuickActionActivation(quickActionPreparation.summary,draftPayload.draft);
         status.className="status-message success";
-        status.textContent="Automatic rehearsal passed. The source database did not change; activation remains explicit.";
+        status.textContent="Structural rehearsal passed without a tenant, principal, or source-row read. Activation remains explicit.";
       }catch(error){status.className="status-message error";status.textContent=error.message}
     }
 
@@ -8130,7 +8111,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       byId("action-quick-decision").innerHTML="";
       const readsPending=guidedActionData?.options?.boundary_state==="reviewed_pending";
       const deterministic=quickActionApprovalMode==="deterministic";
-      byId("action-quick-card").innerHTML='<section class="band success"><p class="instant-kicker">Ready for authority review</p><h3>Proposal rehearsal passed</h3><p><strong>'+esc(summary.intent)+'</strong><br>'+esc(summary.operation.toUpperCase())+' '+esc(summary.resource)+'</p><ul><li>Generated bounded proposal accepted by the disposable ledger</li><li>Source database unchanged</li><li>Rehearsal proposal destroyed; it can never be approved or applied</li><li>'+(deterministic?'Exact deterministic approval and trusted-scope limits compiled; any mismatch falls back to human review':'Approval remains human-only')+'</li><li>Apply remains outside model-facing tools</li></ul>'+(readsPending?'<div class="band notice"><strong>Read activation comes first</strong><p>This action is bound to the fully reviewed pending read revision. Activate that exact read boundary, then return here to activate this rehearsed action.</p></div>':'<p><strong>Activating allows:</strong> create immutable bounded proposals'+(deterministic?' and approve only those that pass every exact deterministic rule and rolling limit':'.')+'<br><strong>Activating does not allow:</strong> apply, source writes, scope changes, or contract changes.</p>')+'<details><summary>Advanced exact digest</summary><code>'+esc(draft.contract_digest)+'</code></details><div class="actions">'+(readsPending?'<button id="action-quick-read" type="button">Review and activate reads</button>':'<button id="action-quick-activate" type="button">Activate proposal-only action</button>')+'<button id="action-quick-leave" class="secondary" type="button">Leave disabled</button></div></section>';
+      byId("action-quick-card").innerHTML='<section class="band success"><p class="instant-kicker">Ready for authority review</p><h3>Structural rehearsal passed</h3><p><strong>'+esc(summary.intent)+'</strong><br>'+esc(summary.operation.toUpperCase())+' '+esc(summary.resource)+'</p><ul><li>Exact DSL, contract, runtime config, argument bounds, and generated safety assertions validated</li><li>No runtime tenant or principal resolved</li><li>No source row read or changed</li><li>'+(deterministic?'Exact deterministic approval and trusted-scope limits compiled; any mismatch falls back to human review':'Approval remains human-only')+'</li><li>Apply remains outside model-facing tools</li></ul>'+(readsPending?'<div class="band notice"><strong>Read activation comes first</strong><p>This action is bound to the fully reviewed pending read revision. Activate that exact read boundary, then return here to activate this rehearsed action.</p></div>':'<p><strong>Activating allows:</strong> create immutable bounded proposals'+(deterministic?' and approve only those that pass every exact deterministic rule and rolling limit':'.')+'<br><strong>Activating does not allow:</strong> apply, source writes, scope changes, or contract changes.</p>')+'<details><summary>Advanced exact digest</summary><code>'+esc(draft.contract_digest)+'</code></details><div class="actions">'+(readsPending?'<button id="action-quick-read" type="button">Review and activate reads</button>':'<button id="action-quick-activate" type="button">Activate proposal-only action</button>')+'<button id="action-quick-leave" class="secondary" type="button">Leave disabled</button></div></section>';
       if(readsPending)byId("action-quick-read").onclick=()=>setView("activate");
       else byId("action-quick-activate").onclick=activateQuickAction;
       byId("action-quick-leave").onclick=()=>{byId("action-quick-status").className="status-message";byId("action-quick-status").textContent="The action remains a disabled rehearsed draft. No active authority changed."};
@@ -8703,7 +8684,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           renderGuidedSuggestions();
         }
         showGuidedActionDraft(payload);
-        status.textContent="Disabled action draft created. Next: enter real staging arguments and preview one proposal.";
+        status.textContent="Disabled action draft created. Next: run its identity-free structural rehearsal.";
       }catch(error){
         status.className="status-message error";
         status.textContent=error.message;
@@ -8723,9 +8704,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       byId("action-policy-capability").value=draft.capability;
       byId("action-policy-patch").value=JSON.stringify(policyPatch,null,2);
       const inputs=Object.entries(args).map(([name,value])=>'<label class="field">'+esc(name)+'<input data-action-preview="'+esc(name)+'" data-value-type="'+esc(typeof value)+'" type="'+(typeof value==="number"?"number":typeof value==="boolean"?"checkbox":"text")+'" '+(typeof value==="boolean"&&value?"checked":"")+(typeof value==="boolean"?"":' value="'+esc(value)+'"')+'></label>').join("");
-      byId("action-draft").innerHTML='<section class="band success"><h3>Disabled reviewable action revision</h3><p><strong>Capability:</strong> '+esc(draft.capability)+'<br><strong>Operation:</strong> '+esc(draft.operation.toUpperCase())+'<br><strong>Authority posture:</strong> '+esc(humanizeIdentifier(draft.authority_posture))+'<br><strong>Writeback:</strong> '+esc(draft.writeback_mode)+(draft.writeback_executor?' via '+esc(draft.writeback_executor):'')+'<br><strong>Supervised execution permission:</strong> '+(draft.supervised_worker_execution?"Contract side enabled; exact-digest deployment allowlist still required":"Off")+'<br><strong>Source database changed:</strong> no</p><details><summary>Review generated public DSL</summary><pre id="action-dsl-preview"></pre></details><details><summary>Advanced fingerprint</summary><code data-action-digest>'+esc(draft.contract_digest)+'</code></details><h3 style="margin-top:16px">Exact disabled-draft rehearsal</h3><p>Use a real row identifier and bounded values. Runner validates the actual semantic proposal path in a disposable ledger, then destroys that rehearsal record. It cannot later be approved or applied.</p><div class="form-grid">'+inputs+'</div><div class="actions"><button id="preview-action" type="button">Rehearse exact proposal</button></div><div id="action-activation"></div></section>';
+      byId("action-draft").innerHTML='<section class="band success"><h3>Disabled reviewable action revision</h3><p><strong>Capability:</strong> '+esc(draft.capability)+'<br><strong>Operation:</strong> '+esc(draft.operation.toUpperCase())+'<br><strong>Authority posture:</strong> '+esc(humanizeIdentifier(draft.authority_posture))+'<br><strong>Writeback:</strong> '+esc(draft.writeback_mode)+(draft.writeback_executor?' via '+esc(draft.writeback_executor):'')+'<br><strong>Supervised execution permission:</strong> '+(draft.supervised_worker_execution?"Contract side enabled; exact-digest deployment allowlist still required":"Off")+'<br><strong>Source database changed:</strong> no</p><details><summary>Review generated public DSL</summary><pre id="action-dsl-preview"></pre></details><details><summary>Advanced fingerprint</summary><code data-action-digest>'+esc(draft.contract_digest)+'</code></details><h3 style="margin-top:16px">Identity-free structural rehearsal</h3><p>Validate the exact DSL, contract, runtime config, argument envelope, and generated safety assertions. This does not resolve a tenant or principal and does not read a source row.</p><div class="actions"><button id="preview-action" type="button">Run structural rehearsal</button></div><details><summary>Advanced: live scoped proposal rehearsal</summary><p>Use a configured runtime identity and exact staging values to exercise the proposal path in a disposable ledger. The rehearsal proposal is destroyed and cannot be approved or applied.</p><div class="form-grid">'+inputs+'</div><div class="actions"><button id="preview-action-live" class="secondary" type="button">Run live scoped rehearsal</button></div></details><div id="action-activation"></div></section>';
       renderSyntaxCode("action-dsl-preview",payload.dsl||"Open "+draft.dsl_path+" to inspect the persisted public DSL.","synapsor-dsl");
-      byId("preview-action").onclick=previewGuidedAction;
+      byId("preview-action").onclick=()=>previewGuidedAction(true);
+      byId("preview-action-live").onclick=()=>previewGuidedAction(false);
       if(draft.effect_preview)renderGuidedActionActivation();
     }
 
@@ -8736,15 +8718,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       ]));
     }
 
-    async function previewGuidedAction(){
+    async function previewGuidedAction(structural){
       const status=byId("action-status");
       try{
         status.className="status-message";
-        status.textContent="Rehearsing one immutable proposal through an isolated copy of the real runtime...";
-        const payload=await post("/api/actions/guided/preview",{
-          capability_name:guidedActionDraft.draft.capability,
-          args:guidedPreviewArgs()
-        });
+        status.textContent=structural
+          ?"Validating the exact generated authority without resolving a runtime identity..."
+          :"Rehearsing one immutable proposal through an isolated copy of the real runtime...";
+        const payload=await post("/api/actions/guided/preview",structural
+          ?{capability_name:guidedActionDraft.draft.capability,structural:true}
+          :{capability_name:guidedActionDraft.draft.capability,args:guidedPreviewArgs()});
         guidedActionDraft.draft.effect_preview=payload.preview;
         renderGuidedActionActivation();
         status.textContent=payload.message;
@@ -8757,7 +8740,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function renderGuidedActionActivation(){
       const draft=guidedActionDraft.draft;
       const execution=draft.writeback_mode==="none"?'The activated tool creates durable proposals only.':'Approved proposals may be applied later through '+draft.writeback_mode+'; the model still cannot approve or apply.';
-      byId("action-activation").innerHTML='<div class="band notice"><strong>Exact rehearsal passed. Source database changed: no.</strong><p>'+esc(execution)+' The rehearsal ledger was disposable, so this test proposal can never become executable. Runner binds activation to the exact fingerprint above and rechecks it immediately before activation.</p></div><div class="form-grid"><label class="field">Operator identity<input id="action-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label></div><div class="actions"><button id="activate-action" type="button">Activate this exact '+esc(humanizeIdentifier(draft.authority_posture))+' revision</button></div>';
+      const structural=draft.effect_preview?.mode==="structural";
+      const proof=structural
+        ?'The exact generated artifacts passed without resolving a runtime identity or reading a source row.'
+        :'The live scoped path passed in a disposable ledger; its proposal was destroyed and cannot become executable.';
+      byId("action-activation").innerHTML='<div class="band notice"><strong>Exact '+(structural?'structural':'live scoped')+' rehearsal passed. Source database changed: no.</strong><p>'+esc(execution)+' '+esc(proof)+' Runner binds activation to the exact fingerprint above and rechecks it immediately before activation.</p></div><div class="form-grid"><label class="field">Operator identity<input id="action-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label></div><div class="actions"><button id="activate-action" type="button">Activate this exact '+esc(humanizeIdentifier(draft.authority_posture))+' revision</button></div>';
       byId("activate-action").onclick=activateGuidedAction;
     }
 

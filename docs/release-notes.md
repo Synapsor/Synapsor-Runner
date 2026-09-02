@@ -114,19 +114,22 @@ Prepared package versions: `@synapsor/runner@1.8.0`,
   access screen with the exact activation order. If an intent clearly names an
   unavailable operation, Runner refuses and names the remediation rather than
   substituting a different write effect.
-- The recommended path generates bounded rehearsal arguments from the compiled
-  contract and runs the real proposal path in a disposable ledger. The source
-  database and durable proposal ledger remain unchanged. The next and only
-  authority-bearing step is explicit proposal-only activation.
-- A fully reviewed pending read revision may now be used for disabled action
-  drafting and disposable rehearsal. The draft records the exact boundary name
-  and digest, and activation fails closed until that exact read authority is
+- The recommended path now performs identity-free structural rehearsal: it
+  recompiles the exact DSL and validates the contract, runtime config, argument
+  envelope, and generated safety assertions without resolving a tenant,
+  principal, or source row. The prior disposable-ledger proposal path remains
+  an explicit live scoped diagnostic. The next and only authority-bearing step
+  is explicit proposal-only activation.
+- A fully reviewed pending read revision may now be used for disabled Action
+  drafting and structural rehearsal. The draft records the exact boundary name
+  and digest, and activation fails closed until that exact Read authority is
   active.
 - Multiple disabled actions prepared for one job can be activated sequentially.
   Runner rebases the remaining disabled Action Boundary candidates around each
   newly active exact revision without changing their contract digests.
-- Rehearsal uses contract-derived enum, boolean, numeric-bound, and text-length
-  prompts, with raw JSON retained for advanced fixtures. Interactive activation
+- Optional live rehearsal uses contract-derived enum, boolean, numeric-bound,
+  and text-length prompts, with raw JSON retained for advanced fixtures.
+  Interactive activation
   and proposal decisions bind the selected revision/proposal to its full
   digest/hash internally; headless and CI paths keep exact copied confirmations.
 - Disabled designs can be edited into replacement revisions or discarded by

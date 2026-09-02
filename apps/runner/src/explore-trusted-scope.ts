@@ -40,6 +40,62 @@ export type ReadPostgresRoleSetting = (input: {
   setting: string;
 }) => Promise<{ currentUser: string; value: string | undefined }>;
 
+/**
+ * Validates reusable trusted-scope authority without resolving one runtime
+ * identity. Boundary authoring and activation use this path; actual reads and
+ * proposals must use resolveExploreTrustedScope instead.
+ */
+export function validateExploreTrustedScopeDefinition(input: {
+  boundary: ExploreBoundary;
+  inspection: SchemaInspection;
+}): void {
+  const { boundary, inspection } = input;
+  const principalRequired = boundary.pack.resources.some((resource) =>
+    hasReviewedPrincipalScope(resource));
+  if (boundary.trusted_context.provider === "http_claims") {
+    if (boundary.deployment_profile !== "production") {
+      throw new ExploreTrustedScopeError(
+        "Verified HTTP claim bindings are only valid for a reviewed production Explore boundary.",
+      );
+    }
+    if (!validBindingName(boundary.trusted_context.principal_claim)) {
+      throw new ExploreTrustedScopeError(
+        "Production Explore requires a valid reviewed principal HTTP claim name.",
+      );
+    }
+    if (!boundary.organization_scope
+      && !validBindingName(boundary.trusted_context.tenant_claim)) {
+      throw new ExploreTrustedScopeError(
+        "Multi-tenant production Explore requires a valid reviewed tenant HTTP claim name.",
+      );
+    }
+    if (boundary.organization_scope && boundary.trusted_context.tenant_claim) {
+      throw new ExploreTrustedScopeError(
+        "Single-organization production Explore uses its reviewed organization and must not declare a tenant HTTP claim.",
+      );
+    }
+    return;
+  }
+  if (boundary.deployment_profile === "production") {
+    throw new ExploreTrustedScopeError(
+      "Production Explore requires reviewed HTTP claim bindings rather than local environment bindings.",
+    );
+  }
+  if (!validEnvironmentName(boundary.trusted_context.tenant_env)
+    || !validEnvironmentName(boundary.trusted_context.principal_env)) {
+    throw new ExploreTrustedScopeError(
+      "Local trusted-context bindings must use valid environment variable names.",
+    );
+  }
+  if (principalRequired && !boundary.trusted_context.principal_env) {
+    throw new ExploreTrustedScopeError(
+      "Principal-scoped resources require a symbolic trusted principal binding.",
+    );
+  }
+  const roleTenant = boundary.trusted_context.database_role_tenant;
+  if (roleTenant) assertRoleBoundTenantAuthority(boundary, inspection, roleTenant.setting);
+}
+
 export async function resolveExploreTrustedScope(input: {
   boundary: ExploreBoundary;
   lock: GenerationLock;
@@ -84,15 +140,20 @@ export async function resolveExploreTrustedScope(input: {
   }
   const principalRequired = input.boundary.pack.resources.some((resource) =>
     hasReviewedPrincipalScope(resource));
-  const configuredTenant = input.env[input.boundary.trusted_context.tenant_env]?.trim();
-  const configuredPrincipal = input.env[input.boundary.trusted_context.principal_env]?.trim();
-  if (principalRequired && !configuredPrincipal) {
-    throw new ExploreTrustedScopeError(
-      `Scoped Explore requires trusted ${input.boundary.trusted_context.principal_env} outside model arguments.`,
-      [input.boundary.trusted_context.principal_env],
-    );
-  }
+  const configuredTenant = normalizedScopeValue(
+    input.env[input.boundary.trusted_context.tenant_env],
+  );
+  const configuredPrincipal = normalizedScopeValue(
+    input.env[input.boundary.trusted_context.principal_env],
+  );
+  const missingPrincipal = principalRequired && !configuredPrincipal;
   if (input.boundary.organization_scope) {
+    if (missingPrincipal) {
+      throw new ExploreTrustedScopeError(
+        `Scoped Explore requires trusted ${input.boundary.trusted_context.principal_env} outside model arguments.`,
+        [input.boundary.trusted_context.principal_env],
+      );
+    }
     return {
       tenant: input.boundary.organization_scope.organization_id,
       principal: configuredPrincipal ?? "",
@@ -103,6 +164,12 @@ export async function resolveExploreTrustedScope(input: {
     };
   }
   if (configuredTenant) {
+    if (missingPrincipal) {
+      throw new ExploreTrustedScopeError(
+        `Scoped Explore requires trusted ${input.boundary.trusted_context.principal_env} outside model arguments.`,
+        [input.boundary.trusted_context.principal_env],
+      );
+    }
     return {
       tenant: configuredTenant,
       principal: configuredPrincipal ?? "",
@@ -115,9 +182,13 @@ export async function resolveExploreTrustedScope(input: {
 
   const roleTenant = input.boundary.trusted_context.database_role_tenant;
   if (!roleTenant) {
+    const missingBindings = [
+      input.boundary.trusted_context.tenant_env,
+      ...(missingPrincipal ? [input.boundary.trusted_context.principal_env] : []),
+    ].filter((binding): binding is string => typeof binding === "string" && binding.length > 0);
     throw new ExploreTrustedScopeError(
-      `Scoped Explore requires trusted ${input.boundary.trusted_context.tenant_env} outside model arguments.`,
-      [input.boundary.trusted_context.tenant_env],
+      `Scoped Explore requires trusted runtime bindings outside model arguments: ${missingBindings.join(", ")}.`,
+      missingBindings,
     );
   }
   assertRoleBoundTenantAuthority(input.boundary, input.inspection, roleTenant.setting);
@@ -125,21 +196,35 @@ export async function resolveExploreTrustedScope(input: {
   if (!databaseUrl) {
     throw new ExploreTrustedScopeError(`Scoped Explore database source ${input.lock.source_env} is not configured.`);
   }
+  const missingRoleScope = (): ExploreTrustedScopeError => {
+    const missingBindings = [
+      input.boundary.trusted_context.tenant_env,
+      ...(missingPrincipal ? [input.boundary.trusted_context.principal_env] : []),
+    ].filter((binding): binding is string => typeof binding === "string" && binding.length > 0);
+    return new ExploreTrustedScopeError(
+      `The read-only PostgreSQL credential does not provide the reviewed tenant scope.${missingPrincipal
+        ? ` Trusted ${input.boundary.trusted_context.principal_env} is also missing.`
+        : ""} Configure that credential's RLS session setting or the listed operator-owned runtime bindings.`,
+      missingBindings,
+    );
+  };
   const resolved = await (input.readPostgresRoleSetting ?? readPostgresRoleSetting)({
     databaseUrl,
     setting: roleTenant.setting,
   }).catch(() => {
-    throw new ExploreTrustedScopeError(
-      "The read-only PostgreSQL credential does not provide the reviewed tenant scope. Configure that credential's RLS session setting or an operator-owned tenant binding.",
-    );
+    throw missingRoleScope();
   });
   if (resolved.currentUser !== input.inspection.current_user) {
     throw new ExploreTrustedScopeError("The credential used to resolve tenant scope differs from the inspected database role.");
   }
   const tenant = normalizedScopeValue(resolved.value);
   if (!tenant) {
+    throw missingRoleScope();
+  }
+  if (missingPrincipal) {
     throw new ExploreTrustedScopeError(
-      "The read-only PostgreSQL credential does not provide the reviewed tenant scope. Configure that credential's RLS session setting or an operator-owned tenant binding.",
+      `Scoped Explore requires trusted ${input.boundary.trusted_context.principal_env} outside model arguments.`,
+      [input.boundary.trusted_context.principal_env],
     );
   }
   return {
@@ -223,4 +308,16 @@ function normalizedScopeValue(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   if (!normalized || normalized.length > 1024 || /[\u0000\r\n]/.test(normalized)) return undefined;
   return normalized;
+}
+
+function validEnvironmentName(value: string | undefined): value is string {
+  return typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value);
+}
+
+function validBindingName(value: string | undefined): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 256
+    && value.trim() === value
+    && !/[\u0000-\u001f\u007f]/.test(value);
 }

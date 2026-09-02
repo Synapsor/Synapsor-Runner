@@ -1,12 +1,38 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import type { ExplorationBoundaryDraft, GenerationLock } from "./auto-boundary.js";
+import {
+  explorationBoundaryCandidateDigest,
+  type ExplorationBoundaryDraft,
+  type GenerationLock,
+} from "./auto-boundary.js";
 import {
   ExploreTrustedScopeError,
   resolveExploreTrustedScope,
+  validateExploreTrustedScopeDefinition,
 } from "./explore-trusted-scope.js";
 
 describe("Explore trusted scope", () => {
+  it("validates symbolic authoring bindings without resolving concrete values", () => {
+    const candidate = boundary(true);
+    candidate.pack.resources[0]!.rls_session = {
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.viewer_context",
+    };
+    expect(() => validateExploreTrustedScopeDefinition({
+      boundary: candidate,
+      inspection: inspection(),
+    })).not.toThrow();
+  });
+
+  it("rejects an unproven symbolic database-role binding without reading its value", () => {
+    const candidate = boundary(true);
+    candidate.pack.resources[0]!.rls_session = { tenant_setting: "app.other_tenant" };
+    expect(() => validateExploreTrustedScopeDefinition({
+      boundary: candidate,
+      inspection: inspection(),
+    })).toThrow(/not proven by the reviewed RLS policy/);
+  });
+
   it("preserves the existing operator-environment binding", async () => {
     const reader = vi.fn();
     const scope = await resolveExploreTrustedScope({
@@ -25,6 +51,37 @@ describe("Explore trusted scope", () => {
       tenant_binding: "SYNAPSOR_TENANT_ID",
     });
     expect(reader).not.toHaveBeenCalled();
+  });
+
+  it("changes runtime identity without changing reusable Boundary authority", async () => {
+    const candidate = boundary(false);
+    candidate.pack.resources[0]!.principal_key = "trainer_id";
+    const digest = explorationBoundaryCandidateDigest(candidate);
+
+    const first = await resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: inspection(),
+      env: {
+        DATABASE_URL: "postgresql://unused",
+        SYNAPSOR_TENANT_ID: "tenant-a",
+        SYNAPSOR_PRINCIPAL: "principal-a",
+      },
+    });
+    const second = await resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: inspection(),
+      env: {
+        DATABASE_URL: "postgresql://unused",
+        SYNAPSOR_TENANT_ID: "tenant-b",
+        SYNAPSOR_PRINCIPAL: "principal-b",
+      },
+    });
+
+    expect(first).toMatchObject({ tenant: "tenant-a", principal: "principal-a" });
+    expect(second).toMatchObject({ tenant: "tenant-b", principal: "principal-b" });
+    expect(explorationBoundaryCandidateDigest(candidate)).toBe(digest);
   });
 
   it("resolves tenant scope from the authenticated PostgreSQL RLS session", async () => {
@@ -154,7 +211,10 @@ describe("Explore trusted scope", () => {
       lock: lock(),
       inspection: inspection(),
       env: { DATABASE_URL: "postgresql://credential-owned-scope" },
-      readPostgresRoleSetting: vi.fn(),
+      readPostgresRoleSetting: vi.fn().mockResolvedValue({
+        currentUser: "fitflow_analytics_reader",
+        value: "org-fitflow",
+      }),
     })).rejects.toThrow(/requires trusted SYNAPSOR_PRINCIPAL/);
 
     const scope = await resolveExploreTrustedScope({
@@ -189,7 +249,10 @@ describe("Explore trusted scope", () => {
       lock: lock(),
       inspection: inspection(),
       env: { DATABASE_URL: "postgresql://credential-owned-scope" },
-      readPostgresRoleSetting: vi.fn(),
+      readPostgresRoleSetting: vi.fn().mockResolvedValue({
+        currentUser: "fitflow_analytics_reader",
+        value: "org-fitflow",
+      }),
     })).rejects.toMatchObject({
       missingBindings: ["SYNAPSOR_PRINCIPAL"],
     });
@@ -210,6 +273,40 @@ describe("Explore trusted scope", () => {
       principal: "viewer-17",
       principal_source: "environment",
       principal_binding: "SYNAPSOR_PRINCIPAL",
+    });
+  });
+
+  it("reports all missing environment runtime bindings together", async () => {
+    const candidate = boundary(false);
+    candidate.pack.resources[0]!.principal_key = "trainer_id";
+
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: inspection(),
+      env: { DATABASE_URL: "postgresql://credential-owned-scope" },
+    })).rejects.toMatchObject({
+      missingBindings: ["SYNAPSOR_TENANT_ID", "SYNAPSOR_PRINCIPAL"],
+      message: expect.stringContaining("SYNAPSOR_TENANT_ID, SYNAPSOR_PRINCIPAL"),
+    });
+  });
+
+  it("reports the tenant fallback and principal together when role scope is absent", async () => {
+    const candidate = boundary(true);
+    candidate.pack.resources[0]!.principal_key = "trainer_id";
+
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: inspection(),
+      env: { DATABASE_URL: "postgresql://credential-without-scope" },
+      readPostgresRoleSetting: vi.fn().mockResolvedValue({
+        currentUser: "fitflow_analytics_reader",
+        value: undefined,
+      }),
+    })).rejects.toMatchObject({
+      missingBindings: ["SYNAPSOR_TENANT_ID", "SYNAPSOR_PRINCIPAL"],
+      message: expect.stringContaining("SYNAPSOR_PRINCIPAL is also missing"),
     });
   });
 

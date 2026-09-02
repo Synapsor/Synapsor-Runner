@@ -93,6 +93,7 @@ import {
 import {
   ExploreTrustedScopeError,
   resolveExploreTrustedScope,
+  validateExploreTrustedScopeDefinition,
   type ExploreTrustedScope,
 } from "./explore-trusted-scope.js";
 import {
@@ -133,6 +134,7 @@ import {
   guidedActionStatus,
   readGuidedActionDesignInput,
   recordGuidedActionPreview,
+  recordGuidedActionStructuralPreview,
   reviseGuidedActionAuthority,
   reviseGuidedActionBoundary,
   type GuidedActionAuthorityRevisionInput,
@@ -891,9 +893,11 @@ async function handleRequest(input: {
       ? buildInstantFirstValue(instantCandidate)
       : null;
     const instantResource = instantCandidate?.pack.resources[0];
-    let instantMissingBindings: string[] = [];
-    let instantTenantScopeSource: ExploreTrustedScope["tenant_source"] | null = null;
-    let instantScopeError: string | null = null;
+    const instantMissingBindings: string[] = [];
+    let instantTenantScopeSource: ExploreTrustedScope["tenant_source"] | null = instantCandidate
+      ? symbolicTenantScopeSource(instantCandidate)
+      : null;
+    const instantScopeError: string | null = null;
     if (instantCandidate
       && instantResource
       && instantCandidate.trusted_context.provider === "environment") {
@@ -902,32 +906,9 @@ async function handleRequest(input: {
       if (hasReviewedPrincipalScope(instantResource) && !configuredPrincipal) {
         instantMissingBindings.push(instantCandidate.trusted_context.principal_env);
       }
-      if (configuredTenant) {
-        instantTenantScopeSource = "environment";
-      } else if (instantCandidate.trusted_context.database_role_tenant && instantMissingBindings.length === 0) {
-        try {
-          const inspection = await schemaInspector({
-            engine: generationLock.engine,
-            databaseUrlEnv: generationLock.source_env,
-            schema: generationLock.inspected_schema,
-            env: process.env,
-          });
-          const scope = await resolveTrustedScopeFn({
-            boundary: instantCandidate,
-            lock: generationLock,
-            inspection,
-            env: process.env,
-          });
-          instantTenantScopeSource = scope.tenant_source;
-        } catch (error) {
-          instantMissingBindings = error instanceof ExploreTrustedScopeError
-            ? error.missingBindings
-            : [];
-          instantScopeError = error instanceof Error
-            ? error.message
-            : "Runner could not verify trusted row scope from this database credential.";
-        }
-      } else if (!configuredTenant) {
+      if (!configuredTenant
+        && !instantCandidate.organization_scope
+        && !instantCandidate.trusted_context.database_role_tenant) {
         instantMissingBindings.push(instantCandidate.trusted_context.tenant_env);
       }
     }
@@ -1016,10 +997,8 @@ async function handleRequest(input: {
       operator_identity_mode: "dev_env",
       instant_onboarding: {
         available: instantAvailable,
-        eligible: instantAvailable
-          && instantMissingBindings.length === 0
-          && instantTenantScopeSource !== null
-          && instantScopeError === null,
+        eligible: instantAvailable && instantTenantScopeSource !== null,
+        runtime_ready: instantAvailable && instantMissingBindings.length === 0,
         candidate: instantCandidate,
         candidate_digest: instantCandidate ? explorationBoundaryCandidateDigest(instantCandidate) : null,
         resource: instantResource?.id ?? null,
@@ -1531,14 +1510,19 @@ async function handleRequest(input: {
       schema: lock.inspected_schema,
       env: process.env,
     });
-    let trustedScope: ExploreTrustedScope;
+    let tenantScopeSource = symbolicTenantScopeSource(candidate);
     try {
-      trustedScope = await resolveTrustedScopeFn({
-        boundary: candidate,
-        lock,
-        inspection,
-        env: process.env,
-      });
+      if (activateOnly) {
+        validateExploreTrustedScopeDefinition({ boundary: candidate, inspection });
+      } else {
+        const trustedScope = await resolveTrustedScopeFn({
+          boundary: candidate,
+          lock,
+          inspection,
+          env: process.env,
+        });
+        tenantScopeSource = trustedScope.tenant_source;
+      }
     } catch (error) {
       const missingBindings = error instanceof ExploreTrustedScopeError
         ? error.missingBindings
@@ -1623,7 +1607,7 @@ async function handleRequest(input: {
         agent_cannot_see: firstValue.agent_cannot_see,
         agent_cannot_see_labels: firstValue.agent_cannot_see_labels,
         tenant_scope: firstValue.tenant_scope,
-        tenant_scope_source: trustedScope.tenant_source,
+        tenant_scope_source: tenantScopeSource,
         principal_scope: firstValue.principal_scope,
         source_rows_read: false,
         source_database_changed: false,
@@ -1665,7 +1649,7 @@ async function handleRequest(input: {
         agent_cannot_see: firstValue.agent_cannot_see,
         agent_cannot_see_labels: firstValue.agent_cannot_see_labels,
         tenant_scope: firstValue.tenant_scope,
-        tenant_scope_source: trustedScope.tenant_source,
+        tenant_scope_source: tenantScopeSource,
         principal_scope: firstValue.principal_scope,
         source_database_changed: false,
         model_can_activate: false,
@@ -4807,8 +4791,37 @@ async function handleRequest(input: {
       return;
     }
     const body = await readJsonBody(request);
-    if (typeof body.capability_name !== "string" || !isRecord(body.args)) {
-      throw new Error("Guided action preview requires capability_name and exact proposal arguments.");
+    if (typeof body.capability_name !== "string") {
+      throw new Error("Guided action rehearsal requires capability_name.");
+    }
+    if (body.structural === true) {
+      const draft = await recordGuidedActionStructuralPreview({
+        projectRoot,
+        configPath,
+        capabilityName: body.capability_name,
+      });
+      await updateGuidedOnboardingState({
+        projectRoot,
+        status: "proposal_ready",
+        completedStep: "proposal_created",
+        authorityActive: true,
+        recommendedNextAction: "Review and activate this exact action digest.",
+      }).catch(() => undefined);
+      sendJson(response, 200, {
+        ok: true,
+        preview: draft.effect_preview,
+        rehearsal_mode: "structural",
+        source_rows_read: false,
+        source_database_changed: false,
+        model_can_approve: false,
+        model_can_apply: false,
+        rehearsal_proposal_persisted: false,
+        message: "Exact structural rehearsal passed without resolving a runtime identity or reading a source row. Activation remains explicit.",
+      });
+      return;
+    }
+    if (!isRecord(body.args)) {
+      throw new Error("A live scoped action rehearsal requires exact proposal arguments. Use structural: true for identity-free authoring validation.");
     }
     const preview = await guidedActionPreview({
       projectRoot,
@@ -7339,6 +7352,16 @@ export function recommendedWorkbenchCandidate(
 
 export function instantWorkbenchCandidate(draft: ExplorationBoundaryDraft): ExplorationBoundaryDraft {
   return instantLocalBoundaryCandidate(draft);
+}
+
+function symbolicTenantScopeSource(
+  boundary: ExplorationBoundaryDraft,
+): ExploreTrustedScope["tenant_source"] {
+  if (boundary.organization_scope) return "reviewed_organization";
+  if (boundary.trusted_context.provider === "http_claims") return "verified_http_claim";
+  return boundary.trusted_context.database_role_tenant
+    ? "postgres_role_setting"
+    : "environment";
 }
 
 function trustedSessionValue(value: unknown, label: string): string {

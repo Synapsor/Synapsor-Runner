@@ -815,7 +815,8 @@ tenant/principal context, and the production budget and rate-limit prerequisites
   ${cmd} action review --suggestion <as_digest> [--project-root .]
   ${cmd} action draft --answers action.json [--project-root .] [--json]
   ${cmd} action revise --capability <name> --expected-digest <sha256:...> --answers authority.json
-  ${cmd} action preview --capability <name> --args proposal-args.json [--config ./synapsor.runner.json]
+  ${cmd} action preview --capability <name> [--config ./synapsor.runner.json]
+  ${cmd} action preview --capability <name> --args proposal-args.json [--config ./synapsor.runner.json] # optional live scoped diagnostic
   ${cmd} action activate --capability <name> --expected-digest <sha256:...> --confirmation 'ACTIVATE <sha256:...>' --actor <audit-label>
   ${cmd} action activate --headless --capability <name> --expected-digest <sha256:...> --confirmation 'ACTIVATE <sha256:...>' --identity <operator> --identity-key <private.pem> --required-role <role> --reason <text>
   ${cmd} action validate ./synapsor/actions/billing.propose_refund_order.ts [--config ./synapsor.runner.json]
@@ -823,7 +824,9 @@ tenant/principal context, and the production budget and rate-limit prerequisites
   ${cmd} action status [--json]
 
 Open action review for the managed terminal control plane, or use the explicit
-draft/revise/preview commands in CI. The first reviewed revision is proposal-only:
+draft/revise/preview commands in CI. Preview is identity-free structural
+verification by default; --args deliberately runs the optional live scoped
+proposal diagnostic. The first reviewed revision is proposal-only:
 invocations create immutable proposals and cannot mutate source data. Execution
 or supervised automation requires a separately rehearsed, exact-digest revision.
 

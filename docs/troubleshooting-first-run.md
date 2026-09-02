@@ -330,12 +330,15 @@ Type `/actions` in local Ask, or run:
 synapsor-runner action review --project-root .
 ```
 
-Select the disabled draft, enter typed rehearsal values, and run the real
-source-unchanged proposal path. After a successful rehearsal, interactive
+Select the disabled draft and run its identity-free structural rehearsal. It
+recompiles the exact DSL and validates the generated runtime authority without
+resolving a tenant, principal, or source row. After it passes, interactive
 activation binds the terminal decision to the selected full digest without
-copy/paste. This remains an operator-only TUI action; it is not an MCP tool.
-Headless activation keeps the stricter full-digest confirmation, verified
-operator identity, reason, expiry, and one-use nonce requirements.
+copy/paste. An optional advanced live scoped rehearsal accepts typed values and
+uses a disposable proposal ledger after runtime identity is configured. These
+remain operator-only TUI actions; neither is an MCP tool. Headless activation
+keeps the stricter full-digest confirmation, verified operator identity,
+reason, expiry, and one-use nonce requirements.
 
 ## Activated Tool Does Not Appear In The MCP Client
 

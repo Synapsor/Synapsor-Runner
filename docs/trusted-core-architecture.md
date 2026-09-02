@@ -187,10 +187,13 @@ The terminal Action control plane and preview Workbench are adapters over the
 same domain services. A bounded `ActionSuggestion` may reorder exact structural
 candidates, but its schema excludes trusted scope, approval, writeback,
 execution, credentials, and SQL. `ActionDesign` compiles through the public DSL
-and canonical Spec path into an immutable disabled revision. Rehearsal invokes
-the real semantic proposal path with a disposable ledger and must prove that
-the source stayed unchanged. Activation recomputes the exact digest and archives
-the revision before updating the separate action-runtime config.
+and canonical Spec path into an immutable disabled revision. The default
+structural rehearsal recompiles that DSL, validates the exact contract, runtime
+config, argument envelope, and generated assertions without resolving a tenant,
+principal, or source row. An operator may separately run the live semantic
+proposal path with a disposable ledger as a scoped diagnostic. Activation
+recomputes the exact digest and archives the revision before updating the
+separate action-runtime config.
 
 Boundary Assist follows the same adapter/domain split. Exact operator or Plan
 Playground workloads enter `read-workload-assist.ts` directly. The optional
@@ -223,12 +226,13 @@ closes the current read gateway, passes only the current provider/model and
 memory-only credential to the optional suggestion adapter, and resumes the same
 conversation after the TUI closes. Intent ranking is deterministic over
 reviewed metadata; unique structural guards may be preselected, but business
-bounds and authority are never inferred. Interactive rehearsal values are
-validated against the generated contract. Interactive confirmations carry the
-selected full digest/hash internally, while non-interactive commands retain
-explicit full-digest/hash inputs. Proposal inbox count and page rows are read
-from one proposal-store snapshot, including when a shared Postgres runtime
-ledger is bridged read-only.
+bounds and authority are never inferred. Structural rehearsal needs no runtime
+values. Values entered for the optional live scoped diagnostic are validated
+against the generated contract. Interactive confirmations carry the selected
+full digest/hash internally, while non-interactive commands retain explicit
+full-digest/hash inputs. Proposal inbox count and page rows are read from one
+proposal-store snapshot, including when a shared Postgres runtime ledger is
+bridged read-only.
 
 Changing execution posture never edits an active revision. It creates another
 disabled digest. Each proposal freezes the contract digest and writeback mode

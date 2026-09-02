@@ -10,7 +10,6 @@ import {
   activateInstantCliBoundary,
   type InstantCliBoundaryActivationResult,
 } from "./instant-cli-boundary.js";
-import { ExploreTrustedScopeError } from "./explore-trusted-scope.js";
 
 const suiteCwd = process.cwd();
 
@@ -888,11 +887,16 @@ describe("guided start surfaces", () => {
     }
   });
 
-  it("pauses with actionable setup guidance when a trusted environment binding is missing", async () => {
+  it("opens metadata-only Boundary authoring without concrete tenant or principal values", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-cli-binding-"));
     const schemaInspector = vi.fn(async () => inspection());
     const runBoundaryReview = vi.fn(async () => 0);
     const runPostActivationHandoff = vi.fn(async () => 0);
+    const validateTrustedScopeDefinition = vi.fn();
+    const previousTenant = process.env.SYNAPSOR_TENANT_ID;
+    const previousPrincipal = process.env.SYNAPSOR_PRINCIPAL;
+    delete process.env.SYNAPSOR_TENANT_ID;
+    delete process.env.SYNAPSOR_PRINCIPAL;
     let output = "";
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
       output += String(chunk);
@@ -906,33 +910,38 @@ describe("guided start surfaces", () => {
         {
           interactive: true,
           schemaInspector,
-          resolveTrustedScope: vi.fn(async () => {
-            throw new ExploreTrustedScopeError(
-              "Scoped Explore requires trusted SYNAPSOR_TENANT_ID outside model arguments.",
-              ["SYNAPSOR_TENANT_ID"],
-            );
-          }),
+          validateTrustedScopeDefinition,
           runBoundaryReview,
           runPostActivationHandoff,
           openWorkbench: vi.fn(async () => 0),
         },
       )).resolves.toBe(0);
 
-      expect(runBoundaryReview).not.toHaveBeenCalled();
+      expect(validateTrustedScopeDefinition).toHaveBeenCalledOnce();
+      expect(runBoundaryReview).toHaveBeenCalledWith(
+        ["--project-root", projectRoot, "--access", "--job-first"],
+        schemaInspector,
+        expect.any(Function),
+      );
       expect(runPostActivationHandoff).not.toHaveBeenCalled();
-      expect(output).toContain("Missing operator binding: SYNAPSOR_TENANT_ID");
-      expect(output).toContain("Quick Start paused. Nothing was activated.");
-      expect(output).toContain("export SYNAPSOR_TENANT_ID='<trusted value>'");
-      expect(output).toContain("synapsor-runner start --from-env DATABASE_URL --cli");
-      expect(output).toContain("Workbench enforces the same requirement");
-      expect(output).toContain("No model request was made, no project artifact was written");
-      expect(output).not.toContain("SET UP ONE AGENT JOB");
-      expect(output).not.toContain("Opening the detailed boundary editor");
+      expect(output).toContain("✓ Connected");
+      const draft = await fs.readFile(
+        path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      );
+      expect(draft).toContain('"tenant_env": "SYNAPSOR_TENANT_ID"');
+      expect(draft).toContain('"principal_env": "SYNAPSOR_PRINCIPAL"');
+      expect(draft).not.toContain("tenant-concrete-value");
+      expect(draft).not.toContain("principal-concrete-value");
       await expect(fs.access(path.join(
         projectRoot,
         ".synapsor/exploration-boundary.active.json",
       ))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
+      if (previousTenant === undefined) delete process.env.SYNAPSOR_TENANT_ID;
+      else process.env.SYNAPSOR_TENANT_ID = previousTenant;
+      if (previousPrincipal === undefined) delete process.env.SYNAPSOR_PRINCIPAL;
+      else process.env.SYNAPSOR_PRINCIPAL = previousPrincipal;
       process.chdir(suiteCwd);
       await fs.rm(projectRoot, { recursive: true, force: true });
     }

@@ -147,11 +147,12 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(script).toContain("Binding trusted-scope rolling limits to the disabled Action Boundary");
     expect(script).toContain('post("/api/actions/guided/boundary/limits"');
     expect(script).toContain("any mismatch falls back to human review");
-    expect(script).toContain("draftPayload.preview_args");
-    expect(script).toContain("One rehearsal value needed");
-    expect(script).toContain("Runner cannot invent or sample an existing");
-    expect(script).toContain("rehearseQuickAction(draftPayload,lookupArgument)");
-    expect(script).toContain("Automatic rehearsal passed");
+    expect(script).toContain("structural:true");
+    expect(script).toContain("Identity-free structural rehearsal");
+    expect(script).toContain("No runtime tenant or principal resolved");
+    expect(script).not.toContain("One rehearsal value needed");
+    expect(script).not.toContain("rehearseQuickAction(draftPayload,lookupArgument)");
+    expect(script).toContain("Structural rehearsal passed without a tenant, principal, or source-row read");
     expect(script).toContain("Activate proposal-only action");
     expect(script).toContain("Read and proposal authority are active");
     expect(script).toContain('byId("action-quick-prepare").disabled=actionReady.length===0');

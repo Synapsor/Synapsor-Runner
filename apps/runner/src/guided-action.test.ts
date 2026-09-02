@@ -29,6 +29,7 @@ import {
   readGuidedActionDesignInput,
   recordGuidedActionBoundaryLimits,
   recordGuidedActionPreview,
+  recordGuidedActionStructuralPreview,
   reviseGuidedActionBoundary,
   reviseGuidedActionAuthority,
 } from "./guided-action.js";
@@ -1848,6 +1849,104 @@ describe("guided write actions", () => {
     await expect(actionCommand(args, async () => fixture.inspection)).resolves.toBe(0);
     expect(stdout).toHaveBeenCalledWith(expect.stringContaining('"authority_posture": "proposal_only"'));
     await expect(actionCommand(args, async () => fixture.inspection)).rejects.toThrow(/already consumed/);
+  });
+
+  it("rehearses and activates reusable Action authority without a runtime identity or source row", async () => {
+    const fixture = await activatedFitFlowFixture();
+    const created = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.propose_identity_free_loyalty_adjustment",
+        description: "Propose one reviewed loyalty adjustment for the runtime-scoped member.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum: 500,
+        }],
+        confirmed_trusted_scope: true,
+      },
+    });
+
+    const rehearsed = await recordGuidedActionStructuralPreview({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+    });
+    expect(rehearsed.effect_preview).toMatchObject({
+      mode: "structural",
+      contract_digest: created.draft.contract_digest,
+      proposal_id: expect.stringMatching(/^structural:[a-f0-9]{64}$/),
+      proposal_hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      source_rows_read: false,
+      source_database_changed: false,
+    });
+
+    const output: string[] = [];
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output.push(String(chunk));
+      return true;
+    });
+    await expect(actionCommand([
+      "preview",
+      "--capability", created.draft.capability,
+      "--project-root", fixture.root,
+      "--json",
+    ], async () => fixture.inspection)).resolves.toBe(0);
+    stdout.mockRestore();
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      ok: true,
+      rehearsal_mode: "structural",
+      runtime_identity_resolved: false,
+      source_rows_read: false,
+      source_database_changed: false,
+      preview: { mode: "structural" },
+    });
+
+    await expect(activateGuidedAction({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: created.draft.contract_digest,
+      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    })).resolves.toMatchObject({
+      capability: created.draft.capability,
+      authority_posture: "proposal_only",
+      source_database_changed: false,
+    });
+
+    const readRow = vi.fn(async () => ({ row: {}, rowCount: 0 }));
+    const runtime = createMcpRuntime(runtimeConfigForMockRead(
+      path.join(fixture.root, "synapsor.actions.runner.json"),
+    ), {
+      storePath: ":memory:",
+      env: {
+        DATABASE_URL: "postgresql://reader:redacted@db.example/fitflow",
+      },
+      readRow,
+    });
+    try {
+      await expect(runtime.callTool(
+        created.draft.capability,
+        created.preview_args,
+      )).resolves.toMatchObject({
+        ok: false,
+        kind: "proposal",
+        proposal: null,
+        error: { code: "INVALID_ARGUMENT" },
+        source_database_changed: false,
+      });
+      expect(readRow).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
   });
 
   it("refuses a rehearsal marker without a full immutable proposal hash", async () => {

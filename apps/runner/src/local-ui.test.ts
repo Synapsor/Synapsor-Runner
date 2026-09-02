@@ -24,6 +24,7 @@ import {
   saveBoundaryReviewProgress,
   startLocalUiServer,
 } from "./local-ui.js";
+import { ExploreTrustedScopeError } from "./explore-trusted-scope.js";
 import { compileSafeActionDraft } from "./safe-action.js";
 import { createScopedExploreRuntime } from "./scoped-explore.js";
 import {
@@ -1614,14 +1615,20 @@ export default defineCapability({
       previewDigest = created.draft.contract_digest;
       const preview = await postJson(`${baseUrl}/api/actions/guided/preview`, mutationHeaders, {
         capability_name: "membership.set_loyalty_balance",
-        args: { member_id: "MEM-1", loyalty_balance: 25 },
+        structural: true,
       });
       expect(preview).toMatchObject({
         ok: true,
+        rehearsal_mode: "structural",
+        source_rows_read: false,
         source_database_changed: false,
         model_can_approve: false,
         model_can_apply: false,
-        preview: { proposal_id: "wrp_guided_action_preview" },
+        preview: {
+          mode: "structural",
+          proposal_id: expect.stringMatching(/^structural:[a-f0-9]{64}$/),
+          source_rows_read: false,
+        },
       });
       const activated = await postJson(`${baseUrl}/api/actions/guided/activate`, mutationHeaders, {
         capability_name: "membership.set_loyalty_balance",
@@ -2265,6 +2272,7 @@ export default defineCapability({
       sourceEnv: "DATABASE_URL",
       inspectedSchema: "public",
     });
+    delete build.exploration_boundary.trusted_context.database_role_tenant;
     const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
     const guided = await initializeGuidedProject({
       projectRoot: tempDir,
@@ -2279,6 +2287,12 @@ export default defineCapability({
     let runtimeCreations = 0;
     let proofGatewayCloses = 0;
     let proofSuppressedGroupingReleased = false;
+    const resolveTrustedScopeFn = vi.fn(async () => {
+      throw new ExploreTrustedScopeError(
+        "Scoped Explore requires trusted runtime bindings outside model arguments: SYNAPSOR_TENANT_ID.",
+        ["SYNAPSOR_TENANT_ID"],
+      );
+    });
     const server = await startLocalUiServer({
       projectRoot: tempDir,
       boundaryRoot: written.root,
@@ -2288,13 +2302,7 @@ export default defineCapability({
       csrfToken: "model-first-csrf",
       instantOnboarding: true,
       schemaInspector: async () => inspection,
-      resolveTrustedScopeFn: async () => ({
-        tenant: "tenant-from-database-role",
-        principal: "",
-        tenant_source: "postgres_role_setting",
-        tenant_binding: "app.tenant_id",
-        principal_source: "not_required",
-      }),
+      resolveTrustedScopeFn,
       scopedExploreRuntimeFactory: async () => {
         runtimeCreations += 1;
         throw new Error("Activation-only Quick Start must not create an Explore runtime.");
@@ -2363,6 +2371,40 @@ export default defineCapability({
       "x-synapsor-csrf": "model-first-csrf",
     };
     try {
+      const boundary = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      expect(boundary.instant_onboarding).toMatchObject({
+        eligible: true,
+        runtime_ready: false,
+        missing_bindings: ["SYNAPSOR_TENANT_ID"],
+        tenant_scope_source: "environment",
+      });
+      expect(resolveTrustedScopeFn).not.toHaveBeenCalled();
+
+      const attemptedRead = await fetch(
+        `http://${server.host}:${server.port}/api/instant/activate-and-read`,
+        {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      expect(attemptedRead.status).toBe(409);
+      await expect(attemptedRead.json()).resolves.toMatchObject({
+        ok: false,
+        error_code: "EXPLORE_SCOPE_FORBIDDEN",
+        missing_bindings: ["SYNAPSOR_TENANT_ID"],
+        source_database_changed: false,
+      });
+      expect(resolveTrustedScopeFn).toHaveBeenCalledOnce();
+      expect(runtimeCreations).toBe(0);
+      await expect(fs.access(path.join(
+        tempDir,
+        ".synapsor/exploration-boundary.active.json",
+      ))).rejects.toMatchObject({ code: "ENOENT" });
+
       const activated = await postJson(
         `http://${server.host}:${server.port}/api/instant/activate`,
         headers,
@@ -2378,13 +2420,14 @@ export default defineCapability({
         resource: "public.members",
         source_rows_read: false,
         source_database_changed: false,
-        tenant_scope_source: "postgres_role_setting",
+        tenant_scope_source: "environment",
         model_can_activate: false,
         model_can_approve: false,
         model_can_apply: false,
         next_action: expect.stringContaining("model"),
       });
       expect(runtimeCreations).toBe(0);
+      expect(resolveTrustedScopeFn).toHaveBeenCalledOnce();
       expect(activated).not.toHaveProperty("result");
       const active = JSON.parse(await fs.readFile(
         path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
