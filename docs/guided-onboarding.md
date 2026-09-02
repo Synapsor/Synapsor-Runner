@@ -377,6 +377,15 @@ schema, but grant no operation and are not valid plan identifiers. Exact
 database IDs remain visible beside them. A label on a kept-out field stays
 human-only and does not expose that field to a model.
 
+Model-guided setup also handles opaque scope names conversationally. Runner
+first derives a closed set of exact columns, relationship paths, or effective
+PostgreSQL RLS settings from the live catalog. The selected model may ask what
+one candidate means, ask the operator to distinguish two candidates, or report
+that none apply. Runner validates the answer against that closed set and asks
+for exact confirmation before recording a disabled decision. It never asks the
+model to invent a setting or principal field, and it never treats a label as
+authority. Use the manual editor when no candidate is structurally present.
+
 ### Optional: Start From Representative Agent Jobs
 
 Before activation, press `W Workloads` in the terminal boundary editor or open
@@ -523,7 +532,7 @@ MCP all use the same boundary, suppression, budgets, and denials:
 ```bash
 synapsor-runner try ask \
   --provider openai \
-  --model gpt-5.6-luna
+  --model gpt-5.6-terra
 ```
 
 Interactive CLI review does not stop after activation. It offers OpenAI,

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
-import type { AutoBoundaryBuild } from "./auto-boundary.js";
+import { hasReviewedPrincipalScope, type AutoBoundaryBuild } from "./auto-boundary.js";
 
 export const GUIDED_ONBOARDING_VERSION = "synapsor.guided-onboarding.v1";
 
@@ -107,7 +107,7 @@ export async function initializeGuidedProject(input: {
   const configuredAuthority = input.build.lock.trusted_context_authority;
   const singleOrganization = Boolean(input.build.exploration_boundary.organization_scope);
   const principalRequired = input.build.exploration_boundary.pack.resources
-    .some((resource) => Boolean(resource.principal_key || resource.principal_scope));
+    .some(hasReviewedPrincipalScope);
   const config = {
     version: 1,
     mode: "read_only",
@@ -359,7 +359,7 @@ export async function recordGuidedBoundaryRescan(input: {
 function environmentExample(build: GuidedBuild): string {
   const trustedContext = build.exploration_boundary.trusted_context;
   const principalRequired = build.exploration_boundary.pack.resources
-    .some((resource) => Boolean(resource.principal_key || resource.principal_scope));
+    .some(hasReviewedPrincipalScope);
   const variables = [
     build.lock.source_env,
     ...(!build.exploration_boundary.organization_scope ? [trustedContext.tenant_env] : []),

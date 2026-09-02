@@ -50,6 +50,7 @@ import {
   emptyReviewOverrides,
   exactNumericGroupingEligibility,
   explorationBoundaryCandidateDigest,
+  hasReviewedPrincipalScope,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
   loadStructuredProjectEvidence,
@@ -898,7 +899,7 @@ async function handleRequest(input: {
       && instantCandidate.trusted_context.provider === "environment") {
       const configuredTenant = process.env[instantCandidate.trusted_context.tenant_env]?.trim();
       const configuredPrincipal = process.env[instantCandidate.trusted_context.principal_env]?.trim();
-      if ((instantResource.principal_key || instantResource.principal_scope) && !configuredPrincipal) {
+      if (hasReviewedPrincipalScope(instantResource) && !configuredPrincipal) {
         instantMissingBindings.push(instantCandidate.trusted_context.principal_env);
       }
       if (configuredTenant) {
@@ -1022,7 +1023,7 @@ async function handleRequest(input: {
         candidate: instantCandidate,
         candidate_digest: instantCandidate ? explorationBoundaryCandidateDigest(instantCandidate) : null,
         resource: instantResource?.id ?? null,
-        requires_principal: Boolean(instantResource?.principal_key || instantResource?.principal_scope),
+        requires_principal: Boolean(instantResource && hasReviewedPrincipalScope(instantResource)),
         missing_bindings: instantMissingBindings,
         tenant_scope_source: instantTenantScopeSource,
         scope_error: instantScopeError,
@@ -3398,7 +3399,7 @@ async function handleRequest(input: {
       return;
     }
     const principalRequired = activeBoundaries.some((boundary) =>
-      boundary.pack.resources.some((resource) => Boolean(resource.principal_key || resource.principal_scope)));
+      boundary.pack.resources.some(hasReviewedPrincipalScope));
     const tenant = active.trusted_context.database_role_tenant
       ? undefined
       : trustedScopeValue(body.tenant, "tenant");
@@ -3439,9 +3440,7 @@ async function handleRequest(input: {
         ? runtime.boundaries
         : [runtime.boundary];
       const principalRequired = runtimeBoundaries.some((boundary) =>
-        boundary.pack.resources.some((resource) =>
-          (typeof resource.principal_key === "string" && resource.principal_key.length > 0)
-          || Boolean(resource.principal_scope)));
+        boundary.pack.resources.some(hasReviewedPrincipalScope));
       if (runtime.boundary.trusted_context.provider !== "environment") {
         throw new Error("The local Workbench cannot bind production HTTP claim scope.");
       }
@@ -7996,7 +7995,7 @@ function renderBoundaryShell(csrfToken: string): string {
     const has=(r,f,k)=>k==="filterable_fields"||k==="time_bucket_fields"?Object.hasOwn(r[k],f):r[k].includes(f);
     const currentResource=id=>candidate.pack.resources.find(r=>r.id===id);
     const scopePathLabel=scope=>{const links=scope?.proof?.links||[];const resources=[];if(links[0]?.source_resource)resources.push(links[0].source_resource);links.forEach(link=>{if(resources.at(-1)!==link.source_resource)resources.push(link.source_resource);if(resources.at(-1)!==link.target_resource)resources.push(link.target_resource)});if(resources.at(-1)!==scope.ancestor_resource)resources.push(scope.ancestor_resource);if(!resources.length)resources.push(scope.ancestor_resource);const shown=resources.map(resource=>resource.startsWith("public.")?resource.slice(7):resource);shown[shown.length-1]=shown.at(-1)+"."+scope.ancestor_column;return shown.join(" → ")};
-    const scopeLabel=(resource,kind)=>{const direct=resource[kind+"_key"];if(direct)return direct;if(kind==="tenant"&&resource.shared_reference_scope)return "Shared reference; no tenant predicate";const scope=resource[kind+"_scope"];return scope?"mandatory relationship path "+scopePathLabel(scope):"not configured"};
+    const scopeLabel=(resource,kind)=>{const direct=resource[kind+"_key"];if(direct)return direct;if(kind==="tenant"&&resource.shared_reference_scope)return "Shared reference; no tenant predicate";const scope=resource[kind+"_scope"];if(scope)return "mandatory relationship path "+scopePathLabel(scope);if(kind==="principal"&&resource.rls_session?.principal_setting)return "PostgreSQL RLS setting "+resource.rls_session.principal_setting;return "not configured"};
     const reviewDecisionLabel=item=>{const separator=item.indexOf(":");if(separator<1)return item;const resource=currentResource(item.slice(0,separator));if(item.includes(": confirm mandatory derived tenant scope ")&&resource?.tenant_scope)return resource.id+": confirm customer isolation through "+scopePathLabel(resource.tenant_scope);if(item.includes(": confirm mandatory derived principal scope ")&&resource?.principal_scope)return resource.id+": confirm user/owner isolation through "+scopePathLabel(resource.principal_scope);return item};
     function allDecisionsConfirmed(){return reviewDecisions.length>0&&document.querySelectorAll("[data-review-decision]:checked").length===reviewDecisions.length}
     function updateActivationState(){document.getElementById("activate").disabled=!digest||!allDecisionsConfirmed()}
@@ -8006,7 +8005,7 @@ function renderBoundaryShell(csrfToken: string): string {
     function setResource(source,checked){if(checked&&!currentResource(source.id)){candidate.pack.resources.push(structuredClone(source));candidate.pack.resources.sort((a,b)=>a.id.localeCompare(b.id))}else if(!checked){candidate.pack.resources=candidate.pack.resources.filter(r=>r.id!==source.id);candidate.pack.resources.forEach(r=>{r.relationships=r.relationships.filter(rel=>rel.target_resource!==source.id)})}changed();renderResources()}
     function setKeptOut(source,field,checked){const resource=currentResource(source.id);if(!resource)return;if(source.kept_out_fields.includes(field)&&!checked)return;if(checked){if(!resource.kept_out_fields.includes(field))resource.kept_out_fields.push(field);removeFieldAuthority(resource,field);candidate.pack.resources.forEach(r=>{r.relationships=r.relationships.filter(rel=>!(rel.target_resource===resource.id&&rel.target_columns.includes(field)))})}else resource.kept_out_fields=resource.kept_out_fields.filter(v=>v!==field);changed();renderResources()}
     function setRelationship(source,relationship,checked){const resource=currentResource(source.id);if(!resource)return;if(checked){const target=currentResource(relationship.target_resource);if(!target||relationship.local_columns.some(field=>resource.kept_out_fields.includes(field))||relationship.target_columns.some(field=>target.kept_out_fields.includes(field)))return;if(!resource.relationships.some(item=>item.id===relationship.id))resource.relationships.push(structuredClone(relationship))}else resource.relationships=resource.relationships.filter(item=>item.id!==relationship.id);changed();renderResources()}
-    function renderResources(){document.getElementById("resources").innerHTML=original.pack.resources.map((source,i)=>{const resource=currentResource(source.id);const included=Boolean(resource);const fields=Object.keys(source.field_types).sort();const relations=included&&source.relationships.length?'<div class="relationships">'+source.relationships.map((relationship,j)=>{const target=currentResource(relationship.target_resource);const blocked=!target||relationship.local_columns.some(field=>resource.kept_out_fields.includes(field))||relationship.target_columns.some(field=>target.kept_out_fields.includes(field));const checked=resource.relationships.some(item=>item.id===relationship.id);return '<label class="relationship"><input type="checkbox" data-relationship-resource="'+i+'" data-relationship="'+j+'" '+(checked?"checked":"")+(blocked?" disabled":"")+'> '+esc(relationship.id)+' → '+esc(relationship.target_resource)+' · many-to-one · max fan-out 1</label>'}).join("")+'</div>':"";return '<section class="resource"><div class="resource-head"><label class="resource-toggle"><input type="checkbox" data-resource-enabled="'+i+'" '+(included?"checked":"")+'> <h3>'+esc(source.id)+'</h3></label><span class="scope">tenant: '+esc(scopeLabel(source,"tenant"))+(source.principal_key||source.principal_scope?' · principal: '+esc(scopeLabel(source,"principal")):'')+'</span></div>'+(!included?'<p class="scope">Excluded from this model-visible authoring pack.</p>':'<table><thead><tr><th>Field</th>'+permissions.map(([l])=>'<th>'+esc(l)+'</th>').join("")+'<th>kept out</th></tr></thead><tbody>'+fields.map(field=>'<tr><td><code>'+esc(field)+'</code></td>'+permissions.map(([label,key])=>'<td>'+(has(source,field,key)?'<input type="checkbox" aria-label="'+esc(label)+' '+esc(field)+' for '+esc(source.id)+'" data-permission-resource="'+i+'" data-field="'+esc(field)+'" data-key="'+key+'" '+(has(resource,field,key)?"checked":"")+(resource.kept_out_fields.includes(field)?" disabled":"")+'>':'—')+'</td>').join("")+'<td><input type="checkbox" aria-label="Keep '+esc(field)+' out" data-kept-out-resource="'+i+'" data-kept-out-field="'+esc(field)+'" '+(resource.kept_out_fields.includes(field)?"checked":"")+(source.kept_out_fields.includes(field)?" disabled":"")+'></td></tr>').join("")+'</tbody></table>'+relations)+'</section>'}).join("");document.querySelectorAll("[data-resource-enabled]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setResource(original.pack.resources[Number(t.dataset.resourceEnabled)],t.checked)}));document.querySelectorAll("[data-permission-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setPermission(currentResource(original.pack.resources[Number(t.dataset.permissionResource)].id),t.dataset.field,t.dataset.key,t.checked)}));document.querySelectorAll("[data-kept-out-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setKeptOut(original.pack.resources[Number(t.dataset.keptOutResource)],t.dataset.keptOutField,t.checked)}));document.querySelectorAll("[data-relationship-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;const source=original.pack.resources[Number(t.dataset.relationshipResource)];setRelationship(source,source.relationships[Number(t.dataset.relationship)],t.checked)}))}
+    function renderResources(){document.getElementById("resources").innerHTML=original.pack.resources.map((source,i)=>{const resource=currentResource(source.id);const included=Boolean(resource);const fields=Object.keys(source.field_types).sort();const relations=included&&source.relationships.length?'<div class="relationships">'+source.relationships.map((relationship,j)=>{const target=currentResource(relationship.target_resource);const blocked=!target||relationship.local_columns.some(field=>resource.kept_out_fields.includes(field))||relationship.target_columns.some(field=>target.kept_out_fields.includes(field));const checked=resource.relationships.some(item=>item.id===relationship.id);return '<label class="relationship"><input type="checkbox" data-relationship-resource="'+i+'" data-relationship="'+j+'" '+(checked?"checked":"")+(blocked?" disabled":"")+'> '+esc(relationship.id)+' → '+esc(relationship.target_resource)+' · many-to-one · max fan-out 1</label>'}).join("")+'</div>':"";return '<section class="resource"><div class="resource-head"><label class="resource-toggle"><input type="checkbox" data-resource-enabled="'+i+'" '+(included?"checked":"")+'> <h3>'+esc(source.id)+'</h3></label><span class="scope">tenant: '+esc(scopeLabel(source,"tenant"))+(source.principal_key||source.principal_scope||source.rls_session?.principal_setting?' · principal: '+esc(scopeLabel(source,"principal")):'')+'</span></div>'+(!included?'<p class="scope">Excluded from this model-visible authoring pack.</p>':'<table><thead><tr><th>Field</th>'+permissions.map(([l])=>'<th>'+esc(l)+'</th>').join("")+'<th>kept out</th></tr></thead><tbody>'+fields.map(field=>'<tr><td><code>'+esc(field)+'</code></td>'+permissions.map(([label,key])=>'<td>'+(has(source,field,key)?'<input type="checkbox" aria-label="'+esc(label)+' '+esc(field)+' for '+esc(source.id)+'" data-permission-resource="'+i+'" data-field="'+esc(field)+'" data-key="'+key+'" '+(has(resource,field,key)?"checked":"")+(resource.kept_out_fields.includes(field)?" disabled":"")+'>':'—')+'</td>').join("")+'<td><input type="checkbox" aria-label="Keep '+esc(field)+' out" data-kept-out-resource="'+i+'" data-kept-out-field="'+esc(field)+'" '+(resource.kept_out_fields.includes(field)?"checked":"")+(source.kept_out_fields.includes(field)?" disabled":"")+'></td></tr>').join("")+'</tbody></table>'+relations)+'</section>'}).join("");document.querySelectorAll("[data-resource-enabled]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setResource(original.pack.resources[Number(t.dataset.resourceEnabled)],t.checked)}));document.querySelectorAll("[data-permission-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setPermission(currentResource(original.pack.resources[Number(t.dataset.permissionResource)].id),t.dataset.field,t.dataset.key,t.checked)}));document.querySelectorAll("[data-kept-out-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setKeptOut(original.pack.resources[Number(t.dataset.keptOutResource)],t.dataset.keptOutField,t.checked)}));document.querySelectorAll("[data-relationship-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;const source=original.pack.resources[Number(t.dataset.relationshipResource)];setRelationship(source,source.relationships[Number(t.dataset.relationship)],t.checked)}))}
     function renderBudgets(){document.getElementById("budgets").innerHTML=Object.entries(candidate.budgets).map(([key,value])=>'<label>'+esc(key.replaceAll("_"," "))+'<input type="number" min="1" max="'+original.budgets[key]+'" value="'+value+'" data-budget="'+key+'"></label>').join("");document.querySelectorAll("[data-budget]").forEach(input=>input.addEventListener("change",e=>{candidate.budgets[e.currentTarget.dataset.budget]=Number(e.currentTarget.value);changed()}))}
     function renderDatabaseCompatibility(value){const panel=document.getElementById("database-compatibility");if(!value){panel.hidden=true;return}const limited=value.tier==="compatible_limited";const limits=[];if(value.authority?.features?.schema_check_constraints===false)limits.push("Text grouping and filtering require a bounded native ENUM.");if(value.authority?.features?.automatic_numeric_bands===false)limits.push("Automatic numeric bands are unavailable.");const profile=value.authority?.version_line?' Reviewed capability profile: '+value.authority.version_line+'.':'';panel.hidden=false;panel.className="notice compatibility"+(limited?"":" full");panel.innerHTML='<strong>Reviewed database compatibility: '+esc(value.detected_version)+'</strong><br>'+(limited?'Supported limited grammar. '+esc(limits.join(" ")):'Full reviewed grammar is available for this supported server line.')+esc(profile)}
     function renderPosture(){const role=reviewReport.database_role||{};document.getElementById("deployment-profile").value=candidate.deployment_profile;document.getElementById("role-posture").innerHTML='<strong>Exact database role posture</strong><p class="scope">role: '+esc(role.name||"unknown")+' · verified: '+esc(role.verified===true?"yes":"no")+' · read only: '+esc(role.read_only===true?"yes":"no")+' · superuser: '+esc(String(role.superuser))+' · BYPASSRLS: '+esc(String(role.bypass_rls))+'</p><p class="scope">role/grant/RLS fingerprint: <code>'+esc(role.fingerprint||candidate.role_posture_fingerprint)+'</code></p>'}
@@ -9970,6 +9969,9 @@ function managedReviewMutationRequest(
   if (decision.kind === "principal_scope_path") {
     return { ...common, principal_scope_path: decision.value };
   }
+  if (decision.kind === "principal_rls_setting") {
+    return { ...common, principal_rls_setting: decision.value };
+  }
   if (decision.kind === "minimum_cohort") {
     return { ...common, minimum_cohort_size: decision.value };
   }
@@ -10126,14 +10128,22 @@ function applyManagedBoundaryReviewDecision(
     };
     delete resource.tenant_key;
     delete resource.tenant_scope_path;
-  } else if (kind === "principal_key" || kind === "principal_scope_path") {
+  } else if (kind === "principal_key"
+    || kind === "principal_scope_path"
+    || kind === "principal_rls_setting") {
     const value = body.value === null ? null : requiredReviewText(body.value, "value");
     if (kind === "principal_key") {
       resource.principal_key = { value, actor, reason, decided_at: decidedAt };
       delete resource.principal_scope_path;
-    } else {
+      delete resource.principal_rls_setting;
+    } else if (kind === "principal_scope_path") {
       resource.principal_scope_path = { value, actor, reason, decided_at: decidedAt };
       delete resource.principal_key;
+      delete resource.principal_rls_setting;
+    } else {
+      resource.principal_rls_setting = { value, actor, reason, decided_at: decidedAt };
+      delete resource.principal_key;
+      delete resource.principal_scope_path;
     }
   } else if (kind === "minimum_cohort") {
     if (!Number.isSafeInteger(body.value) || Number(body.value) < 1 || Number(body.value) > 5) {
@@ -10151,7 +10161,7 @@ function applyManagedBoundaryReviewDecision(
     }
   } else {
     throw new Error(
-      "Managed boundary review kind must be field_exposure, field_enum, derived_measure, numeric_band, auto_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
+      "Managed boundary review kind must be field_exposure, field_enum, derived_measure, numeric_band, auto_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, principal_rls_setting, or minimum_cohort.",
     );
   }
 

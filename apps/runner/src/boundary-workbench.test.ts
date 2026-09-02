@@ -182,7 +182,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["reviewed labels and descriptions", ["Reviewed label", "Reviewed description", "Save reviewed metadata", "plans still use the exact id"]],
       ["model vocabulary coverage", ["Reviewed model vocabulary required before activation", "Reviewed model vocabulary advised", "Model vocabulary ready", "coded value fields", "Exact database IDs remain the plan authority"]],
       ["direct and relationship-carried tenant scope", ["tenant_scope_path", "mandatory proven relationship path"]],
-      ["direct and relationship-carried principal scope", ["principal_scope_path", "user/owner limit"]],
+      ["direct, relationship-carried, and PostgreSQL RLS principal scope", ["principal_scope_path", "principal_rls_setting", "PostgreSQL RLS setting", "user/owner limit"]],
       ["shared-reference scope", ["Shared reference - same rows for every tenant", "I confirm this table has no per-tenant rows"]],
       ["per-table and whole-boundary privacy", ["Privacy for all tables", "Save privacy change", "Save for all"]],
       ["query-volume controls and operator status", ["Queries per rolling 24 hours", "Requests per rolling minute", "Operator-only budget status", "Disclosure controls remain separate", "Differencing variants for ", "root_resource"]],
@@ -663,6 +663,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("explicitly review Shared reference only if ");
     expect(html).toContain('if(candidate.organization_scope)return {kind:"startable"}');
     expect(html).toContain('principal_scope_path');
+    expect(html).toContain('principal_rls_setting');
+    expect(html).toContain("PostgreSQL RLS scope candidates");
     expect(html).toContain("user/owner limit");
     expect(html).toContain("review.fields||[]).filter(field=>field.nullable===false");
     expect(html).toContain("bytea|blob|binary|varbinary|image");

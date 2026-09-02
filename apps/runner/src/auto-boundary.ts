@@ -346,6 +346,15 @@ export type AutoBoundaryResource = {
     effective_for_current_role: boolean | "unknown" | "unsupported";
     policy_names: string[];
     using_expressions: string[];
+    /**
+     * Exact live-catalog settings that could carry principal context. These
+     * are review candidates only; opaque names never become authority without
+     * an explicit reviewed decision.
+     */
+    principal_setting_candidates?: string[];
+    principal_setting_review_override?: Omit<ReviewedValueDecision, "value"> & {
+      value: string | null;
+    };
   };
   role_posture: {
     read_only: boolean;
@@ -594,6 +603,31 @@ export type ActivatedExplorationBoundary = Omit<ExplorationBoundaryDraft, "activ
   };
 };
 
+type ExplorationPrincipalScopeResource = Pick<
+  ExplorationBoundaryDraft["pack"]["resources"][number],
+  "principal_key" | "principal_scope" | "rls_session"
+>;
+
+/**
+ * Principal scope can be compiled into SQL directly, carried through a proven
+ * relationship, or enforced by an effective PostgreSQL RLS policy whose
+ * trusted session setting Runner discovered from the live catalog.
+ */
+export function reviewedPrincipalScopeKind(
+  resource: ExplorationPrincipalScopeResource,
+): "direct" | "derived" | "postgres_rls" | undefined {
+  if (resource.principal_key) return "direct";
+  if (resource.principal_scope) return "derived";
+  if (resource.rls_session?.principal_setting) return "postgres_rls";
+  return undefined;
+}
+
+export function hasReviewedPrincipalScope(
+  resource: ExplorationPrincipalScopeResource,
+): boolean {
+  return reviewedPrincipalScopeKind(resource) !== undefined;
+}
+
 export type ActiveExplorationBoundarySet = {
   schema_version: typeof ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION;
   selected_name: string;
@@ -772,6 +806,7 @@ export type AutoBoundaryReviewOverrides = {
     shared_reference_scope?: ReviewedValueDecision;
     principal_key?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
     principal_scope_path?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
+    principal_rls_setting?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
     minimum_cohort?: ReviewedMinimumCohortDecision;
     field_enums?: Record<string, ReviewedEnumValuesDecision>;
     derived_measures?: Record<string, ReviewedDerivedMeasureDecision>;
@@ -945,6 +980,20 @@ export function pruneAutoBoundaryReviewOverrides(
       }
     }
     if (decision.principal_scope_path) retained.principal_scope_path = decision.principal_scope_path;
+    if (decision.principal_rls_setting) {
+      const candidates = rlsPrincipalSettingCandidates(
+        (table.row_level_security_policies ?? [])
+          .flatMap((policy) => policy.using_expression ? [policy.using_expression] : []),
+      );
+      if (decision.principal_rls_setting.value === null
+        || candidates.includes(decision.principal_rls_setting.value)) {
+        retained.principal_rls_setting = decision.principal_rls_setting;
+      } else {
+        removed.push(
+          `${resourceId}: reviewed PostgreSQL RLS principal setting ${decision.principal_rls_setting.value} is no longer present in an effective policy candidate`,
+        );
+      }
+    }
     if (decision.minimum_cohort) retained.minimum_cohort = decision.minimum_cohort;
     const derivedMeasures: NonNullable<
       AutoBoundaryReviewOverrides["resources"][string]["derived_measures"]
@@ -1104,6 +1153,7 @@ export function pruneAutoBoundaryReviewOverrides(
   if (Object.values(preliminary.resources).some((resource) =>
     resource.tenant_scope_path
     || resource.principal_scope_path
+    || resource.principal_rls_setting
     || resource.shared_reference_scope
     || Object.keys(resource.exact_numeric_grouping ?? {}).length > 0)) {
     const parsedEvidence = context.parsedEvidence ?? [];
@@ -1428,6 +1478,9 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
             ...(resource.principal_scope_path
               ? { principal_scope_path: resource.principal_scope_path.value }
               : {}),
+            ...(resource.principal_rls_setting
+              ? { principal_rls_setting: resource.principal_rls_setting.value }
+              : {}),
             ...(resource.minimum_cohort ? { minimum_cohort: resource.minimum_cohort.value } : {}),
             ...(resource.derived_measures ? {
               derived_measures: Object.fromEntries(
@@ -1496,6 +1549,16 @@ function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown
     ...resource
   }) => ({
     ...resource,
+    rls: {
+      ...resource.rls,
+      ...(resource.rls.principal_setting_review_override
+        ? {
+          principal_setting_review_override: {
+            value: resource.rls.principal_setting_review_override.value,
+          },
+        }
+        : {}),
+    },
     ...(sharedReferenceScope
       ? {
         shared_reference_scope: sharedReferenceEvidenceAuthority(sharedReferenceScope),
@@ -2804,7 +2867,9 @@ export function seedConfiguredPrincipalBindingReview(input: {
     if (!column) continue;
     const resourceId = `${table.schema}.${table.name}`;
     const review = overrides.resources[resourceId] ?? {};
-    if (review.principal_key !== undefined || review.principal_scope_path !== undefined) continue;
+    if (review.principal_key !== undefined
+      || review.principal_scope_path !== undefined
+      || review.principal_rls_setting !== undefined) continue;
     review.principal_key = {
       value: column.name,
       actor,
@@ -2839,6 +2904,7 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
         "shared_reference_scope",
         "principal_key",
         "principal_scope_path",
+        "principal_rls_setting",
         "minimum_cohort",
         "field_enums",
         "derived_measures",
@@ -2890,6 +2956,13 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
       resource.principal_scope_path = normalizeReviewedValueDecision(
         rawResource.principal_scope_path,
         `${resourceId} derived principal scope path`,
+        true,
+      );
+    }
+    if (rawResource.principal_rls_setting !== undefined) {
+      resource.principal_rls_setting = normalizeReviewedValueDecision(
+        rawResource.principal_rls_setting,
+        `${resourceId} PostgreSQL RLS principal setting`,
         true,
       );
     }
@@ -3483,6 +3556,18 @@ function applyReviewOverrides(
         markReviewedInference(resource.principal_key, override.principal_key.value, "Human reviewed this inspected principal-scope column.");
       }
     }
+    if (override.principal_rls_setting) {
+      const reviewedSetting = override.principal_rls_setting.value;
+      if (reviewedSetting !== null
+        && !(resource.rls.principal_setting_candidates ?? []).includes(reviewedSetting)) {
+        throw new Error(
+          `${resourceId} PostgreSQL RLS principal setting ${reviewedSetting} is not a current live-policy candidate.`,
+        );
+      }
+      resource.rls.principal_setting_review_override = structuredClone(
+        override.principal_rls_setting,
+      );
+    }
     if (override.minimum_cohort) {
       resource.minimum_cohort_override = { ...override.minimum_cohort };
     }
@@ -3677,8 +3762,15 @@ function applyDerivedScopeReviewOverrides(
         `${resourceId} must review exactly one of a direct tenant key, a derived tenant path, or shared-reference scope.`,
       );
     }
-    if (override.principal_key?.value && override.principal_scope_path?.value) {
-      throw new Error(`${resourceId} cannot review both a direct principal key and a derived principal scope path.`);
+    const reviewedPrincipalModes = [
+      override.principal_key?.value,
+      override.principal_scope_path?.value,
+      override.principal_rls_setting?.value,
+    ].filter(Boolean).length;
+    if (reviewedPrincipalModes > 1) {
+      throw new Error(
+        `${resourceId} must review one principal mode: a direct key, a derived path, or a PostgreSQL RLS setting.`,
+      );
     }
     if (override.tenant_scope_path) {
       const selected = resource.derived_tenant_scope?.candidates.find((candidate) =>
@@ -4997,6 +5089,10 @@ function buildResource(
   });
   const tenantSelected = tenantInference.selected;
   const principalSelected = principalInference.selected;
+  const rlsUsingExpressions = (table.row_level_security_policies ?? [])
+    .flatMap((policy) => policy.using_expression ? [policy.using_expression] : [])
+    .sort();
+  const principalSettingCandidates = rlsPrincipalSettingCandidates(rlsUsingExpressions);
   const posture = table.role_posture;
   const writeCapable = posture
     ? posture.privileges.insert || posture.privileges.update || posture.privileges.delete || posture.privileges.truncate || posture.privileges.trigger
@@ -5108,7 +5204,10 @@ function buildResource(
       forced: posture?.row_security_forced ?? (inspection.engine === "postgres" ? "unknown" : "unsupported"),
       effective_for_current_role: posture?.row_security_effective_for_current_role ?? (inspection.engine === "postgres" ? "unknown" : "unsupported"),
       policy_names: (table.row_level_security_policies ?? []).map((policy) => policy.name).sort(),
-      using_expressions: (table.row_level_security_policies ?? []).flatMap((policy) => policy.using_expression ? [policy.using_expression] : []).sort(),
+      using_expressions: rlsUsingExpressions,
+      ...(principalSettingCandidates.length
+        ? { principal_setting_candidates: principalSettingCandidates }
+        : {}),
     },
     role_posture: {
       read_only: Boolean(posture?.privileges.select) && !writeCapable,
@@ -5648,7 +5747,9 @@ function unresolvedDecisions(
         ? `${resource.id}: confirm principal scope ${resource.principal_key.selected}`
         : resource.derived_principal_scope?.selected
           ? `${resource.id}: confirm mandatory derived principal scope via ${resource.derived_principal_scope.selected.path_id} to ${resource.derived_principal_scope.selected.ancestor_resource}.${resource.derived_principal_scope.selected.ancestor_column}`
-          : `${resource.id}: confirm principal scope not configured`,
+          : boundaryResources.get(resource.id)?.rls_session?.principal_setting
+            ? `${resource.id}: confirm database-enforced principal scope through PostgreSQL RLS setting ${boundaryResources.get(resource.id)!.rls_session!.principal_setting}`
+            : `${resource.id}: confirm principal scope not configured`,
       `${resource.id}: confirm visible and kept-out fields`,
       `${resource.id}: confirm filter/sort/group/aggregate-only field permissions`,
       `${resource.id}: confirm minimum cohort and extraction/differencing budgets`,
@@ -5972,13 +6073,17 @@ function explorationRlsSession(
   const directPrincipal = principalOwner?.principal_key.selected && principalOwner.rls.enabled === true
     ? settingForScopedColumn(principalOwner.rls.using_expressions, principalOwner.principal_key.selected)
     : undefined;
-  const policyPrincipalCandidates = resource.rls.enabled === true
-    ? unique(resource.rls.using_expressions
-      .flatMap(currentSettingNames)
-      .filter((setting) => setting !== tenant && settingNameSupportsScope(setting, "principal")))
+  const conventionalPrincipalCandidates = resource.rls.enabled === true
+    ? (resource.rls.principal_setting_candidates ?? [])
+      .filter((setting) => setting !== tenant && settingNameSupportsScope(setting, "principal"))
     : [];
+  const reviewedPrincipalSetting = resource.rls.principal_setting_review_override;
   const principal = directPrincipal
-    ?? (policyPrincipalCandidates.length === 1 ? policyPrincipalCandidates[0] : undefined);
+    ?? (reviewedPrincipalSetting
+      ? reviewedPrincipalSetting.value ?? undefined
+      : conventionalPrincipalCandidates.length === 1
+        ? conventionalPrincipalCandidates[0]
+        : undefined);
   if (!tenant && !principal) return {};
   return {
     rls_session: {
@@ -5986,6 +6091,19 @@ function explorationRlsSession(
       ...(principal ? { principal_setting: principal } : {}),
     },
   };
+}
+
+/**
+ * Returns exact settings mentioned by an RLS policy that are not already
+ * proven to carry tenant context. The list is deliberately broader than the
+ * automatic vocabulary: opaque names are candidates for human/model-assisted
+ * clarification, never automatic principal authority.
+ */
+function rlsPrincipalSettingCandidates(expressions: string[]): string[] {
+  const settings = unique(expressions.flatMap(currentSettingNames));
+  const tenantSettings = new Set(settings.filter((setting) =>
+    settingNameSupportsScope(setting, "tenant")));
+  return settings.filter((setting) => !tenantSettings.has(setting)).sort();
 }
 
 function settingNameSupportsScope(setting: string, kind: "tenant" | "principal"): boolean {

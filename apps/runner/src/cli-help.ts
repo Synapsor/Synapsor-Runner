@@ -720,7 +720,7 @@ Resource decision flags:
   --tenant-key <column>
   --tenant-scope-path <path-id>
   --shared-reference --acknowledge-table-has-no-per-tenant-rows
-  --principal-key <column> | --principal-scope-path <path-id> | --no-principal
+  --principal-key <column> | --principal-scope-path <path-id> | --principal-rls-setting <setting> | --no-principal
   --keep-out <column,...>
   --withhold-from-model <column,...>
   --allow-reviewed-field <column,...>

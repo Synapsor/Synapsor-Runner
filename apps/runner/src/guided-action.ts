@@ -262,6 +262,8 @@ export type GuidedActionResourceOption = {
   tenant_key?: string;
   organization_scope?: NonNullable<ActivatedExplorationBoundary["organization_scope"]>;
   principal_key?: string;
+  /** Reviewed PostgreSQL session setting applied transaction-locally before source access. */
+  principal_rls_setting?: string;
   writable_fields: Array<{
     name: string;
     data_type: string;
@@ -432,6 +434,9 @@ function buildGuidedActionOptions(
         ...(resource.tenant_key ? { tenant_key: resource.tenant_key } : {}),
         ...(boundary.organization_scope ? { organization_scope: boundary.organization_scope } : {}),
         ...(resource.principal_key ? { principal_key: resource.principal_key } : {}),
+        ...(resource.rls_session?.principal_setting
+          ? { principal_rls_setting: resource.rls_session.principal_setting }
+          : {}),
         writable_fields: structurallyEligibleFields.map((field) => ({
           ...field,
           ...(resource.field_metadata?.[field.name]?.label

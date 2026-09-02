@@ -439,6 +439,8 @@ function actionSuggestionNarrationFacts(
       const resource = suggestion.resource ? resources.get(suggestion.resource) : undefined;
       const scope = resource?.principal_key
         ? `trusted tenant plus principal scope (${resource.tenant_key} + ${resource.principal_key})`
+        : resource?.principal_rls_setting
+          ? `trusted tenant plus PostgreSQL RLS principal scope (${resource.tenant_key} + ${resource.principal_rls_setting})`
         : resource?.tenant_key
           ? `trusted tenant-only scope (${resource.tenant_key}); no principal row limit is configured`
           : resource?.organization_scope
@@ -513,7 +515,7 @@ function suggestionCatalog(options: GuidedActionOptions) {
     })),
     trusted_limit_scopes: [
       "tenant",
-      ...(resource.principal_key ? ["tenant_principal"] : []),
+      ...(resource.principal_key || resource.principal_rls_setting ? ["tenant_principal"] : []),
       "tenant_object",
     ],
   }));

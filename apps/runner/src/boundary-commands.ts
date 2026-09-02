@@ -20,6 +20,7 @@ import {
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   explorationBoundaryCandidateDigest,
+  hasReviewedPrincipalScope,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
   resolveReviewedChildCountLink,
@@ -118,6 +119,10 @@ import {
 } from "./boundary-authoring-chat.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
+import {
+  interpretPrincipalScopeAnswer,
+  type ModelPrincipalScopeOption,
+} from "./model-principal-scope-review.js";
 import { renderBoundaryMapTable } from "./boundary-map-presentation.js";
 import {
   importActionSuggestion,
@@ -249,6 +254,7 @@ export type BoundaryReviewCommandOptions = {
   modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
   modelAuthoringNarrator?: typeof narrateValidatedAuthoringStep;
+  modelPrincipalScopeInterpreter?: typeof interpretPrincipalScopeAnswer;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
   /** Overrides the persistent model-assisted authoring surface in tests or embedded clients. */
@@ -798,6 +804,7 @@ export async function boundaryReviewCommand(
       modelActionSuggestionGenerator: options.modelActionSuggestionGenerator,
       modelActionSuggestionSetGenerator: options.modelActionSuggestionSetGenerator,
       modelAuthoringNarrator: options.modelAuthoringNarrator,
+      modelPrincipalScopeInterpreter: options.modelPrincipalScopeInterpreter,
       actionProjectInspector: options.actionProjectInspector,
       runDelegationActionReview: options.runDelegationActionReview,
       boundaryAuthoringChatFactory: options.boundaryAuthoringChatFactory,
@@ -1118,6 +1125,7 @@ async function boundaryResourceReviewCommand(
     "--acknowledge-table-has-no-per-tenant-rows",
     "--principal-key",
     "--principal-scope-path",
+    "--principal-rls-setting",
     "--no-principal",
     "--keep-out",
     "--withhold-from-model",
@@ -1175,6 +1183,7 @@ async function boundaryResourceReviewCommand(
     "--acknowledge-table-has-no-per-tenant-rows",
     "--principal-key",
     "--principal-scope-path",
+    "--principal-rls-setting",
     "--no-principal",
     "--keep-out",
     "--withhold-from-model",
@@ -1252,6 +1261,7 @@ async function boundaryResourceReviewCommand(
         modelActionSuggestionGenerator: options.modelActionSuggestionGenerator,
         modelActionSuggestionSetGenerator: options.modelActionSuggestionSetGenerator,
         modelAuthoringNarrator: options.modelAuthoringNarrator,
+        modelPrincipalScopeInterpreter: options.modelPrincipalScopeInterpreter,
         actionProjectInspector: options.actionProjectInspector,
         runDelegationActionReview: options.runDelegationActionReview,
         boundaryAuthoringChatFactory: options.boundaryAuthoringChatFactory,
@@ -1274,9 +1284,6 @@ async function boundaryResourceReviewCommand(
   if (!actor || !reason) {
     throw new Error("Changing disabled boundary review state requires --actor <human> and --reason <concrete-review-reason>.");
   }
-  if (args.includes("--principal-key") && args.includes("--no-principal")) {
-    throw new Error("Use either --principal-key <column> or --no-principal, not both.");
-  }
   const sharedReference = args.includes("--shared-reference");
   const sharedReferenceAcknowledged = args.includes(
     "--acknowledge-table-has-no-per-tenant-rows",
@@ -1296,9 +1303,16 @@ async function boundaryResourceReviewCommand(
       "Use one tenant mode: --tenant-key, --tenant-scope-path, or --shared-reference with its acknowledgement.",
     );
   }
-  if (args.includes("--principal-scope-path")
-    && (args.includes("--principal-key") || args.includes("--no-principal"))) {
-    throw new Error("Use one of --principal-key <column>, --principal-scope-path <path>, or --no-principal.");
+  const principalModeFlags = [
+    args.includes("--principal-key"),
+    args.includes("--principal-scope-path"),
+    args.includes("--principal-rls-setting"),
+    args.includes("--no-principal"),
+  ].filter(Boolean).length;
+  if (principalModeFlags > 1) {
+    throw new Error(
+      "Use one of --principal-key <column>, --principal-scope-path <path>, --principal-rls-setting <setting>, or --no-principal.",
+    );
   }
   if (args.includes("--allow-exact-grouping") && args.includes("--allow-exact-numeric-grouping")) {
     throw new Error("Use --allow-exact-grouping; do not combine it with its legacy --allow-exact-numeric-grouping alias.");
@@ -1382,11 +1396,13 @@ async function boundaryResourceReviewCommand(
       ? { shared_reference_scope: SHARED_REFERENCE_ACKNOWLEDGEMENT }
       : {}),
     ...(args.includes("--no-principal")
-      ? { principal_key: null, principal_scope_path: null }
+      ? { principal_key: null, principal_scope_path: null, principal_rls_setting: null }
       : optionalArg(args, "--principal-key")
         ? { principal_key: optionalArg(args, "--principal-key") }
         : optionalArg(args, "--principal-scope-path")
           ? { principal_scope_path: optionalArg(args, "--principal-scope-path") }
+          : optionalArg(args, "--principal-rls-setting")
+            ? { principal_rls_setting: optionalArg(args, "--principal-rls-setting") }
           : {}),
     ...(listArg(args, "--keep-out") ? { keep_out_fields: listArg(args, "--keep-out") } : {}),
     ...(listArg(args, "--withhold-from-model")
@@ -1521,6 +1537,7 @@ async function interactiveBoundaryReviewLoop(input: {
   modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
   modelAuthoringNarrator?: typeof narrateValidatedAuthoringStep;
+  modelPrincipalScopeInterpreter?: typeof interpretPrincipalScopeAnswer;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
   boundaryAuthoringChatFactory?: BoundaryAuthoringChatFactory;
@@ -1589,6 +1606,7 @@ async function interactiveBoundaryReviewLoop(input: {
           modelActionSuggestionGenerator: input.modelActionSuggestionGenerator,
           modelActionSuggestionSetGenerator: input.modelActionSuggestionSetGenerator,
           modelAuthoringNarrator: input.modelAuthoringNarrator,
+          modelPrincipalScopeInterpreter: input.modelPrincipalScopeInterpreter,
           actionProjectInspector: input.actionProjectInspector,
           runDelegationActionReview: input.runDelegationActionReview,
           boundaryAuthoringChatFactory: input.boundaryAuthoringChatFactory,
@@ -1684,6 +1702,7 @@ async function interactiveBoundaryReviewLoop(input: {
           modelActionSuggestionGenerator: input.modelActionSuggestionGenerator,
           modelActionSuggestionSetGenerator: input.modelActionSuggestionSetGenerator,
           modelAuthoringNarrator: input.modelAuthoringNarrator,
+          modelPrincipalScopeInterpreter: input.modelPrincipalScopeInterpreter,
           actionProjectInspector: input.actionProjectInspector,
           runDelegationActionReview: input.runDelegationActionReview,
           boundaryAuthoringChatFactory: input.boundaryAuthoringChatFactory,
@@ -2780,7 +2799,8 @@ async function promptRunnerGuidedModelFallback(input: {
 
 type ReviewedJobPrincipalScope =
   | { kind: "direct"; value: string; label: string; confidence: "low" | "medium" | "high" }
-  | { kind: "derived"; value: string; label: string; confidence: "catalog_proven" };
+  | { kind: "derived"; value: string; label: string; confidence: "catalog_proven" }
+  | { kind: "postgres_rls"; value: string; label: string; confidence: "review_required" };
 
 function jobRequestsPrincipalIsolation(intent: string): boolean {
   const normalized = intent.replace(/[_-]+/gu, " ");
@@ -2815,11 +2835,130 @@ function reviewedJobPrincipalScopeOptions(
       confidence: "catalog_proven",
     }),
   );
-  return [...direct, ...derived];
+  const postgresRls = (view.rls?.principal_setting_candidates ?? [])
+    .filter((setting) => setting !== view.candidate?.rls_session?.tenant_setting)
+    .map((setting): ReviewedJobPrincipalScope => ({
+      kind: "postgres_rls",
+      value: setting,
+      label: `PostgreSQL RLS setting ${setting} [meaning requires review]`,
+      confidence: "review_required",
+    }));
+  return [...direct, ...derived, ...postgresRls];
 }
 
 function hasReviewedJobPrincipalScope(view: BoundaryResourceReviewView): boolean {
-  return Boolean(view.candidate?.principal_key || view.candidate?.principal_scope);
+  return Boolean(view.candidate && hasReviewedPrincipalScope(view.candidate));
+}
+
+async function reviewJobPrincipalScopeWithModel(input: {
+  resourceId: string;
+  options: ReviewedJobPrincipalScope[];
+  jobIntent: string;
+  session: BoundaryReviewInteractiveSession;
+  modelSession: ActionModelSuggestionSession;
+  narrator: typeof narrateValidatedAuthoringStep;
+  interpreter?: typeof interpretPrincipalScopeAnswer;
+  authoringChat: BoundaryAuthoringChat;
+}): Promise<{ handled: true; scope?: ReviewedJobPrincipalScope } | { handled: false }> {
+  const candidateFacts = input.options.map((option, index) =>
+    `Candidate ${index + 1}: ${option.label}`);
+  const nextQuestion = input.options.length === 1
+    ? input.options[0]!.kind === "postgres_rls"
+      ? `Does ${input.options[0]!.value} carry the authenticated person's trusted identity for ${input.resourceId}?`
+      : `Does ${input.options[0]!.label} identify the authenticated person who owns rows in ${input.resourceId}?`
+    : `Which candidate identifies the authenticated person who owns rows in ${input.resourceId}, or do none of them?`;
+  const opening = await input.authoringChat.progress(
+    `${boundaryModelLabel(input.modelSession)} is reviewing trusted user scope`,
+    () => input.narrator({
+      session: input.modelSession,
+      operatorMessage: `Clarify the business meaning of the reviewed principal-scope candidates for ${input.resourceId}.`,
+      validatedFacts: [
+        `Own-row isolation is required by this job: ${input.jobIntent}`,
+        ...candidateFacts,
+        "These are exact live-catalog candidates, not authority.",
+        "Runner will require an exact confirmation before changing the disabled draft.",
+      ],
+      nextQuestion,
+      egressAcknowledged: true,
+    }),
+  );
+  if (!opening) return { handled: false };
+
+  const modelOptions: ModelPrincipalScopeOption[] = input.options.map((option, index) => ({
+    id: `candidate_${index + 1}`,
+    kind: option.kind,
+    value: option.value,
+    label: option.label,
+  }));
+  let question = opening;
+  for (let clarification = 0; clarification < 2; clarification += 1) {
+    const answer = await input.session.promptText(question, {
+      context: [
+        "MODEL QUESTION - TRUSTED USER/OWNER SCOPE",
+        ...candidateFacts,
+        "Answer in ordinary language. The model translates; Runner validates the exact choice.",
+      ],
+    });
+    if (answer === undefined) return { handled: true };
+    const resolution = await input.authoringChat.progress(
+      `${boundaryModelLabel(input.modelSession)} is interpreting the scope answer`,
+      () => (input.interpreter ?? interpretPrincipalScopeAnswer)({
+        session: input.modelSession,
+        resourceId: input.resourceId,
+        options: modelOptions,
+        answer,
+        egressAcknowledged: true,
+      }),
+    );
+    if (resolution.state === "none") {
+      input.authoringChat.rememberDetails("TRUSTED USER/OWNER SCOPE NOT SELECTED", [
+        `Resource: ${input.resourceId}`,
+        ...(resolution.rationale ? [`Model interpretation: ${resolution.rationale}`] : []),
+        "No reviewed principal predicate was recorded.",
+        "Agent authority changed: no",
+        "Source database changed: no",
+      ]);
+      return { handled: true };
+    }
+    if (resolution.state === "clarification") {
+      question = resolution.question;
+      continue;
+    }
+    const selectedIndex = modelOptions.findIndex((option) => option.id === resolution.option_id);
+    const selected = input.options[selectedIndex];
+    if (!selected) return { handled: false };
+    const summary = await input.authoringChat.progress(
+      `${boundaryModelLabel(input.modelSession)} is summarizing the exact scope choice`,
+      () => input.narrator({
+        session: input.modelSession,
+        operatorMessage: answer,
+        validatedFacts: [
+          `Runner resolved one exact candidate for ${input.resourceId}: ${selected.label}.`,
+          ...(resolution.rationale ? [`Model rationale: ${resolution.rationale}`] : []),
+          "The value will come only from trusted Runner context, never model arguments.",
+          "Recording it changes only the disabled draft; Read and Action authority remain off.",
+        ],
+        nextQuestion: "Should Runner record this exact trusted user/owner predicate in the disabled Boundary?",
+        egressAcknowledged: true,
+      }),
+    );
+    if (summary) await input.authoringChat.streamModel(summary.split(/\r?\n/u));
+    const accepted = await input.session.confirm(
+      `Record ${selected.label} as the exact trusted user/owner predicate for ${input.resourceId}?`,
+      {
+        defaultValue: false,
+        context: [
+          "REVIEW EXACT USER/OWNER SCOPE",
+          `Resource: ${input.resourceId}`,
+          `Exact predicate: ${selected.label}`,
+          "Confirm only when trusted authenticated-principal context has this exact business meaning.",
+          "This changes a disabled draft only. Agent authority and source data remain unchanged.",
+        ],
+      },
+    );
+    return accepted ? { handled: true, scope: selected } : { handled: true };
+  }
+  return { handled: true };
 }
 
 async function reviewJobPrincipalScopeForResources(input: {
@@ -2828,6 +2967,10 @@ async function reviewJobPrincipalScopeForResources(input: {
   session: BoundaryReviewInteractiveSession;
   jobIntent: string;
   resourceIds: Iterable<string>;
+  modelSession?: ActionModelSuggestionSession;
+  modelNarrator?: typeof narrateValidatedAuthoringStep;
+  modelInterpreter?: typeof interpretPrincipalScopeAnswer;
+  authoringChat?: BoundaryAuthoringChat;
 }): Promise<{ state: "ready"; changed: boolean } | { state: "paused"; resources: string[] }> {
   if (!jobRequestsPrincipalIsolation(input.jobIntent)) {
     return { state: "ready", changed: false };
@@ -2878,8 +3021,8 @@ async function reviewJobPrincipalScopeForResources(input: {
       const lines = [
         "This job promises rows belonging to the authenticated person, but Runner cannot prove a user/owner predicate for the selected resources.",
         ...blocked.map((resourceId) => `- ${resourceId}`),
-        "Review a direct user/owner column or mandatory relationship path, then restart this saved job. Tenant scope alone does not satisfy an own-row request.",
-        "No model request, authority activation, source query, or source write occurred.",
+        "Review a direct user/owner column or mandatory relationship path, then reopen Agent job. Tenant scope alone does not satisfy an own-row request.",
+        "No additional model request occurred during this local scope check. No authority activation, source query, or source write occurred.",
       ];
       input.session.rememberDetails?.("PRINCIPAL SCOPE NEEDS REVIEW", lines);
       input.session.present?.("PRINCIPAL SCOPE NEEDS REVIEW", lines, "warning");
@@ -2890,8 +3033,37 @@ async function reviewJobPrincipalScopeForResources(input: {
       resourceId: string;
       scope: ReviewedJobPrincipalScope;
     }> = [];
-    const unique = reviewable.filter((entry) => entry.options.length === 1);
-    const ambiguous = reviewable.filter((entry) => entry.options.length > 1);
+    const conversationallyHandled = new Set<string>();
+    if (input.modelSession && input.authoringChat) {
+      const narrator = input.modelNarrator ?? narrateValidatedAuthoringStep;
+      for (const entry of reviewable.filter(({ options }) =>
+        options.length > 1 || options.some((option) => option.kind === "postgres_rls"))) {
+        const reviewed = await reviewJobPrincipalScopeWithModel({
+          resourceId: entry.view.resource_id,
+          options: entry.options,
+          jobIntent: input.jobIntent,
+          session: input.session,
+          modelSession: input.modelSession,
+          narrator,
+          ...(input.modelInterpreter ? { interpreter: input.modelInterpreter } : {}),
+          authoringChat: input.authoringChat,
+        });
+        if (!reviewed.handled) continue;
+        conversationallyHandled.add(entry.view.resource_id);
+        if (!reviewed.scope) {
+          reportSavedDecisions();
+          return { state: "paused", resources: [entry.view.resource_id] };
+        }
+        decisions.push({
+          resourceId: entry.view.resource_id,
+          scope: reviewed.scope,
+        });
+      }
+    }
+    const remainingReviewable = reviewable.filter(({ view }) =>
+      !conversationallyHandled.has(view.resource_id));
+    const unique = remainingReviewable.filter((entry) => entry.options.length === 1);
+    const ambiguous = remainingReviewable.filter((entry) => entry.options.length > 1);
     const automaticDerived = unique.filter(({ options }) =>
       options[0]!.confidence === "catalog_proven");
     const needsConfirmation = unique.filter(({ options }) =>
@@ -2980,7 +3152,9 @@ async function reviewJobPrincipalScopeForResources(input: {
         resource_id: resourceId,
         ...(scope.kind === "direct"
           ? { principal_key: scope.value }
-          : { principal_scope_path: scope.value }),
+          : scope.kind === "derived"
+            ? { principal_scope_path: scope.value }
+            : { principal_rls_setting: scope.value }),
         actor,
         reason,
       })),
@@ -3012,6 +3186,7 @@ type InteractiveReadWorkloadAssistInput = {
   modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
   modelAuthoringNarrator?: typeof narrateValidatedAuthoringStep;
+  modelPrincipalScopeInterpreter?: typeof interpretPrincipalScopeAnswer;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
   boundaryAuthoringChatFactory?: BoundaryAuthoringChatFactory;
@@ -3885,6 +4060,14 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           const resource = entry.plan.resource;
           return typeof resource === "string" && resource ? [resource] : [];
         }),
+        ...(modelAssistSession ? { modelSession: modelAssistSession } : {}),
+        ...(input.modelAuthoringNarrator
+          ? { modelNarrator: input.modelAuthoringNarrator }
+          : {}),
+        ...(input.modelPrincipalScopeInterpreter
+          ? { modelInterpreter: input.modelPrincipalScopeInterpreter }
+          : {}),
+        ...(input.authoringChat ? { authoringChat: input.authoringChat } : {}),
       });
       if (readPrincipalScope.state === "paused") {
         return boundaryAssistResult({
@@ -3895,7 +4078,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             "The job promises own-row access, so Runner will not save or activate a tenant-only substitute.",
             "The broad mapping catalog remains disabled and source data is unchanged.",
           ],
-          footer: "Review the exact user/owner predicate, then restart this saved job.",
+          footer: "Review the exact user/owner predicate, then reopen Agent job. The disabled catalog is preserved; this conversation is not yet saved.",
         });
       }
       if (readPrincipalScope.changed) {
@@ -4039,6 +4222,14 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           const resource = result.assessment.suggestion.resource;
           return typeof resource === "string" && resource ? [resource] : [];
         }),
+        ...(modelInterviewSession ? { modelSession: modelInterviewSession } : {}),
+        ...(input.modelAuthoringNarrator
+          ? { modelNarrator: input.modelAuthoringNarrator }
+          : {}),
+        ...(input.modelPrincipalScopeInterpreter
+          ? { modelInterpreter: input.modelPrincipalScopeInterpreter }
+          : {}),
+        ...(input.authoringChat ? { authoringChat: input.authoringChat } : {}),
       });
       if (actionPrincipalScope.state === "paused") {
         return boundaryAssistResult({
@@ -4049,7 +4240,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             "The requested Action would otherwise be tenant-only, which does not satisfy this own-row job.",
             "The refused Action draft was not saved or activated and source data is unchanged.",
           ],
-          footer: "Review the exact user/owner predicate, then restart this saved job.",
+          footer: "Review the exact user/owner predicate, then reopen Agent job. The disabled catalog is preserved; this conversation is not yet saved.",
         });
       }
       if (actionPrincipalScope.changed) {
@@ -4073,6 +4264,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           const resource = actionCatalog.resources.find((candidate) => candidate.id === suggestion.resource);
           const scope = resource?.principal_key
             ? `; trusted scope ${resource.tenant_key} + ${resource.principal_key}`
+            : resource?.principal_rls_setting
+              ? `; trusted scope ${resource.tenant_key} + PostgreSQL RLS setting ${resource.principal_rls_setting}`
             : resource?.tenant_key
               ? `; trusted scope ${resource.tenant_key} only; no principal row limit configured`
               : resource?.organization_scope
@@ -4254,6 +4447,14 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     jobIntent: jobIntent.trim(),
     resourceIds: workload.analysis.allowed.flatMap((entry) =>
       entry.authority_atoms.map((atom) => atom.root_resource)),
+    ...(modelAssistSession ? { modelSession: modelAssistSession } : {}),
+    ...(input.modelAuthoringNarrator
+      ? { modelNarrator: input.modelAuthoringNarrator }
+      : {}),
+    ...(input.modelPrincipalScopeInterpreter
+      ? { modelInterpreter: input.modelPrincipalScopeInterpreter }
+      : {}),
+    ...(input.authoringChat ? { authoringChat: input.authoringChat } : {}),
   });
   if (principalScope.state === "paused") {
     return boundaryAssistResult({
@@ -4264,7 +4465,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         "The job promises own-row access, so Runner will not save or activate a tenant-only substitute.",
         "The disabled mapping catalog remains available and source data is unchanged.",
       ],
-      footer: "Review the exact user/owner predicate, then restart this saved job.",
+      footer: "Review the exact user/owner predicate, then reopen Agent job. The disabled catalog is preserved; this conversation is not yet saved.",
     });
   }
   if (principalScope.changed) {
@@ -6892,10 +7093,12 @@ export function formatFocusedBoundaryActivationReview(
       ? `database role ${bundle.candidate.trusted_context.database_role_tenant.setting}`
       : bundle.candidate.trusted_context.tenant_env;
   const principalScopes = bundle.candidate.pack.resources
-    .filter((resource) => Boolean(resource.principal_key || resource.principal_scope))
+    .filter(hasReviewedPrincipalScope)
     .map((resource) => resource.principal_key
       ? `${resource.id}.${resource.principal_key}`
-      : `${resource.id} through ${formatDerivedScopePath(resource.principal_scope!)}`);
+      : resource.principal_scope
+        ? `${resource.id} through ${formatDerivedScopePath(resource.principal_scope)}`
+        : `${resource.id} through PostgreSQL RLS setting ${resource.rls_session!.principal_setting}`);
   const tenantScopeSummary = bundle.candidate.organization_scope
     ? `Single organization (${bundle.candidate.organization_scope.organization_id}); no tenant predicate is applied`
     : allTenantScopesDirect && directTenantKeys.length === 1
@@ -6992,7 +7195,7 @@ export function formatBoundaryChatReviewSummary(
       ? "organization"
       : resource.shared_reference_scope
         ? "shared"
-        : resource.principal_key || resource.principal_scope
+        : hasReviewedPrincipalScope(resource)
           ? "tenant + principal"
           : "tenant";
     return {
@@ -8060,15 +8263,26 @@ async function interactiveBoundaryPrincipalReview(input: {
     value: scope.path_id,
     label: `Mandatory path ${formatDerivedScopePath(scope)}`,
   }));
+  const rls = (input.view.rls?.principal_setting_candidates ?? []).map((setting) => ({
+    kind: "postgres_rls" as const,
+    value: setting,
+    label: `PostgreSQL RLS setting ${setting}`,
+  }));
   const options = [
     { kind: "none" as const, value: "", label: "No per-user row limit" },
     ...direct,
     ...derived,
+    ...rls,
   ];
   const currentIndex = Math.max(0, options.findIndex((option) =>
     (option.kind === "direct" && option.value === candidate.principal_key)
     || (option.kind === "derived" && option.value === candidate.principal_scope?.path_id)
-    || (option.kind === "none" && !candidate.principal_key && !candidate.principal_scope)));
+    || (option.kind === "postgres_rls"
+      && option.value === candidate.rls_session?.principal_setting)
+    || (option.kind === "none"
+      && !candidate.principal_key
+      && !candidate.principal_scope
+      && !candidate.rls_session?.principal_setting)));
   const rowLimitMenu = [
     `USER/OWNER ROW LIMIT - ${input.resourceId}`,
     "Runner binds this value from trusted application context. The AI never supplies it.",
@@ -8124,7 +8338,13 @@ async function interactiveBoundaryPrincipalReview(input: {
       ? { principal_key: selected.value }
       : selected.kind === "derived"
         ? { principal_scope_path: selected.value }
-        : { principal_key: null, principal_scope_path: null }),
+        : selected.kind === "postgres_rls"
+          ? { principal_rls_setting: selected.value }
+          : {
+              principal_key: null,
+              principal_scope_path: null,
+              principal_rls_setting: null,
+            }),
     actor,
     reason,
   };
@@ -8891,6 +9111,11 @@ function formatBoundaryMutationPreview(
     ...(preview.request.principal_scope_path !== undefined && diff.selected_principal_scope_path
       ? [`  Trusted user/owner scope: mandatory reviewed path ${diff.selected_principal_scope_path}`]
       : []),
+    ...(preview.request.principal_rls_setting !== undefined
+      ? [`  Trusted user/owner scope: ${diff.selected_principal_rls_setting
+        ? `reviewed PostgreSQL RLS setting ${diff.selected_principal_rls_setting}`
+        : "not configured"}`]
+      : []),
     ...(diff.minimum_cohort_before !== diff.minimum_cohort_after
       ? [
         `  Minimum group size: ${diff.minimum_cohort_before ?? "not included"} -> ` +
@@ -9014,6 +9239,13 @@ function formatRequestedBoundaryChanges(
       : `Trusted user/owner scope: mandatory reviewed path ${scope
         ? formatDerivedScopePath(scope)
         : request.principal_scope_path}`);
+  }
+  if (request.principal_rls_setting !== undefined
+    && request.principal_key === undefined
+    && request.principal_scope_path === undefined) {
+    lines.push(request.principal_rls_setting === null
+      ? "Trusted user/owner scope: not configured."
+      : `Trusted user/owner scope: reviewed PostgreSQL RLS setting ${request.principal_rls_setting}.`);
   }
   for (const [label, fields] of [
     ["Visible fields", request.selectable_fields],
@@ -9730,6 +9962,7 @@ function formatBoundaryFinalReview(bundle: BoundaryReviewBundle): string {
   }
   for (const resource of bundle.candidate.pack.resources) {
     if (!outstanding.some((decision) => decision.resource_id === resource.id)) continue;
+    const principalScope = reviewedPrincipalScopeLabel(resource);
     rows.push([
       resource.id,
       [
@@ -9739,11 +9972,9 @@ function formatBoundaryFinalReview(bundle: BoundaryReviewBundle): string {
         resource.model_withheld_fields?.length ?? 0,
         resource.kept_out_fields.length,
       ].join("/"),
-      resource.principal_key
-        ? `${reviewedTenantScopeLabel(resource)} + ${resource.principal_key}`
-        : resource.principal_scope
-          ? `${reviewedTenantScopeLabel(resource)} + derived principal`
-          : reviewedTenantScopeLabel(resource),
+      principalScope
+        ? `${reviewedTenantScopeLabel(resource)} + ${principalScope}`
+        : reviewedTenantScopeLabel(resource),
       `${resource.minimum_cohort_size}/${resource.relationships.length}`,
       "Sign-off needed",
     ]);
@@ -9772,6 +10003,17 @@ function reviewedTenantScopeLabel(
   if (resource.tenant_key) return resource.tenant_key;
   if (resource.tenant_scope) return `through ${formatDerivedScopePath(resource.tenant_scope)}`;
   return "Shared reference (no tenant predicate)";
+}
+
+function reviewedPrincipalScopeLabel(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): string | undefined {
+  if (resource.principal_key) return resource.principal_key;
+  if (resource.principal_scope) return `through ${formatDerivedScopePath(resource.principal_scope)}`;
+  if (resource.rls_session?.principal_setting) {
+    return `PostgreSQL RLS setting ${resource.rls_session.principal_setting}`;
+  }
+  return undefined;
 }
 
 function formatBoundarySettingsSignoff(bundle: BoundaryReviewBundle): string {
@@ -9851,11 +10093,9 @@ function formatBoundaryResourceSignoff(
         ["Customer scope", `${reviewedTenantScopeLabel(resource)} - supplied outside AI requests`],
         [
           "User/owner scope",
-          resource.principal_key
-            ? `${resource.principal_key} - supplied outside AI requests`
-            : resource.principal_scope
-              ? `through ${formatDerivedScopePath(resource.principal_scope)} - supplied outside AI requests`
-              : "No separate per-user column is configured",
+          reviewedPrincipalScopeLabel(resource)
+            ? `${reviewedPrincipalScopeLabel(resource)} - supplied outside AI requests`
+            : "No separate per-user row limit is configured",
         ],
         ["Allowed operations", operationCounts],
         ["Model vocabulary", formatExploreVocabularyCoverage(resource)],

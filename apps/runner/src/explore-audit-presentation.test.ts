@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
+import {
+  describeExploreAuditPlan,
+  presentExploreAuditQuery,
+  reconstructExploreAuditQuery,
+} from "./explore-audit-presentation.js";
 import { formatEvidenceBrowserFacts, formatEvidenceBrowserPlan, formatEvidenceBrowserQuery, formatEvidenceBrowserRow, formatEvidenceBrowserSummary, formatEvidenceDetail, formatEvidenceMarkdown, formatEvidenceSummary, formatQueryAuditBrowserFacts, formatQueryAuditBrowserPlan, formatQueryAuditBrowserQuery, formatQueryAuditBrowserRow, formatQueryAuditBrowserSummary, formatQueryAuditDetail } from "./proposal-formatting.js";
 
 describe("Explore audit presentation", () => {
@@ -96,6 +100,69 @@ describe("Explore audit presentation", () => {
     expect(result?.statement).toContain("1 = 0 /* REQUIRED Runner principal scope; see notes */");
     expect(result?.statement).not.toContain("predicate applied by Runner");
     expect(result?.caveats).toContain("Exact tenant-predicate metadata was not recorded for this legacy event.");
+  });
+
+  it("reports PostgreSQL RLS session scope without inventing a principal SQL predicate", () => {
+    const scopeApplication = {
+      tenant: {
+        kind: "direct",
+        predicate_applied: true,
+        column: "tenant_id",
+        session_setting_applied: true,
+        setting: "app.tenant_id",
+      },
+      principal: {
+        kind: "postgres_rls",
+        predicate_applied: false,
+        session_setting_applied: true,
+        setting: "app.viewer_context",
+      },
+    };
+    const legacy = reconstructExploreAuditQuery({
+      normalizedPlan: {
+        kind: "rows",
+        resource: "public.accounts",
+        select: ["status"],
+        limit: 5,
+      },
+      scopeApplication,
+      trustedScope: { tenant_bound: true, principal_bound: true },
+    });
+
+    expect(legacy?.statement).toContain("tenant_id = :trusted_tenant");
+    expect(legacy?.statement).toContain(
+      "principal scope also enforced by PostgreSQL RLS through trusted session setting app.viewer_context",
+    );
+    expect(legacy?.statement).not.toContain("REQUIRED Runner principal scope");
+    expect(legacy?.caveats.join("\n")).toContain(
+      "effective RLS policy, not a model-authored SQL predicate, enforced row filtering",
+    );
+
+    const captured = presentExploreAuditQuery({
+      normalizedPlan: {
+        kind: "rows",
+        resource: "public.accounts",
+        select: ["status"],
+        limit: 5,
+      },
+      parameterizedSql: {
+        schema_version: "synapsor.explore-parameterized-sql.v1",
+        engine: "postgres",
+        provenance: "captured_before_source_execution",
+        parameter_values_persisted: false,
+        model_received_sql: false,
+        statements: [{
+          statement: "SELECT status FROM public.accounts WHERE tenant_id = $1 LIMIT $2",
+          parameter_count: 2,
+          parameter_types: ["string", "integer"],
+        }],
+      },
+      scopeApplication,
+    });
+    expect(captured?.caveats.join("\n")).toContain(
+      "Principal scope also used trusted PostgreSQL session setting app.viewer_context",
+    );
+    expect(captured?.statement).not.toContain("app.viewer_context");
   });
 
   it("groups the important audit facts, colors only interactive output, and leads with the readable query", () => {

@@ -157,8 +157,11 @@ Runner starts from a fully reviewed Read Boundary revision and a fresh database
 inspection. Drafting and rehearsal may use that exact pending revision;
 proposal activation still requires the same Read Boundary digest to be active.
 For managed Safe Actions, a resource must currently have a direct reviewed
-tenant key. If principal scope is required, it must also be direct. A derived
-read path does not silently become write authority.
+tenant key. If principal scope is required, it must be either a direct reviewed
+column or an effective reviewed PostgreSQL RLS session setting. Runner applies
+the latter transaction-locally and accounts deterministic shared limits per
+trusted tenant plus principal. A relationship-carried read path does not
+silently become write authority.
 
 Runner evaluates Action fields independently from the Read Boundary's row-return
 list. It excludes generated, identity, immutable, scope-owned, and structurally
@@ -336,7 +339,7 @@ guessing. The standalone command remains:
 synapsor-runner action suggest \
   --intent "Let support propose a bounded plan credit" \
   --provider openai \
-  --model gpt-5.6-luna \
+  --model gpt-5.6-terra \
   --api-key-env OPENAI_API_KEY \
   --acknowledge-egress \
   --project-root .

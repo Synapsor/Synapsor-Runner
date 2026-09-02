@@ -28,6 +28,7 @@ import {
   writeAutoBoundaryArtifacts,
   type AutoBoundaryField,
   type AutoBoundaryBuild,
+  type AutoBoundaryResource,
   type BoundaryInference,
   type ConfiguredTrustedContextAuthority,
   type DerivedScopeInference,
@@ -178,6 +179,7 @@ export type BoundaryResourceReviewRequest = {
   shared_reference_scope?: typeof SHARED_REFERENCE_ACKNOWLEDGEMENT;
   principal_key?: string | null;
   principal_scope_path?: string | null;
+  principal_rls_setting?: string | null;
   keep_out_fields?: string[];
   withhold_from_model_fields?: string[];
   allow_reviewed_fields?: string[];
@@ -551,6 +553,7 @@ export type BoundaryReviewSemanticDiff = {
   selected_shared_reference_scope: boolean;
   selected_principal_key: string | null;
   selected_principal_scope_path?: string;
+  selected_principal_rls_setting?: string;
   added_visible_fields: string[];
   removed_visible_fields: string[];
   added_kept_out_fields: string[];
@@ -603,6 +606,7 @@ export type BoundaryResourceReviewView = {
   shared_reference_scope?: SharedReferenceScopeInference;
   principal_key: BoundaryInference<string>;
   derived_principal_scope?: DerivedScopeInference;
+  rls?: AutoBoundaryResource["rls"];
   fields: AutoBoundaryField[];
   relationships: Array<{
     name: string;
@@ -684,6 +688,7 @@ type BoundaryReviewFiles = {
       shared_reference_scope?: SharedReferenceScopeInference;
       principal_key: BoundaryInference<string>;
       derived_principal_scope?: DerivedScopeInference;
+      rls?: AutoBoundaryResource["rls"];
       fields: AutoBoundaryField[];
       relationships: BoundaryResourceReviewView["relationships"];
     }>;
@@ -730,6 +735,7 @@ export async function inspectBoundaryResourceReview(
     ...(reviewed.derived_principal_scope
       ? { derived_principal_scope: reviewed.derived_principal_scope }
       : {}),
+    ...(reviewed.rls ? { rls: structuredClone(reviewed.rls) } : {}),
     fields: reviewed.fields,
     relationships: reviewed.relationships,
     included_resource_ids: state.candidate.pack.resources.map((resource) => resource.id).sort(),
@@ -1033,7 +1039,6 @@ export async function prepareBoundaryResourceReviewMutation(
     },
     semantic_diff: diff,
   };
-
   return {
     schema_version: "synapsor.boundary-review-mutation-preview.v1",
     bindings: previousBindings,
@@ -1559,6 +1564,8 @@ function scopeInferenceDigest(
     shared_reference_scope: resource.shared_reference_scope?.selected ?? null,
     principal_key: resource.principal_key.selected ?? null,
     principal_scope: resource.derived_principal_scope?.selected ?? null,
+    principal_rls_candidates: resource.rls?.principal_setting_candidates ?? [],
+    principal_rls_review: resource.rls?.principal_setting_review_override?.value ?? null,
   })));
 }
 
@@ -1767,6 +1774,13 @@ function managedDecisionsForRequest(
       ...common,
       kind: "principal_scope_path",
       value: request.principal_scope_path,
+    }));
+  }
+  if (request.principal_rls_setting !== undefined) {
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "principal_rls_setting",
+      value: request.principal_rls_setting,
     }));
   }
   for (const field of request.keep_out_fields ?? []) {
@@ -2346,7 +2360,8 @@ function canStageIncompleteScopeResolution(
     || request.tenant_scope_path !== undefined
     || request.shared_reference_scope !== undefined
     || request.principal_key !== undefined
-    || request.principal_scope_path !== undefined;
+    || request.principal_scope_path !== undefined
+    || request.principal_rls_setting !== undefined;
   const hasNonScopeChoice = [
     request.keep_out_fields,
     request.withhold_from_model_fields,
@@ -2456,6 +2471,9 @@ function semanticDiff(
     selected_principal_key: afterResource?.principal_key ?? null,
     ...(afterResource?.principal_scope
       ? { selected_principal_scope_path: afterResource.principal_scope.path_id }
+      : {}),
+    ...(afterResource?.rls_session?.principal_setting
+      ? { selected_principal_rls_setting: afterResource.rls_session.principal_setting }
       : {}),
     added_visible_fields: visible.added,
     removed_visible_fields: visible.removed,
@@ -2613,8 +2631,15 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
       `Shared-reference review must acknowledge ${SHARED_REFERENCE_ACKNOWLEDGEMENT}.`,
     );
   }
-  if (request.principal_key && request.principal_scope_path) {
-    throw new Error("Choose either a direct principal column or one relationship-carried principal path, not both.");
+  const principalModes = [
+    request.principal_key,
+    request.principal_scope_path,
+    request.principal_rls_setting,
+  ].filter((value) => value !== undefined && value !== null).length;
+  if (principalModes > 1) {
+    throw new Error(
+      "Choose one principal mode: a direct column, one relationship-carried path, or one reviewed PostgreSQL RLS setting.",
+    );
   }
   if (!request.actor.trim() || request.actor.length > 128) {
     throw new Error("Boundary resource review requires a bounded human reviewer identity.");
@@ -2739,6 +2764,7 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
     request.shared_reference_scope,
     ...(request.principal_key ? [request.principal_key] : []),
     ...(request.principal_scope_path ? [request.principal_scope_path] : []),
+    ...(request.principal_rls_setting ? [request.principal_rls_setting] : []),
     ...requestArrays(request),
   ].filter((value): value is string => typeof value === "string");
   if (values.some((value) => /[\u0000-\u001f\u007f]/.test(value))) {
@@ -2809,6 +2835,14 @@ function validateBoundaryRequestAgainstResource(
       ).join(", ") || "none"}. Use the exact path ID with --principal-scope-path.`,
     );
   }
+  if (request.principal_rls_setting
+    && !(resource.rls?.principal_setting_candidates ?? []).includes(request.principal_rls_setting)) {
+    throw new Error(
+      `${resource.id} PostgreSQL RLS setting ${JSON.stringify(request.principal_rls_setting)} `
+      + "is not present in the current reviewed policy expressions. "
+      + `Available RLS setting candidates: ${(resource.rls?.principal_setting_candidates ?? []).join(", ") || "none"}.`,
+    );
+  }
 
   if (request.field_enum) {
     const field = resource.fields.find((candidate) => candidate.name === request.field_enum!.field);
@@ -2876,6 +2910,12 @@ function assertRequestedExposureState(
 ): void {
   const resource = candidate.pack.resources.find((item) => item.id === request.resource_id);
   if (!resource) return;
+  if (request.principal_rls_setting !== undefined
+    && (resource.rls_session?.principal_setting ?? null) !== request.principal_rls_setting) {
+    throw new Error(
+      `Reviewed PostgreSQL RLS principal setting for ${request.resource_id} was not reflected in the disabled candidate.`,
+    );
+  }
   for (const field of request.keep_out_fields ?? []) {
     if (!resource.kept_out_fields.includes(field)) {
       throw new Error(`Reviewed keep-out decision for ${request.resource_id}.${field} was not reflected in the disabled candidate.`);
@@ -2992,6 +3032,9 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
     principal_key: request.principal_key === undefined ? "unchanged" : request.principal_key,
     ...(request.principal_scope_path !== undefined
       ? { principal_scope_path: request.principal_scope_path }
+      : {}),
+    ...(request.principal_rls_setting !== undefined
+      ? { principal_rls_setting: request.principal_rls_setting }
       : {}),
     keep_out_fields: [...(request.keep_out_fields ?? [])].sort(),
     withhold_from_model_fields: [...(request.withhold_from_model_fields ?? [])].sort(),

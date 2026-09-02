@@ -155,6 +155,7 @@ export function presentExploreAuditQuery(
       `Captured before source execution from the parameterized ${captured.engine === "postgres" ? "PostgreSQL" : "MySQL"} statement shape Runner handed to the driver.`,
       "Parameter values were not persisted; placeholders remain where the driver bound trusted scope and reviewed filter values.",
       "The model never received this SQL. This operator record is not executable without the separately held parameter values.",
+      ...rlsSessionScopeCaveats(input.scopeApplication),
       ...parameterSummary,
     ],
   };
@@ -395,25 +396,60 @@ function scopeClauses(input: ReconstructInput): {
     predicates.push("1 = 0 /* REQUIRED Runner tenant scope; see notes */");
     caveats.push("Exact tenant-predicate metadata was not recorded for this legacy event.");
   }
+  appendRlsSessionScope("tenant", tenant, comments, caveats);
 
   if (principal.predicate_applied === true) {
     predicates.push(scopePredicate("principal", principal));
     caveats.push(`Principal scope: predicate applied by Runner through ${scopeDescription(principal)}.`);
   } else if (text(principal.kind)) {
-    comments.push(`principal predicate not applied: ${scopeDescription(principal)}`);
+    if (principal.session_setting_applied !== true) {
+      comments.push(`principal predicate not applied: ${scopeDescription(principal)}`);
+    }
   } else if (record(input.trustedScope).principal_bound === true || input.principalRecorded) {
     predicates.push("1 = 0 /* REQUIRED Runner principal scope; see notes */");
     caveats.push("Exact principal-predicate metadata was not recorded for this legacy event.");
   }
+  appendRlsSessionScope("principal", principal, comments, caveats);
   return { predicates, comments, caveats };
+}
+
+function appendRlsSessionScope(
+  kind: "tenant" | "principal",
+  scope: AuditRecord,
+  comments: string[],
+  caveats: string[],
+): void {
+  if (scope.session_setting_applied !== true) return;
+  const setting = identifier(scope.setting);
+  if (!setting) return;
+  comments.push(
+    `${kind} scope also enforced by PostgreSQL RLS through trusted session setting ${setting}; the policy predicate is database-managed`,
+  );
+  caveats.push(
+    `${kind === "tenant" ? "Tenant" : "Principal"} scope: Runner applied trusted PostgreSQL session setting ${setting}; the effective RLS policy, not a model-authored SQL predicate, enforced row filtering.`,
+  );
+}
+
+function rlsSessionScopeCaveats(scopeApplication: unknown): string[] {
+  const application = record(scopeApplication);
+  return (["tenant", "principal"] as const).flatMap((kind) => {
+    const scope = record(application[kind]);
+    const setting = identifier(scope.setting);
+    if (scope.session_setting_applied !== true || !setting) return [];
+    return [
+      `${kind === "tenant" ? "Tenant" : "Principal"} scope also used trusted PostgreSQL session setting ${setting}; its database-managed RLS predicate is not text inside the captured statement.`,
+    ];
+  });
 }
 
 function scopeDescription(scope: AuditRecord): string {
   const kind = identifier(scope.kind) || "reviewed scope";
   const column = identifier(scope.column);
   const path = identifier(scope.path_id);
+  const setting = identifier(scope.setting);
   if (column) return `${kind} column ${column}`;
   if (path) return `${kind} path ${path}`;
+  if (setting) return `${kind.replaceAll("_", " ")} setting ${setting}`;
   return kind.replaceAll("_", " ");
 }
 

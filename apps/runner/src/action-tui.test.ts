@@ -110,7 +110,7 @@ describe("Safe Action terminal control plane", () => {
   it("auto-selects one conventional external model without reading or persisting its key", () => {
     expect(conventionalModelAuthoringSession({ OPENAI_API_KEY: "openai-secret" })).toEqual({
       provider: "openai",
-      model: "gpt-5.6-luna",
+      model: "gpt-5.6-terra",
       apiKeyEnv: "OPENAI_API_KEY",
     });
     expect(conventionalModelAuthoringSession({ ANTHROPIC_API_KEY: "anthropic-secret" })).toEqual({

@@ -135,6 +135,37 @@ describe("quick proposal action preparation", () => {
     });
   });
 
+  it("binds deterministic approval limits to tenant plus principal for reviewed RLS scope", () => {
+    const rlsScoped: GuidedActionResourceOption = {
+      ...students,
+      principal_rls_setting: "app.viewer_context",
+      writable_fields: [students.writable_fields.find((field) => field.name === "entry_cohort")!],
+      structurally_eligible_fields: [students.structurally_eligible_fields.find((field) => field.name === "entry_cohort")!],
+    };
+    const result = prepareQuickProposalAction({
+      options: { ...options, resources: [rlsScoped] },
+      intent: "Update the reviewed entry cohort for this authenticated user.",
+      decisions: {
+        resource: rlsScoped.id,
+        operation: "update",
+        guard_column: "student_id",
+        fields: ["entry_cohort"],
+      },
+    });
+
+    expect(result).toMatchObject({
+      state: "ready",
+      deterministic_approval_template: {
+        shared_limits: [expect.objectContaining({ scope: "tenant_principal" })],
+      },
+      summary: {
+        trusted_context: expect.arrayContaining([
+          "PostgreSQL RLS setting app.viewer_context from trusted Runner context",
+        ]),
+      },
+    });
+  });
+
   it("keeps fractional bounds available for a decimal source column", () => {
     const decimalResource: GuidedActionResourceOption = {
       ...students,

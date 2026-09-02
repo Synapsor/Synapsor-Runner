@@ -5,6 +5,7 @@ import type {
   ExplorationBoundaryDraft,
   GenerationLock,
 } from "./auto-boundary.js";
+import { hasReviewedPrincipalScope } from "./auto-boundary.js";
 import { withPreservedCleanup } from "./resource-lifecycle.js";
 
 type ExploreBoundary = ExplorationBoundaryDraft | ActivatedExplorationBoundary;
@@ -82,7 +83,7 @@ export async function resolveExploreTrustedScope(input: {
     };
   }
   const principalRequired = input.boundary.pack.resources.some((resource) =>
-    Boolean(resource.principal_key || resource.principal_scope));
+    hasReviewedPrincipalScope(resource));
   const configuredTenant = input.env[input.boundary.trusted_context.tenant_env]?.trim();
   const configuredPrincipal = input.env[input.boundary.trusted_context.principal_env]?.trim();
   if (principalRequired && !configuredPrincipal) {

@@ -1,4 +1,5 @@
 import {
+  hasReviewedPrincipalScope,
   DEFAULT_REVIEWED_EXPLORATION_BUDGETS,
   reviewExplorationBoundaryCandidate,
   reviewedAnalysisRelationshipHopLimit,
@@ -90,7 +91,7 @@ export function instantLocalBoundaryCandidate(
     derivedScopeDepth(resource.tenant_scope) <= maximumDerivedScopeHops
     && derivedScopeDepth(resource.principal_scope) <= maximumDerivedScopeHops);
   const tenantOnlyResources = eligibleResources
-    .filter((resource) => !resource.principal_key && !resource.principal_scope);
+    .filter((resource) => !hasReviewedPrincipalScope(resource));
   const eligible = tenantOnlyResources.length > 0
     ? tenantOnlyResources
     : eligibleResources;

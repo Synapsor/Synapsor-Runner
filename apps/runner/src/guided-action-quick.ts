@@ -706,7 +706,11 @@ function ready(
           : resource.tenant_key
             ? [`${resource.tenant_key} from trusted Runner context`]
             : []),
-        ...(resource.principal_key ? [`${resource.principal_key} from trusted Runner context`] : []),
+        ...(resource.principal_key
+          ? [`${resource.principal_key} from trusted Runner context`]
+          : resource.principal_rls_setting
+            ? [`PostgreSQL RLS setting ${resource.principal_rls_setting} from trusted Runner context`]
+            : []),
       ],
       retry_or_conflict_guard: action.operation === "insert"
         ? `deduplicate proposals by ${action.dedup_proposal_column}`
@@ -752,7 +756,7 @@ function deterministicApprovalTemplate(
   if (!conditions.length || conditions.length > 16) return undefined;
   const sharedScope = resource.organization_scope
     ? undefined
-    : resource.principal_key
+    : resource.principal_key || resource.principal_rls_setting
       ? "tenant_principal" as const
       : "tenant" as const;
   return {

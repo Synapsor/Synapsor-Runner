@@ -23,7 +23,7 @@ what state remains, and one next action. Do not delete the project or add
 | Database connection or metadata inspection failed | Existing project/review files and source rows | Fix the URL/network without printing the credential, then rerun `npx -y @synapsor/runner start`. |
 | Read role is writable, owner, elevated, superuser, `BYPASSRLS`, or unverifiable | Existing config, draft, active authority, approvals, and source rows | Point the named source URL environment variable at a verifiably SELECT-only non-owner role, then rerun the same command. |
 | Schema or project choice is ambiguous | Existing files; no authority activation | Rerun with the exact reviewed schema, for example `npx -y @synapsor/runner start --schema public`. |
-| Tenant or principal scope is unresolved | Conservative blocked resource decisions | In CLI, select the table and choose its database-inspected Record ID and Tenant isolation values; in Workbench, open **Resolve blocked access**. No signed key is needed for this interactive disabled-draft decision. |
+| Tenant or principal scope is unresolved | Conservative blocked resource decisions | In CLI, select the table and choose its database-inspected Record ID and Tenant isolation values; in Workbench, open **Resolve blocked access**. Model-guided setup can ask about ambiguous exact columns, paths, or PostgreSQL RLS settings, but Runner still requires exact confirmation. No signed key is needed for this interactive disabled-draft decision. |
 | Sensitive field remains unresolved | Field stays kept out; active tools unchanged | Open Workbench **Exceptions** and record one reviewed field decision. |
 | Row identifier is missing/composite/ambiguous | Resource remains blocked | Select a source-proven single-column primary/unique identity or keep the resource blocked. |
 | Trusted context environment is missing | Boundary and ledger remain intact; query did not run | Export the named tenant/principal variable locally, then rerun the displayed Try action. |
@@ -183,7 +183,7 @@ The same provider path is available without a browser:
 synapsor-runner try ask --provider openai
 ```
 
-Terminal Ask defaults OpenAI to `gpt-5.6-luna` and Anthropic
+Terminal Ask defaults OpenAI to `gpt-5.6-terra` and Anthropic
 uses `claude-sonnet-4-20250514` when `--model` is omitted. Pass `--model` to
 override either default. OpenAI-compatible endpoints require an explicit model
 because Runner cannot infer what a local endpoint serves.

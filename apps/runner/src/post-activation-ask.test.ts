@@ -41,7 +41,7 @@ describe("post-activation Ask handoff", () => {
     })).toBeUndefined();
     expect(defaultPostActivationAskSelection({})).toEqual({
       route: "openai",
-      model: "gpt-5.6-luna",
+      model: "gpt-5.6-terra",
     });
     expect(defaultPostActivationAskSelection({ ANTHROPIC_API_KEY: "configured" }))
       .toEqual({
@@ -74,7 +74,7 @@ describe("post-activation Ask handoff", () => {
     expect(runAsk).toHaveBeenCalledWith([
       "--project-root", "/tmp/reviewed-project",
       "--provider", "openai",
-      "--model", "gpt-5.6-luna",
+      "--model", "gpt-5.6-terra",
     ], { consentOnFirstQuestion: true });
     expect(String(stdout.write.mock.calls.flat()))
       .toContain("OpenAI is already configured");
@@ -86,7 +86,7 @@ describe("post-activation Ask handoff", () => {
       expected: [
         "--project-root", "/tmp/reviewed-project",
         "--provider", "openai",
-        "--model", "gpt-5.6-luna",
+        "--model", "gpt-5.6-terra",
       ],
     },
     {
@@ -368,7 +368,7 @@ describe("post-activation Ask handoff", () => {
     expect(errors.join("")).toContain("Ask did not start: provider credential unavailable");
     expect(errors.join("")).toContain("The reviewed boundary is still active.");
     expect(errors.join("")).toContain(
-      "try ask --project-root /tmp/reviewed-project --provider openai --model gpt-5.6-luna",
+      "try ask --project-root /tmp/reviewed-project --provider openai --model gpt-5.6-terra",
     );
   });
 });

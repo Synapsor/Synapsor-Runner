@@ -20,9 +20,11 @@ import {
   exactGroupingDataTypeSupported,
   explorationBoundaryCandidateDigest,
   generationLockSharedFactsDigest,
+  hasReviewedPrincipalScope,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
   pruneAutoBoundaryReviewOverrides,
+  reviewedPrincipalScopeKind,
   reviewExplorationBoundaryCandidate,
   seedConfiguredPrincipalBindingReview,
   writeAutoBoundaryArtifacts,
@@ -1962,6 +1964,8 @@ describe("Auto Boundary compiler", () => {
       tenant_setting: "app.tenant_id",
       principal_setting: "app.principal",
     });
+    expect(resource && reviewedPrincipalScopeKind(resource)).toBe("postgres_rls");
+    expect(resource && hasReviewedPrincipalScope(resource)).toBe(true);
   });
 
   it("does not treat an unrelated RLS session setting as trusted principal scope", () => {
@@ -1978,8 +1982,68 @@ describe("Auto Boundary compiler", () => {
     });
     const resource = result.exploration_boundary.pack.resources.find((candidate) =>
       candidate.id === "public.subscriptions");
+    const reviewed = result.review.resources.find((candidate) =>
+      candidate.id === "public.subscriptions");
 
     expect(resource?.rls_session).toEqual({ tenant_setting: "app.tenant_id" });
+    expect(reviewed?.rls.principal_setting_candidates).toContain("app.region");
+    expect(resource && reviewedPrincipalScopeKind(resource)).toBeUndefined();
+    expect(resource && hasReviewedPrincipalScope(resource)).toBe(false);
+  });
+
+  it("requires an exact reviewed decision before an opaque RLS setting becomes principal scope", () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.row_level_security_policies![0]!.using_expression = [
+      "(tenant_id = current_setting('app.tenant_id')::uuid",
+      "AND app.can_view_subscription(tenant_id, current_setting('app.viewer_context')))",
+    ].join(" ");
+    const input = {
+      inspection,
+      project: projectSummary("/workspace/churn-app"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const unreviewed = buildAutoBoundary(input);
+    const unreviewedResource = unreviewed.exploration_boundary.pack.resources.find((candidate) =>
+      candidate.id === "public.subscriptions");
+    const reviewResource = unreviewed.review.resources.find((candidate) =>
+      candidate.id === "public.subscriptions");
+
+    expect(reviewResource?.rls.principal_setting_candidates).toContain("app.viewer_context");
+    expect(unreviewedResource?.rls_session).toEqual({ tenant_setting: "app.tenant_id" });
+    expect(unreviewedResource && hasReviewedPrincipalScope(unreviewedResource)).toBe(false);
+
+    const reviewed = buildAutoBoundary({
+      ...input,
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.subscriptions": {
+            principal_rls_setting: {
+              value: "app.viewer_context",
+              actor: "security-reviewer@example.com",
+              reason: "Application authentication binds this exact setting to the signed-in customer.",
+              decided_at: "2026-09-02T00:00:00.000Z",
+            },
+          },
+        },
+      },
+    });
+    const reviewedResource = reviewed.exploration_boundary.pack.resources.find((candidate) =>
+      candidate.id === "public.subscriptions");
+
+    expect(reviewedResource?.rls_session).toEqual({
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.viewer_context",
+    });
+    expect(reviewedResource && reviewedPrincipalScopeKind(reviewedResource)).toBe("postgres_rls");
+
+    const drifted = structuredClone(inspection);
+    drifted.tables[0]!.row_level_security_policies![0]!.using_expression =
+      "(tenant_id = current_setting('app.tenant_id')::uuid)";
+    const pruned = pruneAutoBoundaryReviewOverrides(drifted, reviewed.overrides);
+    expect(pruned.overrides.resources["public.subscriptions"]?.principal_rls_setting)
+      .toBeUndefined();
+    expect(pruned.removed.join("\n")).toContain("app.viewer_context");
   });
 
   it("keeps payment, medical, person-name, and unresolved fields out of every generated read operation", () => {

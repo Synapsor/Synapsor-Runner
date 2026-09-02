@@ -44,6 +44,7 @@ import {
   derivedScopeDependencyKey,
   exactGroupingDataTypeSupported,
   generationLockRemediation,
+  hasReviewedPrincipalScope,
   loadActivatedExplorationBoundary,
   loadGenerationLockForActivatedBoundary,
   relationshipAuthorityDependencyFingerprint,
@@ -556,7 +557,7 @@ export async function createScopedExploreRuntime(input: {
   const databaseUrl = env[prepared.lock.source_env];
   if (!databaseUrl) throw new ScopedExploreError("EXPLORE_SOURCE_UNAVAILABLE", `${prepared.lock.source_env} is not set.`);
   const principalRequired = mode === "production_http" || prepared.boundary.pack.resources.some((resource) =>
-    Boolean(resource.principal_key || resource.principal_scope));
+    hasReviewedPrincipalScope(resource));
   const trustedScopeResolver = input.resolveTrustedScopeFn ?? resolveExploreTrustedScope;
   const trustedScope = await trustedScopeResolver({
     boundary: prepared.boundary,
@@ -5124,7 +5125,7 @@ async function recordExploreEvidence(
       role_posture_fingerprint: input.rolePostureFingerprint,
       trusted_scope: {
         tenant_bound: true,
-        principal_bound: Boolean(resource.principal_key || resource.principal_scope),
+        principal_bound: hasReviewedPrincipalScope(resource),
         provenance: "trusted_runtime_context",
         values_persisted: false,
       },
@@ -5175,20 +5176,54 @@ function auditScopeApplication(
 ): Record<string, unknown> | undefined {
   const resource = boundary.pack.resources.find((candidate) => candidate.id === resourceId);
   if (!resource) return undefined;
+  const tenantSession = resource.rls_session?.tenant_setting
+    ? {
+        session_setting_applied: predicateApplied,
+        setting: resource.rls_session.tenant_setting,
+      }
+    : {};
+  const principalSession = resource.rls_session?.principal_setting
+    ? {
+        session_setting_applied: predicateApplied,
+        setting: resource.rls_session.principal_setting,
+      }
+    : {};
   const tenant = resource.tenant_key
-    ? { kind: "direct", predicate_applied: predicateApplied, column: resource.tenant_key }
+    ? { kind: "direct", predicate_applied: predicateApplied, column: resource.tenant_key, ...tenantSession }
     : resource.tenant_scope
-      ? { kind: "derived", predicate_applied: predicateApplied, path_id: resource.tenant_scope.path_id }
+      ? {
+          kind: "derived",
+          predicate_applied: predicateApplied,
+          path_id: resource.tenant_scope.path_id,
+          ...tenantSession,
+        }
       : resource.shared_reference_scope
         ? { kind: "shared_reference", predicate_applied: false }
         : boundary.organization_scope
           ? { kind: "single_organization", predicate_applied: false }
           : { kind: "unresolved", predicate_applied: false };
   const principal = resource.principal_key
-    ? { kind: "direct", predicate_applied: predicateApplied, column: resource.principal_key }
+    ? {
+        kind: "direct",
+        predicate_applied: predicateApplied,
+        column: resource.principal_key,
+        ...principalSession,
+      }
     : resource.principal_scope
-      ? { kind: "derived", predicate_applied: predicateApplied, path_id: resource.principal_scope.path_id }
-      : { kind: "not_configured", predicate_applied: false };
+      ? {
+          kind: "derived",
+          predicate_applied: predicateApplied,
+          path_id: resource.principal_scope.path_id,
+          ...principalSession,
+        }
+      : resource.rls_session?.principal_setting
+        ? {
+            kind: "postgres_rls",
+            predicate_applied: false,
+            session_setting_applied: predicateApplied,
+            setting: resource.rls_session.principal_setting,
+          }
+        : { kind: "not_configured", predicate_applied: false };
   return { tenant, principal };
 }
 

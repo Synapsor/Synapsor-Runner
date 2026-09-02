@@ -74,11 +74,35 @@ explicit human override. When `trusted_context.principal_binding` exactly names
 a non-null inspected column, `boundary draft` seeds that column as the disabled
 boundary's reviewed principal policy. It does not activate the decision. In
 `/access`, select the table, press `Enter`, then press `O` to choose no
-per-user limit, a direct column, or a proven derived path; the editor returns to
-the same columns with unsaved column choices intact. Workbench exposes the same
-choice under **Record and customer limits**. The principal value still comes
-only from the configured environment or verified HTTP claim and is never a
-model argument.
+per-user limit, a direct column, a proven derived path, or an effective
+PostgreSQL RLS session setting; the editor returns to the same columns with
+unsaved column choices intact. Workbench exposes the same choice under
+**Record and customer limits**. The principal value still comes only from the
+configured environment or verified HTTP claim and is never a model argument.
+
+Runner extracts exact `current_setting(...)` names from effective PostgreSQL
+RLS policies without relying on a domain vocabulary. A unique conventional
+principal setting may be proposed automatically. An opaque setting such as
+`app.ctx_7` remains only a review candidate. In model-guided setup, the selected
+model can ask what the exact candidate means or ask the operator to distinguish
+ambiguous candidates. Runner accepts only one of the closed catalog candidates,
+then asks for a separate deny-by-default confirmation before changing the
+disabled Boundary. A setting name, model answer, table label, or field label
+never establishes scope by itself.
+
+The same exact choice is available non-interactively:
+
+```bash
+synapsor-runner boundary review resource public.work_items \
+  --principal-rls-setting app.ctx_7 \
+  --actor boundary_reviewer \
+  --reason 'The application authenticates app.ctx_7 as the current worker.'
+```
+
+Preview the resulting digest-bound decision before applying it. If the setting
+disappears from the effective live policy, rescan invalidates the decision.
+Runner applies a retained tenant or principal setting transaction-locally for
+each query; it does not depend on persistent pooled-session state.
 
 ### Whole-Organization And Shared-Reference Tables
 
@@ -828,7 +852,7 @@ offers that decision as the immediate next default-yes prompt rather than
 requiring another command; headless activation remains explicitly digest-bound.
 After interactive activation, Runner stays in the same terminal and offers:
 
-- OpenAI with the `gpt-5.6-luna` terminal default;
+- OpenAI with the `gpt-5.6-terra` terminal default;
 - Anthropic with the Workbench Claude Sonnet default;
 - a loopback OpenAI-compatible endpoint and model;
 - an existing MCP client; or
@@ -883,7 +907,7 @@ budget, or writing evidence. Run uses the normal `app.explore_data` execution
 path. The preview Workbench exposes the same local service in its no-model
 tools. See [Explore Plan Playground](explore-plan-playground.md).
 
-Terminal Ask uses the `gpt-5.6-luna` OpenAI default and the tested
+Terminal Ask uses the `gpt-5.6-terra` OpenAI default and the tested
 Claude Sonnet default when `--model` is omitted. A loopback OpenAI-compatible
 endpoint still requires `--model` because its installed models are local
 operator state.

@@ -1,5 +1,6 @@
 import { WORKBENCH_SYNTAX_CSS, workbenchSyntaxScript } from "./workbench-syntax.js";
 import { EXPLORATION_BUDGET_REVIEW_CEILINGS } from "./auto-boundary.js";
+import { DEFAULT_TERMINAL_OPENAI_ASK_MODEL } from "./terminal-ask-defaults.js";
 
 export function renderBoundaryWorkbench(csrfToken: string): string {
   const escapedCsrf = escapeScriptString(csrfToken);
@@ -477,7 +478,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	              <label class="field">Representative read questions <small>(optional; Runner uses the job above when blank)</small><textarea id="delegation-read-questions" maxlength="12000" rows="5" placeholder="One representative question per line"></textarea></label>
 	              <div class="form-grid">
 	                <label class="field">Provider<select id="delegation-provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai_compatible">OpenAI-compatible or local</option></select></label>
-	                <label class="field">Model<input id="delegation-model" type="text" maxlength="128" value="gpt-5.6-luna"></label>
+	                <label class="field">Model<input id="delegation-model" type="text" maxlength="128" value="${DEFAULT_TERMINAL_OPENAI_ASK_MODEL}"></label>
 	                <label class="field">API key environment variable<input id="delegation-key-env" type="text" maxlength="128" value="OPENAI_API_KEY"></label>
 	                <label id="delegation-base-url-wrap" class="field hidden">Provider base URL<input id="delegation-base-url" type="url" maxlength="2048" placeholder="http://127.0.0.1:11434/v1"></label>
 	              </div>
@@ -560,7 +561,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               <div class="form-grid">
                 <label class="field">Workload name<input id="workload-intent-name" type="text" maxlength="80" value="representative_reads"></label>
                 <label class="field">Provider<select id="workload-provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai_compatible">OpenAI-compatible or local</option></select></label>
-                <label class="field">Model<input id="workload-model" type="text" maxlength="128" value="gpt-5.6-luna"></label>
+                <label class="field">Model<input id="workload-model" type="text" maxlength="128" value="${DEFAULT_TERMINAL_OPENAI_ASK_MODEL}"></label>
                 <label class="field">API key environment variable<input id="workload-key-env" type="text" maxlength="128" value="OPENAI_API_KEY"></label>
                 <label id="workload-base-url-wrap" class="field hidden">Provider base URL<input id="workload-base-url" type="url" maxlength="2048" placeholder="http://127.0.0.1:11434/v1"></label>
               </div>
@@ -862,7 +863,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           <div class="form-grid">
             <label class="field">Business intent<input id="action-suggest-intent" type="text" maxlength="500" placeholder="Let support propose closing one exact order."></label>
             <label class="field">Provider<select id="action-suggest-provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai_compatible">OpenAI-compatible</option></select></label>
-            <label class="field">Model<input id="action-suggest-model" type="text" maxlength="128" value="gpt-5.6-luna"></label>
+            <label class="field">Model<input id="action-suggest-model" type="text" maxlength="128" value="${DEFAULT_TERMINAL_OPENAI_ASK_MODEL}"></label>
             <label class="field">API key environment name<input id="action-suggest-key-env" type="text" maxlength="128" value="OPENAI_API_KEY"></label>
             <label id="action-suggest-base-wrap" class="field hidden">OpenAI-compatible base URL<input id="action-suggest-base" type="url" maxlength="500"></label>
           </div>
@@ -1677,7 +1678,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function reviewedPrincipalScopeLabel(resource,review){
       if(resource?.principal_key)return "direct column "+resource.principal_key;
       const scope=resource?.principal_scope||review?.derived_principal_scope?.selected;
-      return scope?derivedScopePathLabel(scope):"not required";
+      if(scope)return derivedScopePathLabel(scope);
+      const setting=resource?.rls_session?.principal_setting||review?.rls?.principal_setting_review_override?.value;
+      return setting?"PostgreSQL RLS setting "+setting:"not required";
     }
 
 		    function renderSummary(){
@@ -1704,8 +1707,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const sharedReferenceResources=candidate.organization_scope
 	        ?[]
 	        :(reviewReport.resources||[]).filter(resource=>resource.shared_reference_scope?.eligible);
-	      const principalResources=(reviewReport.resources||[]).filter(resource=>
-	        resource.principal_key?.selected||resource.derived_principal_scope?.selected);
+	      const principalResources=(reviewReport.resources||[]).filter(resource=>{
+	        const reviewedCandidate=candidate.pack.resources.find(item=>item.id===resource.id);
+	        return resource.principal_key?.selected||resource.derived_principal_scope?.selected||reviewedCandidate?.rls_session?.principal_setting;
+	      });
 	      const tenantResolved=tenantResources.length;
 	      const sharedReferenceReviewable=sharedReferenceResources.length;
 	      const principalResolved=principalResources.length;
@@ -3392,7 +3397,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return inferenceExplanation(label,inference)+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Database column<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" '+((current===undefined&&option.value==="__none__")||current===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe the application rule this column enforces."></textarea></label></div><div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>';
     }
 
-    function managedTrustedScopeReviewForm(kind,label,directValues,currentDirect,allowNone,directInference,derivedInference,currentDerived,sharedInference,currentShared){
+    function managedTrustedScopeReviewForm(kind,label,directValues,currentDirect,allowNone,directInference,derivedInference,currentDerived,sharedInference,currentShared,rlsSettings=[],currentRls){
       const pathKind=kind==="tenant_key"?"tenant_scope_path":"principal_scope_path";
       const ranked=(directInference?.alternatives_considered||[]).map(item=>item.value);
       const direct=[...new Set([...ranked,...directValues])].map(value=>({
@@ -3412,26 +3417,33 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         label:"Shared reference - same rows for every tenant",
         kind:"shared_reference_scope"
       }]:[];
+      const rls=kind==="principal_key"?rlsSettings.map(setting=>({
+        value:setting,
+        label:"PostgreSQL RLS setting "+setting,
+        kind:"principal_rls_setting"
+      })):[];
       const options=[
         ...(allowNone?[{value:"__none__",label:"No per-user row limit",kind:"principal_key"}]:[]),
         ...direct,
         ...derived,
-        ...shared
+        ...shared,
+        ...rls
       ];
       if(!options.length){
         return '<div class="risk high"><strong>No proven '+esc(label)+' is available.</strong><p>Add a direct scope column or a required foreign-key path to a directly scoped ancestor, then rescan.</p></div>';
       }
-      const selectedKind=currentShared?"shared_reference_scope":currentDerived?pathKind:kind;
-      const selectedValue=currentShared?.acknowledgement||currentDerived||currentDirect||(allowNone?"__none__":undefined);
+      const selectedKind=currentShared?"shared_reference_scope":currentRls?"principal_rls_setting":currentDerived?pathKind:kind;
+      const selectedValue=currentShared?.acknowledgement||currentRls||currentDerived||currentDirect||(allowNone?"__none__":undefined);
       const selectedDerived=derived.find(option=>option.value===selectedValue);
       const exactPathIds=derived.length
         ?'<details class="access-secondary"><summary>Advanced exact path IDs</summary><p>Use these canonical IDs only with scripted <code>--'+esc(pathKind.replaceAll("_","-"))+'</code> review. Human review and enforcement still refer to the readable mandatory path above.</p><ul>'+derived.map(option=>'<li><code>'+esc(option.value)+'</code> · '+esc(option.label)+'</li>').join("")+'</ul></details>'
         :"";
       const explanation=inferenceExplanation(label,directInference)
         +(derivedInference?'<div class="risk unresolved"><strong>Relationship-carried scope available</strong><p>Runner will inject the selected path into every read. The AI cannot remove, weaken, or choose this join.</p><p><strong>Safety consequence:</strong> '+esc(derivedInference.safety_consequence)+'</p></div>':"")
+        +(rls.length?'<div class="risk unresolved"><strong>PostgreSQL RLS scope candidates</strong><p>These exact settings occur in effective live policy expressions. Their names are not proof of meaning; review one only when the application binds it from authenticated principal context.</p></div>':"")
         +(sharedInference?.eligible?'<div class="risk high"><strong>Shared reference is an owner assertion, not an automatic inference.</strong><p>Select it only when this table has no per-tenant rows and every tenant may receive the same reviewed rows. Field visibility, cohort suppression, and budgets still apply.</p></div>':"");
       const sharedConfirmation=sharedInference?.eligible?'<label class="check"><input data-shared-reference-ack type="checkbox"><span>I confirm this table has no per-tenant rows and every tenant may receive the same reviewed rows. Required when Shared reference is selected.</span></label>':"";
-      return explanation+(selectedDerived?derivedScopeCostAdvisory(selectedDerived.scope):'')+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Reviewed scope<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" data-review-kind="'+esc(option.kind)+'" '+(option.depth?'data-review-depth="'+esc(option.depth)+'" ':'')+(selectedKind===option.kind&&selectedValue===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe why this direct column, mandatory path, or shared-reference assertion is correct."></textarea></label></div>'+sharedConfirmation+'<div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>'+exactPathIds;
+      return explanation+(selectedDerived?derivedScopeCostAdvisory(selectedDerived.scope):'')+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Reviewed scope<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" data-review-kind="'+esc(option.kind)+'" '+(option.depth?'data-review-depth="'+esc(option.depth)+'" ':'')+(selectedKind===option.kind&&selectedValue===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe why this direct column, mandatory path, RLS setting, or shared-reference assertion is correct."></textarea></label></div>'+sharedConfirmation+'<div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>'+exactPathIds;
     }
 
     function invalidateResourceReview(id){
@@ -3735,7 +3747,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         ?'<div class="risk"><strong>Whole reviewed organization</strong><p>'+esc(candidate.organization_scope.organization_id)+' is fixed outside model arguments. This boundary applies no tenant predicate; changing that posture requires regenerating and reviewing the complete boundary.</p></div>'
         :managedTrustedScopeReviewForm("tenant_key","customer isolation",review.tenant_key?.candidates||[],source.tenant_key,false,review.tenant_key,review.derived_tenant_scope,source.tenant_scope?.path_id,review.shared_reference_scope,source.shared_reference_scope);
       const scopeReview=resource
-        ?'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>'+(candidate.organization_scope?'The reviewed organization is fixed outside the model. Any user/owner limit still comes from trusted application context.':'Runner reads tenant and user values from trusted application context. The AI never supplies them or controls a mandatory relationship path.')+'</p>'+managedScopeReviewForm("row_identity","record ID",review.primary_key?.candidates||[],source.primary_key,false,review.primary_key)+organizationScopeReview+managedTrustedScopeReviewForm("principal_key","user/owner limit",[...new Set([...(review.principal_key?.candidates||[]),...(review.fields||[]).filter(field=>field.nullable===false&&!/(?:bytea|blob|binary|varbinary|image)/i.test(field.data_type)).map(field=>field.name)])],source.principal_key,true,review.principal_key,review.derived_principal_scope,source.principal_scope?.path_id)+'</details>'
+        ?'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>'+(candidate.organization_scope?'The reviewed organization is fixed outside the model. Any user/owner limit still comes from trusted application context.':'Runner reads tenant and user values from trusted application context. The AI never supplies them or controls a mandatory relationship path.')+'</p>'+managedScopeReviewForm("row_identity","record ID",review.primary_key?.candidates||[],source.primary_key,false,review.primary_key)+organizationScopeReview+managedTrustedScopeReviewForm("principal_key","user/owner limit",[...new Set([...(review.principal_key?.candidates||[]),...(review.fields||[]).filter(field=>field.nullable===false&&!/(?:bytea|blob|binary|varbinary|image)/i.test(field.data_type)).map(field=>field.name)])],source.principal_key,true,review.principal_key,review.derived_principal_scope,source.principal_scope?.path_id,undefined,undefined,review.rls?.principal_setting_candidates||[],source.rls_session?.principal_setting)+'</details>'
         :boundarySpecificSharedReferenceReview
           ?'<details class="access-secondary" data-access-secondary open><summary>Review Shared reference and include</summary><p>This acknowledgement belongs to the selected boundary. An acknowledgement recorded for another boundary is never copied.</p>'+managedTrustedScopeReviewForm("tenant_key","customer isolation",review.tenant_key?.candidates||[],undefined,false,review.tenant_key,review.derived_tenant_scope,undefined,review.shared_reference_scope,undefined)+'</details>'
           :'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>This '+esc(selectedKind)+' is excluded. Include it before reviewing trusted scope.</p></details>';
@@ -7172,7 +7184,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const defaults=delegationData?.defaults||{};
       byId("delegation-base-url-wrap").classList.toggle("hidden",provider!=="openai_compatible");
       if(provider==="openai"){
-        byId("delegation-model").value=defaults.openai_model||"gpt-5.6-luna";
+        byId("delegation-model").value=defaults.openai_model||"${DEFAULT_TERMINAL_OPENAI_ASK_MODEL}";
         byId("delegation-key-env").value=defaults.openai_key_env||"OPENAI_API_KEY";
       }else if(provider==="anthropic"){
         byId("delegation-model").value=defaults.anthropic_model||"claude-sonnet-4-5";
@@ -7786,7 +7798,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       byId("workload-base-url-wrap").classList.toggle("hidden",provider!=="openai_compatible");
       const defaults=readWorkloadData?.defaults||{};
       if(provider==="openai"){
-        byId("workload-model").value=defaults.openai_model||"gpt-5.6-luna";
+        byId("workload-model").value=defaults.openai_model||"${DEFAULT_TERMINAL_OPENAI_ASK_MODEL}";
         byId("workload-key-env").value=defaults.openai_key_env||"OPENAI_API_KEY";
       }else if(provider==="anthropic"){
         byId("workload-model").value=defaults.anthropic_model||"claude-sonnet-4-20250514";
@@ -8175,7 +8187,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const provider=byId("action-suggest-provider").value;
       byId("action-suggest-base-wrap").classList.toggle("hidden",provider!=="openai_compatible");
       if(provider==="openai"){
-        byId("action-suggest-model").value="gpt-5.6-luna";
+        byId("action-suggest-model").value="${DEFAULT_TERMINAL_OPENAI_ASK_MODEL}";
         byId("action-suggest-key-env").value="OPENAI_API_KEY";
       }else if(provider==="anthropic"){
         byId("action-suggest-model").value="claude-sonnet-4-20250514";
@@ -8275,7 +8287,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const scopeLines=[...new Set((boundary.authority?.capabilities||[]).map(reference=>{
         const resource=(guidedActionData?.options?.resources||[]).find(item=>item.id===reference.resource);
         if(resource?.organization_scope)return reference.resource+": whole organization "+resource.organization_scope.organization_id;
-        return reference.resource+": trusted tenant"+(resource?.principal_key?" + principal":"");
+        return reference.resource+": trusted tenant"+((resource?.principal_key||resource?.principal_rls_setting)?" + principal":"");
       }))];
       const limitRows=limits.length
         ?'<div class="action-fields">'+limits.map(limit=>'<div class="action-field"><strong>'+esc(limit.id)+'</strong><p>'+esc(actionBoundaryLimitText(limit))+'</p><button type="button" class="secondary" data-boundary-limit-remove="'+esc(limit.id)+'">Remove</button></div>').join("")+'</div>'

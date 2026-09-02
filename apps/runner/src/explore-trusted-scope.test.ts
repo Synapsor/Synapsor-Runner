@@ -177,6 +177,42 @@ describe("Explore trusted scope", () => {
     });
   });
 
+  it("requires trusted principal context for database-enforced PostgreSQL RLS principal scope", async () => {
+    const candidate = boundary(true);
+    candidate.pack.resources[0]!.rls_session = {
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.viewer_context",
+    };
+
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: inspection(),
+      env: { DATABASE_URL: "postgresql://credential-owned-scope" },
+      readPostgresRoleSetting: vi.fn(),
+    })).rejects.toMatchObject({
+      missingBindings: ["SYNAPSOR_PRINCIPAL"],
+    });
+
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: inspection(),
+      env: {
+        DATABASE_URL: "postgresql://credential-owned-scope",
+        SYNAPSOR_PRINCIPAL: "viewer-17",
+      },
+      readPostgresRoleSetting: vi.fn().mockResolvedValue({
+        currentUser: "fitflow_analytics_reader",
+        value: "org-fitflow",
+      }),
+    })).resolves.toMatchObject({
+      principal: "viewer-17",
+      principal_source: "environment",
+      principal_binding: "SYNAPSOR_PRINCIPAL",
+    });
+  });
+
   it("fails closed when the credential does not establish the reviewed setting", async () => {
     await expect(resolveExploreTrustedScope({
       boundary: boundary(true),

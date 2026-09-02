@@ -122,7 +122,7 @@ execution path. Supply an OpenAI/Anthropic key or loopback model. Keys and
 history stay in memory; loopback traffic stays local.
 
 ```bash
-synapsor-runner try ask --provider openai --model gpt-5.6-luna
+synapsor-runner try ask --provider openai --model gpt-5.6-terra
 ```
 
 Runner can also configure an MCP client without putting database credentials

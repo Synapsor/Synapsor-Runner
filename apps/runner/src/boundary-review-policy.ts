@@ -86,6 +86,14 @@ export function reconstructBoundaryReviewOverrides(input: {
     } else if (candidate.principal_key !== baseline.principal_key) {
       resource.principal_key = decision(candidate.principal_key ?? null);
     }
+    if (candidate.rls_session?.principal_setting
+      !== baseline.rls_session?.principal_setting
+      && candidate.principal_key === baseline.principal_key
+      && candidate.principal_scope?.path_id === baseline.principal_scope?.path_id) {
+      resource.principal_rls_setting = decision(
+        candidate.rls_session?.principal_setting ?? null,
+      );
+    }
     if (candidate.minimum_cohort_size !== baseline.minimum_cohort_size
       || candidate.minimum_cohort_overridden === true) {
       resource.minimum_cohort = decision(candidate.minimum_cohort_size);

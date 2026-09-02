@@ -1020,7 +1020,11 @@ export async function collectGuidedActionInput(
     resources.map((resource) => ({
       value: resource.id,
       label: resource.label ? `${resource.label} (${resource.id})` : resource.id,
-      detail: `${resource.structurally_eligible_fields.length} structurally eligible fields; trusted scope ${resource.tenant_key}${resource.principal_key ? ` + ${resource.principal_key}` : ""}`,
+      detail: `${resource.structurally_eligible_fields.length} structurally eligible fields; trusted scope ${resource.tenant_key}${resource.principal_key
+        ? ` + ${resource.principal_key}`
+        : resource.principal_rls_setting
+          ? ` + PostgreSQL RLS ${resource.principal_rls_setting}`
+          : ""}`,
     })),
     [
       "These are candidates, not write permissions. Generated, scope-owned, and kept-out fields remain unavailable.",
@@ -1234,7 +1238,11 @@ export async function collectGuidedActionInput(
   }
   const trustedScope = resource.organization_scope
     ? `whole organization ${resource.organization_scope.organization_id} is frozen by the reviewed boundary; no tenant column or model argument is used`
-    : `tenant ${resource.tenant_key}${resource.principal_key ? ` and principal ${resource.principal_key}` : ""} come only from Runner context, never model arguments`;
+    : `tenant ${resource.tenant_key}${resource.principal_key
+      ? ` and principal ${resource.principal_key}`
+      : resource.principal_rls_setting
+        ? ` and principal through PostgreSQL RLS setting ${resource.principal_rls_setting}`
+        : ""} come only from Runner context, never model arguments`;
   const scopeConfirmed = await prompter.confirm(`Confirm trusted scope: ${trustedScope}.`, false);
   if (!scopeConfirmed) return undefined;
 
@@ -2369,7 +2377,7 @@ export function conversationalActionActivationReviewLines(
     : [];
   const trustedScope = resource.organization_scope
     ? `whole organization ${resource.organization_scope.organization_id}`
-    : resource.principal_key
+    : resource.principal_key || resource.principal_rls_setting
       ? "tenant + principal"
       : "tenant (no principal restriction)";
   const guard = [
@@ -2413,7 +2421,7 @@ export function conciseConversationalActionActivationReviewLines(
   const shared = sharedLimits.map(actionBoundaryLimitSummary).join(" ");
   const trustedScope = resource.organization_scope
     ? `whole organization ${resource.organization_scope.organization_id}`
-    : resource.principal_key
+    : resource.principal_key || resource.principal_rls_setting
       ? "tenant + principal"
       : "tenant (no principal restriction)";
   return [
@@ -2790,7 +2798,7 @@ async function reviewAndStageActionBoundaryLimits(input: {
     );
     if (!add) return 0;
     const scope = await input.prompter.choose("TRUSTED APPROVAL LIMIT SCOPE", [
-      ...(input.resource.principal_key
+      ...(input.resource.principal_key || input.resource.principal_rls_setting
         ? [{
             value: "tenant_principal",
             label: "Each trusted tenant + principal (recommended)",
@@ -4631,7 +4639,11 @@ function actionBoundaryTrustedScopeLines(
       return `${capability.resource}: whole organization ${resource.organization_scope.organization_id}; no model-supplied tenant.`;
     }
     return `${capability.resource}: tenant from trusted ${resource?.tenant_key ?? "reviewed runtime context"}`
-      + (resource?.principal_key ? `; principal from trusted ${resource.principal_key}` : "; no per-principal row restriction")
+      + (resource?.principal_key
+        ? `; principal from trusted ${resource.principal_key}`
+        : resource?.principal_rls_setting
+          ? `; principal through trusted PostgreSQL RLS setting ${resource.principal_rls_setting}`
+          : "; no per-principal row restriction")
       + (dependency ? ` (${dependency.name} ${shortDigest(dependency.digest)})` : "");
   });
   return ["Trusted MCP scope:", ...scopes.map((scope) => `  ${scope}`)];
@@ -5035,8 +5047,16 @@ export function actionReviewLines(
     "",
     "RUNNER SUPPLIES AND RECHECKS",
     resource.organization_scope
-      ? `  Reviewed whole-organization scope ${resource.organization_scope.organization_id}${resource.principal_key ? ` and trusted principal ${resource.principal_key}` : ""}; never model arguments.`
-      : `  Trusted tenant ${resource.tenant_key}${resource.principal_key ? ` and principal ${resource.principal_key}` : ""}; never model arguments.`,
+      ? `  Reviewed whole-organization scope ${resource.organization_scope.organization_id}${resource.principal_key
+        ? ` and trusted principal ${resource.principal_key}`
+        : resource.principal_rls_setting
+          ? ` and principal through PostgreSQL RLS setting ${resource.principal_rls_setting}`
+          : ""}; never model arguments.`
+      : `  Trusted tenant ${resource.tenant_key}${resource.principal_key
+        ? ` and principal ${resource.principal_key}`
+        : resource.principal_rls_setting
+          ? ` and principal through PostgreSQL RLS setting ${resource.principal_rls_setting}`
+          : ""}; never model arguments.`,
     `  Exact row identity ${resource.primary_key}${action.conflict_column ? ` and conflict guard ${action.conflict_column}` : ""}${action.dedup_proposal_column ? `; retry identity ${action.dedup_proposal_column}` : ""}.`,
     "",
     "AGENT MAY NOT",
@@ -5103,7 +5123,11 @@ export function actionActivationReviewLines(
   return [
     `Target: ${action.operation.toUpperCase()} ${resource.id}`,
     ...supplied,
-    `Trusted context | ${trustedScope}${resource.principal_key ? ` + principal ${resource.principal_key}` : ""}; never model arguments`,
+    `Trusted context | ${trustedScope}${resource.principal_key
+      ? ` + principal ${resource.principal_key}`
+      : resource.principal_rls_setting
+        ? ` + principal through PostgreSQL RLS ${resource.principal_rls_setting}`
+        : ""}; never model arguments`,
     `Guards | ${guard}`,
     ...approvalLines,
     `State | ${action.authority_posture ?? "proposal_only"} | writeback ${action.writeback?.mode ?? "none"}`,
@@ -5239,7 +5263,11 @@ function actionReviewPrompt(action: GuidedActionInput, resource: GuidedActionRes
   const fields = action.operation === "delete" ? "hard-delete one exact row" : action.patches?.map((patch) => patch.column).join(", ") ?? "none";
   return [
     `Create this disabled ActionDesign? ${action.operation.toUpperCase()} ${resource.id}; fields ${fields}; `,
-    `scope ${resource.tenant_key}${resource.principal_key ? `/${resource.principal_key}` : ""}; `,
+    `scope ${resource.tenant_key}${resource.principal_key
+      ? `/${resource.principal_key}`
+      : resource.principal_rls_setting
+        ? `/PostgreSQL RLS ${resource.principal_rls_setting}`
+        : ""}; `,
     `approval ${action.required_approvals ?? 1} x ${action.approval_role}; `,
     `authority ${action.authority_posture}; writeback ${action.writeback?.mode}. `,
     "No authority activates and no source row changes from this decision.",

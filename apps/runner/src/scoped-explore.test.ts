@@ -346,6 +346,71 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("audits an RLS-only principal as trusted database-enforced scope", async () => {
+    const fixture = await activatedFixture(
+      undefined,
+      rlsOnlyPrincipalInspection(),
+      undefined,
+      undefined,
+      { principal_rls_setting: "app.viewer_context" },
+    );
+    const store = new ProposalStore(path.join(fixture.root, ".synapsor/rls-principal.db"));
+    const queries: CompiledExploreQuery[] = [];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      store,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries: batch }) => {
+          queries.push(...structuredClone(batch));
+          return batch.map(() => [{ region: "west" }]);
+        },
+        close: async () => undefined,
+      },
+    });
+    try {
+      const resource = fixture.boundary.pack.resources.find((candidate) =>
+        candidate.id === "public.subscriptions");
+      expect(resource?.principal_key).toBeUndefined();
+      expect(resource?.principal_scope).toBeUndefined();
+      expect(resource?.rls_session?.principal_setting).toBe("app.viewer_context");
+
+      await runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      });
+
+      expect(queries).toHaveLength(1);
+      expect(queries[0]?.sql).not.toContain("viewer_context");
+      const evidence = store.listEvidenceBundles();
+      expect(evidence).toHaveLength(1);
+      expect(evidence[0]?.principal).toMatch(/^keyed:[a-f0-9]{64}$/);
+      expect(evidence[0]?.payload).toMatchObject({
+        trusted_scope: {
+          tenant_bound: true,
+          principal_bound: true,
+          values_persisted: false,
+        },
+        scope_application: {
+          principal: {
+            kind: "postgres_rls",
+            predicate_applied: false,
+            session_setting_applied: true,
+            setting: "app.viewer_context",
+          },
+        },
+      });
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
   it("freshly inspects only generation-lock resource dependencies on startup and every query", async () => {
     const fixture = await activatedFixture();
     const inspectionCalls: Array<Record<string, unknown>> = [];
@@ -6468,6 +6533,7 @@ async function activatedFixture(
     resource?: ReviewedMetadataDecision;
     fields?: Record<string, ReviewedMetadataDecision>;
     exact_numeric_grouping?: string[];
+    principal_rls_setting?: string;
   },
 ): Promise<{
   root: string;
@@ -6490,6 +6556,16 @@ async function activatedFixture(
             decided_at: "2026-08-19T00:00:00.000Z",
           },
         ])),
+      }
+      : {}),
+    ...(metadata?.principal_rls_setting
+      ? {
+        principal_rls_setting: {
+          value: metadata.principal_rls_setting,
+          actor: "security-reviewer@example.test",
+          reason: "The application binds this exact RLS setting to the authenticated principal.",
+          decided_at: "2026-09-02T00:00:00.000Z",
+        },
       }
       : {}),
     ...(minimumCohort
@@ -7405,6 +7481,15 @@ function churnInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function rlsOnlyPrincipalInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  inspection.tables[0]!.row_level_security_policies![0]!.using_expression = [
+    "(tenant_id = current_setting('app.tenant_id')::uuid",
+    "AND app.can_view_subscription(tenant_id, current_setting('app.viewer_context')))" ,
+  ].join(" ");
+  return inspection;
 }
 
 function exactNumericGroupingInspection(): SchemaInspection {

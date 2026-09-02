@@ -112,7 +112,7 @@ export type ManagedBoundaryReviewDecision =
       decided_at?: string;
     }
   | {
-      kind: "principal_key" | "principal_scope_path";
+      kind: "principal_key" | "principal_scope_path" | "principal_rls_setting";
       resource_id: string;
       value: string | null;
       actor: string;
@@ -329,7 +329,9 @@ export function normalizeManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
   }
-  if (kind === "principal_key" || kind === "principal_scope_path") {
+  if (kind === "principal_key"
+    || kind === "principal_scope_path"
+    || kind === "principal_rls_setting") {
     return {
       kind,
       resource_id: resourceId,
@@ -353,7 +355,7 @@ export function normalizeManagedBoundaryReviewDecision(
     };
   }
   throw new Error(
-    "Managed boundary review kind must be resource_metadata, field_metadata, field_exposure, field_enum, exact_numeric_grouping, derived_measure, numeric_band, auto_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
+    "Managed boundary review kind must be resource_metadata, field_metadata, field_exposure, field_enum, exact_numeric_grouping, derived_measure, numeric_band, auto_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, principal_rls_setting, or minimum_cohort.",
   );
 }
 
@@ -534,6 +536,7 @@ export function applyManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
     delete resource.principal_scope_path;
+    delete resource.principal_rls_setting;
   } else if (input.kind === "principal_scope_path") {
     resource.principal_scope_path = {
       value: input.value,
@@ -542,6 +545,16 @@ export function applyManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
     delete resource.principal_key;
+    delete resource.principal_rls_setting;
+  } else if (input.kind === "principal_rls_setting") {
+    resource.principal_rls_setting = {
+      value: input.value,
+      actor: input.actor,
+      reason: input.reason,
+      decided_at: decidedAt,
+    };
+    delete resource.principal_key;
+    delete resource.principal_scope_path;
   } else {
     const minimumCohort = Number(input.value);
     if (minimumCohort === 5) {
