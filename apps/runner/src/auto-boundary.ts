@@ -4948,11 +4948,8 @@ function rlsExpressionSupportsScope(
 ): boolean {
   if (!expressionReferencesColumn(expression, column)) return false;
   const setting = settingForScopedColumn([expression], column) ?? "";
-  const settingPattern = kind === "tenant"
-    ? /(?:^|[._-])(?:tenant|org|organization|workspace|merchant|store|company|team|facility|property|clinic|project)(?:$|[._-])/i
-    : /(?:^|[._-])(?:principal|user|actor|owner|assignee|agent|staff|technician|manager|trainer)(?:$|[._-])/i;
   const columnPattern = kind === "tenant" ? TENANT_SCOPE_NAME : PRINCIPAL_SCOPE_NAME;
-  return settingPattern.test(setting) || columnPattern.test(column);
+  return settingNameSupportsScope(setting, kind) || columnPattern.test(column);
 }
 
 function buildResource(
@@ -5972,9 +5969,16 @@ function explorationRlsSession(
   const tenant = tenantOwner?.tenant_key.selected && tenantOwner.rls.enabled === true
     ? settingForScopedColumn(tenantOwner.rls.using_expressions, tenantOwner.tenant_key.selected)
     : undefined;
-  const principal = principalOwner?.principal_key.selected && principalOwner.rls.enabled === true
+  const directPrincipal = principalOwner?.principal_key.selected && principalOwner.rls.enabled === true
     ? settingForScopedColumn(principalOwner.rls.using_expressions, principalOwner.principal_key.selected)
     : undefined;
+  const policyPrincipalCandidates = resource.rls.enabled === true
+    ? unique(resource.rls.using_expressions
+      .flatMap(currentSettingNames)
+      .filter((setting) => setting !== tenant && settingNameSupportsScope(setting, "principal")))
+    : [];
+  const principal = directPrincipal
+    ?? (policyPrincipalCandidates.length === 1 ? policyPrincipalCandidates[0] : undefined);
   if (!tenant && !principal) return {};
   return {
     rls_session: {
@@ -5984,17 +5988,75 @@ function explorationRlsSession(
   };
 }
 
+function settingNameSupportsScope(setting: string, kind: "tenant" | "principal"): boolean {
+  const settingPattern = kind === "tenant"
+    ? /(?:^|[._-])(?:tenant|org|organization|workspace|merchant|store|company|team|facility|property|clinic|project)(?:$|[._-])/i
+    : /(?:^|[._-])(?:principal|user|actor|owner|assignee|agent|staff|technician|manager|trainer)(?:$|[._-])/i;
+  return settingPattern.test(setting);
+}
+
 function settingForScopedColumn(expressions: string[], column: string): string | undefined {
   const escaped = column.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const columnReference = `(?:(?:[A-Za-z_][A-Za-z0-9_$]*|\"[^\"]+\")\\s*\\.\\s*)?(?:${escaped}|\"${escaped}\")`;
-  const settingCall = `current_setting\\(\\s*'([A-Za-z0-9_.-]+)'`;
-  const candidates = expressions.flatMap((expression) => {
-    const direct = expression.match(new RegExp(`${columnReference}\\s*=\\s*${settingCall}`, "i"));
-    const reverse = expression.match(new RegExp(`${settingCall}[^)]*\\)\\s*=\\s*${columnReference}`, "i"));
-    return [direct?.[1], reverse?.[1]].filter((value): value is string => Boolean(value));
-  });
+  const columnReference = new RegExp(
+    `(?:^|[^A-Za-z0-9_$\"])(?:${escaped}|\"${escaped}\")(?=$|[^A-Za-z0-9_$\"])`,
+    "i",
+  );
+  const candidates = expressions.flatMap((expression) =>
+    splitSqlBooleanClauses(expression).flatMap((clause) => {
+      const masked = maskSqlQuotedSegments(clause, false);
+      const equalities = [...masked.matchAll(/(?<![<>=!])=(?!=)/gu)];
+      if (equalities.length !== 1 || equalities[0]?.index === undefined) return [];
+      const index = equalities[0].index;
+      const left = clause.slice(0, index);
+      const right = clause.slice(index + 1);
+      const leftNamesColumn = columnReference.test(maskSqlQuotedSegments(left, false));
+      const rightNamesColumn = columnReference.test(maskSqlQuotedSegments(right, false));
+      if (leftNamesColumn === rightNamesColumn) return [];
+      return currentSettingNames(leftNamesColumn ? right : left);
+    }));
   const uniqueCandidates = unique(candidates);
   return uniqueCandidates.length === 1 ? uniqueCandidates[0] : undefined;
+}
+
+function currentSettingNames(sql: string): string[] {
+  return [...sql.matchAll(/current_setting\(\s*'([A-Za-z0-9_.-]+)'/giu)]
+    .flatMap((match) => match[1] ? [match[1]] : []);
+}
+
+function splitSqlBooleanClauses(expression: string): string[] {
+  const masked = maskSqlQuotedSegments(expression, true);
+  const separators = [...masked.matchAll(/\b(?:AND|OR)\b/giu)];
+  if (!separators.length) return [expression];
+  const clauses: string[] = [];
+  let start = 0;
+  for (const separator of separators) {
+    if (separator.index === undefined) continue;
+    clauses.push(expression.slice(start, separator.index));
+    start = separator.index + separator[0].length;
+  }
+  clauses.push(expression.slice(start));
+  return clauses;
+}
+
+function maskSqlQuotedSegments(sql: string, includeIdentifiers: boolean): string {
+  const chars = [...sql];
+  let quote: "'" | '"' | undefined;
+  for (let index = 0; index < chars.length; index += 1) {
+    const character = chars[index]!;
+    if (!quote) {
+      if (character === "'" || (includeIdentifiers && character === '"')) quote = character;
+      continue;
+    }
+    chars[index] = " ";
+    if (character !== quote) continue;
+    if (chars[index + 1] === quote) {
+      chars[index + 1] = " ";
+      index += 1;
+      continue;
+    }
+    quote = undefined;
+  }
+  return chars.join("");
 }
 
 function singularize(value: string): string {

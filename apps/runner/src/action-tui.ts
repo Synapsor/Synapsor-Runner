@@ -47,6 +47,10 @@ import {
   DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
 } from "./terminal-ask-defaults.js";
 import { executeGuidedActionPreview } from "./guided-action-runtime.js";
+import {
+  resolveGuidedActionRehearsalTarget,
+  type GuidedActionRehearsalTargetResolution,
+} from "./guided-action-rehearsal-target.js";
 import { renderBoundaryMapTable } from "./boundary-map-presentation.js";
 import { terminalTheme } from "./boundary-cli-picker.js";
 import {
@@ -152,6 +156,7 @@ export type ActionModelSuggestionSession = {
   dependencies?: AskProviderDependencies;
   conversation?: ModelAuthoringConversation;
   openingValidatedFacts?: string[];
+  openingOperatorMessage?: string;
   openingValidatedFactsConsumed?: boolean;
 };
 
@@ -161,6 +166,14 @@ export type ActionBoundaryInterviewContext = {
   decisionInterpreter?: typeof interpretActionBoundaryDecision;
   policyInterpreter?: typeof interpretActionBoundaryPolicy;
   rehearsalInterpreter?: typeof interpretActionRehearsalArgs;
+};
+
+export type GuidedRehearsalTargetContext = {
+  projectRoot: string;
+  inspection: SchemaInspection;
+  baseConfigPath?: string;
+  env?: NodeJS.ProcessEnv;
+  resolver?: typeof resolveGuidedActionRehearsalTarget;
 };
 
 /**
@@ -1530,8 +1543,42 @@ export async function collectQuickProposalActionInput(
     if (unresolved.kind !== "delete_confirmation") {
       throw new Error(`Unsupported quick proposal decision ${unresolved.kind}.`);
     }
-    const value = await prompter.text(`Type ${unresolved.expected} to include hard-delete proposals`);
-    if (value === undefined) return undefined;
+    const deleteChoice = await prompter.choose(
+      unresolved.title.toUpperCase(),
+      [
+        {
+          value: "skip",
+          label: "Do not include hard-delete proposals  [recommended]",
+          detail: "Continue without creating this Action draft.",
+        },
+        {
+          value: "confirm",
+          label: "Enter the exact destructive confirmation",
+          detail: `Requires typing ${unresolved.expected}; approval and apply still remain separate.`,
+        },
+        { value: "back", label: "Back" },
+      ],
+      choiceContext([
+        unresolved.help,
+        "Hard DELETE is never inferred from a general change request and cannot use deterministic auto-approval.",
+      ]),
+      "skip",
+    );
+    if (!deleteChoice || deleteChoice === "skip" || deleteChoice === "back") return undefined;
+    const value = await prompter.text(`Type ${unresolved.expected} to include hard-delete proposals`, {
+      title: "EXACT HARD-DELETE CONFIRMATION",
+      context: [
+        `Required phrase: ${unresolved.expected}`,
+        "Any other value leaves this Action out. No proposal, approval, apply, or source write occurs.",
+      ],
+    });
+    if (value === undefined || value !== unresolved.expected) {
+      await prompter.message("HARD-DELETE ACTION NOT INCLUDED", [
+        "The exact destructive confirmation was not entered.",
+        "No Action draft, proposal authority, approval, apply, or source write was created.",
+      ]);
+      return undefined;
+    }
     decisions.delete_confirmation = value;
   }
 }
@@ -1553,9 +1600,12 @@ async function collectConversationalProposalDecision(input: {
   let pendingApprovedValues: OperatorApprovedValueContext | undefined;
   let operatorRetryUsed = false;
   const openingValidatedFacts = takeOpeningValidatedFacts(input.modelInterview);
+  const openingOperatorMessage = openingValidatedFacts.length
+    ? input.modelInterview.session.openingOperatorMessage
+    : undefined;
   let pendingModelMessage = await narrateValidatedAuthoringStep({
     session: input.modelInterview.session,
-    operatorMessage: `Continue authoring ${target ?? input.intent}.`,
+    operatorMessage: openingOperatorMessage ?? `Continue authoring ${target ?? input.intent}.`,
     validatedFacts: [
       ...openingValidatedFacts,
       ...prompt.context,
@@ -1858,9 +1908,13 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
   let pendingApprovedValues: OperatorApprovedValueContext | undefined;
   let pendingModelMessage: string | undefined;
   const openingValidatedFacts = takeOpeningValidatedFacts(input.modelInterview);
+  const openingOperatorMessage = openingValidatedFacts.length
+    ? input.modelInterview.session.openingOperatorMessage
+    : undefined;
   let validatedModelMessage = await narrateValidatedAuthoringStep({
     session: input.modelInterview.session,
-    operatorMessage: `Review the starting auto-approval policy for ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}.`,
+    operatorMessage: openingOperatorMessage
+      ?? `Review the starting auto-approval policy for ${input.preparation.action.operation.toUpperCase()} ${input.preparation.action.resource}.`,
     validatedFacts: [
       ...openingValidatedFacts,
       ...conversationalDeterministicApprovalPolicyLines(
@@ -3175,18 +3229,13 @@ export async function reviewActionDraft(input: {
   let draft = input.draft;
   const operatorSession = input.operatorSession ?? {};
   if (input.quickStart && !draft.effect_preview) {
-    try {
-      const details = await guidedActionDraftDetails(input.projectRoot, draft.capability);
-      const args = await collectQuickGuidedRehearsalArgs(details, input.prompter);
-      if (!args) {
-        await input.prompter.message("PROPOSAL ACTION KEPT DISABLED", [
-          `Action: ${draft.capability}`,
-          "The exact existing row ID needed for UPDATE or DELETE rehearsal was not provided.",
-          "No rehearsal ran, no authority activated, and no source row changed.",
-          "Open this disabled draft later to rehearse it with one authorized row ID.",
-        ]);
-        return undefined;
-      }
+    const targetContext: GuidedRehearsalTargetContext = {
+      projectRoot: input.projectRoot,
+      inspection: input.inspection,
+      env: input.env,
+      ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}),
+    };
+    const runPreview = async (args: Record<string, unknown>): Promise<void> => {
       const preview = await executeGuidedActionPreview({
         projectRoot: input.projectRoot,
         ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}),
@@ -3202,12 +3251,45 @@ export async function reviewActionDraft(input: {
         proposalHash: preview.proposal_hash,
         sourceDatabaseChanged: preview.source_database_changed,
       });
+    };
+    try {
+      const details = await guidedActionDraftDetails(input.projectRoot, draft.capability);
+      const args = await collectQuickGuidedRehearsalArgs(details, input.prompter, targetContext);
+      if (!args) {
+        await input.prompter.message("PROPOSAL ACTION KEPT DISABLED", [
+          `Action: ${draft.capability}`,
+          "No authorized local rehearsal target was selected.",
+          "No rehearsal ran, no authority activated, and no source row changed.",
+          "Open this disabled draft later to choose one authorized row and rehearse it.",
+        ]);
+        return undefined;
+      }
+      await runPreview(args);
     } catch (error) {
-      await input.prompter.message("AUTOMATIC REHEARSAL NEEDS ATTENTION", [
+      input.prompter.rememberDetails?.("AUTOMATIC REHEARSAL NEEDS ATTENTION", [
         error instanceof Error ? error.message : String(error),
         "The action remains a disabled draft. No source row or active tool changed.",
-        "Use the guided rehearsal below to supply a value or required production token.",
+        "Runner discarded the generated disposable example and opened one guided correction.",
       ]);
+      const details = await guidedActionDraftDetails(input.projectRoot, draft.capability);
+      const corrected = await collectGuidedRehearsalArgs(
+        details,
+        input.prompter,
+        input.modelInterview,
+        input.env,
+        targetContext,
+      );
+      if (corrected) {
+        try {
+          await runPreview(corrected);
+        } catch (guidedError) {
+          await input.prompter.message("REHEARSAL REFUSED", [
+            guidedError instanceof Error ? guidedError.message : String(guidedError),
+            "The corrected disposable example was discarded.",
+            "The action remains disabled; no authority or source data changed.",
+          ]);
+        }
+      }
     }
   }
   if (input.prepareOnly) {
@@ -3366,6 +3448,12 @@ export async function reviewActionDraft(input: {
         input.prompter,
         input.modelInterview,
         input.env,
+        {
+          projectRoot: input.projectRoot,
+          inspection: input.inspection,
+          env: input.env,
+          ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}),
+        },
       );
       if (!args) continue;
       const preview = await executeGuidedActionPreview({
@@ -3465,6 +3553,7 @@ export async function collectGuidedRehearsalArgs(
   prompter: ActionControlPrompter,
   modelInterview?: ActionBoundaryInterviewContext,
   env: NodeJS.ProcessEnv = process.env,
+  targetContext?: GuidedRehearsalTargetContext,
 ): Promise<Record<string, unknown> | undefined> {
   const capability = details.contract.capabilities.find((candidate) => candidate.name === details.draft.capability);
   if (!capability) throw new Error("GUIDED_ACTION_CAPABILITY_MISSING: the managed contract no longer contains its action.");
@@ -3475,6 +3564,7 @@ export async function collectGuidedRehearsalArgs(
       prompter,
       modelInterview,
       env,
+      targetContext,
     });
   }
   const mode = await prompter.choose("REHEARSAL VALUES", [
@@ -3500,7 +3590,24 @@ export async function collectGuidedRehearsalArgs(
     return raw ? parseJsonObject(raw, "rehearsal arguments") : undefined;
   }
   const args: Record<string, unknown> = {};
+  const lookupArgument = capability.lookup?.id_from_arg;
+  if (lookupArgument) {
+    const definition = capability.args?.[lookupArgument];
+    if (!definition || definition.type === "object_array") {
+      throw new Error(`GUIDED_ACTION_REHEARSAL_VALUE_INVALID: ${lookupArgument} is not one scalar contract argument.`);
+    }
+    const value = await collectLocalRehearsalIdentity({
+      details,
+      capability,
+      prompter,
+      definition,
+      ...(targetContext ? { targetContext } : {}),
+    });
+    if (value === undefined) return undefined;
+    args[lookupArgument] = value;
+  }
   for (const [name, definition] of Object.entries(capability.args ?? {})) {
+    if (name === lookupArgument) continue;
     if (definition.type === "object_array") {
       throw new Error("GUIDED_ACTION_ARGUMENT_SHAPE_UNSUPPORTED: guided actions do not emit object-array arguments.");
     }
@@ -3571,12 +3678,13 @@ async function collectConversationalGuidedRehearsalArgs(input: {
   prompter: ActionControlPrompter;
   modelInterview: ActionBoundaryInterviewContext;
   env: NodeJS.ProcessEnv;
+  targetContext?: GuidedRehearsalTargetContext;
 }): Promise<Record<string, unknown> | undefined> {
   const subject = input.capability.subject;
   const target = `${input.details.draft.operation.toUpperCase()} ${subject.schema}.${subject.table}`;
   const allDefinitions = input.capability.args ?? {};
   if (Object.values(allDefinitions).some((definition) => definition.type === "object_array")) {
-    return collectGuidedRehearsalArgs(input.details, input.prompter);
+    return collectGuidedRehearsalArgs(input.details, input.prompter, undefined, input.env, input.targetContext);
   }
   const localArgs: Record<string, unknown> = {};
   const lookupArgument = input.capability.lookup?.id_from_arg;
@@ -3585,31 +3693,15 @@ async function collectConversationalGuidedRehearsalArgs(input: {
     if (!definition || definition.type === "object_array") {
       throw new Error(`GUIDED_ACTION_REHEARSAL_VALUE_INVALID: ${lookupArgument} is not one scalar contract argument.`);
     }
-    const localQuestion = `Which existing ${lookupArgument} should the disposable rehearsal use?`;
-    const localMessage = await narrateValidatedAuthoringStep({
-      session: input.modelInterview.session,
-      operatorMessage: `Prepare a disposable rehearsal for ${target}.`,
-      validatedFacts: [
-        `Runner needs one existing ${lookupArgument} to verify the guarded proposal path.`,
-        "The value entered next stays local and is not sent to the model.",
-        "The rehearsal reads only that trusted-scope row, retains no applicable proposal, and changes no source row.",
-      ],
-      nextQuestion: localQuestion,
-      env: input.env,
-      egressAcknowledged: input.modelInterview.egressAcknowledged,
+    const value = await collectLocalRehearsalIdentity({
+      details: input.details,
+      capability: input.capability,
+      prompter: input.prompter,
+      definition,
+      ...(input.targetContext ? { targetContext: input.targetContext } : {}),
     });
-    const raw = await input.prompter.text(localQuestion, {
-      title: "LOCAL REHEARSAL IDENTITY",
-      ...(localMessage ? { conversation: { modelLines: [localMessage] } } : {}),
-      context: [
-        `Target: ${target}`,
-        `Local-only argument: ${lookupArgument}`,
-        "This value is used only by Runner for the disposable source-unchanged rehearsal.",
-        "Provider egress: no | model receives this value: no",
-      ],
-    });
-    if (raw === undefined) return undefined;
-    localArgs[lookupArgument] = parseLocalRehearsalArgument(lookupArgument, raw, definition);
+    if (value === undefined) return undefined;
+    localArgs[lookupArgument] = value;
   }
   const definitions = Object.fromEntries(Object.entries(allDefinitions)
     .filter(([name]) => name !== lookupArgument));
@@ -3670,7 +3762,7 @@ async function collectConversationalGuidedRehearsalArgs(input: {
     modelMessage = undefined;
     if (answer === undefined || /^(?:back|pause|cancel|stop)$/iu.test(answer.trim())) return undefined;
     if (/^(?:exact controls?|typed values?|manual)$/iu.test(answer.trim())) {
-      return collectGuidedRehearsalArgs(input.details, input.prompter);
+      return collectGuidedRehearsalArgs(input.details, input.prompter, undefined, input.env, input.targetContext);
     }
     if (/^(?:exact json|json)$/iu.test(answer.trim())) {
       const raw = await input.prompter.text("Exact rehearsal arguments as JSON", {
@@ -3716,7 +3808,9 @@ async function collectConversationalGuidedRehearsalArgs(input: {
         prompt = "Please restate the same disposable example with every required value.";
         continue;
       }
-      if (recovery === "manual") return collectGuidedRehearsalArgs(input.details, input.prompter);
+      if (recovery === "manual") {
+        return collectGuidedRehearsalArgs(input.details, input.prompter, undefined, input.env, input.targetContext);
+      }
       if (recovery === "json") {
         const raw = await input.prompter.text("Exact rehearsal arguments as JSON", {
           defaultValue: JSON.stringify(input.details.preview_args),
@@ -3736,7 +3830,7 @@ async function collectConversationalGuidedRehearsalArgs(input: {
           "Runner will not invent a missing proposal value.",
         ], "manual");
         return recovery === "manual"
-          ? collectGuidedRehearsalArgs(input.details, input.prompter)
+          ? collectGuidedRehearsalArgs(input.details, input.prompter, undefined, input.env, input.targetContext)
           : undefined;
       }
       prompt = resolution.question;
@@ -3860,32 +3954,114 @@ export function generatedGuidedRehearsalArgs(
 export async function collectQuickGuidedRehearsalArgs(
   details: Awaited<ReturnType<typeof guidedActionDraftDetails>>,
   prompter: ActionControlPrompter,
+  targetContext?: GuidedRehearsalTargetContext,
 ): Promise<Record<string, unknown> | undefined> {
   const args = generatedGuidedRehearsalArgs(details);
   const capability = details.contract.capabilities.find((candidate) => candidate.name === details.draft.capability);
   if (!capability) throw new Error("GUIDED_ACTION_CAPABILITY_MISSING: the managed contract no longer contains its action.");
   const lookupArgument = capability.lookup?.id_from_arg;
   if (!lookupArgument) return args;
-  const resource = `${capability.subject.schema}.${capability.subject.table}`;
-  const value = await prompter.text(
-    `Existing ${lookupArgument} value`,
-    {
-      title: "CHOOSE ONE EXISTING ROW FOR REHEARSAL",
-      context: [
-        `Target: ${details.draft.operation.toUpperCase()} ${resource}`,
-        `Row identity argument: ${lookupArgument}`,
-        "Runner reads this one authorized row under trusted tenant/principal scope to verify before-state and conflict guards.",
-        "The proposal is written only to a disposable ledger; the source row is never changed.",
-        "Enter an exact existing ID for the current trusted scope.",
-      ],
-    },
-  );
-  if (value === undefined) return undefined;
-  if (!value.trim()) {
-    throw new Error(`A non-empty existing ${resource} ID is required for rehearsal.`);
+  const definition = capability.args?.[lookupArgument];
+  if (!definition || definition.type === "object_array") {
+    throw new Error(`GUIDED_ACTION_REHEARSAL_VALUE_INVALID: ${lookupArgument} is not one scalar contract argument.`);
   }
-  args[lookupArgument] = value.trim();
+  const value = await collectLocalRehearsalIdentity({
+    details,
+    capability,
+    prompter,
+    definition,
+    ...(targetContext ? { targetContext } : {}),
+  });
+  if (value === undefined) return undefined;
+  args[lookupArgument] = value;
   return args;
+}
+
+async function collectLocalRehearsalIdentity(input: {
+  details: Awaited<ReturnType<typeof guidedActionDraftDetails>>;
+  capability: Awaited<ReturnType<typeof guidedActionDraftDetails>>["contract"]["capabilities"][number];
+  prompter: ActionControlPrompter;
+  definition: Exclude<NonNullable<Awaited<ReturnType<typeof guidedActionDraftDetails>>["contract"]["capabilities"][number]["args"]>[string], { type: "object_array" }>;
+  targetContext?: GuidedRehearsalTargetContext;
+}): Promise<unknown | undefined> {
+  const lookupArgument = input.capability.lookup?.id_from_arg;
+  if (!lookupArgument) return undefined;
+  const resource = `${input.capability.subject.schema}.${input.capability.subject.table}`;
+  const target = `${input.details.draft.operation.toUpperCase()} ${resource}`;
+  let resolution: GuidedActionRehearsalTargetResolution | undefined;
+  if (input.targetContext) {
+    const resolver = input.targetContext.resolver ?? resolveGuidedActionRehearsalTarget;
+    resolution = await resolver({
+      projectRoot: input.targetContext.projectRoot,
+      capabilityName: input.details.draft.capability,
+      inspection: input.targetContext.inspection,
+      env: input.targetContext.env,
+      ...(input.targetContext.baseConfigPath ? { baseConfigPath: input.targetContext.baseConfigPath } : {}),
+    });
+    if (resolution.state === "resolved") {
+      input.prompter.rememberDetails?.("Rehearsal target", [
+        `Target: ${target}`,
+        "Selection: current trusted-scope row",
+        `Proof: ${resolution.proof}`,
+        "Primary key and conflict value remain local and are omitted from the normal transcript and provider input.",
+      ]);
+      return parseLocalRehearsalArgument(lookupArgument, String(resolution.value), input.definition);
+    }
+    if (resolution.state === "selection_required") {
+      const selection = await input.prompter.choose("CHOOSE A LOCAL REHEARSAL TARGET", [
+        ...resolution.candidates.map((candidate, index) => ({
+          value: `candidate:${index}`,
+          label: candidate.label,
+          detail: "Authorized under the current trusted scope; raw identity stays hidden.",
+        })),
+        {
+          value: "advanced",
+          label: "Enter an exact row ID (advanced)",
+          detail: "Local-only fallback. The value is never sent to the model.",
+        },
+        { value: "back", label: "Back" },
+      ], [
+        `Target: ${target}`,
+        "Runner found multiple authorized rows. Choose by reviewed business labels; identities stay local.",
+        ...(resolution.truncated
+          ? ["Only the first 20 authorized rows are shown. Use an evidence-bound target or the advanced local path for another row."]
+          : []),
+        "This read-only selection does not create a proposal or change source data.",
+      ]);
+      if (!selection || selection === "back") return undefined;
+      if (selection !== "advanced") {
+        const index = Number(selection.slice("candidate:".length));
+        const candidate = resolution.candidates[index];
+        if (!candidate) throw new Error("GUIDED_ACTION_REHEARSAL_SELECTION_INVALID: the selected local row is unavailable.");
+        return parseLocalRehearsalArgument(lookupArgument, String(candidate.value), input.definition);
+      }
+    } else {
+      const fallback = await input.prompter.choose("REHEARSAL TARGET NEEDS ATTENTION", [
+        {
+          value: "advanced",
+          label: "Enter an exact row ID (advanced)",
+          detail: "Runner still enforces trusted tenant/principal scope before reading it.",
+        },
+        { value: "back", label: "Keep this action disabled" },
+      ], [
+        resolution.message,
+        "No proposal ran, no authority changed, and no source row changed.",
+      ], "back");
+      if (fallback !== "advanced") return undefined;
+    }
+  }
+  const raw = await input.prompter.text(`Existing ${lookupArgument} value (advanced)`, {
+    title: "ENTER LOCAL ROW ID",
+    context: [
+      `Target: ${target}`,
+      `Local-only argument: ${lookupArgument}`,
+      "Runner applies trusted tenant/principal scope and refuses a row outside it.",
+      "Provider egress: no | normal transcript: hidden | source write: no",
+    ],
+  });
+  if (raw === undefined) return undefined;
+  if (!raw.trim()) throw new Error(`A non-empty existing ${resource} ID is required for rehearsal.`);
+  return parseLocalRehearsalArgument(lookupArgument, raw.trim(), input.definition);
 }
 
 async function collectPatches(

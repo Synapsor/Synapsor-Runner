@@ -1917,6 +1917,71 @@ describe("Auto Boundary compiler", () => {
     expect(mixedResult.exploration_boundary.trusted_context.database_role_tenant).toBeUndefined();
   });
 
+  it("recognizes a scoped PostgreSQL setting through NULLIF and cast wrappers", () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.row_level_security_policies![0]!.using_expression = [
+      "((tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid)",
+      "AND (principal_id = (NULLIF(current_setting('app.principal'::text, true), ''::text))::uuid))",
+    ].join(" ");
+
+    const result = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/churn-app"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const resource = result.exploration_boundary.pack.resources.find((candidate) =>
+      candidate.id === "public.subscriptions");
+
+    expect(resource?.rls_session).toEqual({
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.principal",
+    });
+    expect(result.exploration_boundary.trusted_context.database_role_tenant).toEqual({
+      engine: "postgres",
+      setting: "app.tenant_id",
+    });
+  });
+
+  it("binds a uniquely named RLS principal setting even without a physical principal column", () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.row_level_security_policies![0]!.using_expression = [
+      "((tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid)",
+      "AND app.can_access_tenant(tenant_id, (NULLIF(current_setting('app.principal'::text, true), ''::text))::uuid))",
+    ].join(" ");
+
+    const result = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/churn-app"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const resource = result.exploration_boundary.pack.resources.find((candidate) =>
+      candidate.id === "public.subscriptions");
+
+    expect(resource?.principal_scope).toBeUndefined();
+    expect(resource?.rls_session).toEqual({
+      tenant_setting: "app.tenant_id",
+      principal_setting: "app.principal",
+    });
+  });
+
+  it("does not treat an unrelated RLS session setting as trusted principal scope", () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.row_level_security_policies![0]!.using_expression = [
+      "(tenant_id = current_setting('app.tenant_id')::uuid",
+      "AND region_code = current_setting('app.region'))",
+    ].join(" ");
+
+    const result = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/churn-app"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const resource = result.exploration_boundary.pack.resources.find((candidate) =>
+      candidate.id === "public.subscriptions");
+
+    expect(resource?.rls_session).toEqual({ tenant_setting: "app.tenant_id" });
+  });
+
   it("keeps payment, medical, person-name, and unresolved fields out of every generated read operation", () => {
     const inspection = churnInspection();
     inspection.tables[0]!.columns.push(

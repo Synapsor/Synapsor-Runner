@@ -38,6 +38,7 @@ export type ActionBoundaryInterviewSession = {
   dependencies?: AskProviderDependencies;
   conversation?: ModelAuthoringConversation;
   openingValidatedFacts?: string[];
+  openingOperatorMessage?: string;
   openingValidatedFactsConsumed?: boolean;
 };
 

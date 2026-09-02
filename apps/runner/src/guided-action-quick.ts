@@ -112,9 +112,25 @@ export type QuickProposalPreparation =
 export type ActionIntentHints = {
   resource?: string;
   operation?: GuidedActionOperation;
+  excluded_operations?: GuidedActionOperation[];
   fields: string[];
   notes: string[];
 };
+
+const ACTION_CUE_WEIGHTS = new Map<string, { operation: GuidedActionOperation; weight: number }>([
+  ["insert", { operation: "insert", weight: 3 }],
+  ...["add", "create", "new", "open", "register"].map(
+    (cue) => [cue, { operation: "insert" as const, weight: 1 }] as const,
+  ),
+  ["update", { operation: "update", weight: 3 }],
+  ...["adjust", "assign", "cancel", "change", "close", "credit", "mark", "refund", "set"].map(
+    (cue) => [cue, { operation: "update" as const, weight: 1 }] as const,
+  ),
+  ["delete", { operation: "delete", weight: 3 }],
+  ...["purge", "remove"].map(
+    (cue) => [cue, { operation: "delete" as const, weight: 1 }] as const,
+  ),
+]);
 
 export function prepareQuickProposalAction(input: {
   options: GuidedActionOptions;
@@ -139,9 +155,9 @@ export function prepareQuickProposalAction(input: {
     });
   }
 
-  const availableOperations = (['insert', 'update', 'delete'] as GuidedActionOperation[])
+  const sourceAvailableOperations = (['insert', 'update', 'delete'] as GuidedActionOperation[])
     .filter((operation) => resource.operation_availability[operation].available);
-  if (!availableOperations.length) {
+  if (!sourceAvailableOperations.length) {
     const reasons = (['insert', 'update', 'delete'] as GuidedActionOperation[])
       .map((candidate) => `${candidate.toUpperCase()}: ${resource.operation_availability[candidate].reason}`)
       .join(" ");
@@ -150,7 +166,21 @@ export function prepareQuickProposalAction(input: {
       + "Open Readiness for the exact schema remediation; Runner will not substitute another table or weaker guard.",
     );
   }
-  if (!decisions.operation && hints.operation && !availableOperations.includes(hints.operation)) {
+  const excludedOperations = new Set(hints.excluded_operations ?? []);
+  if (decisions.operation && excludedOperations.has(decisions.operation)) {
+    throw new Error(
+      `${decisions.operation.toUpperCase()} contradicts the stated job, which explicitly excludes that effect. `
+      + "Restate the job before preparing a different Action.",
+    );
+  }
+  const availableOperations = sourceAvailableOperations.filter((operation) => !excludedOperations.has(operation));
+  if (!availableOperations.length) {
+    throw new Error(
+      `The stated job explicitly excludes every source-proven proposal effect for ${resource.id}. `
+      + "Runner will not infer or ask for a contradictory Action.",
+    );
+  }
+  if (!decisions.operation && hints.operation && !sourceAvailableOperations.includes(hints.operation)) {
     throw new Error(
       `${hints.operation.toUpperCase()} ${resource.id} is unavailable: `
       + `${resource.operation_availability[hints.operation].reason} `
@@ -216,8 +246,12 @@ export function prepareQuickProposalAction(input: {
   }
 
   const eligible = resource.structurally_eligible_fields.filter((field) => field.name !== guardColumn);
-  if (decisions.fields?.some((field) => !eligible.some((candidate) => candidate.name === field))) {
-    const invalid = decisions.fields.find((field) => !eligible.some((candidate) => candidate.name === field));
+  // A structured suggestion may include a version-like column before Runner
+  // resolves the only source-proven conflict guard. Treat that duplicate as
+  // guard metadata, never as a model-writable patch. Other ineligible fields
+  // still fail closed.
+  if (decisions.fields?.some((field) => field !== guardColumn && !eligible.some((candidate) => candidate.name === field))) {
+    const invalid = decisions.fields.find((field) => field !== guardColumn && !eligible.some((candidate) => candidate.name === field));
     throw new Error(`${invalid} is not a structurally eligible model-supplied field for ${operation.toUpperCase()} ${resource.id}.`);
   }
   const selectedNames = new Set<string>();
@@ -505,23 +539,34 @@ export function rankActionIntent(
 ): ActionIntentHints {
   const intent = intentInput?.trim();
   if (!intent) return { fields: [], notes: [] };
-  const tokens = intentTokens(intent);
-  const operation = rankedOperation(tokens);
+  const allTokens = intentTokens(intent);
+  const actionTokens = focusedActionIntentTokens(intent);
+  const operationSignals = rankedOperation(intent);
+  const operation = operationSignals.operation;
+  const hasFocusedFieldEvidence = resources.some((resource) =>
+    rankedIntentFieldMatches(resource.structurally_eligible_fields, actionTokens).length > 0);
+  const fieldTokens = hasFocusedFieldEvidence ? actionTokens : allTokens;
   const rankedResources = resources
     .map((resource) => {
-      const resourceScore = metadataIntentScore(tokens, [
-        resource.id,
+      const focusedResourceScore = metadataIntentScore(actionTokens, [
         resource.table,
         resource.label,
         resource.description,
       ]);
-      const fieldScores = resource.structurally_eligible_fields
-        .map((field) => metadataIntentScore(tokens, [field.name, field.label, field.description]))
-        .filter((score) => score > 0)
-        .sort((left, right) => right - left)
+      // The full sentence may identify the target before the action clause,
+      // but broad read vocabulary must not outweigh exact change-field
+      // evidence. This matters for mixed jobs such as "inspect shipments and
+      // change carrier mode plus delay threshold".
+      const fullResourceScore = metadataIntentScore(allTokens, [
+        resource.table,
+        resource.label,
+      ]);
+      const fieldMatches = rankedIntentFieldMatches(resource.structurally_eligible_fields, fieldTokens);
+      const fieldScores = fieldMatches
+        .map((candidate) => candidate.score)
         .slice(0, 3);
       const guardScore = metadataIntentScore(
-        tokens,
+        actionTokens,
         operation === "insert"
           ? resource.insert_dedup_candidates
           : operation === "update" || operation === "delete"
@@ -530,7 +575,11 @@ export function rankActionIntent(
       );
       return {
         resource,
-        score: resourceScore + fieldScores.reduce((sum, score) => sum + score, 0) + guardScore,
+        score: (focusedResourceScore * 2)
+          + fullResourceScore
+          + (fieldScores.reduce((sum, score) => sum + score, 0) * 2)
+          + (fieldMatches.length * 4)
+          + guardScore,
       };
     })
     .sort((left, right) => right.score - left.score || left.resource.id.localeCompare(right.resource.id));
@@ -541,16 +590,21 @@ export function rankActionIntent(
     : undefined;
   const selected = resource ? first?.resource : undefined;
   const fields = selected
-    ? selected.structurally_eligible_fields
-      .map((field) => ({ field, score: metadataIntentScore(tokens, [field.name, field.label, field.description]) }))
-      .filter((candidate) => candidate.score > 0)
-      .sort((left, right) => right.score - left.score || left.field.name.localeCompare(right.field.name))
+    ? rankedIntentFieldMatches(selected.structurally_eligible_fields, fieldTokens)
       .map((candidate) => candidate.field.name)
     : [];
   const notes = resource
     ? [`Runner ranked ${resource}${fields.length ? ` and field${fields.length === 1 ? "" : "s"} ${fields.join(", ")}` : ""} from reviewed metadata. Nothing was selected or authorized automatically.`]
     : ["Runner found no unique resource match. Choose the exact reviewed target; ambiguous intent never grants authority."];
-  return { ...(resource ? { resource } : {}), ...(operation ? { operation } : {}), fields, notes };
+  return {
+    ...(resource ? { resource } : {}),
+    ...(operation ? { operation } : {}),
+    ...(operationSignals.excluded.length
+      ? { excluded_operations: operationSignals.excluded }
+      : {}),
+    fields,
+    notes,
+  };
 }
 
 function resolveResource(
@@ -786,28 +840,226 @@ function metadataIntentScore(tokens: Set<string>, values: Array<string | undefin
   return score;
 }
 
-function rankedOperation(tokens: Set<string>): GuidedActionOperation | undefined {
-  const scores: Array<{ operation: GuidedActionOperation; score: number }> = [
-    { operation: "insert", score: operationCueScore(tokens, "insert", ["add", "create", "new", "open", "register"]) },
-    { operation: "update", score: operationCueScore(tokens, "update", ["adjust", "assign", "cancel", "change", "close", "credit", "mark", "refund", "set"]) },
-    { operation: "delete", score: operationCueScore(tokens, "delete", ["purge", "remove"]) },
-  ];
-  scores.sort((left, right) => right.score - left.score);
-  return scores[0]!.score > 0 && scores[0]!.score > scores[1]!.score
-    ? scores[0]!.operation
-    : undefined;
-}
-
-function cueScore(tokens: Set<string>, cues: string[]): number {
-  return cues.reduce((score, cue) => score + (tokens.has(cue) ? 1 : 0), 0);
-}
-
-function operationCueScore(
+function rankedIntentFieldMatches(
+  fields: GuidedActionResourceOption["structurally_eligible_fields"],
   tokens: Set<string>,
-  exactOperation: GuidedActionOperation,
-  relatedCues: string[],
-): number {
-  return (tokens.has(exactOperation) ? 3 : 0) + cueScore(tokens, relatedCues);
+): Array<{ field: GuidedActionResourceOption["structurally_eligible_fields"][number]; score: number }> {
+  const candidates = fields.map((field) => {
+    const identifyingConcepts = new Set(
+      [field.name, field.label]
+        .filter((value): value is string => Boolean(value))
+        .flatMap(rawIntentTokens)
+        .map(singularIntentToken)
+        .filter((value) => value.length > 1),
+    );
+    const matchedConcepts = [...identifyingConcepts]
+      .filter((concept) => tokens.has(concept));
+    return {
+      field,
+      identifyingConcepts,
+      matchedConcepts,
+      score: metadataIntentScore(tokens, [field.name, field.label, field.description]),
+    };
+  });
+  const conceptFrequency = new Map<string, number>();
+  for (const candidate of candidates) {
+    for (const concept of candidate.matchedConcepts) {
+      conceptFrequency.set(concept, (conceptFrequency.get(concept) ?? 0) + 1);
+    }
+  }
+  return candidates
+    .filter((candidate) => candidate.score > 0 && (
+      candidate.identifyingConcepts.size === 1
+      || candidate.matchedConcepts.length >= 2
+      || candidate.matchedConcepts.some((concept) => conceptFrequency.get(concept) === 1)
+    ))
+    .sort((left, right) => right.score - left.score || left.field.name.localeCompare(right.field.name))
+    .map(({ field, score }) => ({ field, score }));
+}
+
+function rankedOperation(intent: string): {
+  operation?: GuidedActionOperation;
+  excluded: GuidedActionOperation[];
+} {
+  const parts = operationIntentParts(intent);
+  const scores = new Map<GuidedActionOperation, number>([
+    ["insert", 0],
+    ["update", 0],
+    ["delete", 0],
+  ]);
+  const excluded = new Set<GuidedActionOperation>();
+  for (const [index, part] of parts.entries()) {
+    if (part.boundary) continue;
+    const cue = ACTION_CUE_WEIGHTS.get(part.value);
+    if (!cue || operationCueIsWritePostureNoun(parts, index)) continue;
+    if (operationCueIsNegated(parts, index)) {
+      excluded.add(cue.operation);
+      continue;
+    }
+    scores.set(cue.operation, (scores.get(cue.operation) ?? 0) + cue.weight);
+  }
+  const ranked = [...scores.entries()]
+    .filter(([operation]) => !excluded.has(operation))
+    .map(([operation, score]) => ({ operation, score }))
+    .sort((left, right) => right.score - left.score);
+  const first = ranked[0];
+  const second = ranked[1];
+  const operation = first && first.score > 0 && (!second || first.score > second.score)
+    ? first.operation
+    : undefined;
+  return {
+    ...(operation ? { operation } : {}),
+    excluded: [...excluded].sort(),
+  };
+}
+
+function focusedActionIntentTokens(intent: string): Set<string> {
+  const parts = operationIntentParts(intent);
+  const focused = new Set<string>();
+  for (const [cueIndex, part] of parts.entries()) {
+    if (!ACTION_CUE_WEIGHTS.has(part.value)
+      || operationCueIsWritePostureNoun(parts, cueIndex)
+      || operationCueIsNegated(parts, cueIndex)) continue;
+    let start = cueIndex;
+    let precedingWords = 0;
+    for (let index = cueIndex - 1; index >= 0 && precedingWords < 6; index -= 1) {
+      const candidate = parts[index]!;
+      if (strongActionContextBoundary(candidate)) break;
+      start = index;
+      if (!candidate.boundary) precedingWords += 1;
+    }
+    let end = parts.length - 1;
+    for (let index = cueIndex + 1; index < parts.length; index += 1) {
+      if (strongActionContextBoundary(parts[index]!)) {
+        end = index - 1;
+        break;
+      }
+    }
+    for (let index = start; index <= end; index += 1) {
+      const candidate = parts[index]!;
+      if (candidate.boundary) continue;
+      focused.add(candidate.value);
+      focused.add(singularIntentToken(candidate.value));
+    }
+  }
+  return focused.size ? focused : intentTokens(intent);
+}
+
+function strongActionContextBoundary(part: { value: string; boundary: boolean }): boolean {
+  return part.boundary && part.value !== ",";
+}
+
+function operationCueIsWritePostureNoun(
+  parts: Array<{ value: string; boundary: boolean }>,
+  cueIndex: number,
+): boolean {
+  if (parts[cueIndex]?.value !== "change") return false;
+  const preceding: string[] = [];
+  for (let index = cueIndex - 1; index >= 0 && preceding.length < 7; index -= 1) {
+    const part = parts[index]!;
+    if (strongActionContextBoundary(part)) break;
+    if (!part.boundary) preceding.unshift(part.value);
+  }
+  const previous = preceding.at(-1);
+  if (previous === "source" || previous === "database" || previous === "data") return true;
+  const controlVerbs = new Set(["apply", "approve", "commit", "execute", "persist", "write", "writeback"]);
+  const negators = new Set(["no", "not", "never", "without"]);
+  const controlIndex = preceding.findIndex((value) => controlVerbs.has(value));
+  return controlIndex >= 0
+    && preceding.slice(0, controlIndex + 1).some((value) => negators.has(value));
+}
+
+function operationIntentParts(intent: string): Array<{ value: string; boundary: boolean }> {
+  const normalized = intent
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/\b(do|does|did|should|must|can|could|would|will)n['’]?t\b/gu, "$1 not")
+    .replace(/\bcannot\b/gu, "can not");
+  return (normalized.match(/[a-z0-9]+|[,.;!?]/gu) ?? []).map((raw) => {
+    const boundary = /^[,.;!?]$/u.test(raw)
+      || /^(?:but|however|instead|except|although|yet)$/u.test(raw);
+    return { value: boundary ? raw : canonicalActionCue(raw), boundary };
+  });
+}
+
+function canonicalActionCue(value: string): string {
+  const forms: Record<string, string> = {
+    added: "add",
+    adding: "add",
+    adds: "add",
+    adjusted: "adjust",
+    adjusting: "adjust",
+    adjusts: "adjust",
+    assigned: "assign",
+    assigning: "assign",
+    assigns: "assign",
+    canceled: "cancel",
+    cancelled: "cancel",
+    canceling: "cancel",
+    cancelling: "cancel",
+    changes: "change",
+    changed: "change",
+    changing: "change",
+    closed: "close",
+    closes: "close",
+    closing: "close",
+    created: "create",
+    creates: "create",
+    creating: "create",
+    credited: "credit",
+    crediting: "credit",
+    credits: "credit",
+    deleted: "delete",
+    deletes: "delete",
+    deleting: "delete",
+    inserted: "insert",
+    inserting: "insert",
+    inserts: "insert",
+    marked: "mark",
+    marking: "mark",
+    marks: "mark",
+    opened: "open",
+    opening: "open",
+    opens: "open",
+    purged: "purge",
+    purges: "purge",
+    purging: "purge",
+    refunded: "refund",
+    refunding: "refund",
+    refunds: "refund",
+    registered: "register",
+    registering: "register",
+    registers: "register",
+    removed: "remove",
+    removes: "remove",
+    removing: "remove",
+    setting: "set",
+    sets: "set",
+    updated: "update",
+    updates: "update",
+    updating: "update",
+  };
+  return forms[value] ?? value;
+}
+
+function operationCueIsNegated(
+  parts: Array<{ value: string; boundary: boolean }>,
+  cueIndex: number,
+): boolean {
+  const negators = new Set(["no", "not", "never", "without"]);
+  for (let index = cueIndex - 1, words = 0; index >= 0 && words < 6; index -= 1) {
+    const part = parts[index]!;
+    if (part.boundary) break;
+    words += 1;
+    if (negators.has(part.value)) return true;
+  }
+  for (let index = cueIndex + 1, words = 0; index < parts.length && words < 4; index += 1) {
+    const part = parts[index]!;
+    if (part.boundary) break;
+    words += 1;
+    if (negators.has(part.value)) return true;
+  }
+  return false;
 }
 
 function reviewedTypeLength(dataType: string): number | undefined {

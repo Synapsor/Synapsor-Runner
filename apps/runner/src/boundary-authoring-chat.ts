@@ -61,13 +61,23 @@ type ChoiceInput = {
   initialValue?: string;
 };
 
-const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 40;
-const DEFAULT_TRANSCRIPT_STREAM_VISIBLE_CHARS = 10;
+const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 32;
+const DEFAULT_TRANSCRIPT_STREAM_VISIBLE_CHARS = 14;
 const AUTHORING_SLASH_SUGGESTIONS: SlashCommandSuggestion[] = [
   {
     label: "/details",
     completion: "/details",
     description: "Show the latest exact Runner validation; no model request",
+  },
+  {
+    label: "/diff",
+    completion: "/diff",
+    description: "Show the latest concise reviewed change; no model request",
+  },
+  {
+    label: "/exact",
+    completion: "/exact",
+    description: "Show the complete latest Runner record; no model request",
   },
   {
     label: "/help",
@@ -312,6 +322,17 @@ export function createBoundaryAuthoringChat(input: {
   ): string => {
     const safe = transcriptText(line);
     let content = speaker === "model" ? renderInlineModelMarkdown(safe, theme) : safe;
+    if (speaker === "model") {
+      const heading = safe.match(/^\s*#{1,3}\s+(.+)$/u);
+      const bullet = safe.match(/^(\s*)([-*]|\d+\.)\s+(.+)$/u);
+      if (heading) {
+        content = theme.bold(renderInlineModelMarkdown(heading[1]!, theme));
+      } else if (bullet) {
+        content = `${bullet[1]}${theme.key(bullet[2]!)} ${renderInlineModelMarkdown(bullet[3]!, theme)}`;
+      } else if (/^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*$/u.test(safe)) {
+        content = theme.dim(safe);
+      }
+    }
     if (index === 0 && firstStyle) content = firstStyle(content);
     if (speaker === "model") {
       const interpreted = safe.match(/^I interpreted that as\s+([^:]+):\s*(.+)\.$/iu);
@@ -458,11 +479,35 @@ export function createBoundaryAuthoringChat(input: {
     ].flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
     writeTranscript(rendered.join("\n"));
   };
+  const showDiff = () => {
+    if (!latestDetails) {
+      runner("No reviewed change yet", [
+        "A diff appears after Runner validates a draft or prepares an exact authority decision.",
+      ], "warning");
+      return;
+    }
+    const selected = latestDetails.lines.filter((line) =>
+      /^(?:Boundary|Action|Target|Read plans?|Action suggestions?|Runner-validated interpretation|Validated decision|Agent supplies|Runner supplies|Approval|Authority|Writeback|Rehearsal|Source database changed|Agent access|Model-facing fields|Privacy|Usage limits):/iu.test(line.trim())
+      || /\b(?:added|removed|changed|kept out|remains disabled|remains off|source unchanged)\b/iu.test(line));
+    const facts = (selected.length ? selected : latestDetails.lines).slice(0, 18);
+    const rendered = [
+      "",
+      theme.title("LATEST REVIEWED CHANGE"),
+      theme.scope(latestDetails.title),
+      ...facts.map((line) => `  ${transcriptText(line)}`),
+      "",
+      theme.dim("Use /exact for the complete Runner record. No model request or authority change occurred."),
+      "",
+    ].flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
+    writeTranscript(rendered.join("\n"));
+  };
   const showHelp = () => {
     const rendered = [
       "",
       theme.title("BOUNDARY AUTHORING COMMANDS"),
       `${theme.key("/details")}  ${theme.dim("Show the latest exact Runner validation or permission record")}`,
+      `${theme.key("/diff")}     ${theme.dim("Show the latest concise reviewed change")}`,
+      `${theme.key("/exact")}    ${theme.dim("Show the complete latest Runner record")}`,
       `${theme.key("/help")}     ${theme.dim("Show these commands")}`,
       `${theme.key("Esc")}       ${theme.dim("Pause safely at an input prompt")}`,
       "",
@@ -562,6 +607,14 @@ export function createBoundaryAuthoringChat(input: {
           : await io.read(prompt);
       const command = answer?.trim().toLowerCase();
       if (command === "/details") {
+        showDetails();
+        continue;
+      }
+      if (command === "/diff") {
+        showDiff();
+        continue;
+      }
+      if (command === "/exact") {
         showDetails();
         continue;
       }

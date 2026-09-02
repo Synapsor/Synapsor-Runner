@@ -126,6 +126,28 @@ describe("job mapping catalog", () => {
     ]);
     expect(result.manual_resources).toEqual([]);
   });
+
+  it("withholds unresolved principal candidates from model mapping until their role is reviewed", () => {
+    const unresolved = reviewView({
+      id: "ops.work_orders",
+      generated: true,
+      principalCandidates: ["principal_id"],
+      principalBlocked: true,
+    });
+    const reviewedTenantOnly = reviewView({
+      id: "ops.routing_rules",
+      generated: true,
+      principalCandidates: ["owner_id"],
+      principalBlocked: false,
+    });
+
+    const result = buildJobMappingCatalog([reviewedTenantOnly, unresolved]);
+
+    expect(result.unresolved_principal_fields_to_withhold).toEqual([{
+      resource_id: "ops.work_orders",
+      fields: ["principal_id"],
+    }]);
+  });
 });
 
 function reviewView(input: {
@@ -139,6 +161,8 @@ function reviewView(input: {
   generatedTenantPath?: ReturnType<typeof path>;
   generatedPrincipalPath?: ReturnType<typeof path>;
   relationships?: Array<{ target: string }>;
+  principalCandidates?: string[];
+  principalBlocked?: boolean;
 }): BoundaryResourceReviewView {
   const generatedCandidate = input.generated
     ? {
@@ -157,9 +181,14 @@ function reviewView(input: {
     tenant_key: { candidates: [], confidence: "none", evidence: [] },
     ...(input.tenantPaths ? { derived_tenant_scope: { candidates: input.tenantPaths } } : {}),
     ...(input.shared ? { shared_reference_scope: { eligible: true, blockers: [] } } : {}),
-    principal_key: { candidates: [], confidence: "none", evidence: [] },
+    principal_key: {
+      candidates: input.principalCandidates ?? [],
+      confidence: input.principalCandidates?.length ? "low" : "none",
+      evidence: [],
+      ...(input.principalBlocked ? { blocked_reason: "Descriptive evidence does not prove authority." } : {}),
+    },
     ...(input.principalPaths ? { derived_principal_scope: { candidates: input.principalPaths } } : {}),
-    fields: [],
+    fields: (input.principalCandidates ?? []).map((name) => ({ name })),
     relationships: (input.relationships ?? []).map(({ target }, index) => ({
       name: `relationship_${index}`,
       columns: ["id"],

@@ -30,7 +30,7 @@ export async function narrateValidatedAuthoringStep(input: {
   env?: NodeJS.ProcessEnv;
   egressAcknowledged: boolean;
   signal?: AbortSignal;
-  responseStyle?: "validated_result" | "permission";
+  responseStyle?: "validated_result" | "permission" | "opening";
 }): Promise<string | undefined> {
   if (!input.session.conversation) return undefined;
   const tools: [] = [];
@@ -69,13 +69,16 @@ export async function narrateValidatedAuthoringStep(input: {
     async close() {},
   };
   const permission = input.responseStyle === "permission";
+  const opening = input.responseStyle === "opening";
   const question = [
     `Operator message: ${JSON.stringify(input.operatorMessage)}`,
     "Runner-validated record:",
     ...input.validatedFacts.map((fact) => `- ${fact}`),
     ...(input.nextQuestion ? [`Exact next question: ${JSON.stringify(input.nextQuestion)}`] : []),
     "Respond as the selected Boundary-drafting model, not as Runner.",
-    permission
+    opening
+      ? "Use exactly two short sentences. First say only that you are ready to help draft reviewed boundaries while Runner validates each decision. Then ask the exact next question."
+      : permission
       ? "Use at most three short sentences. Answer the operator's question when one was supplied, then explain why this permission is needed and what allowing or declining changes."
       : "Use at most four short sentences. Explain the validated result in ordinary business language.",
     input.nextQuestion
@@ -83,7 +86,11 @@ export async function narrateValidatedAuthoringStep(input: {
       : "State the next useful operator choice only when the validated record names one.",
     "Do not mention internal hashes, SQL, credentials, hidden fields, or claim that authority, approval, apply, or source writes occurred.",
     "Do not imply that previously validated work disappeared merely because the current record focuses on one authoring step.",
+    "Approval and proposal counts inside time windows are upper circuit-breaker ceilings. Describe them as 'at most' or 'up to'; never say authority begins 'after' that count.",
     "If the operator's rule cannot fit the current action target, say so once and name the recovery choices in the validated record; never ask them to map a missing concept onto an unrelated field.",
+    ...(opening
+      ? ["Do not invent or paraphrase an agent capability, resource, field, operation, scope, policy, count, limit, approval rule, or write posture before the operator describes the job."]
+      : []),
   ].join("\n");
   try {
     const result = await runAskProviderTurn({
@@ -100,6 +107,7 @@ export async function narrateValidatedAuthoringStep(input: {
         "Runner is the deterministic validator; treat its current validated record as authoritative for this response.",
         "Keep continuity with prior operator/model turns, but never invent a reviewed resource, field, value, scope, limit, or authority.",
         "The model cannot activate, approve, apply, execute SQL, or change source data.",
+        "Treat approval and proposal counts as maximum circuit-breaker ceilings, never thresholds that must be reached.",
         "Be concise and useful. Do not reproduce internal policy dumps or pretend to be Runner.",
       ].join(" "),
       skipRunnerQuestionContext: true,
@@ -107,6 +115,7 @@ export async function narrateValidatedAuthoringStep(input: {
     });
     if (result.answer_source !== "model" || !result.answer.trim()) return undefined;
     const answer = result.answer.trim();
+    if (opening && !openingNarrationIsSafe(answer, input.nextQuestion)) return undefined;
     if (narrationContradictsValidatedRecord(answer, input.validatedFacts)) return undefined;
     rememberModelAuthoringTurn(
       input.session.conversation,
@@ -123,6 +132,20 @@ export async function narrateValidatedAuthoringStep(input: {
   }
 }
 
+function openingNarrationIsSafe(answer: string, nextQuestion?: string): boolean {
+  if (!nextQuestion || answer.length > 500 || answer.split(/\r?\n/u).length > 3) return false;
+  const normalizedAnswer = answer.toLowerCase().replace(/[^a-z0-9]+/gu, " ").trim();
+  const normalizedQuestion = nextQuestion.toLowerCase().replace(/[^a-z0-9]+/gu, " ").trim();
+  if (!normalizedAnswer.includes(normalizedQuestion)) return false;
+  const questionIndex = normalizedAnswer.indexOf(normalizedQuestion);
+  const introduction = normalizedAnswer.slice(0, questionIndex).trim();
+  if (!introduction || /\d|\b(?:at most|up to|limit|threshold|quota|tenant|principal|row|table|field|sql|credential)\b/u.test(introduction)) {
+    return false;
+  }
+  return !/\b(?:can(?:not)?|may|must|should|will|won t|allowed|forbidden|only)\b[^.]{0,100}\b(?:read|propose|create|change|update|delete|approve|apply|write)\b/u
+    .test(introduction);
+}
+
 function narrationContradictsValidatedRecord(answer: string, facts: string[]): boolean {
   const normalizedAnswer = answer.toLowerCase().replace(/\s+/gu, " ");
   const record = facts.join(" ").toLowerCase().replace(/\s+/gu, " ");
@@ -133,11 +156,20 @@ function narrationContradictsValidatedRecord(answer: string, facts: string[]): b
     || /(?:scope|tenant|principal|row identity)[^.?!]{0,90}(?:already )?(?:resolved|validated|available|known|provided|complete)[?!]/u.test(normalizedAnswer);
   if (scopeResolved && (claimsMissingScope || questionsResolvedScope)) return true;
 
+  const principalNotConfigured = /(?:no principal (?:row )?(?:limit|scope)|principal (?:row )?(?:limit|scope) (?:is )?not configured|tenant-only scope)/u.test(record);
+  const claimsPrincipalScope = /(?:tenant\s*(?:\+|plus|and)\s*principal|principal (?:row )?(?:scope|isolation|filter|limit)[^.]{0,40}(?:active|applied|configured|enforced|validated)|scoped by (?:both )?tenant and principal)/u.test(normalizedAnswer)
+    && !/(?:no|not|without)[^.]{0,30}principal/u.test(normalizedAnswer);
+  if (principalNotConfigured && claimsPrincipalScope) return true;
+
   const authorityOff = /(?:no authority|authority[^.]{0,60}(?:off|disabled|unchanged|not active)|approval and apply authority remain off)/u.test(record);
   const claimsAuthorityOn = (/(?:(?:read|action|proposal|approval|apply) )?authority[^.]{0,40}(?:active|enabled|granted|approved)/u.test(normalizedAnswer)
     || /(?:proposal|approval|apply|writeback)[^.]{0,30}(?:is|was|has been) (?:active|enabled|granted|approved)/u.test(normalizedAnswer))
     && !/(?:no|not|never|without)[^.]{0,30}(?:authority|proposal|approval|apply|writeback)[^.]{0,30}(?:active|enabled|granted|approved)/u.test(normalizedAnswer);
   if (authorityOff && claimsAuthorityOn) return true;
+
+  const misstatesApprovalCeiling = /\bafter\s+\d+(?:\.\d+)?\s+(?:approvals?|proposals?)\b/u.test(normalizedAnswer)
+    && /\b\d+(?:\.\d+)?\s+(?:approvals?|proposals?)\b/u.test(record);
+  if (misstatesApprovalCeiling) return true;
 
   const sourceUnchanged = /(?:source (?:database|data|row|rows)[^.]{0,60}(?:unchanged|changed: no|did not change)|no source[^.]{0,50}(?:change|write))/u.test(record);
   const claimsSourceChanged = /(?:source (?:database|data|row|rows)|database)[^.]{0,50}(?:changed|updated|written|mutated)/u.test(normalizedAnswer)

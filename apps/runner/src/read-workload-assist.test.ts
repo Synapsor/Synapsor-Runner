@@ -120,6 +120,34 @@ describe("Read workload boundary compiler", () => {
     });
   });
 
+  it("does not treat a shared schema name as evidence for an opaque resource", () => {
+    const recommendation = recommendReadWorkloadPlanCardsForJob([
+      {
+        id: "orders",
+        title: "List work orders",
+        detail: "Return priority and estimated duration",
+        plan: {
+          kind: "rows",
+          resource: "fleet_ops.work_orders",
+          select: ["priority", "estimated_minutes"],
+        },
+      },
+      {
+        id: "opaque",
+        title: "List x7",
+        detail: "Return k1, c1, and c2",
+        plan: {
+          kind: "rows",
+          resource: "fleet_ops.x7",
+          select: ["k1", "c1", "c2"],
+        },
+      },
+    ], "Help a fleet dispatcher understand their work orders and priorities.");
+
+    expect(recommendation.cards.map((card) => card.id)).toEqual(["orders"]);
+    expect(recommendation.matched_resource_count).toBe(1);
+  });
+
   it("offers deterministic reviewed question cards without model or source access", () => {
     const draft = generatedBoundary();
     const cards = buildReadWorkloadPlanCards(draft);

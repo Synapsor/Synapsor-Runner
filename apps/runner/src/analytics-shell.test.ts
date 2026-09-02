@@ -50,6 +50,24 @@ describe("Synapsor Analytics shell", () => {
     expect(frame.cursorColumn).toBeLessThanOrEqual(117);
   });
 
+  it("wraps pasted conversation text at words without losing cursor placement", () => {
+    const value = "Review outage durations and customer notification preferences before proposing a bounded response.";
+    const cursor = value.indexOf("notification") + 5;
+    const frame = renderConversationComposerFrame({
+      prompt: "you> ",
+      value,
+      cursor,
+      columns: 48,
+    });
+    const visible = frame.inputLines.map(stripAnsi);
+
+    expect(visible.length).toBeGreaterThan(1);
+    expect(visible.join("\n")).not.toMatch(/duratio\n\s*ns|notificatio\n\s*n/u);
+    expect(frame.cursorRow).toBeGreaterThanOrEqual(0);
+    expect(frame.cursorRow).toBeLessThan(frame.inputLines.length);
+    expect(frame.cursorColumn).toBeLessThan(48);
+  });
+
   it("accepts bracketed multiline paste as one conversation message", async () => {
     const readable = new PassThrough() as PassThrough & {
       isRaw: boolean;

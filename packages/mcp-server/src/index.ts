@@ -167,4 +167,5 @@ export {
 export {
   configUsesHttpClaims,
   resolveRuntimeSourceCredential,
+  resolveTrustedContext,
 } from "./trusted-context.js";

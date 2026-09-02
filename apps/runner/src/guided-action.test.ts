@@ -138,6 +138,25 @@ describe("guided write actions", () => {
     expect(candidate.pack.resources[0]?.selectable_fields).toEqual([]);
   });
 
+  it("never exposes a model-withheld field as an Action proposal argument", async () => {
+    const fixture = await activatedFitFlowFixture();
+    const candidate = structuredClone(fixture.candidate);
+    const resource = candidate.pack.resources[0]!;
+    resource.model_withheld_fields = [...new Set([
+      ...(resource.model_withheld_fields ?? []),
+      "loyalty_balance",
+    ])];
+
+    const options = guidedActionOptionsFromCandidate({
+      candidate,
+      inspection: fixture.inspection,
+    });
+    const fields = options.resources[0]?.structurally_eligible_fields.map((field) => field.name) ?? [];
+
+    expect(fields).not.toContain("loyalty_balance");
+    expect(options.resources[0]?.writable_fields.map((field) => field.name)).not.toContain("loyalty_balance");
+  });
+
   it("authors and runs proposal-only UPDATE under reviewed single-organization scope", async () => {
     const fixture = await activatedFitFlowFixture({ singleOrganization: true });
     const options = await guidedActionOptions({ projectRoot: fixture.root, inspection: fixture.inspection });

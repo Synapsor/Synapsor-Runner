@@ -377,6 +377,43 @@ describe("Safe Action terminal control plane", () => {
     });
   });
 
+  it("skips hard-delete drafting once without repeating an exact phrase prompt", async () => {
+    const chosen: string[] = [];
+    const prompter = scriptedPrompter({
+      choices: ["skip"],
+      texts: [],
+      confirms: [],
+      onChoose: (title) => chosen.push(title),
+    });
+
+    await expect(collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Delete one public order.",
+    )).resolves.toBeUndefined();
+    expect(chosen).toEqual(["CONFIRM HARD-DELETE PROPOSAL AUTHORITY"]);
+  });
+
+  it("keeps quick hard-delete drafting behind the exact destructive phrase", async () => {
+    const prompter = scriptedPrompter({
+      choices: ["confirm", "create"],
+      texts: ["DELETE public.orders"],
+      confirms: [],
+    });
+
+    await expect(collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Delete one public order.",
+    )).resolves.toMatchObject({
+      resource: "public.orders",
+      operation: "delete",
+      delete_confirmation: "DELETE public.orders",
+      authority_posture: "proposal_only",
+      writeback: { mode: "none" },
+    });
+  });
+
   it("asks for unresolved Action bounds in natural language and confirms the exact interpretation", async () => {
     const textLabels: string[] = [];
     const textContexts: string[][] = [];
@@ -558,6 +595,39 @@ describe("Safe Action terminal control plane", () => {
           resource: "public.orders",
           operation: "update",
           guard_column: "version",
+          fields: ["credit_cents", "version"],
+          numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } },
+        },
+      },
+    );
+
+    expect(action).toMatchObject({
+      conflict_column: "version",
+      patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
+    });
+    expect(action).not.toMatchObject({
+      patches: expect.arrayContaining([expect.objectContaining({ column: "version" })]),
+    });
+  });
+
+  it("removes the only auto-selected stale-row guard from model-writable fields", async () => {
+    const guardedOrders: GuidedActionResourceOption = {
+      ...orders,
+      structurally_eligible_fields: [
+        ...orders.structurally_eligible_fields,
+        { name: "version", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false },
+      ],
+      conflict_candidates: ["version"],
+    };
+    const action = await collectQuickProposalActionInput(
+      { ...options, resources: [guardedOrders] },
+      scriptedPrompter({ choices: ["create"], texts: [], confirms: [] }),
+      "Propose a reviewed order update.",
+      [],
+      {
+        initialDecisions: {
+          resource: "public.orders",
+          operation: "update",
           fields: ["credit_cents", "version"],
           numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } },
         },
@@ -1746,6 +1816,137 @@ describe("Safe Action terminal control plane", () => {
     expect(interpreted?.args).not.toHaveProperty("order_id");
   });
 
+  it("resolves a trusted-scope unique UPDATE row without asking for its identity", async () => {
+    const prompts: string[] = [];
+    const prompter = scriptedPrompter({
+      choices: [],
+      texts: ["Set the credit to 500.", ""],
+      confirms: [],
+      onText: (label) => prompts.push(label),
+    });
+    const details = {
+      draft: { capability: "orders.propose_update_credit", operation: "update" },
+      preview_args: { order_id: "replace-with-order-id", credit_cents: 100 },
+      contract: {
+        capabilities: [{
+          name: "orders.propose_update_credit",
+          subject: { schema: "public", table: "orders" },
+          lookup: { id_from_arg: "order_id" },
+          args: {
+            order_id: { type: "string", max_length: 128 },
+            credit_cents: { type: "number", minimum: 0, maximum: 1000 },
+          },
+        }],
+      },
+    } as unknown as Parameters<typeof collectGuidedRehearsalArgs>[0];
+    const rehearsalInterpreter = vi.fn(async (_input: unknown) => ({
+      state: "resolved" as const,
+      args: { credit_cents: 500 },
+      summary: ["credit_cents: 500"],
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const resolver = vi.fn(async () => ({
+      state: "resolved" as const,
+      mode: "trusted_scope_unique" as const,
+      lookup_argument: "order_id",
+      value: "order-1042",
+      proof: "unique constraint orders_tenant_key (tenant_id)",
+    }));
+
+    await expect(collectGuidedRehearsalArgs(details, prompter, {
+      session: { provider: "openai", model: "gpt-test" },
+      egressAcknowledged: true,
+      rehearsalInterpreter,
+    }, {}, {
+      projectRoot: "/tmp/project",
+      inspection: {} as never,
+      resolver,
+    })).resolves.toEqual({ order_id: "order-1042", credit_cents: 500 });
+    expect(prompts).toEqual([
+      "What example values should I use for the disposable rehearsal?",
+      "Press Enter to run this exact disposable rehearsal, or restate the complete example",
+    ]);
+    expect(rehearsalInterpreter.mock.calls[0]?.[0]).toMatchObject({
+      args: { credit_cents: expect.any(Object) },
+    });
+    expect(rehearsalInterpreter.mock.calls[0]?.[0]).not.toMatchObject({
+      args: { order_id: expect.anything() },
+    });
+  });
+
+  it("uses reviewed labels for a local non-unique rehearsal picker", async () => {
+    const prompter = scriptedPrompter({
+      choices: ["candidate:1"],
+      texts: [],
+      confirms: [],
+    });
+    const details = {
+      draft: { capability: "orders.propose_quick_update", operation: "update" },
+      preview_args: { order_id: "replace-with-order-id", credit_cents: 50 },
+      contract: {
+        capabilities: [{
+          name: "orders.propose_quick_update",
+          subject: { schema: "public", table: "orders" },
+          lookup: { id_from_arg: "order_id" },
+          args: {
+            order_id: { type: "string", max_length: 128 },
+            credit_cents: { type: "number", minimum: 50, maximum: 1000 },
+          },
+        }],
+      },
+    } as unknown as Parameters<typeof collectQuickGuidedRehearsalArgs>[0];
+    const resolver = vi.fn(async () => ({
+      state: "selection_required" as const,
+      mode: "local_safe_picker" as const,
+      lookup_argument: "order_id",
+      candidates: [
+        { label: "status: open", value: "ord-secret-1" },
+        { label: "status: pending", value: "ord-secret-2" },
+      ],
+      truncated: false,
+    }));
+
+    await expect(collectQuickGuidedRehearsalArgs(details, prompter, {
+      projectRoot: "/tmp/project",
+      inspection: {} as never,
+      resolver,
+    })).resolves.toEqual({ order_id: "ord-secret-2", credit_cents: 50 });
+  });
+
+  it("normalizes a hidden PostgreSQL bigint rehearsal identity to the generated argument type", async () => {
+    const prompter = scriptedPrompter({ choices: [], texts: [], confirms: [] });
+    const details = {
+      draft: { capability: "preferences.propose_quick_update", operation: "update" },
+      preview_args: { preference_id: 0, threshold: 15 },
+      contract: {
+        capabilities: [{
+          name: "preferences.propose_quick_update",
+          subject: { schema: "public", table: "preferences" },
+          lookup: { id_from_arg: "preference_id" },
+          args: {
+            preference_id: { type: "number" },
+            threshold: { type: "number", minimum: 15, maximum: 180 },
+          },
+        }],
+      },
+    } as unknown as Parameters<typeof collectQuickGuidedRehearsalArgs>[0];
+    const resolver = vi.fn(async () => ({
+      state: "resolved" as const,
+      mode: "trusted_scope_unique" as const,
+      lookup_argument: "preference_id",
+      value: "42",
+      proof: "unique constraint preferences_scope_key (tenant_id, principal_id)",
+    }));
+
+    await expect(collectQuickGuidedRehearsalArgs(details, prompter, {
+      projectRoot: "/tmp/project",
+      inspection: {} as never,
+      resolver,
+    })).resolves.toEqual({ preference_id: 42, threshold: 15 });
+  });
+
   it("generates bounded rehearsal values from the compiled contract", () => {
     const details = {
       draft: { capability: "orders.propose_generated_rehearsal" },
@@ -1801,13 +2002,13 @@ describe("Safe Action terminal control plane", () => {
       credit_cents: 50,
     });
     expect(textPrompts).toEqual([{
-      label: "Existing order_id value",
+      label: "Existing order_id value (advanced)",
       options: {
-        title: "CHOOSE ONE EXISTING ROW FOR REHEARSAL",
+        title: "ENTER LOCAL ROW ID",
         context: expect.arrayContaining([
           "Target: UPDATE public.orders",
-          "Row identity argument: order_id",
-          expect.stringContaining("disposable ledger"),
+          "Local-only argument: order_id",
+          expect.stringContaining("trusted tenant/principal scope"),
         ]),
       },
     }]);

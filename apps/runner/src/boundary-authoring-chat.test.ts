@@ -406,6 +406,31 @@ describe("Boundary authoring chat", () => {
     expect(transcript).toContain("No model request, authority change, source query, or source write occurred.");
   });
 
+  it("offers local diff and exact records without adding a model turn", async () => {
+    const memory = memoryIo({ reads: ["/diff", "/exact", "continue"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    chat.rememberDetails("Validated combined draft", [
+      "Boundary: reviewed_staging",
+      "Action: INSERT support.refund_requests",
+      "Agent supplies: amount, reason, method",
+      "Approval: disabled deterministic policy",
+      "Source database changed: no",
+      "Exact fingerprint: sha256:operator-only",
+    ]);
+
+    await expect(chat.actionPrompter.text("What should happen next?", {
+      conversation: { modelLines: ["The disabled drafts are ready. What would you like to do next?"] },
+    })).resolves.toBe("continue");
+
+    const transcript = memory.writes.join("");
+    expect(transcript).toContain("LATEST REVIEWED CHANGE");
+    expect(transcript).toContain("RUNNER DETAILS");
+    expect(transcript).toContain("Agent supplies: amount, reason, method");
+    expect(transcript).toContain("Exact fingerprint: sha256:operator-only");
+    expect(transcript.match(/model>/gu)).toHaveLength(1);
+    expect(memory.prompts).toHaveLength(3);
+  });
+
   it("strips inherited terminal formatting and emphasizes the validated value", () => {
     const memory = memoryIo();
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: true });
@@ -427,7 +452,9 @@ describe("Boundary authoring chat", () => {
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: true });
 
     chat.model([
+      "## Reviewed proposal",
       "The **disabled proposal** constrains `amount`; *review it* before continuing.",
+      "- `amount` stays between the reviewed bounds",
       "?**What is the smallest and largest amount the agent may propose?**",
       "Escaped \\**markers\\** remain literal.",
     ]);
@@ -435,6 +462,9 @@ describe("Boundary authoring chat", () => {
     const transcript = memory.writes.join("");
     const plain = transcript.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
     expect(plain).toContain("The disabled proposal constrains amount; review it before continuing.");
+    expect(plain).toContain("Reviewed proposal");
+    expect(plain).toContain("- amount stays between the reviewed bounds");
+    expect(plain).not.toContain("## Reviewed proposal");
     expect(plain).toContain("Escaped **markers** remain literal.");
     expect(plain).toContain("What is the smallest and largest amount the agent may propose?");
     expect(plain).not.toContain("?What is the smallest");
@@ -492,7 +522,7 @@ describe("Boundary authoring chat", () => {
     ], "success");
 
     const streamed = memory.writes.slice(initialWrites).join("");
-    expect(memory.writes.slice(initialWrites).length).toBeGreaterThan(10);
+    expect(memory.writes.slice(initialWrites).length).toBeGreaterThan(5);
     expect(streamed.match(/model>/gu)).toHaveLength(1);
     expect(streamed).toContain("✓ Runner verified");
     expect(streamed).not.toContain("runner>");

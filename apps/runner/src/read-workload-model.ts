@@ -92,6 +92,8 @@ export async function generateModelReadWorkload(input: {
   ) => Promise<ModelReadClarificationDecision>;
   dependencies?: AskProviderDependencies;
   conversation?: ModelAuthoringConversation;
+  /** The outer authoring session will narrate the combined validated draft. */
+  deferNarration?: boolean;
   signal?: AbortSignal;
 }): Promise<ModelReadWorkloadResult> {
   const name = boundedText(input.name, "workload name", 80);
@@ -513,30 +515,32 @@ export async function generateModelReadWorkload(input: {
       ? "READ_WORKLOAD_ASSISTANCE_REQUEST_REPEATED: the model requested another clarification or database-value context after the one bounded operator decision. Runner sent nothing else and accepted no draft."
       : "READ_WORKLOAD_NOT_SUBMITTED: the model did not submit one bounded structured workload.");
   }
-  const modelMessage = await narrateValidatedAuthoringStep({
-    session: {
-      provider: input.provider,
-      model: input.model,
-      ...(input.apiKey ? { apiKey: input.apiKey } : {}),
-      ...(input.apiKeyEnv ? { apiKeyEnv: input.apiKeyEnv } : {}),
-      ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
-      ...(input.dependencies ? { dependencies: input.dependencies } : {}),
-      ...(input.conversation ? { conversation: input.conversation } : {}),
-    },
-    operatorMessage: allowedQuestions.join("\n"),
-    validatedFacts: [
-      `${workload.allowed.length} representative Read plan${workload.allowed.length === 1 ? "" : "s"} passed Runner grammar validation.`,
-      ...workload.allowed.slice(0, 8).map((entry) =>
-        `${entry.plan.resource}: ${entry.description}`),
-      ...(workload.allowed.length > 8
-        ? [`${workload.allowed.length - 8} additional validated Read plans are in Runner details.`]
-        : []),
-      "Read authority remains disabled and the source database was not changed.",
-    ],
-    env: input.env,
-    egressAcknowledged: input.egressAcknowledged,
-    signal: input.signal,
-  });
+  const modelMessage = input.deferNarration
+    ? undefined
+    : await narrateValidatedAuthoringStep({
+        session: {
+          provider: input.provider,
+          model: input.model,
+          ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+          ...(input.apiKeyEnv ? { apiKeyEnv: input.apiKeyEnv } : {}),
+          ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+          ...(input.dependencies ? { dependencies: input.dependencies } : {}),
+          ...(input.conversation ? { conversation: input.conversation } : {}),
+        },
+        operatorMessage: allowedQuestions.join("\n"),
+        validatedFacts: [
+          `${workload.allowed.length} representative Read plan${workload.allowed.length === 1 ? "" : "s"} passed Runner grammar validation.`,
+          ...workload.allowed.slice(0, 8).map((entry) =>
+            `${entry.plan.resource}: ${entry.description}`),
+          ...(workload.allowed.length > 8
+            ? [`${workload.allowed.length - 8} additional validated Read plans are in Runner details.`]
+            : []),
+          "Read authority remains disabled and the source database was not changed.",
+        ],
+        env: input.env,
+        egressAcknowledged: input.egressAcknowledged,
+        signal: input.signal,
+      });
   return {
     workload,
     analysis,

@@ -348,16 +348,19 @@ function scoreReadWorkloadPlanCards(
   const jobTokens = intentTokens(job);
   return cards.map((card, index) => {
     if (!jobTokens.size) return { card, index, score: 0 };
+    const { resource: _resource, ...planWithoutResource } = card.plan;
     const cardTokens = intentTokens([
       card.title,
       card.detail,
-      JSON.stringify(card.plan),
+      JSON.stringify(planWithoutResource),
     ].join(" "));
     let score = 0;
     for (const token of jobTokens) {
       if (cardTokens.has(token)) score += token.length >= 8 ? 4 : token.length >= 5 ? 3 : 2;
     }
-    const resource = typeof card.plan.resource === "string" ? readableIdentifier(card.plan.resource) : "";
+    const resource = typeof card.plan.resource === "string"
+      ? readableIdentifier(card.plan.resource.split(".").at(-1) ?? card.plan.resource)
+      : "";
     const resourceTokens = intentTokens(resource);
     if ([...resourceTokens].some((token) => jobTokens.has(token))) score += 6;
     return { card, index, score };

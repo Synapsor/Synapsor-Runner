@@ -958,6 +958,12 @@ type ConversationComposerFrame = {
   cursorColumn: number;
 };
 
+type ConversationComposerSegment = {
+  start: number;
+  end: number;
+  text: string;
+};
+
 function visibleTerminalLength(value: string): number {
   return Array.from(value.replace(/\u001b\[[0-9;]*m/gu, "")).length;
 }
@@ -978,31 +984,85 @@ export function renderConversationComposerFrame(input: {
   const answerWidth = Math.max(1, contentWidth - promptWidth - 1);
   const characters = Array.from(safeTerminalText(input.value).replace(/[\r\n\t]+/gu, " "));
   const cursor = Math.max(0, Math.min(characters.length, Math.trunc(input.cursor)));
-  const chunks: string[] = [];
-  for (let offset = 0; offset < characters.length; offset += answerWidth) {
-    chunks.push(characters.slice(offset, offset + answerWidth).join(""));
-  }
-  if (!chunks.length || (cursor === characters.length && cursor > 0 && cursor % answerWidth === 0)) {
-    chunks.push("");
-  }
+  const segments = wrapConversationComposerValue(characters, answerWidth);
   const continuation = " ".repeat(promptWidth);
-  const inputLines = chunks.map((chunk, index) => padTerminalLine(
-    `${index === 0 ? prompt : continuation}${chunk}`,
+  const inputLines = segments.map((segment, index) => padTerminalLine(
+    `${index === 0 ? prompt : continuation}${segment.text}`,
   ));
   const menuLines = input.menu
     ? input.menu.split("\n").flatMap((line) =>
         wrapStyledTerminalLine(line, contentWidth).map((wrapped) => padTerminalLine(wrapped)))
     : [];
-  const cursorRow = Math.min(chunks.length - 1, Math.floor(cursor / answerWidth));
-  const cursorOffset = cursorRow === chunks.length - 1 && cursor === characters.length
-    ? cursor - (cursorRow * answerWidth)
-    : cursor % answerWidth;
+  let cursorRow = segments.length - 1;
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index]!;
+    const next = segments[index + 1];
+    if (cursor < segment.end
+      || (cursor === segment.end && (!next || next.start > cursor))) {
+      cursorRow = index;
+      break;
+    }
+    if (cursor < segment.start) {
+      cursorRow = index;
+      break;
+    }
+  }
+  const cursorSegment = segments[cursorRow]!;
+  const cursorOffset = Math.max(0, Math.min(
+    Array.from(cursorSegment.text).length,
+    cursor - cursorSegment.start,
+  ));
   return {
     lines: [...inputLines, ...menuLines],
     inputLines,
     cursorRow,
     cursorColumn: 2 + promptWidth + cursorOffset,
   };
+}
+
+function wrapConversationComposerValue(
+  characters: string[],
+  width: number,
+): ConversationComposerSegment[] {
+  if (!characters.length) return [{ start: 0, end: 0, text: "" }];
+  const segments: ConversationComposerSegment[] = [];
+  let start = 0;
+  while (start < characters.length) {
+    const hardEnd = Math.min(characters.length, start + width);
+    let end = hardEnd;
+    let nextStart = hardEnd;
+    if (hardEnd < characters.length) {
+      const minimumBreak = start + Math.max(1, Math.floor(width / 2));
+      for (let index = hardEnd - 1; index >= minimumBreak; index -= 1) {
+        if (!/\s/u.test(characters[index]!)) continue;
+        end = index;
+        nextStart = index + 1;
+        while (nextStart < characters.length && /\s/u.test(characters[nextStart]!)) {
+          nextStart += 1;
+        }
+        break;
+      }
+    }
+    if (end === start) {
+      end = hardEnd;
+      nextStart = hardEnd;
+    }
+    segments.push({
+      start,
+      end,
+      text: characters.slice(start, end).join(""),
+    });
+    start = nextStart;
+  }
+  const last = segments.at(-1)!;
+  if (last.end === characters.length && Array.from(last.text).length === width) {
+    segments.push({
+      start: characters.length,
+      end: characters.length,
+      text: "",
+    });
+  }
+  return segments;
 }
 
 export function createTerminalAnalyticsShellIo(input: {

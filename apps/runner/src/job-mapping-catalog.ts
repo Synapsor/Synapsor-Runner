@@ -45,6 +45,15 @@ export type JobMappingCatalogPlan = {
     resource_id: string;
     reason: string;
   }>;
+  /**
+   * Principal-like columns are structural candidates, not reviewed authority.
+   * Keep them out of model catalogs until an operator explicitly reviews their
+   * role as trusted scope or ordinary business data.
+   */
+  unresolved_principal_fields_to_withhold: Array<{
+    resource_id: string;
+    fields: string[];
+  }>;
   current_limits: {
     max_derived_scope_hops: 1 | 2 | 3;
     max_analysis_relationship_hops: 1 | 2 | 3;
@@ -170,6 +179,17 @@ export function buildJobMappingCatalog(
     ...derivedResources.map((resource) => resource.resource_id),
     ...sharedResources.map((resource) => resource.resource_id),
   ]);
+  const unresolvedPrincipalFieldsToWithhold = views
+    .filter((view) => included.has(view.resource_id))
+    .filter((view) => !view.principal_key.selected && Boolean(view.principal_key.blocked_reason))
+    .map((view) => ({
+      resource_id: view.resource_id,
+      fields: [...new Set(view.principal_key.candidates)]
+        .filter((field) => view.fields.some((candidate) => candidate.name === field))
+        .sort(),
+    }))
+    .filter((entry) => entry.fields.length > 0)
+    .sort((left, right) => left.resource_id.localeCompare(right.resource_id));
   const deepestAnalysisPath = reviewedCatalogAnalysisDepth(views, included);
   const proposedDerivedDepth = boundedPathDepth(Math.max(currentDerivedDepth, deepestDerivedPath));
   const proposedAnalysisDepth = boundedPathDepth(Math.max(currentAnalysisDepth, deepestAnalysisPath));
@@ -180,6 +200,7 @@ export function buildJobMappingCatalog(
     derived_resources: derivedResources,
     shared_reference_resources: sharedResources,
     manual_resources: manualResources,
+    unresolved_principal_fields_to_withhold: unresolvedPrincipalFieldsToWithhold,
     current_limits: {
       max_derived_scope_hops: currentDerivedDepth,
       max_analysis_relationship_hops: currentAnalysisDepth,
@@ -249,6 +270,22 @@ export async function applyJobMappingCatalog(input: {
       reason: input.reason,
     })),
   ];
+  for (const unresolved of plan.unresolved_principal_fields_to_withhold) {
+    const existing = requests.find((request) => request.resource_id === unresolved.resource_id);
+    if (existing) {
+      existing.withhold_from_model_fields = [...new Set([
+        ...(existing.withhold_from_model_fields ?? []),
+        ...unresolved.fields,
+      ])].sort();
+    } else {
+      requests.push({
+        resource_id: unresolved.resource_id,
+        withhold_from_model_fields: [...unresolved.fields],
+        actor: input.actor,
+        reason: input.reason,
+      });
+    }
+  }
   const budgetReviewNeeded = plan.current_limits.max_derived_scope_hops
       !== plan.proposed_limits.max_derived_scope_hops
     || plan.current_limits.max_analysis_relationship_hops

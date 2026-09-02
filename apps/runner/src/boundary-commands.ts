@@ -2697,9 +2697,7 @@ async function promptRunnerGuidedModelFallback(input: {
   failure?: BoundaryModelDraftFailure;
 }): Promise<"runner" | "retry" | "change_model" | "back"> {
   const grammarFailure = input.failure?.kind === "reviewed_grammar" ? input.failure : undefined;
-  const title = grammarFailure
-    ? "MODEL DRAFT DID NOT FIT THE REVIEWED GRAMMAR"
-    : "MODEL COULD NOT PRODUCE A STRUCTURED DRAFT";
+  const title = `${input.stage.toUpperCase()} MODEL DRAFT FAILED`;
   const context = grammarFailure
     ? [
         `${boundaryModelLabel(input)} submitted a structured ${input.stage} draft, but Runner validation refused it.`,
@@ -2712,40 +2710,52 @@ async function promptRunnerGuidedModelFallback(input: {
         "Runner discarded the responses. No model output became authority and no source query or write ran.",
         "The deterministic path uses the same job and reviewed structural catalog; you still review the exact disabled draft.",
       ];
+  input.session.rememberDetails?.(title, context);
   if (input.session.chooseOption) {
-    const selected = await input.session.chooseOption(
-      title,
-      [
-        {
-          value: "runner",
-          label: "Continue this job with Runner's deterministic recommendation [recommended]",
-          detail: "No further model requests. Runner uses the same job and reviewed structural catalog.",
-        },
-        ...(input.allowModelRetry
-          ? [
-              {
-                value: "retry",
-                label: `Retry once with ${boundaryModelLabel(input)}`,
-                detail: "Starts one additional bounded drafting attempt; the rejected draft remains discarded.",
-              },
-              {
-                value: "change_model",
-                label: "Choose another model and retry once",
-                detail: "Review the replacement model and its metadata egress before one additional bounded attempt.",
-              },
-            ]
-          : []),
-        {
-          value: "back",
-          label: "Back to Agent job",
-          detail: "The broad authoring catalog remains disabled; active authority is unchanged.",
-        },
-      ],
-      { initialValue: "runner", context },
-    );
-    return selected === "runner" || selected === "retry" || selected === "change_model"
-      ? selected
-      : "back";
+    while (true) {
+      const selected = await input.session.chooseOption(
+        title,
+        [
+          {
+            value: "runner",
+            label: "Continue this job with Runner's deterministic recommendation [recommended]",
+            detail: "No further model requests. Runner uses the same job and reviewed structural catalog.",
+          },
+          ...(input.allowModelRetry
+            ? [
+                {
+                  value: "retry",
+                  label: `Retry once with ${boundaryModelLabel(input)}`,
+                  detail: "Starts one additional bounded drafting attempt; the rejected draft remains discarded.",
+                },
+                {
+                  value: "change_model",
+                  label: "Choose another model and retry once",
+                  detail: "Review the replacement model and its metadata egress before one additional bounded attempt.",
+                },
+              ]
+            : []),
+          {
+            value: "details",
+            label: `View why ${input.stage} drafting failed`,
+            detail: "Shows the exact local failure stage and validation reason without another model request.",
+          },
+          {
+            value: "back",
+            label: "Back to Agent job",
+            detail: "The broad authoring catalog remains disabled; active authority is unchanged.",
+          },
+        ],
+        { initialValue: "runner", context },
+      );
+      if (selected === "details") {
+        input.session.present?.(`${input.stage.toUpperCase()} FAILURE DETAILS`, context, "danger");
+        continue;
+      }
+      return selected === "runner" || selected === "retry" || selected === "change_model"
+        ? selected
+        : "back";
+    }
   }
   const accepted = await input.session.confirm(
     "Continue this same job with Runner's deterministic recommended draft?",
@@ -2755,6 +2765,231 @@ async function promptRunnerGuidedModelFallback(input: {
     },
   );
   return accepted ? "runner" : "back";
+}
+
+type ReviewedJobPrincipalScope =
+  | { kind: "direct"; value: string; label: string; confidence: "low" | "medium" | "high" }
+  | { kind: "derived"; value: string; label: string; confidence: "catalog_proven" };
+
+function jobRequestsPrincipalIsolation(intent: string): boolean {
+  const normalized = intent.replace(/[_-]+/gu, " ");
+  return /\b(?:my|mine)\b/iu.test(normalized)
+    || /\b(?:their|his|her|its|user(?:'s)?|customer(?:'s)?|agent(?:'s)?|operator(?:'s)?)\s+own\b/iu.test(normalized)
+    || /\bown\s+(?:account|profile|record|row|ticket|case|request|order|work|history|data|preference|setting)s?\b/iu.test(normalized)
+    || /\bauthenticated\s+(?:user|customer|agent|operator|member|employee|dispatcher|principal)\b/iu.test(normalized)
+    || /\bper\s+(?:user|customer|agent|operator|member|employee|dispatcher|principal)\b/iu.test(normalized);
+}
+
+function reviewedJobPrincipalScopeOptions(
+  view: BoundaryResourceReviewView,
+): ReviewedJobPrincipalScope[] {
+  const fields = new Map(view.fields.map((field) => [field.name, field]));
+  const direct = [...new Set(view.principal_key.candidates)]
+    .filter((field) => fields.get(field)?.nullable === false)
+    .map((field): ReviewedJobPrincipalScope => {
+      const confidence = view.principal_key.alternatives_considered
+        .find((candidate) => candidate.value === field)?.confidence ?? "low";
+      return {
+        kind: "direct",
+        value: field,
+        label: `column ${field} [${confidence}-confidence candidate]`,
+        confidence,
+      };
+    });
+  const derived = (view.derived_principal_scope?.candidates ?? []).map(
+    (scope): ReviewedJobPrincipalScope => ({
+      kind: "derived",
+      value: scope.path_id,
+      label: `catalog-proven mandatory path ${formatDerivedScopePath(scope)}`,
+      confidence: "catalog_proven",
+    }),
+  );
+  return [...direct, ...derived];
+}
+
+function hasReviewedJobPrincipalScope(view: BoundaryResourceReviewView): boolean {
+  return Boolean(view.candidate?.principal_key || view.candidate?.principal_scope);
+}
+
+async function reviewJobPrincipalScopeForResources(input: {
+  projectRoot: string;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+  jobIntent: string;
+  resourceIds: Iterable<string>;
+}): Promise<{ state: "ready"; changed: boolean } | { state: "paused"; resources: string[] }> {
+  if (!jobRequestsPrincipalIsolation(input.jobIntent)) {
+    return { state: "ready", changed: false };
+  }
+  const resourceIds = [...new Set(input.resourceIds)].sort();
+  if (!resourceIds.length) return { state: "ready", changed: false };
+
+  let changed = false;
+  const savedDecisions: Array<{
+    resourceId: string;
+    scope: ReviewedJobPrincipalScope;
+  }> = [];
+  let savedReviewRevision: number | undefined;
+  const reportSavedDecisions = (): void => {
+    if (!savedDecisions.length) return;
+    input.session.rememberDetails?.("TRUSTED USER/OWNER SCOPE SAVED", [
+      ...savedDecisions.map(({ resourceId, scope }) => `${resourceId}: ${scope.label}`),
+      ...(savedReviewRevision !== undefined
+        ? [`Disabled Boundary revision: ${savedReviewRevision}`]
+        : []),
+      "Agent authority changed: no",
+      "Source database changed: no",
+    ]);
+    input.session.present?.("TRUSTED USER/OWNER SCOPE SAVED", [
+      `${savedDecisions.length} exact predicate${savedDecisions.length === 1 ? "" : "s"} recorded in the disabled draft.`,
+      "Source-proven mandatory paths were carried forward without a second confirmation.",
+      "The model cannot supply or change these trusted values.",
+      "Agent authority remains off.",
+    ], "success");
+  };
+  for (let pass = 0; pass < 4; pass += 1) {
+    const views = await Promise.all(resourceIds.map((resourceId) =>
+      inspectBoundaryResourceReview(input.projectRoot, resourceId)));
+    const unresolved = views.filter((view) => !hasReviewedJobPrincipalScope(view));
+    if (!unresolved.length) {
+      reportSavedDecisions();
+      return { state: "ready", changed };
+    }
+
+    const candidates = unresolved.map((view) => ({
+      view,
+      options: reviewedJobPrincipalScopeOptions(view),
+    }));
+    const reviewable = candidates.filter((entry) => entry.options.length > 0);
+    if (!reviewable.length) {
+      const blocked = unresolved.map((view) => view.resource_id).sort();
+      reportSavedDecisions();
+      const lines = [
+        "This job promises rows belonging to the authenticated person, but Runner cannot prove a user/owner predicate for the selected resources.",
+        ...blocked.map((resourceId) => `- ${resourceId}`),
+        "Review a direct user/owner column or mandatory relationship path, then restart this saved job. Tenant scope alone does not satisfy an own-row request.",
+        "No model request, authority activation, source query, or source write occurred.",
+      ];
+      input.session.rememberDetails?.("PRINCIPAL SCOPE NEEDS REVIEW", lines);
+      input.session.present?.("PRINCIPAL SCOPE NEEDS REVIEW", lines, "warning");
+      return { state: "paused", resources: blocked };
+    }
+
+    const decisions: Array<{
+      resourceId: string;
+      scope: ReviewedJobPrincipalScope;
+    }> = [];
+    const unique = reviewable.filter((entry) => entry.options.length === 1);
+    const ambiguous = reviewable.filter((entry) => entry.options.length > 1);
+    const automaticDerived = unique.filter(({ options }) =>
+      options[0]!.confidence === "catalog_proven");
+    const needsConfirmation = unique.filter(({ options }) =>
+      options[0]!.confidence !== "catalog_proven");
+    decisions.push(...automaticDerived.map(({ view, options }) => ({
+      resourceId: view.resource_id,
+      scope: options[0]!,
+    })));
+    if (needsConfirmation.length) {
+      const exact = needsConfirmation.map(({ view, options }) =>
+        `${view.resource_id}: ${options[0]!.label}`);
+      const accepted = await input.session.confirm(
+        "Use these exact trusted user/owner predicates in the disabled Boundary drafts?",
+        {
+          defaultValue: needsConfirmation.every(({ options }) =>
+            options[0]!.confidence === "high" || options[0]!.confidence === "catalog_proven"),
+          context: [
+            "REVIEW USER/OWNER SCOPE",
+            "The job asks for data belonging to an authenticated person. Runner found one candidate for each resource below.",
+            ...exact,
+            "A column name is not proof of authorization. Confirm only when the application's trusted principal really maps to the shown field or path.",
+            "Runner supplies this scope outside model arguments and applies it to every query or proposal for the resource.",
+            "Source-proven mandatory paths from these predicates are added to selected dependent resources without asking the same question again.",
+            "This narrows a disabled draft only. Read and Action authority remain off until their separate activation reviews.",
+          ],
+        },
+      );
+      if (!accepted) {
+        reportSavedDecisions();
+        const blocked = needsConfirmation.map(({ view }) => view.resource_id).sort();
+        return { state: "paused", resources: blocked };
+      }
+      decisions.push(...needsConfirmation.map(({ view, options }) => ({
+        resourceId: view.resource_id,
+        scope: options[0]!,
+      })));
+    }
+    for (const { view, options } of ambiguous) {
+      const selected = await input.session.chooseOption?.(
+        `CHOOSE USER/OWNER SCOPE - ${view.resource_id}`,
+        [
+          ...options.map((option, index) => ({
+            value: `scope:${index}`,
+            label: option.label,
+            detail: "Runner binds this reviewed predicate from trusted context; the model never supplies it.",
+          })),
+          {
+            value: "back",
+            label: "Pause and review this resource manually",
+            detail: "Do not guess. The disabled catalog and active authority remain unchanged.",
+          },
+        ],
+        {
+          initialValue: "back",
+          requireExplicitSelection: true,
+          context: [
+            "AMBIGUOUS USER/OWNER SCOPE",
+            `${view.resource_id} has more than one structurally plausible principal predicate.`,
+            "Choose the exact business owner path, or pause. Runner will not infer one from a friendly name.",
+          ],
+        },
+      );
+      if (!selected || selected === "back") {
+        reportSavedDecisions();
+        return { state: "paused", resources: [view.resource_id] };
+      }
+      const index = Number(selected.slice("scope:".length));
+      const scope = options[index];
+      if (!scope) {
+        reportSavedDecisions();
+        return { state: "paused", resources: [view.resource_id] };
+      }
+      decisions.push({ resourceId: view.resource_id, scope });
+    }
+
+    if (!decisions.length) {
+      const blocked = unresolved.map((view) => view.resource_id).sort();
+      reportSavedDecisions();
+      return { state: "paused", resources: blocked };
+    }
+    const actor = localInteractiveActor();
+    const reason = "The reviewed job explicitly requires authenticated user/owner row isolation.";
+    const preview = await prepareBoundaryReviewMutationBatch(
+      input.projectRoot,
+      decisions.map(({ resourceId, scope }): BoundaryResourceReviewRequest => ({
+        resource_id: resourceId,
+        ...(scope.kind === "direct"
+          ? { principal_key: scope.value }
+          : { principal_scope_path: scope.value }),
+        actor,
+        reason,
+      })),
+      input.schemaInspector,
+    );
+    const committed = await commitBoundaryReviewMutationBatch(input.projectRoot, preview);
+    changed = true;
+    savedDecisions.push(...decisions);
+    savedReviewRevision = committed.review_revision;
+  }
+
+  const remaining = (await Promise.all(resourceIds.map((resourceId) =>
+    inspectBoundaryResourceReview(input.projectRoot, resourceId))))
+    .filter((view) => !hasReviewedJobPrincipalScope(view))
+    .map((view) => view.resource_id)
+    .sort();
+  reportSavedDecisions();
+  return remaining.length
+    ? { state: "paused", resources: remaining }
+    : { state: "ready", changed };
 }
 
 type InteractiveReadWorkloadAssistInput = {
@@ -3037,14 +3272,14 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ],
             nextQuestion: "What should this agent be able to read or propose?",
             egressAcknowledged: true,
+            responseStyle: "opening",
           }),
         );
         if (greeting) {
           await input.authoringChat.streamModel(greeting.split(/\r?\n/u));
         } else {
-          await input.authoringChat.streamRunner("MODEL GREETING UNAVAILABLE", [
-            "The provider did not return a usable greeting. You can still describe the job; Runner will keep validation fail-closed.",
-            "What should this agent be able to read or propose?",
+          await input.authoringChat.streamCheckpoint("Model connected", [
+            "Unsupported opening text was discarded; describe one job below",
           ], "warning");
         }
       }
@@ -3300,8 +3535,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   // limits and newly proven scope paths are present during validation. The
   // resulting workload is minimized and revalidated before it replaces this
   // catalog; no authority is activated here.
-  const mappingBoundary = context.candidate;
+  let mappingBoundary = context.candidate;
   let workload: ReadWorkloadView | undefined;
+  let preparedWorkload: ReadWorkloadSet | undefined;
   let modelAssistSession: ActionModelSuggestionSession | undefined;
   let modelInterviewSession: ActionModelSuggestionSession | undefined;
   let modelAssistRecord: DelegationModelAssist | undefined;
@@ -3346,6 +3582,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         });
       }
     }
+    preparedWorkload = exact;
     const analysis = analyzeReadWorkloadSet({ workload: exact, generatedBoundary: mappingBoundary });
     return storeReadWorkloadAnalysis({
       projectRoot: input.projectRoot,
@@ -3370,6 +3607,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     if (exact.source?.kind !== "operator_exact_plan" && exact.source?.kind !== "plan_playground") {
       throw new Error("Exact workload import must declare source.kind=operator_exact_plan or plan_playground.");
     }
+    preparedWorkload = exact;
     const analysis = analyzeReadWorkloadSet({ workload: exact, generatedBoundary: mappingBoundary });
     workload = await storeReadWorkloadAnalysis({
       projectRoot: input.projectRoot,
@@ -3481,6 +3719,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ...(authoringConversation ? { conversation: authoringConversation } : {}),
         };
         input.authoringChat.setModel(boundaryModelLabel(mappingSession));
+        input.authoringChat.setPermissionGuide?.(undefined);
         acknowledged = await confirmModelEgress(mappingSession);
         continue;
       }
@@ -3519,6 +3758,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ...(mappingSession.baseUrl ? { baseUrl: mappingSession.baseUrl } : {}),
             ...boundaryAuthoringProviderOptions(mappingSession.dependencies, input.authoringChat),
             ...(mappingSession.conversation ? { conversation: mappingSession.conversation } : {}),
+            deferNarration: Boolean(input.authoringChat),
             egressAcknowledged: true,
             valueRequestHandler: (request) => promptReadBoundaryValueContext({
               session: input.session,
@@ -3584,6 +3824,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ...(authoringConversation ? { conversation: authoringConversation } : {}),
         };
         input.authoringChat?.setModel(boundaryModelLabel(mappingSession));
+        input.authoringChat?.setPermissionGuide?.(undefined);
         const replacementAcknowledged = await confirmModelEgress(mappingSession);
         if (!replacementAcknowledged) {
           return boundaryAssistResult(boundaryAssistBackNotice(
@@ -3610,12 +3851,42 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         `Read plans (${mappedWorkload.allowed.length})`,
         ...mappedWorkload.allowed.map((entry) => `- ${modelReadPlanSummary(entry.plan)}`),
       ];
+      const readPrincipalScope = await reviewJobPrincipalScopeForResources({
+        projectRoot: input.projectRoot,
+        schemaInspector: input.schemaInspector,
+        session: input.session,
+        jobIntent: jobIntent.trim(),
+        resourceIds: mappedWorkload.allowed.flatMap((entry) => {
+          const resource = entry.plan.resource;
+          return typeof resource === "string" && resource ? [resource] : [];
+        }),
+      });
+      if (readPrincipalScope.state === "paused") {
+        return boundaryAssistResult({
+          tone: "warning",
+          title: "User/owner scope review paused this job.",
+          lines: [
+            `Still unresolved: ${readPrincipalScope.resources.join(", ")}`,
+            "The job promises own-row access, so Runner will not save or activate a tenant-only substitute.",
+            "The broad mapping catalog remains disabled and source data is unchanged.",
+          ],
+          footer: "Review the exact user/owner predicate, then restart this saved job.",
+        });
+      }
+      if (readPrincipalScope.changed) {
+        context = await loadBoundaryReviewContext(input.projectRoot);
+        mappingBoundary = context.candidate;
+        mappedAnalysis = analyzeReadWorkloadSet({
+          workload: mappedWorkload,
+          generatedBoundary: mappingBoundary,
+        });
+      }
       if (actionIntents.length) {
       actionInspection = await (input.actionProjectInspector ?? inspectActionProject)(
         input.projectRoot,
         process.env,
       );
-      const actionCatalog = guidedActionOptionsFromCandidate({
+      let actionCatalog = guidedActionOptionsFromCandidate({
         candidate: mappingBoundary,
         inspection: actionInspection,
       });
@@ -3640,6 +3911,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                 ...(mappingSession.baseUrl ? { baseUrl: mappingSession.baseUrl } : {}),
                 ...boundaryAuthoringProviderOptions(mappingSession.dependencies, input.authoringChat),
                 ...(mappingSession.conversation ? { conversation: mappingSession.conversation } : {}),
+                deferNarration: Boolean(input.authoringChat),
                 egressAcknowledged: true,
               }),
             );
@@ -3672,6 +3944,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   ...(mappingSession.baseUrl ? { baseUrl: mappingSession.baseUrl } : {}),
                   ...boundaryAuthoringProviderOptions(mappingSession.dependencies, input.authoringChat),
                   ...(mappingSession.conversation ? { conversation: mappingSession.conversation } : {}),
+                  deferNarration: Boolean(input.authoringChat),
                   egressAcknowledged: true,
                 }),
               );
@@ -3720,6 +3993,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ...(authoringConversation ? { conversation: authoringConversation } : {}),
           };
           input.authoringChat?.setModel(boundaryModelLabel(mappingSession));
+          input.authoringChat?.setPermissionGuide?.(undefined);
           const replacementAcknowledged = await confirmModelEgress(mappingSession);
           if (!replacementAcknowledged) {
             return boundaryAssistResult(boundaryAssistBackNotice(
@@ -3731,13 +4005,55 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           modelInterviewSession = modelAssistSession;
         }
       }
+      const actionPrincipalScope = await reviewJobPrincipalScopeForResources({
+        projectRoot: input.projectRoot,
+        schemaInspector: input.schemaInspector,
+        session: input.session,
+        jobIntent: jobIntent.trim(),
+        resourceIds: preMappedActions.flatMap(({ result }) => {
+          const resource = result.assessment.suggestion.resource;
+          return typeof resource === "string" && resource ? [resource] : [];
+        }),
+      });
+      if (actionPrincipalScope.state === "paused") {
+        return boundaryAssistResult({
+          tone: "warning",
+          title: "User/owner scope review paused this job.",
+          lines: [
+            `Still unresolved: ${actionPrincipalScope.resources.join(", ")}`,
+            "The requested Action would otherwise be tenant-only, which does not satisfy this own-row job.",
+            "The refused Action draft was not saved or activated and source data is unchanged.",
+          ],
+          footer: "Review the exact user/owner predicate, then restart this saved job.",
+        });
+      }
+      if (actionPrincipalScope.changed) {
+        context = await loadBoundaryReviewContext(input.projectRoot);
+        mappingBoundary = context.candidate;
+        mappedAnalysis = analyzeReadWorkloadSet({
+          workload: mappedWorkload,
+          generatedBoundary: mappingBoundary,
+        });
+        actionCatalog = guidedActionOptionsFromCandidate({
+          candidate: mappingBoundary,
+          inspection: actionInspection,
+        });
+      }
       if (preMappedActions.length) {
         const actionSummaries = preMappedActions.map(({ result }) => {
           const suggestion = result.assessment.suggestion;
           const fields = suggestion.fields?.length
             ? `; reviewed proposal fields ${suggestion.fields.join(", ")}`
             : "";
-          return `${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}${fields}`;
+          const resource = actionCatalog.resources.find((candidate) => candidate.id === suggestion.resource);
+          const scope = resource?.principal_key
+            ? `; trusted scope ${resource.tenant_key} + ${resource.principal_key}`
+            : resource?.tenant_key
+              ? `; trusted scope ${resource.tenant_key} only; no principal row limit configured`
+              : resource?.organization_scope
+                ? "; reviewed whole-organization scope; no principal row limit configured"
+                : "";
+          return `${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}${fields}${scope}`;
         });
         exactModelDraftLines.push(
           `Action suggestions (${preMappedActions.length})`,
@@ -3813,7 +4129,31 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ...verificationDetails,
             "Summarize these validated facts as one coherent update before asking the next unresolved Action question.",
           ];
+          modelInterviewSession.openingOperatorMessage = jobIntent.trim();
           modelInterviewSession.openingValidatedFactsConsumed = false;
+        } else if (modelAssistSession) {
+          const summarySession = modelAssistSession;
+          const narrator = input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep;
+          const summary = await runWithProgress(
+            `${boundaryModelLabel(summarySession)} is summarizing the validated Read draft`,
+            () => narrator({
+              session: summarySession,
+              operatorMessage: jobIntent.trim(),
+              validatedFacts: [
+                "Runner completed and validated the Read draft for this job.",
+                ...exactModelDraftLines,
+                ...verificationDetails,
+                "Summarize this as one concise update. Do not ask for another mapping decision.",
+              ],
+              nextQuestion: "Would you like to review this exact Read Boundary for activation?",
+              egressAcknowledged: true,
+            }),
+          );
+          if (summary) await input.authoringChat.streamModel(summary.split(/\r?\n/u));
+          else await input.authoringChat.streamCheckpoint("Read draft validated; model summary unavailable", [
+            `${representativeReadPlanCount} exact Read plan${representativeReadPlanCount === 1 ? "" : "s"} remain disabled`,
+            "No authority or source data changed",
+          ], "warning");
         } else if (modelDraftMessages.length) {
           await input.authoringChat.streamModel(modelDraftMessages.flatMap((message, index) => [
             ...(index > 0 ? [""] : []),
@@ -3835,6 +4175,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ...verificationDetails,
         ]);
       }
+      preparedWorkload = mappedWorkload;
       workload = await storeReadWorkloadAnalysis({
         projectRoot: input.projectRoot,
         generatedBoundary: mappingBoundary,
@@ -3880,6 +4221,62 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         : [workload.stale_reason ?? "Re-run this workload against the current generated boundary."],
       footer: "Nothing was saved or activated.",
     });
+  }
+  const principalScope = await reviewJobPrincipalScopeForResources({
+    projectRoot: input.projectRoot,
+    schemaInspector: input.schemaInspector,
+    session: input.session,
+    jobIntent: jobIntent.trim(),
+    resourceIds: workload.analysis.allowed.flatMap((entry) =>
+      entry.authority_atoms.map((atom) => atom.root_resource)),
+  });
+  if (principalScope.state === "paused") {
+    return boundaryAssistResult({
+      tone: "warning",
+      title: "User/owner scope review paused this job.",
+      lines: [
+        `Still unresolved: ${principalScope.resources.join(", ")}`,
+        "The job promises own-row access, so Runner will not save or activate a tenant-only substitute.",
+        "The disabled mapping catalog remains available and source data is unchanged.",
+      ],
+      footer: "Review the exact user/owner predicate, then restart this saved job.",
+    });
+  }
+  if (principalScope.changed) {
+    context = await loadBoundaryReviewContext(input.projectRoot);
+    mappingBoundary = context.candidate;
+    if (!preparedWorkload) {
+      return boundaryAssistResult({
+        tone: "warning",
+        title: "Trusted user/owner scope was saved; re-run this workload analysis.",
+        lines: [
+          "The selected saved analysis predates the new principal predicate and is now stale.",
+          "Runner will not reuse it without validating its exact plans against the revised disabled catalog.",
+          "No authority was activated and source data is unchanged.",
+        ],
+        footer: "Reopen Agent job and choose exact questions, a model, or a current saved analysis.",
+      });
+    }
+    const analysis = analyzeReadWorkloadSet({
+      workload: preparedWorkload,
+      generatedBoundary: mappingBoundary,
+    });
+    workload = await storeReadWorkloadAnalysis({
+      projectRoot: input.projectRoot,
+      generatedBoundary: mappingBoundary,
+      source: preparedWorkload.source,
+      analysis,
+    });
+    if (workload.state !== "ready") {
+      return boundaryAssistResult({
+        tone: "danger",
+        title: "The exact workload no longer fits after user/owner scope review.",
+        lines: workload.analysis.blockers.length
+          ? workload.analysis.blockers.slice(0, 5)
+          : ["Review the exact plans and trusted principal predicate before continuing."],
+        footer: "Nothing was activated and source data is unchanged.",
+      });
+    }
   }
   const reasonDefault = `Compile representative workload ${workload.analysis.workload_name}.`;
   context = await loadBoundaryReviewContext(input.projectRoot);
@@ -3965,6 +4362,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
               ...(modelAssistSession.baseUrl ? { baseUrl: modelAssistSession.baseUrl } : {}),
               ...(modelAssistSession.dependencies ? { dependencies: modelAssistSession.dependencies } : {}),
               ...(modelAssistSession.conversation ? { conversation: modelAssistSession.conversation } : {}),
+              deferNarration: Boolean(input.authoringChat),
               egressAcknowledged: true,
             });
         const imported = await importActionSuggestion({

@@ -63,6 +63,8 @@ export async function generateModelActionSuggestion(input: {
   egressAcknowledged: boolean;
   dependencies?: AskProviderDependencies;
   conversation?: ModelAuthoringConversation;
+  /** The outer authoring session will narrate the combined validated draft. */
+  deferNarration?: boolean;
   signal?: AbortSignal;
 }): Promise<ModelActionSuggestionResult> {
   const intent = safeIntent(input.intent);
@@ -190,11 +192,11 @@ export async function generateModelActionSuggestion(input: {
   }
   const recovered = recoverSuggestionWithoutInvalidApprovalPolicy(assessment, input.options.resources);
   assessment = recovered.assessment;
-  const modelMessage = assessment.status === "suggested"
+  const modelMessage = assessment.status === "suggested" && !input.deferNarration
     ? await narrateValidatedAuthoringStep({
         session: narrationSession(input),
         operatorMessage: intent,
-        validatedFacts: actionSuggestionNarrationFacts([assessment]),
+        validatedFacts: actionSuggestionNarrationFacts([assessment], input.options),
         env: input.env,
         egressAcknowledged: input.egressAcknowledged,
         signal: input.signal,
@@ -229,6 +231,8 @@ export async function generateModelActionSuggestionSet(input: {
   egressAcknowledged: boolean;
   dependencies?: AskProviderDependencies;
   conversation?: ModelAuthoringConversation;
+  /** The outer authoring session will narrate the combined validated draft. */
+  deferNarration?: boolean;
   signal?: AbortSignal;
 }): Promise<ModelActionSuggestionSetResult> {
   const jobIntent = safeIntent(input.jobIntent);
@@ -378,14 +382,16 @@ export async function generateModelActionSuggestionSet(input: {
       `ACTION_SUGGESTION_SET_BLOCKED: ${submissionIssues.slice(0, 8).join(" ")}`,
     );
   }
-  const modelMessage = await narrateValidatedAuthoringStep({
-    session: narrationSession(input),
-    operatorMessage: jobIntent,
-    validatedFacts: actionSuggestionNarrationFacts(assessments),
-    env: input.env,
-    egressAcknowledged: input.egressAcknowledged,
-    signal: input.signal,
-  });
+  const modelMessage = input.deferNarration
+    ? undefined
+    : await narrateValidatedAuthoringStep({
+        session: narrationSession(input),
+        operatorMessage: jobIntent,
+        validatedFacts: actionSuggestionNarrationFacts(assessments, input.options),
+        env: input.env,
+        egressAcknowledged: input.egressAcknowledged,
+        signal: input.signal,
+      });
   return {
     assessments,
     provider: input.provider,
@@ -420,13 +426,25 @@ function narrationSession(input: {
   };
 }
 
-function actionSuggestionNarrationFacts(assessments: ActionSuggestionAssessment[]): string[] {
+function actionSuggestionNarrationFacts(
+  assessments: ActionSuggestionAssessment[],
+  options: GuidedActionOptions,
+): string[] {
+  const resources = new Map(options.resources.map((resource) => [resource.id, resource]));
   return [
     `${assessments.length} Action suggestion${assessments.length === 1 ? "" : "s"} passed exact catalog validation.`,
     ...assessments.map((assessment) => {
       const suggestion = assessment.suggestion;
       const fields = suggestion.fields?.length ? suggestion.fields.join(", ") : "no agent-supplied fields";
-      return `${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}; agent fields: ${fields}.`;
+      const resource = suggestion.resource ? resources.get(suggestion.resource) : undefined;
+      const scope = resource?.principal_key
+        ? `trusted tenant plus principal scope (${resource.tenant_key} + ${resource.principal_key})`
+        : resource?.tenant_key
+          ? `trusted tenant-only scope (${resource.tenant_key}); no principal row limit is configured`
+          : resource?.organization_scope
+            ? "reviewed whole-organization scope; no principal row limit is configured"
+            : "reviewed scope posture";
+      return `${(suggestion.operation ?? "propose").toUpperCase()} ${suggestion.resource ?? "reviewed target"}; agent fields: ${fields}; ${scope}.`;
     }),
     "Every suggestion is still a disabled proposal-only draft. Approval, apply, and source writes remain off.",
     "This record describes only the Action-suggestion step. The separately validated Read draft remains unchanged; do not describe its reads as absent or rolled back.",

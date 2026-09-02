@@ -100,6 +100,76 @@ describe("model-assisted Boundary authoring conversation", () => {
     expect(modelAuthoringHistory(conversation)).toEqual([]);
   });
 
+  it("keeps a validated pre-job greeting short and question-led", async () => {
+    const conversation = createModelAuthoringConversation();
+    const requestJson = vi.fn(async () => ({
+      status: 200,
+      body: {
+        choices: [{
+          message: {
+            role: "assistant",
+            content: "I am ready to help draft reviewed boundaries while Runner validates each decision. What should this agent be able to read or propose?",
+          },
+          finish_reason: "stop",
+        }],
+      },
+    }));
+
+    await expect(narrateValidatedAuthoringStep({
+      session: {
+        provider: "openai_compatible",
+        model: "qwen2.5:7b",
+        baseUrl: "http://127.0.0.1:11434/v1",
+        dependencies: { requestJson },
+        conversation,
+      },
+      operatorMessage: "Start a new model-guided job.",
+      validatedFacts: [
+        "Metadata egress was explicitly approved.",
+        "No Read or Action authority was activated.",
+      ],
+      nextQuestion: "What should this agent be able to read or propose?",
+      responseStyle: "opening",
+      egressAcknowledged: true,
+    })).resolves.toContain("What should this agent be able to read or propose?");
+    expect(modelAuthoringHistory(conversation)).toHaveLength(1);
+  });
+
+  it("discards a local-model greeting that invents capability or proposal limits", async () => {
+    const conversation = createModelAuthoringConversation();
+    const requestJson = vi.fn(async () => ({
+      status: 200,
+      body: {
+        choices: [{
+          message: {
+            role: "assistant",
+            content: "The agent should be able to read metadata but not propose changes. At most one proposal is allowed. What should this agent be able to read or propose?",
+          },
+          finish_reason: "stop",
+        }],
+      },
+    }));
+
+    await expect(narrateValidatedAuthoringStep({
+      session: {
+        provider: "openai_compatible",
+        model: "qwen2.5:7b",
+        baseUrl: "http://127.0.0.1:11434/v1",
+        dependencies: { requestJson },
+        conversation,
+      },
+      operatorMessage: "Start a new model-guided job.",
+      validatedFacts: [
+        "Metadata egress was explicitly approved.",
+        "No Read or Action authority was activated.",
+      ],
+      nextQuestion: "What should this agent be able to read or propose?",
+      responseStyle: "opening",
+      egressAcknowledged: true,
+    })).resolves.toBeUndefined();
+    expect(modelAuthoringHistory(conversation)).toEqual([]);
+  });
+
   it("drops model narration that contradicts Runner-validated scope and authority facts", async () => {
     const conversation = createModelAuthoringConversation();
     const requestJson = vi.fn(async () => ({
@@ -162,6 +232,74 @@ describe("model-assisted Boundary authoring conversation", () => {
       validatedFacts: [
         "Target row identity and trusted tenant/principal scope are separate Runner-validated controls and are already resolved.",
         "The pending reviewed decision is conflict guard version.",
+      ],
+      egressAcknowledged: true,
+    })).resolves.toBeUndefined();
+    expect(modelAuthoringHistory(conversation)).toEqual([]);
+  });
+
+  it("drops narration that turns an approval ceiling into a threshold", async () => {
+    const conversation = createModelAuthoringConversation();
+    const requestJson = vi.fn(async () => ({
+      status: 200,
+      body: {
+        output: [{
+          type: "message",
+          role: "assistant",
+          content: [{
+            type: "output_text",
+            text: "This action becomes eligible after 10 approvals in 24 hours. Should I use it?",
+          }],
+        }],
+      },
+    }));
+
+    await expect(narrateValidatedAuthoringStep({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-luna",
+        apiKey: "memory-key",
+        dependencies: { requestJson },
+        conversation,
+      },
+      operatorMessage: "Review this policy.",
+      validatedFacts: [
+        "This action | 24 hours | 10 approvals",
+        "Anything above the reviewed ceiling requires human review.",
+      ],
+      egressAcknowledged: true,
+    })).resolves.toBeUndefined();
+    expect(modelAuthoringHistory(conversation)).toEqual([]);
+  });
+
+  it("drops narration that invents principal isolation for a tenant-only record", async () => {
+    const conversation = createModelAuthoringConversation();
+    const requestJson = vi.fn(async () => ({
+      status: 200,
+      body: {
+        output: [{
+          type: "message",
+          role: "assistant",
+          content: [{
+            type: "output_text",
+            text: "The action is isolated by both tenant and principal and is ready for review.",
+          }],
+        }],
+      },
+    }));
+
+    await expect(narrateValidatedAuthoringStep({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-luna",
+        apiKey: "memory-key",
+        dependencies: { requestJson },
+        conversation,
+      },
+      operatorMessage: "Summarize the validated draft.",
+      validatedFacts: [
+        "Trusted tenant-only scope (tenant_id); no principal row limit is configured.",
+        "Action authority remains disabled and source data is unchanged.",
       ],
       egressAcknowledged: true,
     })).resolves.toBeUndefined();

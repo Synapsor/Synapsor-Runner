@@ -382,7 +382,8 @@ function buildGuidedActionOptions(
           && column.name !== resource.primary_key
           && column.name !== resource.tenant_key
           && column.name !== resource.principal_key
-          && !resource.kept_out_fields.includes(column.name))
+          && !resource.kept_out_fields.includes(column.name)
+          && !(resource.model_withheld_fields ?? []).includes(column.name))
         .map((column) => ({
           name: column.name,
           data_type: column.data_type,

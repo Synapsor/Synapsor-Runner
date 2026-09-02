@@ -79,6 +79,50 @@ describe("model-assisted Read workload mapping", () => {
     expect(JSON.stringify(requests[1]?.body)).not.toContain("provider-test-key");
   });
 
+  it("defers narration to the retained outer authoring session without another provider call", async () => {
+    const requestJson = vi.fn(async () => ({
+      status: 200,
+      body: {
+        output: [{
+          type: "function_call",
+          call_id: "call_read_deferred",
+          name: "runner__submit_read_workloads",
+          arguments: JSON.stringify({
+            allowed: [{
+              id: "orders_by_status",
+              description: "Count orders by status",
+              plan: {
+                kind: "aggregate",
+                resource: "public.orders",
+                measures: [{ function: "count" }],
+                dimensions: [{ field: "status" }],
+              },
+            }],
+            forbidden: [],
+          }),
+        }],
+      },
+    }));
+
+    const result = await generateModelReadWorkload({
+      name: "support_reads",
+      allowedQuestions: ["How many orders are in each status?"],
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      generatedBoundary: generatedBoundary(),
+      env: { TEST_PROVIDER_KEY: "provider-test-key" },
+      apiKeyEnv: "TEST_PROVIDER_KEY",
+      egressAcknowledged: true,
+      dependencies: { requestJson },
+      conversation: createModelAuthoringConversation(),
+      deferNarration: true,
+    });
+
+    expect(result.model_message).toBeUndefined();
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(result.analysis.status).toBe("ready");
+  });
+
   it.each(["openai", "anthropic"] as const)(
     "uses one ephemeral structured workload tool with %s and grants no authority",
     async (provider) => {

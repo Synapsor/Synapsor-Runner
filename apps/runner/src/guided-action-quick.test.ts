@@ -4,6 +4,7 @@ import type { GuidedActionOptions, GuidedActionResourceOption } from "./guided-a
 import {
   applySuggestedDeterministicApproval,
   prepareQuickProposalAction,
+  rankActionIntent,
 } from "./guided-action-quick.js";
 
 const students: GuidedActionResourceOption = {
@@ -414,6 +415,270 @@ describe("quick proposal action preparation", () => {
     });
     if (ready.state !== "ready") throw new Error("expected ready delete action");
     expect(ready.deterministic_approval_template).toBeUndefined();
+  });
+
+  it("treats explicitly forbidden create/delete wording as exclusions and keeps the requested update", () => {
+    const preferences: GuidedActionResourceOption = {
+      ...students,
+      id: "fleet_ops.operator_preferences",
+      schema: "fleet_ops",
+      table: "operator_preferences",
+      label: "Operator preferences",
+      description: "One dispatcher's alert and notification preferences.",
+      writable_fields: [
+        {
+          name: "alert_threshold_minutes",
+          data_type: "integer",
+          enum_values: [],
+          nullable: false,
+          required_for_insert: false,
+          suggested_numeric_minimum: 0,
+          suggested_numeric_maximum: 240,
+        },
+        {
+          name: "notification_level",
+          data_type: "text",
+          enum_values: ["standard", "elevated", "urgent"],
+          nullable: false,
+          required_for_insert: false,
+        },
+      ],
+      structurally_eligible_fields: [
+        {
+          name: "alert_threshold_minutes",
+          data_type: "integer",
+          enum_values: [],
+          nullable: false,
+          required_for_insert: false,
+          suggested_numeric_minimum: 0,
+          suggested_numeric_maximum: 240,
+        },
+        {
+          name: "notification_level",
+          data_type: "text",
+          enum_values: ["standard", "elevated", "urgent"],
+          nullable: false,
+          required_for_insert: false,
+        },
+      ],
+      conflict_candidates: ["version"],
+      operation_availability: {
+        insert: { available: true, reason: "A unique retry identity exists." },
+        update: { available: true, reason: "A reviewed version guard exists." },
+        delete: { available: true, reason: "A reviewed identity exists." },
+      },
+    };
+    const workOrders: GuidedActionResourceOption = {
+      ...preferences,
+      id: "fleet_ops.work_orders",
+      table: "work_orders",
+      label: "Work orders",
+      description: "Fleet work orders.",
+      writable_fields: [{
+        name: "priority",
+        data_type: "text",
+        enum_values: ["routine", "urgent"],
+        nullable: false,
+        required_for_insert: false,
+      }],
+      structurally_eligible_fields: [{
+        name: "priority",
+        data_type: "text",
+        enum_values: ["routine", "urgent"],
+        nullable: false,
+        required_for_insert: false,
+      }],
+    };
+    const intent = "Let the dispatcher propose changing their own alert threshold and notification level. Do not create or delete work orders.";
+
+    expect(rankActionIntent([workOrders, preferences], intent)).toMatchObject({
+      resource: "fleet_ops.operator_preferences",
+      operation: "update",
+      excluded_operations: ["delete", "insert"],
+      fields: ["alert_threshold_minutes", "notification_level"],
+    });
+    expect(prepareQuickProposalAction({
+      options: { ...options, resources: [workOrders, preferences] },
+      intent,
+    })).toMatchObject({
+      state: "ready",
+      action: {
+        resource: "fleet_ops.operator_preferences",
+        operation: "update",
+        conflict_column: "version",
+      },
+    });
+    expect(() => prepareQuickProposalAction({
+      options: { ...options, resources: [workOrders, preferences] },
+      intent,
+      decisions: { operation: "delete" },
+    })).toThrow(/DELETE contradicts the stated job/);
+  });
+
+  it("ranks the positive Action clause instead of broad Read vocabulary in a mixed warehouse job", () => {
+    const shipments: GuidedActionResourceOption = {
+      ...students,
+      id: "warehouse_qual.shipments",
+      schema: "warehouse_qual",
+      table: "shipments",
+      label: "Shipments",
+      description: "Tenant-owned shipment records.",
+      writable_fields: [
+        { name: "carrier_mode", data_type: "enum", enum_values: ["ground", "air"], nullable: false, required_for_insert: false },
+        { name: "warehouse_zone", data_type: "enum", enum_values: ["north", "central"], nullable: false, required_for_insert: false },
+        { name: "status", data_type: "enum", enum_values: ["pending", "in_transit"], nullable: false, required_for_insert: false },
+      ],
+      structurally_eligible_fields: [
+        { name: "carrier_mode", data_type: "enum", enum_values: ["ground", "air"], nullable: false, required_for_insert: false },
+        { name: "warehouse_zone", data_type: "enum", enum_values: ["north", "central"], nullable: false, required_for_insert: false },
+        { name: "status", data_type: "enum", enum_values: ["pending", "in_transit"], nullable: false, required_for_insert: false },
+      ],
+      conflict_candidates: ["version"],
+    };
+    const routingPreferences: GuidedActionResourceOption = {
+      ...students,
+      id: "warehouse_qual.routing_preferences",
+      schema: "warehouse_qual",
+      table: "routing_preferences",
+      label: "Routing preferences",
+      description: "One coordinator's carrier and delay preferences.",
+      writable_fields: [
+        { name: "carrier_mode", data_type: "enum", enum_values: ["ground", "air"], nullable: false, required_for_insert: false },
+        { name: "delay_threshold_minutes", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false },
+      ],
+      structurally_eligible_fields: [
+        { name: "carrier_mode", data_type: "enum", enum_values: ["ground", "air"], nullable: false, required_for_insert: false },
+        { name: "delay_threshold_minutes", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false },
+      ],
+      conflict_candidates: ["version"],
+    };
+    const intent = "Help an authenticated warehouse coordinator understand only their own shipments, carrier modes, zones, statuses, and shipment event history, and let them propose changing only their own carrier mode and delay threshold. Do not create or delete shipments, approve proposals, or apply source changes.";
+
+    expect(rankActionIntent([shipments, routingPreferences], intent)).toMatchObject({
+      resource: "warehouse_qual.routing_preferences",
+      operation: "update",
+      excluded_operations: ["delete", "insert"],
+      fields: ["carrier_mode", "delay_threshold_minutes"],
+    });
+    expect(prepareQuickProposalAction({
+      options: { ...options, resources: [shipments, routingPreferences] },
+      intent,
+      decisions: {
+        numeric_bounds: { delay_threshold_minutes: { minimum: 5, maximum: 180 } },
+      },
+    })).toMatchObject({
+      state: "ready",
+      action: {
+        resource: "warehouse_qual.routing_preferences",
+        operation: "update",
+        conflict_column: "version",
+        patches: [
+          { column: "carrier_mode" },
+          { column: "delay_threshold_minutes", minimum: 5, maximum: 180 },
+        ],
+      },
+    });
+  });
+
+  it("recognizes contracted negative operation wording", () => {
+    const hints = rankActionIntent([students], "Change residency, but don't create or delete students.");
+    expect(hints).toMatchObject({
+      operation: "update",
+      excluded_operations: ["delete", "insert"],
+      fields: ["residency"],
+    });
+  });
+
+  it("does not treat a no-source-write posture as excluding a requested proposal update", () => {
+    const subscriptions: GuidedActionResourceOption = {
+      ...students,
+      id: "telecom.subscriptions",
+      schema: "telecom",
+      table: "subscriptions",
+      label: "Subscriptions",
+      description: "Reviewed subscription plan records.",
+      writable_fields: [
+        { name: "plan_code", data_type: "text", enum_values: ["starter", "unlimited"], nullable: false, required_for_insert: false },
+        { name: "base_monthly_cents", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false },
+      ],
+      structurally_eligible_fields: [
+        { name: "plan_code", data_type: "text", enum_values: ["starter", "unlimited"], nullable: false, required_for_insert: false },
+        { name: "base_monthly_cents", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false },
+      ],
+      conflict_candidates: ["updated_at", "version"],
+    };
+    const invoices: GuidedActionResourceOption = {
+      ...students,
+      id: "telecom.invoices",
+      schema: "telecom",
+      table: "invoices",
+      label: "Invoices",
+      writable_fields: [{ name: "amount_due_cents", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false }],
+      structurally_eligible_fields: [{ name: "amount_due_cents", data_type: "integer", enum_values: [], nullable: false, required_for_insert: false }],
+    };
+    const intent = "Help the authenticated telecom customer understand their account, subscription, service line, recent usage, invoices, and payments, and let them propose changing their plan code and monthly base price. Do not apply or write any source change.";
+
+    const hints = rankActionIntent([invoices, subscriptions], intent);
+    expect(hints).toMatchObject({
+      resource: "telecom.subscriptions",
+      operation: "update",
+      fields: ["base_monthly_cents", "plan_code"],
+    });
+    expect(hints.excluded_operations ?? []).not.toContain("update");
+  });
+
+  it("refuses to infer one ambiguous suffix across multiple reviewed fields", () => {
+    const preferences: GuidedActionResourceOption = {
+      ...students,
+      id: "logistics.preferences",
+      schema: "logistics",
+      table: "preferences",
+      writable_fields: [
+        { name: "carrier_mode", data_type: "text", enum_values: [], nullable: false, required_for_insert: false },
+        { name: "delivery_mode", data_type: "text", enum_values: [], nullable: false, required_for_insert: false },
+      ],
+      structurally_eligible_fields: [
+        { name: "carrier_mode", data_type: "text", enum_values: [], nullable: false, required_for_insert: false },
+        { name: "delivery_mode", data_type: "text", enum_values: [], nullable: false, required_for_insert: false },
+      ],
+      conflict_candidates: ["version"],
+    };
+
+    const hints = rankActionIntent([preferences], "Update the mode preference.");
+    expect(hints).toMatchObject({ resource: "logistics.preferences", operation: "update", fields: [] });
+    expect(prepareQuickProposalAction({
+      options: { ...options, resources: [preferences] },
+      intent: "Update the mode preference.",
+    })).toMatchObject({
+      state: "needs_input",
+      decision: {
+        kind: "fields",
+        choices: [
+          { value: "carrier_mode" },
+          { value: "delivery_mode" },
+        ],
+      },
+    });
+  });
+
+  it("does not use a shared schema name to rank an opaque Action resource", () => {
+    const named = {
+      ...students,
+      id: "fleet_ops.work_orders",
+      schema: "fleet_ops",
+      table: "work_orders",
+      label: "Work orders",
+    };
+    const opaque = {
+      ...students,
+      id: "fleet_ops.x7",
+      schema: "fleet_ops",
+      table: "x7",
+      label: undefined,
+      description: undefined,
+    };
+    expect(rankActionIntent([opaque, named], "Update one fleet work order").resource)
+      .toBe("fleet_ops.work_orders");
   });
 
   it("refuses an exact target with no source-proven proposal operation instead of silently returning", () => {

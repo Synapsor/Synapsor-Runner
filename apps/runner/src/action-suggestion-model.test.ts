@@ -70,6 +70,43 @@ describe("model-assisted Safe Action suggestions", () => {
     );
   });
 
+  it("defers Action narration to the retained outer authoring session", async () => {
+    const requestJson = vi.fn(async () => ({
+      status: 200,
+      body: {
+        output: [{
+          type: "function_call",
+          call_id: "call_action_set_deferred",
+          name: "runner__suggest_safe_actions",
+          arguments: JSON.stringify({
+            suggestions: [{
+              intent: "Propose creating one order.",
+              operation: "insert",
+              resource: "public.orders",
+              fields: ["status"],
+            }],
+          }),
+        }],
+      },
+    }));
+
+    const result = await generateModelActionSuggestionSet({
+      jobIntent: "Review orders and propose creating replacements.",
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      options: actionOptions(),
+      env: { OPENAI_API_KEY: "provider-test-key" },
+      egressAcknowledged: true,
+      dependencies: { requestJson },
+      conversation: createModelAuthoringConversation(),
+      deferNarration: true,
+    });
+
+    expect(result.model_message).toBeUndefined();
+    expect(result.assessments).toHaveLength(1);
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
+
   it("gives a local model one bounded correction when an action set is returned as prose", async () => {
     let attempt = 0;
     const requests: string[] = [];
