@@ -1927,6 +1927,133 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("accepts a 500-character agent job before choosing a mapping path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-limit-accepted-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const job = "a".repeat(500);
+    const promptContexts: string[][] = [];
+    const mappingChoices: string[] = [];
+    const notices: string[] = [];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async (_resources, _overview, options) => {
+        if (options?.notice) notices.push(...options.notice.lines);
+        return undefined;
+      },
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt, options) => {
+        expect(prompt).toBe("What job are you giving this agent?");
+        promptContexts.push(options?.context ?? []);
+        return job;
+      },
+      chooseOption: async (title) => {
+        mappingChoices.push(title);
+        return "manual";
+      },
+      confirm: async () => {
+        throw new Error("A valid job followed by Manual must not request confirmation.");
+      },
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const before = await loadBoundaryReviewContext(root);
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        { startWithAgentJob: true },
+      )).resolves.toBe(0);
+
+      expect(promptContexts).toHaveLength(1);
+      expect(promptContexts[0]).toContain("Maximum job description length: 500 characters.");
+      expect(mappingChoices).toEqual(["MAP THE JOB TO REVIEWED STRUCTURE"]);
+      expect(notices).not.toContain(expect.stringContaining("maximum is 500"));
+      const after = await loadBoundaryReviewContext(root);
+      expect(after.bundle.candidate_digest).toBe(before.bundle.candidate_digest);
+      expect(after.candidate).toEqual(before.candidate);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a 501-character agent job before staging the mapping catalog", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-limit-refused-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const prompts: Array<{ prompt: string; context: string[] }> = [];
+    const presented: Array<{ title: string; lines: string[] }> = [];
+    const chooseOption = vi.fn();
+    const session: BoundaryReviewInteractiveSession = {
+      present: (title, lines) => presented.push({ title, lines }),
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt, options) => {
+        prompts.push({ prompt, context: options?.context ?? [] });
+        return prompts.length === 1 ? "a".repeat(501) : undefined;
+      },
+      chooseOption,
+      confirm: async () => {
+        throw new Error("An oversized job must be rejected before confirmation.");
+      },
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const before = await loadBoundaryReviewContext(root);
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        { startWithAgentJob: true },
+      )).resolves.toBe(0);
+
+      expect(prompts).toHaveLength(2);
+      expect(prompts[1]?.context).toEqual(expect.arrayContaining([
+        "JOB DESCRIPTION TOO LONG",
+        "Job description is 501 characters; maximum is 500.",
+        "Shorten it and submit again. No disabled Boundary draft was staged or changed.",
+      ]));
+      expect(presented).toContainEqual({
+        title: "JOB DESCRIPTION TOO LONG",
+        lines: [
+          "Job description is 501 characters; maximum is 500.",
+          "Shorten it and submit again. No disabled Boundary draft was staged or changed.",
+        ],
+      });
+      expect(chooseOption).not.toHaveBeenCalled();
+      const after = await loadBoundaryReviewContext(root);
+      expect(after.bundle.candidate_digest).toBe(before.bundle.candidate_digest);
+      expect(after.candidate).toEqual(before.candidate);
+      await expect(fs.access(path.join(root, ".synapsor/read-workloads")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps a read-only model job in chat through its explicit activation gate", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-first-model-"));
     const inspection = boundaryInspection();

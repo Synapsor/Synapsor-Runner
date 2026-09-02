@@ -426,6 +426,12 @@ export async function boundaryAssistCommand(
   return 0;
 }
 
+const MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS = 500;
+
+function textCharacterCount(value: string): number {
+  return Array.from(value).length;
+}
+
 function parseReadWorkloadIntent(value: unknown): {
   name: string;
   allowed_questions: string[];
@@ -444,8 +450,13 @@ function parseReadWorkloadIntent(value: unknown): {
   const questions = (key: "allowed_questions" | "forbidden_questions", required: boolean) => {
     const values = record[key];
     if (!Array.isArray(values) || (required && values.length < 1) || values.length > 40
-      || values.some((item) => typeof item !== "string" || !item.trim() || item.trim().length > 500)) {
-      throw new Error(`${key} must contain ${required ? "1-40" : "0-40"} questions of at most 500 characters.`);
+      || values.some((item) => typeof item !== "string"
+        || !item.trim()
+        || textCharacterCount(item.trim()) > MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS)) {
+      throw new Error(
+        `${key} must contain ${required ? "1-40" : "0-40"} questions of at most `
+        + `${MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS} characters.`,
+      );
     }
     return values.map((item) => (item as string).trim());
   };
@@ -3285,19 +3296,33 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
     }
   }
-  const jobIntent = await input.session.promptText(
-    "What job are you giving this agent?",
-    {
-      context: [
-        "SET UP ONE AGENT JOB",
-        "Describe what the agent should answer and, if needed, what changes it may propose.",
-        "Runner will prepare separate disabled Read and Action Boundary drafts. The model cannot activate either one.",
-        "Example: Explain operational trends and propose one bounded follow-up action.",
-        "",
-        "Type M for full manual table and field setup. Esc pauses without changing authority.",
-      ],
-    },
-  );
+  const jobPromptContext = [
+    "SET UP ONE AGENT JOB",
+    "Describe what the agent should answer and, if needed, what changes it may propose.",
+    "Runner will prepare separate disabled Read and Action Boundary drafts. The model cannot activate either one.",
+    `Maximum job description length: ${MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS} characters.`,
+    "Example: Explain operational trends and propose one bounded follow-up action.",
+    "",
+    "Type M for full manual table and field setup. Esc pauses without changing authority.",
+  ];
+  let jobIntent: string | undefined;
+  let jobValidationContext: string[] = [];
+  while (true) {
+    jobIntent = await input.session.promptText(
+      "What job are you giving this agent?",
+      { context: [...jobValidationContext, ...jobPromptContext] },
+    );
+    if (jobIntent === undefined) break;
+    const characterCount = textCharacterCount(jobIntent.trim());
+    if (characterCount <= MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS) break;
+    const validationLines = [
+      `Job description is ${characterCount} characters; maximum is ${MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS}.`,
+      "Shorten it and submit again. No disabled Boundary draft was staged or changed.",
+    ];
+    input.session.rememberDetails?.("JOB DESCRIPTION TOO LONG", validationLines);
+    input.session.present?.("JOB DESCRIPTION TOO LONG", validationLines, "warning");
+    jobValidationContext = ["JOB DESCRIPTION TOO LONG", ...validationLines, ""];
+  }
   if (jobIntent === undefined) return boundaryAssistResult(boundaryAssistBackNotice("Delegation setup closed."));
   if (input.jobFirst && /^(?:m|manual)$/i.test(jobIntent.trim())) {
     return boundaryAssistResult({
