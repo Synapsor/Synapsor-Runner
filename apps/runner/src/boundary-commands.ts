@@ -67,6 +67,7 @@ import {
   DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
 } from "./terminal-ask-defaults.js";
 import { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
+import { discoverHostedProviderModels } from "./hosted-provider-models.js";
 import { withTerminalProgress } from "./terminal-prompt.js";
 import { AskError, type AskProviderDependencies } from "./model-ask.js";
 import {
@@ -120,6 +121,11 @@ import {
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import {
+  planModelBoundaryJob,
+  type BoundaryJobCurrentState,
+  type BoundaryJobPlan,
+} from "./boundary-job-model.js";
+import {
   interpretPrincipalScopeAnswer,
   type ModelPrincipalScopeOption,
 } from "./model-principal-scope-review.js";
@@ -168,6 +174,7 @@ import {
   listReadWorkloadAnalyses,
   readReadWorkloadAnalysis,
   storeReadWorkloadAnalysis,
+  type ReadWorkloadReview,
   type ReadWorkloadView,
 } from "./read-workloads.js";
 import {
@@ -241,6 +248,12 @@ export type BoundaryActivationHandoff = (input: {
   boundaryDigest: `sha256:${string}`;
 }) => Promise<number>;
 
+export type BoundaryModelDiscoveryDependencies = {
+  discoverModels?: typeof discoverOpenAiCompatibleModels;
+  discoverHostedModels?: typeof discoverHostedProviderModels;
+  env?: NodeJS.ProcessEnv;
+};
+
 export type BoundaryReviewCommandOptions = {
   activationReviewNotice?: (input: {
     projectRoot: string;
@@ -251,10 +264,12 @@ export type BoundaryReviewCommandOptions = {
   /** Reuses the already-consented Ask model without persisting its credential. */
   modelAuthoringSession?: ActionModelSuggestionSession;
   modelReadWorkloadGenerator?: typeof generateModelReadWorkload;
+  modelBoundaryJobPlanner?: typeof planModelBoundaryJob;
   modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
   modelAuthoringNarrator?: typeof narrateValidatedAuthoringStep;
   modelPrincipalScopeInterpreter?: typeof interpretPrincipalScopeAnswer;
+  modelDiscovery?: BoundaryModelDiscoveryDependencies;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
   /** Overrides the persistent model-assisted authoring surface in tests or embedded clients. */
@@ -801,10 +816,12 @@ export async function boundaryReviewCommand(
       startAtBoundaryList: options.startAtBoundaryList,
       modelAuthoringSession: options.modelAuthoringSession,
       modelReadWorkloadGenerator: options.modelReadWorkloadGenerator,
+      modelBoundaryJobPlanner: options.modelBoundaryJobPlanner,
       modelActionSuggestionGenerator: options.modelActionSuggestionGenerator,
       modelActionSuggestionSetGenerator: options.modelActionSuggestionSetGenerator,
       modelAuthoringNarrator: options.modelAuthoringNarrator,
       modelPrincipalScopeInterpreter: options.modelPrincipalScopeInterpreter,
+      modelDiscovery: options.modelDiscovery,
       actionProjectInspector: options.actionProjectInspector,
       runDelegationActionReview: options.runDelegationActionReview,
       boundaryAuthoringChatFactory: options.boundaryAuthoringChatFactory,
@@ -1262,6 +1279,7 @@ async function boundaryResourceReviewCommand(
         modelActionSuggestionSetGenerator: options.modelActionSuggestionSetGenerator,
         modelAuthoringNarrator: options.modelAuthoringNarrator,
         modelPrincipalScopeInterpreter: options.modelPrincipalScopeInterpreter,
+        modelDiscovery: options.modelDiscovery,
         actionProjectInspector: options.actionProjectInspector,
         runDelegationActionReview: options.runDelegationActionReview,
         boundaryAuthoringChatFactory: options.boundaryAuthoringChatFactory,
@@ -1534,10 +1552,12 @@ async function interactiveBoundaryReviewLoop(input: {
   startAtBoundaryList?: boolean;
   modelAuthoringSession?: ActionModelSuggestionSession;
   modelReadWorkloadGenerator?: typeof generateModelReadWorkload;
+  modelBoundaryJobPlanner?: typeof planModelBoundaryJob;
   modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
   modelAuthoringNarrator?: typeof narrateValidatedAuthoringStep;
   modelPrincipalScopeInterpreter?: typeof interpretPrincipalScopeAnswer;
+  modelDiscovery?: BoundaryModelDiscoveryDependencies;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
   boundaryAuthoringChatFactory?: BoundaryAuthoringChatFactory;
@@ -1603,10 +1623,12 @@ async function interactiveBoundaryReviewLoop(input: {
           session: input.session,
           modelAuthoringSession: input.modelAuthoringSession,
           modelReadWorkloadGenerator: input.modelReadWorkloadGenerator,
+          modelBoundaryJobPlanner: input.modelBoundaryJobPlanner,
           modelActionSuggestionGenerator: input.modelActionSuggestionGenerator,
           modelActionSuggestionSetGenerator: input.modelActionSuggestionSetGenerator,
           modelAuthoringNarrator: input.modelAuthoringNarrator,
           modelPrincipalScopeInterpreter: input.modelPrincipalScopeInterpreter,
+          modelDiscovery: input.modelDiscovery,
           actionProjectInspector: input.actionProjectInspector,
           runDelegationActionReview: input.runDelegationActionReview,
           boundaryAuthoringChatFactory: input.boundaryAuthoringChatFactory,
@@ -2282,11 +2304,12 @@ async function interactiveBoundaryReviewLoop(input: {
 export async function promptBoundaryMappingModel(
   session: Pick<BoundaryReviewInteractiveSession, "promptText"> & Partial<Pick<BoundaryReviewInteractiveSession, "chooseOption">>,
   currentModel?: ActionModelSuggestionSession,
-  dependencies: {
-    discoverModels?: typeof discoverOpenAiCompatibleModels;
-    env?: NodeJS.ProcessEnv;
-  } = {},
+  dependencies: BoundaryModelDiscoveryDependencies = {},
 ): Promise<ActionModelSuggestionSession | undefined> {
+  const defaultBaseUrl = "http://127.0.0.1:11434/v1";
+  const discoverModels = dependencies.discoverModels ?? discoverOpenAiCompatibleModels;
+  const discoverHostedModels = dependencies.discoverHostedModels ?? discoverHostedProviderModels;
+  const env = dependencies.env ?? process.env;
   if (currentModel) {
     const currentLabel = boundaryModelLabel(currentModel);
     const choices = [
@@ -2343,24 +2366,24 @@ export async function promptBoundaryMappingModel(
     if (selected === undefined) return undefined;
     if (selected === "current") return currentModel;
     if (selected === "change_model") {
-      const modelText = await session.promptText(
-        `Model for ${currentModel.provider} [${currentModel.model}]`,
-        {
-          context: [
-            "CHANGE BOUNDARY-DRAFTING MODEL",
-            `Provider: ${currentModel.provider}. The existing credential source stays in memory and is not displayed.`,
-            "Enter an exact model name, or leave it blank to keep the displayed default.",
-          ],
-        },
-      );
-      if (modelText === undefined) return undefined;
-      return { ...currentModel, model: modelText.trim() || currentModel.model };
+      const available = currentModel.provider === "openai_compatible"
+        ? await discoverModels(currentModel.baseUrl ?? defaultBaseUrl).catch(() => [])
+        : await discoverHostedModels({
+            provider: currentModel.provider,
+            apiKey: currentModel.apiKey
+              ?? env[currentModel.apiKeyEnv ?? (currentModel.provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY")]
+              ?? "",
+          }).catch(() => []);
+      const model = await chooseBoundaryDraftingModel({
+        session,
+        provider: currentModel.provider,
+        currentModel: currentModel.model,
+        available,
+      });
+      return model ? { ...currentModel, model } : undefined;
     }
   }
-  const defaultBaseUrl = "http://127.0.0.1:11434/v1";
-  const discoverModels = dependencies.discoverModels ?? discoverOpenAiCompatibleModels;
   const detectedModels = await discoverModels(defaultBaseUrl).catch(() => []);
-  const env = dependencies.env ?? process.env;
   const openAiReady = Boolean(env.OPENAI_API_KEY?.trim());
   const anthropicReady = Boolean(env.ANTHROPIC_API_KEY?.trim());
   let providerChoice: string;
@@ -2403,9 +2426,16 @@ export async function promptBoundaryMappingModel(
     );
     if (selected === undefined) return undefined;
     if (selected === "detected_local") {
+      const model = await chooseBoundaryDraftingModel({
+        session,
+        provider: "openai_compatible",
+        currentModel: detectedModel!,
+        available: detectedModels,
+      });
+      if (!model) return undefined;
       return {
         provider: "openai_compatible",
-        model: detectedModel!,
+        model,
         baseUrl: defaultBaseUrl,
       };
     }
@@ -2455,25 +2485,16 @@ export async function promptBoundaryMappingModel(
       ? detectedModels
       : await discoverModels(baseUrl).catch(() => []);
     const defaultModel = modelsAtEndpoint[0] ?? "llama3.2";
-    const modelText = await session.promptText(
-      `Local model [${defaultModel}]`,
-      {
-        context: modelsAtEndpoint.length
-          ? [
-              "DETECTED LOCAL MODELS",
-              ...modelsAtEndpoint.slice(0, 8).map((model) => `- ${model}`),
-              ...(modelsAtEndpoint.length > 8 ? [`- and ${modelsAtEndpoint.length - 8} more`] : []),
-            ]
-          : [
-              "MODEL NAME",
-              "Runner could not list this endpoint's models. Enter the exact installed model name.",
-            ],
-      },
-    );
-    if (modelText === undefined) return undefined;
+    const model = await chooseBoundaryDraftingModel({
+      session,
+      provider,
+      currentModel: defaultModel,
+      available: modelsAtEndpoint,
+    });
+    if (!model) return undefined;
     return {
       provider,
-      model: modelText.trim() || defaultModel,
+      model,
       baseUrl,
     };
   }
@@ -2481,16 +2502,83 @@ export async function promptBoundaryMappingModel(
   const defaultModel = provider === "anthropic"
     ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL
     : DEFAULT_TERMINAL_OPENAI_ASK_MODEL;
-  const modelText = await session.promptText(`Model [${defaultModel}]`);
-  if (modelText === undefined) return undefined;
   const keyDefault = provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
   const keyText = await session.promptText(`API key environment variable [${keyDefault}]`);
   if (keyText === undefined) return undefined;
+  const keyEnv = keyText.trim() || keyDefault;
+  const available = await discoverHostedModels({
+    provider,
+    apiKey: env[keyEnv] ?? "",
+  }).catch(() => []);
+  const model = await chooseBoundaryDraftingModel({
+    session,
+    provider,
+    currentModel: defaultModel,
+    available,
+  });
+  if (!model) return undefined;
   return {
     provider,
-    model: modelText.trim() || defaultModel,
-    apiKeyEnv: keyText.trim() || keyDefault,
+    model,
+    apiKeyEnv: keyEnv,
   };
+}
+
+async function chooseBoundaryDraftingModel(input: {
+  session: Pick<BoundaryReviewInteractiveSession, "promptText"> & Partial<Pick<BoundaryReviewInteractiveSession, "chooseOption">>;
+  provider: ActionModelSuggestionSession["provider"];
+  currentModel: string;
+  available: string[];
+}): Promise<string | undefined> {
+  const models = [input.currentModel, ...input.available]
+    .map((model) => model.trim())
+    .filter((model, index, values) => model && values.indexOf(model) === index)
+    .slice(0, 100);
+  if (input.session.chooseOption && input.available.length) {
+    const exactValue = "__exact_model_id__";
+    const latestListed = input.available[0];
+    const selected = await input.session.chooseOption(
+      "MODEL FOR BOUNDARY DRAFTING",
+      [
+        ...models.map((model) => ({
+          value: model,
+          label: `${model}${model === input.currentModel && model === latestListed
+            ? "  [current, latest listed]"
+            : model === input.currentModel
+              ? "  [current]"
+              : model === latestListed
+                ? "  [latest listed]"
+                : ""}`,
+          detail: model === input.currentModel
+            ? "Keep the currently configured exact model."
+            : `Available from ${input.provider === "openai_compatible" ? "the selected loopback endpoint" : `${input.provider}'s model catalog`}.`,
+        })),
+        {
+          value: exactValue,
+          label: "Advanced: enter an exact model ID",
+          detail: "Use when a compatible model is not returned by provider discovery.",
+        },
+      ],
+      {
+        initialValue: input.currentModel,
+        context: [
+          "Use Up/Down and Enter. Runner lists only bounded compatible candidates returned by the selected provider.",
+          "The choice affects drafting only and grants no Boundary authority.",
+        ],
+      },
+    );
+    if (selected === undefined) return undefined;
+    if (selected !== exactValue) return selected;
+  }
+  const exact = await input.session.promptText(`Exact model ID [${input.currentModel}]`, {
+    context: input.available.length
+      ? ["ADVANCED MODEL ID", "Enter an exact compatible model ID, or leave blank to keep the current model."]
+      : [
+          "MODEL CATALOG UNAVAILABLE",
+          "Runner could not list models from the selected provider. Enter an exact compatible model ID or keep the current model.",
+        ],
+  });
+  return exact === undefined ? undefined : exact.trim() || input.currentModel;
 }
 
 function boundaryModelLabel(model: Pick<ActionModelSuggestionSession, "provider" | "model">): string {
@@ -2793,6 +2881,88 @@ async function promptRunnerGuidedModelFallback(input: {
       defaultValue: true,
       context: [title, ...context],
     },
+  );
+  return accepted ? "runner" : "back";
+}
+
+function boundaryJobPlanningFailureReason(error: unknown): string {
+  if (error instanceof AskError && error.code === "ASK_REQUIRED_TOOL_NOT_CALLED") {
+    return "The model did not submit the required typed Read/Action job plan.";
+  }
+  if (error instanceof Error && /^BOUNDARY_JOB_PLAN_INVALID:/iu.test(error.message)) {
+    return "The model response did not match Runner's typed Read/Action planning contract.";
+  }
+  return "The model request did not complete one valid typed Read/Action job plan.";
+}
+
+async function promptBoundaryJobPlanningFallback(input: {
+  session: BoundaryReviewInteractiveSession;
+  model: ActionModelSuggestionSession;
+  allowAdditionalAttempt: boolean;
+  failure?: unknown;
+  unresolvedQuestion?: string;
+}): Promise<"runner" | "retry" | "change_model" | "back"> {
+  const title = "BOUNDARY JOB PLANNING DID NOT COMPLETE";
+  const reason = input.unresolvedQuestion
+    ? "The model still needs a business clarification before it can separate Read and Action work."
+    : boundaryJobPlanningFailureReason(input.failure);
+  const context = [
+    `${boundaryModelLabel(input.model)} did not produce a usable job split after Runner's bounded correction.`,
+    reason,
+    ...(input.unresolvedQuestion ? [`Unresolved question: ${input.unresolvedQuestion}`] : []),
+    "Runner discarded the response before staging a mapping catalog or changing a Boundary draft.",
+    "Active authority and source data are unchanged.",
+  ];
+  input.session.rememberDetails?.(title, context);
+  if (input.session.chooseOption) {
+    while (true) {
+      const selected = await input.session.chooseOption(
+        title,
+        [
+          {
+            value: "runner",
+            label: "Continue with Runner's deterministic recommendation  [recommended]",
+            detail: "Use the same job and inspected schema; every exact disabled draft still requires review.",
+          },
+          ...(input.allowAdditionalAttempt
+            ? [
+                {
+                  value: "retry",
+                  label: `Retry once with ${boundaryModelLabel(input.model)}`,
+                  detail: "Start one new bounded planning request; the rejected response stays discarded.",
+                },
+                {
+                  value: "change_model",
+                  label: "Choose another model and retry once",
+                  detail: "Review replacement-model metadata egress before one new bounded planning request.",
+                },
+              ]
+            : []),
+          {
+            value: "details",
+            label: "View the local planning failure",
+            detail: "Show the safe failure category without another model request or state change.",
+          },
+          {
+            value: "back",
+            label: "Pause this job",
+            detail: "Keep every existing Read and Action Boundary exactly as it was.",
+          },
+        ],
+        { initialValue: "runner", context },
+      );
+      if (selected === "details") {
+        input.session.present?.(title, context, "warning");
+        continue;
+      }
+      return selected === "runner" || selected === "retry" || selected === "change_model"
+        ? selected
+        : "back";
+    }
+  }
+  const accepted = await input.session.confirm(
+    "Continue this job with Runner's deterministic recommendation?",
+    { defaultValue: true, context: [title, ...context] },
   );
   return accepted ? "runner" : "back";
 }
@@ -3183,10 +3353,12 @@ type InteractiveReadWorkloadAssistInput = {
   session: BoundaryReviewInteractiveSession;
   modelAuthoringSession?: ActionModelSuggestionSession;
   modelReadWorkloadGenerator?: typeof generateModelReadWorkload;
+  modelBoundaryJobPlanner?: typeof planModelBoundaryJob;
   modelActionSuggestionGenerator?: typeof generateModelActionSuggestion;
   modelActionSuggestionSetGenerator?: typeof generateModelActionSuggestionSet;
   modelAuthoringNarrator?: typeof narrateValidatedAuthoringStep;
   modelPrincipalScopeInterpreter?: typeof interpretPrincipalScopeAnswer;
+  modelDiscovery?: BoundaryModelDiscoveryDependencies;
   actionProjectInspector?: typeof inspectActionProject;
   runDelegationActionReview?: typeof runActionControlPlane;
   boundaryAuthoringChatFactory?: BoundaryAuthoringChatFactory;
@@ -3299,7 +3471,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       "Later in this same job, business-policy answers and reviewed-name clarifications you type may be sent for translation into an exact draft.",
       "Never sent automatically: rows, observed values, kept-out fields, credentials, endpoint URLs, SQL, or trusted tenant/principal values.",
       "Observed values require their own exact preview and permission. Model output remains untrusted and cannot activate, approve, apply, or write.",
-      "Bounded requests: one short welcome, Read mapping, Action mapping, concise validated chat replies, and one correction only after a refusal.",
+      "Bounded requests: one short welcome, job planning, Read mapping, Action mapping, concise validated chat replies, and one correction only after a refusal.",
     ];
     input.authoringChat?.rememberDetails("MODEL METADATA EGRESS", exact);
     return input.session.confirm(
@@ -3396,7 +3568,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     mode = selected === "choose_model" ? "model" : selected as MappingMode;
     if (mode === "model") {
       routeSelectedModel = selected === "choose_model" || !currentModel
-        ? await promptBoundaryMappingModel(input.session, currentModel)
+        ? await promptBoundaryMappingModel(input.session, currentModel, input.modelDiscovery)
         : { ...currentModel };
       if (!routeSelectedModel) return boundaryAssistResult(boundaryAssistBackNotice());
       input.authoringChat.setModel(boundaryModelLabel(routeSelectedModel));
@@ -3428,7 +3600,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         }
         if (recovery === "review") continue;
         if (recovery === "change_model") {
-          const replacement = await promptBoundaryMappingModel(input.session, preselectedMappingSession);
+          const replacement = await promptBoundaryMappingModel(
+            input.session,
+            preselectedMappingSession,
+            input.modelDiscovery,
+          );
           if (!replacement) continue;
           routeSelectedModel = replacement;
           preselectedMappingSession = {
@@ -3704,15 +3880,163 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         : "Press W again and enter a number from 1 through 5."],
     });
   }
-  const promptedActionIntents = input.jobFirst
-    ? input.authoringChat && mode === "model"
-      ? jobAppearsToChangeState(jobIntent.trim()) ? [jobIntent.trim()] : []
-      : await promptJobFirstActionIntents(input.session, jobIntent.trim())
-    : await promptDelegationActionIntents(input.session);
+  let context = await loadBoundaryReviewContext(input.projectRoot);
+  let jobPlan: BoundaryJobPlan | undefined;
+  let reusableState: BoundaryJobAuthoringState | undefined;
+  let reusedReadWorkload: ReadWorkloadView | undefined;
+  let reusingExactRead = false;
+  let mappedReadIntent = jobIntent.trim();
+  const shouldPlanModelJob = input.jobFirst
+    && mode === "model"
+    && preselectedMappingSession !== undefined
+    && modelEgressAcknowledged
+    && (input.modelBoundaryJobPlanner !== undefined || input.modelReadWorkloadGenerator === undefined);
+  if (shouldPlanModelJob) {
+    reusableState = await inspectBoundaryJobAuthoringState({
+      projectRoot: input.projectRoot,
+      context,
+    });
+    let planningModel = preselectedMappingSession!;
+    let additionalAttemptUsed = false;
+    while (true) {
+      const planningSession = boundaryAuthoringModelSession(planningModel, input.authoringChat);
+      let clarificationAnswer: string | undefined;
+      let planningFailure: unknown;
+      jobPlan = undefined;
+      try {
+        for (let clarificationCount = 0; clarificationCount < 2; clarificationCount += 1) {
+          jobPlan = await runWithProgress(
+            clarificationAnswer ? "Updating the Boundary plan" : "Planning Read and Action work",
+            () => (input.modelBoundaryJobPlanner ?? planModelBoundaryJob)({
+              session: planningSession,
+              jobIntent: jobIntent!.trim(),
+              currentState: reusableState!.current_state,
+              availableResourceIds: context.draft.pack.resources.map((resource) => resource.id),
+              ...(clarificationAnswer ? { clarificationAnswer } : {}),
+              env: process.env,
+              egressAcknowledged: true,
+            }),
+          );
+          if (jobPlan.state === "planned") break;
+          clarificationAnswer = await input.session.promptText(jobPlan.question, {
+            context: [
+              "MODEL QUESTION",
+              "The answer is used only to classify this job. Runner still validates every exact Boundary decision.",
+            ],
+          });
+          if (clarificationAnswer === undefined) {
+            return boundaryAssistResult(boundaryAssistBackNotice(
+              "Boundary planning paused before any disabled draft changed.",
+            ));
+          }
+        }
+      } catch (error) {
+        planningFailure = error;
+      }
+      if (jobPlan?.state === "planned") break;
+
+      const recovery = await promptBoundaryJobPlanningFallback({
+        session: input.session,
+        model: planningModel,
+        allowAdditionalAttempt: !additionalAttemptUsed,
+        ...(planningFailure ? { failure: planningFailure } : {}),
+        ...(jobPlan?.state === "clarification" ? { unresolvedQuestion: jobPlan.question } : {}),
+      });
+      if (recovery === "back") {
+        return boundaryAssistResult(boundaryAssistBackNotice(
+          "Boundary planning paused before any disabled draft changed. The rejected model response was discarded.",
+        ));
+      }
+      if (recovery === "runner") {
+        mode = "cards";
+        routeSelectedModel = undefined;
+        preselectedMappingSession = undefined;
+        modelEgressAcknowledged = false;
+        input.authoringChat?.setPermissionGuide?.(undefined);
+        jobPlan = undefined;
+        break;
+      }
+      if (recovery === "change_model") {
+        const replacement = await promptBoundaryMappingModel(
+          input.session,
+          planningModel,
+          input.modelDiscovery,
+        );
+        if (!replacement) continue;
+        const replacementSession = {
+          ...replacement,
+          ...(authoringConversation ? { conversation: authoringConversation } : {}),
+        };
+        input.authoringChat?.setModel(boundaryModelLabel(replacementSession));
+        input.authoringChat?.setPermissionGuide?.(undefined);
+        const replacementAcknowledged = await confirmModelEgress(replacementSession);
+        if (!replacementAcknowledged) {
+          await input.authoringChat?.streamCheckpoint("Replacement model not started", [
+            "Metadata egress was not approved; the same job and every Boundary remain unchanged",
+          ], "warning");
+          continue;
+        }
+        planningModel = replacementSession;
+        routeSelectedModel = replacementSession;
+        preselectedMappingSession = replacementSession;
+        modelEgressAcknowledged = true;
+        installPermissionGuide(replacementSession);
+      }
+      additionalAttemptUsed = true;
+    }
+    if (jobPlan?.state === "planned") {
+      mappedReadIntent = jobPlan.read_intent ?? jobIntent.trim();
+      if (input.authoringChat) await input.authoringChat.streamModel([jobPlan.summary]);
+      if ((jobPlan.read_mode === "none" || jobPlan.read_mode === "reuse")
+        && (jobPlan.action_mode === "none" || jobPlan.action_mode === "reuse")) {
+        const currentAuthority = formatCurrentBoundaryAuthoritySummary(reusableState.current_state);
+        input.authoringChat?.rememberDetails("EXISTING BOUNDARY AUTHORITY", currentAuthority);
+        return boundaryAssistResult({
+          tone: "success",
+          title: "Existing Boundary authority kept unchanged.",
+          lines: currentAuthority,
+          footer: "No new draft, activation, approval, apply operation, or source write occurred.",
+        });
+      }
+      if (jobPlan.read_mode === "reuse") {
+        reusedReadWorkload = await selectReusableReadWorkload({
+          session: input.session,
+          workloads: reusableState.reusable_read_workloads,
+        });
+        if (!reusedReadWorkload?.review) {
+          return boundaryAssistResult({
+            tone: "warning",
+            title: "No exact Read revision was selected.",
+            lines: [
+              "Runner did not replace, broaden, or activate the current Read Boundary.",
+              "Choose one exact reviewed revision or ask the model to revise the Read Boundary instead.",
+            ],
+          });
+        }
+        reusingExactRead = true;
+        input.authoringChat?.rememberDetails("EXISTING READ BOUNDARY REUSED", [
+          `Boundary: ${context.candidate.pack.name}`,
+          `Authority: ${reusableState.current_state.read.authority}`,
+          `Resources: ${context.candidate.pack.resources.map((resource) => resource.id).join(", ")}`,
+          `Review revision: ${reusedReadWorkload.review.review_revision}`,
+          "Read candidate changed: no",
+          "Source database changed: no",
+        ]);
+      }
+    }
+  }
+  const promptedActionIntents = jobPlan?.state === "planned"
+    ? jobPlan.action_mode === "create" || jobPlan.action_mode === "revise"
+      ? [boundedDownstreamActionIntent(jobPlan.action_intent!, jobIntent.trim())]
+      : []
+    : input.jobFirst
+      ? input.authoringChat && mode === "model"
+        ? jobAppearsToChangeState(jobIntent.trim()) ? [jobIntent.trim()] : []
+        : await promptJobFirstActionIntents(input.session, jobIntent.trim())
+      : await promptDelegationActionIntents(input.session);
   if (!promptedActionIntents) return boundaryAssistResult(boundaryAssistBackNotice("Delegation setup closed."));
   let actionIntents: string[] = promptedActionIntents;
-  let context = await loadBoundaryReviewContext(input.projectRoot);
-  if (input.jobFirst && mode !== "saved") {
+  if (input.jobFirst && mode !== "saved" && !reusingExactRead) {
     const prepared = await prepareJobMappingCatalog({
       projectRoot: input.projectRoot,
       schemaInspector: input.schemaInspector,
@@ -3736,7 +4060,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   // resulting workload is minimized and revalidated before it replaces this
   // catalog; no authority is activated here.
   let mappingBoundary = context.candidate;
-  let workload: ReadWorkloadView | undefined;
+  let workload: ReadWorkloadView | undefined = reusedReadWorkload;
   let preparedWorkload: ReadWorkloadSet | undefined;
   let modelAssistSession: ActionModelSuggestionSession | undefined;
   let modelInterviewSession: ActionModelSuggestionSession | undefined;
@@ -3820,7 +4144,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     if (mode === "model" && input.jobFirst) {
       intent = parseReadWorkloadIntent({
         name: "delegation_reads",
-        allowed_questions: [jobIntent.trim()],
+        allowed_questions: [mappedReadIntent],
         forbidden_questions: [],
       });
     } else if (mode === "model") {
@@ -3852,7 +4176,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       );
     }
     const selectedModel = routeSelectedModel
-      ?? await promptBoundaryMappingModel(input.session, currentModel);
+      ?? await promptBoundaryMappingModel(input.session, currentModel, input.modelDiscovery);
     if (!selectedModel) return boundaryAssistResult(boundaryAssistBackNotice());
     if (!routeSelectedModel) input.authoringChat?.setModel(boundaryModelLabel(selectedModel));
     let mappingSession: ActionModelSuggestionSession = preselectedMappingSession ?? {
@@ -3907,7 +4231,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         continue;
       }
       if (recovery === "change_model") {
-        const replacement = await promptBoundaryMappingModel(input.session, mappingSession);
+        const replacement = await promptBoundaryMappingModel(
+          input.session,
+          mappingSession,
+          input.modelDiscovery,
+        );
         if (!replacement) {
           await input.authoringChat.streamCheckpoint("Model choice unchanged", [
             "No provider request was made. The same job is still waiting for a drafting path.",
@@ -3927,8 +4255,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         "Agent job paused by the operator. No provider request was made and no authority changed.",
       ));
     }
-    if (acknowledged) installPermissionGuide(mappingSession);
-    if (!workload) {
+    if (acknowledged) {
+      installPermissionGuide(mappingSession);
       modelAssistSession = boundaryAuthoringModelSession(mappingSession, input.authoringChat);
       modelInterviewSession = modelAssistSession;
       modelAssistRecord = {
@@ -3936,6 +4264,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         model: mappingSession.model,
         structural_metadata_egress_acknowledged: true,
       };
+    }
+    if (!workload) {
     let mapped: Awaited<ReturnType<typeof generateModelReadWorkload>> | undefined;
     let operatorRetryUsed = false;
     while (!workload && !mapped) {
@@ -4013,7 +4343,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       operatorRetryUsed = true;
       mapped = undefined;
       if (recovery === "change_model") {
-        const replacement = await promptBoundaryMappingModel(input.session, mappingSession);
+        const replacement = await promptBoundaryMappingModel(
+          input.session,
+          mappingSession,
+          input.modelDiscovery,
+        );
         if (!replacement) {
           return boundaryAssistResult(boundaryAssistBackNotice(
             "Model replacement was cancelled. The refused draft remains discarded and no authority changed.",
@@ -4190,7 +4524,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
 
         actionOperatorRetryUsed = true;
         if (recovery === "change_model") {
-          const replacement = await promptBoundaryMappingModel(input.session, mappingSession);
+          const replacement = await promptBoundaryMappingModel(
+            input.session,
+            mappingSession,
+            input.modelDiscovery,
+          );
           if (!replacement) {
             return boundaryAssistResult(boundaryAssistBackNotice(
               "Model replacement was cancelled. The refused action draft remains discarded and no authority changed.",
@@ -4430,7 +4768,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   if (!workload) {
     throw new Error("Boundary workload preparation ended without a reviewed workload.");
   }
-  if (workload.state !== "ready") {
+  if (!reusingExactRead && workload.state !== "ready") {
     return boundaryAssistResult({
       tone: "danger",
       title: `Workload ${workload.analysis.workload_name} is ${workload.state}.`,
@@ -4440,88 +4778,127 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       footer: "Nothing was saved or activated.",
     });
   }
-  const principalScope = await reviewJobPrincipalScopeForResources({
-    projectRoot: input.projectRoot,
-    schemaInspector: input.schemaInspector,
-    session: input.session,
-    jobIntent: jobIntent.trim(),
-    resourceIds: workload.analysis.allowed.flatMap((entry) =>
-      entry.authority_atoms.map((atom) => atom.root_resource)),
-    ...(modelAssistSession ? { modelSession: modelAssistSession } : {}),
-    ...(input.modelAuthoringNarrator
-      ? { modelNarrator: input.modelAuthoringNarrator }
-      : {}),
-    ...(input.modelPrincipalScopeInterpreter
-      ? { modelInterpreter: input.modelPrincipalScopeInterpreter }
-      : {}),
-    ...(input.authoringChat ? { authoringChat: input.authoringChat } : {}),
-  });
-  if (principalScope.state === "paused") {
-    return boundaryAssistResult({
-      tone: "warning",
-      title: "User/owner scope review paused this job.",
-      lines: [
-        `Still unresolved: ${principalScope.resources.join(", ")}`,
-        "The job promises own-row access, so Runner will not save or activate a tenant-only substitute.",
-        "The disabled mapping catalog remains available and source data is unchanged.",
-      ],
-      footer: "Review the exact user/owner predicate, then reopen Agent job. The disabled catalog is preserved; this conversation is not yet saved.",
-    });
-  }
-  if (principalScope.changed) {
-    context = await loadBoundaryReviewContext(input.projectRoot);
-    mappingBoundary = context.candidate;
-    if (!preparedWorkload) {
-      return boundaryAssistResult({
-        tone: "warning",
-        title: "Trusted user/owner scope was saved; re-run this workload analysis.",
-        lines: [
-          "The selected saved analysis predates the new principal predicate and is now stale.",
-          "Runner will not reuse it without validating its exact plans against the revised disabled catalog.",
-          "No authority was activated and source data is unchanged.",
-        ],
-        footer: "Reopen Agent job and choose exact questions, a model, or a current saved analysis.",
-      });
-    }
-    const analysis = analyzeReadWorkloadSet({
-      workload: preparedWorkload,
-      generatedBoundary: mappingBoundary,
-    });
-    workload = await storeReadWorkloadAnalysis({
-      projectRoot: input.projectRoot,
-      generatedBoundary: mappingBoundary,
-      source: preparedWorkload.source,
-      analysis,
-    });
-    if (workload.state !== "ready") {
-      return boundaryAssistResult({
-        tone: "danger",
-        title: "The exact workload no longer fits after user/owner scope review.",
-        lines: workload.analysis.blockers.length
-          ? workload.analysis.blockers.slice(0, 5)
-          : ["Review the exact plans and trusted principal predicate before continuing."],
-        footer: "Nothing was activated and source data is unchanged.",
-      });
-    }
-  }
-  const reasonDefault = `Compile representative workload ${workload.analysis.workload_name}.`;
-  context = await loadBoundaryReviewContext(input.projectRoot);
-  const preview = await prepareReadWorkloadCandidate({
-    projectRoot: input.projectRoot,
-    workload,
-    actor: localInteractiveActor(),
-    reason: reasonDefault,
-    expectedBindings: context.bundle.mutation_bindings,
-    schemaInspector: input.schemaInspector,
-  });
   const coverage = workload.analysis.coverage;
   const requestedReadCoverage = representativeReadCoverage(workload.analysis);
   const exposure = workload.analysis.exposure;
-  const committed = await commitReadWorkloadCandidate({
-    projectRoot: input.projectRoot,
-    preview,
-  });
-  if (actionIntents.length) {
+  let committed: {
+    candidate_digest: `sha256:${string}`;
+    review_revision: number;
+    review: ReadWorkloadReview;
+    authority_activated: false;
+    source_database_changed: false;
+  };
+  if (reusingExactRead) {
+    context = await loadBoundaryReviewContext(input.projectRoot);
+    const currentDigest = explorationBoundaryCandidateDigest(context.candidate);
+    if (!workload.review
+      || !exactReadBoundaryIsFullyReviewed(context)
+      || workload.analysis.candidate_digest === undefined
+      || workload.review.analyzed_candidate_digest !== workload.analysis.candidate_digest
+      || workload.review.candidate_digest !== currentDigest) {
+      return boundaryAssistResult({
+        tone: "warning",
+        title: "The saved Read revision changed before Action drafting.",
+        lines: [
+          "Runner will not reuse a stale or different Read Boundary revision.",
+          "No Action draft, authority, or source data changed.",
+        ],
+        footer: "Reopen Agent job and review the current Read revision.",
+      });
+    }
+    mappingBoundary = context.candidate;
+    committed = {
+      candidate_digest: currentDigest,
+      review_revision: workload.review.review_revision,
+      review: workload.review,
+      authority_activated: false,
+      source_database_changed: false,
+    };
+    await input.authoringChat?.streamCheckpoint("Existing Read Boundary retained", [
+      `${context.candidate.pack.name} · ${reusableState?.current_state.read.authority ?? "disabled"}`,
+      "No Read remapping, candidate mutation, or source query",
+    ]);
+  } else {
+    const principalScope = await reviewJobPrincipalScopeForResources({
+      projectRoot: input.projectRoot,
+      schemaInspector: input.schemaInspector,
+      session: input.session,
+      jobIntent: jobIntent.trim(),
+      resourceIds: workload.analysis.allowed.flatMap((entry) =>
+        entry.authority_atoms.map((atom) => atom.root_resource)),
+      ...(modelAssistSession ? { modelSession: modelAssistSession } : {}),
+      ...(input.modelAuthoringNarrator
+        ? { modelNarrator: input.modelAuthoringNarrator }
+        : {}),
+      ...(input.modelPrincipalScopeInterpreter
+        ? { modelInterpreter: input.modelPrincipalScopeInterpreter }
+        : {}),
+      ...(input.authoringChat ? { authoringChat: input.authoringChat } : {}),
+    });
+    if (principalScope.state === "paused") {
+      return boundaryAssistResult({
+        tone: "warning",
+        title: "User/owner scope review paused this job.",
+        lines: [
+          `Still unresolved: ${principalScope.resources.join(", ")}`,
+          "The job promises own-row access, so Runner will not save or activate a tenant-only substitute.",
+          "The disabled mapping catalog remains available and source data is unchanged.",
+        ],
+        footer: "Review the exact user/owner predicate, then reopen Agent job. The disabled catalog is preserved; this conversation is not yet saved.",
+      });
+    }
+    if (principalScope.changed) {
+      context = await loadBoundaryReviewContext(input.projectRoot);
+      mappingBoundary = context.candidate;
+      if (!preparedWorkload) {
+        return boundaryAssistResult({
+          tone: "warning",
+          title: "Trusted user/owner scope was saved; re-run this workload analysis.",
+          lines: [
+            "The selected saved analysis predates the new principal predicate and is now stale.",
+            "Runner will not reuse it without validating its exact plans against the revised disabled catalog.",
+            "No authority was activated and source data is unchanged.",
+          ],
+          footer: "Reopen Agent job and choose exact questions, a model, or a current saved analysis.",
+        });
+      }
+      const analysis = analyzeReadWorkloadSet({
+        workload: preparedWorkload,
+        generatedBoundary: mappingBoundary,
+      });
+      workload = await storeReadWorkloadAnalysis({
+        projectRoot: input.projectRoot,
+        generatedBoundary: mappingBoundary,
+        source: preparedWorkload.source,
+        analysis,
+      });
+      if (workload.state !== "ready") {
+        return boundaryAssistResult({
+          tone: "danger",
+          title: "The exact workload no longer fits after user/owner scope review.",
+          lines: workload.analysis.blockers.length
+            ? workload.analysis.blockers.slice(0, 5)
+            : ["Review the exact plans and trusted principal predicate before continuing."],
+          footer: "Nothing was activated and source data is unchanged.",
+        });
+      }
+    }
+    const reasonDefault = `Compile representative workload ${workload.analysis.workload_name}.`;
+    context = await loadBoundaryReviewContext(input.projectRoot);
+    const preview = await prepareReadWorkloadCandidate({
+      projectRoot: input.projectRoot,
+      workload,
+      actor: localInteractiveActor(),
+      reason: reasonDefault,
+      expectedBindings: context.bundle.mutation_bindings,
+      schemaInspector: input.schemaInspector,
+    });
+    committed = await commitReadWorkloadCandidate({
+      projectRoot: input.projectRoot,
+      preview,
+    });
+  }
+  if (actionIntents.length && !reusingExactRead) {
     if (!input.completeReadReview) {
       throw new Error(
         "DELEGATION_READ_REVIEW_REQUIRED: finish the exact Read Boundary review before preparing dependent proposal actions.",
@@ -4690,9 +5067,15 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     && (actionDrafts.length === 0 || allPreparedActionsActive);
   const activeActionBoundary = finalActionStatus.action_boundary.active;
   const currentActionBoundary = activeActionBoundary ?? finalActionStatus.action_boundary.draft;
-  const deterministicPolicyActive = Boolean(activeActionBoundary?.authority.approval_policies.some(
-    (policy) => policy.mode === "policy" && activeActionCapabilities.has(policy.capability),
-  ));
+  const deterministicPolicyActive = actionBoundaryHasDeterministicPolicy(
+    activeActionBoundary,
+    activeActionCapabilities,
+  );
+  const preparedActionCapabilities = new Set(actionDrafts.map(({ draft }) => draft.capability));
+  const deterministicPolicyPrepared = actionBoundaryHasDeterministicPolicy(
+    currentActionBoundary,
+    new Set([...preparedActionCapabilities, ...activeActionCapabilities]),
+  );
   const authorityRows = [
     [
       "Read",
@@ -4710,10 +5093,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       : [["Action", "Not requested", "OFF", "None"]]),
     [
       "Approval",
-      deterministicPolicyActive ? "Deterministic policy" : "Human review",
+      deterministicPolicyPrepared ? "Deterministic policy" : "Human review",
       allPreparedActionsActive
         ? deterministicPolicyActive ? "ACTIVE" : "REQUIRED"
-        : "OFF",
+        : deterministicPolicyPrepared ? "DRAFT" : "OFF",
       "Cannot approve",
     ],
     ["Apply", "Source writeback", "OFF", "Cannot apply"],
@@ -4754,7 +5137,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         : `DRAFT - ${actionDrafts.length - activatedPreparedActions} action${actionDrafts.length - activatedPreparedActions === 1 ? "" : "s"} not active`;
     await input.authoringChat.streamCheckpoint(finalNotice.title, [
       `Read ${readState} · Action ${actionState}`,
-      `Approval ${deterministicPolicyActive ? "deterministic policy with human fallback" : "human review"} · apply outside agent authority · source unchanged`,
+      `Approval ${deterministicPolicyActive
+        ? "deterministic policy with human fallback"
+        : deterministicPolicyPrepared
+          ? "deterministic policy draft with human fallback"
+          : "human review"} · apply outside agent authority · source unchanged`,
       `${finalNotice.footer ?? "Continue from the Boundary screen."} · /details shows the exact authority record`,
     ], finalNotice.tone);
   }
@@ -4764,6 +5151,65 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     setupComplete,
     Boolean(input.authoringChat),
   );
+}
+
+export function actionBoundaryHasDeterministicPolicy(
+  boundary: {
+    authority: {
+      approval_policies: Array<{ capability: string; mode: string }>;
+    };
+  } | undefined,
+  capabilities: ReadonlySet<string>,
+): boolean {
+  return Boolean(boundary?.authority.approval_policies.some(
+    (policy) => policy.mode === "policy" && capabilities.has(policy.capability),
+  ));
+}
+
+function boundedDownstreamActionIntent(plannedIntent: string, operatorJob: string): string {
+  // The planner may explain the Action split more fully than the legacy
+  // suggestion protocol accepts. The operator's already-bounded job remains
+  // the authoritative input in that case; model expansion never broadens it.
+  return [...plannedIntent].length <= 500 ? plannedIntent : operatorJob;
+}
+
+export function formatCurrentBoundaryAuthoritySummary(
+  state: BoundaryJobCurrentState,
+): string[] {
+  const readState = state.read.authority === "active_with_disabled_changes"
+    ? "ACTIVE + DRAFT"
+    : state.read.authority === "active"
+      ? "ACTIVE"
+      : "DRAFT";
+  const readAuthority = state.read.authority === "disabled"
+    ? "No active Read"
+    : `Explore ${state.read.resource_ids.length} reviewed resource${state.read.resource_ids.length === 1 ? "" : "s"}`;
+  const rows = [
+    ["Read", state.read.boundary_name, readState, readAuthority],
+    ...(state.actions.length
+      ? state.actions.map((action) => [
+          "Action",
+          action.capability,
+          action.authority === "active" ? "ACTIVE" : "DRAFT",
+          action.authority === "active"
+            ? ["Propose", action.operation?.toUpperCase(), action.resource].filter(Boolean).join(" ")
+            : "No active proposal",
+        ])
+      : [["Action", "None", "OFF", "None"]]),
+  ];
+  return [
+    ...renderBoundaryMapTable(
+      ["Type", "Boundary / action", "State", "Agent can"],
+      rows,
+      { widths: [7, 22, 16, 22], rowSeparators: false },
+    ),
+    `Read resources: ${state.read.resource_ids.length ? state.read.resource_ids.join(", ") : "none"}`,
+    `Action capabilities: ${state.actions.length
+      ? state.actions.map((action) => `${action.capability} (${action.authority})`).join(", ")
+      : "none"}`,
+    "Runner reused the exact local revisions; the model did not recreate or broaden them.",
+    "Existing approval and apply posture: unchanged | source database changed: no",
+  ];
 }
 
 async function promptDelegationActionIntents(
@@ -5017,6 +5463,120 @@ async function exactReadBoundaryIsActive(input: {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
+}
+
+type BoundaryJobAuthoringState = {
+  current_state: BoundaryJobCurrentState;
+  candidate_digest: `sha256:${string}`;
+  reusable_read_workloads: ReadWorkloadView[];
+};
+
+async function inspectBoundaryJobAuthoringState(input: {
+  projectRoot: string;
+  context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>;
+}): Promise<BoundaryJobAuthoringState> {
+  const candidateDigest = explorationBoundaryCandidateDigest(input.context.candidate);
+  const fullyReviewed = exactReadBoundaryIsFullyReviewed(input.context);
+  const workloads = await listReadWorkloadAnalyses({
+    projectRoot: input.projectRoot,
+    generatedBoundary: input.context.candidate,
+  });
+  const reusableReadWorkloads = fullyReviewed
+    ? workloads.filter((workload) => workload.review
+      && workload.analysis.candidate_digest !== undefined
+      && workload.review.analyzed_candidate_digest === workload.analysis.candidate_digest
+      && workload.review.candidate_digest === candidateDigest)
+    : [];
+  let activeReadRevisions: Awaited<ReturnType<typeof loadActivatedExplorationBoundaries>> = [];
+  try {
+    activeReadRevisions = (await loadActivatedExplorationBoundaries(input.projectRoot))
+      .filter((boundary) => boundary.pack.name === input.context.candidate.pack.name);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const exactReadActive = fullyReviewed && activeReadRevisions.some((boundary) =>
+    boundary.activation.digest === candidateDigest);
+  const readAuthority = exactReadActive
+    ? "active" as const
+    : activeReadRevisions.length
+      ? "active_with_disabled_changes" as const
+      : "disabled" as const;
+  const actionStatus = await guidedActionStatus(input.projectRoot);
+  const actions = new Map<string, BoundaryJobCurrentState["actions"][number]>();
+  for (const action of actionStatus.drafts) {
+    if (action.boundary_name !== input.context.candidate.pack.name
+      || action.boundary_digest !== candidateDigest) continue;
+    actions.set(`${action.capability}:disabled`, {
+      capability: action.capability,
+      operation: action.operation,
+      resource: action.resource,
+      authority: "disabled",
+    });
+  }
+  for (const action of actionStatus.activations) {
+    if (action.boundary_name !== input.context.candidate.pack.name
+      || action.boundary_digest !== candidateDigest) continue;
+    actions.set(`${action.capability}:active`, {
+      capability: action.capability,
+      ...(action.operation ? { operation: action.operation } : {}),
+      ...(action.resource ? { resource: action.resource } : {}),
+      authority: "active",
+    });
+  }
+  return {
+    candidate_digest: candidateDigest,
+    reusable_read_workloads: reusableReadWorkloads,
+    current_state: {
+      read: {
+        boundary_name: input.context.candidate.pack.name,
+        authority: readAuthority,
+        fully_reviewed: fullyReviewed,
+        resource_ids: input.context.candidate.pack.resources.map((resource) => resource.id).sort(),
+        exact_reusable_revision_count: reusableReadWorkloads.length,
+      },
+      actions: [...actions.values()].sort((left, right) =>
+        left.capability.localeCompare(right.capability) || left.authority.localeCompare(right.authority)),
+      control_plane: {
+        trusted_scope: "runner_injected",
+        approval_history: "runner_proposal_ledger",
+        model_may_supply_scope_values: false,
+        model_may_supply_approval_history: false,
+      },
+    },
+  };
+}
+
+async function selectReusableReadWorkload(input: {
+  session: BoundaryReviewInteractiveSession;
+  workloads: ReadWorkloadView[];
+}): Promise<ReadWorkloadView | undefined> {
+  if (input.workloads.length === 1) return input.workloads[0];
+  if (!input.workloads.length) return undefined;
+  if (input.session.chooseOption) {
+    const selected = await input.session.chooseOption(
+      "CHOOSE THE EXACT READ REVISION TO REUSE",
+      input.workloads.map((workload) => ({
+        value: workload.analysis_id,
+        label: workload.analysis.workload_name,
+        detail: `${workload.analysis.coverage.allowed_supported} reviewed plan${workload.analysis.coverage.allowed_supported === 1 ? "" : "s"} | revision ${workload.review!.review_revision} | ${workload.imported_at}`,
+      })),
+      {
+        context: [
+          "Several immutable analyses match the current reviewed Read Boundary exactly.",
+          "Choose one local record for the delegation history. The Read Boundary itself is not changed.",
+        ],
+      },
+    );
+    return input.workloads.find((workload) => workload.analysis_id === selected);
+  }
+  const selected = await input.session.promptText("Exact saved Read analysis ID", {
+    context: [
+      "CHOOSE THE EXACT READ REVISION TO REUSE",
+      ...input.workloads.map((workload) =>
+        `${workload.analysis_id}  ${workload.analysis.workload_name}  revision ${workload.review!.review_revision}`),
+    ],
+  });
+  return input.workloads.find((workload) => workload.analysis_id === selected?.trim());
 }
 
 function exactReadBoundaryIsFullyReviewed(

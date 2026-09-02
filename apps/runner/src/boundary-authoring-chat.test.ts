@@ -200,6 +200,38 @@ describe("Boundary authoring chat", () => {
     expect(transcript).not.toContain("runner> Permission request");
   });
 
+  it("keeps an unavailable automatic narration out of the authority flow", async () => {
+    const memory = memoryIo({ choices: ["yes"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    chat.setPermissionGuide?.(vi.fn(async () => undefined));
+
+    await expect(chat.session.confirmActivation?.(
+      'Activate "reviewed_support" for local read-only Explore?',
+      { context: ["READ BOUNDARY AUTHORITY", "3 reviewed tables"] },
+    )).resolves.toBe(true);
+
+    const transcript = memory.writes.join("");
+    expect(transcript).toContain("you> Allow this exact step");
+    expect(transcript).not.toContain("Model explanation unavailable");
+  });
+
+  it("shows a compact Read dependency handoff after the Action draft is rehearsed", async () => {
+    const memory = memoryIo();
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+
+    await chat.streamRunner("NEXT AUTHORITY REVIEW - READ BOUNDARY", [
+      "Read Boundary: reviewed_staging",
+      "The job draft is complete. Review the exact Read authority now; activation remains your decision.",
+      "After Read activation, Runner opens each rehearsed Action Boundary revision for its own separate confirmation.",
+    ]);
+
+    const transcript = memory.writes.join("");
+    const compact = transcript.replace(/\s+/gu, " ");
+    expect(compact).toContain("Action draft saved; Read dependency needs review");
+    expect(compact).toContain("Read and Action activation remain separate decisions");
+    expect(compact).not.toContain("The job draft is complete");
+  });
+
   it("presents model-interpreted business questions in chat and uses a spinner only during work", async () => {
     const memory = memoryIo({ reads: ["between five minutes and two hours"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
@@ -406,6 +438,25 @@ describe("Boundary authoring chat", () => {
     expect(transcript).toContain("No model request, authority change, source query, or source write occurred.");
   });
 
+  it("keeps incomplete and unknown slash commands out of business-policy answers", async () => {
+    const memory = memoryIo({ reads: ["/d", "/de", "/unknown", "Use the existing reviewed policy."] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    chat.rememberDetails("Pending policy", ["Target: UPDATE telecom.billing_preferences"]);
+
+    const answer = await chat.actionPrompter.text("What should change?", {
+      conversation: { modelLines: ["What should change in this disabled policy?"] },
+    });
+
+    expect(answer).toBe("Use the existing reviewed policy.");
+    expect(memory.prompts).toHaveLength(4);
+    const transcript = memory.writes.join("");
+    expect(transcript).toContain("Incomplete command: /d");
+    expect(transcript).toContain("Matches: /details, /diff");
+    expect(transcript).toContain("RUNNER DETAILS");
+    expect(transcript).toContain("Unknown command: /unknown");
+    expect(transcript).toContain("The pending question and disabled draft are unchanged.");
+  });
+
   it("offers local diff and exact records without adding a model turn", async () => {
     const memory = memoryIo({ reads: ["/diff", "/exact", "continue"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
@@ -455,7 +506,9 @@ describe("Boundary authoring chat", () => {
       "## Reviewed proposal",
       "The **disabled proposal** constrains `amount`; *review it* before continuing.",
       "- `amount` stays between the reviewed bounds",
-      "?**What is the smallest and largest amount the agent may propose?**",
+      "The stale-row guard is selected. ??Which column detects stale proposals?",
+      "??**What is the smallest and largest amount the agent may propose?**",
+      "?What exact rolling window should apply?",
       "Escaped \\**markers\\** remain literal.",
     ]);
 
@@ -464,10 +517,15 @@ describe("Boundary authoring chat", () => {
     expect(plain).toContain("The disabled proposal constrains amount; review it before continuing.");
     expect(plain).toContain("Reviewed proposal");
     expect(plain).toContain("- amount stays between the reviewed bounds");
+    expect(plain).toContain("The stale-row guard is selected. Which column detects stale proposals?");
+    expect(plain).not.toContain("??Which column");
     expect(plain).not.toContain("## Reviewed proposal");
     expect(plain).toContain("Escaped **markers** remain literal.");
     expect(plain).toContain("What is the smallest and largest amount the agent may propose?");
     expect(plain).not.toContain("?What is the smallest");
+    expect(plain).not.toContain("??What is the smallest");
+    expect(plain).toContain("What exact rolling window should apply?");
+    expect(plain).not.toContain("?What exact rolling window");
     expect(plain).not.toContain("`amount`");
     expect(plain).not.toContain("**disabled proposal**");
     expect(transcript).toMatch(/\u001b\[[0-9;]+mdisabled proposal\u001b\[0m/u);

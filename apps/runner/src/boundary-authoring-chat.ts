@@ -98,7 +98,14 @@ function renderInlineModelMarkdown(
   value: string,
   theme: ReturnType<typeof terminalTheme>,
 ): string {
-  value = value.replace(/\?\s*\*\*([^*\n]+\?)\*\*/gu, "**$1**");
+  // Some providers prefix a Markdown-formatted question with a stray `?`.
+  // Treat it as a rendering artifact only when the remainder is itself a
+  // complete question; ordinary punctuation elsewhere remains untouched.
+  value = value.replace(
+    /(^|\s)\?+\s*(?=(?:\*\*)?\p{Lu}[^?\n]*\?)/gu,
+    "$1",
+  );
+  value = value.replace(/\?+\s*\*\*([^*\n]+\?)\*\*/gu, "**$1**");
   let rendered = "";
   let plain = "";
   const flush = () => {
@@ -261,9 +268,17 @@ function compactRoutineCheckpoint(
     };
   }
   if (title === "NEXT AUTHORITY REVIEW - READ BOUNDARY") {
+    const actionDependency = lines.find((line) => /Action Boundary|rehearsed Action/iu.test(line));
     return {
-      title: "Read draft ready for activation review",
-      lines: [contextValue(lines, "Read Boundary:") ?? "The exact Read draft is ready."],
+      title: actionDependency
+        ? "Action draft saved; Read dependency needs review"
+        : "Read draft ready for activation review",
+      lines: [
+        contextValue(lines, "Read Boundary:") ?? "The exact Read draft is ready.",
+        ...(actionDependency
+          ? ["The rehearsed Action draft depends on this exact Read revision. Read and Action activation remain separate decisions."]
+          : []),
+      ],
     };
   }
   if (title === "NEXT AUTHORITY REVIEW - ACTION BOUNDARY") {
@@ -553,6 +568,9 @@ export function createBoundaryAuthoringChat(input: {
     const routine = compactRoutineCheckpoint(title, lines);
     if (routine) {
       rememberDetails(title, lines);
+      if (/^NEXT AUTHORITY REVIEW - /u.test(title)) {
+        checkpoint(routine.title, routine.lines, "normal");
+      }
       return;
     }
     const titleStyle = tone === "success"
@@ -605,7 +623,24 @@ export function createBoundaryAuthoringChat(input: {
         : io.readWithEscape
           ? await io.readWithEscape(prompt)
           : await io.read(prompt);
-      const command = answer?.trim().toLowerCase();
+      let command = answer?.trim().toLowerCase();
+      if (command?.startsWith("/") && !AUTHORING_SLASH_SUGGESTIONS.some((item) => item.completion === command)) {
+        const matches = AUTHORING_SLASH_SUGGESTIONS.flatMap((item) =>
+          item.completion?.startsWith(command!) ? [item.completion] : []);
+        if (matches.length === 1) {
+          command = matches[0]!;
+        } else {
+          runner(matches.length
+            ? `Incomplete command: ${command}`
+            : `Unknown command: ${command}`, [
+            ...(matches.length
+              ? [`Matches: ${matches.join(", ")}`]
+              : ["Type /help to list Boundary-authoring commands."]),
+            "The pending question and disabled draft are unchanged.",
+          ], "warning");
+          continue;
+        }
+      }
       if (command === "/details") {
         showDetails();
         continue;
@@ -620,6 +655,13 @@ export function createBoundaryAuthoringChat(input: {
       }
       if (command === "/help") {
         showHelp();
+        continue;
+      }
+      if (command?.startsWith("/")) {
+        runner(`Unknown command: ${command}`, [
+          "Type /help to list Boundary-authoring commands.",
+          "The pending question and disabled draft are unchanged.",
+        ], "warning");
         continue;
       }
       return answer;
@@ -691,9 +733,14 @@ export function createBoundaryAuthoringChat(input: {
         explanationShown = true;
         return;
       }
-      checkpoint("Model explanation unavailable", [
-        "The exact Runner permission is unchanged. Use /details, decide now, or try again later.",
-      ], "warning");
+      // The automatic narration is optional. Its failure must not look like a
+      // failed authority operation or obscure the exact Runner confirmation.
+      // Surface the outage only after the operator explicitly asks the model.
+      if (operatorQuestion) {
+        checkpoint("Model explanation unavailable", [
+          "The exact Runner permission is unchanged. Use /details, decide now, or try again later.",
+        ], "warning");
+      }
     };
 
     await explain();

@@ -24,6 +24,7 @@ import {
   type ModelAuthoringConversation,
 } from "./model-authoring-conversation.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
+import { explicitTrustedPolicyScope } from "./action-policy-scope.js";
 
 const INTERPRET_DECISION_TOOL = "runner.interpret_action_boundary_answer";
 const INTERPRET_POLICY_TOOL = "runner.interpret_action_approval_policy";
@@ -375,6 +376,8 @@ export async function interpretActionBoundaryPolicy(input: {
     "Every model-controlled proposal field must have at least one condition. Use the full reviewed proposal envelope for a field when the operator does not narrow it.",
     "All conditions are ANDed. A failed, missing, or indeterminate condition falls back to human review.",
     "Use max_per_day as a per-action rolling 24-hour circuit breaker. Use shared_limits only with the listed trusted scopes; the model never supplies scope identity values.",
+    "Trusted tenant, principal, account, and target identity are injected by Runner or enforced by reviewed database scope. They are not proposal fields.",
+    "Approval counts and rolling-window history come from Runner's separate proposal ledger. Never request an application table or source field for approval history.",
     ...(requiredLimitScope
       ? [`The operator explicitly scoped the limit ${requiredLimitScope.phrase}. Include at least one shared_limits entry with scope ${requiredLimitScope.scope}; max_per_day alone does not preserve that trusted scope.`]
       : []),
@@ -394,6 +397,7 @@ export async function interpretActionBoundaryPolicy(input: {
     providerSystemPrompt: [
       "You translate one operator business rule into the fixed deterministic approval-policy tool schema.",
       "Use exact reviewed field ids, values, operators, and trusted limit scopes only. Ask one clarification question instead of inventing a threshold.",
+      "Runner-injected trusted scope and Runner proposal-ledger history are control-plane capabilities, not missing application fields.",
       approvedValues
         ? "Use only the separately approved exact value context when needed. Do not infer, request, or emit any other database value."
         : "Do not infer, request, or emit database values; use value_request for one exact proposal field only when indispensable.",
@@ -1055,6 +1059,14 @@ function policyCatalog(
       fields,
     },
     trusted_limit_scopes: trustedLimitScopes(resource),
+    trusted_limit_scope_semantics: trustedLimitScopeSemantics(resource),
+    runner_control_plane: {
+      trusted_scope: "injected from verified Runner context or reviewed database scope",
+      approval_history: "evaluated from Runner's separate proposal ledger",
+      model_selects_scope_identity_values: false,
+      model_selects_approval_history_fields: false,
+      rolling_windows_use_elapsed_seconds: true,
+    },
     current_policy: current
       ? {
           auto_approval: current.auto_approval,
@@ -1403,10 +1415,22 @@ function parseSharedLimits(
 function trustedLimitScopes(resource: GuidedActionResourceOption): ActionBoundarySharedLimitV1["scope"][] {
   if (resource.organization_scope) return ["capability", "boundary"];
   return [
-    ...(resource.principal_key ? ["tenant_principal" as const] : []),
+    ...(resource.principal_key || resource.principal_rls_setting ? ["tenant_principal" as const] : []),
     ...(resource.tenant_key ? ["tenant" as const, "tenant_object" as const] : []),
     "capability",
   ];
+}
+
+function trustedLimitScopeSemantics(resource: GuidedActionResourceOption): Record<string, string> {
+  const available = new Set(trustedLimitScopes(resource));
+  const descriptions: Array<[ActionBoundarySharedLimitV1["scope"], string]> = [
+    ["tenant", "One ceiling for each Runner-injected trusted tenant, organization, or account. This is not a target-row identity."],
+    ["tenant_principal", "One ceiling for each Runner-injected trusted tenant plus trusted principal, user, customer, agent, or operator."],
+    ["tenant_object", "One ceiling for each Runner-injected trusted tenant plus one exact target row. Use only when the operator explicitly says target row, record, or object."],
+    ["capability", "One ceiling shared by every approval for this exact action capability."],
+    ["boundary", "One ceiling shared by every approval in this Action Boundary."],
+  ];
+  return Object.fromEntries(descriptions.filter(([scope]) => available.has(scope)));
 }
 
 type RequiredTrustedPolicyScope = {
@@ -1418,27 +1442,30 @@ function requiredTrustedPolicyScope(
   answer: string,
   resource: GuidedActionResourceOption,
 ): RequiredTrustedPolicyScope | undefined {
-  const principalMatch = answer.match(
-    /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:authenticated\s+)?(?:agent|operator|principal|user|customer)\b/i,
-  );
-  const tenantMatch = answer.match(
-    /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:tenant|org|organization|organisation)\b/i,
-  );
-  if (principalMatch) {
+  const requirement = explicitTrustedPolicyScope(answer);
+  if (requirement?.scope === "tenant_object") {
+    if (!trustedLimitScopes(resource).includes("tenant_object")) {
+      throw new Error(
+        "ACTION_BOUNDARY_POLICY_SCOPE_UNAVAILABLE: the rule is scoped per target row, but this reviewed action has no trusted tenant+object accounting scope.",
+      );
+    }
+    return requirement;
+  }
+  if (requirement?.scope === "tenant_principal") {
     if (!trustedLimitScopes(resource).includes("tenant_principal")) {
       throw new Error(
         "ACTION_BOUNDARY_POLICY_SCOPE_UNAVAILABLE: the rule is scoped per principal, but this reviewed action has no trusted tenant+principal accounting scope.",
       );
     }
-    return { scope: "tenant_principal", phrase: JSON.stringify(principalMatch[0]) };
+    return requirement;
   }
-  if (tenantMatch) {
+  if (requirement?.scope === "tenant") {
     if (!trustedLimitScopes(resource).includes("tenant")) {
       throw new Error(
-        "ACTION_BOUNDARY_POLICY_SCOPE_UNAVAILABLE: the rule is scoped per tenant, but this reviewed action has no trusted tenant accounting scope.",
+        "ACTION_BOUNDARY_POLICY_SCOPE_UNAVAILABLE: the rule is scoped per trusted tenant/account, but this reviewed action has no trusted tenant/account accounting scope.",
       );
     }
-    return { scope: "tenant", phrase: JSON.stringify(tenantMatch[0]) };
+    return requirement;
   }
   return undefined;
 }

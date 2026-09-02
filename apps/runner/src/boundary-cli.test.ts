@@ -24,9 +24,11 @@ import {
 } from "./cli.js";
 import {
   boundaryAssistCommand,
+  actionBoundaryHasDeterministicPolicy,
   boundaryActivateCommand as boundaryActivateCommandInternal,
   boundaryReviewCommand as boundaryReviewCommandInternal,
   formatBoundaryChatReviewSummary,
+  formatCurrentBoundaryAuthoritySummary,
   formatFocusedBoundaryActivationReview,
   loadBoundaryReviewContext,
   promptBoundaryMappingModel,
@@ -106,6 +108,57 @@ describe("boundary operator-plane CLI", () => {
     vi.restoreAllMocks();
   });
 
+  it("summarizes reused Read and Action authority instead of echoing the model request", () => {
+    const summary = formatCurrentBoundaryAuthoritySummary({
+      read: {
+        boundary_name: "reviewed_staging",
+        authority: "active_with_disabled_changes",
+        fully_reviewed: true,
+        resource_ids: ["telecom.accounts", "telecom.billing_preferences"],
+        exact_reusable_revision_count: 1,
+      },
+      actions: [{
+        capability: "billing_preference.propose_update",
+        operation: "update",
+        resource: "telecom.billing_preferences",
+        authority: "active",
+      }],
+      control_plane: {
+        trusted_scope: "runner_injected",
+        approval_history: "runner_proposal_ledger",
+        model_may_supply_scope_values: false,
+        model_may_supply_approval_history: false,
+      },
+    }).join("\n");
+
+    expect(summary).toContain("reviewed_staging");
+    expect(summary).toContain("ACTIVE + DRAFT");
+    expect(summary).toContain("billing_preference.propose_update");
+    expect(summary).toContain("Propose UPDATE");
+    expect(summary).toContain("telecom.accounts, telecom.billing_preferences");
+    expect(summary).toContain("source database changed: no");
+  });
+
+  it("preserves a disabled deterministic policy in setup status", () => {
+    const boundary = {
+      authority: {
+        approval_policies: [{
+          capability: "billing_preference.propose_update",
+          mode: "policy",
+        }],
+      },
+    };
+
+    expect(actionBoundaryHasDeterministicPolicy(
+      boundary,
+      new Set(["billing_preference.propose_update"]),
+    )).toBe(true);
+    expect(actionBoundaryHasDeterministicPolicy(
+      boundary,
+      new Set(["support_case.propose_insert"]),
+    )).toBe(false);
+  });
+
   it("detects an installed loopback model during first-run boundary drafting", async () => {
     const prompts: Array<{ label: string; context: string[] }> = [];
     const answers = ["3", "", ""];
@@ -128,9 +181,9 @@ describe("boundary operator-plane CLI", () => {
     expect(prompts.map(({ label }) => label)).toEqual([
       "Provider (1-3)",
       "Local model endpoint [http://127.0.0.1:11434/v1]",
-      "Local model [qwen2.5:7b]",
+      "Exact model ID [qwen2.5:7b]",
     ]);
-    expect(prompts[2]?.context).toContain("- qwen2.5:7b");
+    expect(prompts[2]?.context).toContain("ADVANCED MODEL ID");
   });
 
   it("selects a detected loopback model from the TUI without endpoint or model text prompts", async () => {
@@ -143,7 +196,9 @@ describe("boundary operator-plane CLI", () => {
           ...(promptOptions?.initialValue ? { initial: promptOptions.initialValue } : {}),
           ...(promptOptions?.requireExplicitSelection ? { explicit: true } : {}),
         });
-        return "detected_local";
+        return title === "CHOOSE A MODEL FOR BOUNDARY DRAFTING"
+          ? "detected_local"
+          : "qwen2.5:7b";
       },
       promptText: async () => {
         throw new Error("A detected local model should not require text setup.");
@@ -156,11 +211,18 @@ describe("boundary operator-plane CLI", () => {
       model: "qwen2.5:7b",
       baseUrl: "http://127.0.0.1:11434/v1",
     });
-    expect(choices).toEqual([{
-      title: "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
-      values: ["detected_local", "openai", "anthropic", "openai_compatible"],
-      explicit: true,
-    }]);
+    expect(choices).toEqual([
+      {
+        title: "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
+        values: ["detected_local", "openai", "anthropic", "openai_compatible"],
+        explicit: true,
+      },
+      {
+        title: "MODEL FOR BOUNDARY DRAFTING",
+        values: ["qwen2.5:7b", "__exact_model_id__"],
+        initial: "qwen2.5:7b",
+      },
+    ]);
   });
 
   it("does not infer a drafting provider from ready credentials or a detected local model", async () => {
@@ -194,6 +256,38 @@ describe("boundary operator-plane CLI", () => {
         "Another local OpenAI-compatible endpoint",
       ],
     }]);
+  });
+
+  it("lists compatible hosted models in an Up/Down picker after the credential source is chosen", async () => {
+    const titles: string[] = [];
+    await expect(promptBoundaryMappingModel({
+      chooseOption: async (title) => {
+        titles.push(title);
+        return title === "CHOOSE A MODEL FOR BOUNDARY DRAFTING"
+          ? "openai"
+          : "gpt-5.6-terra";
+      },
+      promptText: async (label) => {
+        expect(label).toBe("API key environment variable [OPENAI_API_KEY]");
+        return "";
+      },
+    }, undefined, {
+      discoverModels: async () => [],
+      discoverHostedModels: async ({ provider, apiKey }) => {
+        expect(provider).toBe("openai");
+        expect(apiKey).toBe("session-openai-key");
+        return ["gpt-5.6-terra", "gpt-5.6-luna"];
+      },
+      env: { OPENAI_API_KEY: "session-openai-key" },
+    })).resolves.toEqual({
+      provider: "openai",
+      model: "gpt-5.6-terra",
+      apiKeyEnv: "OPENAI_API_KEY",
+    });
+    expect(titles).toEqual([
+      "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
+      "MODEL FOR BOUNDARY DRAFTING",
+    ]);
   });
 
   it("requires an explicit choice before reusing the configured OpenAI drafting model", async () => {
@@ -238,13 +332,31 @@ describe("boundary operator-plane CLI", () => {
       apiKey: "session-secret",
     };
     await expect(promptBoundaryMappingModel({
-      chooseOption: async () => "change_model",
-      promptText: async (label, options) => {
-        expect(label).toBe("Model for openai [gpt-5.6-luna]");
-        expect(options?.context).toContain("CHANGE BOUNDARY-DRAFTING MODEL");
-        return "gpt-4.1";
+      chooseOption: async (title) => title === "MODEL FOR BOUNDARY DRAFTING"
+        ? undefined
+        : "change_model",
+      promptText: async () => {
+        throw new Error("Discovered hosted models should use the picker.");
       },
-    }, current)).resolves.toEqual({
+    }, current, {
+      discoverHostedModels: async () => ["gpt-4.1"],
+    })).resolves.toBeUndefined();
+
+    let step = 0;
+    await expect(promptBoundaryMappingModel({
+      chooseOption: async () => {
+        step += 1;
+        return step === 1 ? "change_model" : "gpt-4.1";
+      },
+      promptText: async () => {
+        throw new Error("Discovered hosted models should use the picker.");
+      },
+    }, current, {
+      discoverHostedModels: async ({ apiKey }) => {
+        expect(apiKey).toBe("session-secret");
+        return ["gpt-4.1"];
+      },
+    })).resolves.toEqual({
       provider: "openai",
       model: "gpt-4.1",
       apiKey: "session-secret",
@@ -261,9 +373,9 @@ describe("boundary operator-plane CLI", () => {
     await expect(promptBoundaryMappingModel({
       chooseOption: async (title) => {
         titles.push(title);
-        return title === "MODEL FOR BOUNDARY DRAFTING"
-          ? "change_provider"
-          : "detected_local";
+        if (titles.length === 1) return "change_provider";
+        if (title === "CHOOSE A MODEL FOR BOUNDARY DRAFTING") return "detected_local";
+        return "qwen2.5:7b";
       },
       promptText: async () => {
         throw new Error("A detected replacement provider should not require text setup.");
@@ -279,6 +391,7 @@ describe("boundary operator-plane CLI", () => {
     expect(titles).toEqual([
       "MODEL FOR BOUNDARY DRAFTING",
       "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
+      "MODEL FOR BOUNDARY DRAFTING",
     ]);
   });
 
@@ -3592,6 +3705,317 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("reuses an exact reviewed Read revision and continues directly to model-guided Action drafting", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-action-only-reuse-"));
+    const inspection = actionTargetInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const modelReadWorkloadGenerator = vi.fn();
+    const operatorJob = "Keep the existing reviewed reads and add only a bounded maintenance-request proposal.";
+    const expandedActionIntent = `Propose inserting one bounded maintenance request. ${"Keep this as proposal-only reviewed Action detail. ".repeat(12)}`;
+    expect([...expandedActionIntent].length).toBeGreaterThan(500);
+    const modelBoundaryJobPlanner = vi.fn(async () => ({
+      state: "planned" as const,
+      read_mode: "reuse" as const,
+      action_mode: "create" as const,
+      action_intent: expandedActionIntent,
+      summary: "I will keep the reviewed Read Boundary unchanged and draft only the maintenance proposal.",
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const modelActionSuggestionGenerator = vi.fn(async (input) => {
+      const assessment = assessActionSuggestion({
+        schema_version: ACTION_SUGGESTION_VERSION,
+        intent: "Propose inserting one bounded maintenance request.",
+        operation: "insert",
+        resource: "public.maintenance_requests",
+        fields: ["request_kind", "estimated_hours"],
+        suggested_by: { kind: "model", provider: "openai", model: "gpt-test" },
+      }, input.options.resources);
+      return {
+        assessment,
+        provider: "openai" as const,
+        model: "gpt-test",
+        authority_granted: false as const,
+        source_database_changed: false as const,
+      };
+    });
+    const runDelegationActionReview = vi.fn(async () => ({
+      state: "closed" as const,
+      source_database_changed: false as const,
+      activated_actions: [],
+    }));
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) {
+          return operatorJob;
+        }
+        throw new Error(`Unexpected action-only text prompt: ${prompt}`);
+      },
+      chooseOption: async (title) => {
+        if (title === "START BOUNDARY DRAFTING") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
+        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        throw new Error(`Unexpected action-only choice: ${title}`);
+      },
+      confirm: async () => true,
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const generated = (await loadBoundaryReviewContext(root)).candidate;
+      const workloadSet = {
+        schema_version: READ_WORKLOAD_SET_VERSION,
+        name: "maintenance_request_review",
+        allowed: [{
+          id: "maintenance_request_fields",
+          description: "Review bounded maintenance request fields",
+          plan: {
+            kind: "rows",
+            resource: "public.maintenance_requests",
+            select: ["request_kind", "estimated_hours"],
+            limit: 10,
+          },
+        }],
+        forbidden: [],
+        source: { kind: "operator_exact_plan" as const },
+      };
+      const analysis = analyzeReadWorkloadSet({ workload: workloadSet, generatedBoundary: generated });
+      const stored = await storeReadWorkloadAnalysis({
+        projectRoot: root,
+        generatedBoundary: generated,
+        source: workloadSet.source,
+        analysis,
+      });
+      const preview = await prepareReadWorkloadCandidate({
+        projectRoot: root,
+        workload: stored,
+        actor: "test-reviewer",
+        reason: "Prepare exact reusable Read revision.",
+        schemaInspector: async () => inspection,
+      });
+      await commitReadWorkloadCandidate({ projectRoot: root, preview });
+      const reviewedContext = await loadBoundaryReviewContext(root);
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
+        draft: reviewedContext.draft,
+        candidate: reviewedContext.candidate,
+        confirmedDecisions: reviewedContext.candidate.unresolved_decisions,
+        previous: reviewedContext.progress,
+        revision: (reviewedContext.progress?.revision ?? 0) + 1,
+        actor: "test-reviewer",
+      }));
+      const digestBefore = explorationBoundaryCandidateDigest((await loadBoundaryReviewContext(root)).candidate);
+
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner,
+          modelReadWorkloadGenerator,
+          modelActionSuggestionGenerator,
+          actionProjectInspector: async () => inspection,
+          runDelegationActionReview,
+          modelAuthoringNarrator: async () => "The exact local Read revision remains unchanged.",
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(session),
+        },
+      )).resolves.toBe(0);
+
+      expect(modelBoundaryJobPlanner).toHaveBeenCalledWith(expect.objectContaining({
+        currentState: expect.objectContaining({
+          read: expect.objectContaining({
+            fully_reviewed: true,
+            exact_reusable_revision_count: 1,
+          }),
+        }),
+      }));
+      expect(modelReadWorkloadGenerator).not.toHaveBeenCalled();
+      expect(modelActionSuggestionGenerator).toHaveBeenCalledOnce();
+      expect(modelActionSuggestionGenerator).toHaveBeenCalledWith(expect.objectContaining({
+        intent: operatorJob,
+      }));
+      expect(runDelegationActionReview).toHaveBeenCalledWith(expect.objectContaining({
+        prepareOnly: true,
+        initialSuggestionId: expect.stringMatching(/^as_/u),
+      }));
+      const digestAfter = explorationBoundaryCandidateDigest((await loadBoundaryReviewContext(root)).candidate);
+      expect(digestAfter).toBe(digestBefore);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("offers one bounded retry when typed job planning fails before candidate mutation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-plan-retry-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const modelBoundaryJobPlanner = vi.fn()
+      .mockRejectedValueOnce(new Error("BOUNDARY_JOB_PLAN_INVALID: status must be planned or clarification."))
+      .mockResolvedValueOnce({
+        state: "planned" as const,
+        read_mode: "none" as const,
+        action_mode: "none" as const,
+        summary: "The current Boundary state already matches this job.",
+        correction_used: false,
+        authority_granted: false as const,
+        source_database_changed: false as const,
+      });
+    const recoveryOptions: string[] = [];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) return "Keep the current reviewed Boundary unchanged.";
+        throw new Error(`Unexpected planning-retry text prompt: ${prompt}`);
+      },
+      chooseOption: async (title, options) => {
+        if (title === "START BOUNDARY DRAFTING") return "model";
+        if (title === "BOUNDARY JOB PLANNING DID NOT COMPLETE") {
+          recoveryOptions.push(...options.map((option) => option.value));
+          return "retry";
+        }
+        throw new Error(`Unexpected planning-retry choice: ${title}`);
+      },
+      confirm: async () => true,
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const digestBefore = explorationBoundaryCandidateDigest((await loadBoundaryReviewContext(root)).candidate);
+
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner,
+          modelAuthoringNarrator: async () => "Tell me the Boundary job to prepare.",
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(session),
+        },
+      )).resolves.toBe(0);
+
+      expect(modelBoundaryJobPlanner).toHaveBeenCalledTimes(2);
+      expect(recoveryOptions).toEqual(expect.arrayContaining([
+        "runner",
+        "retry",
+        "change_model",
+        "details",
+        "back",
+      ]));
+      const digestAfter = explorationBoundaryCandidateDigest((await loadBoundaryReviewContext(root)).candidate);
+      expect(digestAfter).toBe(digestBefore);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("pauses safely after an invalid typed job plan without staging a mapping catalog", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-plan-pause-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const modelBoundaryJobPlanner = vi.fn(async () => {
+      throw new Error("BOUNDARY_JOB_PLAN_INVALID: status must be planned or clarification.");
+    });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) return "Review service activity and propose one bounded follow-up.";
+        throw new Error(`Unexpected planning-pause text prompt: ${prompt}`);
+      },
+      chooseOption: async (title) => {
+        if (title === "START BOUNDARY DRAFTING") return "model";
+        if (title === "BOUNDARY JOB PLANNING DID NOT COMPLETE") return "back";
+        throw new Error(`Unexpected planning-pause choice: ${title}`);
+      },
+      confirm: async () => true,
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const contextBefore = await loadBoundaryReviewContext(root);
+      const digestBefore = explorationBoundaryCandidateDigest(contextBefore.candidate);
+      const revisionBefore = contextBefore.progress?.revision;
+
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner,
+          modelAuthoringNarrator: async () => "Tell me the Boundary job to prepare.",
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(session),
+        },
+      )).resolves.toBe(0);
+
+      expect(modelBoundaryJobPlanner).toHaveBeenCalledOnce();
+      const contextAfter = await loadBoundaryReviewContext(root);
+      expect(explorationBoundaryCandidateDigest(contextAfter.candidate)).toBe(digestBefore);
+      expect(contextAfter.progress?.revision).toBe(revisionBefore);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("carries a model-selected action target into exact disabled read review before reusing the suggestion", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-action-target-"));
     const inspection = actionTargetInspection();
@@ -4029,9 +4453,12 @@ describe("boundary operator-plane CLI", () => {
         if (prompt.includes("Model for openai")) return "gpt-action-replacement";
         return "";
       },
-      chooseOption: async (title, _choices, options) => {
+      chooseOption: async (title, choices, options) => {
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") {
+          if (choices.some((choice) => choice.value === "gpt-action-replacement")) {
+            return "gpt-action-replacement";
+          }
           modelChooserCount += 1;
           return modelChooserCount === 1 ? "current" : "change_model";
         }
@@ -4064,6 +4491,9 @@ describe("boundary operator-plane CLI", () => {
           },
           modelReadWorkloadGenerator,
           modelActionSuggestionSetGenerator,
+          modelDiscovery: {
+            discoverHostedModels: async () => ["gpt-action-replacement"],
+          },
           actionProjectInspector: async () => inspection,
           runDelegationActionReview,
         },
@@ -4476,6 +4906,7 @@ describe("boundary operator-plane CLI", () => {
     });
     const attemptedModels: string[] = [];
     const egressPrompts: string[] = [];
+    let modelChooserCount = 0;
     const modelReadWorkloadGenerator = vi.fn(async (
       input: Parameters<typeof generateModelReadWorkload>[0],
     ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
@@ -4512,7 +4943,6 @@ describe("boundary operator-plane CLI", () => {
         source_database_changed: false,
       };
     });
-    let modelChooserCount = 0;
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => undefined,
       editFieldTiers: async () => undefined,
@@ -4521,9 +4951,12 @@ describe("boundary operator-plane CLI", () => {
         if (prompt.includes("Model for openai")) return "gpt-replacement";
         throw new Error(`Unexpected model-replacement prompt: ${prompt}`);
       },
-      chooseOption: async (title) => {
+      chooseOption: async (title, choices) => {
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") {
+          if (choices.some((choice) => choice.value === "gpt-replacement")) {
+            return "gpt-replacement";
+          }
           modelChooserCount += 1;
           return modelChooserCount === 1 ? "current" : "change_model";
         }
@@ -4556,6 +4989,9 @@ describe("boundary operator-plane CLI", () => {
             apiKey: "session-secret",
           },
           modelReadWorkloadGenerator,
+          modelDiscovery: {
+            discoverHostedModels: async () => ["gpt-replacement"],
+          },
         },
       )).resolves.toBe(0);
 

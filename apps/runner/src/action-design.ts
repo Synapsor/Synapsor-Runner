@@ -385,7 +385,7 @@ function assessApprovalPolicyProposal(
     }
   }
   for (const [index, limit] of (policy.shared_limits ?? []).entries()) {
-    if (limit.scope === "tenant_principal" && !resource?.principal_key) {
+    if (limit.scope === "tenant_principal" && !resource?.principal_key && !resource?.principal_rls_setting) {
       blockers.push("A tenant_principal approval limit requires direct reviewed principal scope on the action resource.");
     }
     if (limit.kind === "total") {
@@ -397,7 +397,7 @@ function assessApprovalPolicyProposal(
     evidence.push({
       decision: "shared_limit",
       value: `${limit.kind}:${limit.scope}:${index + 1}`,
-      state: limit.scope !== "tenant_principal" || Boolean(resource?.principal_key) ? "proven_candidate" : "unavailable",
+      state: limit.scope !== "tenant_principal" || Boolean(resource?.principal_key || resource?.principal_rls_setting) ? "proven_candidate" : "unavailable",
       reason: "The scope selects trusted runtime identity dimensions only; the model supplies no tenant, principal, or object value.",
     });
   }

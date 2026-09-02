@@ -6,6 +6,7 @@ import {
   actionBoundaryActivationStatusLine,
   actionBoundaryApprovalStatusLine,
   actionBoundaryLimitSummary,
+  actionSuggestionMenuLabel,
   actionActivationReviewLines,
   conciseConversationalActionActivationReviewLines,
   conversationalActionActivationReviewLines,
@@ -105,6 +106,22 @@ describe("Safe Action terminal control plane", () => {
       .toBe("Approval: HUMAN REVIEW");
     expect(actionBoundaryActivationStatusLine(undefined))
       .toBe("Action Boundary: status unavailable");
+  });
+
+  it("labels model suggestions by reviewed effect rather than an opaque record id", () => {
+    const assessment = assessActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: "Propose one bounded order credit update.",
+      operation: "update",
+      resource: "public.orders",
+      fields: ["credit_cents"],
+      suggested_by: { kind: "model", provider: "openai", model: "gpt-test" },
+    }, options.resources);
+
+    expect(actionSuggestionMenuLabel({ state: "reviewed", assessment }))
+      .toBe("UPDATE public.orders [REVIEWED]");
+    expect(actionSuggestionMenuLabel({ state: "reviewed", assessment }))
+      .not.toContain("as_");
   });
 
   it("auto-selects one conventional external model without reading or persisting its key", () => {
@@ -325,7 +342,7 @@ describe("Safe Action terminal control plane", () => {
     expect(rendered).toContain("credit_cents: 0 through 2500");
     expect(rendered).toContain("proposal status must be one of \"open\"");
     expect(rendered).toContain("At most 3 deterministic approvals");
-    expect(rendered).toContain("trusted tenant + principal in 1 day");
+    expect(rendered).toContain("trusted tenant + principal in 24 hours");
     expect(rendered).toContain("propose only; approval, apply, and writeback remain outside the agent");
     expect(rendered).not.toContain("+----------------");
   });
@@ -951,7 +968,7 @@ describe("Safe Action terminal control plane", () => {
     expect(choiceTitles).not.toContain("REVIEW PROPOSAL ACTION");
   });
 
-  it("stops an incompatible policy after one clarification and offers bounded recovery", async () => {
+  it("stops an incompatible policy after three bounded clarifications and offers recovery", async () => {
     const policyInterpreter = vi.fn(async () => ({
       state: "clarification" as const,
       question: "Which reviewed ticket field represents the refund amount?",
@@ -968,6 +985,7 @@ describe("Safe Action terminal control plane", () => {
         "yes",
         "Auto-approve refunds up to twenty-five dollars.",
         "Use an account credit.",
+        "The action still has no reviewed amount field.",
       ],
       confirms: [],
       onChoose: (title, choices) => choiceRecords.push({
@@ -998,7 +1016,7 @@ describe("Safe Action terminal control plane", () => {
       },
     );
 
-    expect(policyInterpreter).toHaveBeenCalledTimes(2);
+    expect(policyInterpreter).toHaveBeenCalledTimes(3);
     expect(choiceRecords).toContainEqual(expect.objectContaining({
       title: "POLICY DOES NOT FIT THIS ACTION",
       labels: expect.arrayContaining([
@@ -1009,6 +1027,87 @@ describe("Safe Action terminal control plane", () => {
       ]),
     }));
     expect(action).not.toHaveProperty("auto_approval");
+  });
+
+  it("does not treat blank Enter during a model policy clarification as acceptance or navigation", async () => {
+    let attempt = 0;
+    const policyInterpreter = vi.fn(async () => {
+      attempt += 1;
+      if (attempt === 1) {
+        return {
+          state: "clarification" as const,
+          question: "What exact reviewed credit ceiling should apply?",
+          model_message: "What exact reviewed credit ceiling should apply?",
+          correction_used: false,
+          authority_granted: false as const,
+          source_database_changed: false as const,
+        };
+      }
+      return {
+        state: "resolved" as const,
+        auto_approval: {
+          conditions: [{ field: "credit_cents", operator: "lte" as const, value: 500 }],
+          max_per_day: 3,
+        },
+        shared_limits: [],
+        correction_used: false,
+        authority_granted: false as const,
+        source_database_changed: false as const,
+      };
+    });
+    const promptRecords: Array<{ label: string; title?: string; context?: string[] }> = [];
+    const choiceTitles: string[] = [];
+    const prompter = scriptedPrompter({
+      choices: [],
+      texts: [
+        "From zero through twenty-five dollars.",
+        "yes",
+        "Use a bounded policy.",
+        "",
+        "Five dollars.",
+        "yes",
+      ],
+      confirms: [],
+      onText: (label, options) => promptRecords.push({
+        label,
+        ...(options?.title ? { title: options.title } : {}),
+        ...(options?.context ? { context: options.context } : {}),
+      }),
+      onChoose: (title) => choiceTitles.push(title),
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Let support update an order credit_cents within a reviewed limit.",
+      [],
+      {
+        modelInterview: {
+          session: { provider: "openai", model: "gpt-5.6-luna" },
+          egressAcknowledged: true,
+          decisionInterpreter: async () => ({
+            state: "resolved",
+            decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } } },
+            summary: "credit_cents: 0 through 2500",
+            correction_used: false,
+            authority_granted: false,
+            source_database_changed: false,
+          }),
+          policyInterpreter,
+        },
+      },
+    );
+
+    expect(policyInterpreter).toHaveBeenCalledTimes(2);
+    expect(choiceTitles).not.toContain("POLICY DOES NOT FIT THIS ACTION");
+    expect(promptRecords.filter((record) => record.title === "REFINE AUTO-APPROVAL POLICY")).toHaveLength(2);
+    expect(promptRecords.some((record) => record.context?.some((line) =>
+      line.includes("Blank Enter did not accept, skip, or change")))).toBe(true);
+    expect(action).toMatchObject({
+      auto_approval: {
+        conditions: [{ field: "credit_cents", operator: "lte", value: 500 }],
+      },
+    });
   });
 
   it("resets the bounded clarification count after a policy revision resolves", async () => {

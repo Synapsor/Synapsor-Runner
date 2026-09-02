@@ -1942,6 +1942,8 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
       : template.source === "model_interview"
         ? "Natural-language policy interpreted by the selected model and validated by Runner"
         : "Model-proposed from structural metadata and validated by Runner";
+    const awaitingExactConfirmation = reviewingExactPolicy;
+    const displayedModelMessage = pendingModelMessage;
     const answer = pendingAnswer ?? await input.prompter.text(prompt, {
       ...(reviewingExactPolicy ? { defaultValue: "yes" } : {}),
       title: reviewingExactPolicy ? "CONFIRM AUTO-APPROVAL POLICY" : "REFINE AUTO-APPROVAL POLICY",
@@ -1973,6 +1975,14 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
     pendingModelMessage = undefined;
     notice = [];
     if (answer === undefined) return "back";
+    if (!answer.trim() && !awaitingExactConfirmation) {
+      reviewingExactPolicy = false;
+      pendingModelMessage = displayedModelMessage;
+      notice = [
+        "The model's clarification still needs an answer. Blank Enter did not accept, skip, or change this Action draft.",
+      ];
+      continue;
+    }
     const command = conversationalPolicyCommand(answer);
     if (command === "accept") return template;
     if (command === "human") return "human";
@@ -2029,7 +2039,7 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
     }
     if (resolution.state === "clarification") {
       clarificationCount += 1;
-      if (clarificationCount > 1) {
+      if (clarificationCount > 2) {
         const recovery = await input.prompter.choose("POLICY DOES NOT FIT THIS ACTION", [
           {
             value: "restate",
@@ -4292,7 +4302,7 @@ function actionHomeChoices(
     })),
     ...suggestions.map((suggestion) => ({
       value: `suggestion:${suggestion.suggestion_id}`,
-      label: `${suggestion.suggestion_id} [${suggestion.state.toUpperCase()}]`,
+      label: actionSuggestionMenuLabel(suggestion),
       detail: suggestion.assessment.suggestion.intent,
     })),
     {
@@ -4325,6 +4335,16 @@ function actionHomeChoices(
     { value: "proposals", label: "Proposal inbox and lifecycle", detail: "Review proposals, approvals, apply posture, receipts, replay, and evidence." },
     { value: "quit", label: "Quit" },
   ];
+}
+
+export function actionSuggestionMenuLabel(
+  suggestion: Pick<ActionSuggestionView, "state" | "assessment">,
+): string {
+  const proposed = suggestion.assessment.suggestion;
+  const effect = [proposed.operation?.toUpperCase(), proposed.resource]
+    .filter((value): value is string => Boolean(value))
+    .join(" ") || "Model proposal";
+  return `${effect} [${suggestion.state.toUpperCase()}]`;
 }
 
 function actionBoundaryStateLabel(status: Awaited<ReturnType<typeof guidedActionStatus>>): string {
@@ -4665,6 +4685,7 @@ export function actionBoundaryLimitSummary(limit: ActionBoundarySharedLimitV1): 
 }
 
 function formatLimitWindow(seconds: number): string {
+  if (seconds === 86_400) return "24 hours";
   if (seconds % 86_400 === 0) return `${seconds / 86_400} day${seconds === 86_400 ? "" : "s"}`;
   if (seconds % 3_600 === 0) return `${seconds / 3_600} hour${seconds === 3_600 ? "" : "s"}`;
   return `${seconds} seconds`;

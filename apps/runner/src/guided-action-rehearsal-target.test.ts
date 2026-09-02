@@ -104,6 +104,24 @@ describe("guided Action rehearsal target resolution", () => {
     })).resolves.toMatchObject({ state: "unavailable", reason: "scope_cardinality_changed" });
   });
 
+  it("replaces a trusted-context database type error with an actionable local diagnostic", async () => {
+    const readRow: DbRowReader = async () => {
+      throw new Error('invalid input syntax for type uuid: "northstar-mobile"');
+    };
+
+    await expect(resolveGuidedActionRehearsalTargetWithRuntime({
+      config,
+      capability,
+      inspection: inspection(table({
+        unique_constraints: [{ name: "billing_preferences_account_key", columns: ["account_id"] }],
+      })),
+      context,
+      readRow,
+    })).rejects.toThrow(
+      /GUIDED_ACTION_TRUSTED_SCOPE_VALUE_INVALID: the configured trusted tenant or principal value does not match the database type/,
+    );
+  });
+
   it("returns a bounded local picker for non-unique scoped resources without displaying identities", async () => {
     const readRow = vi.fn<DbRowReader>(async (input) => {
       expect(input.capability.operation).toMatchObject({ cardinality: "set", max_rows: 3 });

@@ -122,15 +122,26 @@ export async function resolveGuidedActionRehearsalTargetWithRuntime(input: {
   const pickerLimit = boundedPickerLimit(input.localPickerLimit ?? DEFAULT_LOCAL_PICKER_LIMIT);
   const labelColumns = localPickerLabelColumns(input.capability);
   const probe = scopedProbeCapability(input.capability, labelColumns, proof ? 2 : pickerLimit + 1);
-  const result = await input.readRow({
-    sourceName: input.capability.source,
-    source,
-    capability: probe,
-    args: {},
-    context: input.context,
-    env: input.env ?? process.env,
-    transaction_mode: "read_only",
-  });
+  let result: Awaited<ReturnType<DbRowReader>>;
+  try {
+    result = await input.readRow({
+      sourceName: input.capability.source,
+      source,
+      capability: probe,
+      args: {},
+      context: input.context,
+      env: input.env ?? process.env,
+      transaction_mode: "read_only",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/invalid input syntax for type|incorrect .* value|truncated incorrect/i.test(message)) {
+      throw new Error(
+        "GUIDED_ACTION_TRUSTED_SCOPE_VALUE_INVALID: the configured trusted tenant or principal value does not match the database type required by this action. Check the trusted-context environment variables; no rehearsal or source write ran.",
+      );
+    }
+    throw error;
+  }
   const rows = result.rows ?? (result.rowCount ? [result.row] : []);
   if (proof) {
     if (rows.length === 1) {

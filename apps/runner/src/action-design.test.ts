@@ -71,4 +71,26 @@ describe("ActionSuggestion authority boundary", () => {
     ]));
     expect(result.authority_granted).toBe(false);
   });
+
+  it("accepts a tenant-principal breaker backed by reviewed PostgreSQL RLS principal scope", () => {
+    const result = assessActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: "Propose closing one order with a per-user rolling limit.",
+      operation: "update",
+      resource: "public.orders",
+      fields: ["status"],
+      approval_policy_proposal: {
+        mode: "deterministic",
+        conditions: [{ field: "status", operator: "in", values: ["closed"] }],
+        max_per_day: 10,
+        shared_limits: [{ kind: "count", scope: "tenant_principal", maximum: 3, window_seconds: 86_400 }],
+      },
+      suggested_by: { kind: "model", provider: "openai", model: "gpt-5.6-terra" },
+    }, [{ ...resource, principal_rls_setting: "synapsor.principal" }]);
+
+    expect(result.status).toBe("suggested");
+    expect(result.structural_evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ decision: "shared_limit", state: "proven_candidate" }),
+    ]));
+  });
 });

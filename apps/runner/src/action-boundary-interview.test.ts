@@ -573,6 +573,9 @@ describe("conversational Action Boundary interview", () => {
     expect(request).toContain("routine");
     expect(request).toContain("elevated");
     expect(request).toContain("tenant_principal");
+    expect(request).toContain("Runner's separate proposal ledger");
+    expect(request).toContain("model_selects_approval_history_fields");
+    expect(request).toContain("control-plane capabilities, not missing application fields");
     expect(request).not.toContain("memory-key");
     expect(request).not.toContain("acme");
   });
@@ -688,6 +691,61 @@ describe("conversational Action Boundary interview", () => {
     expect(requestJson).toHaveBeenCalledTimes(2);
     expect(requests[1]).toContain("explicitly stated a window of 15 days");
     expect(requests[1]).toContain("15 days");
+  });
+
+  it("keeps an explicit trusted-account limit separate from a target-row limit", async () => {
+    let attempt = 0;
+    const requests: string[] = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(JSON.stringify(request.body));
+      attempt += 1;
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "function_call",
+            call_id: `call_action_account_scope_${attempt}`,
+            name: "runner__interpret_action_approval_policy",
+            arguments: JSON.stringify({
+              status: "resolved",
+              conditions: [
+                { field: "estimated_minutes", operator: "lte", value: 30 },
+                { field: "priority", operator: "in", values: ["routine", "elevated"] },
+              ],
+              max_per_day: 10,
+              shared_limits: [{
+                kind: "count",
+                scope: attempt === 1 ? "tenant_object" : "tenant",
+                maximum: 3,
+                window_seconds: 86_400,
+              }],
+            }),
+          }],
+        },
+      };
+    });
+
+    const result = await interpretActionBoundaryPolicy({
+      session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      action,
+      resource: followUps,
+      answer: "Auto-approve at most three per trusted account in a rolling 24-hour window, not per target row.",
+      egressAcknowledged: true,
+    });
+
+    expect(result).toMatchObject({
+      state: "resolved",
+      correction_used: true,
+      shared_limits: [{
+        scope: "tenant",
+        maximum: 3,
+        window_seconds: 86_400,
+      }],
+    });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(requests[0]).toContain("One ceiling for each Runner-injected trusted tenant, organization, or account");
+    expect(requests[0]).toContain("Use only when the operator explicitly says target row");
+    expect(requests[1]).toContain("shared_limits must include trusted scope tenant");
   });
 
   it("requires explicit egress acknowledgement before sending an operator answer", async () => {

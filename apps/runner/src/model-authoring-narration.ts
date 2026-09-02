@@ -86,6 +86,7 @@ export async function narrateValidatedAuthoringStep(input: {
       : "State the next useful operator choice only when the validated record names one.",
     "Do not mention internal hashes, SQL, credentials, hidden fields, or claim that authority, approval, apply, or source writes occurred.",
     "Do not imply that previously validated work disappeared merely because the current record focuses on one authoring step.",
+    "Do not claim that the operator supplied no decision or made no prior decision. Discuss only the exact pending gate; earlier confirmed draft decisions remain in the conversation history.",
     "Approval and proposal counts inside time windows are upper circuit-breaker ceilings. Describe them as 'at most' or 'up to'; never say authority begins 'after' that count.",
     "If the operator's rule cannot fit the current action target, say so once and name the recovery choices in the validated record; never ask them to map a missing concept onto an unrelated field.",
     ...(opening
@@ -149,6 +150,9 @@ function openingNarrationIsSafe(answer: string, nextQuestion?: string): boolean 
 function narrationContradictsValidatedRecord(answer: string, facts: string[]): boolean {
   const normalizedAnswer = answer.toLowerCase().replace(/\s+/gu, " ");
   const record = facts.join(" ").toLowerCase().replace(/\s+/gu, " ");
+  const erasesOperatorHistory = /\b(?:no (?:prior |previous )?operator decision (?:was |has been )?(?:supplied|made|recorded)|the operator (?:has|had) not (?:supplied|made|recorded|confirmed|accepted) (?:a|any) decision)\b/u
+    .test(normalizedAnswer);
+  if (erasesOperatorHistory) return true;
   const scopeResolved = /(?:trusted (?:tenant\/principal )?scope|target row identity)[^.]{0,120}(?:already resolved|are separate runner-validated controls|remain unchanged|passed runner validation)/u.test(record)
     || /scope[^.]{0,80}(?:is|was|has been) (?:resolved|validated)/u.test(record);
   const claimsMissingScope = /(?:scope|tenant|principal|row identity)[^.]{0,80}(?:incomplete|unresolved|missing|not (?:yet )?(?:resolved|validated)|still (?:needs|requires))/u.test(normalizedAnswer);

@@ -272,6 +272,47 @@ describe("model-assisted Boundary authoring conversation", () => {
     expect(modelAuthoringHistory(conversation)).toEqual([]);
   });
 
+  it("drops narration that falsely erases an operator's earlier confirmations", async () => {
+    const conversation = createModelAuthoringConversation();
+    rememberModelAuthoringTurn(
+      conversation,
+      "Use this exact disabled deterministic policy.",
+      "The disabled policy is confirmed and remains inactive.",
+    );
+    const requestJson = vi.fn(async () => ({
+      status: 200,
+      body: {
+        output: [{
+          type: "message",
+          role: "assistant",
+          content: [{
+            type: "output_text",
+            text: "No operator decision was supplied beyond requesting an explanation. Would you like to review the Read Boundary now?",
+          }],
+        }],
+      },
+    }));
+
+    await expect(narrateValidatedAuthoringStep({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-terra",
+        apiKey: "memory-key",
+        dependencies: { requestJson },
+        conversation,
+      },
+      operatorMessage: "Explain the next unchanged permission.",
+      validatedFacts: [
+        "The disabled deterministic policy was confirmed and saved.",
+        "Read and Action authority remain separate and disabled.",
+      ],
+      nextQuestion: "Would you like to review the Read Boundary now?",
+      egressAcknowledged: true,
+      responseStyle: "permission",
+    })).resolves.toBeUndefined();
+    expect(modelAuthoringHistory(conversation)).toHaveLength(1);
+  });
+
   it("drops narration that invents principal isolation for a tenant-only record", async () => {
     const conversation = createModelAuthoringConversation();
     const requestJson = vi.fn(async () => ({

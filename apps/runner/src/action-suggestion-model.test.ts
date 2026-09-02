@@ -584,6 +584,63 @@ describe("model-assisted Safe Action suggestions", () => {
     });
   });
 
+  it("corrects a target-row breaker when the operator asked for a trusted-account breaker", async () => {
+    let attempt = 0;
+    const requests: string[] = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(JSON.stringify(request.body));
+      attempt += 1;
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "function_call",
+            call_id: `call_action_scope_${attempt}`,
+            name: "runner__suggest_safe_actions",
+            arguments: JSON.stringify({
+              suggestions: [{
+                intent: "Propose closing an order with a bounded trusted-account approval policy.",
+                operation: "update",
+                resource: "public.orders",
+                fields: ["status"],
+                approval_policy_proposal: {
+                  mode: "deterministic",
+                  conditions: [{ field: "status", operator: "in", values: ["closed"] }],
+                  max_per_day: 10,
+                  shared_limits: [{
+                    kind: "count",
+                    scope: attempt === 1 ? "tenant_object" : "tenant",
+                    maximum: 3,
+                    window_seconds: 86_400,
+                  }],
+                },
+              }],
+            }),
+          }],
+        },
+      };
+    });
+
+    const result = await generateModelActionSuggestionSet({
+      jobIntent: "Propose closing orders, with at most three approvals per trusted account in a rolling 24-hour window, not per target row.",
+      provider: "openai",
+      model: "gpt-5.6-terra",
+      options: actionOptions(),
+      env: { OPENAI_API_KEY: "provider-test-key" },
+      egressAcknowledged: true,
+      dependencies: { requestJson },
+      deferNarration: true,
+    });
+
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(result.assessments[0]?.suggestion.approval_policy_proposal?.shared_limits).toEqual([
+      expect.objectContaining({ scope: "tenant", maximum: 3, window_seconds: 86_400 }),
+    ]);
+    expect(requests[0]).toContain("Never use tenant_object for a per-account rule");
+    expect(requests[0]).toContain("Each Runner-injected trusted tenant, organization, or account");
+    expect(requests[1]).toContain("shared_limits must include tenant");
+  });
+
   it("fails closed after one bounded retry when a provider ignores the required structured suggestion tool", async () => {
     const requestJson = vi.fn(async () => ({
       status: 200,

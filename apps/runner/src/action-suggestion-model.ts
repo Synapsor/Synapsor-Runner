@@ -20,6 +20,7 @@ import {
   type ModelAuthoringConversation,
 } from "./model-authoring-conversation.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
+import { explicitTrustedPolicyScope } from "./action-policy-scope.js";
 
 const SUBMIT_SUGGESTION_TOOL = "runner.suggest_safe_action";
 const SUBMIT_SUGGESTION_SET_TOOL = "runner.suggest_safe_actions";
@@ -113,7 +114,7 @@ export async function generateModelActionSuggestion(input: {
           error_code: "ACTION_SUGGESTION_CALL_REFUSED",
         };
       }
-      assessment = assessActionSuggestion({
+      assessment = enforceOperatorPolicyScope(assessActionSuggestion({
         schema_version: ACTION_SUGGESTION_VERSION,
         ...args,
         suggested_by: {
@@ -121,7 +122,7 @@ export async function generateModelActionSuggestion(input: {
           provider: input.provider,
           model: input.model,
         },
-      }, input.options.resources);
+      }, input.options.resources), intent);
       return {
         ok: assessment.status === "suggested",
         value: {
@@ -141,6 +142,7 @@ export async function generateModelActionSuggestion(input: {
     "Call runner.suggest_safe_action exactly once. Copy only exact resource and field ids from the structural candidate catalog.",
     "Select the resource whose exact id, label, or description matches the requested changed object. Never substitute a related resource merely because it is available.",
     "You may optionally propose a deterministic approval policy for INSERT or UPDATE using only the fixed policy grammar in the tool schema.",
+    "Scope meanings are exact: tenant is the Runner-injected trusted tenant/account; tenant_principal is that tenant/account plus the trusted principal; tenant_object is that tenant/account plus one exact target row. Never use tenant_object for a per-account rule.",
     "A policy proposal is only operator-review input. Never propose auto-approval for DELETE, identity values, execution, writeback, credentials, SQL, activation, approval decisions, or apply authority.",
     `Structural candidate catalog: ${serializedCatalog}`,
   ].join("\n");
@@ -291,8 +293,12 @@ export async function generateModelActionSuggestionSet(input: {
             model: input.model,
           },
         }, input.options.resources));
-        submissionIssues = suggestionSetIssues(current);
-        assessments = current;
+        const scoped = current.map((assessment) => enforceOperatorPolicyScope(
+          assessment,
+          current.length === 1 ? jobIntent : assessment.suggestion.intent,
+        ));
+        submissionIssues = suggestionSetIssues(scoped);
+        assessments = scoped;
         return {
           ok: submissionIssues.length === 0,
           value: {
@@ -318,6 +324,7 @@ export async function generateModelActionSuggestionSet(input: {
     "Call runner.suggest_safe_actions exactly once with 1 through 8 suggestions. Use one suggestion per distinct changed object or operation; do not combine unrelated effects and do not duplicate effects.",
     "Do not invent a write for read-only analytics clauses. Copy only exact resource and field ids from the structural candidate catalog.",
     "Each INSERT or UPDATE may optionally include one deterministic approval-policy proposal using only the fixed grammar. DELETE must never include auto-approval.",
+    "Scope meanings are exact: tenant is the Runner-injected trusted tenant/account; tenant_principal is that tenant/account plus the trusted principal; tenant_object is that tenant/account plus one exact target row. Never use tenant_object for a per-account rule.",
     "Every item is untrusted review input. Never include identity values, execution, writeback, credentials, SQL, activation, approval decisions, or apply authority.",
     `Structural candidate catalog: ${serializedCatalog}`,
   ].join("\n");
@@ -518,6 +525,13 @@ function suggestionCatalog(options: GuidedActionOptions) {
       ...(resource.principal_key || resource.principal_rls_setting ? ["tenant_principal"] : []),
       "tenant_object",
     ],
+    trusted_limit_scope_semantics: {
+      tenant: "Each Runner-injected trusted tenant, organization, or account; not a target row.",
+      ...(resource.principal_key || resource.principal_rls_setting
+        ? { tenant_principal: "Each Runner-injected trusted tenant/account plus trusted principal, user, customer, agent, or operator." }
+        : {}),
+      tenant_object: "Each Runner-injected trusted tenant/account plus one exact target row. Use only when the operator explicitly says target row, record, or object.",
+    },
   }));
   const core = {
     schema_version: "synapsor.action-suggestion-catalog.v1",
@@ -651,6 +665,26 @@ function suggestionSetRefusal(message: string): Awaited<ReturnType<AskToolGatewa
       source_database_changed: false,
     },
     error_code: "ACTION_SUGGESTION_SET_BLOCKED",
+  };
+}
+
+function enforceOperatorPolicyScope(
+  assessment: ActionSuggestionAssessment,
+  operatorIntent: string,
+): ActionSuggestionAssessment {
+  const required = explicitTrustedPolicyScope(operatorIntent);
+  const policy = assessment.suggestion.approval_policy_proposal;
+  if (!required || !policy || policy.shared_limits?.some((limit) => limit.scope === required.scope)) {
+    return assessment;
+  }
+  const actual = [...new Set((policy.shared_limits ?? []).map((limit) => limit.scope))];
+  return {
+    ...assessment,
+    status: "blocked",
+    blockers: [
+      ...assessment.blockers,
+      `The operator explicitly scoped the rolling limit ${required.phrase}. shared_limits must include ${required.scope}; ${actual.length ? `the submitted scope was ${actual.join(", ")}` : "the submitted policy omitted that trusted scope"}.`,
+    ],
   };
 }
 
