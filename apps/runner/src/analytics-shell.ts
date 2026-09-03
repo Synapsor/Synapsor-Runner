@@ -949,8 +949,6 @@ function shimmerTransientStatusLabel(value: string, elapsedMs: number): string {
   }).join("") + "\u001b[0m";
 }
 
-const CONVERSATION_COMPOSER_MAX_WIDTH = 116;
-
 type ConversationComposerFrame = {
   lines: string[];
   inputLines: string[];
@@ -975,10 +973,7 @@ export function renderConversationComposerFrame(input: {
   columns?: number;
   menu?: string;
 }): ConversationComposerFrame {
-  const contentWidth = Math.min(
-    CONVERSATION_COMPOSER_MAX_WIDTH,
-    terminalContentWidth(input.columns),
-  );
+  const contentWidth = terminalContentWidth(input.columns);
   const prompt = input.prompt;
   const promptWidth = Math.min(contentWidth - 2, visibleTerminalLength(prompt));
   const answerWidth = Math.max(1, contentWidth - promptWidth - 1);

@@ -323,8 +323,9 @@ export function createBoundaryAuthoringChat(input: {
   let lastProviderStatusCharacters = 0;
   let latestDetails: { title: string; lines: string[] } | undefined;
   let permissionGuide: BoundaryAuthoringPermissionGuide | undefined;
+  let lastTranscriptTurn: BoundaryAuthoringSpeaker | "operator" | "checkpoint" | undefined;
   const transcriptIndent = io.isTerminal?.() === true ? "  " : "";
-  const transcriptWidth = () => Math.min(116, Math.max(24, io.columns()));
+  const transcriptWidth = () => Math.max(24, io.columns());
 
   const role = (speaker: BoundaryAuthoringSpeaker): string => speaker === "model"
     ? theme.scope("model>")
@@ -386,8 +387,9 @@ export function createBoundaryAuthoringChat(input: {
     line: string,
     index: number,
     firstStyle?: (value: string) => string,
+    continueTurn = false,
   ): string[] => {
-    const firstPrefix = index === 0
+    const firstPrefix = index === 0 && !continueTurn
       ? `${transcriptIndent}${role(speaker)}`
       : `${transcriptIndent}${" ".repeat(speaker === "model" ? 6 : 7)}`;
     const prefix = `${firstPrefix} `;
@@ -409,6 +411,7 @@ export function createBoundaryAuthoringChat(input: {
     lines: string[] = [],
     tone: BoundaryAuthoringTone = "success",
   ) => {
+    lastTranscriptTurn = "checkpoint";
     const marker = tone === "success" ? "✓" : tone === "warning" ? "!" : tone === "danger" ? "×" : "·";
     const style = tone === "success"
       ? theme.success
@@ -431,8 +434,10 @@ export function createBoundaryAuthoringChat(input: {
     firstStyle?: (value: string) => string,
   ) => {
     if (!lines.length) return;
+    const continueTurn = speaker === "model" && lastTranscriptTurn === "model";
     writeTranscript(`${lines.flatMap((line, index) =>
-      roleLines(speaker, line, index, firstStyle)).join("\n")}\n`);
+      roleLines(speaker, line, index, firstStyle, continueTurn)).join("\n")}\n`);
+    lastTranscriptTurn = speaker;
   };
   const runner = (
     title: string,
@@ -463,6 +468,7 @@ export function createBoundaryAuthoringChat(input: {
     };
   };
   const showDetails = () => {
+    lastTranscriptTurn = "checkpoint";
     if (!latestDetails) {
       runner("No Runner details yet", [
         "Details appear after Runner validates a model draft or prepares an exact authority decision.",
@@ -495,6 +501,7 @@ export function createBoundaryAuthoringChat(input: {
     writeTranscript(rendered.join("\n"));
   };
   const showDiff = () => {
+    lastTranscriptTurn = "checkpoint";
     if (!latestDetails) {
       runner("No reviewed change yet", [
         "A diff appears after Runner validates a draft or prepares an exact authority decision.",
@@ -517,6 +524,7 @@ export function createBoundaryAuthoringChat(input: {
     writeTranscript(rendered.join("\n"));
   };
   const showHelp = () => {
+    lastTranscriptTurn = "checkpoint";
     const rendered = [
       "",
       theme.title("BOUNDARY AUTHORING COMMANDS"),
@@ -545,8 +553,9 @@ export function createBoundaryAuthoringChat(input: {
       writeRole(speaker, lines, firstStyle);
       return;
     }
+    const continueTurn = speaker === "model" && lastTranscriptTurn === "model";
     for (const [lineIndex, line] of lines.entries()) {
-      const physicalLines = roleLines(speaker, line, lineIndex, firstStyle);
+      const physicalLines = roleLines(speaker, line, lineIndex, firstStyle, continueTurn);
       for (const [physicalIndex, physicalLine] of physicalLines.entries()) {
         const chunks = terminalOutputChunks(physicalLine);
         for (const [chunkIndex, chunk] of chunks.entries()) {
@@ -559,6 +568,7 @@ export function createBoundaryAuthoringChat(input: {
         writeTranscript("\n");
       }
     }
+    lastTranscriptTurn = speaker;
   };
   const streamRunner = async (
     title: string,
@@ -623,6 +633,7 @@ export function createBoundaryAuthoringChat(input: {
         : io.readWithEscape
           ? await io.readWithEscape(prompt)
           : await io.read(prompt);
+      lastTranscriptTurn = "operator";
       let command = answer?.trim().toLowerCase();
       if (command?.startsWith("/") && !AUTHORING_SLASH_SUGGESTIONS.some((item) => item.completion === command)) {
         const matches = AUTHORING_SLASH_SUGGESTIONS.flatMap((item) =>
@@ -690,9 +701,13 @@ export function createBoundaryAuthoringChat(input: {
     if (selected !== undefined) {
       const selectedChoice = available.find((option) => option.value === selected);
       io.write(`${theme.focus("you>")} ${theme.value(safeTerminalText(choiceSummary(selectedChoice)))}\n`);
+      lastTranscriptTurn = "operator";
       return selected;
     }
-    if (io.choose) return undefined;
+    if (io.choose) {
+      lastTranscriptTurn = "operator";
+      return undefined;
+    }
     runner(choice.title, [choice.message, ...available.map((option, index) =>
       `${index + 1}. ${option.label}${option.detail ? ` - ${option.detail}` : ""}`)]);
     const answer = await read(`Choose 1-${available.length}, or press Esc to go back.`);

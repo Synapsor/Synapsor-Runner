@@ -54,7 +54,7 @@ function memoryIo(input: {
 }
 
 describe("Boundary authoring chat", () => {
-  it("caps wide transcripts and keeps continuation text aligned below the role", () => {
+  it("uses the available width in a wide terminal instead of stopping at column 116", () => {
     const memory = memoryIo({ columns: 220 });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
 
@@ -63,8 +63,32 @@ describe("Boundary authoring chat", () => {
     ]);
 
     const lines = memory.writes.join("").split("\n").filter(Boolean);
-    expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(116);
-    expect(lines.some((line) => /^ {9}\S/u.test(line))).toBe(true);
+    expect(Math.max(...lines.map((line) => line.length))).toBeGreaterThan(116);
+    expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(220);
+    expect(lines.filter((line) => line.includes("validated telecom draft"))).toHaveLength(1);
+  });
+
+  it("renders adjacent provider fragments as one model turn until the operator responds", async () => {
+    const memory = memoryIo({ reads: ["Use version."] });
+    const chat = createBoundaryAuthoringChat({
+      io: memory.io,
+      color: false,
+      streamLineDelayMs: 1,
+    });
+
+    await chat.streamModel(["I validated the Read draft."]);
+    await chat.streamModel(["One stale-row safeguard remains."]);
+    await chat.actionPrompter.text("Which reviewed field detects stale proposals?", {
+      conversation: { modelLines: ["Which reviewed field detects stale proposals?"] },
+    });
+    await chat.streamModel(["I interpreted that as version."]);
+
+    const transcript = memory.writes.join("");
+    expect(transcript.match(/model>/gu)).toHaveLength(2);
+    expect(transcript).toContain("model> I validated the Read draft.");
+    expect(transcript).toContain("       One stale-row safeguard remains.");
+    expect(transcript).toContain("       Which reviewed field detects stale proposals?");
+    expect(transcript).toContain("model> I interpreted that as version.");
   });
 
   it("keeps operator, model, and Runner roles distinct in one transcript", async () => {

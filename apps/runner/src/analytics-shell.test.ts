@@ -32,7 +32,7 @@ import type { BoundaryCatalogModel } from "./boundary-catalog.js";
 const digest = `sha256:${"a".repeat(64)}` as const;
 
 describe("Synapsor Analytics shell", () => {
-  it("keeps long conversation input aligned under the prompt at a readable width", () => {
+  it("uses the available width for conversation input while preserving prompt alignment", () => {
     const value = "Help an authenticated telecom customer understand their own account, subscription, service line, recent usage, invoices, payments, preferences, and support cases without exposing another customer's data.";
     const frame = renderConversationComposerFrame({
       prompt: "you> ",
@@ -41,13 +41,11 @@ describe("Synapsor Analytics shell", () => {
       columns: 220,
     });
 
-    expect(frame.inputLines.length).toBeGreaterThan(1);
+    expect(frame.inputLines).toHaveLength(1);
     expect(frame.inputLines[0]).toMatch(/^  you> /u);
-    for (const continuation of frame.inputLines.slice(1)) {
-      expect(continuation).toMatch(/^ {7}\S?/u);
-    }
-    expect(Math.max(...frame.inputLines.map((line) => stripAnsi(line).length))).toBeLessThanOrEqual(118);
-    expect(frame.cursorColumn).toBeLessThanOrEqual(117);
+    expect(Math.max(...frame.inputLines.map((line) => stripAnsi(line).length))).toBeGreaterThan(118);
+    expect(Math.max(...frame.inputLines.map((line) => stripAnsi(line).length))).toBeLessThanOrEqual(218);
+    expect(frame.cursorColumn).toBeLessThanOrEqual(217);
   });
 
   it("wraps pasted conversation text at words without losing cursor placement", () => {
