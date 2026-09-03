@@ -79,7 +79,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Leave this blank to reuse the change-oriented job above as one proposal intent");
     expect(html).toContain("Explain or simulate deterministic approval");
     expect(html).toContain("Every model-supplied change field receives an explicit reviewed condition");
-    expect(html).toContain("Maximum auto-approved proposals per day");
+    expect(html).toContain("Policy fallback:</strong>");
+    expect(html).toContain("approval policy / UTC calendar day");
     expect(script).toContain('operator:"gte"');
     expect(script).toContain('operator:"lte"');
     expect(script).toContain('operator:"in"');
@@ -128,6 +129,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(script).toContain("openFocusedActivationReview");
     expect(script).toContain('action_boundary_job_intent:pending.job_intent');
     expect(script).toContain('post("/api/actions/guided/policy/simulate"');
+    expect(script).toContain('getJson("/api/actions/guided/draft?capability="+encodeURIComponent(capability))');
+    expect(script).toContain("showGuidedActionDraft(payload)");
     expect(html).toContain("No source query runs");
     expect(html).toContain("<span>Explore</span>");
     expect(script).toContain(':"delegation";');
@@ -146,10 +149,13 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(script).toContain("action.auto_approval=structuredClone(template.auto_approval)");
     expect(script).toContain("Binding trusted-scope rolling limits to the disabled Action Boundary");
     expect(script).toContain('post("/api/actions/guided/boundary/limits"');
-    expect(script).toContain("any mismatch falls back to human review");
+    expect(script).toContain("Human review when exhausted or uncertain");
+    expect(script).toContain("Outside the hard proposal envelope:");
+    expect(script).toContain("Inside the envelope but outside deterministic approval:");
+    expect(script).toContain('"Shared limit "+limit.id');
     expect(script).toContain("structural:true");
     expect(script).toContain("Identity-free structural rehearsal");
-    expect(script).toContain("No runtime tenant or principal resolved");
+    expect(script).toContain("without resolving a runtime identity");
     expect(script).not.toContain("One rehearsal value needed");
     expect(script).not.toContain("rehearseQuickAction(draftPayload,lookupArgument)");
     expect(script).toContain("Structural rehearsal passed without a tenant, principal, or source-row read");

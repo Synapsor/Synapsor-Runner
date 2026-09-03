@@ -748,6 +748,65 @@ describe("conversational Action Boundary interview", () => {
     expect(requests[1]).toContain("shared_limits must include trusted scope tenant");
   });
 
+  it("keeps a rolling action-wide ceiling separate from the tenant-policy calendar-day fallback", async () => {
+    let attempt = 0;
+    const requests: string[] = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(JSON.stringify(request.body));
+      attempt += 1;
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "function_call",
+            call_id: `call_action_capability_scope_${attempt}`,
+            name: "runner__interpret_action_approval_policy",
+            arguments: JSON.stringify({
+              status: "resolved",
+              conditions: [
+                { field: "estimated_minutes", operator: "lte", value: 30 },
+                { field: "priority", operator: "in", values: ["routine", "elevated"] },
+              ],
+              max_per_day: 10,
+              ...(attempt === 2
+                ? {
+                    shared_limits: [{
+                      kind: "count",
+                      scope: "capability",
+                      maximum: 10,
+                      window_seconds: 86_400,
+                    }],
+                  }
+                : {}),
+            }),
+          }],
+        },
+      };
+    });
+
+    const result = await interpretActionBoundaryPolicy({
+      session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      action,
+      resource: followUps,
+      answer: "Auto-approve at most ten proposals across this action in a rolling 24-hour window.",
+      egressAcknowledged: true,
+    });
+
+    expect(result).toMatchObject({
+      state: "resolved",
+      correction_used: true,
+      auto_approval: { max_per_day: 10 },
+      shared_limits: [{
+        scope: "capability",
+        maximum: 10,
+        window_seconds: 86_400,
+      }],
+    });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(requests[0]).toContain("max_per_day is the capability policy's per-trusted-tenant and per-policy UTC calendar-day fallback limit");
+    expect(requests[1]).toContain("shared_limits must include trusted scope capability");
+  });
+
   it("requires explicit egress acknowledgement before sending an operator answer", async () => {
     const requestJson = vi.fn();
     await expect(interpretActionBoundaryDecision({

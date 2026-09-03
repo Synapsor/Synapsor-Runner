@@ -38,7 +38,9 @@ const orders: GuidedActionResourceOption = {
   table: "orders",
   primary_key: "id",
   tenant_key: "tenant_id",
+  tenant_label: "customer account",
   principal_key: "rep_id",
+  principal_label: "support representative",
   writable_fields: [
     { name: "status", data_type: "text", enum_values: ["open", "closed"], nullable: false, required_for_insert: true },
     { name: "credit_cents", data_type: "integer", enum_values: [], nullable: false, required_for_insert: true },
@@ -243,14 +245,16 @@ describe("Safe Action terminal control plane", () => {
       "Rehearsal: passed for this exact disabled revision; source database changed: no.",
     ]);
 
+    await emitKey(terminal.input, { name: "pageup", sequence: "\u001b[5~" });
     await emitKey(terminal.input, { name: "escape", sequence: "\u001b" });
     await expect(choice).resolves.toBeUndefined();
     const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
     expect(rendered).toContain("Target: UPDATE public.orders");
-    expect(rendered).toContain("tenant tenant_id + principal rep_id");
+    expect(rendered).toContain("trusted customer account (tenant_id tenant scope)");
+    expect(rendered).toContain("support representative (rep_id principal scope)");
     expect(rendered).toContain("Auto-approve proposal credit_cents | <= 500");
     expect(rendered).toContain("State | proposal_only | writeback none");
-    expect(rendered).not.toContain("rows hidden");
+    expect(rendered).toContain("PgUp/PgDn Scroll hidden details");
   });
 
   it("keeps conversational Action activation compact while preserving exact policy authority", () => {
@@ -297,7 +301,9 @@ describe("Safe Action terminal control plane", () => {
     expect(rendered).toContain("credit_cents");
     expect(rendered).toContain("0 through 2500");
     expect(rendered).toContain("<= 500");
-    expect(rendered).toContain("Tenant + principal");
+    expect(rendered).toContain("credit-per-principal");
+    expect(rendered).toContain("customer account");
+    expect(rendered).toContain("support representative");
     expect(rendered).toContain("Approval OFF | apply OFF | writeback OFF");
     expect(rendered).not.toContain("Auto-approve proposal credit_cents |");
     expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(76);
@@ -341,10 +347,62 @@ describe("Safe Action terminal control plane", () => {
     expect(rendered).toContain("Action: UPDATE public.orders");
     expect(rendered).toContain("credit_cents: 0 through 2500");
     expect(rendered).toContain("proposal status must be one of \"open\"");
+    expect(rendered).toContain("Guards: identity id; conflict version");
+    expect(rendered).toContain("Policy fallback: at most 3 approvals per customer account + approval policy / UTC calendar day.");
     expect(rendered).toContain("At most 3 deterministic approvals");
-    expect(rendered).toContain("trusted tenant + principal in 24 hours");
+    expect(rendered).toContain("credit-per-principal");
+    expect(rendered).toContain("trusted customer account + support representative");
+    expect(rendered).toContain("rolling 24 hours");
     expect(rendered).toContain("propose only; approval, apply, and writeback remain outside the agent");
     expect(rendered).not.toContain("+----------------");
+  });
+
+  it("renders every shared Action Boundary limit even when this action uses human approval", () => {
+    const action = {
+      capability_name: "orders.propose_credit",
+      description: "Propose one bounded order credit.",
+      business_object: "order",
+      resource: "public.orders",
+      operation: "update" as const,
+      conflict_column: "version",
+      patches: [{
+        column: "credit_cents",
+        value_source: "argument" as const,
+        argument_name: "credit_cents",
+        minimum: 0,
+        maximum: 2500,
+      }],
+      approval_role: "action_reviewer",
+      required_approvals: 1,
+      authority_posture: "proposal_only" as const,
+      writeback: { mode: "none" as const },
+      confirmed_trusted_scope: true,
+    };
+    const lines = actionActivationReviewLines(action, orders, [
+      {
+        id: "all-actions-hourly",
+        kind: "count",
+        scope: "boundary",
+        maximum: 20,
+        window_seconds: 3600,
+      },
+      {
+        id: "credit-action-daily",
+        kind: "count",
+        scope: "capability",
+        capability: action.capability_name,
+        maximum: 10,
+        window_seconds: 86_400,
+      },
+    ]).join("\n");
+
+    expect(lines).toContain("Shared rolling limit all-actions-hourly");
+    expect(lines).toContain("whole action boundary");
+    expect(lines).toContain("Shared rolling limit credit-action-daily");
+    expect(lines).toContain("this exact action (orders.propose_credit)");
+    expect(lines).toContain("rolling 24 hours");
+    expect(lines).toContain("outside it, Runner refuses before proposal creation");
+    expect(lines).toContain("Approval | 1 x action_reviewer; human review");
   });
 
   it("prepares one consolidated proposal-only action from unique reviewed intent", async () => {
@@ -1235,21 +1293,22 @@ describe("Safe Action terminal control plane", () => {
     expect(choiceTitles).toEqual(["REVIEW PROPOSAL ACTION", "REVIEW EXACT AUTO-APPROVAL POLICY"]);
     expect(firstChoiceLabels[0]).toContain("model-proposed deterministic approval rules");
     expect(firstChoiceLabels[1]).toContain("exact disabled policy");
-    expect(choiceContexts.get("REVIEW EXACT AUTO-APPROVAL POLICY")).toEqual(expect.arrayContaining([
-      expect.stringContaining("| Control"),
-      expect.stringContaining("| Proposal envelope | credit_cents"),
-      expect.stringContaining("| Auto-approve"),
-      expect.stringContaining("proposal credit_cents"),
-      expect.stringContaining("| Circuit breaker"),
-      expect.stringContaining("3 approvals / 24 hours"),
-      expect.stringContaining("1000 total / 24 hours"),
-      "Approval authority: DISABLED | apply authority: NONE | source database changed: no",
-    ]));
-    expect(choiceContexts.get("REVIEW EXACT AUTO-APPROVAL POLICY")).not.toEqual(expect.arrayContaining([
+    const exactPolicyReview = choiceContexts.get("REVIEW EXACT AUTO-APPROVAL POLICY") ?? [];
+    const exactPolicyText = exactPolicyReview.join("\n");
+    expect(exactPolicyText).toContain("| Control");
+    expect(exactPolicyText).toContain("Proposal envelope");
+    expect(exactPolicyText).toContain("credit_cents");
+    expect(exactPolicyText).toContain("Auto-approve");
+    expect(exactPolicyText).toContain("proposal credit_cents");
+    expect(exactPolicyText).toContain("Policy fallback");
+    expect(exactPolicyText).toContain("3 approvals / UTC");
+    expect(exactPolicyText).toContain("1000 total / UTC");
+    expect(exactPolicyText).toContain("Approval authority: DISABLED | apply authority: NONE | source database changed: no");
+    expect(exactPolicyReview).not.toEqual(expect.arrayContaining([
       expect.stringMatching(/^Why:/u),
     ]));
-    expect(choiceContexts.get("REVIEW EXACT AUTO-APPROVAL POLICY")
-      ?.filter((line) => /^[+|]/u.test(line))
+    expect(exactPolicyReview
+      .filter((line) => /^[+|]/u.test(line))
       .every((line) => line.length <= 72)).toBe(true);
     expect(action).toMatchObject({
       resource: "public.orders",
@@ -1330,9 +1389,10 @@ describe("Safe Action terminal control plane", () => {
     expect(textPrompts.find((prompt) => prompt.label === "Maximum auto-approved proposals per day"))
       .toMatchObject({
         options: {
-          title: "SET PER-ACTION CIRCUIT BREAKER",
+          title: "SET POLICY CALENDAR-DAY FALLBACK",
           context: expect.arrayContaining([
-            expect.stringContaining("per rolling 24 hours"),
+            expect.stringContaining("UTC calendar day"),
+            expect.stringContaining("not a rolling or action-wide limit"),
             expect.stringContaining("require human review"),
           ]),
         },
@@ -1652,7 +1712,7 @@ describe("Safe Action terminal control plane", () => {
       capability: "orders.propose_small_credit",
     }]);
     expect(actionBoundaryLimitSummary(limits[0]!)).toBe(
-      "At most 3 deterministic approvals for orders.propose_small_credit per trusted tenant + principal in 1 hour.",
+      "At most 3 deterministic approvals for orders.propose_small_credit for each trusted tenant + principal in a rolling 1 hour window.",
     );
   });
 

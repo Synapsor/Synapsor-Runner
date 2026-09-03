@@ -15,7 +15,7 @@ export type ActionAutoApprovalConditionSuggestion = {
 
 export type ActionSharedApprovalLimitSuggestion = {
   kind: "count" | "total";
-  scope: "tenant" | "tenant_principal" | "tenant_object";
+  scope: "boundary" | "capability" | "tenant" | "tenant_principal" | "tenant_object";
   maximum: number;
   window_seconds: number;
   field?: string;
@@ -313,8 +313,12 @@ function normalizeSharedApprovalLimitSuggestions(value: unknown): ActionSharedAp
     if (candidate.kind !== "count" && candidate.kind !== "total") {
       throw new Error("ACTION_SUGGESTION_SHARED_LIMIT_KIND_INVALID: shared limit kind must be count or total.");
     }
-    if (candidate.scope !== "tenant" && candidate.scope !== "tenant_principal" && candidate.scope !== "tenant_object") {
-      throw new Error("ACTION_SUGGESTION_SHARED_LIMIT_SCOPE_INVALID: model proposals may use tenant, tenant_principal, or tenant_object.");
+    if (candidate.scope !== "boundary"
+      && candidate.scope !== "capability"
+      && candidate.scope !== "tenant"
+      && candidate.scope !== "tenant_principal"
+      && candidate.scope !== "tenant_object") {
+      throw new Error("ACTION_SUGGESTION_SHARED_LIMIT_SCOPE_INVALID: model proposals may use boundary, capability, tenant, tenant_principal, or tenant_object.");
     }
     const maximum = boundedPositiveInteger(candidate.maximum, "shared limit maximum", Number.MAX_SAFE_INTEGER);
     const windowSeconds = boundedPositiveInteger(candidate.window_seconds, "shared limit window_seconds", 31_536_000);
@@ -385,6 +389,9 @@ function assessApprovalPolicyProposal(
     }
   }
   for (const [index, limit] of (policy.shared_limits ?? []).entries()) {
+    if ((limit.scope === "tenant" || limit.scope === "tenant_object") && !resource?.tenant_key) {
+      blockers.push(`A ${limit.scope} approval limit requires direct reviewed tenant/account scope on the action resource.`);
+    }
     if (limit.scope === "tenant_principal" && !resource?.principal_key && !resource?.principal_rls_setting) {
       blockers.push("A tenant_principal approval limit requires direct reviewed principal scope on the action resource.");
     }
@@ -397,7 +404,10 @@ function assessApprovalPolicyProposal(
     evidence.push({
       decision: "shared_limit",
       value: `${limit.kind}:${limit.scope}:${index + 1}`,
-      state: limit.scope !== "tenant_principal" || Boolean(resource?.principal_key || resource?.principal_rls_setting) ? "proven_candidate" : "unavailable",
+      state: ((limit.scope !== "tenant" && limit.scope !== "tenant_object") || Boolean(resource?.tenant_key))
+        && (limit.scope !== "tenant_principal" || Boolean(resource?.principal_key || resource?.principal_rls_setting))
+        ? "proven_candidate"
+        : "unavailable",
       reason: "The scope selects trusted runtime identity dimensions only; the model supplies no tenant, principal, or object value.",
     });
   }

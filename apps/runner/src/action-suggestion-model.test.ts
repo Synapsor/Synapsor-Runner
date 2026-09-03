@@ -641,6 +641,64 @@ describe("model-assisted Safe Action suggestions", () => {
     expect(requests[1]).toContain("shared_limits must include tenant");
   });
 
+  it("does not treat a tenant-policy UTC day limit as an action-wide rolling limit", async () => {
+    let attempt = 0;
+    const requests: string[] = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(JSON.stringify(request.body));
+      attempt += 1;
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "function_call",
+            call_id: `call_action_wide_scope_${attempt}`,
+            name: "runner__suggest_safe_actions",
+            arguments: JSON.stringify({
+              suggestions: [{
+                intent: "Propose closing one order with a bounded approval policy.",
+                operation: "update",
+                resource: "public.orders",
+                fields: ["status"],
+                approval_policy_proposal: {
+                  mode: "deterministic",
+                  conditions: [{ field: "status", operator: "in", values: ["closed"] }],
+                  max_per_day: 10,
+                  shared_limits: [{
+                    kind: "count",
+                    scope: "capability",
+                    maximum: 10,
+                    window_seconds: attempt === 1 ? 3_600 : 86_400,
+                  }],
+                },
+              }],
+            }),
+          }],
+        },
+      };
+    });
+
+    const result = await generateModelActionSuggestionSet({
+      jobIntent: "Propose closing one order, with at most ten approvals across this action in a rolling 24-hour window.",
+      provider: "openai",
+      model: "gpt-5.6-terra",
+      options: actionOptions(),
+      env: { OPENAI_API_KEY: "provider-test-key" },
+      egressAcknowledged: true,
+      dependencies: { requestJson },
+      deferNarration: true,
+    });
+
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(result.assessments[0]?.suggestion.approval_policy_proposal).toMatchObject({
+      max_per_day: 10,
+      shared_limits: [{ scope: "capability", maximum: 10, window_seconds: 86_400 }],
+    });
+    expect(requests[0]).toContain("max_per_day means per trusted tenant plus approval policy in a UTC calendar day");
+    expect(requests[1]).toContain("explicitly stated 1 day");
+    expect(requests[1]).toContain("that scope used 1 hour");
+  });
+
   it("fails closed after one bounded retry when a provider ignores the required structured suggestion tool", async () => {
     const requestJson = vi.fn(async () => ({
       status: 200,

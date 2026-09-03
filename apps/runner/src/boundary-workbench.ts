@@ -902,9 +902,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               <p>Every model-supplied change field receives an explicit reviewed condition. All conditions must pass. Missing current state, stale evidence, or uncertain usage falls back to human review.</p>
               <div id="action-auto-conditions" class="action-fields"></div>
               <div class="form-grid" style="margin-top:10px">
-                <label class="field">Maximum auto-approved proposals per day<input id="action-auto-count" type="number" min="1" placeholder="Required reviewed count"></label>
+                <label class="field">Maximum per trusted tenant + policy / UTC day<input id="action-auto-count" type="number" min="1" placeholder="Required reviewed count"></label>
                 <label id="action-auto-total-field-wrap" class="field hidden">Aggregate numeric field<select id="action-auto-total-field"></select></label>
-                <label id="action-auto-total-wrap" class="field hidden">Maximum aggregate value per day<input id="action-auto-total" type="number" min="1" placeholder="Required aggregate circuit breaker"></label>
+                <label id="action-auto-total-wrap" class="field hidden">Maximum aggregate under that same UTC-day scope<input id="action-auto-total" type="number" min="1" placeholder="Required aggregate circuit breaker"></label>
               </div>
             </div>
             <h3 style="margin-top:18px">Execution authority</h3>
@@ -7538,7 +7538,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const source=template?.source==="model_suggestion"?"Model-proposed, Runner-validated":"Runner-derived from reviewed bounds";
         return '<section class="band"><div class="split-actions"><div><h3>'+esc(candidate.intent)+'</h3><p><code>'+esc(candidate.preparation.action.capability_name)+'</code> · '+esc(candidate.preparation.action.operation.toUpperCase())+' '+esc(candidate.preparation.action.resource)+'</p></div><span class="badge warn">Disabled</span></div>'
           +'<label class="field">Approval path<select data-delegation-policy="'+index+'"><option value="human" '+(deterministic?'':'selected')+'>Human approves every proposal</option>'+(template?'<option value="deterministic" '+(deterministic?'selected':'')+'>Deterministic rules; fallback to human</option>':'')+'</select></label>'
-          +(template?'<div data-delegation-policy-detail="'+index+'"><p><strong>'+esc(source)+'</strong></p><ul>'+conditions.map(condition=>'<li>'+esc(delegationPolicyConditionText(condition))+'</li>').join("")+'</ul><p><strong>Per-action ceiling:</strong> '+esc(template.auto_approval.max_per_day)+' per rolling 24 hours'+(template.auto_approval.max_total_per_day!==undefined?' · total '+esc(template.auto_approval.total_field)+' ≤ '+esc(template.auto_approval.max_total_per_day):'')+'</p>'+(limits.length?'<p><strong>Trusted-scope circuit breakers</strong></p><ul>'+limits.map(limit=>'<li>'+esc(delegationSharedLimitText(limit))+'</li>').join("")+'</ul>':'<p class="muted">No cross-action shared limit is proposed.</p>')+'<p class="muted">'+esc(template.rationale)+'</p></div>':'<p class="muted">No complete deterministic policy is available for this action. Human review remains required.</p>')
+          +(template?'<div data-delegation-policy-detail="'+index+'"><p><strong>'+esc(source)+'</strong></p><ul>'+conditions.map(condition=>'<li>'+esc(delegationPolicyConditionText(condition))+'</li>').join("")+'</ul><p><strong>Policy fallback:</strong> '+esc(template.auto_approval.max_per_day)+' per trusted tenant + approval policy / UTC calendar day'+(template.auto_approval.max_total_per_day!==undefined?' · total '+esc(template.auto_approval.total_field)+' ≤ '+esc(template.auto_approval.max_total_per_day)+' under the same scope/window':'')+'</p>'+(limits.length?'<p><strong>Rolling Action Boundary circuit breakers</strong></p><ul>'+limits.map(limit=>'<li>'+esc(delegationSharedLimitText(limit))+'</li>').join("")+'</ul>':'<p class="muted">No rolling Action Boundary limit is proposed.</p>')+'<p class="muted">'+esc(template.rationale)+'</p></div>':'<p class="muted">No complete deterministic policy is available for this action. Human review remains required.</p>')
           +'</section>';
       }).join("");
       const unresolved=pending.unresolved.length?'<div class="band notice"><strong>'+esc(pending.unresolved.length)+' action intent'+(pending.unresolved.length===1?' needs':'s need')+' a manual structural choice.</strong><p>They will remain unresolved and gain no authority.</p></div>':'';
@@ -8049,7 +8049,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const policyLimits=template?.shared_limits||[];
       const policySource=template?.source==="model_suggestion"?"Model-proposed, Runner-validated":"Runner-derived from the reviewed bounds";
       const policyReview=template
-        ?'<label class="field">Approval path<select id="action-quick-policy"><option value="human" '+(quickActionApprovalMode==="human"?'selected':'')+'>Human approves every proposal</option><option value="deterministic" '+(quickActionApprovalMode==="deterministic"?'selected':'')+'>Deterministic rules; fallback to human</option></select></label><div id="action-quick-policy-detail" class="band notice"><p><strong>'+esc(policySource)+'</strong></p><ul>'+policyConditions.map(condition=>'<li>'+esc(delegationPolicyConditionText(condition))+'</li>').join("")+'</ul><p><strong>Per-action ceiling:</strong> '+esc(template.auto_approval.max_per_day)+' approvals per rolling 24 hours</p>'+(policyLimits.length?'<p><strong>Trusted-scope circuit breakers</strong></p><ul>'+policyLimits.map(limit=>'<li>'+esc(delegationSharedLimitText(limit))+'</li>').join("")+'</ul>':'<p class="muted">No cross-action shared limit is needed for this reviewed organization scope.</p>')+'<p>Every rule must pass. Missing state, stale evidence, a tripped limit, or uncertainty falls back to human review. Apply remains separate.</p><p class="muted">'+esc(template.rationale)+'</p></div>'
+        ?'<label class="field">Approval path<select id="action-quick-policy"><option value="human" '+(quickActionApprovalMode==="human"?'selected':'')+'>Human approves every proposal</option><option value="deterministic" '+(quickActionApprovalMode==="deterministic"?'selected':'')+'>Deterministic rules; fallback to human</option></select></label><div id="action-quick-policy-detail" class="band notice"><p><strong>'+esc(policySource)+'</strong></p><ul>'+policyConditions.map(condition=>'<li>'+esc(delegationPolicyConditionText(condition))+'</li>').join("")+'</ul><p><strong>Policy fallback:</strong> '+esc(template.auto_approval.max_per_day)+' approvals per trusted tenant + approval policy / UTC calendar day</p>'+(policyLimits.length?'<p><strong>Rolling Action Boundary circuit breakers</strong></p><ul>'+policyLimits.map(limit=>'<li>'+esc(delegationSharedLimitText(limit))+'</li>').join("")+'</ul>':'<p class="muted">No rolling Action Boundary limit is needed for this reviewed organization scope.</p>')+'<p>Every rule must pass. Missing state, stale evidence, a tripped limit, or uncertainty falls back to human review. Apply remains separate.</p><p class="muted">'+esc(template.rationale)+'</p></div>'
         :'<div class="band notice"><strong>Human approval required</strong><p>No complete deterministic policy is available for this action. Hard delete always stays on this path.</p></div>';
       byId("action-quick-card").innerHTML='<section class="band success"><p class="instant-kicker">Proposal action candidate</p><h3>'+esc(summary.intent)+'</h3><p><strong>'+esc(summary.operation.toUpperCase())+'</strong> <code>'+esc(summary.resource)+'</code></p><h4>Model-supplied arguments</h4><ul>'+argumentsList+'</ul><h4>Runner-controlled</h4><ul>'+summary.trusted_context.map(item=>'<li>'+esc(item)+'</li>').join("")+'<li>'+esc(summary.retry_or_conflict_guard)+'</li></ul>'+policyReview+'<p><strong>Selected approval:</strong> <span id="action-quick-approval-summary"></span><br><strong>Authority:</strong> proposals only<br><strong>Writeback:</strong> none</p><p class="muted">Intent ranked candidates only. The server will compile and revalidate this exact action before saving a disabled draft.</p><div class="actions"><button id="action-quick-create" type="button">Prepare and rehearse proposal action</button><button id="action-quick-restart" class="secondary" type="button">Change choices</button><button id="action-quick-advanced" class="quiet" type="button">Advanced design</button></div></section>';
       const updatePolicy=()=>{
@@ -8111,7 +8111,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       byId("action-quick-decision").innerHTML="";
       const readsPending=guidedActionData?.options?.boundary_state==="reviewed_pending";
       const deterministic=quickActionApprovalMode==="deterministic";
-      byId("action-quick-card").innerHTML='<section class="band success"><p class="instant-kicker">Ready for authority review</p><h3>Structural rehearsal passed</h3><p><strong>'+esc(summary.intent)+'</strong><br>'+esc(summary.operation.toUpperCase())+' '+esc(summary.resource)+'</p><ul><li>Exact DSL, contract, runtime config, argument bounds, and generated safety assertions validated</li><li>No runtime tenant or principal resolved</li><li>No source row read or changed</li><li>'+(deterministic?'Exact deterministic approval and trusted-scope limits compiled; any mismatch falls back to human review':'Approval remains human-only')+'</li><li>Apply remains outside model-facing tools</li></ul>'+(readsPending?'<div class="band notice"><strong>Read activation comes first</strong><p>This action is bound to the fully reviewed pending read revision. Activate that exact read boundary, then return here to activate this rehearsed action.</p></div>':'<p><strong>Activating allows:</strong> create immutable bounded proposals'+(deterministic?' and approve only those that pass every exact deterministic rule and rolling limit':'.')+'<br><strong>Activating does not allow:</strong> apply, source writes, scope changes, or contract changes.</p>')+'<details><summary>Advanced exact digest</summary><code>'+esc(draft.contract_digest)+'</code></details><div class="actions">'+(readsPending?'<button id="action-quick-read" type="button">Review and activate reads</button>':'<button id="action-quick-activate" type="button">Activate proposal-only action</button>')+'<button id="action-quick-leave" class="secondary" type="button">Leave disabled</button></div></section>';
+        byId("action-quick-card").innerHTML='<section class="band success"><p class="instant-kicker">Ready for authority review</p><h3>Structural rehearsal passed</h3><p><strong>'+esc(summary.intent)+'</strong></p>'+effectiveGuidedActionAuthorityHtml(guidedActionDraft)+(readsPending?'<div class="band notice"><strong>Read activation comes first</strong><p>This action is bound to the fully reviewed pending read revision. Activate that exact read boundary, then return here to activate this rehearsed action.</p></div>':'')+'<details><summary>Advanced complete authority digest</summary><code>'+esc(draft.action_boundary_digest)+'</code></details><div class="actions">'+(readsPending?'<button id="action-quick-read" type="button">Review and activate reads</button>':'<button id="action-quick-activate" type="button">Activate proposal-only action</button>')+'<button id="action-quick-leave" class="secondary" type="button">Leave disabled</button></div></section>';
       if(readsPending)byId("action-quick-read").onclick=()=>setView("activate");
       else byId("action-quick-activate").onclick=activateQuickAction;
       byId("action-quick-leave").onclick=()=>{byId("action-quick-status").className="status-message";byId("action-quick-status").textContent="The action remains a disabled rehearsed draft. No active authority changed."};
@@ -8126,8 +8126,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         status.textContent="Rechecking schema, reviewed boundary, rehearsal, and exact action digest...";
         const payload=await post("/api/actions/guided/activate",{
           capability_name:draft.capability,
-          expected_digest:draft.contract_digest,
-          confirmation:"ACTIVATE "+draft.contract_digest,
+          expected_digest:draft.action_boundary_digest,
+          confirmation:"ACTIVATE "+draft.action_boundary_digest,
           actor:byId("actor").value.trim()||"local_operator"
         });
         const deterministic=quickActionApprovalMode==="deterministic";
@@ -8284,7 +8284,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
     function actionBoundaryLimitText(limit){
       const measure=limit.kind==="count"?limit.maximum+" approvals":limit.maximum+" total "+limit.field;
-      return measure+" · "+humanizeIdentifier(limit.scope)+" · "+limit.window_seconds+" seconds"+(limit.capability?" · "+limit.capability:"");
+      const scope={boundary:"whole Action Boundary",capability:limit.capability?"exact action "+limit.capability:"each exact action",tenant:"each trusted tenant",tenant_principal:"each trusted tenant + principal",tenant_object:"each trusted tenant + target row"}[limit.scope]||humanizeIdentifier(limit.scope);
+      const seconds=Number(limit.window_seconds);
+      const window=seconds===86400?"24 hours":seconds%86400===0?(seconds/86400)+" days":seconds%3600===0?(seconds/3600)+" hours":seconds+" seconds";
+      const applies=limit.capability&&limit.scope!=="capability"?" · applies to "+limit.capability:"";
+      return measure+" · "+scope+" · rolling "+window+applies;
     }
 
     function updateActionBoundaryLimitFields(){
@@ -8353,6 +8357,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     async function refreshGuidedActionAuthority(){
       guidedActionData=await getJson("/api/actions/guided");
       renderGuidedActionInventory(guidedActionData.status||{drafts:[],activations:[]});
+      const capability=guidedActionDraft?.draft?.capability;
+      const currentDraft=(guidedActionData.status?.drafts||[]).find(item=>item.capability===capability);
+      if(capability&&currentDraft){
+        const payload=await getJson("/api/actions/guided/draft?capability="+encodeURIComponent(capability));
+        showGuidedActionDraft(payload);
+      }
     }
 
     function openGuidedActionRevision(active){
@@ -8649,6 +8659,80 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function requiredGuidedElementNumber(input,label){const raw=String(input?.value||"").trim();const value=Number(raw);if(!raw||!Number.isFinite(value))throw new Error(label+" must be an explicit finite number.");return value}
     function requiredGuidedElementInteger(input,label){const value=requiredGuidedElementNumber(input,label);if(!Number.isSafeInteger(value))throw new Error(label+" must be an integer.");return value}
 
+    function guidedPolicyRuleText(rule){
+      const source=(rule.source||"patch")==="before"?"current ":"";
+      if(rule.operator==="in")return source+rule.field+" is one of "+(rule.values||[]).join(", ");
+      if(rule.operator==="eq")return source+rule.field+" equals "+String(rule.value);
+      if(rule.operator==="gte")return source+rule.field+" is at least "+String(rule.value);
+      if(rule.operator==="max_length")return source+rule.field+" is at most "+String(rule.value)+" characters";
+      return source+rule.field+" is at most "+String(rule.value??rule.max);
+    }
+
+    function guidedProposalEnvelopeText(capability,field){
+      const proposal=capability?.proposal||{};
+      const bounds=proposal.numeric_bounds?.[field];
+      if(bounds)return String(bounds.minimum??"-infinity")+" through "+String(bounds.maximum??"infinity");
+      const binding=proposal.patch?.[field];
+      if(binding&&Object.prototype.hasOwnProperty.call(binding,"fixed"))return "fixed "+JSON.stringify(binding.fixed);
+      const argument=binding?.from_arg?capability.args?.[binding.from_arg]:null;
+      if(argument?.enum?.length)return "one of "+argument.enum.join(", ");
+      if(argument?.max_length)return "at most "+argument.max_length+" characters";
+      return "reviewed "+String(argument?.type||"typed")+" value";
+    }
+
+    function guidedTrustedScopeText(resource){
+      if(resource?.organization_scope)return "reviewed whole organization "+resource.organization_scope.organization_id;
+      const tenantName=resource?.tenant_label||humanizeIdentifier(String(resource?.tenant_key||"tenant").replace(/_id$/,""));
+      const tenant="trusted "+tenantName+" ("+(resource?.tenant_key||"tenant")+" tenant scope)";
+      if(resource?.principal_key){
+        const principalName=resource.principal_label||humanizeIdentifier(String(resource.principal_key).replace(/_id$/,""));
+        return tenant+" + trusted "+principalName+" ("+resource.principal_key+" principal scope)";
+      }
+      if(resource?.principal_rls_setting)return tenant+" + trusted principal through PostgreSQL RLS "+resource.principal_rls_setting;
+      return tenant+"; no per-principal restriction";
+    }
+
+    function guidedPolicyScopeText(resource){
+      if(resource?.organization_scope)return "whole organization + approval policy";
+      const tenantName=resource?.tenant_label||humanizeIdentifier(String(resource?.tenant_key||"tenant").replace(/_id$/,""));
+      return tenantName+" + approval policy";
+    }
+
+    function effectiveGuidedActionAuthorityHtml(payload){
+      const draft=payload?.draft||{};
+      const capability=(payload?.contract?.capabilities||[]).find(item=>item.name===draft.capability)||{};
+      const proposal=capability.proposal||{};
+      const resource=(guidedActionData?.options?.resources||[]).find(item=>item.id===draft.resource);
+      const target=(resource?.label?resource.label+" ("+draft.resource+")":draft.resource);
+      const policy=(payload?.contract?.policies||[]).find(item=>item.name===proposal.approval?.policy);
+      const rules=policy?.rules||[];
+      const rulesByField=new Map();
+      rules.forEach(rule=>{const current=rulesByField.get(rule.field)||[];current.push(guidedPolicyRuleText(rule));rulesByField.set(rule.field,current)});
+      const rows=(proposal.allowed_fields||[]).map(field=>[
+        resource?.structurally_eligible_fields?.find(item=>item.name===field)?.label||field,
+        guidedProposalEnvelopeText(capability,field),
+        rulesByField.get(field)?.join(" and ")||"Human review"
+      ]);
+      rules.filter(rule=>!(proposal.allowed_fields||[]).includes(rule.field)).forEach(rule=>rows.push([
+        "Current "+rule.field,
+        "reviewed current row",
+        guidedPolicyRuleText(rule)
+      ]));
+      (policy?.limits||[]).forEach(limit=>rows.push([
+        limit.scope==="tenant_policy_object"?guidedPolicyScopeText(resource)+" + target row":guidedPolicyScopeText(resource),
+        "UTC calendar day",
+        limit.kind==="count"?limit.max+" approvals":limit.max+" total "+limit.field
+      ]));
+      const boundary=payload?.action_boundary;
+      (boundary?.authority?.shared_limits||[]).forEach(limit=>rows.push([
+        "Shared limit "+limit.id,
+        actionBoundaryLimitText(limit),
+        "Human review when exhausted or uncertain"
+      ]));
+      const rowHtml=rows.map(row=>'<tr><td>'+esc(row[0])+'</td><td>'+esc(row[1])+'</td><td>'+esc(row[2])+'</td></tr>').join("");
+      return '<div class="effective-authority"><h4>Complete effective authority</h4><p><strong>Target:</strong> '+esc(draft.operation?.toUpperCase()+" "+target)+'<br><strong>Trusted scope:</strong> '+esc(guidedTrustedScopeText(resource))+'</p><div class="result-table"><table><thead><tr><th>Field or scope</th><th>Proposal envelope or window</th><th>Approval behavior</th></tr></thead><tbody>'+rowHtml+'</tbody></table></div><ul><li><strong>Outside the hard proposal envelope:</strong> refused before proposal creation.</li><li><strong>Inside the envelope but outside deterministic approval:</strong> human review.</li><li><strong>Agent apply authority:</strong> none.</li><li><strong>Source writeback:</strong> '+esc(draft.writeback_mode||"none")+'.</li></ul><p class="muted">Action Boundary '+esc(boundary?.name||draft.action_boundary_name||"unavailable")+' contains '+esc(boundary?.authority?.capabilities?.length||1)+' exact action capability revision(s). Every shared limit above is covered by the complete authority digest.</p></div>';
+    }
+
     async function simulateGuidedApprovalPolicy(){
       const status=byId("action-policy-status");
       const result=byId("action-policy-result");
@@ -8704,7 +8788,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       byId("action-policy-capability").value=draft.capability;
       byId("action-policy-patch").value=JSON.stringify(policyPatch,null,2);
       const inputs=Object.entries(args).map(([name,value])=>'<label class="field">'+esc(name)+'<input data-action-preview="'+esc(name)+'" data-value-type="'+esc(typeof value)+'" type="'+(typeof value==="number"?"number":typeof value==="boolean"?"checkbox":"text")+'" '+(typeof value==="boolean"&&value?"checked":"")+(typeof value==="boolean"?"":' value="'+esc(value)+'"')+'></label>').join("");
-      byId("action-draft").innerHTML='<section class="band success"><h3>Disabled reviewable action revision</h3><p><strong>Capability:</strong> '+esc(draft.capability)+'<br><strong>Operation:</strong> '+esc(draft.operation.toUpperCase())+'<br><strong>Authority posture:</strong> '+esc(humanizeIdentifier(draft.authority_posture))+'<br><strong>Writeback:</strong> '+esc(draft.writeback_mode)+(draft.writeback_executor?' via '+esc(draft.writeback_executor):'')+'<br><strong>Supervised execution permission:</strong> '+(draft.supervised_worker_execution?"Contract side enabled; exact-digest deployment allowlist still required":"Off")+'<br><strong>Source database changed:</strong> no</p><details><summary>Review generated public DSL</summary><pre id="action-dsl-preview"></pre></details><details><summary>Advanced fingerprint</summary><code data-action-digest>'+esc(draft.contract_digest)+'</code></details><h3 style="margin-top:16px">Identity-free structural rehearsal</h3><p>Validate the exact DSL, contract, runtime config, argument envelope, and generated safety assertions. This does not resolve a tenant or principal and does not read a source row.</p><div class="actions"><button id="preview-action" type="button">Run structural rehearsal</button></div><details><summary>Advanced: live scoped proposal rehearsal</summary><p>Use a configured runtime identity and exact staging values to exercise the proposal path in a disposable ledger. The rehearsal proposal is destroyed and cannot be approved or applied.</p><div class="form-grid">'+inputs+'</div><div class="actions"><button id="preview-action-live" class="secondary" type="button">Run live scoped rehearsal</button></div></details><div id="action-activation"></div></section>';
+      byId("action-draft").innerHTML='<section class="band success"><h3>Disabled reviewable action revision</h3><p><strong>Capability:</strong> '+esc(draft.capability)+'<br><strong>Operation:</strong> '+esc(draft.operation.toUpperCase())+'<br><strong>Authority posture:</strong> '+esc(humanizeIdentifier(draft.authority_posture))+'<br><strong>Writeback:</strong> '+esc(draft.writeback_mode)+(draft.writeback_executor?' via '+esc(draft.writeback_executor):'')+'<br><strong>Supervised execution permission:</strong> '+(draft.supervised_worker_execution?"Contract side enabled; exact-digest deployment allowlist still required":"Off")+'<br><strong>Source database changed:</strong> no</p><details><summary>Review capability DSL</summary><pre id="action-dsl-preview"></pre></details><details><summary>Advanced fingerprints</summary><strong>Capability contract</strong><br><code>'+esc(draft.contract_digest)+'</code><br><strong>Complete Action Boundary authority</strong><br><code data-action-digest>'+esc(draft.action_boundary_digest)+'</code></details><h3 style="margin-top:16px">Identity-free structural rehearsal</h3><p>Validate the exact DSL, contract, runtime config, argument envelope, generated safety assertions, and complete Action Boundary authority. This does not resolve a tenant or principal and does not read a source row.</p><div class="actions"><button id="preview-action" type="button">Run structural rehearsal</button></div><details><summary>Advanced: live scoped proposal rehearsal</summary><p>Use a configured runtime identity and exact staging values to exercise the proposal path in a disposable ledger. The rehearsal proposal is destroyed and cannot be approved or applied.</p><div class="form-grid">'+inputs+'</div><div class="actions"><button id="preview-action-live" class="secondary" type="button">Run live scoped rehearsal</button></div></details><div id="action-activation"></div></section>';
       renderSyntaxCode("action-dsl-preview",payload.dsl||"Open "+draft.dsl_path+" to inspect the persisted public DSL.","synapsor-dsl");
       byId("preview-action").onclick=()=>previewGuidedAction(true);
       byId("preview-action-live").onclick=()=>previewGuidedAction(false);
@@ -8739,12 +8823,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
     function renderGuidedActionActivation(){
       const draft=guidedActionDraft.draft;
-      const execution=draft.writeback_mode==="none"?'The activated tool creates durable proposals only.':'Approved proposals may be applied later through '+draft.writeback_mode+'; the model still cannot approve or apply.';
       const structural=draft.effect_preview?.mode==="structural";
       const proof=structural
         ?'The exact generated artifacts passed without resolving a runtime identity or reading a source row.'
         :'The live scoped path passed in a disposable ledger; its proposal was destroyed and cannot become executable.';
-      byId("action-activation").innerHTML='<div class="band notice"><strong>Exact '+(structural?'structural':'live scoped')+' rehearsal passed. Source database changed: no.</strong><p>'+esc(execution)+' '+esc(proof)+' Runner binds activation to the exact fingerprint above and rechecks it immediately before activation.</p></div><div class="form-grid"><label class="field">Operator identity<input id="action-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label></div><div class="actions"><button id="activate-action" type="button">Activate this exact '+esc(humanizeIdentifier(draft.authority_posture))+' revision</button></div>';
+      byId("action-activation").innerHTML='<div class="band notice"><strong>Exact '+(structural?'structural':'live scoped')+' rehearsal passed. Source database changed: no.</strong><p>'+esc(proof)+' Runner binds activation to the complete authority shown below and rechecks it immediately before activation.</p></div>'+effectiveGuidedActionAuthorityHtml(guidedActionDraft)+'<div class="form-grid"><label class="field">Operator identity<input id="action-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label></div><div class="actions"><button id="activate-action" type="button">Activate this exact '+esc(humanizeIdentifier(draft.authority_posture))+' revision</button></div>';
       byId("activate-action").onclick=activateGuidedAction;
     }
 
@@ -8753,8 +8836,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       try{
         const payload=await post("/api/actions/guided/activate",{
           capability_name:guidedActionDraft.draft.capability,
-          expected_digest:guidedActionDraft.draft.contract_digest,
-          confirmation:"ACTIVATE "+guidedActionDraft.draft.contract_digest,
+          expected_digest:guidedActionDraft.draft.action_boundary_digest,
+          confirmation:"ACTIVATE "+guidedActionDraft.draft.action_boundary_digest,
           actor:byId("action-actor").value.trim()
         });
         status.className="status-message";

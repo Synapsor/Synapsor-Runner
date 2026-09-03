@@ -60,7 +60,7 @@ import {
   withAlternateTerminalScreen,
   withRawTerminalScreen,
 } from "./terminal-prompt.js";
-import { terminalContentWidth } from "./terminal-layout.js";
+import { terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
 import { safeTerminalText } from "./analytics-shell-render.js";
 import type { AskProvider, AskProviderDependencies } from "./model-ask.js";
 import type { ModelAuthoringConversation } from "./model-authoring-conversation.js";
@@ -1930,7 +1930,7 @@ async function reviewPreparedDeterministicApprovalInConversation(input: {
         template,
         input.preparation.summary.arguments,
       ),
-      "This is a disabled starting policy. Anything outside it requires human review; approval and apply authority remain off.",
+      "This is a disabled auto-approval subset. In-envelope proposals outside it require human review; out-of-envelope proposals are refused before creation. Approval and apply authority remain off.",
     ],
     nextQuestion: "Should I use this exact starting policy, or what should change?",
     env: input.env,
@@ -2216,13 +2216,13 @@ function compactDeterministicApprovalPolicyLines(
       const [field, rule] = compactApprovalConditionCells(condition);
       return ["Auto-approve", field, rule];
     }),
-    ["Circuit breaker", "This action", `${template.auto_approval.max_per_day} approvals / 24 hours`],
+    ["Policy fallback", "Trusted tenant + policy", `${template.auto_approval.max_per_day} approvals / UTC calendar day`],
     ...(template.auto_approval.max_total_per_day === undefined
       ? []
       : [[
-          "Circuit breaker",
-          template.auto_approval.total_field ?? "Aggregate value",
-          `${template.auto_approval.max_total_per_day} total / 24 hours`,
+          "Policy fallback",
+          `Trusted tenant + policy (${template.auto_approval.total_field ?? "aggregate"})`,
+          `${template.auto_approval.max_total_per_day} total / UTC calendar day`,
         ]]),
     ...sharedRows,
     ["Fallback", "Any failed check", "Human review"],
@@ -2248,12 +2248,12 @@ function conversationalDeterministicApprovalPolicyLines(
     return [field, envelopes.get(condition.field) ?? "reviewed current row", rule];
   });
   const limitRows = [
-    ["This action", "24 hours", `${template.auto_approval.max_per_day} approvals`],
+    ["Trusted tenant + policy", "UTC calendar day", `${template.auto_approval.max_per_day} approvals`],
     ...(template.auto_approval.max_total_per_day === undefined
       ? []
       : [[
-          template.auto_approval.total_field ?? "Aggregate value",
-          "24 hours",
+          `Trusted tenant + policy (${template.auto_approval.total_field ?? "aggregate"})`,
+          "UTC calendar day",
           `${template.auto_approval.max_total_per_day} total`,
         ]]),
     ...template.shared_limits.map((limit) => {
@@ -2299,10 +2299,10 @@ function conversationalDeterministicApprovalModelLines(
       ? `Runner prepared this conservative starting auto-approval policy for ${target}:`
       : `I drafted this starting auto-approval policy for ${target}:`;
   const limitPhrases = [
-    `this action at most ${template.auto_approval.max_per_day} approvals per 24 hours`,
+    `this approval policy at most ${template.auto_approval.max_per_day} approvals per trusted tenant in each UTC calendar day`,
     ...(template.auto_approval.max_total_per_day === undefined
       ? []
-      : [`aggregate at most ${template.auto_approval.max_total_per_day} total ${template.auto_approval.total_field ?? "value"} per 24 hours`]),
+      : [`this approval policy at most ${template.auto_approval.max_total_per_day} total ${template.auto_approval.total_field ?? "value"} per trusted tenant in each UTC calendar day`]),
     ...template.shared_limits.map((limit) => {
       const scope = {
         tenant: "trusted tenant",
@@ -2323,7 +2323,7 @@ function conversationalDeterministicApprovalModelLines(
     sourceLine,
     `Conditions: ${conditionPhrases.join("; ") || "human review only"}.`,
     `Circuit breakers: ${limitPhrases.join("; ")}.`,
-    "Anything else requires human review.",
+    "In-envelope proposals outside this subset require human review; out-of-envelope proposals are refused before creation.",
     "Press Enter to use it, or describe what should change. Say show details for the full exact policy.",
   ];
 }
@@ -2363,55 +2363,48 @@ export function conversationalActionActivationReviewLines(
     ]);
   const approvalLimitRows = action.auto_approval
     ? [
-        ["This action", "24 hours", `${action.auto_approval.max_per_day} approvals`],
+        [trustedPolicyScopeLabel(resource), "UTC calendar day", `${action.auto_approval.max_per_day} approvals`],
         ...(action.auto_approval.max_total_per_day === undefined
           ? []
           : [[
-              action.auto_approval.total_field ?? "Aggregate value",
-              "24 hours",
+              `${trustedPolicyScopeLabel(resource)} (${action.auto_approval.total_field ?? "aggregate"})`,
+              "UTC calendar day",
               `${action.auto_approval.max_total_per_day} total`,
             ]]),
-        ...sharedLimits.map((limit) => {
-          const scope = {
-            tenant: "Trusted tenant",
-            tenant_principal: "Tenant + principal",
-            tenant_object: "Tenant + target row",
-            capability: "This action",
-            boundary: "Action Boundary",
-          }[limit.scope];
-          const ceiling = limit.kind === "count"
-            ? `${limit.maximum} approvals`
-            : `${limit.maximum} total ${limit.field}`;
-          return [scope, formatLimitWindow(limit.window_seconds), ceiling];
-        }),
       ]
     : [];
-  const trustedScope = resource.organization_scope
-    ? `whole organization ${resource.organization_scope.organization_id}`
-    : resource.principal_key || resource.principal_rls_setting
-      ? "tenant + principal"
-      : "tenant (no principal restriction)";
+  const sharedLimitRows = sharedLimits.map((limit) => {
+    const scope = actionBoundaryLimitScopeLabel(limit, resource);
+    const ceiling = limit.kind === "count"
+      ? `${limit.maximum} approvals`
+      : `${limit.maximum} total ${limit.field}`;
+    return [`[${limit.id}]`, `${scope}; rolling ${formatLimitWindow(limit.window_seconds)}`, ceiling];
+  });
+  const trustedScope = reviewedTrustedScopeLabel(resource);
   const guard = [
     `identity ${resource.primary_key}`,
     action.conflict_column ? `conflict ${action.conflict_column}` : undefined,
     action.dedup_proposal_column ? `retry ${action.dedup_proposal_column}` : undefined,
   ].filter((value): value is string => Boolean(value)).join("; ");
   return [
-    `Target: ${action.operation.toUpperCase()} ${resource.id}`,
+    `Target: ${reviewedActionTargetLabel(action, resource)}`,
     `Trusted scope: ${trustedScope} (Runner only)`,
     `Guards: ${guard}`,
     ...renderBoundaryMapTable(
       ["Field or scope", "Proposal allowed", "Auto-approved when"],
-      [...proposalRows, ...currentRowConditions, ...approvalLimitRows],
-      { widths: [18, 18, 24], rowSeparators: false },
+      [...proposalRows, ...currentRowConditions, ...approvalLimitRows, ...sharedLimitRows],
+      { widths: [22, 22, 20], rowSeparators: false },
     ),
-    action.auto_approval ? "Fallback: human review." : `Approval: ${action.required_approvals ?? 1} x ${action.approval_role}; human review.`,
-    ...(action.auto_approval
-      ? ["Used when a condition, evidence check, or circuit breaker fails."]
-      : []),
+    ...(action.operation === "delete"
+      ? []
+      : ["Outside the hard proposal envelope: refused before proposal creation."]),
+    action.auto_approval
+      ? "Inside the envelope but outside the auto-approval subset: human review."
+      : `Every in-envelope proposal: ${action.required_approvals ?? 1} x ${action.approval_role}; human review.`,
+    ...(action.auto_approval ? ["Failed, missing, stale, uncertain, or exhausted checks also require human review."] : []),
     "After activation: agent may propose only.",
     "Approval OFF | apply OFF | writeback OFF.",
-  ];
+  ].flatMap((line) => wrapStyledTerminalLine(line, 76));
 }
 
 export function conciseConversationalActionActivationReviewLines(
@@ -2429,23 +2422,87 @@ export function conciseConversationalActionActivationReviewLines(
   const approvalConditions = action.auto_approval
     ? reviewedAutoApprovalConditions(action.auto_approval).map(approvalConditionSummary).join("; ")
     : `${action.required_approvals ?? 1} x ${action.approval_role}; human review`;
-  const shared = sharedLimits.map(actionBoundaryLimitSummary).join(" ");
-  const trustedScope = resource.organization_scope
-    ? `whole organization ${resource.organization_scope.organization_id}`
-    : resource.principal_key || resource.principal_rls_setting
-      ? "tenant + principal"
-      : "tenant (no principal restriction)";
+  const trustedScope = reviewedTrustedScopeLabel(resource);
+  const guard = [
+    `identity ${resource.primary_key}`,
+    action.conflict_column ? `conflict ${action.conflict_column}` : undefined,
+    action.dedup_proposal_column ? `retry ${action.dedup_proposal_column}` : undefined,
+  ].filter((value): value is string => Boolean(value)).join("; ");
   return [
-    `Action: ${action.operation.toUpperCase()} ${resource.id}`,
+    `Action: ${reviewedActionTargetLabel(action, resource)}`,
     `Agent proposal: ${proposalFields}`,
     `Trusted scope: ${trustedScope}; supplied only by Runner`,
+    `Guards: ${guard}`,
     action.auto_approval
       ? `Auto-approve only when: ${approvalConditions || "no deterministic condition"}`
       : `Approval: ${approvalConditions}`,
-    ...(shared ? [`Shared circuit breaker: ${shared}`] : []),
-    action.auto_approval ? "Anything outside the exact policy requires human review." : "Every proposal requires human review.",
+    ...(action.auto_approval
+      ? [
+          `Policy fallback: at most ${action.auto_approval.max_per_day} approvals per ${trustedPolicyScopeLabel(resource)} / UTC calendar day${action.auto_approval.max_total_per_day !== undefined
+            ? `; at most ${action.auto_approval.max_total_per_day} total ${action.auto_approval.total_field ?? "aggregate"} under the same scope and calendar day`
+            : ""}.`,
+        ]
+      : []),
+    ...sharedLimits.map((limit) =>
+      `Shared circuit breaker ${limit.id}: ${actionBoundaryLimitSummary(limit, resource)}`),
+    ...(action.operation === "delete" ? [] : ["Outside the hard proposal envelope: refused before proposal creation."]),
+    action.auto_approval
+      ? "Inside the envelope but outside auto-approval: human review."
+      : "Every in-envelope proposal requires human review.",
     "After activation: propose only; approval, apply, and writeback remain outside the agent.",
   ];
+}
+
+function reviewedActionTargetLabel(
+  action: GuidedActionInput,
+  resource: GuidedActionResourceOption,
+): string {
+  const target = resource.label ? `${resource.label} (${resource.id})` : resource.id;
+  return `${action.operation.toUpperCase()} ${target}`;
+}
+
+function reviewedTrustedScopeLabel(resource: GuidedActionResourceOption): string {
+  if (resource.organization_scope) {
+    return `reviewed whole organization ${resource.organization_scope.organization_id}`;
+  }
+  const tenant = resource.tenant_key
+    ? `trusted ${resource.tenant_label?.trim() || readableBindingName(resource.tenant_key)} (${resource.tenant_key} tenant scope)`
+    : "trusted tenant scope";
+  if (resource.principal_key) {
+    return `${tenant} + trusted ${resource.principal_label?.trim() || readableBindingName(resource.principal_key)} (${resource.principal_key} principal scope)`;
+  }
+  if (resource.principal_rls_setting) {
+    return `${tenant} + trusted principal through PostgreSQL RLS ${resource.principal_rls_setting}`;
+  }
+  return `${tenant}; no per-principal restriction`;
+}
+
+function trustedPolicyScopeLabel(resource: GuidedActionResourceOption): string {
+  if (resource.organization_scope) return "Whole organization + approval policy";
+  const tenant = resource.tenant_label?.trim() || readableBindingName(resource.tenant_key ?? "tenant");
+  return `${tenant} + approval policy`;
+}
+
+function actionBoundaryLimitScopeLabel(
+  limit: ActionBoundarySharedLimitV1,
+  resource?: GuidedActionResourceOption,
+): string {
+  const tenant = resource?.tenant_label?.trim()
+    || (resource?.tenant_key ? readableBindingName(resource.tenant_key) : "tenant");
+  const principal = resource?.principal_label?.trim()
+    || (resource?.principal_key ? readableBindingName(resource.principal_key) : "principal");
+  return {
+    tenant: `Each trusted ${tenant}`,
+    tenant_principal: `Each trusted ${tenant} + ${principal}`,
+    tenant_object: `Each trusted ${tenant} + target row`,
+    capability: `This exact action${limit.capability ? ` (${limit.capability})` : ""}`,
+    boundary: "Whole Action Boundary",
+  }[limit.scope];
+}
+
+function readableBindingName(value: string): string {
+  const normalized = value.replace(/_id$/i, "").replace(/_/g, " ").trim();
+  return normalized || "tenant";
 }
 
 function compactActivationProposalEnvelope(
@@ -2799,12 +2856,14 @@ async function reviewAndStageActionBoundaryLimits(input: {
     .filter((patch) => patch.value_source === "argument")
     .map((patch) => patch.column));
   let limits = (input.initialLimits ?? suggestedActionBoundaryLimits(input.capability, input.suggestion))
-    .map((limit) => ({ ...limit, capability: input.capability }))
+    .map((limit) => limit.scope === "boundary"
+      ? limit
+      : { ...limit, capability: input.capability })
     .filter((limit) => limit.kind === "count" || (limit.field !== undefined && argumentFields.has(limit.field)));
   if (!limits.length && input.initialLimitsReviewed && input.initialLimits !== undefined) return 0;
   if (!limits.length) {
     const add = await input.prompter.confirm(
-      "Add a rolling trusted-scope circuit breaker for deterministic approvals? This bounds approvals separately for each verified tenant, principal, or object.",
+      "Add a rolling circuit breaker for deterministic approvals? It may cover this action, the whole Action Boundary, or one verified trusted scope.",
       false,
     );
     if (!add) return 0;
@@ -2816,15 +2875,23 @@ async function reviewAndStageActionBoundaryLimits(input: {
             detail: "Each authenticated person or agent gets a separate rolling ceiling inside its tenant.",
           }]
         : []),
-      { value: "tenant", label: "Each trusted tenant", detail: "Every principal in one tenant shares the rolling ceiling." },
-      { value: "tenant_object", label: "Each trusted tenant + target row", detail: "Bounds repeated approvals against one exact reviewed object." },
+      ...(input.resource.tenant_key ? [
+        { value: "tenant", label: "Each trusted tenant", detail: "Every principal in one tenant shares the rolling ceiling." },
+        { value: "tenant_object", label: "Each trusted tenant + target row", detail: "Bounds repeated approvals against one exact reviewed object." },
+      ] : []),
+      { value: "capability", label: "This exact action", detail: "One rolling ceiling for this capability across trusted identities." },
+      { value: "boundary", label: "Whole Action Boundary", detail: "One rolling ceiling shared by every action in this Action Boundary." },
     ], ["The agent supplies none of these identity values; Runner derives them from verified runtime context."]);
     if (!scope) return 0;
     const scopeDescription = scope === "tenant_principal"
       ? "each trusted tenant + principal"
       : scope === "tenant_object"
         ? "each trusted tenant + target row"
-        : "each trusted tenant";
+        : scope === "capability"
+          ? "this exact action"
+          : scope === "boundary"
+            ? "the whole Action Boundary"
+            : "each trusted tenant";
     const maximum = boundedInteger(
       await requiredText(
         input.prompter,
@@ -2861,7 +2928,7 @@ async function reviewAndStageActionBoundaryLimits(input: {
       scope: scope as ActionBoundarySharedLimitV1["scope"],
       maximum,
       window_seconds: Number(window),
-      capability: input.capability,
+      ...(scope === "boundary" ? {} : { capability: input.capability }),
     }];
     const approval = input.action.auto_approval!;
     if (approval.max_total_per_day !== undefined && approval.total_field
@@ -2946,7 +3013,7 @@ export function suggestedActionBoundaryLimits(
     scope: limit.scope,
     maximum: limit.maximum,
     window_seconds: limit.window_seconds,
-    capability,
+    ...(limit.scope === "boundary" ? {} : { capability }),
     ...(limit.field ? { field: limit.field } : {}),
   }));
 }
@@ -2990,10 +3057,10 @@ async function collectDeterministicAutoApproval(input: {
           "",
           "PROPOSED CONDITIONS (NOT AUTHORITY)",
           ...proposedConditions.map((condition) => `  ${approvalConditionSummary(condition)}`),
-          `  Per-action circuit breaker: ${input.initial!.max_per_day}/day`,
+          `  Policy fallback: ${input.initial!.max_per_day} per trusted tenant + approval policy / UTC calendar day`,
           ...(input.initial!.max_total_per_day === undefined
             ? []
-            : [`  Aggregate circuit breaker: ${input.initial!.max_total_per_day} ${input.initial!.total_field}/day`]),
+            : [`  Policy aggregate fallback: ${input.initial!.max_total_per_day} ${input.initial!.total_field} per trusted tenant + approval policy / UTC calendar day`]),
         ]
       : []),
   ]);
@@ -3180,10 +3247,11 @@ async function collectDeterministicAutoApproval(input: {
     "Maximum auto-approved proposals per day",
     String(input.initial?.max_per_day ?? 20),
     {
-      title: "SET PER-ACTION CIRCUIT BREAKER",
+      title: "SET POLICY CALENDAR-DAY FALLBACK",
       context: [
         ...policyContext,
-        "Enter how many proposals this action policy may auto-approve per rolling 24 hours.",
+        "Enter how many proposals this exact approval policy may auto-approve for one trusted tenant during a UTC calendar day.",
+        "This is not a rolling or action-wide limit. Add a shared Action Boundary limit for those semantics.",
         "After the ceiling is reached, further proposals require human review.",
       ],
     },
@@ -3203,8 +3271,8 @@ async function collectDeterministicAutoApproval(input: {
       title: "SET AGGREGATE CIRCUIT BREAKER",
       context: [
         ...policyContext,
-        `Count ceiling already reviewed: ${maxPerDay} auto-approved proposal(s) per rolling 24 hours.`,
-        `Enter the maximum combined ${totalField} across those auto-approved proposals.`,
+        `Count ceiling already reviewed: ${maxPerDay} auto-approved proposal(s) per trusted tenant + approval policy / UTC calendar day.`,
+        `Enter the maximum combined ${totalField} for that same tenant, policy, and UTC calendar day.`,
       ],
     },
   ), 1, 1_000_000_000, "aggregate policy value");
@@ -3310,17 +3378,16 @@ export async function reviewActionDraft(input: {
       ]);
       return undefined;
     }
-    const actionBoundary = await guidedActionStatus(input.projectRoot);
-    const sharedLimits = actionBoundary.action_boundary.draft?.authority.shared_limits
-      .filter((limit) => !limit.capability || limit.capability === draft.capability) ?? [];
-    const exactActivationReview = input.suppressActivationSummary
-      ? conversationalActionActivationReviewLines(design, resource, sharedLimits)
-      : actionActivationReviewLines(design, resource, sharedLimits);
+    const actionStatus = await guidedActionStatus(input.projectRoot);
+    const effectiveBoundary = actionStatus.action_boundary.draft ?? actionStatus.action_boundary.active;
+    const sharedLimits = effectiveBoundary?.authority.shared_limits ?? [];
+    const exactActivationReview = actionActivationReviewLines(design, resource, sharedLimits);
     const activationReview = input.suppressActivationSummary
       ? conciseConversationalActionActivationReviewLines(design, resource, sharedLimits)
       : exactActivationReview;
     input.prompter.rememberDetails?.("Exact Action activation review", [
       ...exactActivationReview,
+      `Complete authority: ${effectiveBoundary?.name ?? draft.action_boundary_name ?? "Action Boundary"} (${draft.action_boundary_digest ?? "unavailable"})`,
       `${actionRehearsalSummary(draft)} for this exact disabled revision; source database changed: no.`,
     ]);
     const choice = await input.prompter.choose("ACTIVATE PROPOSAL ACTION", [
@@ -3337,6 +3404,7 @@ export async function reviewActionDraft(input: {
       { value: "back", label: "Leave disabled" },
     ], [
       ...activationReview,
+      `Complete authority digest: ${draft.action_boundary_digest ?? "unavailable"}`,
       `${actionRehearsalSummary(draft)} for this exact disabled revision; source database changed: no.`,
     ], "back");
     if (choice === "activate") {
@@ -3362,24 +3430,43 @@ export async function reviewActionDraft(input: {
       },
       { value: "activate", label: "Activate this exact rehearsed revision", detail: draft.effect_preview ? "Runner binds confirmation to the selected digest and rechecks it at activation." : "Unavailable until the exact digest has a successful rehearsal.", disabled: !draft.effect_preview },
       { value: "edit", label: "Edit or replace this reviewed design", detail: "Creates a disabled replacement digest. Active authority remains unchanged." },
-      { value: "dsl", label: "View generated DSL and authority summary" },
+      { value: "dsl", label: "View capability DSL and effective authority" },
       { value: "discard", label: "Discard this disabled draft", detail: "Removes only this exact disabled draft. Active revisions and source rows are untouched." },
       { value: "back", label: "Back" },
     ], actionDraftLines(draft));
     if (!choice || choice === "back") return undefined;
     if (choice === "dsl") {
       const details = await guidedActionDraftDetails(input.projectRoot, draft.capability);
+      const design = await readGuidedActionDesignInput(input.projectRoot, draft.capability, "draft");
+      const options = await guidedActionOptions({
+        projectRoot: input.projectRoot,
+        inspection: input.inspection,
+        ...(draft.boundary_name ? { boundaryName: draft.boundary_name } : {}),
+        allowReviewedPending: true,
+      });
+      const resource = options.resources.find((candidate) => candidate.id === design.resource);
+      if (!resource) throw new Error(`GUIDED_ACTION_RESOURCE_UNKNOWN: ${design.resource} is no longer eligible.`);
+      const status = await guidedActionStatus(input.projectRoot);
+      const boundary = status.action_boundary.draft ?? status.action_boundary.active;
+      const sharedLimits = boundary?.authority.shared_limits ?? [];
+      const authority = [
+        "EFFECTIVE AUTHORITY",
+        ...actionActivationReviewLines(design, resource, sharedLimits),
+        `Action Boundary: ${boundary?.name ?? draft.action_boundary_name ?? "unavailable"}`,
+        `Complete authority digest: ${draft.action_boundary_digest ?? "unavailable"}`,
+      ];
       if (input.prompter.syntax) {
         await input.prompter.syntax(
-          "GENERATED ACTION DSL",
+          "CAPABILITY DSL AND EFFECTIVE AUTHORITY",
           details.dsl,
           "synapsor-dsl",
-          actionDraftLines(draft),
+          [...actionDraftLines(draft), "", ...authority],
         );
       } else {
-        await input.prompter.message("GENERATED REVIEW ARTIFACT", [
-          ...actionDraftLines(draft),
+        await input.prompter.message("CAPABILITY DSL AND EFFECTIVE AUTHORITY", [
+          ...authority,
           "",
+          "CAPABILITY DSL",
           ...details.dsl.trimEnd().split("\n"),
         ]);
       }
@@ -3462,6 +3549,7 @@ export async function reviewActionDraft(input: {
         projectRoot: input.projectRoot,
         capabilityName: draft.capability,
         contractDigest: preview.draft_digest,
+        actionBoundaryDigest: preview.action_boundary_digest,
         proposalId: preview.proposal_id,
         proposalHash: preview.proposal_hash,
         sourceDatabaseChanged: preview.source_database_changed,
@@ -3481,7 +3569,7 @@ export async function reviewActionDraft(input: {
       if (!actor) continue;
       operatorSession.actor = actor;
       const confirmed = await input.prompter.confirm(
-        `Activate ${draft.capability} at exact digest ${shortDigest(draft.contract_digest)}? Runner will recompute the full digest. This does not approve or apply any proposal.`,
+        `Activate ${draft.capability} at complete authority digest ${shortDigest(draft.action_boundary_digest ?? "unavailable")}? Runner will recompute it immediately before activation. This does not approve or apply any proposal.`,
         false,
       );
       if (!confirmed) continue;
@@ -3504,8 +3592,8 @@ async function activateActionDraft(input: {
   const active = await activateGuidedAction({
     projectRoot: input.projectRoot,
     capabilityName: input.draft.capability,
-    expectedDigest: input.draft.contract_digest,
-    confirmation: `ACTIVATE ${input.draft.contract_digest}`,
+    expectedDigest: input.draft.action_boundary_digest ?? "",
+    confirmation: `ACTIVATE ${input.draft.action_boundary_digest ?? ""}`,
     actor: input.actor,
     inspection: input.inspection,
     ...(input.baseConfigPath ? { configPath: input.baseConfigPath } : {}),
@@ -4513,7 +4601,7 @@ async function reviewActionBoundaryLimits(input: {
   ], [
     "These circuit breakers apply only to deterministic policy approval. A tripped or indeterminate limit falls back to human review.",
     "Trusted tenant, principal, and object values come from verified runtime context, never the agent.",
-    ...(limits.length ? ["", ...limits.map(actionBoundaryLimitSummary)] : ["No shared approval limits are reviewed yet."]),
+    ...(limits.length ? ["", ...limits.map((limit) => actionBoundaryLimitSummary(limit))] : ["No shared approval limits are reviewed yet."]),
   ]);
   if (!choice || choice === "back") return undefined;
   let next = limits;
@@ -4646,19 +4734,16 @@ function actionBoundaryTrustedScopeLines(
   return ["Trusted MCP scope:", ...scopes.map((scope) => `  ${scope}`)];
 }
 
-export function actionBoundaryLimitSummary(limit: ActionBoundarySharedLimitV1): string {
+export function actionBoundaryLimitSummary(
+  limit: ActionBoundarySharedLimitV1,
+  resource?: GuidedActionResourceOption,
+): string {
   const measure = limit.kind === "count"
     ? `${limit.maximum} deterministic approvals`
     : `${limit.maximum} total ${limit.field}`;
-  const action = limit.capability ? ` for ${limit.capability}` : " across matching actions";
-  const scope = {
-    tenant: "trusted tenant",
-    tenant_principal: "trusted tenant + principal",
-    tenant_object: "trusted tenant + object",
-    capability: "exact capability",
-    boundary: "whole Action Boundary",
-  }[limit.scope];
-  return `At most ${measure}${action} per ${scope} in ${formatLimitWindow(limit.window_seconds)}.`;
+  const action = limit.capability && limit.scope !== "capability" ? ` for ${limit.capability}` : "";
+  const scope = actionBoundaryLimitScopeLabel(limit, resource).toLowerCase();
+  return `At most ${measure}${action} for ${scope} in a rolling ${formatLimitWindow(limit.window_seconds)} window.`;
 }
 
 function formatLimitWindow(seconds: number): string {
@@ -5034,7 +5119,7 @@ export function actionReviewLines(
         return `  Supply ${name}${bounds}.`;
       });
   const approval = action.auto_approval
-    ? `${action.required_approvals ?? 1} x ${action.approval_role}; deterministic approval requires ${action.auto_approval.conditions?.length ?? 1} reviewed condition(s), at most ${action.auto_approval.max_per_day}/day${action.auto_approval.max_total_per_day !== undefined ? ` and ${action.auto_approval.max_total_per_day} aggregate/day` : ""}.`
+    ? `${action.required_approvals ?? 1} x ${action.approval_role}; deterministic approval requires ${action.auto_approval.conditions?.length ?? 1} reviewed condition(s), at most ${action.auto_approval.max_per_day} per trusted tenant + approval policy / UTC calendar day${action.auto_approval.max_total_per_day !== undefined ? ` and ${action.auto_approval.max_total_per_day} aggregate under the same scope/window` : ""}.`
     : `${action.required_approvals ?? 1} x ${action.approval_role}; no model approval authority.`;
   return [
     `${action.capability_name}`,
@@ -5044,17 +5129,7 @@ export function actionReviewLines(
     ...fieldLines,
     "",
     "RUNNER SUPPLIES AND RECHECKS",
-    resource.organization_scope
-      ? `  Reviewed whole-organization scope ${resource.organization_scope.organization_id}${resource.principal_key
-        ? ` and trusted principal ${resource.principal_key}`
-        : resource.principal_rls_setting
-          ? ` and principal through PostgreSQL RLS setting ${resource.principal_rls_setting}`
-          : ""}; never model arguments.`
-      : `  Trusted tenant ${resource.tenant_key}${resource.principal_key
-        ? ` and principal ${resource.principal_key}`
-        : resource.principal_rls_setting
-          ? ` and principal through PostgreSQL RLS setting ${resource.principal_rls_setting}`
-          : ""}; never model arguments.`,
+    `  ${reviewedTrustedScopeLabel(resource)}; never model arguments.`,
     `  Exact row identity ${resource.primary_key}${action.conflict_column ? ` and conflict guard ${action.conflict_column}` : ""}${action.dedup_proposal_column ? `; retry identity ${action.dedup_proposal_column}` : ""}.`,
     "",
     "AGENT MAY NOT",
@@ -5064,11 +5139,11 @@ export function actionReviewLines(
       "DETERMINISTIC AUTO-APPROVAL SUBSET",
       ...reviewedAutoApprovalConditions(action.auto_approval).map((condition) =>
         `  ${approvalConditionSummary(condition)}.`),
-      `  Circuit breaker: at most ${action.auto_approval.max_per_day} auto-approved proposal(s) per day.`,
+      `  Policy fallback: at most ${action.auto_approval.max_per_day} auto-approved proposal(s) per trusted tenant + approval policy in one UTC calendar day.`,
       ...(action.auto_approval.max_total_per_day !== undefined
-        ? [`  Aggregate circuit breaker: at most ${action.auto_approval.max_total_per_day} of ${action.auto_approval.total_field} per day.`]
+        ? [`  Policy aggregate fallback: at most ${action.auto_approval.max_total_per_day} of ${action.auto_approval.total_field} under the same tenant, policy, and UTC calendar day.`]
         : []),
-      "  Missing state, failed conditions, stale evidence, or uncertain rolling usage returns to human review.",
+      "  Missing state, failed conditions, stale evidence, or uncertain usage returns to human review.",
     ] : []),
     "",
     "REVIEW AND EXECUTION",
@@ -5099,9 +5174,7 @@ export function actionActivationReviewLines(
         if (field?.enum_values.length) return `Agent field ${name} | one of ${field.enum_values.join(", ")}`;
         return `Agent field ${name} | reviewed typed value`;
       });
-  const trustedScope = resource.organization_scope
-    ? `whole organization ${resource.organization_scope.organization_id}`
-    : `tenant ${resource.tenant_key}`;
+  const trustedScope = reviewedTrustedScopeLabel(resource);
   const guard = [
     `identity ${resource.primary_key}`,
     action.conflict_column ? `conflict ${action.conflict_column}` : undefined,
@@ -5111,23 +5184,26 @@ export function actionActivationReviewLines(
     ? [
         ...reviewedAutoApprovalConditions(action.auto_approval)
           .map((condition) => `Auto-approve ${compactApprovalConditionSummary(condition)}`),
-        `Action limits | ${action.auto_approval.max_per_day} approvals / 24 hours${action.auto_approval.max_total_per_day !== undefined
-          ? `; ${action.auto_approval.max_total_per_day} total ${action.auto_approval.total_field} / 24 hours`
+        `Policy fallback | ${action.auto_approval.max_per_day} approvals per ${trustedPolicyScopeLabel(resource)} / UTC calendar day${action.auto_approval.max_total_per_day !== undefined
+          ? `; ${action.auto_approval.max_total_per_day} total ${action.auto_approval.total_field} under the same scope/window`
           : ""}`,
-        ...sharedLimits.map((limit) => `Shared limit | ${actionBoundaryLimitSummary(limit)}`),
         "Fallback | human review on failed, missing, uncertain, or exhausted checks",
       ]
     : [`Approval | ${action.required_approvals ?? 1} x ${action.approval_role}; human review`];
   return [
-    `Target: ${action.operation.toUpperCase()} ${resource.id}`,
+    `Target: ${reviewedActionTargetLabel(action, resource)}`,
     ...supplied,
-    `Trusted context | ${trustedScope}${resource.principal_key
-      ? ` + principal ${resource.principal_key}`
-      : resource.principal_rls_setting
-        ? ` + principal through PostgreSQL RLS ${resource.principal_rls_setting}`
-        : ""}; never model arguments`,
+    `Trusted context | ${trustedScope}; never model arguments`,
     `Guards | ${guard}`,
     ...approvalLines,
+    ...sharedLimits.map((limit) =>
+      `Shared rolling limit ${limit.id} | ${actionBoundaryLimitSummary(limit, resource)}`),
+    ...(action.operation === "delete"
+      ? []
+      : ["Hard envelope | outside it, Runner refuses before proposal creation"]),
+    ...(action.auto_approval
+      ? ["Approval subset | inside the envelope but outside policy, human review"]
+      : []),
     `State | ${action.authority_posture ?? "proposal_only"} | writeback ${action.writeback?.mode ?? "none"}`,
   ];
 }
@@ -5258,7 +5334,16 @@ function actionDraftLines(draft: GuidedActionDraft): string[] {
     `Target: ${draft.operation.toUpperCase()} ${draft.resource}`,
     `Authority: ${draft.authority_posture}`,
     `Writeback: ${draft.writeback_mode}`,
-    `Digest: ${draft.contract_digest}`,
+    `Capability contract digest: ${draft.contract_digest}`,
+    `Action Boundary: ${draft.action_boundary_name ?? "unavailable"}`,
+    `Complete authority digest: ${draft.action_boundary_digest ?? "unavailable"}`,
+    ...(draft.action_boundary_shared_limits?.length
+      ? [
+          "Shared rolling limits:",
+          ...draft.action_boundary_shared_limits.map((limit) =>
+            `  ${limit.id}: ${actionBoundaryLimitSummary(limit)}`),
+        ]
+      : []),
     `Rehearsal: ${actionRehearsalSummary(draft)}`,
     "Current state: disabled. Active tools and source data are unchanged.",
   ];

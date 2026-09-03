@@ -3117,6 +3117,7 @@ describe("local Synapsor MCP runtime", () => {
         invoice_id: "INV-3001",
         reason: "oversized waiver",
       })).rejects.toMatchObject({ code: "PATCH_ABOVE_MAXIMUM" });
+      expect(await runtime.store.listProposals?.()).toEqual([]);
     } finally {
       runtime.close();
     }

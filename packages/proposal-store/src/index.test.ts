@@ -1283,6 +1283,46 @@ describe("proposal store", () => {
     }
   });
 
+  it("treats capability policy PER DAY as a trusted-tenant UTC calendar day", () => {
+    const store = new ProposalStore();
+    const create = (id: string, objectId: string) => {
+      const proposal = structuredClone(changeSet) as any;
+      proposal.proposal_id = id;
+      proposal.scope.object_id = objectId;
+      proposal.source.primary_key.value = objectId;
+      proposal.integrity.proposal_hash = `sha256:${id}`;
+      return store.createProposal(proposal);
+    };
+    const limits = [{
+      kind: "count" as const,
+      max: 1,
+      period: "day" as const,
+      scope: "tenant_policy" as const,
+    }];
+    try {
+      const beforeMidnight = create("wrp_policy_utc_1", "INV-POLICY-UTC-1");
+      const afterMidnight = create("wrp_policy_utc_2", "INV-POLICY-UTC-2");
+      expect(store.approveProposalByPolicy(beforeMidnight.proposal_id, {
+        policy: "small_credit",
+        proposal_hash: beforeMidnight.proposal_hash,
+        proposal_version: beforeMidnight.proposal_version,
+        reason: "qualified",
+        limits,
+        now: "2026-07-11T23:59:00.000Z",
+      }).approved).toBe(true);
+      expect(store.approveProposalByPolicy(afterMidnight.proposal_id, {
+        policy: "small_credit",
+        proposal_hash: afterMidnight.proposal_hash,
+        proposal_version: afterMidnight.proposal_version,
+        reason: "qualified",
+        limits,
+        now: "2026-07-12T00:01:00.000Z",
+      }).approved).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
+
   it("enforces rolling Action Boundary limits across capabilities and boundary revisions", () => {
     const store = new ProposalStore();
     const boundaryName = "support_actions";
@@ -1313,7 +1353,7 @@ describe("proposal store", () => {
         proposal_version: first.proposal_version,
         reason: "qualified",
         action_boundary: { name: boundaryName, digest: firstDigest, limits },
-        now: "2026-07-12T01:00:00.000Z",
+        now: "2026-07-11T23:40:00.000Z",
       }).approved).toBe(true);
       expect(store.approveProposalByPolicy(second.proposal_id, {
         policy: "small_refund",
@@ -1321,7 +1361,7 @@ describe("proposal store", () => {
         proposal_version: second.proposal_version,
         reason: "qualified",
         action_boundary: { name: boundaryName, digest: firstDigest, limits },
-        now: "2026-07-12T01:10:00.000Z",
+        now: "2026-07-12T00:10:00.000Z",
       }).approved).toBe(true);
 
       const deferred = store.approveProposalByPolicy(third.proposal_id, {
@@ -1331,11 +1371,18 @@ describe("proposal store", () => {
         reason: "qualified",
         // A replacement revision must not reset use of the stable boundary.
         action_boundary: { name: boundaryName, digest: nextDigest, limits },
-        now: "2026-07-12T01:20:00.000Z",
+        now: "2026-07-12T00:20:00.000Z",
       });
       expect(deferred).toMatchObject({ approved: false, proposal: { state: "pending_review" } });
       expect(deferred.tripped_limits).toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: "all_actions", observed: 2, proposed: 1, projected: 3 }),
+        expect.objectContaining({
+          id: "all_actions",
+          observed: 2,
+          proposed: 1,
+          projected: 3,
+          window_start: "2026-07-11T23:20:00.000Z",
+          window_end: "2026-07-12T00:20:00.000Z",
+        }),
         // The negative second patch counts by magnitude; it cannot cancel prior use.
         expect.objectContaining({ id: "credit_magnitude", observed: 450, proposed: 100, projected: 550 }),
       ]));
@@ -1409,7 +1456,7 @@ describe("proposal store", () => {
       };
       expect(approve(create({ id: "wrp_capability_a1", action: "billing.action_a" }), capabilityLimit, "2026-07-12T01:00:00.000Z").approved).toBe(true);
       expect(approve(create({ id: "wrp_capability_b1", action: "billing.action_b" }), capabilityLimit, "2026-07-12T01:01:00.000Z").approved).toBe(true);
-      expect(approve(create({ id: "wrp_capability_a2", action: "billing.action_a" }), capabilityLimit, "2026-07-12T01:02:00.000Z")).toMatchObject({
+      expect(approve(create({ id: "wrp_capability_a2", action: "billing.action_a", tenant: "globex" }), capabilityLimit, "2026-07-12T01:02:00.000Z")).toMatchObject({
         approved: false,
         tripped_limits: [expect.objectContaining({ id: "one_per_capability", observed: 1, projected: 2 })],
       });

@@ -20,7 +20,11 @@ import {
   type ModelAuthoringConversation,
 } from "./model-authoring-conversation.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
-import { explicitTrustedPolicyScope } from "./action-policy-scope.js";
+import {
+  explicitPolicyDurations,
+  explicitTrustedPolicyScope,
+  formatPolicyDuration,
+} from "./action-policy-scope.js";
 
 const SUBMIT_SUGGESTION_TOOL = "runner.suggest_safe_action";
 const SUBMIT_SUGGESTION_SET_TOOL = "runner.suggest_safe_actions";
@@ -141,8 +145,8 @@ export async function generateModelActionSuggestion(input: {
     `Intent: ${intent}`,
     "Call runner.suggest_safe_action exactly once. Copy only exact resource and field ids from the structural candidate catalog.",
     "Select the resource whose exact id, label, or description matches the requested changed object. Never substitute a related resource merely because it is available.",
-    "You may optionally propose a deterministic approval policy for INSERT or UPDATE using only the fixed policy grammar in the tool schema.",
-    "Scope meanings are exact: tenant is the Runner-injected trusted tenant/account; tenant_principal is that tenant/account plus the trusted principal; tenant_object is that tenant/account plus one exact target row. Never use tenant_object for a per-account rule.",
+    "You may optionally propose a deterministic approval policy for INSERT or UPDATE using only the fixed policy grammar in the tool schema. max_per_day means per trusted tenant plus approval policy in a UTC calendar day; use shared_limits for rolling, capability-wide, or Action-Boundary-wide ceilings.",
+    "Scope meanings are exact: boundary is shared by every action in this Action Boundary; capability is shared by this exact action across identities; tenant is the Runner-injected trusted tenant/account; tenant_principal is that tenant/account plus the trusted principal; tenant_object is that tenant/account plus one exact target row. Never use tenant_object for a per-account rule.",
     "A policy proposal is only operator-review input. Never propose auto-approval for DELETE, identity values, execution, writeback, credentials, SQL, activation, approval decisions, or apply authority.",
     `Structural candidate catalog: ${serializedCatalog}`,
   ].join("\n");
@@ -323,8 +327,8 @@ export async function generateModelActionSuggestionSet(input: {
     `Job: ${jobIntent}`,
     "Call runner.suggest_safe_actions exactly once with 1 through 8 suggestions. Use one suggestion per distinct changed object or operation; do not combine unrelated effects and do not duplicate effects.",
     "Do not invent a write for read-only analytics clauses. Copy only exact resource and field ids from the structural candidate catalog.",
-    "Each INSERT or UPDATE may optionally include one deterministic approval-policy proposal using only the fixed grammar. DELETE must never include auto-approval.",
-    "Scope meanings are exact: tenant is the Runner-injected trusted tenant/account; tenant_principal is that tenant/account plus the trusted principal; tenant_object is that tenant/account plus one exact target row. Never use tenant_object for a per-account rule.",
+    "Each INSERT or UPDATE may optionally include one deterministic approval-policy proposal using only the fixed grammar. max_per_day means per trusted tenant plus approval policy in a UTC calendar day; use shared_limits for rolling, capability-wide, or Action-Boundary-wide ceilings. DELETE must never include auto-approval.",
+    "Scope meanings are exact: boundary is shared by every action in this Action Boundary; capability is shared by this exact action across identities; tenant is the Runner-injected trusted tenant/account; tenant_principal is that tenant/account plus the trusted principal; tenant_object is that tenant/account plus one exact target row. Never use tenant_object for a per-account rule.",
     "Every item is untrusted review input. Never include identity values, execution, writeback, credentials, SQL, activation, approval decisions, or apply authority.",
     `Structural candidate catalog: ${serializedCatalog}`,
   ].join("\n");
@@ -520,17 +524,26 @@ function suggestionCatalog(options: GuidedActionOptions) {
         ? { suggested_numeric_maximum: field.suggested_numeric_maximum }
         : {}),
     })),
-    trusted_limit_scopes: [
-      "tenant",
-      ...(resource.principal_key || resource.principal_rls_setting ? ["tenant_principal"] : []),
-      "tenant_object",
-    ],
+    trusted_limit_scopes: resource.organization_scope
+      ? ["capability", "boundary"]
+      : [
+          ...(resource.tenant_key ? ["tenant", "tenant_object"] : []),
+          ...(resource.principal_key || resource.principal_rls_setting ? ["tenant_principal"] : []),
+          "capability",
+          "boundary",
+        ],
     trusted_limit_scope_semantics: {
-      tenant: "Each Runner-injected trusted tenant, organization, or account; not a target row.",
+      ...(resource.tenant_key
+        ? {
+            tenant: "Each Runner-injected trusted tenant, organization, or account; not a target row.",
+            tenant_object: "Each Runner-injected trusted tenant/account plus one exact target row. Use only when the operator explicitly says target row, record, or object.",
+          }
+        : {}),
       ...(resource.principal_key || resource.principal_rls_setting
         ? { tenant_principal: "Each Runner-injected trusted tenant/account plus trusted principal, user, customer, agent, or operator." }
         : {}),
-      tenant_object: "Each Runner-injected trusted tenant/account plus one exact target row. Use only when the operator explicitly says target row, record, or object.",
+      capability: "Every approval for this exact action capability across trusted identities.",
+      boundary: "Every approval for every action in this Action Boundary.",
     },
   }));
   const core = {
@@ -629,7 +642,12 @@ function suggestionObjectSchema(catalog: ReturnType<typeof suggestionCatalog>): 
               },
             },
           },
-          max_per_day: { type: "integer", minimum: 1, maximum: 1_000_000 },
+          max_per_day: {
+            type: "integer",
+            minimum: 1,
+            maximum: 1_000_000,
+            description: "Fallback ceiling per Runner-trusted tenant and approval policy in one UTC calendar day. Use shared_limits for rolling or action-wide ceilings.",
+          },
           max_total_per_day: { type: "integer", minimum: 1, maximum: 1_000_000_000 },
           total_field: { type: "string", minLength: 1, maxLength: 256 },
           shared_limits: {
@@ -641,7 +659,7 @@ function suggestionObjectSchema(catalog: ReturnType<typeof suggestionCatalog>): 
               required: ["kind", "scope", "maximum", "window_seconds"],
               properties: {
                 kind: { type: "string", enum: ["count", "total"] },
-                scope: { type: "string", enum: ["tenant", "tenant_principal", "tenant_object"] },
+                scope: { type: "string", enum: ["boundary", "capability", "tenant", "tenant_principal", "tenant_object"] },
                 maximum: { type: "integer", minimum: 1 },
                 window_seconds: { type: "integer", minimum: 60, maximum: 31_536_000 },
                 field: { type: "string", minLength: 1, maxLength: 256 },
@@ -674,16 +692,26 @@ function enforceOperatorPolicyScope(
 ): ActionSuggestionAssessment {
   const required = explicitTrustedPolicyScope(operatorIntent);
   const policy = assessment.suggestion.approval_policy_proposal;
-  if (!required || !policy || policy.shared_limits?.some((limit) => limit.scope === required.scope)) {
+  if (!required || !policy) {
     return assessment;
   }
+  const matchingScopeLimits = (policy.shared_limits ?? []).filter((limit) => limit.scope === required.scope);
+  const missingDuration = explicitPolicyDurations(operatorIntent).find((duration) =>
+    !matchingScopeLimits.some((limit) => limit.window_seconds === duration.seconds));
+  if (matchingScopeLimits.length && !missingDuration) return assessment;
   const actual = [...new Set((policy.shared_limits ?? []).map((limit) => limit.scope))];
   return {
     ...assessment,
     status: "blocked",
     blockers: [
       ...assessment.blockers,
-      `The operator explicitly scoped the rolling limit ${required.phrase}. shared_limits must include ${required.scope}; ${actual.length ? `the submitted scope was ${actual.join(", ")}` : "the submitted policy omitted that trusted scope"}.`,
+      ...(matchingScopeLimits.length
+        ? [
+            `The operator explicitly stated ${formatPolicyDuration(missingDuration!.seconds)} (${missingDuration!.phrase}) for ${required.scope} accounting, but that scope used ${matchingScopeLimits.map((limit) => formatPolicyDuration(limit.window_seconds)).join(", ")}. Preserve the exact duration in window_seconds.`,
+          ]
+        : [
+            `The operator explicitly scoped the rolling limit ${required.phrase}. shared_limits must include ${required.scope}; ${actual.length ? `the submitted scope was ${actual.join(", ")}` : "the submitted policy omitted that trusted scope"}.`,
+          ]),
     ],
   };
 }

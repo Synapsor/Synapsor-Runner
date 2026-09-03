@@ -193,6 +193,8 @@ export type GuidedActionDraft = {
     /** Missing on legacy drafts, which always used a live disposable proposal. */
     mode?: "live_proposal" | "structural";
     contract_digest: `sha256:${string}`;
+    /** Complete capability + Action Boundary authority rehearsed together. */
+    action_boundary_digest: `sha256:${string}`;
     proposal_id: string;
     proposal_hash: string;
     source_rows_read?: boolean;
@@ -266,8 +268,12 @@ export type GuidedActionResourceOption = {
   description?: string;
   primary_key: string;
   tenant_key?: string;
+  /** Reviewed business label for the trusted tenant/account binding column. */
+  tenant_label?: string;
   organization_scope?: NonNullable<ActivatedExplorationBoundary["organization_scope"]>;
   principal_key?: string;
+  /** Reviewed business label for the trusted principal binding column. */
+  principal_label?: string;
   /** Reviewed PostgreSQL session setting applied transaction-locally before source access. */
   principal_rls_setting?: string;
   writable_fields: Array<{
@@ -438,8 +444,14 @@ function buildGuidedActionOptions(
         ...(resource.description ? { description: resource.description } : {}),
         primary_key: resource.primary_key,
         ...(resource.tenant_key ? { tenant_key: resource.tenant_key } : {}),
+        ...(resource.tenant_key && resource.field_metadata?.[resource.tenant_key]?.label
+          ? { tenant_label: resource.field_metadata[resource.tenant_key]!.label }
+          : {}),
         ...(boundary.organization_scope ? { organization_scope: boundary.organization_scope } : {}),
         ...(resource.principal_key ? { principal_key: resource.principal_key } : {}),
+        ...(resource.principal_key && resource.field_metadata?.[resource.principal_key]?.label
+          ? { principal_label: resource.field_metadata[resource.principal_key]!.label }
+          : {}),
         ...(resource.rls_session?.principal_setting
           ? { principal_rls_setting: resource.rls_session.principal_setting }
           : {}),
@@ -587,13 +599,6 @@ export async function createGuidedActionDraft(input: {
   const designPath = path.join(outputRoot, "action-design.json");
   const runtimeConfigPath = path.join(projectRoot, "synapsor.actions.runner.json");
   const priorDraft = await readOptionalJson(path.join(outputRoot, "draft.json"));
-  const preservedPreview = priorDraft?.schema_version === GUIDED_ACTION_VERSION
-    && priorDraft.capability === action.capability_name
-    && priorDraft.contract_digest === contractDigest
-    && isRecord(priorDraft.effect_preview)
-    && priorDraft.effect_preview.contract_digest === contractDigest
-      ? priorDraft.effect_preview as GuidedActionDraft["effect_preview"]
-      : undefined;
   let draft: GuidedActionDraft = {
     schema_version: GUIDED_ACTION_VERSION,
     state: "disabled",
@@ -621,7 +626,6 @@ export async function createGuidedActionDraft(input: {
     supervised_worker_execution: action.authority.supervised_worker_execution,
     ...(action.worker_policy ? { worker_policy: action.worker_policy } : {}),
     created_at: input.now ?? new Date().toISOString(),
-    ...(preservedPreview ? { effect_preview: preservedPreview } : {}),
   };
   const actionBoundaryDraft = await prospectiveActionBoundaryDraft({
     projectRoot,
@@ -637,6 +641,14 @@ export async function createGuidedActionDraft(input: {
     ...draft,
     action_boundary_name: actionBoundaryDraft.name,
     action_boundary_digest: actionBoundaryDraft.digest,
+    ...(priorDraft?.schema_version === GUIDED_ACTION_VERSION
+      && priorDraft.capability === action.capability_name
+      && priorDraft.contract_digest === contractDigest
+      && isRecord(priorDraft.effect_preview)
+      && priorDraft.effect_preview.contract_digest === contractDigest
+      && priorDraft.effect_preview.action_boundary_digest === actionBoundaryDraft.digest
+      ? { effect_preview: priorDraft.effect_preview as GuidedActionDraft["effect_preview"] }
+      : {}),
   };
   await writeGuidedActionArtifacts({
     projectRoot,
@@ -737,6 +749,7 @@ export async function prepareGuidedActionPreview(input: {
   config_path: string;
   capability: string;
   draft_digest: `sha256:${string}`;
+  action_boundary_digest: `sha256:${string}`;
 }> {
   const projectRoot = path.resolve(input.projectRoot);
   const draft = await readGuidedActionDraft(projectRoot, input.capabilityName);
@@ -764,6 +777,12 @@ export async function prepareGuidedActionPreview(input: {
     candidateContract: contract,
     now: draft.created_at,
   });
+  if (draft.action_boundary_name !== actionBoundary.name
+    || draft.action_boundary_digest !== actionBoundary.digest) {
+    throw new Error(
+      "GUIDED_ACTION_BOUNDARY_SET_CHANGED: the effective Action Boundary changed; reload and rehearse the current combined authority.",
+    );
+  }
   const previewConfig = configWithGuidedAction({
     projectRoot,
     sourceConfigPath,
@@ -785,6 +804,7 @@ export async function prepareGuidedActionPreview(input: {
     config_path: relativeProjectPath(projectRoot, previewPath),
     capability: draft.capability,
     draft_digest: draft.contract_digest,
+    action_boundary_digest: actionBoundary.digest,
   };
 }
 
@@ -792,6 +812,7 @@ export async function recordGuidedActionPreview(input: {
   projectRoot: string;
   capabilityName: string;
   contractDigest: string;
+  actionBoundaryDigest: string;
   proposalId: string;
   proposalHash: string;
   sourceDatabaseChanged: boolean;
@@ -856,6 +877,7 @@ export async function recordGuidedActionStructuralPreview(input: {
     schema_version: "synapsor.guided-action-structural-rehearsal.v1",
     capability: details.draft.capability,
     contract_digest: details.draft.contract_digest,
+    action_boundary_digest: prepared.action_boundary_digest,
     runtime_config: canonicalJsonDigest(jsonWithoutUndefined(config)),
     argument_envelope: canonicalJsonDigest(jsonWithoutUndefined(capability.args)),
     generated_assertions: canonicalJsonDigest(jsonWithoutUndefined(details.tests)),
@@ -866,6 +888,7 @@ export async function recordGuidedActionStructuralPreview(input: {
     projectRoot,
     capabilityName: input.capabilityName,
     contractDigest: prepared.draft_digest,
+    actionBoundaryDigest: prepared.action_boundary_digest,
     proposalId: `structural:${proofHash.slice("sha256:".length)}`,
     proposalHash: proofHash,
     sourceDatabaseChanged: false,
@@ -886,6 +909,7 @@ async function recordGuidedActionRehearsal(input: {
   projectRoot: string;
   capabilityName: string;
   contractDigest: string;
+  actionBoundaryDigest: string;
   proposalId: string;
   proposalHash: string;
   sourceDatabaseChanged: boolean;
@@ -895,6 +919,10 @@ async function recordGuidedActionRehearsal(input: {
   const projectRoot = path.resolve(input.projectRoot);
   const draft = await readGuidedActionDraft(projectRoot, input.capabilityName);
   if (input.contractDigest !== draft.contract_digest) throw new Error("GUIDED_ACTION_PREVIEW_DIGEST_MISMATCH: preview belongs to another draft.");
+  if (!draft.action_boundary_digest
+    || input.actionBoundaryDigest !== draft.action_boundary_digest) {
+    throw new Error("GUIDED_ACTION_PREVIEW_AUTHORITY_MISMATCH: rehearsal belongs to another effective Action Boundary revision.");
+  }
   if (input.sourceDatabaseChanged) throw new Error("GUIDED_ACTION_PREVIEW_MUTATED_SOURCE: disabled action preview changed source data.");
   if (!input.proposalId.trim()
     || input.proposalId.length > 256
@@ -907,6 +935,7 @@ async function recordGuidedActionRehearsal(input: {
     effect_preview: {
       mode: input.mode,
       contract_digest: draft.contract_digest,
+      action_boundary_digest: draft.action_boundary_digest,
       proposal_id: input.proposalId,
       proposal_hash: input.proposalHash,
       source_rows_read: input.mode === "live_proposal" && draft.operation !== "insert",
@@ -943,14 +972,8 @@ export async function activateGuidedAction(input: {
   const contractPath = containedProjectPath(projectRoot, draft.contract_path);
   const contract = JSON.parse(await fs.readFile(contractPath, "utf8")) as SynapsorContract;
   const digest = canonicalJsonDigest(contract);
-  if (digest !== draft.contract_digest || input.expectedDigest !== digest) {
+  if (digest !== draft.contract_digest) {
     throw new Error("GUIDED_ACTION_DRAFT_CHANGED: reload and review the exact current draft.");
-  }
-  if (input.confirmation !== `ACTIVATE ${digest}`) {
-    throw new Error(`GUIDED_ACTION_CONFIRMATION_REQUIRED: enter ACTIVATE ${digest}.`);
-  }
-  if (!draft.effect_preview || draft.effect_preview.contract_digest !== digest || draft.effect_preview.source_database_changed) {
-    throw new Error("GUIDED_ACTION_EFFECT_PREVIEW_REQUIRED: run the exact structural rehearsal for this digest before activation.");
   }
   const prospectiveBoundary = await prospectiveActionBoundaryDraft({
     projectRoot,
@@ -964,6 +987,19 @@ export async function activateGuidedAction(input: {
     throw new Error(
       "GUIDED_ACTION_BOUNDARY_SET_CHANGED: another action revision changed the prospective Action Boundary; reload and rehearse this draft.",
     );
+  }
+  const effectiveDigest = prospectiveBoundary.digest;
+  if (input.expectedDigest !== effectiveDigest) {
+    throw new Error("GUIDED_ACTION_DRAFT_CHANGED: reload and review the exact current effective Action Boundary authority.");
+  }
+  if (input.confirmation !== `ACTIVATE ${effectiveDigest}`) {
+    throw new Error(`GUIDED_ACTION_CONFIRMATION_REQUIRED: enter ACTIVATE ${effectiveDigest}.`);
+  }
+  if (!draft.effect_preview
+    || draft.effect_preview.contract_digest !== digest
+    || draft.effect_preview.action_boundary_digest !== effectiveDigest
+    || draft.effect_preview.source_database_changed) {
+    throw new Error("GUIDED_ACTION_EFFECT_PREVIEW_REQUIRED: rehearse the complete capability and Action Boundary authority before activation.");
   }
 
   const activeRoot = path.join(projectRoot, GUIDED_ACTION_ROOT, "active");
@@ -1121,11 +1157,13 @@ export async function activateGuidedAction(input: {
  * A job may prepare several disabled actions before activating any of them.
  * Once one revision becomes active, every remaining draft must name the new
  * prospective Action Boundary (active set plus that one draft). The action
- * contract and its rehearsal remain byte-for-byte unchanged.
+ * contract remains byte-for-byte unchanged. A rehearsal is retained only when
+ * the complete effective Action Boundary digest is unchanged.
  */
 async function rebaseDisabledGuidedActionDrafts(input: {
   projectRoot: string;
   inspection: SchemaInspection;
+  authoritativeSharedLimits?: ActionBoundarySharedLimitV1[];
 }): Promise<{ rollback: () => Promise<void> }> {
   const indexPath = path.join(input.projectRoot, ".synapsor/guided-action-drafts.json");
   const priorIndex = await fs.readFile(indexPath, "utf8").then(
@@ -1136,6 +1174,10 @@ async function rebaseDisabledGuidedActionDrafts(input: {
     },
   );
   const status = await guidedActionStatus(input.projectRoot);
+  const reviewedBoundary = status.action_boundary.draft ?? status.action_boundary.active;
+  const reviewedCapabilities = new Set(
+    reviewedBoundary?.authority.capabilities.map((item) => item.capability) ?? [],
+  );
   const activeByCapability = new Map(status.activations.map((activation) => [
     activation.capability,
     activation.contract_digest,
@@ -1169,18 +1211,44 @@ async function rebaseDisabledGuidedActionDrafts(input: {
     if (canonicalJsonDigest(contract) !== draft.contract_digest) {
       throw new Error(`GUIDED_ACTION_DRAFT_TAMPERED: ${draft.capability} no longer matches its reviewed digest.`);
     }
+    const preservedCandidateLimits = input.authoritativeSharedLimits === undefined
+      ? (draft.action_boundary_shared_limits ?? [])
+      : (draft.action_boundary_shared_limits ?? []).filter((limit) =>
+          limit.capability === draft.capability
+          && !reviewedCapabilities.has(draft.capability));
+    const effectiveSharedLimits = input.authoritativeSharedLimits === undefined
+      ? undefined
+      : uniqueSharedLimits([
+          ...input.authoritativeSharedLimits,
+          ...preservedCandidateLimits,
+        ]);
     const nextBoundary = await prospectiveActionBoundaryDraft({
       projectRoot: input.projectRoot,
       boundary,
       candidateDraft: draft,
       candidateContract: contract,
+      ...(effectiveSharedLimits === undefined
+        ? {}
+        : { sharedLimitsOverride: effectiveSharedLimits }),
       now: draft.created_at,
     });
+    const boundaryChanged = draft.action_boundary_name !== nextBoundary.name
+      || draft.action_boundary_digest !== nextBoundary.digest;
+    const { effect_preview: _stalePreview, ...draftWithoutPreview } = draft;
     rebased.push({
       draft: {
-        ...draft,
+        ...(boundaryChanged ? draftWithoutPreview : draft),
         action_boundary_name: nextBoundary.name,
         action_boundary_digest: nextBoundary.digest,
+        ...(input.authoritativeSharedLimits === undefined
+          ? {}
+          : {
+              action_boundary_shared_limits: uniqueSharedLimits([
+                ...input.authoritativeSharedLimits.filter((limit) =>
+                  !limit.capability || limit.capability === draft.capability),
+                ...preservedCandidateLimits,
+              ]),
+            }),
       },
       boundary: nextBoundary,
     });
@@ -1454,6 +1522,7 @@ export async function reviseGuidedActionBoundary(input: {
     await rebaseDisabledGuidedActionDrafts({
       projectRoot,
       inspection: input.inspection,
+      authoritativeSharedLimits: revised.authority.shared_limits,
     });
   } catch (error) {
     if (previousDraft) await writeActionBoundaryDraft(projectRoot, previousDraft).catch(() => undefined);
@@ -1636,6 +1705,7 @@ async function prospectiveActionBoundaryDraft(input: {
   boundary: ActivatedExplorationBoundary;
   candidateDraft: GuidedActionDraft;
   candidateContract: SynapsorContract;
+  sharedLimitsOverride?: ActionBoundarySharedLimitV1[];
   jobIntent?: string;
   now?: string;
 }): Promise<ActionBoundaryDraft> {
@@ -1662,11 +1732,12 @@ async function prospectiveActionBoundaryDraft(input: {
     ...existingCandidates.map((item) => item.capability.capability),
     candidate.capability.capability,
   ]);
-  const sharedLimits = uniqueSharedLimits([
-    ...(current?.authority.shared_limits.filter((limit) =>
-      !limit.capability || includedCapabilities.has(limit.capability)) ?? []),
-    ...(input.candidateDraft.action_boundary_shared_limits ?? []),
-  ]);
+  const sharedLimits = uniqueSharedLimits(
+    (input.sharedLimitsOverride ?? [
+      ...(current?.authority.shared_limits ?? []),
+      ...(input.candidateDraft.action_boundary_shared_limits ?? []),
+    ]).filter((limit) => !limit.capability || includedCapabilities.has(limit.capability)),
+  );
   return buildActionBoundaryDraft({
     name: current?.name ?? DEFAULT_ACTION_BOUNDARY_NAME,
     label: current?.label ?? "Default action boundary",

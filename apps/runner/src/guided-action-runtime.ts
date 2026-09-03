@@ -11,6 +11,7 @@ import { withDisposableActionPreviewLedger } from "./action-preview-ledger.js";
 
 export type GuidedActionRuntimePreview = {
   draft_digest: `sha256:${string}`;
+  action_boundary_digest: `sha256:${string}`;
   proposal_id: string;
   proposal_hash: string;
   source_database_changed: false;
@@ -40,6 +41,11 @@ export async function executeGuidedActionPreview(input: {
   });
   const previewConfigPath = path.resolve(projectRoot, prepared.config_path);
   const config = loadRuntimeConfigFromFile(previewConfigPath);
+  if (config.action_boundary?.digest !== prepared.action_boundary_digest) {
+    throw new Error(
+      "GUIDED_ACTION_PREVIEW_AUTHORITY_MISMATCH: the preview runtime does not contain the exact effective Action Boundary revision.",
+    );
+  }
   const trustedContext = configUsesHttpClaims(config)
     ? await verifiedPreviewHttpContext(
         config,
@@ -82,6 +88,7 @@ export async function executeGuidedActionPreview(input: {
         }
         return {
           draft_digest: prepared.draft_digest,
+          action_boundary_digest: prepared.action_boundary_digest,
           proposal_id: proposalId,
           proposal_hash: proposalHash,
           source_database_changed: false,

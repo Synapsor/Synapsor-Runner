@@ -219,6 +219,7 @@ async function activateDraft(projectRoot, inspection, env, created) {
     projectRoot,
     capabilityName: created.draft.capability,
     contractDigest: preview.draft_digest,
+    actionBoundaryDigest: preview.action_boundary_digest,
     proposalId: preview.proposal_id,
     proposalHash: preview.proposal_hash,
     sourceDatabaseChanged: false,
@@ -226,8 +227,8 @@ async function activateDraft(projectRoot, inspection, env, created) {
   return activateGuidedAction({
     projectRoot,
     capabilityName: created.draft.capability,
-    expectedDigest: created.draft.contract_digest,
-    confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+    expectedDigest: preview.action_boundary_digest,
+    confirmation: `ACTIVATE ${preview.action_boundary_digest}`,
     actor: "guided-action-live-test",
     inspection,
   });

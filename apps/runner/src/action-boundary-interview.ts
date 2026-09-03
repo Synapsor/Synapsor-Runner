@@ -24,7 +24,11 @@ import {
   type ModelAuthoringConversation,
 } from "./model-authoring-conversation.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
-import { explicitTrustedPolicyScope } from "./action-policy-scope.js";
+import {
+  explicitPolicyDurations,
+  explicitTrustedPolicyScope,
+  formatPolicyDuration,
+} from "./action-policy-scope.js";
 
 const INTERPRET_DECISION_TOOL = "runner.interpret_action_boundary_answer";
 const INTERPRET_POLICY_TOOL = "runner.interpret_action_approval_policy";
@@ -375,7 +379,7 @@ export async function interpretActionBoundaryPolicy(input: {
     `Call ${INTERPRET_POLICY_TOOL} exactly once.`,
     "Every model-controlled proposal field must have at least one condition. Use the full reviewed proposal envelope for a field when the operator does not narrow it.",
     "All conditions are ANDed. A failed, missing, or indeterminate condition falls back to human review.",
-    "Use max_per_day as a per-action rolling 24-hour circuit breaker. Use shared_limits only with the listed trusted scopes; the model never supplies scope identity values.",
+    "max_per_day is the capability policy's per-trusted-tenant and per-policy UTC calendar-day fallback limit. It is not action-wide and it is not a rolling window. Represent every requested rolling, capability-wide, or Action-Boundary-wide ceiling in shared_limits with the exact listed scope and window_seconds; the model never supplies scope identity values.",
     "Trusted tenant, principal, account, and target identity are injected by Runner or enforced by reviewed database scope. They are not proposal fields.",
     "Approval counts and rolling-window history come from Runner's separate proposal ledger. Never request an application table or source field for approval history.",
     ...(requiredLimitScope
@@ -638,7 +642,7 @@ async function policyModelMessage(input: {
     validatedFacts: [
       `Current exact action target: ${target}.`,
       `${conditions.length} deterministic condition${conditions.length === 1 ? "" : "s"} passed Runner validation.`,
-      `Per-action rolling 24-hour maximum: ${input.resolution.auto_approval.max_per_day}.`,
+      `UTC calendar-day maximum for this trusted tenant and approval policy: ${input.resolution.auto_approval.max_per_day}.`,
       ...input.resolution.shared_limits.map((limit) =>
         `Trusted ${limit.scope} ${limit.kind} limit: ${limit.maximum} per ${limit.window_seconds} seconds${limit.kind === "total" ? ` on ${limit.field}` : ""}.`),
       "Any failed, missing, or uncertain check falls back to human review. Approval and apply authority remain off.",
@@ -1140,7 +1144,12 @@ function policyToolDefinition(catalog: ReturnType<typeof policyCatalog>): AskToo
           properties: {
             status: { type: "string", enum: ["resolved"] },
             conditions: { type: "array", minItems: 1, maxItems: 16, items: conditionSchema },
-            max_per_day: { type: "integer", minimum: 1, maximum: 1_000_000 },
+            max_per_day: {
+              type: "integer",
+              minimum: 1,
+              maximum: 1_000_000,
+              description: "Fallback ceiling per Runner-trusted tenant and approval policy in one UTC calendar day. Use shared_limits for rolling or action-wide ceilings.",
+            },
             max_total_per_day: { type: "number", exclusiveMinimum: 0, maximum: 1_000_000_000 },
             total_field: { type: "string", enum: fieldIds },
             shared_limits: { type: "array", maxItems: 8, items: sharedLimitSchema },
@@ -1246,7 +1255,7 @@ function parsePolicyResolution(
       `The operator said ${requiredLimitScope.phrase}, so shared_limits must include trusted scope ${requiredLimitScope.scope}; max_per_day alone is not scoped that way.`,
     );
   }
-  assertExplicitPolicyDurationsPreserved(operatorAnswer, sharedLimits, Boolean(requiredLimitScope));
+  assertExplicitPolicyDurationsPreserved(operatorAnswer, sharedLimits);
   const rationale = optionalShortText(value.rationale, "rationale");
   return {
     state: "resolved",
@@ -1266,57 +1275,17 @@ function parsePolicyResolution(
 function assertExplicitPolicyDurationsPreserved(
   operatorAnswer: string | undefined,
   sharedLimits: Array<Omit<ActionBoundarySharedLimitV1, "id" | "capability">>,
-  requireSharedLimitMatch: boolean,
 ): void {
   if (!operatorAnswer) return;
-  const explicit = explicitDurationSeconds(operatorAnswer);
+  const explicit = explicitPolicyDurations(operatorAnswer);
   if (!explicit.length) return;
   const available = new Set(sharedLimits.map((limit) => limit.window_seconds));
-  if (!requireSharedLimitMatch) available.add(86_400); // max_per_day is always a rolling 24-hour action limit.
   const missing = explicit.find((duration) => !available.has(duration.seconds));
   if (!missing) return;
-  const interpreted = [...available].map(formatDurationSeconds).join(", ") || "no matching window";
+  const interpreted = [...available].map(formatPolicyDuration).join(", ") || "no matching window";
   throw new Error(
-    `The operator explicitly stated a window of ${formatDurationSeconds(missing.seconds)} (${missing.phrase}), but the interpreted policy uses ${interpreted}. Preserve the exact duration in window_seconds or ask for clarification.`,
+    `The operator explicitly stated a window of ${formatPolicyDuration(missing.seconds)} (${missing.phrase}), but the interpreted policy uses ${interpreted}. Preserve the exact duration in window_seconds or ask for clarification.`,
   );
-}
-
-function explicitDurationSeconds(value: string): Array<{ seconds: number; phrase: string }> {
-  const multipliers: Record<string, number> = {
-    second: 1,
-    sec: 1,
-    minute: 60,
-    min: 60,
-    hour: 3_600,
-    hr: 3_600,
-    day: 86_400,
-    week: 604_800,
-  };
-  const found = new Map<number, string>();
-  const duration = "(\\d+(?:\\.\\d+)?)\\s*(?:-|\\s)?\\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?)";
-  const patterns = [
-    new RegExp(`\\b(?:rolling|per|every|within|over|during|in\\s+(?:the\\s+)?last|last)\\s+${duration}\\b`, "gi"),
-    new RegExp(`\\b${duration}\\s+(?:rolling\\s+)?(?:window|period)\\b`, "gi"),
-  ];
-  for (const pattern of patterns) {
-    for (const match of value.matchAll(pattern)) {
-      const amount = Number(match[1]);
-      const unit = String(match[2]).toLowerCase().replace(/s$/, "");
-      const multiplier = multipliers[unit];
-      const seconds = multiplier === undefined ? NaN : amount * multiplier;
-      if (!Number.isSafeInteger(seconds) || seconds < 60 || seconds > 31_536_000) continue;
-      found.set(seconds, match[0]);
-    }
-  }
-  return [...found].map(([seconds, phrase]) => ({ seconds, phrase }));
-}
-
-function formatDurationSeconds(seconds: number): string {
-  if (seconds % 604_800 === 0) return `${seconds / 604_800} week${seconds === 604_800 ? "" : "s"}`;
-  if (seconds % 86_400 === 0) return `${seconds / 86_400} day${seconds === 86_400 ? "" : "s"}`;
-  if (seconds % 3_600 === 0) return `${seconds / 3_600} hour${seconds === 3_600 ? "" : "s"}`;
-  if (seconds % 60 === 0) return `${seconds / 60} minute${seconds === 60 ? "" : "s"}`;
-  return `${seconds} seconds`;
 }
 
 function parsePolicyCondition(
@@ -1418,6 +1387,7 @@ function trustedLimitScopes(resource: GuidedActionResourceOption): ActionBoundar
     ...(resource.principal_key || resource.principal_rls_setting ? ["tenant_principal" as const] : []),
     ...(resource.tenant_key ? ["tenant" as const, "tenant_object" as const] : []),
     "capability",
+    "boundary",
   ];
 }
 
@@ -1463,6 +1433,14 @@ function requiredTrustedPolicyScope(
     if (!trustedLimitScopes(resource).includes("tenant")) {
       throw new Error(
         "ACTION_BOUNDARY_POLICY_SCOPE_UNAVAILABLE: the rule is scoped per trusted tenant/account, but this reviewed action has no trusted tenant/account accounting scope.",
+      );
+    }
+    return requirement;
+  }
+  if (requirement?.scope === "capability" || requirement?.scope === "boundary") {
+    if (!trustedLimitScopes(resource).includes(requirement.scope)) {
+      throw new Error(
+        `ACTION_BOUNDARY_POLICY_SCOPE_UNAVAILABLE: the rule requires ${requirement.scope} accounting, which is unavailable for this reviewed action.`,
       );
     }
     return requirement;

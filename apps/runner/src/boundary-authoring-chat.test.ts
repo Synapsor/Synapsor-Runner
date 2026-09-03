@@ -136,6 +136,8 @@ describe("Boundary authoring chat", () => {
     ]);
     expect(memory.writes.join("")).toContain("you> Allow this exact step");
     expect(memory.writes.join("")).toContain("you> Not now; keep authority unchanged");
+    expect(memory.writes.join("")).toContain("RUNNER-VERIFIED ACTION AUTHORITY");
+    expect(memory.writes.join("")).toContain("Proposal authority is currently disabled.");
     expect(memory.writes.join("")).not.toContain("runner> Permission request");
     expect(memory.choices[0]?.message).toContain("Activate \"reviewed_support\" exactly as shown now?");
     for (const choice of memory.choices) {

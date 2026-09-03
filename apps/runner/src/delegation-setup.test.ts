@@ -213,6 +213,8 @@ function actionDraft(rehearsed: boolean): GuidedActionDraft {
     boundary_digest: digest("f"),
     generation_lock_fingerprint: digest("1"),
     contract_digest: digest("2"),
+    action_boundary_name: "default_action_boundary",
+    action_boundary_digest: digest("4"),
     dsl_path: "./synapsor/actions/ticket.dsl",
     contract_path: "./synapsor/actions/ticket.json",
     tests_path: "./synapsor/actions/ticket.tests.json",
@@ -228,6 +230,7 @@ function actionDraft(rehearsed: boolean): GuidedActionDraft {
     ...(rehearsed ? {
       effect_preview: {
         contract_digest: digest("2"),
+        action_boundary_digest: digest("4"),
         proposal_id: "prv_test",
         proposal_hash: digest("3"),
         previewed_at: "2026-08-28T12:00:01.000Z",

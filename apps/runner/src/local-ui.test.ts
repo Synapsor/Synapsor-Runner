@@ -1333,6 +1333,7 @@ export default defineCapability({
       currentInspection: inspection,
     });
     let previewDigest = "";
+    let previewContractDigest = "";
     const server = await startLocalUiServer({
       projectRoot: tempDir,
       boundaryRoot: written.root,
@@ -1345,7 +1346,8 @@ export default defineCapability({
         expect(capabilityName).toBe("membership.set_loyalty_balance");
         expect(args).toEqual({ member_id: "MEM-1", loyalty_balance: 25 });
         return {
-          draft_digest: previewDigest as `sha256:${string}`,
+          draft_digest: previewContractDigest as `sha256:${string}`,
+          action_boundary_digest: previewDigest as `sha256:${string}`,
           proposal_id: "wrp_guided_action_preview",
           proposal_hash: `sha256:${"8".repeat(64)}`,
           source_database_changed: false,
@@ -1612,7 +1614,7 @@ export default defineCapability({
           state: "suggested",
         }),
       ]));
-      previewDigest = created.draft.contract_digest;
+      previewDigest = created.draft.action_boundary_digest;
       const preview = await postJson(`${baseUrl}/api/actions/guided/preview`, mutationHeaders, {
         capability_name: "membership.set_loyalty_balance",
         structural: true,
@@ -1784,12 +1786,21 @@ export default defineCapability({
         },
         previous: { contract_digest: activated.active.contract_digest, writeback_mode: "none" },
         draft: { authority_posture: "executable", writeback_mode: "direct_sql" },
+        action_boundary: {
+          digest: revised.draft.action_boundary_digest,
+          authority: { shared_limits: expect.arrayContaining([
+            expect.objectContaining({ id: "tenant_daily_count" }),
+            expect.objectContaining({ id: "principal_daily_balance" }),
+          ]) },
+        },
       });
       expect(revised.draft.contract_digest).not.toBe(activated.active.contract_digest);
       expect(JSON.parse(await fs.readFile(actionConfigPath, "utf8")).contracts)
         .toEqual([activated.active.contract_path]);
 
-      previewDigest = revised.draft.contract_digest;
+      previewDigest = revised.draft.action_boundary_digest;
+      previewContractDigest = revised.draft.contract_digest;
+      expect(previewDigest).not.toBe(revised.draft.contract_digest);
       await postJson(`${baseUrl}/api/actions/guided/preview`, mutationHeaders, {
         capability_name: "membership.set_loyalty_balance",
         args: { member_id: "MEM-1", loyalty_balance: 25 },

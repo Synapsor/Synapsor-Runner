@@ -213,6 +213,7 @@ describe("guided write actions", () => {
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
       contractDigest: created.draft.contract_digest,
+      actionBoundaryDigest: created.draft.action_boundary_digest!,
       proposalId: "wrp_single_org_preview",
       proposalHash: `sha256:${"8".repeat(64)}`,
       sourceDatabaseChanged: false,
@@ -220,8 +221,8 @@ describe("guided write actions", () => {
     const active = await activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
-      expectedDigest: created.draft.contract_digest,
-      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      expectedDigest: created.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${created.draft.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     });
@@ -372,6 +373,7 @@ describe("guided write actions", () => {
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
       contractDigest: created.draft.contract_digest,
+      actionBoundaryDigest: created.draft.action_boundary_digest!,
       proposalId: "wrp_pending_read_preview",
       proposalHash: `sha256:${"b".repeat(64)}`,
       sourceDatabaseChanged: false,
@@ -392,21 +394,19 @@ describe("guided write actions", () => {
     const rebased = (await guidedActionStatus(fixture.root)).drafts.find(
       (draft) => draft.capability === created.draft.capability,
     );
+    if (!rebased) throw new Error("Expected the disabled Action draft to be rebased.");
     expect(rebased).toMatchObject({
       contract_digest: created.draft.contract_digest,
       action_boundary_name: actionBoundary.name,
       action_boundary_digest: actionBoundary.digest,
-      effect_preview: {
-        contract_digest: created.draft.contract_digest,
-        source_database_changed: false,
-      },
     });
+    expect(rebased.effect_preview).toBeUndefined();
 
     const activation = {
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
-      expectedDigest: created.draft.contract_digest,
-      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      expectedDigest: rebased.action_boundary_digest!,
+      confirmation: `ACTIVATE ${rebased.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     };
@@ -423,6 +423,15 @@ describe("guided write actions", () => {
       confirmation: `ACTIVATE ${readDigest}`,
       confirmedDecisions: fixture.candidate.unresolved_decisions,
       currentInspection: fixture.inspection,
+    });
+    await recordGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: rebased.capability,
+      contractDigest: rebased.contract_digest,
+      actionBoundaryDigest: rebased.action_boundary_digest!,
+      proposalId: "wrp_pending_read_rehearsed_after_limit_change",
+      proposalHash: `sha256:${"d".repeat(64)}`,
+      sourceDatabaseChanged: false,
     });
     await expect(activateGuidedAction(activation)).resolves.toMatchObject({
       state: "active",
@@ -1019,6 +1028,7 @@ describe("guided write actions", () => {
         projectRoot: fixture.root,
         capabilityName: draft.capability,
         contractDigest: draft.contract_digest,
+        actionBoundaryDigest: draft.action_boundary_digest!,
         proposalId: `wrp_multi_${marker}`,
         proposalHash: `sha256:${marker.repeat(64)}`,
         sourceDatabaseChanged: false,
@@ -1028,18 +1038,15 @@ describe("guided write actions", () => {
     await activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: freeze.draft.capability,
-      expectedDigest: freeze.draft.contract_digest,
-      confirmation: `ACTIVATE ${freeze.draft.contract_digest}`,
+      expectedDigest: freeze.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${freeze.draft.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     });
     const afterFirst = await guidedActionStatus(fixture.root);
     expect(afterFirst.activations.map((item) => item.capability)).toEqual([freeze.draft.capability]);
     expect(afterFirst.drafts.map((item) => item.capability)).toEqual([balance.draft.capability]);
-    expect(afterFirst.drafts[0]?.effect_preview).toMatchObject({
-      contract_digest: balance.draft.contract_digest,
-      source_database_changed: false,
-    });
+    expect(afterFirst.drafts[0]?.effect_preview).toBeUndefined();
     expect(afterFirst.drafts[0]?.action_boundary_digest).not.toBe(balance.draft.action_boundary_digest);
     expect(afterFirst.action_boundary.draft?.authority.capabilities.map((item) => item.capability).sort()).toEqual([
       balance.draft.capability,
@@ -1047,11 +1054,28 @@ describe("guided write actions", () => {
     ].sort());
 
     const rebasedBalance = afterFirst.drafts[0]!;
+    await expect(activateGuidedAction({
+      projectRoot: fixture.root,
+      capabilityName: rebasedBalance.capability,
+      expectedDigest: rebasedBalance.action_boundary_digest!,
+      confirmation: `ACTIVATE ${rebasedBalance.action_boundary_digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    })).rejects.toThrow(/GUIDED_ACTION_EFFECT_PREVIEW_REQUIRED/);
+    await recordGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: rebasedBalance.capability,
+      contractDigest: rebasedBalance.contract_digest,
+      actionBoundaryDigest: rebasedBalance.action_boundary_digest!,
+      proposalId: "wrp_multi_b_rebased",
+      proposalHash: `sha256:${"e".repeat(64)}`,
+      sourceDatabaseChanged: false,
+    });
     await activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: rebasedBalance.capability,
-      expectedDigest: rebasedBalance.contract_digest,
-      confirmation: `ACTIVATE ${rebasedBalance.contract_digest}`,
+      expectedDigest: rebasedBalance.action_boundary_digest!,
+      confirmation: `ACTIVATE ${rebasedBalance.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     });
@@ -1095,6 +1119,7 @@ describe("guided write actions", () => {
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
       contractDigest: created.draft.contract_digest,
+      actionBoundaryDigest: created.draft.action_boundary_digest!,
       proposalId: "wrp_limit_base",
       proposalHash: `sha256:${"c".repeat(64)}`,
       sourceDatabaseChanged: false,
@@ -1102,8 +1127,8 @@ describe("guided write actions", () => {
     await activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
-      expectedDigest: created.draft.contract_digest,
-      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      expectedDigest: created.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${created.draft.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     });
@@ -1233,6 +1258,98 @@ describe("guided write actions", () => {
     ]);
   }, 30_000);
 
+  it("invalidates rehearsal and replaces stale per-draft limits when complete authority changes", async () => {
+    const fixture = await activatedFitFlowFixture();
+    const created = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.propose_bounded_balance",
+        description: "Propose one bounded loyalty balance for deterministic or human review.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum: 500,
+        }],
+        auto_approval: {
+          conditions: [{ field: "loyalty_balance", operator: "lte", value: 100 }],
+          max_per_day: 10,
+        },
+        confirmed_trusted_scope: true,
+      },
+    });
+    const originalLimit = [{
+      id: "balance_per_principal",
+      kind: "count" as const,
+      scope: "tenant_principal" as const,
+      capability: created.draft.capability,
+      maximum: 3,
+      window_seconds: 86_400,
+    }];
+    await recordGuidedActionBoundaryLimits({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      limits: originalLimit,
+    });
+    const firstBoundary = await reviseGuidedActionBoundary({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      sharedLimits: originalLimit,
+    });
+    const firstRehearsal = await recordGuidedActionStructuralPreview({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+    });
+    expect(firstRehearsal.effect_preview?.action_boundary_digest).toBe(firstBoundary.digest);
+
+    const replacementLimit = [{ ...originalLimit[0]!, maximum: 2 }];
+    const secondBoundary = await reviseGuidedActionBoundary({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      sharedLimits: replacementLimit,
+    });
+    expect(secondBoundary.digest).not.toBe(firstBoundary.digest);
+    expect(secondBoundary.authority.shared_limits).toEqual(replacementLimit);
+
+    const status = await guidedActionStatus(fixture.root);
+    const rebased = status.drafts.find((draft) => draft.capability === created.draft.capability);
+    expect(rebased?.action_boundary_digest).toBe(secondBoundary.digest);
+    expect(rebased?.action_boundary_shared_limits).toEqual(replacementLimit);
+    expect(rebased?.effect_preview).toBeUndefined();
+    await expect(activateGuidedAction({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: firstBoundary.digest,
+      confirmation: `ACTIVATE ${firstBoundary.digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    })).rejects.toThrow(/GUIDED_ACTION_DRAFT_CHANGED/);
+
+    const rehearsed = await recordGuidedActionStructuralPreview({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+    });
+    expect(rehearsed.effect_preview?.action_boundary_digest).toBe(secondBoundary.digest);
+    await expect(activateGuidedAction({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: secondBoundary.digest,
+      confirmation: `ACTIVATE ${secondBoundary.digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    })).resolves.toMatchObject({
+      state: "active",
+      action_boundary_digest: secondBoundary.digest,
+    });
+  }, 30_000);
+
   it("keeps separate trusted-scope limits with two disabled action revisions", async () => {
     const fixture = await activatedFitFlowFixture();
     const create = (capabilityName: string, maximum: number) => createGuidedActionDraft({
@@ -1346,8 +1463,8 @@ describe("guided write actions", () => {
     await expect(activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
-      expectedDigest: created.draft.contract_digest,
-      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      expectedDigest: created.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${created.draft.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     })).rejects.toThrow(/EFFECT_PREVIEW_REQUIRED/);
@@ -1373,6 +1490,7 @@ describe("guided write actions", () => {
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
       contractDigest: created.draft.contract_digest,
+      actionBoundaryDigest: created.draft.action_boundary_digest!,
       proposalId: "wrp_fitflow_preview",
       proposalHash: `sha256:${"a".repeat(64)}`,
       sourceDatabaseChanged: false,
@@ -1380,8 +1498,8 @@ describe("guided write actions", () => {
     const active = await activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
-      expectedDigest: created.draft.contract_digest,
-      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      expectedDigest: created.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${created.draft.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     });
@@ -1515,6 +1633,7 @@ describe("guided write actions", () => {
       projectRoot: fixture.root,
       capabilityName: promoted.draft.capability,
       contractDigest: promoted.draft.contract_digest,
+      actionBoundaryDigest: promoted.draft.action_boundary_digest!,
       proposalId: "wrp_fitflow_promoted_preview",
       proposalHash: `sha256:${"b".repeat(64)}`,
       sourceDatabaseChanged: false,
@@ -1522,8 +1641,8 @@ describe("guided write actions", () => {
     const promotedActive = await activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: promoted.draft.capability,
-      expectedDigest: promoted.draft.contract_digest,
-      confirmation: `ACTIVATE ${promoted.draft.contract_digest}`,
+      expectedDigest: promoted.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${promoted.draft.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     });
@@ -1622,6 +1741,7 @@ describe("guided write actions", () => {
       projectRoot: fixture.root,
       capabilityName: inserted.draft.capability,
       contractDigest: inserted.draft.contract_digest,
+      actionBoundaryDigest: inserted.draft.action_boundary_digest!,
       proposalId: "wrp_insert_preview",
       proposalHash: `sha256:${"c".repeat(64)}`,
       sourceDatabaseChanged: false,
@@ -1629,8 +1749,8 @@ describe("guided write actions", () => {
     await activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: inserted.draft.capability,
-      expectedDigest: inserted.draft.contract_digest,
-      confirmation: `ACTIVATE ${inserted.draft.contract_digest}`,
+      expectedDigest: inserted.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${inserted.draft.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     });
@@ -1656,6 +1776,7 @@ describe("guided write actions", () => {
       projectRoot: fixture.root,
       capabilityName: deleted.draft.capability,
       contractDigest: deleted.draft.contract_digest,
+      actionBoundaryDigest: deleted.draft.action_boundary_digest!,
       proposalId: "wrp_delete_preview",
       proposalHash: `sha256:${"d".repeat(64)}`,
       sourceDatabaseChanged: false,
@@ -1663,8 +1784,8 @@ describe("guided write actions", () => {
     const deleteActivation = await activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: deleted.draft.capability,
-      expectedDigest: deleted.draft.contract_digest,
-      confirmation: `ACTIVATE ${deleted.draft.contract_digest}`,
+      expectedDigest: deleted.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${deleted.draft.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     });
@@ -1803,6 +1924,7 @@ describe("guided write actions", () => {
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
       contractDigest: created.draft.contract_digest,
+      actionBoundaryDigest: created.draft.action_boundary_digest!,
       proposalId: "wrp_headless_rehearsal",
       proposalHash: `sha256:${"c".repeat(64)}`,
       sourceDatabaseChanged: false,
@@ -1834,8 +1956,8 @@ describe("guided write actions", () => {
       "activate",
       "--headless",
       "--capability", created.draft.capability,
-      "--expected-digest", created.draft.contract_digest,
-      "--confirmation", `ACTIVATE ${created.draft.contract_digest}`,
+      "--expected-digest", created.draft.action_boundary_digest!,
+      "--confirmation", `ACTIVATE ${created.draft.action_boundary_digest}`,
       "--config", configPath,
       "--project-root", fixture.root,
       "--identity", "action_reviewer",
@@ -1912,8 +2034,8 @@ describe("guided write actions", () => {
     await expect(activateGuidedAction({
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
-      expectedDigest: created.draft.contract_digest,
-      confirmation: `ACTIVATE ${created.draft.contract_digest}`,
+      expectedDigest: created.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${created.draft.action_boundary_digest}`,
       actor: "reviewer@example.test",
       inspection: fixture.inspection,
     })).resolves.toMatchObject({
@@ -1976,6 +2098,7 @@ describe("guided write actions", () => {
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
       contractDigest: created.draft.contract_digest,
+      actionBoundaryDigest: created.draft.action_boundary_digest!,
       proposalId: "wrp_invalid_preview",
       proposalHash: "sha256:not-a-real-hash",
       sourceDatabaseChanged: false,

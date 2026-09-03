@@ -497,6 +497,7 @@ export type GuidedActionPreview = (input: {
   env: NodeJS.ProcessEnv;
 }) => Promise<{
   draft_digest: `sha256:${string}`;
+  action_boundary_digest: `sha256:${string}`;
   proposal_id: string;
   proposal_hash: string;
   source_database_changed: boolean;
@@ -4525,9 +4526,12 @@ async function handleRequest(input: {
     }
     const capabilityName = url.searchParams.get("capability")?.trim();
     if (!capabilityName) throw new Error("Guided action draft lookup requires a capability.");
+    const details = await guidedActionDraftDetails(projectRoot, capabilityName);
+    const status = await guidedActionStatus(projectRoot);
     sendJson(response, 200, {
       ok: true,
-      ...(await guidedActionDraftDetails(projectRoot, capabilityName)),
+      ...details,
+      action_boundary: status.action_boundary.draft ?? status.action_boundary.active,
       source_database_changed: false,
     });
     return;
@@ -4601,6 +4605,7 @@ async function handleRequest(input: {
         ? `Rehearse this disabled action, then activate read boundary ${options.boundary_name} before action activation.`
         : "Rehearse the exact draft through the disposable preview ledger. The source database and durable proposal ledger will remain unchanged.",
     }).catch(() => undefined);
+    const actionStatus = await guidedActionStatus(projectRoot);
     sendJson(response, 200, {
       ok: true,
       draft: created.draft,
@@ -4608,6 +4613,7 @@ async function handleRequest(input: {
       contract: created.contract,
       tests: created.tests,
       preview_args: created.preview_args,
+      action_boundary: actionStatus.action_boundary.draft ?? actionStatus.action_boundary.active,
       source_database_changed: false,
       message: "Disabled action draft created. No model-facing authority was activated.",
     });
@@ -4766,6 +4772,7 @@ async function handleRequest(input: {
       source_event_key: `workbench-guided-action-revision:${revised.draft.capability}:${revised.draft.contract_digest}`,
       now: revised.draft.created_at,
     });
+    const actionStatus = await guidedActionStatus(projectRoot);
     sendJson(response, 200, {
       ok: true,
       previous: revised.previous,
@@ -4775,6 +4782,7 @@ async function handleRequest(input: {
       contract: revised.contract,
       tests: revised.tests,
       preview_args: revised.preview_args,
+      action_boundary: actionStatus.action_boundary.draft ?? actionStatus.action_boundary.active,
       source_database_changed: false,
       message: `Disabled ${revised.transition.kind} revision created. The active digest and all earlier proposals are unchanged.`,
     });
@@ -4835,6 +4843,7 @@ async function handleRequest(input: {
       projectRoot,
       capabilityName: body.capability_name,
       contractDigest: preview.draft_digest,
+      actionBoundaryDigest: preview.action_boundary_digest,
       proposalId: preview.proposal_id,
       proposalHash: preview.proposal_hash,
       sourceDatabaseChanged: preview.source_database_changed,

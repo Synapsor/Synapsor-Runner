@@ -706,6 +706,7 @@ export function createBoundaryAuthoringChat(input: {
   const choosePermission = async (
     choice: ChoiceInput,
     context: string[] = [],
+    verifiedCheckpointTitle?: string,
   ): Promise<string | undefined> => {
     const exactChoices = choice.options.filter((option) => !option.disabled);
     const request = {
@@ -744,6 +745,9 @@ export function createBoundaryAuthoringChat(input: {
     };
 
     await explain();
+    if (verifiedCheckpointTitle && request.context.length) {
+      checkpoint(verifiedCheckpointTitle, request.context, "normal");
+    }
     while (true) {
       const selected = await choose({
         ...choice,
@@ -875,10 +879,11 @@ export function createBoundaryAuthoringChat(input: {
     rememberDetails,
     choose: async (title, choices, context, initialValue) => {
       const permission = /^(?:ACTIVATE|APPROVE|APPLY)\b/iu.test(title.trim());
-      if (permission) {
+      const actionActivation = /^ACTIVATE PROPOSAL ACTION$/iu.test(title.trim());
+      if (permission && !actionActivation) {
         rememberDetails("PERMISSION REQUEST", [...meaningfulContext(context), title]);
       } else if (context?.length) {
-        rememberDetails(title, context);
+        if (!actionActivation) rememberDetails(title, context);
       }
       const safePermissionChoice = permission
         ? choices.find((choice) => !choice.disabled && /^(?:back|no|cancel|decline|disabled|leave)$/iu.test(choice.value))
@@ -896,7 +901,11 @@ export function createBoundaryAuthoringChat(input: {
             : {}),
       } satisfies ChoiceInput;
       return permission
-        ? choosePermission(choice, context)
+        ? choosePermission(
+            choice,
+            context,
+            actionActivation ? "RUNNER-VERIFIED ACTION AUTHORITY" : undefined,
+          )
         : choose(choice);
     },
     text: async (label, options) => {

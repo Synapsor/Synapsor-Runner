@@ -3489,6 +3489,7 @@ describe("boundary operator-plane CLI", () => {
           projectRoot: root,
           capabilityName: created.draft.capability,
           contractDigest: created.draft.contract_digest,
+          actionBoundaryDigest: created.draft.action_boundary_digest!,
           proposalId: "rehearsal-maintenance-request",
           proposalHash: `sha256:${"b".repeat(64)}`,
           sourceDatabaseChanged: false,
@@ -3504,8 +3505,8 @@ describe("boundary operator-plane CLI", () => {
       const active = await activateGuidedAction({
         projectRoot: root,
         capabilityName: draft.capability,
-        expectedDigest: draft.contract_digest,
-        confirmation: `ACTIVATE ${draft.contract_digest}`,
+        expectedDigest: draft.action_boundary_digest!,
+        confirmation: `ACTIVATE ${draft.action_boundary_digest}`,
         actor: "job-owner",
         inspection,
       });

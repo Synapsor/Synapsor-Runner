@@ -11113,6 +11113,7 @@ async function previewGuidedActionCommand(args: string[]): Promise<number> {
     projectRoot,
     capabilityName,
     contractDigest: preview.draft_digest,
+    actionBoundaryDigest: preview.action_boundary_digest,
     proposalId: preview.proposal_id,
     proposalHash: preview.proposal_hash,
     sourceDatabaseChanged: preview.source_database_changed,
@@ -11165,11 +11166,13 @@ async function activateGuidedActionCommand(
   let consumedDecision: { store: ProposalStore; key: string; decisionId: `sha256:${string}` } | undefined;
   if (headless) {
     const draft = await readGuidedActionDraft(projectRoot, capabilityName);
-    if (draft.contract_digest !== expectedDigest || confirmation !== `ACTIVATE ${draft.contract_digest}`) {
-      throw new Error(`Headless Safe Action activation requires the exact confirmation ACTIVATE ${draft.contract_digest}.`);
+    if (draft.action_boundary_digest !== expectedDigest || confirmation !== `ACTIVATE ${draft.action_boundary_digest}`) {
+      throw new Error(`Headless Safe Action activation requires the complete authority confirmation ACTIVATE ${draft.action_boundary_digest}.`);
     }
-    if (!draft.effect_preview || draft.effect_preview.contract_digest !== draft.contract_digest) {
-      throw new Error("Headless Safe Action activation requires an exact successful structural rehearsal for this digest.");
+    if (!draft.effect_preview
+      || draft.effect_preview.contract_digest !== draft.contract_digest
+      || draft.effect_preview.action_boundary_digest !== draft.action_boundary_digest) {
+      throw new Error("Headless Safe Action activation requires an exact successful rehearsal of the complete capability and Action Boundary authority.");
     }
     const resolvedProject = await resolveSynapsorProject(projectRoot, process.env);
     const configPath = optionalArg(args, "--config") ?? resolvedProject?.config_path;
@@ -11195,6 +11198,7 @@ async function activateGuidedActionCommand(
       schema_version: "synapsor.action-activation-decision.v1",
       capability: draft.capability,
       contract_digest: draft.contract_digest,
+      action_boundary_digest: draft.action_boundary_digest,
       boundary_digest: draft.boundary_digest,
       generation_lock_fingerprint: draft.generation_lock_fingerprint,
       authority_posture: draft.authority_posture,
@@ -11247,6 +11251,7 @@ async function activateGuidedActionCommand(
       schema_version: "synapsor.action-activation-nonce.v1",
       capability: draft.capability,
       contract_digest: draft.contract_digest,
+      action_boundary_digest: draft.action_boundary_digest,
       nonce,
     });
     const key = `action_activation_nonce:${nonceDigest}`;
