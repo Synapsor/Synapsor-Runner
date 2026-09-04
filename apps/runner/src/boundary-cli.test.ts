@@ -65,6 +65,7 @@ import {
   READ_WORKLOAD_SET_VERSION,
 } from "./read-workload-assist.js";
 import { generateModelReadWorkload } from "./read-workload-model.js";
+import { generateModelReadBoundaryRevision } from "./read-boundary-revision-model.js";
 import { AskError } from "./model-ask.js";
 import {
   generateModelActionSuggestionSet,
@@ -2671,7 +2672,7 @@ describe("boundary operator-plane CLI", () => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
-        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        if (title === "ACTIVATE READ BOUNDARY") return "finish";
         throw new Error(`Unexpected own-row choice: ${title}`);
       },
       confirm: async (prompt, options) => {
@@ -2800,7 +2801,7 @@ describe("boundary operator-plane CLI", () => {
       },
       chooseOption: async (title) => {
         if (title === "START BOUNDARY DRAFTING") return resume ? "resume" : "model";
-        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        if (title === "ACTIVATE READ BOUNDARY") return "finish";
         throw new Error(`Unexpected long-job resume choice: ${title}`);
       },
       confirm: async (prompt) => {
@@ -3051,7 +3052,7 @@ describe("boundary operator-plane CLI", () => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
-        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        if (title === "ACTIVATE READ BOUNDARY") return "finish";
         scopePrompts.push(title);
         throw new Error(`Unexpected RLS own-row choice: ${title}`);
       },
@@ -3165,7 +3166,7 @@ describe("boundary operator-plane CLI", () => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
-        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        if (title === "ACTIVATE READ BOUNDARY") return "finish";
         throw new Error(`Unexpected opaque RLS choice: ${title}`);
       },
       confirm: async (prompt) => {
@@ -3599,7 +3600,7 @@ describe("boundary operator-plane CLI", () => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
-        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        if (title === "ACTIVATE READ BOUNDARY") return "finish";
         throw new Error(`Unexpected numbered-principal choice: ${title}`);
       },
       confirm: async (prompt) => {
@@ -4188,7 +4189,7 @@ describe("boundary operator-plane CLI", () => {
       chooseOption: async (title) => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
-        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        if (title === "ACTIVATE READ BOUNDARY") return "finish";
         throw new Error(`Unexpected action-only choice: ${title}`);
       },
       confirm: async () => true,
@@ -5157,9 +5158,42 @@ describe("boundary operator-plane CLI", () => {
     });
     const legacyActionGenerator = vi.fn();
     const legacyActionReview = vi.fn();
+    const readReviewChoiceValues: string[][] = [];
+    const boundaryListStarts: Array<boolean | undefined> = [];
+    let preRevisionReadDigest: `sha256:${string}` | undefined;
+    const modelReadBoundaryRevisionGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadBoundaryRevision>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadBoundaryRevision>>> => {
+      const resource = input.boundary.pack.resources.find((candidate) =>
+        candidate.id === "public.service_visits")!;
+      expect(resource.kept_out_fields).not.toContain("id");
+      expect(resource.model_withheld_fields ?? []).not.toContain("id");
+      preRevisionReadDigest = explorationBoundaryCandidateDigest(input.boundary);
+      return {
+        changes: [{
+          resource: "public.service_visits",
+          field: "id",
+          before: "model_and_runner",
+          after: "runner_only",
+          rationale: "Use opaque object references instead of returning the internal row identifier.",
+        }],
+        provider: input.provider,
+        model: input.model,
+        model_exposure_expansions: 0,
+        correction_used: false,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
     const answers = [operatorJob];
+    let readActivationReviewCount = 0;
     const session: BoundaryReviewInteractiveSession = {
-      chooseResource: async () => undefined,
+      chooseResource: async (_resources, _overview, options) => {
+        boundaryListStarts.push(options?.startAtBoundaryList);
+        return undefined;
+      },
       editFieldTiers: async () => undefined,
       promptText: async (prompt) => {
         if (prompt.includes("What job are you giving this agent?")) return answers.shift();
@@ -5173,7 +5207,11 @@ describe("boundary operator-plane CLI", () => {
           semanticRecoveryChoices.push(options.map((option) => option.value));
           return "retry";
         }
-        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        if (title === "ACTIVATE READ BOUNDARY") {
+          readReviewChoiceValues.push(options.map((option) => option.value));
+          readActivationReviewCount += 1;
+          return readActivationReviewCount === 1 ? "revise_model" : "finish";
+        }
         throw new Error(`Unexpected semantic Action choice: ${title}`);
       },
       confirm: async () => true,
@@ -5186,7 +5224,9 @@ describe("boundary operator-plane CLI", () => {
       ? `It bounds automatic approval while proposals outside the limit remain reviewable. ${clarificationQuestion}`
       : "The exact disabled drafts are ready for review.");
     const semanticChat = testBoundaryAuthoringChat(session);
-    semanticChat.readOperator = vi.fn(async () => "At most ten proposals in a rolling 24 hours.");
+    semanticChat.readOperator = vi.fn()
+      .mockResolvedValueOnce("At most ten proposals in a rolling 24 hours.")
+      .mockResolvedValueOnce("Keep the service visit id private and use opaque references instead.");
     semanticChat.streamModel = vi.fn(async () => undefined);
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
@@ -5204,6 +5244,7 @@ describe("boundary operator-plane CLI", () => {
           },
           modelBoundaryJobPlanner,
           modelReadWorkloadGenerator,
+          modelReadBoundaryRevisionGenerator,
           modelActionRuleGenerator,
           modelActionSuggestionSetGenerator: legacyActionGenerator,
           runDelegationActionReview: legacyActionReview,
@@ -5216,7 +5257,30 @@ describe("boundary operator-plane CLI", () => {
       expect(modelBoundaryJobPlanner).toHaveBeenCalledWith(expect.objectContaining({ jobIntent: operatorJob }));
       expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
       expect(clarificationAnswer).toBe("At most ten proposals in a rolling 24 hours.");
-      expect(semanticChat.readOperator).toHaveBeenCalledOnce();
+      expect(semanticChat.readOperator).toHaveBeenCalledTimes(2);
+      expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledOnce();
+      const readRevisionDetails = vi.mocked(semanticChat.rememberDetails).mock.calls
+        .find(([title]) => title.includes("READ BOUNDARY REVISION"));
+      expect(readRevisionDetails).toEqual([
+        "READ BOUNDARY REVISION",
+        expect.arrayContaining([
+          "public.service_visits.id: Model + Runner -> Runner only",
+          expect.stringMatching(/^Read digest changed: sha256:.+ -> sha256:.+$/),
+          "Dependent Action revision: rebuilt and revalidated against the new exact Read digest",
+          "Read authority: unchanged",
+          "Action authority: unchanged",
+          "Source query executed: no",
+          "Source database changed: no",
+        ]),
+      ]);
+      expect(readReviewChoiceValues[0]).toEqual([
+        "activate",
+        "revise_model",
+        "details",
+        "finish",
+        "manual_editor",
+      ]);
+      expect(boundaryListStarts[0]).toBe(true);
       expect(modelAuthoringNarrator).toHaveBeenCalledWith(expect.objectContaining({
         operatorMessage: "Why does Runner need this limit?",
         nextQuestion: clarificationQuestion,
@@ -5235,10 +5299,19 @@ describe("boundary operator-plane CLI", () => {
       expect(legacyActionReview).not.toHaveBeenCalled();
       const reviewed = await loadBoundaryReviewContext(root);
       const exactReadDigest = explorationBoundaryCandidateDigest(reviewed.candidate);
+      expect(preRevisionReadDigest).toBeDefined();
+      expect(exactReadDigest).not.toBe(preRevisionReadDigest);
       expect(reviewed.candidate.pack.resources.map((resource) => resource.id))
         .not.toContain("public.maintenance_requests");
       expect(reviewed.candidate.pack.resources.find((resource) =>
         resource.id === "public.service_visits")?.principal_key).toBe("principal_id");
+      const revisedServiceVisits = reviewed.candidate.pack.resources.find((resource) =>
+        resource.id === "public.service_visits")!;
+      expect({
+        fields: Object.keys(revisedServiceVisits.field_types),
+        keptOut: revisedServiceVisits.kept_out_fields,
+        runnerOnly: revisedServiceVisits.model_withheld_fields ?? [],
+      }).toMatchObject({ runnerOnly: expect.arrayContaining(["id"]) });
       const semantic = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
       expect(semantic).toMatchObject({
         state: "disabled",
@@ -5292,7 +5365,7 @@ describe("boundary operator-plane CLI", () => {
         },
         chooseOption: async (title) => {
           if (title === "START BOUNDARY DRAFTING") return "resume";
-          if (title === "ACTIVATE READ BOUNDARY") return "back";
+          if (title === "ACTIVATE READ BOUNDARY") return "finish";
           throw new Error(`Unexpected resumed semantic Action choice: ${title}`);
         },
         confirm: async () => true,
@@ -5348,7 +5421,7 @@ describe("boundary operator-plane CLI", () => {
         },
         chooseOption: async (title) => {
           if (title === "START BOUNDARY DRAFTING") return "model";
-          if (title === "ACTIVATE READ BOUNDARY") return "back";
+          if (title === "ACTIVATE READ BOUNDARY") return "finish";
           throw new Error(`Unexpected revision choice: ${title}`);
         },
         confirm: async () => true,
@@ -6524,7 +6597,8 @@ describe("boundary operator-plane CLI", () => {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
       const review = formatBoundaryChatReviewSummary((await loadBoundaryReviewContext(root)).bundle);
       expect(review.join("\n")).toContain("Reviewed table");
-      expect(review.join("\n")).toContain("Model fields");
+      expect(review.join("\n")).toContain("Runner only");
+      expect(review.join("\n")).toMatch(/Reviewed: \d+ model \| \d+ Runner only \| \d+ kept out/u);
       expect(review.join("\n")).toContain("Schema: public");
       expect(review.join("\n")).toContain("Trusted scope:");
       expect(review.join("\n")).not.toContain("| public.products");
@@ -6727,11 +6801,11 @@ describe("boundary operator-plane CLI", () => {
       expect(replacementChoices).toHaveLength(1);
       expect(replacementChoices[0]).toMatchObject({
         title: "REPLACE ACTIVE READ BOUNDARY",
-        initialValue: "back",
+        initialValue: "finish",
       });
       expect(replacementChoices[0]?.labels[0]).toContain("removes 1 table");
       expect(replacementChoices[0]?.labels).toContain(
-        "Keep current active Read Boundary unchanged  [recommended]",
+        "Keep current active Read Boundary and finish  [recommended]",
       );
       expect(replacementChoices[0]?.context.join("\n")).toContain(
         `Removes active tables (1): ${removed.id}`,
@@ -6886,7 +6960,7 @@ describe("boundary operator-plane CLI", () => {
         styledReviewContext.bundle,
         true,
       );
-      expect(styledReview).toContain("\u001b[1;36mTable");
+      expect(styledReview).toContain("\u001b[1;36mREAD TABLE");
       expect(styledReview).toContain("\u001b[1;35mpublic.service_visits\u001b[0m");
       expect(styledReview).toContain("\u001b[1;32m");
       expect(styledReview).toContain("\u001b[1;33m");
@@ -6907,6 +6981,65 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("renders a width-bounded Read access matrix with conspicuous internal-field review notes", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-read-review-renderer-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const resource = build.exploration_boundary.pack.resources[0]!;
+    resource.field_types.version = "integer";
+    resource.field_types.auto_approval_eligible = "boolean";
+    resource.selectable_fields = [...new Set([
+      ...resource.selectable_fields,
+      "version",
+      "auto_approval_eligible",
+    ])];
+    resource.kept_out_fields = [...new Set([
+      ...resource.kept_out_fields.filter((field) => field !== "id"),
+      "tenant_id",
+    ])];
+    resource.model_withheld_fields = [
+      ...new Set([...(resource.model_withheld_fields ?? []), "id"]),
+    ];
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const bundle = (await loadBoundaryReviewContext(root)).bundle;
+      const plain = formatFocusedBoundaryActivationReview(bundle, false, true, 76);
+      const styled = formatFocusedBoundaryActivationReview(bundle, true, true, 76);
+      const normalized = plain.replace(/\s+/gu, " ");
+      expect(plain).toContain("READ TABLE 1/1");
+      expect(plain).toContain("Field access:");
+      expect(plain).toContain("Model + Runner");
+      expect(plain).toContain("Runner only");
+      expect(plain).toContain("Kept out");
+      expect(plain).toContain("REVIEW BEFORE ACTIVATION:");
+      expect(plain).toContain("auto_approval_eligible");
+      expect(plain).toContain("version");
+      expect(normalized).toContain("private policy fact");
+      expect(normalized).toContain("conflict/version guard");
+      expect(normalized).toContain("Runner-only record identity");
+      expect(normalized).toContain("obj_* references");
+      expect(normalized).toContain("Kept out trusted scope");
+      expect(plain.split("\n").every((line) => line.length <= 76)).toBe(true);
+      expect(styled).toContain("\u001b[1;33m");
+      expect(styled).toContain("\u001b[1;32m");
+      expect(styled).toContain("\u001b[1;36m");
+      expect(stripAnsi(styled)).toBe(plain);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 
   it("saves an enum review with pending column edits and returns to the column screen", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-enum-columns-"));
@@ -10104,9 +10237,11 @@ describe("boundary operator-plane CLI", () => {
 
       let context = await loadBoundaryReviewContext(root);
       expect(context.candidate.pack.resources[0]!.auto_bands).toEqual([policy]);
-      expect(formatFocusedBoundaryActivationReview(context.bundle, false)).toContain(
-        "duration_ms: automatic quantile or equal_width, 3-8 buckets, ordinal labels",
+      const review = formatFocusedBoundaryActivationReview(context.bundle, false);
+      expect(review).toContain(
+        "duration_ms: automatic quantile or equal_width, 3-8 buckets, ordinal",
       );
+      expect(review).toContain("labels");
 
       const removal = await prepareBoundaryResourceReviewMutation(root, {
         resource_id: "public.service_visits",

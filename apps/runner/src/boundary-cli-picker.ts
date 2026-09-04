@@ -209,6 +209,8 @@ export type BoundaryReviewInteractiveSession = {
   ): void;
   /** Retain exact deterministic context for an operator-requested details view. */
   rememberDetails?(title: string, lines: string[]): void;
+  /** Render the retained details without duplicating them as a new Runner turn. */
+  showRememberedDetails?(): void;
   chooseResource(
     resources: BoundaryResourceReviewSummary[],
     overview?: BoundaryReviewOverview,

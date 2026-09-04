@@ -939,6 +939,7 @@ export function createBoundaryAuthoringChat(input: {
     presentationMode: "conversation",
     present: runner,
     rememberDetails,
+    showRememberedDetails: showDetails,
     chooseResource: async () => undefined,
     editFieldTiers: async () => undefined,
     promptText: async (prompt, options) => {
