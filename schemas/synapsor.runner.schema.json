@@ -43,6 +43,13 @@
                   "required": ["enabled"]
                 }
               }
+            },
+            {
+              "required": ["action_rules"],
+              "properties": {
+                "mode": { "const": "review" },
+                "action_rules": { "required": ["project_root"] }
+              }
             }
           ]
         }
@@ -75,6 +82,30 @@
           "type": "string",
           "enum": ["semantic", "exact"],
           "default": "semantic"
+        }
+      }
+    },
+    "action_rules": {
+      "description": "Binds this runtime to the local immutable semantic Action Rule authority. Production runtimes also bind opaque subject references to one shared key and deployment namespace.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_root"],
+      "dependentRequired": {
+        "subject_reference_hmac_key_env": ["subject_reference_namespace"],
+        "subject_reference_namespace": ["subject_reference_hmac_key_env"]
+      },
+      "properties": {
+        "project_root": {
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "://|[\\u0000-\\u001f\\u007f]" }
+        },
+        "subject_reference_hmac_key_env": { "$ref": "#/$defs/env_name" },
+        "subject_reference_namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_.:-]*$"
         }
       }
     },
@@ -231,6 +262,12 @@
           "type": "array",
           "maxItems": 256,
           "items": { "$ref": "#/$defs/supervised_worker_capability" }
+        },
+        "outcomes": {
+          "description": "Exact semantic outcome and active Action Boundary digest allowlist. This is separate from approval and from model-facing proposal authority.",
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/supervised_worker_outcome" }
         }
       }
     },
@@ -629,6 +666,54 @@
         "control_role": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$" },
         "required_attention_sinks": {
           "description": "Optional default-off supervision-health gate. Every named sink must be configured and healthy before this exact capability/digest is leased.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$" }
+        }
+      }
+    },
+    "supervised_worker_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "action_boundary_digest",
+        "mode",
+        "concurrency",
+        "queue_limit",
+        "lease_seconds",
+        "max_attempts",
+        "proposal_ttl_seconds",
+        "rate_limit",
+        "write_url_env"
+      ],
+      "properties": {
+        "outcome": { "$ref": "#/$defs/qualified_name" },
+        "action_boundary_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "mode": { "const": "supervised_worker" },
+        "concurrency": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "queue_limit": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "lease_seconds": { "type": "integer", "minimum": 15, "maximum": 3600 },
+        "max_attempts": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "proposal_ttl_seconds": { "type": "integer", "minimum": 60, "maximum": 2592000 },
+        "rate_limit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["executions", "window_seconds"],
+          "properties": {
+            "executions": { "type": "integer", "minimum": 1, "maximum": 100000 },
+            "window_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+          }
+        },
+        "write_url_env": { "$ref": "#/$defs/env_name" },
+        "require_least_privilege_writer": { "type": "boolean" },
+        "writer_posture_fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "worker_identity": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$" },
+        "control_role": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$" },
+        "required_attention_sinks": {
+          "description": "Optional default-off supervision-health gate for this exact semantic outcome authority.",
           "type": "array",
           "minItems": 1,
           "maxItems": 8,

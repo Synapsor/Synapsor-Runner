@@ -14,7 +14,10 @@ import type {
 } from "./boundary-cli-picker.js";
 import { terminalTheme } from "./boundary-cli-picker.js";
 import { instantLocalBoundaryCandidate } from "./boundary-candidate.js";
-import { updateGuidedOnboardingState } from "./guided-project.js";
+import {
+  reconcileGuidedProjectTrustedContext,
+  updateGuidedOnboardingState,
+} from "./guided-project.js";
 import { buildInstantFirstValue } from "./instant-first-value.js";
 import {
   choosePostActivationAskSelection,
@@ -314,6 +317,7 @@ async function activateInstantCliBoundaryAttempt(
       confirmation_gesture: "activate_for_model",
     },
   });
+  await reconcileGuidedProjectTrustedContext({ projectRoot: input.projectRoot });
   await updateGuidedOnboardingState({
     projectRoot: input.projectRoot,
     status: "boundary_active",

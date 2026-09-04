@@ -25,6 +25,9 @@ export function buildProposalReviewView(
   receipts: StoredWritebackReceipt[] = [],
 ): ProposalReviewView {
   const changeSet = proposal.change_set;
+  if (changeSet.schema_version === protocolVersions.changeSetV4) {
+    return buildSemanticProposalReviewView(proposal, receipts);
+  }
   const boundedSet = changeSet.schema_version === protocolVersions.changeSetV3 ? {
     operation: changeSet.operation,
     row_count: changeSet.frozen_set.row_count,
@@ -178,6 +181,93 @@ export function buildProposalReviewView(
       local_ui_command: "synapsor-runner ui --config ./synapsor.runner.json --store ./.synapsor/local.db",
       terminal_review_command: `synapsor-runner proposals show ${proposal.proposal_id} --store ./.synapsor/local.db`,
       note: "Approval and apply remain outside the model-facing MCP surface.",
+    },
+    security_boundary: {
+      presentation_only: true,
+      approval_tool_exposed: false,
+      apply_tool_exposed: false,
+      privileged_handoff_embedded: false,
+    },
+  };
+}
+
+function buildSemanticProposalReviewView(
+  proposal: StoredProposal,
+  receipts: StoredWritebackReceipt[],
+): ProposalReviewView {
+  if (proposal.change_set.schema_version !== protocolVersions.changeSetV4) {
+    throw new Error("Semantic proposal review requires a v4 ChangeSet.");
+  }
+  const changeSet = proposal.change_set;
+  const latestReceipt = receipts.at(-1);
+  const diff = Object.fromEntries(Object.keys(changeSet.patch).map((column) => [column, {
+    before: "withheld from model; available to operator",
+    proposed: "Runner-derived; available to operator",
+  }]));
+  return {
+    schema_version: "synapsor.proposal-review-view.v1",
+    message: "Runner verified current authoritative facts and derived an immutable proposal. The model cannot approve or apply it.",
+    proposal: {
+      id: proposal.proposal_id,
+      version: proposal.proposal_version,
+      action: proposal.action,
+      capability: proposal.action,
+      status: proposal.state,
+    },
+    requested_business_action: proposal.action,
+    semantic_capability: proposal.action,
+    source_database_changed: proposal.source_database_mutated,
+    proposed_fields: Object.keys(changeSet.patch),
+    diff,
+    trusted_context: {
+      tenant_id: "trusted Runner context (value withheld)",
+      principal: "trusted Runner context (value withheld)",
+      values_exposed: false,
+    },
+    evidence_summary: {
+      bundle_id: changeSet.evidence.bundle_id,
+      required: true,
+      item_count: changeSet.semantic_authority.subject_bindings.length,
+      values_included_in_summary: false,
+    },
+    expected_source_version: "operator-only",
+    policy_and_risk: {
+      eligibility: "verified from current authoritative facts",
+      approval: changeSet.approval.mode === "policy"
+        ? "separate reviewed policy decision"
+        : "human review required",
+      apply: "outside MCP",
+    },
+    expiration: {
+      expires_at: changeSet.semantic_authority.proof.valid_until,
+      status: "eligibility proof is time-bounded",
+    },
+    receipt: latestReceipt ? {
+      status: latestReceipt.status,
+      source_database_mutated: latestReceipt.source_database_mutated,
+      created_at: latestReceipt.created_at,
+    } : {
+      status: "not_created",
+      source_database_mutated: false,
+    },
+    guard_checklist: {
+      subject_identity: "opaque and operator-only",
+      trusted_scope: "Runner-injected",
+      fact_loading: "parameterized and reviewed",
+      derived_effect: "sealed by Runner",
+      affected_row_count_required: 1,
+    },
+    writeback: {
+      status: proposal.state,
+      mode: changeSet.writeback.mode,
+      executor: "semantic_rule",
+    },
+    handoff: {
+      mode: "standalone_operator",
+      privileged_authority_embedded: false,
+      local_ui_command: "synapsor-runner ui --config ./synapsor.actions.runner.json --store ./.synapsor/local.db",
+      terminal_review_command: `synapsor-runner proposals show ${proposal.proposal_id} --store ./.synapsor/local.db`,
+      note: "Exact identities, verified facts, effect values, approval, and apply remain in the standalone operator surface.",
     },
     security_boundary: {
       presentation_only: true,

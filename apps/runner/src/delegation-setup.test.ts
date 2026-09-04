@@ -61,6 +61,28 @@ describe("delegation setup artifacts", () => {
     await expect(readDelegationDraft(root, draft.job_name)).resolves.toEqual(draft);
   });
 
+  it("retains detailed bounded job and Action intent text", () => {
+    const jobIntent = "j".repeat(2_000);
+    const actionIntent = "a".repeat(2_000);
+    const draft = buildDelegationDraft({
+      jobName: "detailed_job",
+      jobIntent,
+      boundaryName: "reviewed_support",
+      workload: workload(),
+      review: review(),
+      actionIntents: [actionIntent],
+    });
+    expect(draft.job_intent).toBe(jobIntent);
+    expect(draft.actions[0]?.intent).toBe(actionIntent);
+    expect(() => buildDelegationDraft({
+      jobName: "too_long_job",
+      jobIntent: "j".repeat(2_001),
+      boundaryName: "reviewed_support",
+      workload: workload(),
+      review: review(),
+    })).toThrow("job intent must be 1 through 2000 safe characters");
+  });
+
   it("reports EXPLORE, PROPOSE, DELEGATE, and APPLY as separate authority stages", () => {
     const draft = buildDelegationDraft({
       jobName: "support_agent",

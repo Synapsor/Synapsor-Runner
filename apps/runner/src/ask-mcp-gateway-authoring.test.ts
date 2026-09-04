@@ -10,6 +10,43 @@ const fixture = vi.hoisted(() => ({
   exploredPlans: [] as unknown[],
   autoBands: true,
   withheld: false,
+  semanticActive: false,
+}));
+
+vi.mock("./semantic-action-runtime.js", () => ({
+  createOptionalActionRuleRuntimeServices: async () => fixture.semanticActive
+    ? {
+        authority: {},
+        subjectReferences: {},
+        key: Buffer.alloc(32),
+        deployment_scope: "test",
+        workflow_session_id: "test-workflow",
+        semanticActions: {
+          listTools: () => [{
+            name: "app.describe_actions",
+            title: "Describe reviewed actions",
+            description: "List exact reviewed outcomes.",
+            kind: "action_catalog",
+            input_schema: {},
+            annotations: { readOnlyHint: true },
+          }, {
+            name: "app.request_change",
+            title: "Request a reviewed change",
+            description: "Nominate one reviewed outcome with opaque subjects.",
+            kind: "semantic_action",
+            input_schema: {
+              outcome: { type: "string", required: true },
+              subject_refs: { type: "object", required: true },
+            },
+            annotations: { readOnlyHint: false },
+          }],
+          hasTool: (name: string) => name === "app.describe_actions" || name === "app.request_change",
+          callTool: async (name: string) => name === "app.describe_actions"
+            ? { ok: true, actions: [{ outcome: "billing.pause" }], source_database_changed: false }
+            : { ok: true, status: "review_required", source_database_changed: false },
+        },
+      }
+    : undefined,
 }));
 
 vi.mock("./scoped-explore.js", async (importOriginal) => {
@@ -139,6 +176,7 @@ afterEach(async () => {
   fixture.exploredPlans.length = 0;
   fixture.autoBands = true;
   fixture.withheld = false;
+  fixture.semanticActive = false;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
@@ -417,6 +455,65 @@ describe("Ask authoring/runtime separation", () => {
       await gateway.close();
     }
     expect(fixture.closes).toBe(2);
+  });
+
+  it("adds only the fixed verified Action pair to local Ask when semantic authority is active", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ask-authoring-actions-"));
+    roots.push(root);
+    const configPath = path.join(root, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        source: { engine: "postgres", read_url_env: "DATABASE_URL", read_only: true },
+      },
+      trusted_context: {
+        provider: "static_dev",
+        values: { tenant_id: "acme", principal: "analyst" },
+      },
+      capabilities: [],
+    }, null, 2));
+    await fs.writeFile(path.join(root, "synapsor.actions.runner.json"), JSON.stringify({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        source: { engine: "postgres", read_url_env: "DATABASE_URL", read_only: true },
+      },
+      trusted_context: {
+        provider: "static_dev",
+        values: { tenant_id: "acme", principal: "analyst" },
+      },
+      action_rules: { project_root: "./" },
+      strict: true,
+    }, null, 2));
+    fixture.semanticActive = true;
+
+    const gateway = await createWorkbenchAskMcpGateway({
+      configPath,
+      storePath: path.join(root, ".synapsor/local.db"),
+      projectRoot: root,
+      env: {},
+      mode: "authoring",
+    });
+    try {
+      expect((await gateway.listTools()).map((tool) => tool.name)).toEqual([
+        "app.describe_actions",
+        "app.describe_data",
+        "app.explore_data",
+        "app.request_change",
+      ]);
+      await expect(gateway.callTool("app.describe_actions", {})).resolves.toMatchObject({
+        ok: true,
+        value: {
+          actions: [{ outcome: "billing.pause" }],
+          source_database_changed: false,
+        },
+      });
+    } finally {
+      await gateway.close();
+    }
   });
 
   it("refuses an explicit runtime session instead of silently switching while Explore is active", async () => {

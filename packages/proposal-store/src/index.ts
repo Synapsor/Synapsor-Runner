@@ -100,6 +100,12 @@ export type {
   PostgresProposalRuntimeStoreOptions,
   PostgresWritebackIntentStoreOptions,
   RecordHandlerWritebackJobInput,
+  ObservedSubjectReferenceState,
+  ObservedSubjectOutcomeAuthority,
+  ProtectedSubjectIdentityV1,
+  StoredObservedSubjectReference,
+  ClaimObservedSubjectReferencesInput,
+  RevokeObservedSubjectReferencesInput,
 } from "./domain-types.js";
 
 export { ProposalStore } from "./sqlite-store.js";
@@ -115,3 +121,4 @@ export {
   notificationReplayDecisionSubject,
 } from "./attention-domain.js";
 export { workerControlDecisionSubject } from "./worker-control-domain.js";
+export { semanticApprovalSetDigest } from "./proposal-integrity.js";

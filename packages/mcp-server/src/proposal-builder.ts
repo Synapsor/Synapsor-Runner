@@ -1,13 +1,18 @@
 import type {
   StoredProposal,
 } from "@synapsor-runner/proposal-store";
+import type {
+  SemanticActionEligibilityDecisionV1,
+} from "@synapsor-runner/action-rules";
 import {
   canonicalJsonDigest,
+  parseChangeSet,
   protocolVersions,
   type ChangeSet,
   type ChangeSetV1,
   type ChangeSetV2,
   type ChangeSetV3,
+  type ChangeSetV4,
   type FreshnessAuthorityV1,
 } from "@synapsor-runner/protocol";
 import type {
@@ -40,6 +45,158 @@ import {
 import {
   effectivePrincipalScope,
 } from "./trusted-context.js";
+
+type EligibleSemanticActionDecision = Extract<SemanticActionEligibilityDecisionV1, { result: "eligible" }>;
+
+export function buildDerivedChangeSet(input: {
+  decision: EligibleSemanticActionDecision;
+  context: TrustedContext;
+  proposalId: string;
+  createdAt: string;
+  evidenceBundleId: string;
+  queryFingerprint: `sha256:${string}`;
+  objectId?: string;
+  contract?: ChangeSetV4["contract"];
+}): ChangeSetV4 {
+  const { activated, semantic_authority: semanticAuthority } = input.decision;
+  const effect = semanticAuthority.effect;
+  if (input.proposalId.length < 1 || input.proposalId.length > 200) {
+    throw new McpRuntimeError("SEMANTIC_PROPOSAL_ID_INVALID", "Runner could not allocate a valid semantic proposal identity.");
+  }
+  if (input.context.principal.length < 1) {
+    throw new McpRuntimeError("TRUSTED_PRINCIPAL_MISSING", "A trusted principal is required to create an immutable Action proposal.");
+  }
+  if (effect.tenant_guard !== undefined) {
+    if (typeof effect.tenant_guard.value !== "string" || effect.tenant_guard.value !== input.context.tenant_id) {
+      throw new McpRuntimeError("SEMANTIC_SCOPE_MISMATCH", "The eligible action does not match the trusted tenant context.");
+    }
+  } else if (effect.organization_scope?.organization_id !== input.context.tenant_id) {
+    throw new McpRuntimeError("SEMANTIC_SCOPE_MISMATCH", "The eligible action does not match the reviewed organization context.");
+  }
+  if (effect.principal_scope !== undefined && effect.principal_scope.value !== input.context.principal) {
+    throw new McpRuntimeError("SEMANTIC_SCOPE_MISMATCH", "The eligible action does not match the trusted principal context.");
+  }
+  const provider = input.context.provenance === "reviewed_organization"
+    ? undefined
+    : input.context.provenance;
+  if (effect.principal_scope !== undefined && provider === undefined) {
+    throw new McpRuntimeError("TRUSTED_PRINCIPAL_MISSING", "Principal-scoped semantic actions require a trusted principal provider.");
+  }
+  const principalScope = effect.principal_scope === undefined ? undefined : {
+    schema_version: protocolVersions.principalScope,
+    column: effect.principal_scope.column,
+    binding: "principal",
+    provider: provider!,
+    value_fingerprint: canonicalJsonDigest({
+      column: effect.principal_scope.column,
+      binding: "principal",
+      provider,
+      value: effect.principal_scope.value,
+    }),
+    value: effect.principal_scope.value,
+  };
+  const targetDependencies = semanticAuthority.dependencies.filter((dependency) =>
+    dependency.resource === effect.resource
+    && dependency.primary_key.column === effect.primary_key.column
+    && dependency.primary_key.value === effect.primary_key.value);
+  if (effect.operation === "single_row_update" && targetDependencies.length !== 1) {
+    throw new McpRuntimeError("SEMANTIC_TARGET_DEPENDENCY_INVALID", "The eligible update is not bound to one exact target dependency.");
+  }
+  const targetDependency = targetDependencies[0];
+  const before = effect.operation === "single_row_update"
+    ? {
+      [effect.primary_key.column]: effect.primary_key.value!,
+      ...(targetDependency?.version === undefined
+        ? {}
+        : { [targetDependency.version.column]: targetDependency.version.value }),
+    }
+    : {};
+  const after: Record<string, Scalar> = { ...before, ...effect.set };
+  for (const component of effect.deduplication?.components ?? []) after[component.column] = component.value;
+  if (principalScope !== undefined) after[principalScope.column] = principalScope.value!;
+  if (effect.version_advance !== undefined && effect.expected_version !== undefined) {
+    if (typeof effect.expected_version.value !== "number" || !Number.isSafeInteger(effect.expected_version.value)) {
+      throw new McpRuntimeError("SEMANTIC_VERSION_INVALID", "The eligible action has an invalid integer version guard.");
+    }
+    after[effect.version_advance.column] = effect.expected_version.value + 1;
+  }
+  const proposalCore = {
+    schema_version: protocolVersions.changeSetV4,
+    proposal_id: input.proposalId,
+    proposal_version: 1,
+    action: semanticAuthority.proof.outcome,
+    ...(input.contract === undefined ? {} : { contract: input.contract }),
+    operation: effect.operation,
+    mode: "review_required" as const,
+    principal: {
+      id: input.context.principal,
+      source: input.context.provenance === "environment"
+        ? "environment" as const
+        : input.context.provenance === "cloud_session"
+          ? "cloud_session" as const
+          : input.context.provenance === "static_dev"
+            ? "static_dev" as const
+            : "trusted_session" as const,
+    },
+    scope: {
+      ...(effect.tenant_guard === undefined ? {} : { tenant_id: input.context.tenant_id }),
+      ...(effect.organization_scope === undefined ? {} : { organization_scope: effect.organization_scope }),
+      business_object: effect.resource,
+      object_id: input.objectId ?? String(effect.primary_key.value ?? input.proposalId),
+    },
+    source: {
+      kind: activated.compiled.target_resource.engine === "postgres" ? "external_postgres" as const : "external_mysql" as const,
+      source_id: effect.source,
+      schema: effect.schema,
+      table: effect.table,
+      primary_key: effect.primary_key,
+    },
+    before,
+    patch: effect.set,
+    after,
+    guards: {
+      ...(effect.tenant_guard === undefined ? {} : { tenant: effect.tenant_guard }),
+      ...(effect.organization_scope === undefined ? {} : { organization_scope: effect.organization_scope }),
+      ...(principalScope === undefined ? {} : { principal_scope: principalScope }),
+      allowed_columns: effect.allowed_columns,
+      ...(effect.expected_version === undefined ? {} : { expected_version: effect.expected_version }),
+      ...(effect.version_advance === undefined ? {} : { version_advance: effect.version_advance }),
+      ...(effect.deduplication === undefined ? {} : { deduplication: effect.deduplication }),
+    },
+    evidence: {
+      bundle_id: input.evidenceBundleId,
+      query_fingerprint: input.queryFingerprint,
+      items: [],
+    },
+    approval: {
+      status: "pending" as const,
+      mode: input.decision.approval.path === "automatic_eligible" ? "policy" as const : "human" as const,
+      approval_class: semanticAuthority.proof.approval_class,
+      approval_policy_digest: semanticAuthority.proof.approval_policy_digest,
+      required_role: input.decision.approval.authority.required_role,
+      required_approvals: input.decision.approval.authority.required_approvals,
+    },
+    writeback: {
+      status: "not_applied" as const,
+      mode: activated.compiled.effect_envelope.writeback.mode === "direct_sql"
+        && activated.compiled.effect_envelope.writeback.supervised_worker === "allowed"
+        ? "trusted_worker_required" as const
+        : "read_only" as const,
+      executor: "semantic_rule" as const,
+    },
+    semantic_authority: semanticAuthority,
+    source_database_mutated: false as const,
+    created_at: input.createdAt,
+  } satisfies Omit<ChangeSetV4, "integrity">;
+  const parsed = parseChangeSet({
+    ...proposalCore,
+    integrity: { proposal_hash: canonicalJsonDigest(proposalCore) },
+  });
+  if (parsed.schema_version !== protocolVersions.changeSetV4) {
+    throw new McpRuntimeError("SEMANTIC_PROPOSAL_INVALID", "Runner did not produce a semantic ChangeSet.");
+  }
+  return parsed;
+}
 
 export function buildChangeSet(input: {
   config: RuntimeConfig;

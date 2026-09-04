@@ -467,6 +467,11 @@ function reviewedResourceSummary(
   const time = isRecord(resource.time_bucket_fields)
     ? Object.keys(resource.time_bucket_fields).map(fieldLabel)
     : [];
+  const fieldEgress = isRecord(resource.field_egress) ? resource.field_egress : {};
+  const selectable = stringList(resource.selectable_fields).filter((field) => {
+    const egress = fieldEgress[field];
+    return !isRecord(egress) || egress.model_egress !== "withheld";
+  });
   const capabilities = [
     "record counts",
     measures.length ? `totals and averages of ${naturalList(measures.slice(0, 3))}` : undefined,
@@ -474,13 +479,17 @@ function reviewedResourceSummary(
     groups.length ? `grouping by ${naturalList(groups.slice(0, 3))}` : undefined,
     time.length ? `day, week, or month using ${naturalList(time.slice(0, 2))}` : undefined,
   ].filter((value): value is string => Boolean(value));
-  const suggestions = Array.isArray(resource.suggested_questions)
+  const aggregateSuggestions = Array.isArray(resource.suggested_questions)
     ? resource.suggested_questions
       .filter(isRecord)
       .filter((question) => activeSuggestionIsExecutable(resource, question))
       .map((question) => safeQuestion(question.text))
       .filter((question): question is string => Boolean(question))
     : [];
+  const suggestions = unique([
+    ...(selectable.length ? [`Show a few reviewed records from ${label}.`] : []),
+    ...aggregateSuggestions,
+  ]).slice(0, 3);
   return {
     id,
     label,

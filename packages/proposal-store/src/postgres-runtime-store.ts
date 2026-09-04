@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import {
+  canonicalJsonStringify,
   parseWritebackJob,
   parseWritebackResult,
   type FreshnessProofV1,
@@ -51,6 +52,9 @@ import type {
   CompleteExploreBudgetReservationDecision,
   CompleteExploreBudgetReservationInput,
   ProductionExploreAuditEventInput,
+  StoredObservedSubjectReference,
+  ClaimObservedSubjectReferencesInput,
+  RevokeObservedSubjectReferencesInput,
 } from "./domain-types.js";
 import { isRecord } from "./common.js";
 import { assertNoSecretMaterial } from "./proposal-integrity.js";
@@ -63,6 +67,15 @@ import {
 import { ProposalStoreError } from "./errors.js";
 import { ProposalStore } from "./sqlite-store.js";
 import { normalizedExplorePrivacyReleaseClaims } from "./privacy-release.js";
+import {
+  assertObservedSubjectMatchesClaim,
+  consumedObservedSubjectReference,
+  normalizeNewObservedSubjectReference,
+  normalizeObservedSubjectClaim,
+  normalizeObservedSubjectRevocation,
+  normalizeStoredObservedSubjectReference,
+  subjectReferenceUnavailable,
+} from "./subject-reference-domain.js";
 
 /**
  * Durable intent authority for fleet applies. It writes the intent ledger entry
@@ -109,7 +122,7 @@ export class PostgresWritebackIntentStore {
         idempotency_key: job.idempotency_key,
         writeback_job_id: job.job_id,
         proposal_id: job.proposal_id,
-        proposal_hash: job.approval_id,
+        proposal_hash: job.protocol_version === "5.0" ? job.proposal_hash : job.approval_id,
         runner_id: runnerId,
         operation: job.operation ?? "single_row_update",
         status: "intent_recorded",
@@ -263,6 +276,161 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
       [input.event_id, input.event_kind, JSON.stringify(input.payload), input.created_at],
     );
     this.scheduleProductionExploreMaintenance(Date.parse(input.created_at));
+  }
+
+  async createObservedSubjectReference(
+    input: StoredObservedSubjectReference,
+  ): Promise<StoredObservedSubjectReference> {
+    const subject = normalizeNewObservedSubjectReference(input);
+    await this.ensureProductionExploreMigrated();
+    const table = `${quotePostgresIdentifier(this.schema)}.observed_subject_references`;
+    const inserted = await this.pool.query(
+      `INSERT INTO ${table} (
+        subject_ref, subject_ref_digest, state, claim_id, record_json,
+        issued_at, expires_at, consumed_at, revoked_at
+      ) VALUES ($1, $2, 'active', NULL, $3::jsonb, $4::timestamptz, $5::timestamptz, NULL, NULL)
+      ON CONFLICT (subject_ref) DO NOTHING
+      RETURNING record_json, state, claim_id, consumed_at, revoked_at`,
+      [
+        subject.subject_ref,
+        subject.subject_ref_digest,
+        JSON.stringify(subject),
+        subject.issued_at,
+        subject.expires_at,
+      ],
+    );
+    if (inserted.rows[0]) return postgresObservedSubjectFromRow(inserted.rows[0]);
+    const existing = await this.getObservedSubjectReference(subject.subject_ref);
+    if (!existing || canonicalJsonStringify(existing) !== canonicalJsonStringify(subject)) {
+      throw new ProposalStoreError(
+        "SUBJECT_REFERENCE_IMMUTABILITY_VIOLATION",
+        "An observed subject reference already exists with different protected metadata.",
+      );
+    }
+    return existing;
+  }
+
+  async getObservedSubjectReference(
+    subjectRef: string,
+  ): Promise<StoredObservedSubjectReference | undefined> {
+    if (!/^obj_[A-Za-z0-9_-]{32,128}$/.test(subjectRef)) return undefined;
+    await this.ensureProductionExploreMigrated();
+    const table = `${quotePostgresIdentifier(this.schema)}.observed_subject_references`;
+    const selected = await this.pool.query(
+      `SELECT record_json, state, claim_id, consumed_at, revoked_at
+       FROM ${table}
+       WHERE subject_ref = $1`,
+      [subjectRef],
+    );
+    return selected.rows[0] ? postgresObservedSubjectFromRow(selected.rows[0]) : undefined;
+  }
+
+  async claimObservedSubjectReferences(
+    input: ClaimObservedSubjectReferencesInput,
+  ): Promise<StoredObservedSubjectReference[]> {
+    const claim = normalizeObservedSubjectClaim(input);
+    await this.ensureProductionExploreMigrated();
+    const client = await this.pool.connect();
+    const table = `${quotePostgresIdentifier(this.schema)}.observed_subject_references`;
+    try {
+      await client.query("BEGIN");
+      for (const subjectRef of [...claim.subject_refs].sort()) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+          `synapsor-subject:${this.schema}:${subjectRef}`,
+        ]);
+      }
+      const selected = await client.query(
+        `SELECT subject_ref, record_json, state, claim_id, consumed_at, revoked_at
+         FROM ${table}
+         WHERE subject_ref = ANY($1::text[])
+         FOR UPDATE`,
+        [claim.subject_refs],
+      );
+      const byRef = new Map(selected.rows.map((row) => {
+        const subject = postgresObservedSubjectFromRow(row);
+        return [subject.subject_ref, subject] as const;
+      }));
+      const subjects = claim.subject_refs.map((subjectRef) => {
+        const subject = byRef.get(subjectRef);
+        if (!subject) throw subjectReferenceUnavailable();
+        assertObservedSubjectMatchesClaim(subject, claim);
+        return subject;
+      });
+      const consumed: StoredObservedSubjectReference[] = [];
+      for (const subject of subjects) {
+        if (subject.state === "consumed") {
+          consumed.push(subject);
+          continue;
+        }
+        const updated = await client.query(
+          `UPDATE ${table}
+           SET state = 'consumed', claim_id = $1, consumed_at = $2::timestamptz
+           WHERE subject_ref = $3 AND state = 'active'
+           RETURNING subject_ref`,
+          [claim.claim_id, claim.now, subject.subject_ref],
+        );
+        if (updated.rows.length !== 1) throw subjectReferenceUnavailable();
+        consumed.push(consumedObservedSubjectReference(subject, claim.claim_id, claim.now));
+      }
+      await client.query("COMMIT");
+      return consumed;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async revokeObservedSubjectReferences(
+    input: RevokeObservedSubjectReferencesInput,
+  ): Promise<number> {
+    const revocation = normalizeObservedSubjectRevocation(input);
+    await this.ensureProductionExploreMigrated();
+    const client = await this.pool.connect();
+    const table = `${quotePostgresIdentifier(this.schema)}.observed_subject_references`;
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        `synapsor-subject-revoke:${this.schema}`,
+      ]);
+      const selected = await client.query(
+        `SELECT subject_ref, record_json, state, claim_id, consumed_at, revoked_at
+         FROM ${table}
+         WHERE state = 'active'
+         FOR UPDATE`,
+      );
+      const requestedRefs = new Set(revocation.subject_refs);
+      const subjects = selected.rows
+        .map(postgresObservedSubjectFromRow)
+        .filter((subject) =>
+          (requestedRefs.size === 0 || requestedRefs.has(subject.subject_ref))
+          && (!revocation.read_boundary_digest
+            || subject.read_boundary_digest === revocation.read_boundary_digest)
+          && (!revocation.action_boundary_digest
+            || subject.outcome_authorities.some((authority) =>
+              authority.action_boundary_digest === revocation.action_boundary_digest))
+          && (!revocation.workflow_session_id
+            || subject.workflow_session_id === revocation.workflow_session_id));
+      let count = 0;
+      for (const subject of subjects) {
+        const updated = await client.query(
+          `UPDATE ${table}
+           SET state = 'revoked', revoked_at = $1::timestamptz
+           WHERE subject_ref = $2 AND state = 'active'
+           RETURNING subject_ref`,
+          [revocation.now, subject.subject_ref],
+        );
+        count += updated.rows.length;
+      }
+      await client.query("COMMIT");
+      return count;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async findActiveProposal(input: ActiveProposalLookup): Promise<StoredProposal | undefined> {
@@ -880,6 +1048,10 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
       `DELETE FROM ${schema}.production_explore_audit_events WHERE created_at < $1::timestamptz`,
       [auditCutoff],
     );
+    await this.pool.query(
+      `DELETE FROM ${schema}.observed_subject_references WHERE expires_at < $1::timestamptz`,
+      [auditCutoff],
+    );
   }
 
   private scheduleProductionExploreMaintenance(now: number): void {
@@ -1034,6 +1206,19 @@ export function sharedPostgresRuntimeStoreMigration(schema = "synapsor_runner"):
     "  created_at timestamptz NOT NULL",
     ");",
     `CREATE INDEX IF NOT EXISTS idx_synapsor_production_explore_audit_created ON ${s}.production_explore_audit_events(created_at);`,
+    `CREATE TABLE IF NOT EXISTS ${s}.observed_subject_references (`,
+    "  subject_ref text PRIMARY KEY,",
+    "  subject_ref_digest text UNIQUE NOT NULL,",
+    "  state text NOT NULL CHECK (state IN ('active', 'consumed', 'revoked')),",
+    "  claim_id text,",
+    "  record_json jsonb NOT NULL,",
+    "  issued_at timestamptz NOT NULL,",
+    "  expires_at timestamptz NOT NULL,",
+    "  consumed_at timestamptz,",
+    "  revoked_at timestamptz",
+    ");",
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_observed_subject_expiry ON ${s}.observed_subject_references(state, expires_at);`,
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_observed_subject_claim ON ${s}.observed_subject_references(claim_id);`,
   ].join("\n");
 }
 
@@ -1229,6 +1414,20 @@ function parseJsonRecord(value: unknown): Record<string, unknown> {
   if (isRecord(value)) return value;
   const parsed = JSON.parse(String(value ?? "{}")) as unknown;
   return isRecord(parsed) ? parsed : {};
+}
+
+function postgresObservedSubjectFromRow(row: Record<string, unknown>): StoredObservedSubjectReference {
+  return normalizeStoredObservedSubjectReference({
+    ...parseJsonRecord(row.record_json),
+    state: row.state,
+    ...(row.claim_id == null ? {} : { claim_id: String(row.claim_id) }),
+    ...(row.consumed_at == null
+      ? {}
+      : { consumed_at: new Date(String(row.consumed_at)).toISOString() }),
+    ...(row.revoked_at == null
+      ? {}
+      : { revoked_at: new Date(String(row.revoked_at)).toISOString() }),
+  });
 }
 
 function assertSafePostgresIdentifier(value: string, label: string): void {

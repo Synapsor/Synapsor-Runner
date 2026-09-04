@@ -1,6 +1,8 @@
 # Threat Model
 
-Synapsor Runner protects one narrow boundary: model-facing MCP database actions that go through reviewed Synapsor capabilities and guarded writeback jobs.
+Synapsor Runner protects one narrow boundary: model-facing MCP database actions
+that go through reviewed Read/Action authority, typed Action Rules, immutable
+proposals, and guarded writeback jobs.
 
 It is not a general MCP security gateway, not a prompt-injection cure, not a replacement for host security, and not a self-hosted copy of Synapsor Cloud.
 
@@ -17,6 +19,9 @@ It is not a general MCP security gateway, not a prompt-injection cure, not a rep
 - Generated boundary drafts, review decisions, exact activation digests,
   generation locks, reviewed relationship proofs, and Scoped Explore privacy
   budgets.
+- Verification Boundaries, effect envelopes, compiled Action Rule plans,
+  approval-class digests, eligibility proofs, dependency versions, opaque
+  subject-reference records, and derived-effect digests.
 - Optional Workbench Ask provider credentials and direct-egress consent held
   only in the local process.
 
@@ -25,8 +30,10 @@ It is not a general MCP security gateway, not a prompt-injection cure, not a rep
 ```text
 MCP client/model
   -> Synapsor Runner MCP server
-  -> reviewed capability config
+  -> reviewed Read/Action authority
   -> read-only database credential
+  -> bounded private fact verification
+  -> immutable derived proposal
   -> local proposal/evidence/replay store
   -> human or reviewed deterministic policy approval outside the model
   -> manual apply or separately enabled guarded worker with write credential
@@ -85,6 +92,21 @@ idempotency boundary for effects.
   refused, DNS is revalidated and pinned, and private/link-local/metadata
   destinations fail closed.
 - Model supplies `tenant_id`, `principal`, source id, allowed columns, row version, or approval identity: runner rejects trusted-binding overrides.
+- Model supplies an Action patch or raw row identity: rule-derived actions
+  accept only one activated outcome plus scope/session-bound opaque subject
+  references. Runner loads current facts and derives the effect independently.
+- A leaked or forged opaque subject reference is replayed elsewhere: the claim
+  rechecks source, resource, active Read/Action authority, trusted scope,
+  workflow session, permitted outcome, observed-version provenance, expiry,
+  revocation, and one-use state atomically.
+- A rule-derived proposal was valid earlier but facts changed before write:
+  supervised apply reloads active authority, locks and reloads every bounded
+  dependency, re-evaluates the portable rule, re-derives the effect, and
+  compares the exact effect digest before mutating one row.
+- Model or authoring provider invents business-rule structure: model drafts are
+  non-authoritative and compile only against the reviewed catalog, exact scalar
+  types, relationship/cardinality proofs, scope, effect envelope, transaction
+  posture, and approval class. Runtime evaluation makes no model call.
 - Prompt injection in database content asks the model to bypass policy: the runner ignores text as authority and only accepts structured capability/job state.
 - Aggregate inference through a one-record group: reviewed aggregate tools
   require minimum-group suppression and never return member rows or IDs. This
@@ -153,6 +175,11 @@ idempotency boundary for effects.
 - Business invariants not represented in the capability config, proposal, application handler, or database constraints.
 - Generic multi-row business transactions, DDL, UPSERT, model-generated
   predicates, or cross-database atomicity in the Runner direct-write path.
+- Action Rule v1 effects beyond one exact `INSERT` or `UPDATE`. In particular,
+  two proposals are not represented as one atomic multi-row effect.
+- Scalar aggregates or negatively polarized existence rules in Action Rule v1;
+  they remain disabled until an engine-independent phantom-prevention design is
+  reviewed. Positive existence is supported only over explicitly bounded rows.
 - A compromised IdP/JWKS host, ledger database, source database, TLS
   terminator, or administrator-approved contract.
 - A compromised operator-approved notification destination or signing secret.
@@ -167,6 +194,10 @@ idempotency boundary for effects.
 - Keep capability config under code review.
 - Prefer version/timestamp conflict guards over weak row-hash fallback.
 - Review proposal diffs and evidence before approval.
+- Review Read authority, private Verification authority, effect envelope, rule,
+  approval class, and execution posture as separate objects. Do not activate a
+  rule whose private facts or one-row effect do not express the real business
+  invariant.
 - Monitor conflict/failed receipt rates.
 - Keep automatic execution disabled unless both exact-digest opt-ins and a
   separately scoped least-privilege writer are reviewed. Monitor queue,

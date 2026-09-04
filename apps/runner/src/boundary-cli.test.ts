@@ -60,6 +60,7 @@ import {
 import {
   analyzeReadWorkloadSet,
   buildReadWorkloadPlanCards,
+  normalizeReadWorkloadSet,
   readWorkloadFromPlanCards,
   READ_WORKLOAD_SET_VERSION,
 } from "./read-workload-assist.js";
@@ -68,20 +69,29 @@ import { AskError } from "./model-ask.js";
 import {
   generateModelActionSuggestionSet,
 } from "./action-suggestion-model.js";
+import { compileActionRuleModelDraft, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
+import { readActionRuleAuthorityDraft } from "./action-rule-authority.js";
+import {
+  generateModelActionRuleDraft,
+  type ModelActionRuleDraftResult,
+} from "./action-rule-model.js";
 import type {
   BoundaryAuthoringChat,
   BoundaryAuthoringPermissionGuide,
 } from "./boundary-authoring-chat.js";
+import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { ACTION_SUGGESTION_VERSION, assessActionSuggestion } from "./action-design.js";
 import {
   commitReadWorkloadCandidate,
   prepareReadWorkloadCandidate,
 } from "./read-workload-authoring.js";
 import {
+  listReadWorkloadAnalyses,
   readReadWorkloadAnalysis,
   storeReadWorkloadAnalysis,
 } from "./read-workloads.js";
 import { readDelegationDraft } from "./delegation-setup.js";
+import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import { boundaryCommand } from "./guided-start.js";
 import { initializeGuidedProject, readGuidedOnboardingState } from "./guided-project.js";
@@ -2013,7 +2023,7 @@ describe("boundary operator-plane CLI", () => {
       ]]);
       expect(output).toContain("READ CANDIDATE READY");
       expect(output).toMatch(/\| Read\s+\| reviewed_staging\s+\| DRAFT\s+\| None/u);
-      expect(output).toMatch(/\| Apply\s+\| Source writeback\s+\| OFF\s+\| Cannot apply/u);
+      expect(output).toMatch(/\| Apply\s+\| Source writeback\s+\| NOT ALLOWED\s+\| Cannot apply/u);
       expect(output).toContain("REVIEW EXACT BOUNDARY");
       expect(output).toContain("READ REVIEW COMPLETE - NOT ACTIVE");
       expect(output).toContain("Press Y in /access to prepare and rehearse a proposal action");
@@ -2040,7 +2050,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("accepts a 500-character agent job before choosing a mapping path", async () => {
+  it("accepts a 2,000-character agent job before choosing a mapping path", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-limit-accepted-"));
     const inspection = boundaryInspection();
     const build = buildAutoBoundary({
@@ -2055,7 +2065,7 @@ describe("boundary operator-plane CLI", () => {
       sourceEnv: "DATABASE_URL",
       inspectedSchema: "public",
     });
-    const job = "a".repeat(500);
+    const job = "a".repeat(2_000);
     const promptContexts: string[][] = [];
     const mappingChoices: string[] = [];
     const notices: string[] = [];
@@ -2090,9 +2100,9 @@ describe("boundary operator-plane CLI", () => {
       )).resolves.toBe(0);
 
       expect(promptContexts).toHaveLength(1);
-      expect(promptContexts[0]).toContain("Maximum job description length: 500 characters.");
+      expect(promptContexts[0]).toContain("Maximum job description length: 2000 characters.");
       expect(mappingChoices).toEqual(["MAP THE JOB TO REVIEWED STRUCTURE"]);
-      expect(notices).not.toContain(expect.stringContaining("maximum is 500"));
+      expect(notices).not.toContain(expect.stringContaining("maximum is 2000"));
       const after = await loadBoundaryReviewContext(root);
       expect(after.bundle.candidate_digest).toBe(before.bundle.candidate_digest);
       expect(after.candidate).toEqual(before.candidate);
@@ -2101,7 +2111,7 @@ describe("boundary operator-plane CLI", () => {
     }
   });
 
-  it("rejects a 501-character agent job before staging the mapping catalog", async () => {
+  it("rejects a 2,001-character agent job before staging the mapping catalog", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-limit-refused-"));
     const inspection = boundaryInspection();
     const build = buildAutoBoundary({
@@ -2125,7 +2135,7 @@ describe("boundary operator-plane CLI", () => {
       editFieldTiers: async () => undefined,
       promptText: async (prompt, options) => {
         prompts.push({ prompt, context: options?.context ?? [] });
-        return prompts.length === 1 ? "a".repeat(501) : undefined;
+        return prompts.length === 1 ? "a".repeat(2_001) : undefined;
       },
       chooseOption,
       confirm: async () => {
@@ -2146,13 +2156,13 @@ describe("boundary operator-plane CLI", () => {
       expect(prompts).toHaveLength(2);
       expect(prompts[1]?.context).toEqual(expect.arrayContaining([
         "JOB DESCRIPTION TOO LONG",
-        "Job description is 501 characters; maximum is 500.",
+        "Job description is 2001 characters; maximum is 2000.",
         "Shorten it and submit again. No disabled Boundary draft was staged or changed.",
       ]));
       expect(presented).toContainEqual({
         title: "JOB DESCRIPTION TOO LONG",
         lines: [
-          "Job description is 501 characters; maximum is 500.",
+          "Job description is 2001 characters; maximum is 2000.",
           "Shorten it and submit again. No disabled Boundary draft was staged or changed.",
         ],
       });
@@ -2622,7 +2632,21 @@ describe("boundary operator-plane CLI", () => {
     ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
       const card = buildReadWorkloadPlanCards(input.generatedBoundary)
         .find((candidate) => candidate.plan.resource === "public.service_visits")!;
-      const workload = readWorkloadFromPlanCards({ cards: [card], selectedIds: [card.id] });
+      const workload = normalizeReadWorkloadSet({
+        schema_version: READ_WORKLOAD_SET_VERSION,
+        name: "own_row_scope_projection",
+        allowed: [{
+          id: "own_row_scope_projection.service_visits",
+          description: "Return service visits while Runner applies trusted principal scope.",
+          plan: {
+            ...card.plan,
+            select: [...new Set([...(card.plan.select as string[]), "principal_id"])],
+          },
+        }],
+        forbidden: [],
+        source: { kind: "model", provider: input.provider, model: input.model },
+      });
+      expect(analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }).status).toBe("ready");
       return {
         workload,
         analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
@@ -2647,11 +2671,12 @@ describe("boundary operator-plane CLI", () => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
+        if (title === "ACTIVATE READ BOUNDARY") return "back";
         throw new Error(`Unexpected own-row choice: ${title}`);
       },
       confirm: async (prompt, options) => {
         if (prompt.includes("reviewed structural context")) return true;
-        if (prompt.includes("trusted user/owner predicates")) {
+        if (prompt.includes("trusted user scope")) {
           scopeReviews.push(options?.context ?? []);
           return true;
         }
@@ -2683,7 +2708,7 @@ describe("boundary operator-plane CLI", () => {
 
       expect(scopeReviews).toHaveLength(1);
       expect(scopeReviews[0]?.join("\n")).toContain(
-        "public.service_visits: column principal_id [low-confidence candidate]",
+        "public.service_visits -> principal_id (low confidence)",
       );
       const reviewed = await loadBoundaryReviewContext(root);
       const resource = reviewed.candidate.pack.resources.find((candidate) =>
@@ -2694,8 +2719,283 @@ describe("boundary operator-plane CLI", () => {
         ...(resource?.kept_out_fields ?? []),
         ...(resource?.model_withheld_fields ?? []),
       ]).toContain("principal_id");
+      const workloads = await listReadWorkloadAnalyses({
+        projectRoot: root,
+        generatedBoundary: reviewed.candidate,
+      });
+      expect(workloads).toHaveLength(1);
+      expect(workloads[0]?.state).toBe("reviewed");
+      expect(workloads[0]?.analysis.allowed[0]?.plan_shape?.select).not.toContain("principal_id");
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("resumes a long model-guided job after principal review with its concise Read intent", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-long-job-scope-resume-"));
+    const inspection = principalScopeInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const operatorJob = [
+      "Let an authenticated field-service operator inspect only their own scheduled service visits and related status information.",
+      "Keep tenant and principal identity outside model arguments and preserve the existing reviewed database posture.",
+      "The operator should understand arrival windows, service state, and the equipment involved without seeing another operator's work.",
+      "Do not prepare a source mutation, approval, apply operation, raw SQL surface, credential path, or unscoped fallback.",
+      "Retain the exact disabled Read draft if authoring pauses for a business confirmation, and continue from that same reviewed job when reopened.",
+      "No source row should change during this authoring session.",
+    ].join(" ");
+    const readIntent = "Show the authenticated operator only their own scheduled service visits.";
+    expect(Array.from(operatorJob).length).toBeGreaterThan(500);
+    expect(Array.from(operatorJob).length).toBeLessThanOrEqual(2_000);
+    expect(Array.from(readIntent).length).toBeLessThanOrEqual(500);
+
+    const modelBoundaryJobPlanner = vi.fn(async () => ({
+      state: "planned" as const,
+      read_mode: "create" as const,
+      read_intent: readIntent,
+      action_mode: "none" as const,
+      summary: "I will prepare the exact own-visit Read draft and no Action draft.",
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const modelReadWorkloadGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadWorkload>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
+      expect(input.allowedQuestions).toEqual([readIntent]);
+      const card = buildReadWorkloadPlanCards(input.generatedBoundary)
+        .find((candidate) => candidate.plan.resource === "public.service_visits")!;
+      const workload = readWorkloadFromPlanCards({ cards: [card], selectedIds: [card.id] });
+      return {
+        workload,
+        analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
+    let scopeReviewAttempt = 0;
+    let metadataEgressReviews = 0;
+    const makeSession = (resume: boolean): BoundaryReviewInteractiveSession => ({
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (!resume && prompt.includes("What job are you giving this agent?")) return operatorJob;
+        throw new Error(`Unexpected long-job resume prompt: ${prompt}`);
+      },
+      chooseOption: async (title) => {
+        if (title === "START BOUNDARY DRAFTING") return resume ? "resume" : "model";
+        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        throw new Error(`Unexpected long-job resume choice: ${title}`);
+      },
+      confirm: async (prompt) => {
+        if (prompt.includes("reviewed structural context")) {
+          metadataEgressReviews += 1;
+          return true;
+        }
+        if (prompt.includes("trusted user scope")) {
+          scopeReviewAttempt += 1;
+          return resume;
+        }
+        throw new Error(`Unexpected long-job resume confirmation: ${prompt}`);
+      },
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const firstSession = makeSession(false);
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        firstSession,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner,
+          modelReadWorkloadGenerator,
+          modelAuthoringNarrator: async () => "The exact own-visit Read draft remains disabled.",
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(firstSession),
+        },
+      )).resolves.toBe(0);
+
+      const pausedContext = await loadBoundaryReviewContext(root);
+      const pausedResume = await readBoundaryAuthoringResumeState(root, {
+        boundary_name: pausedContext.candidate.pack.name,
+        generation_lock_fingerprint: pausedContext.bundle.authority.generation_lock_fingerprint,
+        schema_fingerprint: pausedContext.bundle.authority.schema_fingerprint,
+        role_posture_fingerprint: pausedContext.bundle.authority.role_posture_fingerprint,
+      });
+      expect(pausedResume).toMatchObject({
+        status: "ready",
+        value: {
+          stage: "read_mapping",
+          job_intent: operatorJob,
+          read_intent: readIntent,
+        },
+      });
+      expect(modelBoundaryJobPlanner).toHaveBeenCalledOnce();
+      expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
+
+      const resumedSession = makeSession(true);
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        resumedSession,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner,
+          modelReadWorkloadGenerator,
+          modelAuthoringNarrator: async () => "I retained the saved job and resumed its Read review.",
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(resumedSession),
+        },
+      )).resolves.toBe(0);
+
+      expect(modelBoundaryJobPlanner).toHaveBeenCalledOnce();
+      expect(modelReadWorkloadGenerator).toHaveBeenCalledTimes(2);
+      expect(scopeReviewAttempt).toBe(2);
+      expect(metadataEgressReviews).toBe(1);
+      const reviewed = await loadBoundaryReviewContext(root);
+      expect(reviewed.candidate.pack.resources.find((resource) =>
+        resource.id === "public.service_visits")?.principal_key).toBe("principal_id");
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("stops before Action drafting when trusted-scope review still blocks a model projection", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-scope-reprojection-blocked-"));
+    const inspection = principalScopeInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const modelReadWorkloadGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadWorkload>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
+      const workload = normalizeReadWorkloadSet({
+        schema_version: READ_WORKLOAD_SET_VERSION,
+        name: "scope_only_projection",
+        allowed: [{
+          id: "scope_only_projection.service_visits",
+          description: "Return only the candidate principal column.",
+          plan: {
+            kind: "rows",
+            resource: "public.service_visits",
+            select: ["principal_id"],
+            limit: 10,
+          },
+        }],
+        forbidden: [],
+        source: { kind: "model", provider: input.provider, model: input.model },
+      });
+      const analysis = analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary });
+      expect(analysis.status).toBe("ready");
+      return {
+        workload,
+        analysis,
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
+    const actionProjectInspector = vi.fn();
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) {
+          return "Inspect only the authenticated operator's own visits and propose a bounded update.";
+        }
+        throw new Error(`Unexpected blocked reprojection prompt: ${prompt}`);
+      },
+      chooseOption: async (title) => {
+        if (title === "START BOUNDARY DRAFTING") return "model";
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
+        throw new Error(`Unexpected blocked reprojection choice: ${title}`);
+      },
+      confirm: async (prompt) => {
+        if (prompt.includes("reviewed structural context")) return true;
+        if (prompt.includes("trusted user scope") || prompt.includes("trusted user/owner predicate")) return true;
+        throw new Error(`Unexpected blocked reprojection confirmation: ${prompt}`);
+      },
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    const chat = testBoundaryAuthoringChat(session);
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-5.6-terra",
+            apiKey: "session-secret",
+          },
+          modelReadWorkloadGenerator,
+          actionProjectInspector,
+          boundaryAuthoringChatFactory: () => chat,
+        },
+      )).resolves.toBe(0);
+
+      expect(actionProjectInspector).not.toHaveBeenCalled();
+      expect(chat.rememberDetails).toHaveBeenCalledWith(
+        "READ PLAN BLOCKED AFTER TRUSTED-SCOPE REVIEW",
+        expect.arrayContaining([
+          expect.stringContaining("principal_id"),
+          "The model-generated Read plan was not saved and Action drafting did not start.",
+        ]),
+      );
+      const reviewed = await loadBoundaryReviewContext(root);
+      await expect(listReadWorkloadAnalyses({
+        projectRoot: root,
+        generatedBoundary: reviewed.candidate,
+      })).resolves.toEqual([]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -2953,7 +3253,7 @@ describe("boundary operator-plane CLI", () => {
       },
       confirm: async (prompt, options) => {
         if (prompt.includes("reviewed structural context")) return true;
-        if (prompt.includes("trusted user/owner predicates")) {
+        if (prompt.includes("trusted user scope") || prompt.includes("trusted user/owner predicate")) {
           scopeReviews.push(options?.context ?? []);
           return true;
         }
@@ -2984,7 +3284,7 @@ describe("boundary operator-plane CLI", () => {
       expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
       expect(scopeReviews).toHaveLength(1);
       expect(scopeReviews[0]?.join("\n")).toContain(
-        "public.service_visits: column principal_id [low-confidence candidate]",
+        "public.service_visits -> principal_id (low confidence)",
       );
       const reviewed = await loadBoundaryReviewContext(root);
       expect(reviewed.candidate.pack.resources.find((candidate) =>
@@ -3054,7 +3354,7 @@ describe("boundary operator-plane CLI", () => {
       },
       confirm: async (prompt, options) => {
         if (prompt.includes("reviewed structural context")) return true;
-        if (prompt.includes("trusted user/owner predicates")) {
+        if (prompt.includes("trusted user scope") || prompt.includes("trusted user/owner predicate")) {
           scopeReviews.push(options?.context ?? []);
           return true;
         }
@@ -3089,7 +3389,7 @@ describe("boundary operator-plane CLI", () => {
 
       expect(scopeReviews).toHaveLength(1);
       expect(scopeReviews[0]?.join("\n")).toContain(
-        "public.orders: column owner_id [low-confidence candidate]",
+        "public.orders -> owner_id (low confidence)",
       );
       expect(savedScopeSummaries).toHaveLength(1);
       expect(savedScopeSummaries[0]?.join("\n")).toContain("2 exact predicates recorded");
@@ -3133,6 +3433,9 @@ describe("boundary operator-plane CLI", () => {
         rationale: "The operator did not confirm either exact candidate.",
         correction_used: false,
       });
+    const modelAuthoringNarrator = vi.fn(async (
+      _input: Parameters<typeof import("./model-authoring-narration.js").narrateValidatedAuthoringStep>[0],
+    ) => "Which reviewed column carries the authenticated operator identity for public.service_visits?");
     const modelReadWorkloadGenerator = vi.fn(async (
       input: Parameters<typeof generateModelReadWorkload>[0],
     ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
@@ -3194,8 +3497,7 @@ describe("boundary operator-plane CLI", () => {
             apiKey: "session-secret",
           },
           modelReadWorkloadGenerator,
-          modelAuthoringNarrator: vi.fn(async () =>
-            "Which reviewed column carries the authenticated operator identity for public.service_visits?"),
+          modelAuthoringNarrator,
           modelPrincipalScopeInterpreter,
           boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(session),
         },
@@ -3211,11 +3513,128 @@ describe("boundary operator-plane CLI", () => {
       expect(principalScopeQuestions.join("\n")).toContain(
         "Which column is populated from the authenticated operator identity",
       );
+      const scopeNarration = modelAuthoringNarrator.mock.calls
+        .map(([call]) => call)
+        .find((call) => call.operatorMessage.includes("principal-scope candidates"));
+      expect(scopeNarration?.nextQuestion).toMatch(
+        /Candidate [12]: column principal_id \[low-confidence candidate\]/u,
+      );
+      expect(scopeNarration?.nextQuestion).toMatch(
+        /Candidate [12]: column owner_id \[low-confidence candidate\]/u,
+      );
       const reviewed = await loadBoundaryReviewContext(root);
       expect(reviewed.candidate.pack.resources.find((candidate) =>
         candidate.id === "public.service_visits")?.principal_key).toBeUndefined();
+      const pausedResume = await readBoundaryAuthoringResumeState(root, {
+        boundary_name: reviewed.candidate.pack.name,
+        generation_lock_fingerprint: reviewed.bundle.authority.generation_lock_fingerprint,
+        schema_fingerprint: reviewed.bundle.authority.schema_fingerprint,
+        role_posture_fingerprint: reviewed.bundle.authority.role_posture_fingerprint,
+      });
+      expect(pausedResume).toMatchObject({
+        status: "ready",
+        value: {
+          stage: "read_mapping",
+          job_intent: "Show an authenticated operator only their own service visits.",
+        },
+      });
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("resolves an exact numbered principal-scope answer without a second model interpretation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-numbered-principal-"));
+    const inspection = principalScopeInspection({ ambiguous: true });
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const modelPrincipalScopeInterpreter = vi.fn(async () => {
+      throw new Error("An exact candidate number must resolve without another provider request.");
+    });
+    const modelAuthoringNarrator = vi.fn(async (input: {
+      nextQuestion?: string;
+    }) => input.nextQuestion ?? "The exact disabled draft passed Runner validation.");
+    const modelReadWorkloadGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadWorkload>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
+      const card = buildReadWorkloadPlanCards(input.generatedBoundary)
+        .find((candidate) => candidate.plan.resource === "public.service_visits")!;
+      const workload = readWorkloadFromPlanCards({ cards: [card], selectedIds: [card.id] });
+      return {
+        workload,
+        analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt, options) => {
+        if (prompt.includes("What job are you giving this agent?")) {
+          return "Show an authenticated operator only their own service visits.";
+        }
+        if (options?.context?.[0] === "MODEL QUESTION - TRUSTED USER/OWNER SCOPE") {
+          return "1";
+        }
+        throw new Error(`Unexpected numbered-principal prompt: ${prompt}`);
+      },
+      chooseOption: async (title) => {
+        if (title === "START BOUNDARY DRAFTING") return "model";
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
+        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        throw new Error(`Unexpected numbered-principal choice: ${title}`);
+      },
+      confirm: async (prompt) => {
+        if (prompt.includes("reviewed structural context")) return true;
+        if (prompt.includes("trusted user/owner predicate")) return true;
+        throw new Error(`Unexpected numbered-principal confirmation: ${prompt}`);
+      },
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-5.6-terra",
+            apiKey: "session-secret",
+          },
+          modelReadWorkloadGenerator,
+          modelAuthoringNarrator,
+          modelPrincipalScopeInterpreter,
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(session),
+        },
+      )).resolves.toBe(0);
+
+      expect(modelPrincipalScopeInterpreter).not.toHaveBeenCalled();
+      const reviewed = await loadBoundaryReviewContext(root);
+      expect(reviewed.candidate.pack.resources.find((candidate) =>
+        candidate.id === "public.service_visits")?.principal_key).toBe("owner_id");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -3592,7 +4011,7 @@ describe("boundary operator-plane CLI", () => {
       expect(output).toContain("NEXT AUTHORITY REVIEW - ACTION BOUNDARY");
       expect(output).toMatch(/\| Read\s+\| reviewed_staging\s+\| ACTIVE\s+\| Explore/u);
       expect(output).toMatch(/\| Action\s+\| default_action_boundary\s+\| ACTIVE\s+\| Propose/u);
-      expect(output).toMatch(/\| Apply\s+\| Source writeback\s+\| OFF\s+\| Cannot apply/u);
+      expect(output).toMatch(/\| Apply\s+\| Source writeback\s+\| NOT ALLOWED\s+\| Cannot apply/u);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -3686,7 +4105,7 @@ describe("boundary operator-plane CLI", () => {
       expect(confirms[0]?.prompt).toContain("anthropic[claude-current]");
       expect(confirms[0]?.context).toEqual(expect.arrayContaining([
         expect.stringContaining("reviewed structural metadata"),
-        expect.stringContaining("Does not send: rows, SQL, credentials, kept-out fields, or trusted identity values"),
+        expect.stringContaining("Does not send: rows, observed values, SQL, credentials, or trusted identity values"),
         expect.stringContaining("Model suggestions remain untrusted"),
       ]));
       expect(modelReadWorkloadGenerator).toHaveBeenCalledWith(expect.objectContaining({
@@ -3706,7 +4125,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("reuses an exact reviewed Read revision and continues directly to model-guided Action drafting", async () => {
+  it("reuses an exact active Read Boundary when its original workload record is unavailable", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-action-only-reuse-"));
     const inspection = actionTargetInspection();
     const build = buildAutoBoundary({
@@ -3820,6 +4239,16 @@ describe("boundary operator-plane CLI", () => {
         actor: "test-reviewer",
       }));
       const digestBefore = explorationBoundaryCandidateDigest((await loadBoundaryReviewContext(root)).candidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: (await loadBoundaryReviewContext(root)).candidate,
+        expectedDigest: digestBefore,
+        actor: "test-reviewer",
+        confirmation: `ACTIVATE ${digestBefore}`,
+        confirmedDecisions: (await loadBoundaryReviewContext(root)).candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      await fs.rm(path.join(root, ".synapsor/read-workloads"), { recursive: true, force: true });
 
       await expect(boundaryReviewCommandInternal(
         ["--project-root", root, "--access", "--job-first"],
@@ -3846,6 +4275,7 @@ describe("boundary operator-plane CLI", () => {
       expect(modelBoundaryJobPlanner).toHaveBeenCalledWith(expect.objectContaining({
         currentState: expect.objectContaining({
           read: expect.objectContaining({
+            authority: "active",
             fully_reviewed: true,
             exact_reusable_revision_count: 1,
           }),
@@ -3854,7 +4284,7 @@ describe("boundary operator-plane CLI", () => {
       expect(modelReadWorkloadGenerator).not.toHaveBeenCalled();
       expect(modelActionSuggestionGenerator).toHaveBeenCalledOnce();
       expect(modelActionSuggestionGenerator).toHaveBeenCalledWith(expect.objectContaining({
-        intent: operatorJob,
+        intent: expandedActionIntent,
       }));
       expect(runDelegationActionReview).toHaveBeenCalledWith(expect.objectContaining({
         prepareOnly: true,
@@ -3862,10 +4292,304 @@ describe("boundary operator-plane CLI", () => {
       }));
       const digestAfter = explorationBoundaryCandidateDigest((await loadBoundaryReviewContext(root)).candidate);
       expect(digestAfter).toBe(digestBefore);
+      expect((await loadActivatedExplorationBoundaries(root)).find((boundary) =>
+        boundary.pack.name === build.exploration_boundary.pack.name)?.activation.digest
+      ).toBe(digestBefore);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 25_000);
+
+  it("resumes a saved disabled Read mapping after Action drafting stops without remapping reads", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-action-resume-"));
+    const inspection = principalScopeInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const operatorJob = "Review my scheduled service visits and prepare one verified maintenance follow-up outcome.";
+    const modelReadWorkloadGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadWorkload>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
+      const card = buildReadWorkloadPlanCards(input.generatedBoundary).find((candidate) =>
+        candidate.plan.kind === "aggregate"
+        && candidate.plan.resource === "public.service_visits")!;
+      const workload = readWorkloadFromPlanCards({ cards: [card], selectedIds: [card.id] });
+      return {
+        workload,
+        analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
+    let actionDraftAttempt = 0;
+    let resumedConversation: Array<{ question: string; answer: string }> | undefined;
+    const modelActionRuleGenerator = vi.fn(async (input: Parameters<typeof generateModelActionRuleDraft>[0]) => {
+      actionDraftAttempt += 1;
+      if (actionDraftAttempt === 1) {
+        const answer = await input.askClarification?.(
+          "What is the maximum number of automatically approved follow-ups in a rolling 24-hour window?",
+        );
+        expect(answer).toBe("At most three per customer each rolling 24 hours.");
+      } else {
+        resumedConversation = input.session.conversation?.turns;
+      }
+      throw new AskError(
+        "ASK_REQUIRED_TOOL_NOT_CALLED",
+        "The model did not submit the required verified Action draft.",
+      );
+    });
+    const firstPlanner = vi.fn(async () => ({
+      state: "planned" as const,
+      read_mode: "create" as const,
+      read_intent: "Review the authenticated customer's scheduled service visits.",
+      action_mode: "create" as const,
+      action_intent: "Prepare one verified maintenance follow-up outcome.",
+      action_strategy: "rule_derived" as const,
+      summary: "I will map the requested reads and prepare the verified maintenance outcome.",
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const metadataEgressPrompts: string[] = [];
+    const makeSession = (resume = false): BoundaryReviewInteractiveSession => ({
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (!resume && prompt.includes("What job are you giving this agent?")) return operatorJob;
+        if (!resume && prompt.includes("maximum number of automatically approved follow-ups")) {
+          return "At most three per customer each rolling 24 hours.";
+        }
+        throw new Error(`Unexpected resumable Action text prompt: ${prompt}`);
+      },
+      chooseOption: async (title) => {
+        if (title === "START BOUNDARY DRAFTING") return resume ? "resume" : "model";
+        if (title === "ACTION BOUNDARY MODEL DRAFT FAILED") return "back";
+        throw new Error(`Unexpected resumable Action choice: ${title}`);
+      },
+      confirm: async (prompt) => {
+        if (prompt.startsWith("Send this Boundary-authoring conversation")) {
+          metadataEgressPrompts.push(`${resume ? "resume" : "new"}:${prompt}`);
+        }
+        return true;
+      },
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const firstSession = makeSession(false);
+      const firstChat = testBoundaryAuthoringChat(firstSession);
+      firstChat.streamModel = vi.fn(async () => undefined);
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        firstSession,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner: firstPlanner,
+          modelReadWorkloadGenerator,
+          modelActionRuleGenerator,
+          modelAuthoringNarrator: async () => "The validated Read mapping is saved while Action drafting remains paused.",
+          actionProjectInspector: async () => inspection,
+          boundaryAuthoringChatFactory: () => firstChat,
+        },
+      )).resolves.toBe(0);
+
+      expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
+      expect(modelActionRuleGenerator).toHaveBeenCalledOnce();
+      expect(metadataEgressPrompts).toHaveLength(1);
+      expect(metadataEgressPrompts[0]).toMatch(/^new:/u);
+      expect(firstChat.streamModel).not.toHaveBeenCalledWith([
+        "I will map the requested reads and prepare the verified maintenance outcome.",
+      ]);
+      expect(firstChat.rememberDetails).toHaveBeenCalledWith("BOUNDARY JOB ROUTE", expect.arrayContaining([
+        "Read: create",
+        "Action: create (rule_derived)",
+      ]));
+      const savedAfterFailure = await listReadWorkloadAnalyses({
+        projectRoot: root,
+        generatedBoundary: (await loadBoundaryReviewContext(root)).candidate,
+      });
+      expect(savedAfterFailure).toHaveLength(1);
+      expect(savedAfterFailure[0]).toMatchObject({ state: "ready" });
+      expect(savedAfterFailure[0]?.review).toBeUndefined();
+      const savedResume = await fs.readFile(
+        path.join(root, ".synapsor/boundary-authoring/resume.json"),
+        "utf8",
+      );
+      expect(savedResume).toContain(operatorJob);
+      expect(savedResume).toContain("At most three per customer each rolling 24 hours.");
+      expect(savedResume).not.toContain("session-secret");
+      const resumeContext = await loadBoundaryReviewContext(root);
+      const storedResumeState = await readBoundaryAuthoringResumeState(root, {
+        boundary_name: resumeContext.candidate.pack.name,
+        generation_lock_fingerprint: resumeContext.bundle.authority.generation_lock_fingerprint,
+        schema_fingerprint: resumeContext.bundle.authority.schema_fingerprint,
+        role_posture_fingerprint: resumeContext.bundle.authority.role_posture_fingerprint,
+      });
+      expect(storedResumeState.status === "stale" ? storedResumeState.reason : storedResumeState.status).toBe("ready");
+      if (storedResumeState.status !== "ready") throw new Error("Expected resumable Boundary authoring state.");
+      expect(storedResumeState.value).toMatchObject({
+        stage: "action_drafting",
+        job_intent: operatorJob,
+        read_intent: "Review the authenticated customer's scheduled service visits.",
+        action: {
+          intent: "Prepare one verified maintenance follow-up outcome.",
+          strategy: "rule_derived",
+        },
+      });
+      const resumedPlanner = vi.fn(async () => {
+        throw new Error("The saved job route must not be planned again.");
+      });
+      const resumedSession = makeSession(true);
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        resumedSession,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner: resumedPlanner,
+          modelReadWorkloadGenerator,
+          modelActionRuleGenerator,
+          modelAuthoringNarrator: async () => "I retained the exact mapped reads and resumed the Action step.",
+          actionProjectInspector: async () => inspection,
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(resumedSession),
+        },
+      )).resolves.toBe(0);
+
+      expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
+      expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
+      expect(resumedPlanner).not.toHaveBeenCalled();
+      expect(metadataEgressPrompts).toHaveLength(1);
+      expect(resumedConversation).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          question: "What is the maximum number of automatically approved follow-ups in a rolling 24-hour window?",
+          answer: "At most three per customer each rolling 24 hours.",
+        }),
+      ]));
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("carries two Boundary-routing clarifications into the third model turn", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-two-answers-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const plannerInputs: Array<{ clarificationAnswer?: string }> = [];
+    const modelBoundaryJobPlanner = vi.fn(async (plannerInput: { clarificationAnswer?: string }) => {
+      plannerInputs.push(plannerInput);
+      if (plannerInputs.length === 1) {
+        return {
+          state: "clarification" as const,
+          question: "Should the current reviewed reads remain unchanged?",
+          correction_used: false,
+          authority_granted: false as const,
+          source_database_changed: false as const,
+        };
+      }
+      if (plannerInputs.length === 2) {
+        return {
+          state: "clarification" as const,
+          question: "Should this job prepare an Action Boundary too?",
+          correction_used: false,
+          authority_granted: false as const,
+          source_database_changed: false as const,
+        };
+      }
+      return {
+        state: "planned" as const,
+        read_mode: "none" as const,
+        action_mode: "none" as const,
+        summary: "The operator asked to keep the current Boundary state unchanged.",
+        correction_used: false,
+        authority_granted: false as const,
+        source_database_changed: false as const,
+      };
+    });
+    const answers = [
+      "Keep the current Boundary state unchanged.",
+      "Yes, keep the reviewed reads unchanged.",
+      "No, do not prepare an Action Boundary.",
+    ];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async () => answers.shift(),
+      chooseOption: async (title) => {
+        if (title === "START BOUNDARY DRAFTING") return "model";
+        throw new Error(`Unexpected two-answer planning choice: ${title}`);
+      },
+      confirm: async () => true,
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner,
+          modelAuthoringNarrator: async () => "Tell me the Boundary job to prepare.",
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(session),
+        },
+      )).resolves.toBe(0);
+
+      expect(modelBoundaryJobPlanner).toHaveBeenCalledTimes(3);
+      expect(plannerInputs[1]?.clarificationAnswer).toContain("Should the current reviewed reads remain unchanged?");
+      expect(plannerInputs[1]?.clarificationAnswer).toContain("Yes, keep the reviewed reads unchanged.");
+      expect(plannerInputs[2]?.clarificationAnswer).toContain("Should this job prepare an Action Boundary too?");
+      expect(plannerInputs[2]?.clarificationAnswer).toContain("No, do not prepare an Action Boundary.");
+      expect(plannerInputs[2]?.clarificationAnswer).toContain("Yes, keep the reviewed reads unchanged.");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
 
   it("offers one bounded retry when typed job planning fails before candidate mutation", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-job-plan-retry-"));
@@ -4216,7 +4940,7 @@ describe("boundary operator-plane CLI", () => {
       expect(runDelegationActionReview).toHaveBeenCalledOnce();
       const greetingCall = modelAuthoringNarrator.mock.calls
         .map(([call]) => call)
-        .find((call) => call.operatorMessage.includes("preserved disabled Boundary draft"));
+        .find((call) => call.operatorMessage.includes("current reviewed Boundary state"));
       expect(greetingCall?.validatedFacts.join("\n")).toContain(
         "This is a new conversation, not a resumed model transcript.",
       );
@@ -4247,6 +4971,466 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 25_000);
+
+  it("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-semantic-action-"));
+    const inspection = principalScopeInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const operatorJob = "When an authenticated customer's own scheduled service visit needs follow-up, let the agent request one bounded maintenance action.";
+    const modelBoundaryJobPlanner = vi.fn(async () => ({
+      state: "planned" as const,
+      read_mode: "create" as const,
+      action_mode: "create" as const,
+      action_strategy: "rule_derived" as const,
+      read_intent: operatorJob,
+      action_intent: operatorJob,
+      summary: "Draft one reviewed Read Boundary and one verified Action outcome.",
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const modelReadWorkloadGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadWorkload>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
+      const card = buildReadWorkloadPlanCards(input.generatedBoundary).find((candidate) =>
+        candidate.plan.kind === "aggregate"
+        && candidate.plan.resource === "public.service_visits")!;
+      const workload = readWorkloadFromPlanCards({ cards: [card], selectedIds: [card.id] });
+      return {
+        workload,
+        analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
+    let semanticActionAttempt = 0;
+    let revisionCompiledRequiredApprovals: number | undefined;
+    const semanticRecoveryChoices: string[][] = [];
+    const preparedActionPrincipalKeys: Array<string | undefined> = [];
+    const clarificationQuestion = "What maximum maintenance proposals may auto-approve in a rolling 24 hours?";
+    let clarificationAnswer: string | undefined;
+    const modelActionRuleGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelActionRuleDraft>[0],
+    ): Promise<ModelActionRuleDraftResult> => {
+      semanticActionAttempt += 1;
+      if (semanticActionAttempt === 1) {
+        throw new AskError(
+          "ASK_REQUIRED_TOOL_NOT_CALLED",
+          "The model returned prose instead of the required verified Action draft.",
+        );
+      }
+      if (semanticActionAttempt === 2) {
+        clarificationAnswer = await input.askClarification?.(clarificationQuestion);
+      }
+      if (input.existingDraft) {
+        const revised = structuredClone(input.existingDraft);
+        revised.approval.required_approvals = 2;
+        revised.review.human_review = "Two maintenance reviewers must approve the proposal.";
+        const compiled = compileActionRuleModelDraft({
+          draft: revised,
+          builtCatalog: input.builtCatalog,
+          readBoundary: input.readBoundary,
+          readBoundaryDigest: input.readBoundaryDigest,
+          activatedAt: "2026-09-03T13:00:00.000Z",
+        });
+        revisionCompiledRequiredApprovals = compiled.approval_class.required_approvals;
+        return {
+          state: "ready",
+          compiled,
+          provider: input.session.provider,
+          model: input.session.model,
+          correction_used: false,
+          clarification_count: 0,
+          authority_granted: false,
+          source_database_changed: false,
+          revision: {
+            outcome: revised.outcome,
+            changed_phases: ["approval", "rule"],
+          },
+        };
+      }
+      let prepared = {
+        builtCatalog: input.builtCatalog,
+        readBoundary: input.readBoundary,
+        readBoundaryDigest: input.readBoundaryDigest,
+      };
+      if (input.prepareResources) {
+        prepared = await input.prepareResources({
+          phase: "verification",
+          resourceIds: ["public.service_visits"],
+        });
+        prepared = await input.prepareResources({
+          phase: "effect",
+          resourceIds: ["public.maintenance_requests"],
+        });
+        preparedActionPrincipalKeys.push(prepared.builtCatalog.catalog.resources.find((candidate) =>
+          candidate.name === "public.maintenance_requests")?.principal_scope_key);
+      }
+      const resource = (name: string) => prepared.builtCatalog.catalog.resources.find((candidate) => candidate.name === name)!;
+      const fieldType = (resourceName: string, fieldName: string) =>
+        structuredClone(resource(resourceName).fields.find((field) => field.name === fieldName)!.type);
+      const statusType = fieldType("public.service_visits", "status");
+      const requestKindType = fieldType("public.maintenance_requests", "request_kind");
+      const estimatedHoursType = fieldType("public.maintenance_requests", "estimated_hours");
+      const draft: ActionRuleModelDraftV1 = {
+        schema_version: "synapsor.action-rule-model-draft.v1",
+        name: "maintenance.create_inspection_followup",
+        outcome: "maintenance.create_inspection_followup",
+        verification: {
+          name: "maintenance.create_inspection_followup_verification",
+          resources: [{
+            binding: "visit",
+            resource: "public.service_visits",
+            source: { kind: "subject_ref" },
+            fields: ["status"],
+          }],
+        },
+        effect: {
+          name: "maintenance.create_inspection_followup_effect",
+          operation: "insert",
+          target_resource: "public.maintenance_requests",
+          allowed_fields: [
+            { name: "request_kind", values: ["inspection_followup"] },
+            { name: "estimated_hours", minimum: 1, maximum: 8 },
+          ],
+          set: {
+            request_kind: { kind: "literal", value: "inspection_followup", value_type: requestKindType },
+            estimated_hours: { kind: "literal", value: 2, value_type: estimatedHoursType },
+          },
+          writeback: "proposal_only",
+        },
+        require: {
+          kind: "compare",
+          operator: "eq",
+          left: { kind: "field", binding: "visit", field: "status" },
+          right: { kind: "literal", value: "scheduled", value_type: statusType },
+        },
+        derive: {},
+        approval: {
+          class_name: "maintenance.human_followup",
+          mode: "human",
+          required_role: "maintenance_reviewer",
+          required_approvals: 1,
+          shared_limits: [],
+        },
+        ttl_seconds: 300,
+        review: {
+          when: "The selected service visit is still scheduled.",
+          then: "Propose one two-hour inspection follow-up maintenance request.",
+          refused: ["The visit is no longer scheduled."],
+          human_review: "One maintenance reviewer must approve the proposal.",
+          examples: [
+            { kind: "eligible", scenario: "Scheduled visit", result: "Create a proposal" },
+            { kind: "ineligible", scenario: "Completed visit", result: "Refuse without a proposal" },
+          ],
+        },
+      };
+      return {
+        state: "ready",
+        compiled: compileActionRuleModelDraft({
+          draft,
+          ...prepared,
+          activatedAt: "2026-09-03T12:00:00.000Z",
+        }),
+        provider: input.session.provider,
+        model: input.session.model,
+        correction_used: false,
+        clarification_count: 0,
+        authority_granted: false,
+        source_database_changed: false,
+      };
+    });
+    const legacyActionGenerator = vi.fn();
+    const legacyActionReview = vi.fn();
+    const answers = [operatorJob];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) return answers.shift();
+        if (prompt === clarificationQuestion) return "Why does Runner need this limit?";
+        throw new Error(`Unexpected semantic Action text prompt: ${prompt}`);
+      },
+      chooseOption: async (title, options) => {
+        if (title === "START BOUNDARY DRAFTING") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
+        if (title === "ACTION BOUNDARY MODEL DRAFT FAILED") {
+          semanticRecoveryChoices.push(options.map((option) => option.value));
+          return "retry";
+        }
+        if (title === "ACTIVATE READ BOUNDARY") return "back";
+        throw new Error(`Unexpected semantic Action choice: ${title}`);
+      },
+      confirm: async () => true,
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    const modelAuthoringNarrator = vi.fn(async (
+      narration: Parameters<typeof import("./model-authoring-narration.js").narrateValidatedAuthoringStep>[0],
+    ) => narration.operatorMessage === "Why does Runner need this limit?"
+      ? `It bounds automatic approval while proposals outside the limit remain reviewable. ${clarificationQuestion}`
+      : "The exact disabled drafts are ready for review.");
+    const semanticChat = testBoundaryAuthoringChat(session);
+    semanticChat.readOperator = vi.fn(async () => "At most ten proposals in a rolling 24 hours.");
+    semanticChat.streamModel = vi.fn(async () => undefined);
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner,
+          modelReadWorkloadGenerator,
+          modelActionRuleGenerator,
+          modelActionSuggestionSetGenerator: legacyActionGenerator,
+          runDelegationActionReview: legacyActionReview,
+          modelAuthoringNarrator,
+          actionProjectInspector: async () => inspection,
+          boundaryAuthoringChatFactory: () => semanticChat,
+        },
+      )).resolves.toBe(0);
+
+      expect(modelBoundaryJobPlanner).toHaveBeenCalledWith(expect.objectContaining({ jobIntent: operatorJob }));
+      expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
+      expect(clarificationAnswer).toBe("At most ten proposals in a rolling 24 hours.");
+      expect(semanticChat.readOperator).toHaveBeenCalledOnce();
+      expect(modelAuthoringNarrator).toHaveBeenCalledWith(expect.objectContaining({
+        operatorMessage: "Why does Runner need this limit?",
+        nextQuestion: clarificationQuestion,
+      }));
+      expect(semanticChat.streamModel).toHaveBeenCalledWith([
+        expect.stringContaining("It bounds automatic approval"),
+      ]);
+      expect(preparedActionPrincipalKeys).toEqual(["principal_id"]);
+      expect(semanticRecoveryChoices).toEqual([[
+        "retry",
+        "change_model",
+        "details",
+        "back",
+      ]]);
+      expect(legacyActionGenerator).not.toHaveBeenCalled();
+      expect(legacyActionReview).not.toHaveBeenCalled();
+      const reviewed = await loadBoundaryReviewContext(root);
+      const exactReadDigest = explorationBoundaryCandidateDigest(reviewed.candidate);
+      expect(reviewed.candidate.pack.resources.map((resource) => resource.id))
+        .not.toContain("public.maintenance_requests");
+      expect(reviewed.candidate.pack.resources.find((resource) =>
+        resource.id === "public.service_visits")?.principal_key).toBe("principal_id");
+      const semantic = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+      expect(semantic).toMatchObject({
+        state: "disabled",
+        authority: {
+          action_boundary: { name: "reviewed_staging_actions" },
+          rules: [{
+            read_boundary_name: "reviewed_staging",
+            read_boundary_digest: exactReadDigest,
+            rule: { outcome: "maintenance.create_inspection_followup" },
+            effect_envelope: { principal_scope_key: "principal_id" },
+          }],
+        },
+      });
+      const storedWorkloads = await fs.readdir(path.join(root, ".synapsor/read-workloads"));
+      const storedText = (await Promise.all(storedWorkloads
+        .filter((name) => name.endsWith(".json"))
+        .map((name) => fs.readFile(path.join(root, ".synapsor/read-workloads", name), "utf8"))))
+        .join("\n");
+      expect(storedText).toContain("semantic_action_subject_1");
+      await expect(fs.access(path.join(root, ".synapsor/action-rules/active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      const deferredResumeContext = await loadBoundaryReviewContext(root);
+      const deferredResume = await readBoundaryAuthoringResumeState(root, {
+        boundary_name: deferredResumeContext.candidate.pack.name,
+        generation_lock_fingerprint: deferredResumeContext.bundle.authority.generation_lock_fingerprint,
+        schema_fingerprint: deferredResumeContext.bundle.authority.schema_fingerprint,
+        role_posture_fingerprint: deferredResumeContext.bundle.authority.role_posture_fingerprint,
+      });
+      expect(deferredResume).toMatchObject({
+        status: "ready",
+        value: {
+          stage: "authority_review",
+          job_intent: operatorJob,
+          read: expect.objectContaining({ analysis_id: expect.any(String) }),
+          action: {
+            intent: operatorJob,
+            outcome: "maintenance.create_inspection_followup",
+            strategy: "rule_derived",
+          },
+        },
+      });
+
+      const resumedPlanner = vi.fn(async () => {
+        throw new Error("Authority review must not re-plan the saved job.");
+      });
+      const resumedSession: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => undefined,
+        editFieldTiers: async () => undefined,
+        promptText: async (prompt) => {
+          throw new Error(`Unexpected resumed semantic Action text prompt: ${prompt}`);
+        },
+        chooseOption: async (title) => {
+          if (title === "START BOUNDARY DRAFTING") return "resume";
+          if (title === "ACTIVATE READ BOUNDARY") return "back";
+          throw new Error(`Unexpected resumed semantic Action choice: ${title}`);
+        },
+        confirm: async () => true,
+        confirmActivation: async () => false,
+        confirmReviewedDisabled: async () => true,
+      };
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        resumedSession,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner: resumedPlanner,
+          modelAuthoringNarrator: async () => "The exact existing authority remains unchanged.",
+          actionProjectInspector: async () => inspection,
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(resumedSession),
+        },
+      )).resolves.toBe(0);
+      expect(resumedPlanner).not.toHaveBeenCalled();
+      expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
+
+      const revisionJob = "Keep the reviewed reads and change the maintenance outcome to require two reviewers.";
+      let revisionReusableReadCount: number | undefined;
+      const revisionPlanner = vi.fn(async (plannerInput: {
+        currentState: { read: { exact_reusable_revision_count: number } };
+      }) => {
+        revisionReusableReadCount = plannerInput.currentState.read.exact_reusable_revision_count;
+        return {
+          state: "planned" as const,
+          read_mode: "reuse" as const,
+          action_mode: "revise" as const,
+          action_strategy: "rule_derived" as const,
+          action_outcome: "maintenance.create_inspection_followup",
+          action_intent: "Require two maintenance reviewers for the existing inspection follow-up outcome.",
+          summary: "Keep the Read Boundary and prepare one disabled approval-policy replacement.",
+          correction_used: false,
+          authority_granted: false as const,
+          source_database_changed: false as const,
+        };
+      });
+      const revisionSession: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => undefined,
+        editFieldTiers: async () => undefined,
+        promptText: async (prompt) => {
+          if (prompt.includes("What job are you giving this agent?")) return revisionJob;
+          throw new Error(`Unexpected revision text prompt: ${prompt}`);
+        },
+        chooseOption: async (title) => {
+          if (title === "START BOUNDARY DRAFTING") return "model";
+          if (title === "ACTIVATE READ BOUNDARY") return "back";
+          throw new Error(`Unexpected revision choice: ${title}`);
+        },
+        confirm: async () => true,
+        confirmActivation: async () => false,
+        confirmReviewedDisabled: async () => true,
+      };
+      const revisionChat = testBoundaryAuthoringChat(revisionSession);
+      revisionChat.streamCheckpoint = vi.fn(async () => undefined);
+      const revisionNarrator = vi.fn<typeof narrateValidatedAuthoringStep>(async () =>
+        "The exact disabled replacement requires two reviewers.");
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        revisionSession,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner: revisionPlanner,
+          modelReadWorkloadGenerator,
+          modelActionRuleGenerator,
+          modelAuthoringNarrator: revisionNarrator,
+          actionProjectInspector: async () => inspection,
+          boundaryAuthoringChatFactory: () => revisionChat,
+        },
+      )).resolves.toBe(0);
+      expect(revisionPlanner).toHaveBeenCalledTimes(1);
+      expect(modelActionRuleGenerator).toHaveBeenCalledTimes(3);
+      expect(revisionReusableReadCount).toBe(1);
+      const revisionGreeting = revisionNarrator.mock.calls
+        .map(([call]) => call)
+        .find((call) => call.responseStyle === "opening");
+      expect(revisionGreeting?.validatedFacts).toEqual(expect.arrayContaining([
+        expect.stringContaining("Current Read Boundary reviewed_staging"),
+        expect.stringContaining("Current Action maintenance.create_inspection_followup: disabled"),
+        expect.stringContaining("approval history remains in Runner's proposal ledger"),
+      ]));
+      expect(modelActionRuleGenerator.mock.calls[2]?.[0].existingDraft).toMatchObject({
+        outcome: "maintenance.create_inspection_followup",
+        effect: {
+          operation: "insert",
+          target_resource: "public.maintenance_requests",
+        },
+        approval: { required_approvals: 1 },
+      });
+      expect(revisionCompiledRequiredApprovals).toBe(2);
+      const revisedSemantic = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+      expect(revisedSemantic?.authority.approval_classes[0]).toMatchObject({
+        required_approvals: 2,
+      });
+      expect(revisedSemantic?.reviews[0]).toMatchObject({
+        human_review: "Two maintenance reviewers must approve the proposal.",
+      });
+      expect(revisionChat.streamCheckpoint).toHaveBeenCalledWith(
+        "Runner-validated Action change",
+        expect.arrayContaining([
+          "Editing maintenance.create_inspection_followup; INSERT public.maintenance_requests is unchanged.",
+          "Human-review quorum: 1 distinct maintenance_reviewer approval -> 2 distinct maintenance_reviewer approvals",
+          "The prior active revision remains live until this disabled replacement is explicitly activated.",
+        ]),
+        "normal",
+      );
+      const revisionCheckpoint = vi.mocked(revisionChat.streamCheckpoint).mock.calls.find(([title]) =>
+        title === "Runner-validated Action change");
+      expect(revisionCheckpoint?.[1]).not.toEqual(expect.arrayContaining([
+        expect.stringContaining("Private facts"),
+      ]));
+      expect(revisionChat.rememberDetails).toHaveBeenCalledWith(
+        "VERIFIED ACTION OUTCOME",
+        expect.arrayContaining([
+          "REPLACEMENT OF EXISTING VERIFIED OUTCOME",
+          "Human-review quorum: 1 distinct maintenance_reviewer approval -> 2 distinct maintenance_reviewer approvals",
+        ]),
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("retries a refused Action Boundary draft once without restarting the agent job", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-action-model-retry-"));
@@ -5466,6 +6650,99 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("names authority removals before replacing an active Read Boundary and keeps the active revision by default", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-replacement-warning-"));
+    const inspection = actionTargetInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const initialDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    const removed = build.exploration_boundary.pack.resources.at(-1)!;
+    const candidate = structuredClone(build.exploration_boundary);
+    candidate.pack.resources = candidate.pack.resources.filter((resource) => resource.id !== removed.id);
+    candidate.unresolved_decisions = candidate.unresolved_decisions.filter((decision) =>
+      !decision.startsWith(`${removed.id}:`));
+    const replacementChoices: Array<{
+      title: string;
+      labels: string[];
+      initialValue?: string;
+      context: string[];
+    }> = [];
+    let resourceVisit = 0;
+    const session: BoundaryReviewInteractiveSession = {
+      presentationMode: "conversation",
+      chooseResource: async () => resourceVisit++ === 0 ? { action: "confirm" } : undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async () => {
+        throw new Error("A fully reviewed replacement must not ask for free text.");
+      },
+      chooseOption: async (title, choices, options) => {
+        replacementChoices.push({
+          title,
+          labels: choices.map((choice) => choice.label),
+          ...(options?.initialValue ? { initialValue: options.initialValue } : {}),
+          context: options?.context ?? [],
+        });
+        return "back";
+      },
+      confirm: async () => {
+        throw new Error("Conversation replacement must use the explicit choice gate.");
+      },
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: initialDigest,
+        actor: "initial-reviewer",
+        confirmation: `ACTIVATE ${initialDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate,
+        confirmedDecisions: candidate.unresolved_decisions,
+        actor: "replacement-reviewer",
+        revision: 1,
+      }));
+
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access"],
+        async () => inspection,
+        session,
+      )).resolves.toBe(0);
+
+      expect(replacementChoices).toHaveLength(1);
+      expect(replacementChoices[0]).toMatchObject({
+        title: "REPLACE ACTIVE READ BOUNDARY",
+        initialValue: "back",
+      });
+      expect(replacementChoices[0]?.labels[0]).toContain("removes 1 table");
+      expect(replacementChoices[0]?.labels).toContain(
+        "Keep current active Read Boundary unchanged  [recommended]",
+      );
+      expect(replacementChoices[0]?.context.join("\n")).toContain(
+        `Removes active tables (1): ${removed.id}`,
+      );
+      expect((await loadActivatedExplorationBoundaries(root)).find((boundary) =>
+        boundary.pack.name === build.exploration_boundary.pack.name)?.activation.digest
+      ).toBe(initialDigest);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   it("stages focused access edits and activates the exact replacement with one confirmation", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-focused-access-"));

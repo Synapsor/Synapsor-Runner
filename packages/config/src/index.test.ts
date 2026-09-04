@@ -179,6 +179,39 @@ describe("runner capability config validation", () => {
     }));
   });
 
+  it("validates local and shared semantic Action Rule runtime bindings", () => {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+    const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "schemas/synapsor.runner.schema.json"), "utf8"));
+    const schemaValidate = new Ajv2020({ strict: false, allErrors: true }).compile(schema);
+    const local = {
+      ...structuredClone(safeConfig),
+      action_rules: { project_root: "./" },
+    };
+    expect(validateRunnerCapabilityConfig(local)).toMatchObject({ ok: true, errors: [] });
+    expect(schemaValidate(local), JSON.stringify(schemaValidate.errors)).toBe(true);
+
+    const shared = {
+      ...structuredClone(safeConfig),
+      action_rules: {
+        project_root: "./production",
+        subject_reference_hmac_key_env: "SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY",
+        subject_reference_namespace: "acme.analytics.production",
+      },
+    };
+    expect(validateRunnerCapabilityConfig(shared)).toMatchObject({ ok: true, errors: [] });
+    expect(schemaValidate(shared), JSON.stringify(schemaValidate.errors)).toBe(true);
+
+    for (const action_rules of [
+      { project_root: "https://example.test/project" },
+      { project_root: "./production", subject_reference_hmac_key_env: "SYNAPSOR_KEY" },
+      { project_root: "./production", subject_reference_namespace: "Invalid Namespace" },
+    ]) {
+      const invalid = { ...structuredClone(safeConfig), action_rules };
+      expect(validateRunnerCapabilityConfig(invalid).ok).toBe(false);
+      expect(schemaValidate(invalid)).toBe(false);
+    }
+  });
+
   it("accepts only explicit local required generation-lock enforcement", () => {
     const generated = {
       ...structuredClone(safeConfig),
@@ -291,6 +324,23 @@ describe("runner capability config validation", () => {
     }).warnings.map((issue) => issue.code)).toContain("READ_ONLY_CONFIG_HAS_NO_ACTIVE_CAPABILITIES");
   });
 
+  it("accepts the fixed semantic Action surface without embedded capabilities", () => {
+    expect(validateRunnerCapabilityConfig({
+      version: 1,
+      mode: "review",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "DATABASE_URL",
+          read_only: true,
+        },
+      },
+      trusted_context: { provider: "environment" },
+      action_rules: { project_root: "./" },
+    })).toEqual({ ok: true, errors: [], warnings: [] });
+  });
+
   it("requires both exact contract permission and an exact deployment allowlist for supervised execution", () => {
     const config = supervisedWorkerConfig();
     expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
@@ -332,6 +382,50 @@ describe("runner capability config validation", () => {
     hardenedRuntimeDdl.sources.app_postgres.receipts.provisioning = "auto_migrate";
     expect(validateRunnerCapabilityConfig(hardenedRuntimeDdl).errors.map((issue) => issue.code))
       .toContain("SUPERVISED_WORKER_PRECREATED_RECEIPT_REQUIRED");
+  });
+
+  it("validates exact semantic outcome deployment authority independently from legacy capabilities", () => {
+    const config = supervisedWorkerConfig();
+    const actionBoundaryDigest = `sha256:${"d".repeat(64)}`;
+    config.action_rules = { project_root: "." };
+    config.supervised_worker.capabilities = [];
+    config.supervised_worker.outcomes = [{
+      outcome: "support.request_refund",
+      action_boundary_digest: actionBoundaryDigest,
+      mode: "supervised_worker",
+      concurrency: 1,
+      queue_limit: 50,
+      lease_seconds: 60,
+      max_attempts: 4,
+      proposal_ttl_seconds: 3_600,
+      rate_limit: { executions: 10, window_seconds: 60 },
+      write_url_env: "APP_POSTGRES_WRITE_URL",
+      worker_identity: "runner_worker",
+      control_role: "runner_operator",
+    }];
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    const missingAuthority = structuredClone(config);
+    delete missingAuthority.action_rules;
+    expect(validateRunnerCapabilityConfig(missingAuthority).errors.map((issue) => issue.code))
+      .toContain("SUPERVISED_WORKER_ACTION_RULE_AUTHORITY_REQUIRED");
+
+    const wrongWriter = structuredClone(config);
+    wrongWriter.supervised_worker.outcomes[0].write_url_env = "OTHER_WRITE_URL";
+    expect(validateRunnerCapabilityConfig(wrongWriter).errors.map((issue) => issue.code))
+      .toContain("SUPERVISED_WORKER_WRITER_MISMATCH");
+
+    const duplicateControlTarget = supervisedWorkerConfig();
+    duplicateControlTarget.action_rules = { project_root: "." };
+    duplicateControlTarget.supervised_worker.outcomes = [{
+      ...structuredClone(duplicateControlTarget.supervised_worker.capabilities[0]),
+      outcome: duplicateControlTarget.supervised_worker.capabilities[0].capability,
+      action_boundary_digest: duplicateControlTarget.supervised_worker.capabilities[0].contract_digest,
+    }];
+    delete duplicateControlTarget.supervised_worker.outcomes[0].capability;
+    delete duplicateControlTarget.supervised_worker.outcomes[0].contract_digest;
+    expect(validateRunnerCapabilityConfig(duplicateControlTarget).errors.map((issue) => issue.code))
+      .toContain("DUPLICATE_SUPERVISED_WORKER_ALLOWLIST");
   });
 
   it("keeps supervised execution additive and disabled when deployment policy is absent", () => {

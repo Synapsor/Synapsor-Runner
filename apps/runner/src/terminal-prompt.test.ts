@@ -195,6 +195,40 @@ describe("in-place terminal rendering", () => {
     expect(rendered).toContain("\u001b[?25h");
   });
 
+  it("uses the full live width instead of wrapping raw screens at 116 columns", async () => {
+    const input = new PassThrough() as PassThrough & {
+      isTTY: boolean;
+      isRaw: boolean;
+      setRawMode(value: boolean): void;
+    };
+    input.isTTY = true;
+    input.isRaw = false;
+    input.setRawMode = (value: boolean) => {
+      input.isRaw = value;
+    };
+    const output = new PassThrough() as WriteStream & PassThrough;
+    Object.assign(output, { isTTY: true, columns: 180, rows: 24 });
+    const wideLine = [
+      "This reviewed authority summary should remain on one line in a wide terminal",
+      "instead of wrapping at the former fixed one-hundred-and-sixteen-column boundary.",
+    ].join(" ");
+
+    const interaction = withRawTerminalScreen(
+      input as unknown as ReadStream,
+      output,
+      async (nextKey, render) => {
+        render(["WIDE REVIEW", wideLine, "Esc Back"]);
+        return nextKey();
+      },
+    );
+    const initial = output.read()?.toString() ?? "";
+    expect(initial).toContain(wideLine);
+
+    input.emit("keypress", "\u001b", { name: "escape", sequence: "\u001b" });
+    await expect(interaction).resolves.toMatchObject({ name: "escape" });
+    expect(input.isRaw).toBe(false);
+  });
+
   it("handles Page Down inside every raw-screen interaction before returning normal keys", async () => {
     const input = new PassThrough() as PassThrough & {
       isTTY: boolean;

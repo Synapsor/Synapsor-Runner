@@ -1092,6 +1092,123 @@ describe("guided write actions", () => {
     expect(runtimeConfig.contracts).toHaveLength(2);
   }, 30_000);
 
+  it("preserves semantic outcome worker authority when a proposal-only legacy action is activated", async () => {
+    const fixture = await activatedFitFlowFixture();
+    const first = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.freeze_membership",
+        description: "Propose freezing one assigned active membership.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "membership_status",
+          value_source: "fixed",
+          fixed_value: "frozen",
+          allowed_from: ["active"],
+        }],
+        confirmed_trusted_scope: true,
+      },
+    });
+    await recordGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: first.draft.capability,
+      contractDigest: first.draft.contract_digest,
+      actionBoundaryDigest: first.draft.action_boundary_digest!,
+      proposalId: "wrp_semantic_coexist_first",
+      proposalHash: `sha256:${"a".repeat(64)}`,
+      sourceDatabaseChanged: false,
+    });
+    await activateGuidedAction({
+      projectRoot: fixture.root,
+      capabilityName: first.draft.capability,
+      expectedDigest: first.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${first.draft.action_boundary_digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    });
+    const actionConfigPath = path.join(fixture.root, "synapsor.actions.runner.json");
+    const actionConfig = JSON.parse(await fs.readFile(actionConfigPath, "utf8"));
+    actionConfig.sources.local_postgres.read_only = false;
+    actionConfig.sources.local_postgres.write_url_env = "SYNAPSOR_DATABASE_WRITE_URL";
+    actionConfig.sources.local_postgres.receipts = { authority: "runner_ledger" };
+    actionConfig.supervised_worker = {
+      enabled: true,
+      profile: "staging",
+      capabilities: [],
+      outcomes: [{
+        outcome: "membership.recalculate_tier",
+        action_boundary_digest: `sha256:${"e".repeat(64)}`,
+        mode: "supervised_worker",
+        concurrency: 1,
+        queue_limit: 100,
+        lease_seconds: 300,
+        max_attempts: 5,
+        proposal_ttl_seconds: 86400,
+        rate_limit: { executions: 60, window_seconds: 60 },
+        write_url_env: "SYNAPSOR_DATABASE_WRITE_URL",
+      }],
+    };
+    await fs.writeFile(actionConfigPath, `${JSON.stringify(actionConfig, null, 2)}\n`, "utf8");
+
+    const second = await createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.set_loyalty_balance",
+        description: "Propose a reviewed loyalty balance for one assigned member.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum: 500,
+        }],
+        confirmed_trusted_scope: true,
+      },
+    });
+    await recordGuidedActionPreview({
+      projectRoot: fixture.root,
+      capabilityName: second.draft.capability,
+      contractDigest: second.draft.contract_digest,
+      actionBoundaryDigest: second.draft.action_boundary_digest!,
+      proposalId: "wrp_semantic_coexist_second",
+      proposalHash: `sha256:${"b".repeat(64)}`,
+      sourceDatabaseChanged: false,
+    });
+    await activateGuidedAction({
+      projectRoot: fixture.root,
+      capabilityName: second.draft.capability,
+      expectedDigest: second.draft.action_boundary_digest!,
+      confirmation: `ACTIVATE ${second.draft.action_boundary_digest}`,
+      actor: "reviewer@example.test",
+      inspection: fixture.inspection,
+    });
+    const after = JSON.parse(await fs.readFile(actionConfigPath, "utf8"));
+    expect(after.sources.local_postgres).toMatchObject({
+      read_only: false,
+      write_url_env: "SYNAPSOR_DATABASE_WRITE_URL",
+      receipts: { authority: "runner_ledger" },
+    });
+    expect(after.supervised_worker).toMatchObject({
+      enabled: true,
+      capabilities: [],
+      outcomes: [{
+        outcome: "membership.recalculate_tier",
+        action_boundary_digest: `sha256:${"e".repeat(64)}`,
+      }],
+    });
+  }, 30_000);
+
   it("reviews and activates shared cross-action limits as a separate exact boundary revision", async () => {
     const fixture = await activatedFitFlowFixture();
     const created = await createGuidedActionDraft({
@@ -1526,6 +1643,7 @@ describe("guided write actions", () => {
     const config = JSON.parse(await fs.readFile(actionConfigPath, "utf8"));
     expect(config.mode).toBe("review");
     expect(config.production_explore).toBeUndefined();
+    expect(config.action_rules).toEqual({ project_root: "./" });
     expect(config.sources.local_postgres).toMatchObject({
       read_url_env: "DATABASE_URL",
       read_only: true,

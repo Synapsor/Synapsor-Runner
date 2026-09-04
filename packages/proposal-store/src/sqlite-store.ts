@@ -5,6 +5,7 @@ import type {
   ProposalStoreSchemaMethods,
   ProposalStoreProposalMethods,
   ProposalStoreWritebackMethods,
+  ProposalStoreSubjectReferenceMethods,
   ProposalStoreWorkerMethods,
   ProposalStoreMetricsPolicyMethods,
   ProposalStoreAttentionMethods,
@@ -14,6 +15,7 @@ import type {
 import { proposalStoreSchemaMethods } from "./sqlite-schema-methods.js";
 import { proposalStoreProposalsMethods } from "./sqlite-proposal-methods.js";
 import { proposalStoreWritebackMethods } from "./sqlite-writeback-methods.js";
+import { proposalStoreSubjectReferenceMethods } from "./sqlite-subject-reference-methods.js";
 import { proposalStoreWorkersMethods } from "./sqlite-worker-methods.js";
 import { proposalStoreMetricsPolicyMethods } from "./sqlite-metrics-policy-methods.js";
 import { proposalStoreAttentionMethods } from "./sqlite-attention-methods.js";
@@ -53,6 +55,7 @@ export interface ProposalStore
   extends ProposalStoreSchemaMethods,
     ProposalStoreProposalMethods,
     ProposalStoreWritebackMethods,
+    ProposalStoreSubjectReferenceMethods,
     ProposalStoreWorkerMethods,
     ProposalStoreMetricsPolicyMethods,
     ProposalStoreAttentionMethods,
@@ -66,6 +69,7 @@ installProposalStoreMethods(
   proposalStoreSchemaMethods,
   proposalStoreProposalsMethods,
   proposalStoreWritebackMethods,
+  proposalStoreSubjectReferenceMethods,
   proposalStoreWorkersMethods,
   proposalStoreMetricsPolicyMethods,
   proposalStoreAttentionMethods,

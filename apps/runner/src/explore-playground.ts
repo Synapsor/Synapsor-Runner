@@ -993,7 +993,7 @@ async function showPlaygroundPage(input: {
   input: ReadStream;
   output: WriteStream;
 }): Promise<void> {
-  const width = Math.min(terminalContentWidth(input.output.columns), 116);
+  const width = terminalContentWidth(input.output.columns);
   const wrapped = input.content
     .split("\n")
     .flatMap((line) => wrapStyledTerminalLine(line, width));

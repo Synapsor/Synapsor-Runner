@@ -25,6 +25,7 @@ import {
   explicitTrustedPolicyScope,
   formatPolicyDuration,
 } from "./action-policy-scope.js";
+import { MAX_BOUNDARY_ACTION_INTENT_CHARACTERS } from "./boundary-authoring-limits.js";
 
 const SUBMIT_SUGGESTION_TOOL = "runner.suggest_safe_action";
 const SUBMIT_SUGGESTION_SET_TOOL = "runner.suggest_safe_actions";
@@ -601,7 +602,11 @@ function suggestionObjectSchema(catalog: ReturnType<typeof suggestionCatalog>): 
     additionalProperties: false,
     required: ["intent", "operation", "resource"],
     properties: {
-      intent: { type: "string", minLength: 1, maxLength: 500 },
+      intent: {
+        type: "string",
+        minLength: 1,
+        maxLength: MAX_BOUNDARY_ACTION_INTENT_CHARACTERS,
+      },
       operation: { type: "string", enum: ["insert", "update", "delete"] },
       resource: { type: "string", enum: resourceIds },
       fields: {
@@ -734,8 +739,12 @@ function mergeUsage(
 
 function safeIntent(value: string): string {
   const normalized = value.trim().replace(/\s+/g, " ");
-  if (!normalized || normalized.length > 500 || /[\u0000-\u001f\u007f]/.test(normalized)) {
-    throw new Error("ACTION_SUGGESTION_INTENT_INVALID: intent must be 1 through 500 safe characters.");
+  if (!normalized
+    || normalized.length > MAX_BOUNDARY_ACTION_INTENT_CHARACTERS
+    || /[\u0000-\u001f\u007f]/.test(normalized)) {
+    throw new Error(
+      `ACTION_SUGGESTION_INTENT_INVALID: intent must be 1 through ${MAX_BOUNDARY_ACTION_INTENT_CHARACTERS} safe characters.`,
+    );
   }
   return normalized;
 }

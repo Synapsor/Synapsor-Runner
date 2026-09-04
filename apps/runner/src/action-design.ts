@@ -2,6 +2,7 @@ import type {
   GuidedActionOperation,
   GuidedActionResourceOption,
 } from "./guided-action.js";
+import { MAX_BOUNDARY_ACTION_INTENT_CHARACTERS } from "./boundary-authoring-limits.js";
 
 export const ACTION_SUGGESTION_VERSION = "synapsor.action-suggestion.v1" as const;
 
@@ -169,7 +170,7 @@ export function normalizeActionSuggestion(value: unknown): ActionSuggestion {
   if (value.schema_version !== ACTION_SUGGESTION_VERSION) {
     throw new Error(`ACTION_SUGGESTION_VERSION_INVALID: expected ${ACTION_SUGGESTION_VERSION}.`);
   }
-  const intent = boundedText(value.intent, "intent", 500);
+  const intent = boundedText(value.intent, "intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS);
   const rationale = value.rationale === undefined ? undefined : boundedText(value.rationale, "rationale", 500);
   const operation = value.operation;
   if (operation !== undefined && operation !== "insert" && operation !== "update" && operation !== "delete") {

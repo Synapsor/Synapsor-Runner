@@ -395,11 +395,16 @@ async function startAutoBoundary(
       ? path.join(project.root, existingJourney.artifacts.boundary_root)
       : context.boundaryRoot;
     const activeBoundaryExists = await guidedActiveBoundaryExists(project.root);
+    const savedReviewSummary = context.progress
+      ? `Saved Read candidate: ${context.candidate.pack.resources.length} table(s) in revision ${context.progress.revision}; `
+        + `${context.bundle.decisions.filter((decision) => decision.confirmed).length}/${context.bundle.decisions.length} exact review decisions confirmed.`
+      : `Saved Read candidate: ${context.candidate.pack.resources.length} table(s) in the initial disabled revision; review has not started.`;
     writeGuidedOutput([
       existingJourney
         ? "Existing Synapsor guided project found."
         : "Existing Runner-managed boundary project found.",
       ...(existingJourney ? [`Completed: ${existingJourney.completed_steps.join(", ")}`] : []),
+      savedReviewSummary,
       `Agent authority active: ${activeBoundaryExists ? "yes" : "no"}`,
       "Source database changed: no",
       "No schema inspection, digest change, or file rewrite was performed.",
@@ -407,7 +412,7 @@ async function startAutoBoundary(
         ? [
           activeBoundaryExists
             ? "Continuing to model or MCP-client selection in this terminal."
-            : "Continuing the saved boundary review in this terminal.",
+            : "Continuing from the saved disabled candidate. A new model conversation receives the current saved Read and Action state; the prior provider transcript is not retained.",
         ]
         : [`Next: ${existingJourney?.recommended_next_action ?? "Review the saved disabled boundary."}`]),
       "",

@@ -7,6 +7,7 @@ import {
 import {
   projectAuthorityMetadataForModel,
   type ModelAuthorityMetadataMode,
+  type SubjectReferenceService,
 } from "@synapsor-runner/mcp-server";
 import {
   activatedExplorationBoundarySetDigest,
@@ -93,6 +94,10 @@ export async function createScopedExploreBoundarySetRuntime(input: {
   resolveTrustedScopeFn?: ResolveExploreTrustedScopeFn;
   runtimeFactory?: typeof createScopedExploreRuntime;
   modelAuthorityMetadata?: ModelAuthorityMetadataMode;
+  subjectReferences?: {
+    service: SubjectReferenceService;
+    workflow_session_id: string;
+  };
 }): Promise<ScopedExploreBoundarySetRuntime> {
   const projectRoot = path.resolve(input.projectRoot);
   const ownsStore = !input.store;
@@ -145,6 +150,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
       ...(input.clock ? { clock: input.clock } : {}),
       ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
       ...(input.resolveTrustedScopeFn ? { resolveTrustedScopeFn: input.resolveTrustedScopeFn } : {}),
+      ...(input.subjectReferences ? { subjectReferences: input.subjectReferences } : {}),
       modelAuthorityMetadata: input.modelAuthorityMetadata ?? "semantic",
     });
     children.set(boundary.pack.name, {

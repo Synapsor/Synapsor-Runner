@@ -99,6 +99,27 @@ export function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["err
   )) {
     return { code: "INVALID_ARGUMENT", message: "The tool input or trusted context binding is invalid.", retryable: false };
   }
+  if (runtimeCode === "SUBJECT_REFERENCE_UNAVAILABLE") {
+    return {
+      code: "POLICY_VIOLATION",
+      message: "One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.",
+      retryable: false,
+    };
+  }
+  if (runtimeCode === "SEMANTIC_ACTION_NOT_ELIGIBLE") {
+    return {
+      code: "POLICY_VIOLATION",
+      message: "Current authoritative facts do not permit this reviewed outcome. No proposal or source change was created.",
+      retryable: false,
+    };
+  }
+  if (runtimeCode === "SEMANTIC_ACTION_UNAVAILABLE") {
+    return {
+      code: "POLICY_VIOLATION",
+      message: "Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.",
+      retryable: false,
+    };
+  }
   if (runtimeCode && (
     runtimeCode.startsWith("PATCH_")
     || runtimeCode.startsWith("SET_")

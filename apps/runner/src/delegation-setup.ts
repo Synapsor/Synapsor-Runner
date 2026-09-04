@@ -3,6 +3,11 @@ import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { GuidedActionDraft } from "./guided-action.js";
 import type { ReadWorkloadReview, ReadWorkloadView } from "./read-workloads.js";
+import {
+  MAX_BOUNDARY_ACTION_INTENT_CHARACTERS,
+  MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS,
+  MAX_BOUNDARY_READ_QUESTION_CHARACTERS,
+} from "./boundary-authoring-limits.js";
 
 export const DELEGATION_DRAFT_VERSION = "synapsor.delegation-draft.v1" as const;
 
@@ -24,7 +29,11 @@ export type DelegationReadDraft = {
 
 export type DelegationActionDraft = {
   intent: string;
+  kind?: "discretionary" | "rule_derived";
   capability?: string;
+  outcome?: string;
+  action_boundary_name?: string;
+  authority_digest?: `sha256:${string}`;
   contract_digest?: `sha256:${string}`;
   rehearsal: "not_started" | "required" | "passed";
   state: "disabled";
@@ -82,10 +91,20 @@ export function buildDelegationDraft(input: {
   review: ReadWorkloadReview;
   actionIntents?: string[];
   actionDrafts?: Array<{ intent: string; draft: GuidedActionDraft }>;
+  semanticActions?: Array<{
+    intent: string;
+    outcome: string;
+    action_boundary_name: string;
+    authority_digest: `sha256:${string}`;
+  }>;
   modelAssist?: DelegationModelAssist;
   now?: string;
 }): DelegationDraft {
-  const jobIntent = reviewedText(input.jobIntent, "job intent", 500);
+  const jobIntent = reviewedText(
+    input.jobIntent,
+    "job intent",
+    MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS,
+  );
   const jobName = safeJobName(input.jobName ?? jobNameFromIntent(jobIntent));
   const boundaryName = reviewedName(input.boundaryName, "read boundary name", 80);
   if (input.workload.analysis_id !== input.review.analysis_id
@@ -95,15 +114,26 @@ export function buildDelegationDraft(input: {
     );
   }
   const requestedActions = (input.actionIntents ?? []).map((intent) =>
-    reviewedText(intent, "action intent", 500));
+    reviewedText(intent, "action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS));
   const draftByIntent = new Map(
     (input.actionDrafts ?? []).map(({ intent, draft }) => [normalizeComparableText(intent), draft]),
   );
+  const semanticByIntent = new Map(
+    (input.semanticActions ?? []).map((action) => [normalizeComparableText(action.intent), action]),
+  );
   const actions = requestedActions.map((intent): DelegationActionDraft => {
     const draft = draftByIntent.get(normalizeComparableText(intent));
+    const semantic = semanticByIntent.get(normalizeComparableText(intent));
     return {
       intent,
-      ...(draft ? {
+      ...(semantic ? {
+        kind: "rule_derived" as const,
+        outcome: reviewedName(semantic.outcome, "verified Action outcome", 200),
+        action_boundary_name: reviewedName(semantic.action_boundary_name, "Action Boundary name", 128),
+        authority_digest: reviewedDigest(semantic.authority_digest, "verified Action authority digest"),
+        rehearsal: "passed" as const,
+      } : draft ? {
+        kind: "discretionary" as const,
         capability: draft.capability,
         contract_digest: draft.contract_digest,
         rehearsal: draft.effect_preview ? "passed" as const : "required" as const,
@@ -118,7 +148,11 @@ export function buildDelegationDraft(input: {
     candidate_digest: input.review.candidate_digest,
     review_revision: input.review.review_revision,
     representative_questions: input.workload.analysis.allowed.map((entry) =>
-      reviewedText(entry.description, "representative question", 500)),
+      reviewedText(
+        entry.description,
+        "representative question",
+        MAX_BOUNDARY_READ_QUESTION_CHARACTERS,
+      )),
     state: "disabled_review",
   };
   const core = {
@@ -308,6 +342,13 @@ function reviewedName(value: string, label: string, maximum: number): string {
     throw new Error(`DELEGATION_NAME_INVALID: ${label} is invalid.`);
   }
   return normalized;
+}
+
+function reviewedDigest(value: string, label: string): `sha256:${string}` {
+  if (!/^sha256:[a-f0-9]{64}$/u.test(value)) {
+    throw new Error(`DELEGATION_DIGEST_INVALID: ${label} must be one canonical sha256 digest.`);
+  }
+  return value as `sha256:${string}`;
 }
 
 function reviewedText(value: string, label: string, maximum: number): string {

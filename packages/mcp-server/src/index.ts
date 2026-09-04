@@ -18,8 +18,12 @@ export type {
   RuntimeTransitionGuardConfig,
   RuntimeCapabilityConfig,
   RuntimeSupervisedWorkerCapabilityPolicy,
+  RuntimeSupervisedWorkerOutcomePolicy,
+  RuntimeSupervisedWorkerPolicy,
+  RuntimeSupervisedWorkerPolicyBase,
   RuntimeSupervisedWorkerConfig,
   SupervisedWorkerEligibility,
+  SemanticSupervisedWorkerEligibility,
   RuntimeProposalFreshnessDependencyConfig,
   RuntimeProposalFreshnessConfig,
   RuntimeNotificationBudgetConfig,
@@ -43,6 +47,9 @@ export type {
   RuntimeRateLimitMetric,
   RuntimePoolMetric,
   LocalToolMetadata,
+  SemanticActionContextResolver,
+  SemanticActionRequestContext,
+  SemanticActionRuntime,
   HttpMcpServerOptions,
   StreamableHttpSessionFactory,
   StreamableHttpSessionRuntime,
@@ -55,6 +62,15 @@ export type {
   SafeToolErrorCode,
   ProposalFreshnessEvaluation,
 } from "./runtime-types.js";
+export {
+  createSemanticActionRuntime,
+  DESCRIBE_ACTIONS_TOOL,
+  REQUEST_CHANGE_TOOL,
+} from "./semantic-actions.js";
+export type { SemanticActionContinuation } from "./semantic-actions.js";
+export {
+  buildDerivedChangeSet,
+} from "./proposal-builder.js";
 export {
   modelAuthorityMetadataMode,
   projectAuthorityMetadataForModel,
@@ -112,7 +128,11 @@ export {
 export {
   capabilityWritebackExecutor,
   capabilityWritebackMode,
+  resolveSemanticSupervisedWorkerEligibility,
   resolveSupervisedWorkerEligibility,
+  supervisedWorkerPolicies,
+  supervisedWorkerPolicyDigest,
+  supervisedWorkerPolicyName,
 } from "./capability-authority.js";
 export {
   CloudLinkedSynchronizer,
@@ -170,3 +190,13 @@ export {
   resolveTrustedContext,
   validateToolArgs,
 } from "./trusted-context.js";
+export {
+  createSubjectReferenceService,
+  subjectReferenceScopeFingerprints,
+  type ModelVisibleSubjectReference,
+  type ObservedSubjectInput,
+  type ResolvedSubjectRequest,
+  type SubjectObservationRequirement,
+  type SubjectReferenceAuthorityContext,
+  type SubjectReferenceService,
+} from "./subject-references.js";

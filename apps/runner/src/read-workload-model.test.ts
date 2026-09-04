@@ -511,6 +511,70 @@ describe("model-assisted Read workload mapping", () => {
     });
   });
 
+  it("resolves trusted ownership mechanics without asking the operator", async () => {
+    let attempt = 0;
+    const requests: string[] = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(JSON.stringify(request.body));
+      attempt += 1;
+      const input = attempt === 1
+        ? {
+            clarification_request: {
+              resource: "public.orders",
+              reason: "Need to enforce that each order belongs to the authenticated customer account.",
+              question: "Which exact reviewed field or relationship defines the customer account that owns an order?",
+            },
+          }
+        : {
+            allowed: [{
+              id: "own_orders",
+              description: "List the authenticated customer's reviewed order fields",
+              plan: {
+                kind: "rows",
+                resource: "public.orders",
+                select: ["id", "status", "amount"],
+              },
+            }],
+            forbidden: [],
+          };
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "function_call",
+            call_id: `call_scope_mechanics_${attempt}`,
+            name: "runner__submit_read_workloads",
+            arguments: JSON.stringify(input),
+          }],
+        },
+      };
+    });
+    const clarificationHandler = vi.fn(async () => ({
+      state: "answered" as const,
+      answer: "The operator should never have to identify trusted scope fields.",
+    }));
+
+    const result = await generateModelReadWorkload({
+      name: "own_order_reads",
+      allowedQuestions: ["Show an authenticated customer their own orders"],
+      provider: "openai",
+      model: "gpt-5.6-terra",
+      generatedBoundary: generatedBoundary(),
+      env: { OPENAI_API_KEY: "provider-test-key" },
+      egressAcknowledged: true,
+      clarificationHandler,
+      dependencies: { requestJson },
+    });
+
+    expect(clarificationHandler).not.toHaveBeenCalled();
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(requests[1]).toContain("Scope keys are deliberately absent from the model catalog");
+    expect(requests[1]).toContain("Do not ask the operator about trusted ownership or scope mechanics again");
+    expect(result.analysis.status).toBe("ready");
+    expect(result.workload.allowed[0]?.plan).not.toHaveProperty("tenant_id");
+    expect(result.workload.allowed[0]?.plan).not.toHaveProperty("principal_id");
+  });
+
   it("intercepts a guessed opaque plan and requires a resource clarification before accepting it", async () => {
     let attempt = 0;
     const requests: string[] = [];

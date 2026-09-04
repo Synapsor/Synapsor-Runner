@@ -49,6 +49,7 @@ import {
 import {
   ProposalStoreError,
 } from "./errors.js";
+import { proposalScopeIndex } from "./proposal-integrity.js";
 
 import type {
   ProposalStoreShadowMethods,
@@ -493,10 +494,11 @@ export const proposalStoreShadowMethods: ProposalStoreShadowMethods & ProposalSt
   
   insertShadowCaseFromChangeSet(studyId: string, changeSet: ChangeSet, createdAt: string): void {
       const requestId = changeSet.proposal_id;
+      const scope = proposalScopeIndex(changeSet);
       const caseId = `scase_${canonicalJsonDigest({
         study_id: studyId,
         request_id: requestId,
-        tenant_id: changeSet.scope.tenant_id,
+        tenant_id: scope.id,
         business_object: changeSet.scope.business_object,
         object_id: changeSet.scope.object_id,
       }).slice("sha256:".length, "sha256:".length + 20)}`;
@@ -513,7 +515,7 @@ export const proposalStoreShadowMethods: ProposalStoreShadowMethods & ProposalSt
         studyId,
         requestId,
         changeSet.proposal_id,
-        changeSet.scope.tenant_id,
+        scope.id,
         changeSet.principal.id,
         changeSet.action,
         changeSet.scope.business_object,

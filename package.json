@@ -9,7 +9,7 @@
     "packages/*"
   ],
   "bin": {
-    "synapsor-runner": "./bin/synapsor-runner"
+    "synapsor-runner": "bin/synapsor-runner"
   },
   "scripts": {
     "build": "tsc -b",
@@ -30,6 +30,8 @@
     "test:live-apply": "node scripts/smoke-mcp-local-examples.mjs",
     "test:guarded-crud": "corepack pnpm build && node scripts/verify-guarded-crud.mjs",
     "test:guided-actions-live": "corepack pnpm build && node scripts/verify-guided-action-control-plane.mjs",
+    "test:action-rules-live": "corepack pnpm build && node scripts/verify-semantic-action-rule-engines.mjs",
+    "test:action-rule-models-live": "corepack pnpm build && node scripts/verify-action-rule-model-providers.mjs",
     "test:bounded-set": "corepack pnpm build && node scripts/verify-bounded-set-writeback.mjs",
     "test:reversible": "corepack pnpm build:runner-package && node scripts/verify-reversible-writeback.mjs",
     "test:contract-lsp": "vitest run apps/runner/src/language-server.test.ts",
@@ -111,6 +113,7 @@
   "devDependencies": {
     "@anthropic-ai/mcpb": "2.1.2",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@synapsor-runner/action-rules": "workspace:*",
     "@synapsor-runner/config": "workspace:*",
     "@synapsor-runner/control-plane-client": "workspace:*",
     "@synapsor-runner/mcp-server": "workspace:*",
@@ -137,5 +140,22 @@
     "onlyBuiltDependencies": [
       "esbuild"
     ]
-  }
+  },
+  "description": "[![npm version](https://img.shields.io/npm/v/@synapsor/runner.svg)](https://www.npmjs.com/package/@synapsor/runner) [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) [![ci](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml?query=branch%3Amain)",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Synapsor/Synapsor-Runner.git"
+  },
+  "keywords": [],
+  "author": "",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Synapsor/Synapsor-Runner/issues"
+  },
+  "homepage": "https://github.com/Synapsor/Synapsor-Runner#readme"
 }

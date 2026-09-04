@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
+import type { ActionRuleFactLoaderAdapterV1 } from "@synapsor-runner/action-rules";
 import { ControlPlaneClient, type ClaimedWritebackJob } from "@synapsor-runner/control-plane-client";
-import { canonicalJsonDigest, parseWritebackJob, protocolVersions, type InverseDescriptorV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseWritebackJob, protocolVersions, type InverseDescriptorV1, type NormalizedWritebackJobV5, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 
 export * from "./mcp-audit.js";
 
@@ -37,9 +38,52 @@ export type RunnerConfig = {
     principal: string;
   };
   writebackIntentStore?: WritebackIntentStore;
+  /**
+   * Trusted semantic authority resolver and transaction-time rule evaluator.
+   *
+   * Database adapters invoke this inside the same source transaction that
+   * performs the exact mutation. The callback resolves opaque subjects and
+   * active rule authority outside model input, then loads and locks facts
+   * through the supplied engine adapter.
+   */
+  semanticActionVerifier?: SemanticActionVerifier;
   /** Test-only crash injection. Production config loaders must never expose this. */
   testFailpoint?: (name: WritebackFailpoint) => void | Promise<void>;
 };
+
+export type SemanticActionReverification = {
+  status: "reverified";
+  proof_digest: `sha256:${string}`;
+  action_rule_digest: `sha256:${string}`;
+  compiled_plan_digest: `sha256:${string}`;
+  proposal_dependency_set_digest: `sha256:${string}`;
+  dependency_set_digest: `sha256:${string}`;
+  effect_digest: `sha256:${string}`;
+  checked_at: string;
+};
+
+export type SemanticActionVerifier = (input: {
+  job: NormalizedWritebackJobV5;
+  factLoader: ActionRuleFactLoaderAdapterV1;
+}) => Promise<SemanticActionReverification>;
+
+export function assertSemanticActionReverification(
+  job: NormalizedWritebackJobV5,
+  verification: SemanticActionReverification,
+): void {
+  const proof = job.semantic_authority.proof;
+  if (verification.status !== "reverified"
+    || verification.proof_digest !== proof.proof_digest
+    || verification.action_rule_digest !== proof.action_rule_digest
+    || verification.compiled_plan_digest !== proof.compiled_plan_digest
+    || verification.proposal_dependency_set_digest !== proof.dependency_set_digest
+    || verification.effect_digest !== job.semantic_authority.effect.effect_digest
+    || verification.effect_digest !== proof.derived_effect_digest
+    || !/^sha256:[a-f0-9]{64}$/.test(verification.dependency_set_digest)
+    || !Number.isFinite(Date.parse(verification.checked_at))) {
+    throw new Error("SEMANTIC_AUTHORITY_STALE");
+  }
+}
 
 export type WritebackIntentStatus =
   | "intent_recorded"
@@ -485,6 +529,25 @@ export function failedWritebackResult(job: WritebackJob, runnerId: string, error
       target_identities: job.frozen_set.members.map((member) => member.primary_key),
       set_digest: job.frozen_set.set_digest,
       member_effects: [],
+    };
+  } else if (job.protocol_version === protocolVersions.normalizedWritebackJobV5) {
+    const proof = job.semantic_authority.proof;
+    result = {
+      ...common,
+      operation: job.operation,
+      receipt_authority: "runner_ledger",
+      target_identity: [{
+        column: job.target.primary_key.column,
+        value: job.target.primary_key.value ?? null,
+      }],
+      semantic_verification: {
+        status: "not_run",
+        proof_digest: proof.proof_digest,
+        action_rule_digest: proof.action_rule_digest,
+        compiled_plan_digest: proof.compiled_plan_digest,
+        proposal_dependency_set_digest: proof.dependency_set_digest,
+        effect_digest: proof.derived_effect_digest,
+      },
     };
   } else {
     result = {

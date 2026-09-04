@@ -34,6 +34,7 @@ import {
   proposalAppHtml,
   proposalAppInitializeRequest,
   resolveRuntimeSourceCredential,
+  resolveRuntimeConfig,
   serveStdio,
   startHttpMcpServer,
   startStreamableHttpMcpServer,
@@ -66,6 +67,19 @@ const {
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 
 describe("database-enforced trusted scope", () => {
+  it("resolves a semantic Action Rule project relative to its config file", () => {
+    const runtimeConfig: RuntimeConfig = {
+      version: 1,
+      mode: "read_only",
+      sources: {},
+      capabilities: [],
+      action_rules: { project_root: "./reviewed-project" },
+    };
+    expect(resolveRuntimeConfig(runtimeConfig, "/srv/synapsor").action_rules).toEqual({
+      project_root: "/srv/synapsor/reviewed-project",
+    });
+  });
+
   it("describes application, PostgreSQL RLS, and tenant-bound assurance without overstating the process boundary", () => {
     const base: RuntimeConfig = {
       version: 1,
@@ -4402,7 +4416,10 @@ describe("local Synapsor MCP runtime", () => {
       audience: "synapsor-runner",
     };
     const env = { SYNAPSOR_SESSION_JWT_SECRET: secret };
-    const seen: Array<{ tenant_id: string; principal: string; provenance: string }> = [];
+    const seen: Array<{
+      trustedContext: { tenant_id: string; principal: string; provenance: string };
+      authenticationFingerprint: string;
+    }> = [];
     const server = await startStreamableHttpMcpServer({
       config: sessionConfig,
       storePath: ":memory:",
@@ -4410,8 +4427,8 @@ describe("local Synapsor MCP runtime", () => {
       env,
       log: false,
       readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
-      streamableSessionFactory: async ({ store, trustedContext }) => {
-        seen.push(trustedContext);
+      streamableSessionFactory: async ({ store, trustedContext, authenticationFingerprint }) => {
+        seen.push({ trustedContext, authenticationFingerprint });
         const runtime = createMcpRuntime(sessionConfig, {
           env,
           store,
@@ -4470,9 +4487,12 @@ describe("local Synapsor MCP runtime", () => {
         },
       });
       expect(seen).toEqual([{
-        tenant_id: "verified-tenant",
-        principal: "verified-user",
-        provenance: "http_claims",
+        trustedContext: {
+          tenant_id: "verified-tenant",
+          principal: "verified-user",
+          provenance: "http_claims",
+        },
+        authenticationFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
       }]);
     } finally {
       await client.close().catch(() => undefined);

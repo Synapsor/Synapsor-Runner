@@ -166,6 +166,11 @@ export type BoundaryReviewOverview = {
     proposal_action_state?: "none" | "draft" | "rehearsed" | "active";
     proposal_action_active_count?: number;
     proposal_action_draft_count?: number;
+    verified_action_boundary_name?: string;
+    verified_action_state?: "disabled" | "active" | "active_with_disabled_changes" | "blocked";
+    verified_action_active_count?: number;
+    verified_action_draft_count?: number;
+    verified_action_error?: string;
   }>;
 };
 
@@ -195,6 +200,8 @@ type BoundaryChoicePromptOptions = BoundaryPromptOptions & {
 export type BoundaryReviewInteractiveSession = {
   /** Conversation surfaces retain scrollback and render prompt context themselves. */
   presentationMode?: "screen" | "conversation";
+  /** Live terminal width for responsive review artifacts. */
+  terminalColumns?: number;
   present?(
     title: string,
     lines: string[],
@@ -306,9 +313,15 @@ function linkedActionBoundaryLines(
   overview: BoundaryReviewOverview | undefined,
   boundary: NonNullable<BoundaryReviewOverview["boundaries"]>[number],
   theme: TerminalTheme,
+  rowLayout: SavedBoundaryRowLayout,
 ): string[] {
   const activeCount = boundary.proposal_action_active_count ?? 0;
   const draftCount = boundary.proposal_action_draft_count ?? 0;
+  const verifiedActiveCount = boundary.verified_action_active_count ?? 0;
+  const verifiedDraftCount = boundary.verified_action_draft_count ?? 0;
+  const verifiedCount = verifiedActiveCount + verifiedDraftCount;
+  const hasVerified = verifiedCount > 0;
+  const hasDiscretionary = activeCount + draftCount > 0;
   const global = overview?.action_boundary;
   const state = global?.state ?? (activeCount ? "active" : draftCount ? "disabled" : "off");
   const stateLabel = state === "active_with_disabled_changes"
@@ -326,30 +339,75 @@ function linkedActionBoundaryLines(
       : "ACTIVE"
     : "NOT ACTIVE";
   const row = savedBoundaryRow(
-    "Y",
+    hasVerified ? "" : "Y",
     name,
     "ACTION",
     stateLabel,
     `${actionCount} ${plural(actionCount, "action", "actions")}`,
     access,
+    rowLayout,
   );
   const styledRow = state === "active"
     ? theme.success(row)
     : state === "off"
       ? theme.dim(row)
       : theme.warning(row);
-  return [
-    styledRow,
-    theme.dim(`  Linked Read Boundary: ${safeTerminalText(boundary.name)}`),
-    activeCount > 0
-      ? "  Y reviews active proposal authority or any disabled replacement. Approval and apply remain outside the agent."
-      : draftCount > 0
-        ? theme.warning(
-          `  Next: Y reviews ${draftCount} disabled Action ${plural(draftCount, "draft", "drafts")}; `
-          + "W opens model-guided Read + Action setup.",
-        )
-        : "  Y prepares one proposal action after the Read Boundary review is complete.",
-  ];
+  const lines: string[] = [];
+  if (hasVerified) {
+    const verifiedState = boundary.verified_action_state
+      ?? (verifiedActiveCount ? "active" : "disabled");
+    const verifiedStatus = verifiedState === "active_with_disabled_changes"
+      ? "ACTIVE + DISABLED CHANGES"
+      : verifiedState === "active"
+        ? "ACTIVE"
+        : verifiedState === "blocked"
+          ? "BLOCKED - REVIEW"
+          : "DISABLED DRAFT";
+    const verifiedAccess = verifiedActiveCount > 0
+      ? verifiedDraftCount > 0 ? "ACTIVE + CHANGES" : "ACTIVE"
+      : "NOT ACTIVE";
+    const verifiedRow = savedBoundaryRow(
+      "Y",
+      boundary.verified_action_boundary_name ?? `${boundary.name}_actions`,
+      "ACTION",
+      verifiedStatus,
+      `${verifiedCount} verified ${plural(verifiedCount, "outcome", "outcomes")}`,
+      verifiedAccess,
+      rowLayout,
+    );
+    lines.push(
+      verifiedState === "active"
+        ? theme.success(verifiedRow)
+        : verifiedState === "blocked"
+          ? theme.danger(verifiedRow)
+          : theme.warning(verifiedRow),
+      theme.dim("  Agent nominates an outcome; Runner privately verifies facts and derives the exact bounded effect."),
+      ...(boundary.verified_action_error
+        ? [theme.danger(`  Blocked: ${safeTerminalText(boundary.verified_action_error)}`)]
+        : []),
+    );
+  }
+  if (hasDiscretionary || !hasVerified) {
+    lines.push(styledRow);
+  }
+  lines.push(theme.dim(`  Linked Read Boundary: ${safeTerminalText(boundary.name)}`));
+  if (hasVerified && hasDiscretionary) {
+    lines.push("  Y opens verified outcomes or caller-supplied proposal actions. Approval and apply remain separate.");
+  } else if (hasVerified) {
+    lines.push(verifiedActiveCount > 0
+      ? "  Y reviews this verified outcome authority. Approval and apply remain outside the agent."
+      : theme.warning("  Next: Y reviews this disabled verified outcome; W can revise it with a model."));
+  } else if (activeCount > 0) {
+    lines.push("  Y reviews active proposal authority or any disabled replacement. Approval and apply remain outside the agent.");
+  } else if (draftCount > 0) {
+    lines.push(theme.warning(
+      `  Next: Y reviews ${draftCount} disabled Action ${plural(draftCount, "draft", "drafts")}; `
+      + "W opens model chat to create or edit Read + Action authority.",
+    ));
+  } else {
+    lines.push("  Y prepares one proposal action after the Read Boundary review is complete.");
+  }
+  return lines;
 }
 
 function databaseCompatibilityLine(
@@ -396,6 +454,7 @@ export function createBoundaryReviewInteractiveSession(
     brand: true,
   });
   return {
+    terminalColumns: output.columns,
     chooseResource: (resources, overview, options) =>
       chooseResource(resources, overview, options, input, output),
     editFieldTiers: (view, options) => editFieldTiers(view, options, input, output),
@@ -841,8 +900,8 @@ function exactModelOutputConfirmationLines(theme: TerminalTheme): string[] {
 
 function modelGuidedSetupHint(theme: TerminalTheme): string[] {
   return [
-    theme.bold(`${theme.key("W")} Model-guided Read + Action setup is always available.`),
-    theme.dim("The model drafts; Runner validates; only you review and activate. Manual controls stay available."),
+    theme.bold(`${theme.key("W")} Model chat can create or edit Read + Action authority anytime.`),
+    theme.dim("Describe the business rule; Runner validates it; only you activate it. Manual controls stay available."),
   ];
 }
 
@@ -1086,7 +1145,7 @@ async function chooseResource(
           theme,
           "synapsor-runner",
           showMapDetails,
-          Math.max(36, Math.min(terminalContentWidth(output.columns), 116)),
+          Math.max(36, terminalContentWidth(output.columns)),
         );
         const pageSize = 15;
         mapOffset = Math.min(mapOffset, Math.max(0, mapLines.length - pageSize));
@@ -1122,6 +1181,7 @@ async function chooseResource(
         continue;
       }
       if (showBoundaryList) {
+        const boundaryRowLayout = savedBoundaryRowLayout(terminalContentWidth(output.columns));
         const includedCount = resources.filter((resource) => resource.included).length;
         const activeResources = resources.filter((resource) => resource.active);
         const activeBoundaryName = activeResources[0]?.active_boundary_name;
@@ -1165,7 +1225,7 @@ async function chooseResource(
             "",
             theme.bold("BOUNDARIES"),
             theme.dim("READ controls Explore. ACTION controls proposals; approval and apply remain separate."),
-            theme.bold(savedBoundaryRow("KEY", "NAME", "TYPE", "STATUS", "CONTENT", "AGENT AUTHORITY")),
+            theme.bold(savedBoundaryRow("KEY", "NAME", "TYPE", "STATUS", "CONTENT", "AI ACCESS", boundaryRowLayout)),
             theme.focus(savedBoundaryRow(
               ">",
               candidateBoundaryName,
@@ -1173,8 +1233,9 @@ async function chooseResource(
               "DRAFT",
               `${includedCount} ${plural(includedCount, "table", "tables")}`,
               "NOT ACTIVE",
+              boundaryRowLayout,
             )),
-            ...linkedActionBoundaryLines(overview, highlightedBoundary, theme),
+            ...linkedActionBoundaryLines(overview, highlightedBoundary, theme, boundaryRowLayout),
             "",
             highlightedBoundary.ask_intent_check_mode === "boundary_only"
               ? theme.warning("Local Ask plan check: BOUNDARY ONLY")
@@ -1195,7 +1256,7 @@ async function chooseResource(
               `${theme.key("A")} New boundary`,
               `${theme.key("P")} Privacy for all tables`,
               `${theme.key("L")} Limits`,
-              `${theme.key("W")} Model-guided setup - Read + Action`,
+              `${theme.key("W")} Model chat - create/edit Read + Action`,
               `${theme.key("Y")} ${safeActionAccessLabel(
                 highlightedBoundary.proposal_action_state,
                 reviewLeft === "Complete" && !highlightedBoundary.policy_review_required,
@@ -1300,6 +1361,7 @@ async function chooseResource(
             status,
             `${entry.table_count} ${plural(entry.table_count, "table", "tables")}`,
             entry.active ? "ACTIVE" : "NONE",
+            boundaryRowLayout,
           );
           return index === selectedBoundary ? theme.focus(line) : line;
         });
@@ -1308,9 +1370,9 @@ async function chooseResource(
           "READ controls Explore. ACTION controls proposals; approval and apply remain separate.",
           ...(boundaryListCompatibility ? [boundaryListCompatibility] : []),
           "",
-          theme.bold(savedBoundaryRow("KEY", "NAME", "TYPE", "STATUS", "CONTENT", "AGENT AUTHORITY")),
+          theme.bold(savedBoundaryRow("KEY", "NAME", "TYPE", "STATUS", "CONTENT", "AI ACCESS", boundaryRowLayout)),
           ...rows,
-          ...linkedActionBoundaryLines(overview, highlightedBoundary, theme),
+          ...linkedActionBoundaryLines(overview, highlightedBoundary, theme, boundaryRowLayout),
           "",
           highlightedBoundary.ask_intent_check_mode === "boundary_only"
             ? theme.warning(
@@ -1353,7 +1415,7 @@ async function chooseResource(
             `${theme.key("A")} New boundary`,
             `${theme.key("P")} Privacy for all tables`,
             `${theme.key("L")} Limits`,
-            `${theme.key("W")} Model-guided setup - Read + Action`,
+            `${theme.key("W")} Model chat - create/edit Read + Action`,
             `${theme.key("Y")} ${safeActionAccessLabel(
               highlightedBoundary.proposal_action_state,
               highlightedActionAvailable,
@@ -1580,7 +1642,7 @@ async function chooseResource(
         `${theme.key("M")} Map`,
         `${theme.key("N")} Rename`,
         `${theme.key("L")} Limits`,
-        `${theme.key("W")} Model-guided setup - Read + Action`,
+        `${theme.key("W")} Model chat - create/edit Read + Action`,
         `${theme.key("Y")} ${safeActionAccessLabel(
           overview?.boundaries?.find((entry) => entry.selected)?.proposal_action_state,
           candidateActionAvailable,
@@ -2161,7 +2223,7 @@ async function editFieldTiers(
   return withRawKeys<BoundaryFieldTierEditResult>(input, output, async (nextKey, render) => {
     while (true) {
       if (showMap) {
-        const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
+        const width = Math.max(36, terminalContentWidth(output.columns));
         render([
           ...boundaryResourceMapLines(
             view,
@@ -2226,7 +2288,7 @@ async function editFieldTiers(
           : exactNumericGroupingAvailable
             ? "OFF"
             : "UNAVAILABLE";
-      const tableWidth = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
+      const tableWidth = Math.max(36, terminalContentWidth(output.columns));
       const accessLayout = fieldAccessLayout(tableWidth);
       const reviewCompatibility = databaseCompatibilityLine(view.database_server_compatibility, theme);
       const vocabularyCoverage = exploreVocabularyCoverage(
@@ -2617,7 +2679,7 @@ export function formatBoundaryResourceMap(
     field.name,
     currentFieldTier(view, field.name),
   ])) as Record<string, BoundaryFieldTier>;
-  const width = Math.max(36, Math.min(terminalContentWidth(options.columns), 116));
+  const width = Math.max(36, terminalContentWidth(options.columns));
   const lines = boundaryResourceMapLines(
     view,
     tiers,
@@ -2662,7 +2724,7 @@ export function formatBoundaryOverviewMap(
       theme,
       options.commandName ?? "synapsor-runner",
       options.details === true,
-      Math.max(36, Math.min(terminalContentWidth(options.columns), 116)),
+      Math.max(36, terminalContentWidth(options.columns)),
     ),
     ...(options.details ? [] : [
       "",
@@ -3650,15 +3712,38 @@ function savedBoundaryRow(
   status: string,
   content: string,
   authority: string,
+  layout: SavedBoundaryRowLayout,
 ): string {
   return [
-    fitTerminalCell(marker, 3),
-    fitTerminalCell(safeTerminalText(name), 24),
-    fitTerminalCell(type, 7),
-    fitTerminalCell(status, 24),
-    fitTerminalCell(content, 12),
-    safeTerminalText(authority),
+    fitTerminalCell(marker, layout.marker),
+    fitTerminalCell(safeTerminalText(name), layout.name),
+    fitTerminalCell(type, layout.type),
+    fitTerminalCell(status, layout.status),
+    fitTerminalCell(content, layout.content),
+    fitTerminalCell(authority, layout.authority),
   ].join("  ");
+}
+
+type SavedBoundaryRowLayout = {
+  marker: number;
+  name: number;
+  type: number;
+  status: number;
+  content: number;
+  authority: number;
+};
+
+function savedBoundaryRowLayout(width: number): SavedBoundaryRowLayout {
+  if (width >= 108) {
+    return { marker: 3, name: 26, type: 7, status: 24, content: 18, authority: 15 };
+  }
+  if (width >= 88) {
+    return { marker: 2, name: 22, type: 7, status: 21, content: 14, authority: 12 };
+  }
+  if (width >= 72) {
+    return { marker: 2, name: 17, type: 6, status: 17, content: 11, authority: 10 };
+  }
+  return { marker: 1, name: 9, type: 4, status: 8, content: 7, authority: 8 };
 }
 
 function fieldAccessRow(
@@ -3737,7 +3822,7 @@ function boundaryOverviewMapLines(
     commandName,
     details,
   ));
-  const normalizedWidth = Math.max(36, Math.min(width, 116));
+  const normalizedWidth = Math.max(36, width);
   const lines = normalizedWidth >= 96
     ? renderWideBoundaryOverviewTable(tableRows, normalizedWidth)
     : normalizedWidth >= 64
@@ -3948,7 +4033,11 @@ function renderWideBoundaryOverviewTable(
   width: number,
 ): string[] {
   const contentWidth = width - 13;
-  const resourceWidth = Math.min(24, Math.max(18, Math.floor(contentWidth * 0.22)));
+  const longestResource = Math.max(...rows.map((row) => row.resource.length), 18);
+  const resourceWidth = Math.min(
+    longestResource,
+    Math.max(18, Math.floor(contentWidth * 0.3)),
+  );
   const statusWidth = Math.min(20, Math.max(15, Math.floor(contentWidth * 0.18)));
   const fieldsWidth = Math.min(20, Math.max(18, Math.floor(contentWidth * 0.19)));
   const reviewWidth = contentWidth - resourceWidth - statusWidth - fieldsWidth;
@@ -4333,19 +4422,19 @@ function isCancel(key: Keypress): boolean {
   return (key.ctrl === true && key.name === "c")
     || (key.ctrl === true && key.name === "d")
     || isEscapeKey(key)
-    || (key.name === "q" && key.sequence === "q");
+    || (key.ctrl !== true && key.name?.toLowerCase() === "q");
 }
 
 function isBackToResources(key: Keypress): boolean {
   return key.name === "backspace"
     || isEscapeKey(key)
-    || (key.name === "b" && key.sequence === "b");
+    || (key.ctrl !== true && key.name?.toLowerCase() === "b");
 }
 
 function isBackKey(key: Keypress): boolean {
   return key.name === "backspace"
     || isEscapeKey(key)
-    || (key.name === "b" && key.sequence === "b");
+    || (key.ctrl !== true && key.name?.toLowerCase() === "b");
 }
 
 function isEscapeKey(key: Keypress): boolean {

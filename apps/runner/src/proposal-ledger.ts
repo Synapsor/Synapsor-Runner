@@ -1,4 +1,4 @@
-import { evaluateProposalFreshness, resolveSupervisedWorkerEligibility, validateFreshnessAuthorityAgainstCurrentConfig, type ProposalFreshnessEvaluation, type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import { evaluateProposalFreshness, resolveSemanticSupervisedWorkerEligibility, resolveSupervisedWorkerEligibility, validateFreshnessAuthorityAgainstCurrentConfig, type ProposalFreshnessEvaluation, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import {
   ProposalStore,
   type EvidenceSearchFilters,
@@ -24,7 +24,7 @@ import { TrustedOperatorInvocation } from "./operator-authority.js";
 import { formatEvidenceBrowserFacts, formatEvidenceBrowserPlan, formatEvidenceBrowserQuery, formatEvidenceBrowserRow, formatEvidenceBrowserSummary, formatEvidenceDetail, formatEvidenceFirstLook, formatEvidenceMarkdown, formatEvidenceSummary, formatProposalDebug, formatProposalDetail, formatProposalEventDetail, formatProposalFirstLook, formatProposalSummary, formatQueryAuditBrowserFacts, formatQueryAuditBrowserPlan, formatQueryAuditBrowserQuery, formatQueryAuditBrowserRow, formatQueryAuditBrowserSummary, formatQueryAuditDetail, formatQueryAuditFirstLook, formatQueryAuditSummary, formatReceiptDetail, formatReceiptFirstLook, formatReceiptSummary, formatReplayDebug, formatReplayDetail, formatReplayFirstLook, formatReplayMarkdown, formatReplaySummary } from "./proposal-formatting.js";
 import { sharedPostgresLedgerMirrorOptions } from "./shared-ledger-domain.js";
 import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, maybeSharedPostgresRuntimeStoreRead, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge } from "./store-shared.js";
-import { findProposalCapability } from "./writeback-execution.js";
+import { findProposalCapability, loadSemanticProposalAuthority } from "./writeback-execution.js";
 import { terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
 import { renderTerminalSectionHeading, renderTerminalStyledText, safeTerminalText, terminalSyntaxColorEnabled } from "./terminal-syntax.js";
 import { readTerminalTextWithEscape, withAlternateTerminalScreen, withRawTerminalScreen, type TerminalKeypress } from "./terminal-prompt.js";
@@ -1024,7 +1024,7 @@ async function browseAuditRecord(options: AuditRecordBrowserOptions): Promise<bo
     let mode: "summary" | "details" | "query" | "plan" = "summary";
     let scrollOffset = 0;
     while (true) {
-      const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
+      const width = Math.max(36, terminalContentWidth(output.columns));
       const content = options[mode]().trimEnd().split("\n")
         .flatMap((line) => wrapStyledTerminalLine(line, width));
       const viewportRows = Math.max(5, (output.rows ?? 28) - 4);
@@ -1530,7 +1530,7 @@ export async function proposalsApprove(
     });
     const progress = store.approvalProgress(resolvedProposalId);
     const workerQueue = progress.complete
-      ? enqueueApprovedProposalForSupervisedWorker(store, config, updated)
+      ? await enqueueApprovedProposalForSupervisedWorker(store, config, configPath, updated)
       : undefined;
     const approvalResult = {
       ...updated,
@@ -1561,12 +1561,30 @@ export async function proposalsApprove(
 }
 
 
-function enqueueApprovedProposalForSupervisedWorker(
+async function enqueueApprovedProposalForSupervisedWorker(
   store: ProposalStore,
   config: RuntimeConfig | undefined,
+  configPath: string,
   proposal: StoredProposal,
-): WorkerQueueItem | undefined {
+): Promise<WorkerQueueItem | undefined> {
   if (!config?.supervised_worker?.enabled || proposal.state !== "approved") return undefined;
+  if (proposal.change_set.schema_version === "synapsor.change-set.v4") {
+    let authority: Awaited<ReturnType<typeof loadSemanticProposalAuthority>>;
+    try {
+      authority = await loadSemanticProposalAuthority(config, configPath, proposal);
+    } catch {
+      return undefined;
+    }
+    const eligibility = resolveSemanticSupervisedWorkerEligibility(config, authority.activated, { phase: "queue" });
+    if (!eligibility.eligible || !eligibility.policy || !eligibility.action_boundary_digest) return undefined;
+    return store.enqueueWorkerProposal({
+      proposal_id: proposal.proposal_id,
+      execution_mode: "supervised_worker",
+      contract_digest: eligibility.action_boundary_digest,
+      max_attempts: eligibility.policy.max_attempts,
+      queue_limit: eligibility.policy.queue_limit,
+    });
+  }
   const capability = findProposalCapability(config, proposal);
   const eligibility = resolveSupervisedWorkerEligibility(config, capability, { phase: "queue" });
   if (!eligibility.eligible || !eligibility.policy || !eligibility.contract_digest) return undefined;

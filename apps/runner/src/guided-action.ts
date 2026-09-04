@@ -2535,9 +2535,23 @@ function configWithGuidedAction(input: {
   // Production Explore remains a separate, locked read-only endpoint. Action
   // runtimes reuse its verified HTTP identity settings but never widen that
   // two-tool surface in place.
-  delete config.production_explore;
   const sourceConfigDirectory = path.dirname(input.sourceConfigPath);
   const outputConfigDirectory = path.dirname(input.outputConfigPath);
+  const productionExplore = isRecord(config.production_explore)
+    ? config.production_explore
+    : undefined;
+  if (productionExplore) {
+    config.action_rules = {
+      project_root: relativeConfigPath(outputConfigDirectory, input.projectRoot),
+      subject_reference_hmac_key_env: productionExplore.budget_hmac_key_env,
+      subject_reference_namespace: productionExplore.accounting_namespace,
+    };
+  } else if (!isRecord(config.action_rules)) {
+    config.action_rules = {
+      project_root: relativeConfigPath(outputConfigDirectory, input.projectRoot),
+    };
+  }
+  delete config.production_explore;
   const existingContracts = Array.isArray(config.contracts)
     ? config.contracts.filter((item): item is string => typeof item === "string")
     : [];
@@ -2559,6 +2573,13 @@ function configWithGuidedAction(input: {
     digest: input.actionBoundary.digest,
     authority: input.actionBoundary.authority,
   };
+  const existingWorker = isRecord(config.supervised_worker)
+    ? structuredClone(config.supervised_worker)
+    : undefined;
+  const existingWorkerOutcomes = existingWorker
+    && Array.isArray(existingWorker.outcomes)
+    ? existingWorker.outcomes
+    : [];
   const sources = isRecord(config.sources) ? config.sources : {};
   const sourceName = input.draft.source;
   const source = isRecord(sources[sourceName]) ? structuredClone(sources[sourceName] as Record<string, unknown>) : undefined;
@@ -2582,7 +2603,7 @@ function configWithGuidedAction(input: {
         authority: "source_db",
         provisioning: input.draft.receipt_mode === "source_auto_migrate" ? "auto_migrate" : "precreated",
       };
-  } else if (!input.retainDirectSqlSource) {
+  } else if (!input.retainDirectSqlSource && existingWorkerOutcomes.length === 0) {
     source.read_only = true;
     delete source.write_url_env;
     delete source.receipts;
@@ -2612,9 +2633,6 @@ function configWithGuidedAction(input: {
     if (Object.keys(proposalFreshness).length > 0) config.proposal_freshness = proposalFreshness;
     else delete config.proposal_freshness;
   }
-  const existingWorker = isRecord(config.supervised_worker)
-    ? structuredClone(config.supervised_worker)
-    : undefined;
   const otherWorkerCapabilities = existingWorker
     && Array.isArray(existingWorker.capabilities)
     ? existingWorker.capabilities.filter((entry) =>
@@ -2648,10 +2666,11 @@ function configWithGuidedAction(input: {
         },
       ],
     };
-  } else if (existingWorker && otherWorkerCapabilities.length > 0) {
+  } else if (existingWorker && (otherWorkerCapabilities.length > 0 || existingWorkerOutcomes.length > 0)) {
     config.supervised_worker = {
       ...existingWorker,
       capabilities: otherWorkerCapabilities,
+      ...(existingWorkerOutcomes.length > 0 ? { outcomes: existingWorkerOutcomes } : {}),
     };
   } else {
     delete config.supervised_worker;

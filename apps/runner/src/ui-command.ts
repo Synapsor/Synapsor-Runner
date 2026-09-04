@@ -1,4 +1,9 @@
-import { type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import {
+  supervisedWorkerPolicies,
+  supervisedWorkerPolicyDigest,
+  supervisedWorkerPolicyName,
+  type RuntimeConfig,
+} from "@synapsor-runner/mcp-server";
 import {
   attentionDecisionSubject,
   ProposalStore,
@@ -148,11 +153,12 @@ export async function ui(args: string[]): Promise<number> {
           "worker-control-authority-read",
           (store) => store.workerControlState(),
         );
-        const policies = config.supervised_worker?.capabilities.filter((policy) =>
+        const policies = supervisedWorkerPolicies(config).filter((policy) =>
           !input.capability
-          || (policy.capability === input.capability && policy.contract_digest === input.contractDigest)) ?? [];
+          || (supervisedWorkerPolicyName(policy) === input.capability
+            && supervisedWorkerPolicyDigest(policy) === input.contractDigest));
         if (input.capability && policies.length !== 1) {
-          throw new Error("worker capability control must target one configured exact capability/digest entry");
+          throw new Error("worker authority control must target one configured exact capability or outcome digest entry");
         }
         const identity = await resolveOperatorIdentity({
           config: config.operator_identity as OperatorIdentityConfig | undefined,
@@ -196,9 +202,9 @@ export async function ui(args: string[]): Promise<number> {
           "worker-cancel-policy-read",
           (store) => store.getWorkerQueueItem(proposal.proposal_id),
         );
-        const policy = config.supervised_worker?.capabilities.find((candidate) =>
-          candidate.capability === proposal.action
-          && candidate.contract_digest === queue?.contract_digest);
+        const policy = supervisedWorkerPolicies(config).find((candidate) =>
+          supervisedWorkerPolicyName(candidate) === proposal.action
+          && supervisedWorkerPolicyDigest(candidate) === queue?.contract_digest);
         const identity = await resolveOperatorIdentity({
           config: config.operator_identity as OperatorIdentityConfig | undefined,
           configPath,

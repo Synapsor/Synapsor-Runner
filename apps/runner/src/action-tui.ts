@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import type { ReadStream, WriteStream } from "node:tty";
-import { inspectDatabase, type SchemaInspection } from "@synapsor-runner/schema-inspector";
+import {
+  inspectDatabase,
+  type SchemaInspection,
+  type TableInfo,
+} from "@synapsor-runner/schema-inspector";
 import type { ActionBoundarySharedLimitV1 } from "@synapsor-runner/protocol";
 import {
   createActionOperatorService,
@@ -53,7 +57,7 @@ import {
   type GuidedActionRehearsalTargetResolution,
 } from "./guided-action-rehearsal-target.js";
 import { renderBoundaryMapTable } from "./boundary-map-presentation.js";
-import { terminalTheme } from "./boundary-cli-picker.js";
+import { terminalTheme, type BoundaryAccessNotice } from "./boundary-cli-picker.js";
 import {
   readTerminalTextWithEscape,
   withTerminalProgress,
@@ -87,6 +91,15 @@ import {
   type ActionRehearsalResolution,
   type OperatorApprovedValueContext,
 } from "./action-boundary-interview.js";
+import {
+  listActionRuleAuthorityDrafts,
+  loadActiveActionRuleAuthority,
+  type ActionRuleAuthorityActivationV1,
+  type ActionRuleAuthorityDraftV1,
+} from "./action-rule-authority.js";
+import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
+import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+import { reviewVerifiedActionAuthority } from "./verified-action-review.js";
 
 export { rankActionIntent } from "./guided-action-quick.js";
 
@@ -238,12 +251,140 @@ export async function inspectActionProject(
     source_env: string;
     inspected_schema?: string;
   };
-  return inspectDatabase({
+  let configuredSources: unknown;
+  try {
+    const config = JSON.parse(
+      await fs.readFile(path.join(projectRoot, "synapsor.runner.json"), "utf8"),
+    ) as { sources?: unknown };
+    configuredSources = config.sources;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const writerUrlEnv = actionInspectionDatabaseUrlEnv({
     engine: lock.engine,
-    databaseUrlEnv: lock.source_env,
+    sourceEnv: lock.source_env,
+    configuredSources,
+    env,
+  });
+  const inspect = (databaseUrlEnv: string) => inspectDatabase({
+    engine: lock.engine,
+    databaseUrlEnv,
     ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}),
     env,
   });
+  const readInspection = await inspect(lock.source_env);
+  if (writerUrlEnv === lock.source_env) return readInspection;
+  const writerInspection = await inspect(writerUrlEnv);
+  return mergeActionProjectInspections(readInspection, writerInspection);
+}
+
+/**
+ * Action authoring needs the reader's complete fact/relationship catalog and
+ * the writer's independently inspected mutation posture. A least-privilege
+ * writer commonly cannot see unrelated verification tables, so replacing the
+ * read inspection with the writer inspection strands otherwise valid rules.
+ */
+export function mergeActionProjectInspections(
+  readInspection: SchemaInspection,
+  writerInspection: SchemaInspection,
+): SchemaInspection {
+  if (readInspection.engine !== writerInspection.engine) {
+    throw new Error("ACTION_INSPECTION_ENGINE_MISMATCH: read and writer credentials resolved to different database engines.");
+  }
+  if (readInspection.server_version !== writerInspection.server_version) {
+    throw new Error("ACTION_INSPECTION_SERVER_MISMATCH: read and writer credentials resolved to different database server versions.");
+  }
+
+  const writerTables = new Map(writerInspection.tables.map((table) => [actionTableId(table), table]));
+  const readTables = new Map(readInspection.tables.map((table) => [actionTableId(table), table]));
+  const overlappingIds = [...readTables.keys()].filter((id) => writerTables.has(id));
+  if (writerInspection.tables.length > 0 && overlappingIds.length === 0) {
+    throw new Error("ACTION_INSPECTION_SCHEMA_MISMATCH: read and writer credentials expose no common inspected relation.");
+  }
+
+  const tables = readInspection.tables.map((readTable) => {
+    const writerTable = writerTables.get(actionTableId(readTable));
+    if (!writerTable) return structuredClone(readTable);
+    assertCompatibleActionTable(readTable, writerTable);
+    const merged: TableInfo = {
+      ...structuredClone(readTable),
+      writable: writerTable.writable,
+    };
+    if (writerTable.role_posture) merged.role_posture = structuredClone(writerTable.role_posture);
+    else delete merged.role_posture;
+    return merged;
+  });
+  for (const writerTable of writerInspection.tables) {
+    if (!readTables.has(actionTableId(writerTable))) tables.push(structuredClone(writerTable));
+  }
+  tables.sort((left, right) => actionTableId(left).localeCompare(actionTableId(right)));
+
+  return {
+    ...structuredClone(readInspection),
+    current_user: writerInspection.current_user,
+    role_posture: writerInspection.role_posture
+      ? structuredClone(writerInspection.role_posture)
+      : readInspection.role_posture,
+    inspected_at: [readInspection.inspected_at, writerInspection.inspected_at].sort().at(-1)!,
+    schemas: [...new Set([...readInspection.schemas, ...writerInspection.schemas])].sort(),
+    tables,
+    warnings: [...new Set([
+      ...readInspection.warnings,
+      ...writerInspection.warnings,
+      "Action authoring combines reader-visible verification metadata with separately inspected writer posture; no source rows were read.",
+    ])],
+  };
+}
+
+function actionTableId(table: Pick<TableInfo, "schema" | "name">): string {
+  return `${table.schema}.${table.name}`;
+}
+
+function assertCompatibleActionTable(readTable: TableInfo, writerTable: TableInfo): void {
+  const shape = (table: TableInfo) => JSON.stringify({
+    type: table.type,
+    primary_key: table.primary_key,
+    columns: table.columns.map((column) => ({
+      name: column.name,
+      data_type: column.data_type,
+      nullable: column.nullable,
+      default: column.default ?? null,
+      generated: column.generated ?? false,
+      identity: column.identity ?? false,
+    })),
+  });
+  if (shape(readTable) !== shape(writerTable)) {
+    throw new Error(
+      `ACTION_INSPECTION_SCHEMA_MISMATCH: ${actionTableId(readTable)} differs between the read and writer inspections.`,
+    );
+  }
+}
+
+export function actionInspectionDatabaseUrlEnv(input: {
+  engine: "postgres" | "mysql";
+  sourceEnv: string;
+  configuredSources?: unknown;
+  env: NodeJS.ProcessEnv;
+}): string {
+  const sources = input.configuredSources && typeof input.configuredSources === "object"
+    ? Object.values(input.configuredSources as Record<string, unknown>)
+    : [];
+  const matchingSource = sources.find((value) => {
+    if (!value || typeof value !== "object") return false;
+    const source = value as Record<string, unknown>;
+    return source.engine === input.engine && source.read_url_env === input.sourceEnv;
+  }) ?? sources.find((value) => {
+    if (!value || typeof value !== "object") return false;
+    return (value as Record<string, unknown>).engine === input.engine;
+  });
+  if (matchingSource && typeof matchingSource === "object") {
+    const configured = (matchingSource as Record<string, unknown>).write_url_env;
+    if (typeof configured === "string" && configured.trim()) return configured.trim();
+  }
+  if (input.env.SYNAPSOR_DATABASE_WRITE_URL?.trim()) {
+    return "SYNAPSOR_DATABASE_WRITE_URL";
+  }
+  return input.sourceEnv;
 }
 
 export async function runActionControlPlane(input: {
@@ -258,6 +399,11 @@ export async function runActionControlPlane(input: {
   initialSuggestionId?: string;
   modelSuggestionGenerator?: typeof generateModelActionSuggestion;
   modelSuggestionSession?: ActionModelSuggestionSession;
+  modelGuidedVerifiedActionRevision?: (input: {
+    projectRoot: string;
+    boundaryName: string;
+    modelSuggestionSession?: ActionModelSuggestionSession;
+  }) => Promise<BoundaryAccessNotice>;
   modelInterviewEgressAcknowledged?: boolean;
   initialIntent?: string;
   initialDraftCapability?: string;
@@ -293,12 +439,19 @@ export async function runActionControlPlane(input: {
     let initialIntent = input.initialIntent?.trim();
     let initialDraftCapability = input.initialDraftCapability?.trim();
     while (true) {
-      const options = await guidedActionOptions({
-        projectRoot,
-        inspection,
-        ...(input.boundaryName ? { boundaryName: input.boundaryName } : {}),
-        allowReviewedPending: true,
-      });
+      const verifiedStatus = await verifiedActionStatus(projectRoot);
+      let options: Awaited<ReturnType<typeof guidedActionOptions>>;
+      try {
+        options = await guidedActionOptions({
+          projectRoot,
+          inspection,
+          ...(input.boundaryName ? { boundaryName: input.boundaryName } : {}),
+          allowReviewedPending: true,
+        });
+      } catch (error) {
+        if (!verifiedStatus.active && !verifiedStatus.draft) throw error;
+        options = await verifiedActionFallbackOptions(projectRoot, verifiedStatus);
+      }
       const status = await guidedActionStatus(projectRoot);
       const suggestions = await listActionSuggestions({ projectRoot, options });
       if (initialDraftCapability) {
@@ -380,23 +533,96 @@ export async function runActionControlPlane(input: {
         if (input.prepareOnly) break;
         continue;
       }
-      const homeChoices = actionHomeChoices(status, suggestions, options, modelSuggestionSession);
+      const homeChoices = actionHomeChoices(
+        status,
+        suggestions,
+        options,
+        modelSuggestionSession,
+        verifiedStatus,
+        Boolean(input.modelGuidedVerifiedActionRevision),
+      );
       const preferredDraft = status.drafts.find((draft) => draft.effect_preview) ?? status.drafts[0];
+      const preferredHomeChoice = verifiedStatus.draft
+        ? "verified_action"
+        : verifiedStatus.active && input.modelGuidedVerifiedActionRevision
+          ? "verified_model_revision"
+          : preferredDraft
+            ? `draft:${preferredDraft.capability}`
+            : verifiedStatus.active
+              ? "verified_action"
+              : "boundary";
       const choice = await prompter.choose(
         "ACTION BOUNDARY",
         homeChoices,
         [
           "The Action Boundary is the reviewed set of changes an agent may propose. Approval and apply stay outside the agent.",
-          ...actionBoundaryHomeLines(status),
-          `Active ${status.activations.length} | Drafts ${status.drafts.length} | Proposal-only is the default.`,
+          ...verifiedActionHomeLines(verifiedStatus),
+          ...actionBoundaryHomeLines(status, Boolean(verifiedStatus.active || verifiedStatus.draft)),
+          `Caller-supplied actions: active ${status.activations.length} | drafts ${status.drafts.length} | proposal-only by default.`,
           `Targets with at least one proposal operation ${actionReadyResourceCount(options)} | Fully blocked ${actionBlockedTargetCount(options)}.`,
           ...notice,
         ],
-        preferredDraft ? `draft:${preferredDraft.capability}` : "boundary",
+        preferredHomeChoice,
       );
       notice = [];
       if (!choice || choice === "quit") break;
       try {
+        if (choice === "verified_model_revision" && input.modelGuidedVerifiedActionRevision) {
+          const current = verifiedStatus.draft ?? verifiedStatus.active;
+          const boundaryName = current?.authority.rules[0]?.read_boundary_name;
+          if (!current || !boundaryName) {
+            await prompter.message("VERIFIED ACTION BOUNDARY UNAVAILABLE", [
+              "The saved authority has no exact Read Boundary dependency.",
+              "No authority or source data changed.",
+            ]);
+            continue;
+          }
+          const result = await input.modelGuidedVerifiedActionRevision({
+            projectRoot,
+            boundaryName,
+            ...(modelSuggestionSession ? { modelSuggestionSession } : {}),
+          });
+          notice = [result.title, ...result.lines];
+          continue;
+        }
+        if (choice === "verified_action") {
+          const current = verifiedStatus.draft ?? verifiedStatus.active;
+          if (!current) continue;
+          const boundaryName = current.authority.rules[0]?.read_boundary_name;
+          if (!boundaryName) {
+            await prompter.message("VERIFIED ACTION BOUNDARY UNAVAILABLE", [
+              "The saved authority has no exact Read Boundary dependency.",
+              "No authority or source data changed.",
+            ]);
+            continue;
+          }
+          const result = await reviewVerifiedActionAuthority({
+            projectRoot,
+            ...(input.configPath ? { baseConfigPath: input.configPath } : {}),
+            boundaryName,
+            session: boundarySessionForActionPrompter(prompter),
+            ...(verifiedStatus.draft ? { draft: verifiedStatus.draft } : {}),
+            ...(verifiedStatus.active ? { active: verifiedStatus.active } : {}),
+            env,
+            ...(input.modelGuidedVerifiedActionRevision
+              ? {
+                  modelRevision: {
+                    label: modelSuggestionSession
+                      ? `Describe a verified outcome change with ${modelSessionLabel(modelSuggestionSession)}`
+                      : "Describe a verified outcome change with a model",
+                    detail: "Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.",
+                    run: () => input.modelGuidedVerifiedActionRevision!({
+                      projectRoot,
+                      boundaryName,
+                      ...(modelSuggestionSession ? { modelSuggestionSession } : {}),
+                    }),
+                  },
+                }
+              : {}),
+          });
+          notice = [result.title, ...result.lines];
+          continue;
+        }
         if (choice === "boundary") {
           await reviewActionBoundary({
             projectRoot,
@@ -1605,16 +1831,19 @@ async function collectConversationalProposalDecision(input: {
     : undefined;
   let prompt = actionBoundaryDecisionQuestion(input.decision, target);
   let notice: string[] = [];
-  let pendingAnswer: string | undefined;
+  // Reuse the operator's original job as the first answer for each unresolved
+  // business decision. This lets one sufficiently precise request populate
+  // several exact draft values while Runner still validates and confirms each
+  // one. If the job is ambiguous, the model returns one focused clarification.
+  let pendingAnswer = input.modelInterview.session.openingOperatorMessage?.trim() || undefined;
+  let pendingAnswerCameFromOpeningJob = Boolean(pendingAnswer);
   let pendingApprovedValues: OperatorApprovedValueContext | undefined;
   let operatorRetryUsed = false;
   const openingValidatedFacts = takeOpeningValidatedFacts(input.modelInterview);
-  const openingOperatorMessage = openingValidatedFacts.length
-    ? input.modelInterview.session.openingOperatorMessage
-    : undefined;
-  let pendingModelMessage = await narrateValidatedAuthoringStep({
+  const narrateDecisionQuestion = () => narrateValidatedAuthoringStep({
     session: input.modelInterview.session,
-    operatorMessage: openingOperatorMessage ?? `Continue authoring ${target ?? input.intent}.`,
+    operatorMessage: input.modelInterview.session.openingOperatorMessage
+      ?? `Continue authoring ${target ?? input.intent}.`,
     validatedFacts: [
       ...openingValidatedFacts,
       ...prompt.context,
@@ -1631,7 +1860,9 @@ async function collectConversationalProposalDecision(input: {
     env: input.env,
     egressAcknowledged: input.modelInterview.egressAcknowledged,
   });
+  let pendingModelMessage = pendingAnswer ? undefined : await narrateDecisionQuestion();
   while (true) {
+    const answerFromOpeningJob = pendingAnswerCameFromOpeningJob;
     const answer = pendingAnswer ?? await input.prompter.text(prompt.label, {
         title: conversationalDecisionTitle(input.decision, "question"),
         ...(pendingModelMessage
@@ -1646,6 +1877,7 @@ async function collectConversationalProposalDecision(input: {
     pendingModelMessage = undefined;
     const operatorApprovedValues = pendingApprovedValues;
     pendingAnswer = undefined;
+    pendingAnswerCameFromOpeningJob = false;
     pendingApprovedValues = undefined;
     if (answer === undefined) return "back";
     let resolution: ActionBoundaryDecisionResolution;
@@ -1665,6 +1897,10 @@ async function collectConversationalProposalDecision(input: {
         input.modelInterview.session,
       );
     } catch (error) {
+      if (answerFromOpeningJob) {
+        pendingModelMessage = await narrateDecisionQuestion();
+        continue;
+      }
       const recovery = await input.prompter.choose("MODEL INTERPRETATION NOT USED", [
         ...(!operatorRetryUsed
           ? [{ value: "retry", label: "Try one more natural-language answer", detail: "One final provider attempt for this exact decision; the rejected result stays discarded." }]
@@ -1719,6 +1955,7 @@ async function collectConversationalProposalDecision(input: {
         continue;
       }
       pendingAnswer = answer;
+      pendingAnswerCameFromOpeningJob = false;
       pendingApprovedValues = valueContext;
       notice = [`Exact operator-supplied value context approved for ${resolution.field}; no source query ran.`];
       continue;
@@ -1766,6 +2003,7 @@ async function collectConversationalProposalDecision(input: {
       }
       if (decisionTextNamesReplacement(input.decision, confirmation)) {
         pendingAnswer = confirmation;
+        pendingAnswerCameFromOpeningJob = false;
         notice = ["The prior interpretation was discarded. Runner will validate this replacement answer."];
         break;
       }
@@ -2420,7 +2658,7 @@ export function conciseConversationalActionActivationReviewLines(
         return `${field?.label ?? patch.column}: ${compactActivationProposalEnvelope(patch, field)}`;
       }).join("; ") || "no agent-supplied fields";
   const approvalConditions = action.auto_approval
-    ? reviewedAutoApprovalConditions(action.auto_approval).map(approvalConditionSummary).join("; ")
+    ? reviewedAutoApprovalConditions(action.auto_approval).map(compactApprovalConditionSummary).join("; ")
     : `${action.required_approvals ?? 1} x ${action.approval_role}; human review`;
   const trustedScope = reviewedTrustedScopeLabel(resource);
   const guard = [
@@ -2429,27 +2667,22 @@ export function conciseConversationalActionActivationReviewLines(
     action.dedup_proposal_column ? `retry ${action.dedup_proposal_column}` : undefined,
   ].filter((value): value is string => Boolean(value)).join("; ");
   return [
-    `Action: ${reviewedActionTargetLabel(action, resource)}`,
-    `Agent proposal: ${proposalFields}`,
-    `Trusted scope: ${trustedScope}; supplied only by Runner`,
-    `Guards: ${guard}`,
+    `${reviewedActionTargetLabel(action, resource)} · proposal only`,
+    `Agent may propose: ${proposalFields}`,
     action.auto_approval
-      ? `Auto-approve only when: ${approvalConditions || "no deterministic condition"}`
+      ? `Auto-approve: ${approvalConditions || "no deterministic condition"}`
       : `Approval: ${approvalConditions}`,
     ...(action.auto_approval
       ? [
-          `Policy fallback: at most ${action.auto_approval.max_per_day} approvals per ${trustedPolicyScopeLabel(resource)} / UTC calendar day${action.auto_approval.max_total_per_day !== undefined
+          `Limit: ${action.auto_approval.max_per_day} approvals per ${trustedPolicyScopeLabel(resource)} / UTC day${action.auto_approval.max_total_per_day !== undefined
             ? `; at most ${action.auto_approval.max_total_per_day} total ${action.auto_approval.total_field ?? "aggregate"} under the same scope and calendar day`
             : ""}.`,
         ]
       : []),
     ...sharedLimits.map((limit) =>
-      `Shared circuit breaker ${limit.id}: ${actionBoundaryLimitSummary(limit, resource)}`),
-    ...(action.operation === "delete" ? [] : ["Outside the hard proposal envelope: refused before proposal creation."]),
-    action.auto_approval
-      ? "Inside the envelope but outside auto-approval: human review."
-      : "Every in-envelope proposal requires human review.",
-    "After activation: propose only; approval, apply, and writeback remain outside the agent.",
+      `Rolling limit: ${actionBoundaryLimitSummary(limit, resource)}`),
+    `Runner enforces ${trustedScope}; ${guard}. Outside policy: ${action.auto_approval ? "human review" : "human approval"}; outside the proposal envelope: refused.`,
+    "Apply and source writeback remain off.",
   ];
 }
 
@@ -2699,6 +2932,7 @@ export function createTerminalActionPrompter(input: ReadStream, output: WriteStr
   return {
     async choose(title, choices, context = [], initialValue) {
       if (!choices.length) return undefined;
+      const quitChoice = choices.find((choice) => choice.value === "quit" && !choice.disabled);
       const requested = initialValue === undefined
         ? -1
         : choices.findIndex((choice) => choice.value === initialValue && !choice.disabled);
@@ -2716,10 +2950,13 @@ export function createTerminalActionPrompter(input: ReadStream, output: WriteStr
               ...(choice.detail ? [`      ${choice.disabled ? theme.dim(choice.detail) : theme.dim(choice.detail)}`] : []),
             ]),
             "",
-            `  ${theme.key("Up/Down")} Navigate   ${theme.key("Enter")} Select   ${theme.key("Esc")} Back`,
+            `  ${theme.key("Up/Down")} Navigate   ${theme.key("Enter")} Select   ${theme.key("Esc")} Back${quitChoice ? `   ${theme.key("Q")} Quit` : ""}`,
           ]);
           const key = await nextKey();
           if (key.name === "escape" || key.sequence === "\u001b" || (key.ctrl && ["c", "d"].includes(key.name ?? ""))) return undefined;
+          if (quitChoice && !key.ctrl && (key.name?.toLowerCase() === "q" || key.sequence?.toLowerCase() === "q")) {
+            return quitChoice.value;
+          }
           if (key.name === "up" || key.name === "down") {
             const direction = key.name === "up" ? -1 : 1;
             for (let offset = 1; offset <= choices.length; offset += 1) {
@@ -2916,18 +3153,35 @@ async function reviewAndStageActionBoundaryLimits(input: {
       { value: "86400", label: "24 hours (recommended)" },
       { value: "604800", label: "7 days" },
       { value: "2592000", label: "30 days" },
+      { value: "custom", label: "Custom rolling window", detail: "Enter any exact duration from 60 seconds through 365 days." },
     ], [
       `Action: ${input.action.operation.toUpperCase()} ${input.resource.id}`,
       `Selected scope: ${scopeDescription} | maximum ${maximum} approval(s).`,
       "Choose how far back Runner counts approvals for this trusted-scope circuit breaker.",
     ], "86400");
     if (!window) return 0;
+    const windowSeconds = window === "custom"
+      ? boundedInteger(
+          await requiredText(input.prompter, "Rolling window seconds", undefined, {
+            title: "SET EXACT ROLLING WINDOW",
+            context: [
+              `Action: ${input.action.operation.toUpperCase()} ${input.resource.id}`,
+              `Selected scope: ${scopeDescription} | maximum ${maximum} approval(s).`,
+              "Enter elapsed seconds. Example: 15 days is 1296000 seconds.",
+              "Lifetime or non-resetting counters are not supported; Runner will not approximate them.",
+            ],
+          }),
+          60,
+          31_536_000,
+          "Rolling window",
+        )
+      : Number(window);
     limits = [{
       id: `reviewed_${scope}_count`,
       kind: "count",
       scope: scope as ActionBoundarySharedLimitV1["scope"],
       maximum,
-      window_seconds: Number(window),
+      window_seconds: windowSeconds,
       ...(scope === "boundary" ? {} : { capability: input.capability }),
     }];
     const approval = input.action.auto_approval!;
@@ -2941,7 +3195,7 @@ async function reviewAndStageActionBoundaryLimits(input: {
         kind: "total",
         scope: scope as ActionBoundarySharedLimitV1["scope"],
         maximum: approval.max_total_per_day,
-        window_seconds: Number(window),
+        window_seconds: windowSeconds,
         capability: input.capability,
         field: approval.total_field,
       });
@@ -3402,11 +3656,13 @@ export async function reviewActionDraft(input: {
         detail: "Inspect DSL, policy, rehearsal, or edit the design.",
       },
       { value: "back", label: "Leave disabled" },
-    ], [
-      ...activationReview,
-      `Complete authority digest: ${draft.action_boundary_digest ?? "unavailable"}`,
-      `${actionRehearsalSummary(draft)} for this exact disabled revision; source database changed: no.`,
-    ], "back");
+    ], input.suppressActivationSummary
+      ? activationReview
+      : [
+          ...activationReview,
+          `Complete authority digest: ${draft.action_boundary_digest ?? "unavailable"}`,
+          `${actionRehearsalSummary(draft)} for this exact disabled revision; source database changed: no.`,
+        ], "back");
     if (choice === "activate") {
       const actor = input.env.SYNAPSOR_OPERATOR_ACTOR ?? input.env.USER ?? "local_operator";
       operatorSession.actor = actor;
@@ -4344,13 +4600,37 @@ function actionHomeChoices(
   suggestions: ActionSuggestionView[],
   options: Awaited<ReturnType<typeof guidedActionOptions>>,
   modelSuggestionSession?: ActionModelSuggestionSession,
+  verifiedStatus?: VerifiedActionStatus,
+  hasModelGuidedVerifiedActionRevision = false,
 ): ActionPromptChoice[] {
   const readyTargets = actionReadyResourceCount(options);
   const blockedTargets = actionBlockedTargetCount(options);
+  const verifiedModelRevisionChoice = verifiedStatus?.active || verifiedStatus?.draft
+    ? {
+        value: "verified_model_revision",
+        label: modelSuggestionSession
+          ? `Change a verified outcome with ${modelSessionLabel(modelSuggestionSession)} [recommended]`
+          : "Change a verified outcome with a model [recommended]",
+        detail: "Describe the business-policy change. Runner retains the exact baseline and saves only a disabled replacement.",
+      }
+    : undefined;
   return [
+    ...(hasModelGuidedVerifiedActionRevision && verifiedStatus?.active && !verifiedStatus.draft && verifiedModelRevisionChoice
+      ? [verifiedModelRevisionChoice]
+      : []),
+    ...(verifiedStatus?.active || verifiedStatus?.draft
+      ? [{
+          value: "verified_action",
+          label: `Verified Action Boundary [${verifiedActionStateLabel(verifiedStatus)}]`,
+          detail: verifiedActionChoiceDetail(verifiedStatus),
+        }]
+      : []),
+    ...(hasModelGuidedVerifiedActionRevision && (!verifiedStatus?.active || verifiedStatus.draft) && verifiedModelRevisionChoice
+      ? [verifiedModelRevisionChoice]
+      : []),
     {
       value: "boundary",
-      label: `Review Action Boundary [${actionBoundaryStateLabel(status)}]`,
+      label: `${verifiedStatus?.active || verifiedStatus?.draft ? "Caller-supplied " : ""}Action Boundary [${actionBoundaryStateLabel(status)}]`,
       detail: actionBoundaryChoiceDetail(status),
     },
     ...status.activations.map((active) => ({
@@ -4402,6 +4682,95 @@ function actionHomeChoices(
   ];
 }
 
+type VerifiedActionStatus = {
+  active?: ActionRuleAuthorityActivationV1;
+  draft?: ActionRuleAuthorityDraftV1;
+};
+
+async function verifiedActionStatus(projectRoot: string): Promise<VerifiedActionStatus> {
+  const [loadedActive, drafts] = await Promise.all([
+    loadActiveActionRuleAuthority(projectRoot).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }),
+    listActionRuleAuthorityDrafts(projectRoot),
+  ]);
+  const active = loadedActive?.activation;
+  return {
+    ...(active ? { active } : {}),
+    ...(drafts[0] ? { draft: drafts[0] } : {}),
+  };
+}
+
+async function verifiedActionFallbackOptions(
+  projectRoot: string,
+  status: VerifiedActionStatus,
+): Promise<Awaited<ReturnType<typeof guidedActionOptions>>> {
+  const current = status.draft ?? status.active!;
+  const dependency = current.authority.rules[0];
+  if (!dependency) throw new Error("Verified Action authority has no Read Boundary dependency.");
+  const reads = await loadActivatedExplorationBoundaries(projectRoot);
+  const read = reads.find((boundary) =>
+    boundary.pack.name === dependency.read_boundary_name
+    && boundary.activation.digest === dependency.read_boundary_digest);
+  if (!read) {
+    throw new Error(
+      `Verified Action authority requires exact active Read Boundary ${dependency.read_boundary_name}.`,
+    );
+  }
+  return {
+    boundary_name: read.pack.name,
+    boundary_state: "active",
+    boundary_digest: read.activation.digest,
+    source: read.source,
+    deployment_profile: read.deployment_profile,
+    resources: [],
+    blocked_resources: [],
+    safe_defaults: {},
+  };
+}
+
+function verifiedActionStateLabel(status: VerifiedActionStatus): string {
+  if (status.active && status.draft) return "ACTIVE + DISABLED CHANGES";
+  if (status.active) return "ACTIVE";
+  return "DISABLED DRAFT";
+}
+
+function verifiedActionChoiceDetail(status: VerifiedActionStatus): string {
+  const current = status.draft ?? status.active!;
+  const count = current.authority.rules.length;
+  return `${current.authority.action_boundary.name} | ${count} reviewed outcome${count === 1 ? "" : "s"} behind app.request_change`;
+}
+
+function verifiedActionHomeLines(status: VerifiedActionStatus): string[] {
+  const current = status.draft ?? status.active;
+  if (!current) return [];
+  const count = current.authority.rules.length;
+  return [
+    `Verified Action Boundary ${verifiedActionStateLabel(status)} (${count} outcome${count === 1 ? "" : "s"}) | fixed app.describe_actions + app.request_change surface.`,
+  ];
+}
+
+function boundarySessionForActionPrompter(
+  prompter: ActionControlPrompter,
+): BoundaryReviewInteractiveSession {
+  return {
+    presentationMode: "conversation",
+    chooseOption: (title, choices, options) => prompter.choose(
+      title,
+      choices,
+      options?.context,
+      options?.initialValue,
+    ),
+    promptText: (prompt, options) => prompter.text(prompt, {
+      ...(options?.context ? { context: options.context } : {}),
+    }),
+    confirm: (prompt, options) => prompter.confirm(prompt, options?.defaultValue),
+    confirmActivation: (prompt) => prompter.confirm(prompt, false),
+    rememberDetails: (title, lines) => prompter.rememberDetails?.(title, lines),
+  } as BoundaryReviewInteractiveSession;
+}
+
 export function actionSuggestionMenuLabel(
   suggestion: Pick<ActionSuggestionView, "state" | "assessment">,
 ): string {
@@ -4449,18 +4818,22 @@ function actionBoundaryChoiceDetail(status: Awaited<ReturnType<typeof guidedActi
   return `${boundary.label} | ${proposed}`;
 }
 
-function actionBoundaryHomeLines(status: Awaited<ReturnType<typeof guidedActionStatus>>): string[] {
+function actionBoundaryHomeLines(
+  status: Awaited<ReturnType<typeof guidedActionStatus>>,
+  callerSupplied = false,
+): string[] {
   const active = status.action_boundary.active;
   const draft = status.action_boundary.draft;
-  if (!active && !draft) return ["Action Boundary OFF | no agent change authority."];
+  const label = callerSupplied ? "Caller-supplied Action Boundary" : "Action Boundary";
+  if (!active && !draft) return [`${label} OFF | no caller-supplied proposal authority.`];
   if (active && draft) {
     return [
-      `Action Boundary ACTIVE (${active.authority.capabilities.length} actions) | disabled candidate has ${draft.authority.capabilities.length}.`,
+      `${label} ACTIVE (${active.authority.capabilities.length} actions) | disabled candidate has ${draft.authority.capabilities.length}.`,
     ];
   }
   const boundary = draft ?? active!;
   return [
-    `Action Boundary ${draft ? "DISABLED" : "ACTIVE"} | ${boundary.authority.capabilities.length} exact action revision(s).`,
+    `${label} ${draft ? "DISABLED" : "ACTIVE"} | ${boundary.authority.capabilities.length} exact action revision(s).`,
   ];
 }
 
@@ -5412,7 +5785,7 @@ export function renderActionControlPlaneTable(
     ]),
   ];
   if (!rows.length) return ["No Safe Actions are active or drafted."];
-  const available = Math.max(72, Math.min(width, 116)) - 13;
+  const available = Math.max(72, width) - 13;
   const capability = Math.max(20, Math.floor(available * 0.32));
   const state = 8;
   const authority = 20;
@@ -5496,5 +5869,5 @@ function isBooleanType(dataType: string): boolean {
 }
 
 export function actionTerminalWidth(output: Pick<WriteStream, "columns">): number {
-  return Math.min(terminalContentWidth(output.columns), 116);
+  return terminalContentWidth(output.columns);
 }

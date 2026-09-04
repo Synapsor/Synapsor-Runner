@@ -239,7 +239,11 @@ export function resolveTrustedContext(
         "A principal-scoped protected capability must pair its reviewed organization with a trusted principal provider.",
       );
     }
-    return { tenant_id: protectedOrganization, principal: "", provenance: "reviewed_organization" };
+    return {
+      tenant_id: protectedOrganization,
+      principal: optionalLocalProposalActor(capability, false, env) ?? "",
+      provenance: "reviewed_organization",
+    };
   }
   throw new McpRuntimeError("TRUSTED_CONTEXT_UNSUPPORTED", `${provider} trusted context is not available in local stdio mode.`);
 }

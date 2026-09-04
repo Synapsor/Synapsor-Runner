@@ -1,10 +1,12 @@
 import type {
   LocalProposalState,
   StoredProposal,
+  StoredApproval,
   OperatorDecision,
   OperatorIdentityProof,
 } from "./domain-types.js";
 import {
+  canonicalJsonDigest,
   parseFreshnessAuthority,
   type ChangeSet,
   type FreshnessAuthorityV1,
@@ -14,11 +16,69 @@ import {
 } from "./common.js";
 import { ProposalStoreError } from "./errors.js";
 
+export function semanticApprovalSetDigest(
+  proposal: StoredProposal,
+  approvals: StoredApproval[],
+): `sha256:${string}` {
+  const approved = approvals
+    .filter((approval) => approval.status === "approved")
+    .map((approval) => ({
+      approval_id: approval.approval_id,
+      proposal_version: approval.proposal_version,
+      proposal_hash: approval.proposal_hash,
+      approver: approval.approver,
+      decision_hash: approval.decision_hash ?? null,
+      integrity_hash: approval.integrity_hash ?? null,
+      freshness_proof_digest: approval.freshness_proof_digest ?? null,
+      action_boundary_name: approval.action_boundary_name ?? null,
+      action_boundary_digest: approval.action_boundary_digest ?? null,
+      created_at: approval.created_at,
+    }));
+  if (approved.length === 0) {
+    throw new ProposalStoreError(
+      "SEMANTIC_APPROVAL_MISSING",
+      `semantic proposal ${proposal.proposal_id} has no durable approval record`,
+    );
+  }
+  return canonicalJsonDigest({
+    schema_version: "synapsor.semantic-approval-set.v1",
+    proposal_id: proposal.proposal_id,
+    proposal_version: proposal.proposal_version,
+    proposal_hash: proposal.proposal_hash,
+    approvals: approved,
+  });
+}
+
 export function stateFromChangeSet(changeSet: ChangeSet): LocalProposalState {
   if (changeSet.approval.status === "approved") return "approved";
   if (changeSet.approval.status === "rejected") return "rejected";
   if (changeSet.approval.status === "canceled") return "canceled";
   return "pending_review";
+}
+
+export type ProposalScopeIndex = {
+  kind: "tenant" | "organization";
+  id: string;
+};
+
+export function proposalScopeIndex(changeSet: ChangeSet): ProposalScopeIndex {
+  if (
+    changeSet.schema_version === "synapsor.change-set.v4"
+    && changeSet.scope.organization_scope !== undefined
+  ) {
+    return {
+      kind: "organization",
+      id: changeSet.scope.organization_scope.organization_id,
+    };
+  }
+  const tenantId = changeSet.scope.tenant_id;
+  if (typeof tenantId !== "string" || tenantId.length === 0) {
+    throw new ProposalStoreError(
+      "PROPOSAL_SCOPE_INVALID",
+      `proposal ${changeSet.proposal_id} has no trusted accounting scope`,
+    );
+  }
+  return { kind: "tenant", id: tenantId };
 }
 
 export function proposalFreshnessAuthority(proposal: StoredProposal): FreshnessAuthorityV1 | undefined {

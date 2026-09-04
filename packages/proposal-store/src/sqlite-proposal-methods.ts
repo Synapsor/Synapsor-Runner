@@ -3,6 +3,7 @@ import {
   parseChangeSet,
   parseFreshnessProof,
   PrivacyBoundaryError,
+  protocolVersions,
   type FreshnessProofV1,
 } from "@synapsor-runner/protocol";
 import {
@@ -45,6 +46,7 @@ import {
   assertProposalIdentity,
   assertWritebackAllowed,
   assertNoSecretMaterial,
+  proposalScopeIndex,
 } from "./proposal-integrity.js";
 import {
   buildProposalQuery,
@@ -76,6 +78,7 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
   createProposal(input: unknown): StoredProposal {
       const changeSet = parseChangeSet(input);
       assertNoSecretMaterial(changeSet, "change_set");
+      const scope = proposalScopeIndex(changeSet);
       const existing = this.getProposal(changeSet.proposal_id);
       if (existing) {
         if (
@@ -91,7 +94,7 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
       }
   
       const active = this.findActiveProposal({
-        tenant_id: changeSet.scope.tenant_id,
+        tenant_id: scope.id,
         action: changeSet.action,
         business_object: changeSet.scope.business_object,
         object_id: changeSet.scope.object_id,
@@ -136,7 +139,7 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
           changeSet.integrity.proposal_hash,
           changeSet.action,
           state,
-          changeSet.scope.tenant_id,
+          scope.id,
           changeSet.principal.id,
           changeSet.action,
           null,
@@ -612,7 +615,10 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
           throw new ProposalStoreError("PROPOSAL_NOT_PENDING_REVIEW", `proposal ${proposalId} is ${proposal.state}`);
         }
         const requiredApprovals = requiredApprovalCount(proposal);
-        if (requiredApprovals > 1) {
+        const semanticAutomaticPolicy = proposal.change_set.schema_version === protocolVersions.changeSetV4
+          && proposal.change_set.approval.mode === "policy"
+          && proposal.change_set.semantic_authority.proof.approval_path === "automatic_eligible";
+        if (requiredApprovals > 1 && !semanticAutomaticPolicy) {
           quorumDeferred = true;
           this.appendEvent(proposalId, "policy_auto_approval_deferred", actor, {
             policy: options.policy,

@@ -105,6 +105,7 @@ import {
   consumeGuidedGraduationTip,
   recordGuidedBoundaryRescan,
   readGuidedOnboardingState,
+  reconcileGuidedProjectTrustedContext,
   resetGuidedOnboardingForBoundaryReview,
   updateGuidedOnboardingState,
 } from "./guided-project.js";
@@ -1564,6 +1565,7 @@ async function handleRequest(input: {
           : "activate_and_read",
       },
     });
+    await reconcileGuidedProjectTrustedContext({ projectRoot });
     await recordWorkbenchAttention(storeAccess, {
       event_type: "capability.activated",
       severity: "informational",
@@ -2600,6 +2602,7 @@ async function handleRequest(input: {
       currentInspection: inspection,
       activeSetMode: "add",
     });
+    await reconcileGuidedProjectTrustedContext({ projectRoot });
     bootstrapState.boundaryPreview = undefined;
     await recordWorkbenchAttention(storeAccess, {
       event_type: "capability.activated",
@@ -3722,16 +3725,23 @@ async function handleRequest(input: {
         throw new Error("Managed client setup refused because the live authoring tool boundary was not exactly the reviewed Explore pair.");
       }
       const actionStatus = await guidedActionStatus(projectRoot);
-      const includeActions = Boolean(
-        actionStatus.action_boundary.active?.authority.capabilities.length,
-      );
       const actionConfigPath = path.join(projectRoot, "synapsor.actions.runner.json");
+      const actionConfigExists = await fs.access(actionConfigPath).then(() => true).catch(() => false);
+      const actionBoundary = actionConfigExists
+        ? await inspectMcpToolBoundary([
+            "--config", actionConfigPath,
+            "--store", ":memory:",
+          ])
+        : undefined;
+      const includeActions = Boolean(
+        actionStatus.action_boundary.active?.authority.capabilities.length
+        || (actionBoundary?.surface === "semantic_actions" && actionBoundary.names.length > 0),
+      );
       let actionTools: string[] = [];
       if (includeActions) {
-        const actionBoundary = await inspectMcpToolBoundary([
-          "--config", actionConfigPath,
-          "--store", ":memory:",
-        ]);
+        if (!actionBoundary) {
+          throw new Error("Managed client setup refused because the active Action runtime config is missing.");
+        }
         const nonProposalTools = actionBoundary.capabilityDetails
           .filter((detail) => detail.kind !== "proposal")
           .map((detail) => detail.name);
@@ -5212,14 +5222,13 @@ async function handleRequest(input: {
     const config = await readResolvedRunnerConfig(configPath);
     const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
     const workerConfig = asRecord(config.supervised_worker);
-    const workerPolicies = Array.isArray(workerConfig.capabilities)
-      ? workerConfig.capabilities.map(asRecord)
-      : [];
+    const workerPolicies = workbenchWorkerPolicies(workerConfig);
     if (capabilityAction && !workerPolicies.some((policy) =>
-      policy.capability === capability && policy.contract_digest === exactDigest)) {
+      workbenchWorkerPolicyName(policy) === capability
+      && workbenchWorkerPolicyDigest(policy) === exactDigest)) {
       sendJson(response, 409, {
         ok: false,
-        error: "The exact capability/digest is not present in the deployment worker allowlist.",
+        error: "The exact capability or outcome digest is not present in the deployment worker allowlist.",
         source_database_changed: false,
       });
       return;
@@ -6675,6 +6684,21 @@ function workbenchNotificationCounts(
   return counts;
 }
 
+function workbenchWorkerPolicies(workerConfig: JsonRecord): JsonRecord[] {
+  return [
+    ...(Array.isArray(workerConfig.capabilities) ? workerConfig.capabilities.map(asRecord) : []),
+    ...(Array.isArray(workerConfig.outcomes) ? workerConfig.outcomes.map(asRecord) : []),
+  ];
+}
+
+function workbenchWorkerPolicyName(policy: JsonRecord): string {
+  return String(policy.capability ?? policy.outcome ?? "");
+}
+
+function workbenchWorkerPolicyDigest(policy: JsonRecord): string {
+  return String(policy.contract_digest ?? policy.action_boundary_digest ?? "");
+}
+
 function workbenchWorkerProjection(
   store: ProposalStore,
   config: JsonRecord,
@@ -6683,9 +6707,7 @@ function workbenchWorkerProjection(
   ledgerScope?: WorkbenchLedgerScope,
 ): JsonRecord {
   const workerConfig = asRecord(config.supervised_worker);
-  const policies = Array.isArray(workerConfig.capabilities)
-    ? workerConfig.capabilities.map(asRecord)
-    : [];
+  const policies = workbenchWorkerPolicies(workerConfig);
   const capabilities = Array.isArray(config.capabilities)
     ? config.capabilities.map(asRecord)
     : [];
@@ -6769,19 +6791,21 @@ function workbenchWorkerProjection(
       unknown_or_reconciliation: items.filter((item) => item.status === "reconciliation_required").length,
     },
     capabilities: policies.map((policy) => {
-      const capabilityName = String(policy.capability ?? "");
-      const contractDigest = String(policy.contract_digest ?? "");
+      const capabilityName = workbenchWorkerPolicyName(policy);
+      const contractDigest = workbenchWorkerPolicyDigest(policy);
+      const authorityType = typeof policy.outcome === "string" ? "outcome" : "capability";
       const runtimeCapability = capabilities.find((candidate) => candidate.name === capabilityName);
       const source = runtimeCapability ? asRecord(sources[String(runtimeCapability.source ?? "")]) : {};
       const controlEntry = controlByTarget.get(`${capabilityName}:${contractDigest}`);
       const postureState = store.getRunnerState(`supervised_writer_posture:${canonicalJsonDigest({
         environment: String(workerConfig.profile ?? profile),
-        capability: capabilityName,
-        contract_digest: contractDigest,
+        authority: capabilityName,
+        authority_digest: contractDigest,
       })}`);
       return {
         capability: capabilityName,
         contract_digest: contractDigest,
+        authority_type: authorityType,
         control_status: controlEntry?.status ?? "enabled",
         allowlist_match: true,
         worker_identity: policy.worker_identity ?? null,
@@ -6794,7 +6818,7 @@ function workbenchWorkerProjection(
           : [],
         writer_posture: {
           source: runtimeCapability?.source ?? null,
-          reference: source.write_url_env ?? null,
+          reference: policy.write_url_env ?? source.write_url_env ?? null,
           separation: source.write_url_env && source.write_url_env !== source.read_url_env
             ? "separate_reference"
             : "shared_or_missing_reference",

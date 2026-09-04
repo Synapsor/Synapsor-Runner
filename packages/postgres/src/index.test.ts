@@ -5,6 +5,7 @@ import {
   applyPostgresJob,
   applyPostgresJobWithClient,
   bindPostgresRlsScope,
+  buildPostgresActionRuleFactQuery,
   buildPostgresDelete,
   buildPostgresInsert,
   buildPostgresReconciliationRead,
@@ -14,11 +15,206 @@ import {
   normalizeVersionValue,
   postgresPoolConfig,
   postgresAdapter,
+  postgresActionRuleIsolation,
   versionValuesMatch,
   type PostgresApplyClient
 } from "./index.js";
 import type { WritebackIntentStore } from "@synapsor-runner/worker-core";
 import { canonicalJsonDigest, canonicalJsonStringify, parseWritebackJob, parseWritebackResult, protocolVersions } from "@synapsor-runner/protocol";
+import { ActionRuleError, createSemanticAdapterConformanceVector, type ActionRuleFactQueryV1 } from "@synapsor-runner/action-rules";
+
+describe("postgres Action Rule fact queries", () => {
+  it("lowers every reviewed transaction isolation level exactly", () => {
+    expect(postgresActionRuleIsolation("read_committed")).toBe("READ COMMITTED");
+    expect(postgresActionRuleIsolation("repeatable_read")).toBe("REPEATABLE READ");
+    expect(postgresActionRuleIsolation("serializable")).toBe("SERIALIZABLE");
+  });
+
+  it("binds every subject and trusted-scope value in a bounded locking query", () => {
+    const query: ActionRuleFactQueryV1 = {
+      binding: "appointment",
+      engine: "postgres",
+      source: "local_postgres",
+      schema: "field_service",
+      table: "appointments",
+      projection: ["appointment_id", "version"],
+      predicates: [
+        { operation: "eq", column: "appointment_id", value: "appt_1" },
+        { operation: "in", column: "account_id", values: ["acct_1", "acct_2"] },
+      ],
+      order_by: [{ column: "appointment_id", direction: "asc" }],
+      limit: 2,
+      lock: "for_update",
+    };
+    const compiled = buildPostgresActionRuleFactQuery(query);
+    expect(compiled.sql).toContain('FROM "field_service"."appointments"');
+    expect(compiled.sql).toContain('"appointment_id" = $1');
+    expect(compiled.sql).toContain('"account_id" IN ($2, $3)');
+    expect(compiled.sql).toContain("LIMIT $4\nFOR UPDATE");
+    expect(compiled.sql).not.toContain("appt_1");
+    expect(compiled.values).toEqual(["appt_1", "acct_1", "acct_2", 2]);
+  });
+});
+
+class SemanticPostgresIntentStore implements WritebackIntentStore {
+  result?: ReturnType<typeof parseWritebackResult>;
+  readonly calls: string[] = [];
+
+  claimWritebackIntent() {
+    this.calls.push("claim");
+    return this.result === undefined
+      ? { decision: "proceed" as const, intent_id: "wbi:semantic-postgres" }
+      : { decision: "existing_result" as const, intent_id: "wbi:semantic-postgres", result: this.result };
+  }
+
+  markWritebackIntentApplying() { this.calls.push("applying"); }
+
+  completeWritebackIntent(_intentId: string, result: Parameters<WritebackIntentStore["completeWritebackIntent"]>[1]) {
+    this.calls.push("complete");
+    this.result = parseWritebackResult(result);
+  }
+
+  requireWritebackReconciliation() { this.calls.push("reconciliation"); }
+}
+
+class SemanticPostgresClient implements PostgresApplyClient {
+  readonly queryLog: Array<{ sql: string; values: unknown[] }> = [];
+  updateCount = 0;
+
+  constructor(private readonly commitUnknown = false) {}
+
+  get sqlLog(): string[] { return this.queryLog.map((entry) => entry.sql); }
+
+  async query(sql: string, values: unknown[] = []): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    const normalized = sql.trim();
+    this.queryLog.push({ sql: normalized, values });
+    if (normalized === "COMMIT" && this.commitUnknown) throw new Error("connection lost after COMMIT");
+    if (["BEGIN", "COMMIT", "ROLLBACK", "SET LOCAL TIME ZONE 'UTC'", "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"].includes(normalized)) {
+      return { rows: [], rowCount: null };
+    }
+    if (normalized.startsWith("SELECT")
+      && normalized.includes('FROM "support_cases"."case_actions"')
+      && normalized.includes("FOR UPDATE")) {
+      return {
+        rows: [{ case_id: "case_1", status: "open", tenant_id: "acme", version: 7 }],
+        rowCount: 1,
+      };
+    }
+    if (normalized.startsWith('UPDATE "support_cases"."case_actions"')) {
+      this.updateCount += 1;
+      return {
+        rows: [{ __synapsor_primary_key: "case_1", __synapsor_result_version: "8" }],
+        rowCount: 1,
+      };
+    }
+    throw new Error(`unexpected semantic PostgreSQL query: ${normalized}`);
+  }
+}
+
+describe("postgres semantic Action adapter conformance", () => {
+  it("re-verifies with parameterized locked facts inside the transaction and replays idempotently", async () => {
+    const vector = createSemanticAdapterConformanceVector("postgres");
+    const store = new SemanticPostgresIntentStore();
+    const client = new SemanticPostgresClient();
+    const semanticActionVerifier = vi.fn(async ({ job: candidate, factLoader }) => {
+      expect(candidate).toEqual(vector.job);
+      expect(factLoader.engine).toBe("postgres");
+      expect(client.sqlLog).toContain("BEGIN");
+      expect(await factLoader.load(vector.fact_query)).toEqual([vector.fact_row]);
+      return vector.reverification;
+    });
+    const semanticConfig = {
+      ...config,
+      receipts: { authority: "runner_ledger" as const },
+      writebackIntentStore: store,
+      semanticActionVerifier,
+    };
+
+    const applied = await applyPostgresJobWithClient(vector.job, semanticConfig, client);
+    expect(applied).toMatchObject({
+      protocol_version: "5.0",
+      status: "applied",
+      affected_rows: 1,
+      semantic_verification: { status: "reverified", effect_digest: vector.reverification.effect_digest },
+    });
+    const factQuery = client.queryLog.find((entry) => entry.sql.startsWith("SELECT") && entry.sql.includes("case_actions"));
+    expect(factQuery).toMatchObject({ values: ["case_1", "acme", 2] });
+    expect(factQuery?.sql).not.toContain("case_1");
+    expect(client.sqlLog.indexOf("BEGIN")).toBeLessThan(client.sqlLog.findIndex((sql) => sql.startsWith("SELECT")));
+    expect(client.sqlLog.indexOf("BEGIN")).toBeLessThan(client.sqlLog.indexOf("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"));
+    expect(client.sqlLog.indexOf("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+      .toBeLessThan(client.sqlLog.findIndex((sql) => sql.startsWith("SELECT")));
+    expect(client.sqlLog.findIndex((sql) => sql.startsWith("SELECT"))).toBeLessThan(client.sqlLog.findIndex((sql) => sql.startsWith("UPDATE")));
+    expect(client.sqlLog.findIndex((sql) => sql.startsWith("UPDATE"))).toBeLessThan(client.sqlLog.indexOf("COMMIT"));
+
+    const replayed = await applyPostgresJobWithClient(vector.job, semanticConfig, client);
+    expect(replayed).toMatchObject({
+      protocol_version: "5.0",
+      status: "already_applied",
+      affected_rows: 0,
+      semantic_verification: { status: "previously_reverified" },
+    });
+    expect(client.updateCount).toBe(1);
+    expect(semanticActionVerifier).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back stale semantic authority before any mutation", async () => {
+    const vector = createSemanticAdapterConformanceVector("postgres");
+    const store = new SemanticPostgresIntentStore();
+    const client = new SemanticPostgresClient();
+    const result = await applyPostgresJobWithClient(vector.job, {
+      ...config,
+      receipts: { authority: "runner_ledger" as const },
+      writebackIntentStore: store,
+      semanticActionVerifier: async () => ({
+        ...vector.reverification,
+        effect_digest: canonicalJsonDigest({ effect: "drifted" }),
+      }),
+    }, client);
+
+    expect(result).toMatchObject({ status: "failed", error_code: "SEMANTIC_AUTHORITY_STALE", affected_rows: 0 });
+    expect(client.updateCount).toBe(0);
+    expect(client.sqlLog).toContain("ROLLBACK");
+    expect(client.sqlLog).not.toContain("COMMIT");
+  });
+
+  it("preserves a coded Action Rule stale refusal when its message is explanatory", async () => {
+    const vector = createSemanticAdapterConformanceVector("postgres");
+    const client = new SemanticPostgresClient();
+    const result = await applyPostgresJobWithClient(vector.job, {
+      ...config,
+      receipts: { authority: "runner_ledger" as const },
+      writebackIntentStore: new SemanticPostgresIntentStore(),
+      semanticActionVerifier: async () => {
+        throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Current facts no longer prove this effect.");
+      },
+    }, client);
+
+    expect(result).toMatchObject({ status: "failed", error_code: "SEMANTIC_AUTHORITY_STALE", affected_rows: 0 });
+    expect(client.updateCount).toBe(0);
+    expect(client.sqlLog).toContain("ROLLBACK");
+  });
+
+  it("marks a lost semantic COMMIT acknowledgement for reconciliation", async () => {
+    const vector = createSemanticAdapterConformanceVector("postgres");
+    const store = new SemanticPostgresIntentStore();
+    const client = new SemanticPostgresClient(true);
+    const result = await applyPostgresJobWithClient(vector.job, {
+      ...config,
+      receipts: { authority: "runner_ledger" as const },
+      writebackIntentStore: store,
+      semanticActionVerifier: async ({ factLoader }) => {
+        await factLoader.load(vector.fact_query);
+        return vector.reverification;
+      },
+    }, client);
+
+    expect(result).toMatchObject({ status: "reconciliation_required", error_code: "RECONCILIATION_REQUIRED" });
+    expect(client.updateCount).toBe(1);
+    expect(store.calls).toContain("reconciliation");
+    expect(client.sqlLog).not.toContain("ROLLBACK");
+  });
+});
 
 const job = {
   protocol_version: "1.0" as const,
@@ -338,7 +534,7 @@ describe("postgres adapter", () => {
   it("returns an idempotent receipt without touching the business row", async () => {
     const client = new FakePostgresClient({
       claimRowCount: 0,
-      receiptRow: { status: "applied", result_hash: "sha256:existing" }
+      receiptRow: { job_id: job.job_id, proposal_id: job.proposal_id, status: "applied", result_hash: "sha256:existing" }
     });
 
     const result = await applyPostgresJobWithClient(job, config, client);
@@ -348,6 +544,18 @@ describe("postgres adapter", () => {
     expect(client.sqlLog.some((sql) => /CREATE\s+TABLE/i.test(sql))).toBe(false);
     expect(client.sqlLog.some((sql) => sql.includes('UPDATE "public"."tickets"'))).toBe(false);
     expect(client.sqlLog).toContain("COMMIT");
+  });
+
+  it("refuses an idempotency key already bound to another job", async () => {
+    const client = new FakePostgresClient({
+      claimRowCount: 0,
+      receiptRow: { job_id: "wbj_other", proposal_id: job.proposal_id, status: "applied", result_hash: "sha256:existing" },
+    });
+    await expect(applyPostgresJobWithClient(job, config, client)).resolves.toMatchObject({
+      status: "failed",
+      error_code: "IDEMPOTENCY_KEY_COLLISION",
+    });
+    expect(client.sqlLog.some((sql) => sql.includes('UPDATE "public"."tickets"'))).toBe(false);
   });
 
   it("records stale-row conflicts before update", async () => {
@@ -1292,7 +1500,7 @@ class FakePostgresClient implements PostgresApplyClient {
       const rowCount = this.options.claimRowCount ?? 1;
       return { rows: rowCount === 1 ? [{ status: "in_progress", result_hash: null }] : [], rowCount };
     }
-    if (sql.startsWith("SELECT status, result_hash FROM synapsor_writeback_receipts")) {
+    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM synapsor_writeback_receipts")) {
       return { rows: this.options.receiptRow ? [this.options.receiptRow] : [], rowCount: this.options.receiptRow ? 1 : 0 };
     }
     if (sql.startsWith("SELECT") && sql.includes('FROM "public"."invoice_eligibility"') && sql.includes("FOR UPDATE")) {
@@ -1350,10 +1558,10 @@ class ConcurrentPostgresClient implements PostgresApplyClient {
       }
       return { rows: [], rowCount: 0 };
     }
-    if (sql.startsWith("SELECT status, result_hash FROM synapsor_writeback_receipts")) {
+    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM synapsor_writeback_receipts")) {
       await this.state.finalizedPromise;
       return {
-        rows: [{ status: this.state.receiptStatus, result_hash: this.state.resultHash }],
+        rows: [{ job_id: job.job_id, proposal_id: job.proposal_id, status: this.state.receiptStatus, result_hash: this.state.resultHash }],
         rowCount: 1
       };
     }

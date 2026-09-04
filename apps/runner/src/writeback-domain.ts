@@ -68,7 +68,10 @@ export function writebackDatabaseScope(
   if (!proposal) {
     throw new Error(`POSTGRES_RLS_TRUSTED_CONTEXT_MISSING: proposal ${job.proposal_id} is required to bind hardened writeback scope`);
   }
-  const tenantId = String(proposal.change_set.scope.tenant_id);
+  if (job.target.tenant_guard === undefined || proposal.scope_kind !== "tenant") {
+    throw new Error("POSTGRES_RLS_SCOPE_MODE_MISMATCH");
+  }
+  const tenantId = proposal.scope_id;
   const principal = String(proposal.change_set.principal.id);
   if (tenantId !== String(job.target.tenant_guard.value)) {
     throw new Error("POSTGRES_RLS_TENANT_CONTEXT_MISMATCH");

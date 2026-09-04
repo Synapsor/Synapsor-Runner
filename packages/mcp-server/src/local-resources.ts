@@ -18,6 +18,9 @@ import {
 import {
   resolveTrustedContext,
 } from "./trusted-context.js";
+import {
+  buildProposalReviewView,
+} from "./proposal-review-view.js";
 
 export async function readLocalResource(
   store: ProposalRuntimeStore,
@@ -73,6 +76,36 @@ export function projectOperatorOnlyAuditMetadata(value: unknown): unknown {
     key === "parameterized_sql"
       ? []
       : [[key, projectOperatorOnlyAuditMetadata(item)]]));
+}
+
+/** Semantic proposal internals include protected identities and verification facts. */
+export function projectLocalResourceForModel(value: Record<string, unknown>): Record<string, unknown> {
+  const proposal = value.proposal;
+  if (proposal && typeof proposal === "object" && !Array.isArray(proposal)) {
+    const stored = proposal as import("@synapsor-runner/proposal-store").StoredProposal;
+    if (stored.change_set?.schema_version === "synapsor.change-set.v4") {
+      const receipts = Array.isArray(value.receipts)
+        ? value.receipts as import("@synapsor-runner/proposal-store").StoredWritebackReceipt[]
+        : [];
+      const events = Array.isArray(value.events)
+        ? value.events.flatMap((event) => {
+          if (!event || typeof event !== "object" || Array.isArray(event)) return [];
+          const record = event as Record<string, unknown>;
+          return [{ kind: record.kind, created_at: record.created_at }];
+        })
+        : [];
+      return {
+        proposal_review: buildProposalReviewView(stored, receipts),
+        events,
+        receipts: receipts.map((receipt) => ({
+          status: receipt.status,
+          source_database_mutated: receipt.source_database_mutated,
+          created_at: receipt.created_at,
+        })),
+      };
+    }
+  }
+  return projectOperatorOnlyAuditMetadata(value) as Record<string, unknown>;
 }
 
 export function assertLocalResourceAccess(

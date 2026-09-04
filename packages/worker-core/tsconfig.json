@@ -6,9 +6,9 @@
     "outDir": "dist"
   },
   "references": [
+    { "path": "../action-rules" },
     { "path": "../protocol" },
     { "path": "../control-plane-client" }
   ],
   "include": ["src/**/*.ts"]
 }
-

@@ -18,6 +18,9 @@ const TOP_LEVEL_KEYS = new Set([
   "receipts",
   "replay",
   "external_actions",
+  "verification_boundaries",
+  "derived_effect_envelopes",
+  "action_rules",
 ]);
 const METADATA_KEYS = new Set(["name", "description", "version", "tags"]);
 const RESOURCE_KEYS = new Set(["name", "engine", "schema", "table", "type", "primary_key", "tenant_key", "conflict_key", "single_tenant_dev"]);
@@ -149,6 +152,53 @@ const PROPOSAL_RECORD_KEYS = new Set(["id", "capability", "subject", "status", "
 const RECEIPT_KEYS = new Set(["id", "proposal_id", "status", "idempotency_key", "source_database_mutated", "rows_affected"]);
 const REPLAY_KEYS = new Set(["id", "proposal_id", "run_id", "events"]);
 const EXTERNAL_ACTION_KEYS = new Set(["id", "action", "handler", "idempotency_key", "receipt"]);
+const VERIFICATION_BOUNDARY_KEYS = new Set(["schema_version", "name", "source", "context", "generation_lock_fingerprint", "resources", "lock_order", "transaction"]);
+const VERIFICATION_RESOURCE_KEYS = new Set(["binding", "resource", "source", "primary_key", "version_field", "fields", "scope", "cardinality", "max_rows", "overflow", "deterministic_order", "lock"]);
+const VERIFICATION_FIELD_KEYS = new Set(["name", "type", "nullable", "model_visible"]);
+const VERIFICATION_SOURCE_KEYS = new Set(["kind", "from_binding", "relationship", "local_field", "target_field", "direction"]);
+const VERIFICATION_SCOPE_KEYS = new Set(["mode", "tenant_field", "principal_field", "from_binding", "organization_id"]);
+const VERIFICATION_ORDER_KEYS = new Set(["field", "direction"]);
+const VERIFICATION_TRANSACTION_KEYS = new Set(["isolation", "timezone"]);
+const EFFECT_ENVELOPE_KEYS = new Set(["schema_version", "name", "source", "operation", "target_resource", "target_binding", "primary_key", "tenant_key", "organization_scope", "principal_scope_key", "conflict_key", "max_rows", "allowed_fields", "version_advance", "deduplication", "approval_classes", "writeback"]);
+const EFFECT_FIELD_KEYS = new Set(["name", "type", "minimum", "maximum", "values"]);
+const EFFECT_DEDUP_KEYS = new Set(["components"]);
+const EFFECT_DEDUP_COMPONENT_KEYS = new Set(["column", "source", "derived", "fixed"]);
+const EFFECT_VERSION_ADVANCE_KEYS = new Set(["column", "strategy"]);
+const EFFECT_WRITEBACK_KEYS = new Set(["mode", "supervised_worker"]);
+const ACTION_RULE_KEYS = new Set(["schema_version", "name", "outcome", "context", "source", "verification_boundary_ref", "effect_envelope_ref", "subjects", "require", "derive", "effect", "approval_class", "ttl_seconds"]);
+const ACTION_RULE_SUBJECT_KEYS = new Set(["binding", "resource", "input"]);
+const ACTION_RULE_EFFECT_KEYS = new Set(["operation", "target_resource", "target_binding", "set"]);
+const ACTION_RULE_SCALAR_TYPE_KEYS = new Set(["kind", "unit", "currency", "max_length", "enum", "comparison"]);
+const ACTION_RULE_SCALAR_EXPR_KEYS = new Set(["kind", "value", "value_type", "binding", "field", "name", "operation", "inputs", "input", "constant", "rounding", "minimum", "maximum", "timestamp", "seconds"]);
+const ACTION_RULE_BOOLEAN_EXPR_KEYS = new Set(["kind", "expressions", "expression", "operator", "left", "right", "value", "values", "binding", "where"]);
+const ACTION_RULE_SCALAR_TYPE_VARIANT_KEYS = {
+  boolean: new Set(["kind"]),
+  integer: new Set(["kind", "unit"]),
+  money_minor: new Set(["kind", "currency"]),
+  string: new Set(["kind", "max_length", "enum", "comparison"]),
+  date: new Set(["kind"]),
+  timestamp: new Set(["kind"]),
+} as const;
+const ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS = {
+  literal: new Set(["kind", "value", "value_type"]),
+  trusted: new Set(["kind", "binding"]),
+  field: new Set(["kind", "binding", "field"]),
+  derived: new Set(["kind", "name"]),
+  aggregate: new Set(["kind", "operation", "binding", "field"]),
+  math: new Set(["kind", "operation", "inputs"]),
+  scale: new Set(["kind", "operation", "input", "constant", "rounding"]),
+  clamp: new Set(["kind", "input", "minimum", "maximum"]),
+  add_duration: new Set(["kind", "timestamp", "seconds"]),
+} as const;
+const ACTION_RULE_BOOLEAN_EXPR_VARIANT_KEYS = {
+  all: new Set(["kind", "expressions"]),
+  any: new Set(["kind", "expressions"]),
+  not: new Set(["kind", "expression"]),
+  compare: new Set(["kind", "operator", "left", "right"]),
+  null_check: new Set(["kind", "operator", "value"]),
+  in: new Set(["kind", "value", "values"]),
+  exists: new Set(["kind", "binding", "where"]),
+} as const;
 
 const TRUSTED_ARG_NAMES = new Set([
   "tenant_id",
@@ -202,6 +252,7 @@ export function validateContract(input: unknown): ValidationResult {
   validateReceiptRecords(input.receipts, errors);
   validateReplay(input.replay, errors);
   validateExternalActions(input.external_actions, errors);
+  validateActionRuleAuthority(input, resourceNames, contextNames, errors);
   scanForInlineSecrets(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
@@ -2152,6 +2203,468 @@ function validateExternalActions(value: unknown, errors: ValidationIssue[]): voi
   validateArrayRecords(value, "$.external_actions", EXTERNAL_ACTION_KEYS, "EXTERNAL_ACTION", errors);
 }
 
+function validateActionRuleAuthority(
+  contract: JsonRecord,
+  resourceNames: Set<string>,
+  contextNames: Set<string>,
+  errors: ValidationIssue[],
+): void {
+  const boundaryNames = new Set<string>();
+  const envelopeNames = new Set<string>();
+
+  if (contract.verification_boundaries !== undefined) {
+    if (!Array.isArray(contract.verification_boundaries)) {
+      errors.push({ path: "$.verification_boundaries", code: "VERIFICATION_BOUNDARIES_NOT_ARRAY", message: "verification_boundaries must be an array." });
+    } else {
+      contract.verification_boundaries.forEach((raw, index) => {
+        const path = `$.verification_boundaries[${index}]`;
+        if (!isRecord(raw)) {
+          errors.push({ path, code: "VERIFICATION_BOUNDARY_NOT_OBJECT", message: "verification boundary must be an object." });
+          return;
+        }
+        checkUnknownKeys(raw, VERIFICATION_BOUNDARY_KEYS, path, errors);
+        if (raw.schema_version !== "synapsor.verification-boundary.v1") errors.push({ path: `${path}.schema_version`, code: "INVALID_VERIFICATION_BOUNDARY_VERSION", message: "schema_version must be synapsor.verification-boundary.v1." });
+        validateNamedAuthority(raw.name, `${path}.name`, boundaryNames, "VERIFICATION_BOUNDARY", errors);
+        if (!isSafeIdentifier(raw.source)) errors.push({ path: `${path}.source`, code: "INVALID_VERIFICATION_SOURCE", message: "source must be a fixed safe identifier." });
+        if (!isQualifiedOrSafeName(raw.context) || !contextNames.has(String(raw.context))) errors.push({ path: `${path}.context`, code: "UNKNOWN_VERIFICATION_CONTEXT", message: "context must reference a declared trusted context." });
+        if (!isSha256Digest(raw.generation_lock_fingerprint)) errors.push({ path: `${path}.generation_lock_fingerprint`, code: "INVALID_VERIFICATION_GENERATION_LOCK", message: "generation_lock_fingerprint must be an exact sha256 digest." });
+        validateVerificationResources(raw.resources, path, resourceNames, errors);
+        if (!Array.isArray(raw.lock_order) || raw.lock_order.length === 0 || raw.lock_order.some((item) => !isSafeIdentifier(item))) errors.push({ path: `${path}.lock_order`, code: "INVALID_VERIFICATION_LOCK_ORDER", message: "lock_order must contain fixed binding names." });
+        if (!isRecord(raw.transaction)) errors.push({ path: `${path}.transaction`, code: "VERIFICATION_TRANSACTION_REQUIRED", message: "transaction must freeze isolation and UTC timezone." });
+        else {
+          checkUnknownKeys(raw.transaction, VERIFICATION_TRANSACTION_KEYS, `${path}.transaction`, errors);
+          if (!["read_committed", "repeatable_read", "serializable"].includes(String(raw.transaction.isolation))) errors.push({ path: `${path}.transaction.isolation`, code: "INVALID_VERIFICATION_ISOLATION", message: "unsupported transaction isolation." });
+          if (raw.transaction.timezone !== "UTC") errors.push({ path: `${path}.transaction.timezone`, code: "VERIFICATION_TIMEZONE_MUST_BE_UTC", message: "Action Rule verification uses UTC." });
+        }
+      });
+    }
+  }
+
+  if (contract.derived_effect_envelopes !== undefined) {
+    if (!Array.isArray(contract.derived_effect_envelopes)) {
+      errors.push({ path: "$.derived_effect_envelopes", code: "EFFECT_ENVELOPES_NOT_ARRAY", message: "derived_effect_envelopes must be an array." });
+    } else {
+      contract.derived_effect_envelopes.forEach((raw, index) => {
+        const path = `$.derived_effect_envelopes[${index}]`;
+        if (!isRecord(raw)) {
+          errors.push({ path, code: "EFFECT_ENVELOPE_NOT_OBJECT", message: "derived effect envelope must be an object." });
+          return;
+        }
+        checkUnknownKeys(raw, EFFECT_ENVELOPE_KEYS, path, errors);
+        if (raw.schema_version !== "synapsor.derived-effect-envelope.v1") errors.push({ path: `${path}.schema_version`, code: "INVALID_EFFECT_ENVELOPE_VERSION", message: "schema_version must be synapsor.derived-effect-envelope.v1." });
+        validateNamedAuthority(raw.name, `${path}.name`, envelopeNames, "EFFECT_ENVELOPE", errors);
+        if (!isSafeIdentifier(raw.source)) errors.push({ path: `${path}.source`, code: "INVALID_EFFECT_SOURCE", message: "source must be a fixed safe identifier." });
+        if (raw.operation !== "update" && raw.operation !== "insert") errors.push({ path: `${path}.operation`, code: "INVALID_DERIVED_EFFECT_OPERATION", message: "derived effects support update or insert only." });
+        if (!isQualifiedOrSafeName(raw.target_resource) || !resourceNames.has(String(raw.target_resource))) errors.push({ path: `${path}.target_resource`, code: "UNKNOWN_EFFECT_RESOURCE", message: "target_resource must reference a declared resource." });
+        for (const key of ["target_binding", "primary_key", "tenant_key", "principal_scope_key", "conflict_key"] as const) {
+          if (raw[key] !== undefined && !isSafeIdentifier(raw[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_EFFECT_IDENTIFIER", message: `${key} must be a fixed safe identifier.` });
+        }
+        if (!isSafeIdentifier(raw.primary_key)) errors.push({ path: `${path}.primary_key`, code: "DERIVED_EFFECT_PRIMARY_KEY_REQUIRED", message: "derived effects require one exact target primary key." });
+        const organizationScoped = validateProtectedOrganizationScope(raw.organization_scope, `${path}.organization_scope`, errors);
+        if ((raw.tenant_key === undefined) === !organizationScoped) {
+          errors.push({
+            path,
+            code: "DERIVED_EFFECT_SCOPE_REQUIRED",
+            message: "derived effect envelope must declare exactly one trusted tenant key or reviewed single-organization scope.",
+          });
+        }
+        if (raw.max_rows !== 1) errors.push({ path: `${path}.max_rows`, code: "DERIVED_EFFECT_SINGLE_ROW_REQUIRED", message: "first-release derived effects must change exactly one row." });
+        validateDerivedEffectFields(raw.allowed_fields, path, errors);
+        if (raw.operation === "update") {
+          if (!isSafeIdentifier(raw.target_binding) || !isSafeIdentifier(raw.conflict_key)) errors.push({ path, code: "DERIVED_UPDATE_GUARDS_REQUIRED", message: "derived UPDATE requires target_binding and conflict_key." });
+          if (raw.deduplication !== undefined) errors.push({ path: `${path}.deduplication`, code: "DERIVED_UPDATE_DEDUP_FORBIDDEN", message: "derived UPDATE uses row identity and a conflict guard, not INSERT deduplication." });
+        }
+        if (raw.operation === "insert") {
+          if (!isRecord(raw.deduplication)) errors.push({ path: `${path}.deduplication`, code: "DERIVED_INSERT_DEDUP_REQUIRED", message: "derived INSERT requires reviewed source-enforced deduplication." });
+          for (const key of ["target_binding", "conflict_key", "version_advance"] as const) {
+            if (raw[key] !== undefined) errors.push({ path: `${path}.${key}`, code: "DERIVED_INSERT_UPDATE_GUARD_FORBIDDEN", message: `derived INSERT cannot declare UPDATE-only ${key}.` });
+          }
+        }
+        if (raw.version_advance !== undefined) {
+          if (!isRecord(raw.version_advance)) errors.push({ path: `${path}.version_advance`, code: "INVALID_DERIVED_VERSION_ADVANCE", message: "version_advance must freeze one integer conflict-column increment." });
+          else {
+            checkUnknownKeys(raw.version_advance, EFFECT_VERSION_ADVANCE_KEYS, `${path}.version_advance`, errors);
+            if (!isSafeIdentifier(raw.version_advance.column) || raw.version_advance.strategy !== "integer_increment") errors.push({ path: `${path}.version_advance`, code: "INVALID_DERIVED_VERSION_ADVANCE", message: "version_advance must freeze one integer conflict-column increment." });
+            if (raw.operation === "update" && raw.version_advance.column !== raw.conflict_key) errors.push({ path: `${path}.version_advance.column`, code: "DERIVED_VERSION_GUARD_MISMATCH", message: "version_advance must increment the reviewed conflict key." });
+          }
+        }
+        if (raw.deduplication !== undefined) validateDerivedDedup(raw.deduplication, `${path}.deduplication`, errors);
+        if (!Array.isArray(raw.approval_classes)
+          || raw.approval_classes.length === 0
+          || raw.approval_classes.length > 64
+          || raw.approval_classes.some((item) => !isDottedName(item))
+          || new Set(raw.approval_classes).size !== raw.approval_classes.length) errors.push({ path: `${path}.approval_classes`, code: "EFFECT_APPROVAL_CLASSES_REQUIRED", message: "approval_classes must contain 1 through 64 unique fixed names." });
+        if (!isRecord(raw.writeback)) errors.push({ path: `${path}.writeback`, code: "EFFECT_WRITEBACK_REQUIRED", message: "writeback posture is required." });
+        else {
+          checkUnknownKeys(raw.writeback, EFFECT_WRITEBACK_KEYS, `${path}.writeback`, errors);
+          if (raw.writeback.mode !== "none" && raw.writeback.mode !== "direct_sql") errors.push({ path: `${path}.writeback.mode`, code: "INVALID_DERIVED_WRITEBACK", message: "derived effects support none or direct_sql." });
+          if (raw.writeback.supervised_worker !== "disabled" && raw.writeback.supervised_worker !== "allowed") errors.push({ path: `${path}.writeback.supervised_worker`, code: "INVALID_DERIVED_WORKER_POSTURE", message: "supervised_worker must be disabled or allowed." });
+          if (raw.writeback.mode === "none" && raw.writeback.supervised_worker === "allowed") errors.push({ path: `${path}.writeback`, code: "INVALID_DERIVED_WORKER_POSTURE", message: "a supervised worker requires reviewed direct_sql writeback." });
+        }
+      });
+    }
+  }
+
+  if (contract.action_rules === undefined) return;
+  if (!Array.isArray(contract.action_rules)) {
+    errors.push({ path: "$.action_rules", code: "ACTION_RULES_NOT_ARRAY", message: "action_rules must be an array." });
+    return;
+  }
+  const ruleNames = new Set<string>();
+  const outcomes = new Set<string>();
+  contract.action_rules.forEach((raw, index) => {
+    const path = `$.action_rules[${index}]`;
+    if (!isRecord(raw)) {
+      errors.push({ path, code: "ACTION_RULE_NOT_OBJECT", message: "action rule must be an object." });
+      return;
+    }
+    checkUnknownKeys(raw, ACTION_RULE_KEYS, path, errors);
+    if (raw.schema_version !== "synapsor.action-rule.v1") errors.push({ path: `${path}.schema_version`, code: "INVALID_ACTION_RULE_VERSION", message: "schema_version must be synapsor.action-rule.v1." });
+    validateNamedAuthority(raw.name, `${path}.name`, ruleNames, "ACTION_RULE", errors);
+    if (!isDottedName(raw.outcome)) errors.push({ path: `${path}.outcome`, code: "INVALID_ACTION_OUTCOME", message: "outcome must be a fixed qualified business name." });
+    else addUnique(outcomes, raw.outcome, `${path}.outcome`, "DUPLICATE_ACTION_OUTCOME", errors);
+    if (!isQualifiedOrSafeName(raw.context) || !contextNames.has(String(raw.context))) errors.push({ path: `${path}.context`, code: "UNKNOWN_ACTION_RULE_CONTEXT", message: "context must reference a declared trusted context." });
+    if (!isSafeIdentifier(raw.source)) errors.push({ path: `${path}.source`, code: "INVALID_ACTION_RULE_SOURCE", message: "source must be a fixed safe identifier." });
+    if (!boundaryNames.has(String(raw.verification_boundary_ref))) errors.push({ path: `${path}.verification_boundary_ref`, code: "UNKNOWN_VERIFICATION_BOUNDARY", message: "verification_boundary_ref must reference this contract." });
+    if (!envelopeNames.has(String(raw.effect_envelope_ref))) errors.push({ path: `${path}.effect_envelope_ref`, code: "UNKNOWN_EFFECT_ENVELOPE", message: "effect_envelope_ref must reference this contract." });
+    validateActionRuleSubjects(raw.subjects, path, resourceNames, errors);
+    validateRuleBooleanExpression(raw.require, `${path}.require`, errors, 0);
+    if (!isRecord(raw.derive)) errors.push({ path: `${path}.derive`, code: "ACTION_RULE_DERIVE_NOT_OBJECT", message: "derive must map fixed names to scalar expressions." });
+    else for (const [name, expression] of Object.entries(raw.derive)) {
+      if (!isSafeIdentifier(name)) errors.push({ path: `${path}.derive.${name}`, code: "INVALID_DERIVED_NAME", message: "derived value names must be safe identifiers." });
+      validateRuleScalarExpression(expression, `${path}.derive.${name}`, errors, 0);
+    }
+    if (!isRecord(raw.effect)) errors.push({ path: `${path}.effect`, code: "ACTION_RULE_EFFECT_REQUIRED", message: "effect must be an exact object." });
+    else {
+      checkUnknownKeys(raw.effect, ACTION_RULE_EFFECT_KEYS, `${path}.effect`, errors);
+      if (raw.effect.operation !== "update" && raw.effect.operation !== "insert") errors.push({ path: `${path}.effect.operation`, code: "INVALID_ACTION_RULE_EFFECT", message: "effect operation must be update or insert." });
+      if (!isQualifiedOrSafeName(raw.effect.target_resource) || !resourceNames.has(String(raw.effect.target_resource))) errors.push({ path: `${path}.effect.target_resource`, code: "UNKNOWN_ACTION_RULE_EFFECT_RESOURCE", message: "effect target_resource must reference a declared resource." });
+      if (raw.effect.target_binding !== undefined && !isSafeIdentifier(raw.effect.target_binding)) errors.push({ path: `${path}.effect.target_binding`, code: "INVALID_ACTION_RULE_TARGET_BINDING", message: "target_binding must be a safe identifier." });
+      if (!isRecord(raw.effect.set) || Object.keys(raw.effect.set).length === 0) errors.push({ path: `${path}.effect.set`, code: "ACTION_RULE_EFFECT_SET_REQUIRED", message: "effect.set must contain at least one derived field." });
+      else for (const [field, expression] of Object.entries(raw.effect.set)) {
+        if (!isSafeIdentifier(field)) errors.push({ path: `${path}.effect.set.${field}`, code: "INVALID_ACTION_RULE_EFFECT_FIELD", message: "effect fields must be safe identifiers." });
+        validateRuleScalarExpression(expression, `${path}.effect.set.${field}`, errors, 0);
+      }
+    }
+    if (!isDottedName(raw.approval_class)) errors.push({ path: `${path}.approval_class`, code: "INVALID_ACTION_RULE_APPROVAL_CLASS", message: "approval_class must be a fixed name." });
+    if (!Number.isSafeInteger(raw.ttl_seconds) || Number(raw.ttl_seconds) < 15 || Number(raw.ttl_seconds) > 3600) errors.push({ path: `${path}.ttl_seconds`, code: "INVALID_ACTION_RULE_TTL", message: "ttl_seconds must be an integer from 15 through 3600." });
+  });
+}
+
+function validateVerificationResources(value: unknown, boundaryPath: string, resourceNames: Set<string>, errors: ValidationIssue[]): void {
+  const path = `${boundaryPath}.resources`;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 32) {
+    errors.push({ path, code: "VERIFICATION_RESOURCES_REQUIRED", message: "verification resources must contain 1 through 32 bounded bindings." });
+    return;
+  }
+  const bindings = new Set<string>();
+  value.forEach((raw, index) => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(raw)) { errors.push({ path: itemPath, code: "VERIFICATION_RESOURCE_NOT_OBJECT", message: "verification resource must be an object." }); return; }
+    checkUnknownKeys(raw, VERIFICATION_RESOURCE_KEYS, itemPath, errors);
+    if (!isSafeIdentifier(raw.binding)) errors.push({ path: `${itemPath}.binding`, code: "INVALID_VERIFICATION_BINDING", message: "binding must be a safe identifier." });
+    else addUnique(bindings, raw.binding, `${itemPath}.binding`, "DUPLICATE_VERIFICATION_BINDING", errors);
+    if (!isQualifiedOrSafeName(raw.resource) || !resourceNames.has(String(raw.resource))) errors.push({ path: `${itemPath}.resource`, code: "UNKNOWN_VERIFICATION_RESOURCE", message: "resource must reference a declared resource." });
+    if (!isSafeIdentifier(raw.primary_key)) errors.push({ path: `${itemPath}.primary_key`, code: "INVALID_VERIFICATION_PRIMARY_KEY", message: "primary_key must be a safe identifier." });
+    if (raw.version_field !== undefined && !isSafeIdentifier(raw.version_field)) errors.push({ path: `${itemPath}.version_field`, code: "INVALID_VERIFICATION_VERSION_FIELD", message: "version_field must be a safe identifier." });
+    validateVerificationBindingSource(raw.source, `${itemPath}.source`, errors);
+    validateVerificationFields(raw.fields, `${itemPath}.fields`, errors);
+    validateVerificationScope(raw.scope, `${itemPath}.scope`, errors);
+    if (raw.cardinality !== "one" && raw.cardinality !== "many") errors.push({ path: `${itemPath}.cardinality`, code: "INVALID_VERIFICATION_CARDINALITY", message: "cardinality must be one or many." });
+    if (!Number.isSafeInteger(raw.max_rows) || Number(raw.max_rows) < 1 || Number(raw.max_rows) > 100 || (raw.cardinality === "one" && raw.max_rows !== 1)) errors.push({ path: `${itemPath}.max_rows`, code: "INVALID_VERIFICATION_ROW_BOUND", message: "one bindings require 1 row; many bindings require an explicit maximum no greater than 100." });
+    if (raw.overflow !== "ineligible" && raw.overflow !== "unsupported") errors.push({ path: `${itemPath}.overflow`, code: "INVALID_VERIFICATION_OVERFLOW", message: "overflow must fail as ineligible or unsupported." });
+    if (raw.lock !== "for_update") errors.push({ path: `${itemPath}.lock`, code: "VERIFICATION_LOCK_REQUIRED", message: "first-release rule facts require for_update locking." });
+    if (raw.deterministic_order !== undefined) {
+      if (!Array.isArray(raw.deterministic_order) || raw.deterministic_order.length === 0) errors.push({ path: `${itemPath}.deterministic_order`, code: "INVALID_VERIFICATION_ORDER", message: "deterministic_order must be a non-empty bounded list." });
+      else raw.deterministic_order.forEach((entry, orderIndex) => {
+        const orderPath = `${itemPath}.deterministic_order[${orderIndex}]`;
+        if (!isRecord(entry)) errors.push({ path: orderPath, code: "VERIFICATION_ORDER_NOT_OBJECT", message: "order entry must be an object." });
+        else {
+          checkUnknownKeys(entry, VERIFICATION_ORDER_KEYS, orderPath, errors);
+          if (!isSafeIdentifier(entry.field) || (entry.direction !== "asc" && entry.direction !== "desc")) errors.push({ path: orderPath, code: "INVALID_VERIFICATION_ORDER", message: "order requires one fixed field and direction." });
+        }
+      });
+    }
+  });
+  if (Array.isArray(value)) value.forEach((raw, index) => {
+    if (!isRecord(raw) || !isRecord(raw.source) || raw.source.kind !== "relationship") return;
+    if (!bindings.has(String(raw.source.from_binding))) errors.push({ path: `${path}[${index}].source.from_binding`, code: "UNKNOWN_VERIFICATION_PARENT_BINDING", message: "relationship source must reference another binding." });
+  });
+}
+
+function validateVerificationBindingSource(value: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(value)) { errors.push({ path, code: "VERIFICATION_SOURCE_REQUIRED", message: "binding source is required." }); return; }
+  checkUnknownKeys(value, VERIFICATION_SOURCE_KEYS, path, errors);
+  if (value.kind === "subject_ref") {
+    checkVariantKeys(value, VERIFICATION_SOURCE_KEYS, new Set(["kind"]), path, errors);
+    for (const key of ["from_binding", "relationship", "local_field", "target_field", "direction"]) if (value[key] !== undefined) errors.push({ path: `${path}.${key}`, code: "SUBJECT_SOURCE_FIELD_FORBIDDEN", message: "subject_ref has no relationship fields." });
+    return;
+  }
+  if (value.kind !== "relationship") { errors.push({ path: `${path}.kind`, code: "INVALID_VERIFICATION_SOURCE_KIND", message: "source kind must be subject_ref or relationship." }); return; }
+  checkVariantKeys(value, VERIFICATION_SOURCE_KEYS, VERIFICATION_SOURCE_KEYS, path, errors);
+  for (const key of ["from_binding", "relationship", "local_field", "target_field"] as const) if (!isSafeIdentifier(value[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_VERIFICATION_RELATIONSHIP", message: `${key} must be a fixed identifier.` });
+  if (value.direction !== "forward" && value.direction !== "inverse") errors.push({ path: `${path}.direction`, code: "INVALID_VERIFICATION_DIRECTION", message: "direction must be forward or inverse." });
+}
+
+function validateVerificationFields(value: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 256) { errors.push({ path, code: "VERIFICATION_FIELDS_REQUIRED", message: "fields must contain 1 through 256 reviewed fields." }); return; }
+  const names = new Set<string>();
+  value.forEach((raw, index) => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(raw)) { errors.push({ path: itemPath, code: "VERIFICATION_FIELD_NOT_OBJECT", message: "field must be an object." }); return; }
+    checkUnknownKeys(raw, VERIFICATION_FIELD_KEYS, itemPath, errors);
+    if (!isSafeIdentifier(raw.name)) errors.push({ path: `${itemPath}.name`, code: "INVALID_VERIFICATION_FIELD", message: "field name must be a safe identifier." });
+    else addUnique(names, raw.name, `${itemPath}.name`, "DUPLICATE_VERIFICATION_FIELD", errors);
+    validateRuleScalarType(raw.type, `${itemPath}.type`, errors);
+    if (raw.nullable !== undefined && typeof raw.nullable !== "boolean") errors.push({ path: `${itemPath}.nullable`, code: "INVALID_VERIFICATION_NULLABLE", message: "nullable must be boolean." });
+    if (raw.model_visible !== undefined && typeof raw.model_visible !== "boolean") errors.push({ path: `${itemPath}.model_visible`, code: "INVALID_VERIFICATION_VISIBILITY", message: "model_visible must be boolean." });
+  });
+}
+
+function validateVerificationScope(value: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(value)) { errors.push({ path, code: "VERIFICATION_SCOPE_REQUIRED", message: "every verification resource requires reviewed trusted scope." }); return; }
+  checkUnknownKeys(value, VERIFICATION_SCOPE_KEYS, path, errors);
+  if (value.mode === "columns") {
+    checkVariantKeys(value, VERIFICATION_SCOPE_KEYS, new Set(["mode", "tenant_field", "principal_field"]), path, errors);
+    if (!isSafeIdentifier(value.tenant_field)) errors.push({ path: `${path}.tenant_field`, code: "VERIFICATION_TENANT_FIELD_REQUIRED", message: "column scope requires tenant_field." });
+    if (value.principal_field !== undefined && !isSafeIdentifier(value.principal_field)) errors.push({ path: `${path}.principal_field`, code: "INVALID_VERIFICATION_PRINCIPAL_FIELD", message: "principal_field must be fixed." });
+  } else if (value.mode === "inherited") {
+    checkVariantKeys(value, VERIFICATION_SCOPE_KEYS, new Set(["mode", "from_binding"]), path, errors);
+    if (!isSafeIdentifier(value.from_binding)) errors.push({ path: `${path}.from_binding`, code: "VERIFICATION_SCOPE_PARENT_REQUIRED", message: "inherited scope requires a parent binding." });
+  } else if (value.mode === "single_organization") {
+    checkVariantKeys(value, VERIFICATION_SCOPE_KEYS, new Set(["mode", "organization_id", "principal_field"]), path, errors);
+    if (!isNonEmptyString(value.organization_id)) errors.push({ path: `${path}.organization_id`, code: "VERIFICATION_ORGANIZATION_REQUIRED", message: "single-organization scope requires the reviewed organization ID." });
+    if (value.principal_field !== undefined && !isSafeIdentifier(value.principal_field)) errors.push({ path: `${path}.principal_field`, code: "INVALID_VERIFICATION_PRINCIPAL_FIELD", message: "principal_field must be fixed." });
+  } else errors.push({ path: `${path}.mode`, code: "INVALID_VERIFICATION_SCOPE", message: "scope mode must be columns, inherited, or single_organization." });
+}
+
+function validateDerivedEffectFields(value: unknown, envelopePath: string, errors: ValidationIssue[]): void {
+  const path = `${envelopePath}.allowed_fields`;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 64) { errors.push({ path, code: "DERIVED_EFFECT_FIELDS_REQUIRED", message: "allowed_fields must contain 1 through 64 exact fields." }); return; }
+  const names = new Set<string>();
+  value.forEach((raw, index) => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(raw)) { errors.push({ path: itemPath, code: "DERIVED_EFFECT_FIELD_NOT_OBJECT", message: "allowed effect field must be an object." }); return; }
+    checkUnknownKeys(raw, EFFECT_FIELD_KEYS, itemPath, errors);
+    if (!isSafeIdentifier(raw.name)) errors.push({ path: `${itemPath}.name`, code: "INVALID_DERIVED_EFFECT_FIELD", message: "effect field must be fixed." });
+    else addUnique(names, raw.name, `${itemPath}.name`, "DUPLICATE_DERIVED_EFFECT_FIELD", errors);
+    validateRuleScalarType(raw.type, `${itemPath}.type`, errors);
+    if (raw.minimum !== undefined && !Number.isSafeInteger(raw.minimum)) errors.push({ path: `${itemPath}.minimum`, code: "INVALID_DERIVED_EFFECT_MINIMUM", message: "numeric minimum must be a safe integer." });
+    if (raw.maximum !== undefined && !Number.isSafeInteger(raw.maximum)) errors.push({ path: `${itemPath}.maximum`, code: "INVALID_DERIVED_EFFECT_MAXIMUM", message: "numeric maximum must be a safe integer." });
+    if (typeof raw.minimum === "number" && typeof raw.maximum === "number" && raw.minimum > raw.maximum) errors.push({ path: itemPath, code: "INVALID_DERIVED_EFFECT_RANGE", message: "minimum must not exceed maximum." });
+    if ((raw.minimum !== undefined || raw.maximum !== undefined)
+      && (!isRecord(raw.type) || (raw.type.kind !== "integer" && raw.type.kind !== "money_minor"))) {
+      errors.push({ path: itemPath, code: "INVALID_DERIVED_EFFECT_RANGE_TYPE", message: "minimum and maximum are valid only for integer or money_minor fields." });
+    }
+    if (raw.values !== undefined) {
+      if (!Array.isArray(raw.values)
+        || raw.values.length === 0
+        || raw.values.length > 256
+        || raw.values.some((item) => !isJsonScalar(item))
+        || new Set(raw.values.map((item) => JSON.stringify(item))).size !== raw.values.length) {
+        errors.push({ path: `${itemPath}.values`, code: "INVALID_DERIVED_EFFECT_VALUES", message: "values must be a bounded, unique finite scalar allowlist." });
+      } else {
+        raw.values.forEach((item, valueIndex) => validateRuleLiteralValue(item, raw.type, `${itemPath}.values[${valueIndex}]`, errors));
+      }
+    }
+  });
+}
+
+function validateDerivedDedup(value: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(value)) { errors.push({ path, code: "DERIVED_INSERT_DEDUP_REQUIRED", message: "deduplication must be an object." }); return; }
+  checkUnknownKeys(value, EFFECT_DEDUP_KEYS, path, errors);
+  if (!Array.isArray(value.components) || value.components.length < 1 || value.components.length > 8) { errors.push({ path: `${path}.components`, code: "INVALID_DERIVED_DEDUP_COMPONENTS", message: "deduplication requires 1 through 8 components." }); return; }
+  const columns = new Set<string>();
+  value.components.forEach((raw, index) => {
+    const itemPath = `${path}.components[${index}]`;
+    if (!isRecord(raw)) { errors.push({ path: itemPath, code: "DERIVED_DEDUP_COMPONENT_NOT_OBJECT", message: "deduplication component must be an object." }); return; }
+    checkUnknownKeys(raw, EFFECT_DEDUP_COMPONENT_KEYS, itemPath, errors);
+    if (!isSafeIdentifier(raw.column)) errors.push({ path: `${itemPath}.column`, code: "INVALID_DERIVED_DEDUP_COLUMN", message: "deduplication column must be fixed." });
+    else addUnique(columns, raw.column, `${itemPath}.column`, "DUPLICATE_DERIVED_DEDUP_COLUMN", errors);
+    if (!["proposal_id", "trusted_tenant", "derived", "fixed"].includes(String(raw.source))) errors.push({ path: `${itemPath}.source`, code: "INVALID_DERIVED_DEDUP_SOURCE", message: "unsupported deduplication source." });
+    if (raw.source === "derived") {
+      checkVariantKeys(raw, EFFECT_DEDUP_COMPONENT_KEYS, new Set(["column", "source", "derived"]), itemPath, errors);
+      if (!isSafeIdentifier(raw.derived)) errors.push({ path: `${itemPath}.derived`, code: "DERIVED_DEDUP_VALUE_REQUIRED", message: "derived source requires one derived value name." });
+    } else if (raw.source === "fixed") {
+      checkVariantKeys(raw, EFFECT_DEDUP_COMPONENT_KEYS, new Set(["column", "source", "fixed"]), itemPath, errors);
+      if (!isJsonScalar(raw.fixed)) errors.push({ path: `${itemPath}.fixed`, code: "FIXED_DEDUP_VALUE_REQUIRED", message: "fixed source requires one scalar." });
+    } else if (raw.source === "proposal_id" || raw.source === "trusted_tenant") {
+      checkVariantKeys(raw, EFFECT_DEDUP_COMPONENT_KEYS, new Set(["column", "source"]), itemPath, errors);
+    }
+  });
+}
+
+function validateActionRuleSubjects(value: unknown, rulePath: string, resourceNames: Set<string>, errors: ValidationIssue[]): void {
+  const path = `${rulePath}.subjects`;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 8) { errors.push({ path, code: "ACTION_RULE_SUBJECTS_REQUIRED", message: "subjects must contain 1 through 8 opaque-reference bindings." }); return; }
+  const bindings = new Set<string>();
+  value.forEach((raw, index) => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(raw)) { errors.push({ path: itemPath, code: "ACTION_RULE_SUBJECT_NOT_OBJECT", message: "subject must be an object." }); return; }
+    checkUnknownKeys(raw, ACTION_RULE_SUBJECT_KEYS, itemPath, errors);
+    if (!isSafeIdentifier(raw.binding)) errors.push({ path: `${itemPath}.binding`, code: "INVALID_ACTION_RULE_SUBJECT_BINDING", message: "subject binding must be fixed." });
+    else addUnique(bindings, raw.binding, `${itemPath}.binding`, "DUPLICATE_ACTION_RULE_SUBJECT_BINDING", errors);
+    if (!isQualifiedOrSafeName(raw.resource) || !resourceNames.has(String(raw.resource))) errors.push({ path: `${itemPath}.resource`, code: "UNKNOWN_ACTION_RULE_SUBJECT_RESOURCE", message: "subject resource must be declared." });
+    if (raw.input !== "opaque_subject_ref") errors.push({ path: `${itemPath}.input`, code: "ACTION_RULE_OPAQUE_SUBJECT_REQUIRED", message: "rule subjects must use opaque_subject_ref." });
+  });
+}
+
+function validateRuleScalarType(value: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isRecord(value)) { errors.push({ path, code: "ACTION_RULE_TYPE_REQUIRED", message: "one portable scalar type is required." }); return; }
+  checkUnknownKeys(value, ACTION_RULE_SCALAR_TYPE_KEYS, path, errors);
+  if (!["boolean", "integer", "money_minor", "string", "date", "timestamp"].includes(String(value.kind))) { errors.push({ path: `${path}.kind`, code: "INVALID_ACTION_RULE_TYPE", message: "unsupported portable scalar type." }); return; }
+  checkVariantKeys(
+    value,
+    ACTION_RULE_SCALAR_TYPE_KEYS,
+    ACTION_RULE_SCALAR_TYPE_VARIANT_KEYS[value.kind as keyof typeof ACTION_RULE_SCALAR_TYPE_VARIANT_KEYS],
+    path,
+    errors,
+  );
+  if (value.kind === "integer" && value.unit !== undefined && !isSafeUnit(value.unit)) errors.push({ path: `${path}.unit`, code: "INVALID_ACTION_RULE_UNIT", message: "integer unit must be a short fixed unit." });
+  if (value.kind === "money_minor" && (typeof value.currency !== "string" || !/^[A-Z]{3}$/.test(value.currency))) errors.push({ path: `${path}.currency`, code: "ACTION_RULE_CURRENCY_REQUIRED", message: "money_minor requires an ISO-style three-letter currency." });
+  if (value.kind === "string") {
+    if (!Number.isSafeInteger(value.max_length) || Number(value.max_length) < 1 || Number(value.max_length) > 4096) errors.push({ path: `${path}.max_length`, code: "ACTION_RULE_STRING_BOUND_REQUIRED", message: "string max_length must be 1 through 4096." });
+    if (value.comparison !== "exact") errors.push({ path: `${path}.comparison`, code: "ACTION_RULE_EXACT_STRING_REQUIRED", message: "first-release string comparisons are exact." });
+    if (value.enum !== undefined && (!Array.isArray(value.enum)
+      || value.enum.length === 0
+      || value.enum.length > 256
+      || value.enum.some((item) => typeof item !== "string" || item.length > Number(value.max_length))
+      || new Set(value.enum).size !== value.enum.length)) {
+      errors.push({ path: `${path}.enum`, code: "INVALID_ACTION_RULE_ENUM", message: "enum must be a bounded, unique string allowlist whose values fit max_length." });
+    }
+  }
+}
+
+function validateRuleLiteralValue(value: unknown, type: unknown, path: string, errors: ValidationIssue[]): void {
+  if (value === null || !isRecord(type)) return;
+  let valid = false;
+  switch (type.kind) {
+    case "boolean": valid = typeof value === "boolean"; break;
+    case "integer":
+    case "money_minor": valid = Number.isSafeInteger(value); break;
+    case "string": valid = typeof value === "string"
+      && Number.isSafeInteger(type.max_length)
+      && value.length <= Number(type.max_length)
+      && (!Array.isArray(type.enum) || type.enum.includes(value)); break;
+    case "date": valid = isCanonicalDate(value); break;
+    case "timestamp": valid = isCanonicalUtcInstant(value); break;
+    default: return;
+  }
+  if (!valid) errors.push({ path, code: "ACTION_RULE_LITERAL_TYPE_MISMATCH", message: "literal value must exactly match its declared portable type." });
+}
+
+function validateRuleScalarExpression(value: unknown, path: string, errors: ValidationIssue[], depth: number): void {
+  if (depth > 24) { errors.push({ path, code: "ACTION_RULE_EXPRESSION_TOO_DEEP", message: "rule expressions may be at most 24 levels deep." }); return; }
+  if (!isRecord(value)) { errors.push({ path, code: "ACTION_RULE_SCALAR_EXPRESSION_REQUIRED", message: "scalar expression must be an object." }); return; }
+  checkUnknownKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, path, errors);
+  switch (value.kind) {
+    case "literal":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.literal, path, errors);
+      if (!isJsonScalar(value.value)) errors.push({ path: `${path}.value`, code: "INVALID_ACTION_RULE_LITERAL", message: "literal must be a finite JSON scalar." });
+      validateRuleScalarType(value.value_type, `${path}.value_type`, errors);
+      validateRuleLiteralValue(value.value, value.value_type, `${path}.value`, errors);
+      return;
+    case "trusted":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.trusted, path, errors);
+      if (!["tenant", "organization", "principal", "transaction_time"].includes(String(value.binding))) errors.push({ path: `${path}.binding`, code: "INVALID_TRUSTED_RULE_BINDING", message: "trusted binding must be tenant, organization, principal, or transaction_time." });
+      return;
+    case "field":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.field, path, errors);
+      if (!isSafeIdentifier(value.binding) || !isSafeIdentifier(value.field)) errors.push({ path, code: "INVALID_ACTION_RULE_FIELD_REFERENCE", message: "field references require fixed binding and field identifiers." });
+      return;
+    case "derived":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.derived, path, errors);
+      if (!isSafeIdentifier(value.name)) errors.push({ path: `${path}.name`, code: "INVALID_ACTION_RULE_DERIVED_REFERENCE", message: "derived reference must be fixed." });
+      return;
+    case "aggregate":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.aggregate, path, errors);
+      if (!["count", "sum", "min", "max"].includes(String(value.operation)) || !isSafeIdentifier(value.binding) || (value.operation !== "count" && !isSafeIdentifier(value.field))) errors.push({ path, code: "INVALID_ACTION_RULE_AGGREGATE", message: "aggregate requires a supported operation and fixed bounded binding." });
+      return;
+    case "math":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.math, path, errors);
+      if (!["add", "subtract", "min", "max"].includes(String(value.operation)) || !Array.isArray(value.inputs) || value.inputs.length < 2 || value.inputs.length > 16) errors.push({ path, code: "INVALID_ACTION_RULE_MATH", message: "math requires 2 through 16 inputs." });
+      else value.inputs.forEach((item, index) => validateRuleScalarExpression(item, `${path}.inputs[${index}]`, errors, depth + 1));
+      return;
+    case "scale":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.scale, path, errors);
+      if (value.operation !== "multiply" && value.operation !== "divide") errors.push({ path: `${path}.operation`, code: "INVALID_ACTION_RULE_SCALE", message: "scale supports multiply or divide." });
+      if (!Number.isSafeInteger(value.constant) || value.constant === 0) errors.push({ path: `${path}.constant`, code: "INVALID_ACTION_RULE_SCALE_CONSTANT", message: "scale constant must be a non-zero safe integer." });
+      if (!["floor", "ceiling", "half_even"].includes(String(value.rounding))) errors.push({ path: `${path}.rounding`, code: "ACTION_RULE_ROUNDING_REQUIRED", message: "scale requires explicit rounding." });
+      validateRuleScalarExpression(value.input, `${path}.input`, errors, depth + 1);
+      return;
+    case "clamp":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.clamp, path, errors);
+      validateRuleScalarExpression(value.input, `${path}.input`, errors, depth + 1);
+      validateRuleScalarExpression(value.minimum, `${path}.minimum`, errors, depth + 1);
+      validateRuleScalarExpression(value.maximum, `${path}.maximum`, errors, depth + 1);
+      return;
+    case "add_duration":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.add_duration, path, errors);
+      if (!Number.isSafeInteger(value.seconds) || Number(value.seconds) < -31_536_000 || Number(value.seconds) > 31_536_000) errors.push({ path: `${path}.seconds`, code: "INVALID_ACTION_RULE_DURATION", message: "duration must be a reviewed whole-second value within one year." });
+      validateRuleScalarExpression(value.timestamp, `${path}.timestamp`, errors, depth + 1);
+      return;
+    default:
+      errors.push({ path: `${path}.kind`, code: "UNKNOWN_ACTION_RULE_SCALAR_OPERATOR", message: "unsupported scalar expression kind." });
+  }
+}
+
+function validateRuleBooleanExpression(value: unknown, path: string, errors: ValidationIssue[], depth: number): void {
+  if (depth > 24) { errors.push({ path, code: "ACTION_RULE_EXPRESSION_TOO_DEEP", message: "rule expressions may be at most 24 levels deep." }); return; }
+  if (!isRecord(value)) { errors.push({ path, code: "ACTION_RULE_BOOLEAN_EXPRESSION_REQUIRED", message: "boolean expression must be an object." }); return; }
+  checkUnknownKeys(value, ACTION_RULE_BOOLEAN_EXPR_KEYS, path, errors);
+  if (value.kind === "all" || value.kind === "any") {
+    checkVariantKeys(value, ACTION_RULE_BOOLEAN_EXPR_KEYS, ACTION_RULE_BOOLEAN_EXPR_VARIANT_KEYS[value.kind], path, errors);
+    if (!Array.isArray(value.expressions) || value.expressions.length < 1 || value.expressions.length > 32) errors.push({ path: `${path}.expressions`, code: "INVALID_ACTION_RULE_BOOLEAN_SET", message: "all/any requires 1 through 32 expressions." });
+    else value.expressions.forEach((item, index) => validateRuleBooleanExpression(item, `${path}.expressions[${index}]`, errors, depth + 1));
+    return;
+  }
+  if (value.kind === "not") {
+    checkVariantKeys(value, ACTION_RULE_BOOLEAN_EXPR_KEYS, ACTION_RULE_BOOLEAN_EXPR_VARIANT_KEYS.not, path, errors);
+    validateRuleBooleanExpression(value.expression, `${path}.expression`, errors, depth + 1);
+    return;
+  }
+  if (value.kind === "compare") {
+    checkVariantKeys(value, ACTION_RULE_BOOLEAN_EXPR_KEYS, ACTION_RULE_BOOLEAN_EXPR_VARIANT_KEYS.compare, path, errors);
+    if (!["eq", "neq", "lt", "lte", "gt", "gte"].includes(String(value.operator))) errors.push({ path: `${path}.operator`, code: "INVALID_ACTION_RULE_COMPARISON", message: "unsupported comparison operator." });
+    validateRuleScalarExpression(value.left, `${path}.left`, errors, depth + 1);
+    validateRuleScalarExpression(value.right, `${path}.right`, errors, depth + 1);
+    return;
+  }
+  if (value.kind === "null_check") {
+    checkVariantKeys(value, ACTION_RULE_BOOLEAN_EXPR_KEYS, ACTION_RULE_BOOLEAN_EXPR_VARIANT_KEYS.null_check, path, errors);
+    if (value.operator !== "is_null" && value.operator !== "is_not_null") errors.push({ path: `${path}.operator`, code: "INVALID_ACTION_RULE_NULL_CHECK", message: "null check must be is_null or is_not_null." });
+    validateRuleScalarExpression(value.value, `${path}.value`, errors, depth + 1);
+    return;
+  }
+  if (value.kind === "in") {
+    checkVariantKeys(value, ACTION_RULE_BOOLEAN_EXPR_KEYS, ACTION_RULE_BOOLEAN_EXPR_VARIANT_KEYS.in, path, errors);
+    validateRuleScalarExpression(value.value, `${path}.value`, errors, depth + 1);
+    if (!Array.isArray(value.values) || value.values.length < 1 || value.values.length > 256) errors.push({ path: `${path}.values`, code: "INVALID_ACTION_RULE_IN_SET", message: "in requires 1 through 256 reviewed scalar expressions." });
+    else value.values.forEach((item, index) => validateRuleScalarExpression(item, `${path}.values[${index}]`, errors, depth + 1));
+    return;
+  }
+  if (value.kind === "exists") {
+    checkVariantKeys(value, ACTION_RULE_BOOLEAN_EXPR_KEYS, ACTION_RULE_BOOLEAN_EXPR_VARIANT_KEYS.exists, path, errors);
+    if (!isSafeIdentifier(value.binding)) errors.push({ path: `${path}.binding`, code: "INVALID_ACTION_RULE_EXISTS_BINDING", message: "exists binding must be fixed." });
+    validateRuleBooleanExpression(value.where, `${path}.where`, errors, depth + 1);
+    return;
+  }
+  errors.push({ path: `${path}.kind`, code: "UNKNOWN_ACTION_RULE_BOOLEAN_OPERATOR", message: "unsupported boolean expression kind." });
+}
+
+function validateNamedAuthority(value: unknown, path: string, names: Set<string>, label: string, errors: ValidationIssue[]): void {
+  if (!isDottedName(value)) errors.push({ path, code: `INVALID_${label}_NAME`, message: "name must be a fixed safe or qualified name." });
+  else addUnique(names, value, path, `DUPLICATE_${label}_NAME`, errors);
+}
+
+function isDottedName(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(value);
+}
+
+function isSafeUnit(value: unknown): boolean {
+  return typeof value === "string" && /^[A-Za-z][A-Za-z0-9_.-]{0,31}$/.test(value);
+}
+
 function validateArrayRecords(value: unknown, path: string, keys: Set<string>, label: string, errors: ValidationIssue[]): void {
   if (!Array.isArray(value)) {
     errors.push({ path, code: `${label}_NOT_ARRAY`, message: `${path} must be an array.` });
@@ -2236,6 +2749,23 @@ function checkUnknownKeys(value: JsonRecord, allowed: Set<string>, path: string,
   }
 }
 
+function checkVariantKeys(
+  value: JsonRecord,
+  unionKeys: Set<string>,
+  variantKeys: Set<string>,
+  path: string,
+  errors: ValidationIssue[],
+): void {
+  for (const key of Object.keys(value)) {
+    if (!unionKeys.has(key) || variantKeys.has(key) || isExtensionKey(key)) continue;
+    errors.push({
+      path: `${path}.${key}`,
+      code: "INVALID_DISCRIMINATED_VARIANT_FIELD",
+      message: `${key} is not valid when kind/mode/source is ${String(value.kind ?? value.mode ?? value.source)}.`,
+    });
+  }
+}
+
 function addUnique(seen: Set<string>, name: unknown, path: string, code: string, errors: ValidationIssue[]): void {
   const value = String(name);
   if (seen.has(value)) errors.push({ path, code, message: `Duplicate name: ${value}` });
@@ -2274,6 +2804,15 @@ function isCanonicalUtcInstant(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function isCanonicalDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year!, month! - 1, day!));
+  return parsed.getUTCFullYear() === year
+    && parsed.getUTCMonth() === month! - 1
+    && parsed.getUTCDate() === day;
 }
 
 function isPositiveInteger(value: unknown): boolean {

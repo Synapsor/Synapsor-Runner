@@ -285,6 +285,8 @@ describe("guided start surfaces", () => {
         expect.any(Function),
       );
       expect(output).toContain("Existing Runner-managed boundary project found.");
+      expect(output).toContain("Saved Read candidate: 1 table(s) in the initial disabled revision; review has not started.");
+      expect(output).toContain("A new model conversation receives the current saved Read and Action state; the prior provider transcript is not retained.");
 
       runBoundaryReview.mockClear();
       await expect(start(

@@ -27,9 +27,12 @@ import type {
   RuntimeConfig,
   DbRowReader,
   TenantCredentialResolver,
+  TrustedContext,
+  SemanticActionRuntime,
   McpRuntime,
   SynapsorMcpServerOptions,
 } from "./runtime-types.js";
+import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import {
   listedLocalCapabilities,
 } from "./capability-authority.js";
@@ -40,6 +43,7 @@ import {
   preflightGeneratedAuthority,
 } from "./generated-authority.js";
 import {
+  projectLocalResourceForModel,
   resourceResult,
 } from "./local-resources.js";
 import {
@@ -79,6 +83,10 @@ import {
   buildAnalyticsCatalog,
   pinAnalyticsCatalogCapability,
 } from "./analytics-catalog.js";
+import {
+  DESCRIBE_ACTIONS_TOOL,
+  REQUEST_CHANGE_TOOL,
+} from "./semantic-actions.js";
 
 export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMcpServerOptions = {}): McpServer {
   const server = new McpServer(
@@ -137,8 +145,62 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
     }
   } else {
     const capabilities = listedLocalCapabilities(runtime.config);
-    const exposedNames = toolNameExposureMap(capabilities.map((capability) => capability.name), toolNameStyle);
-    for (const capability of capabilities) {
+    const runtimeTools = runtime.listTools();
+    const exposedNames = toolNameExposureMap(runtimeTools.map((tool) => tool.name), toolNameStyle);
+    for (const tool of runtimeTools) {
+      const capability = capabilities.find((candidate) => candidate.name === tool.name);
+      if (!capability) {
+        if (tool.name !== DESCRIBE_ACTIONS_TOOL && tool.name !== REQUEST_CHANGE_TOOL) {
+          throw new McpRuntimeError("MCP_TOOL_METADATA_INVALID", `Unsupported local tool metadata for ${tool.name}.`);
+        }
+        const inputSchema = tool.name === DESCRIBE_ACTIONS_TOOL
+          ? z.object({}).strict()
+          : z.object({
+            outcome: z.string().regex(/^[A-Za-z_][A-Za-z0-9_.:-]{0,255}$/u),
+            subject_refs: z.record(
+              z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u),
+              z.string().regex(/^obj_[A-Za-z0-9_-]{32,128}$/u),
+            ).refine((value) => Object.keys(value).length >= 1 && Object.keys(value).length <= 8),
+          }).strict();
+        const toolConfig = {
+          title: tool.title,
+          description: tool.description,
+          inputSchema,
+          annotations: {
+            readOnlyHint: tool.name === DESCRIBE_ACTIONS_TOOL,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
+          _meta: projectToolMetadata({
+            ...tool.annotations,
+            "synapsor.kind": tool.kind,
+            "synapsor.canonical_tool_name": tool.name,
+            "synapsor.exposed_tool_name": tool.name,
+            "synapsor.tool_name_style": "canonical",
+            "synapsor.raw_sql_exposed": false,
+            "synapsor.approval_tool": false,
+          }),
+        };
+        const callback = async (args: unknown, extra: { _meta?: Record<string, unknown> }) =>
+          toolCallResult(runtime, tool.name, args as Record<string, unknown>, {
+            requestMeta: extra._meta,
+            localPresentation: options.localPresentation,
+          });
+        if (tool.name === REQUEST_CHANGE_TOOL) {
+          registerAppTool(server, tool.name, {
+            ...toolConfig,
+            _meta: {
+              ...toolConfig._meta,
+              ui: { resourceUri: PROPOSAL_APP_URI, visibility: ["model", "app"] },
+              "synapsor.mcp_app_mode": "display_only",
+            },
+          }, callback);
+        } else {
+          server.registerTool(tool.name, toolConfig, callback);
+        }
+        continue;
+      }
       const outputSchema = analyticalToolOutputSchema(capability, resultFormat);
       for (const exposedName of exposedNames.get(capability.name) ?? [capability.name]) {
         const toolConfig = {
@@ -231,7 +293,7 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
     ? undefined
     : buildAnalyticsCatalog(runtime.config, resultFormat);
   const projectModelResource = async (uri: string) => projectAuthorityMetadataForModel(
-    await runtime.readResource(uri),
+    projectLocalResourceForModel(await runtime.readResource(uri)),
     authorityMetadata,
   ).value;
   if (analyticsCatalog?.capabilities.length) {
@@ -306,20 +368,39 @@ function resourceVariable(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
-export async function serveStdio(options: { configPath?: string; storePath?: string; config?: RuntimeConfig; toolNameStyle?: ToolNameStyle; resultFormat?: ResultFormat; stdin?: Readable; stdout?: Writable; readRow?: DbRowReader; credentialResolver?: TenantCredentialResolver } = {}): Promise<void> {
+export async function serveStdio(options: {
+  configPath?: string;
+  storePath?: string;
+  store?: ProposalRuntimeStore;
+  config?: RuntimeConfig;
+  env?: NodeJS.ProcessEnv;
+  toolNameStyle?: ToolNameStyle;
+  resultFormat?: ResultFormat;
+  stdin?: Readable;
+  stdout?: Writable;
+  readRow?: DbRowReader;
+  credentialResolver?: TenantCredentialResolver;
+  trustedContext?: TrustedContext;
+  semanticActions?: SemanticActionRuntime;
+} = {}): Promise<void> {
   const config = resolveRuntimeConfig(options.config ?? loadRuntimeConfigFromFile(options.configPath));
+  const env = options.env ?? process.env;
   if (options.readRow && Object.values(config.sources ?? {}).some((source) => source.database_scope?.mode === "postgres_rls")) {
     throw new McpRuntimeError("POSTGRES_RLS_CUSTOM_READER_UNVERIFIED", "Hardened postgres_rls mode requires Runner's verified PostgreSQL reader; a custom readRow cannot be attested by the stock server.");
   }
-  await preflightGeneratedAuthority(config, process.env);
-  await preflightPostgresDatabaseScope(config, process.env, options.credentialResolver);
-  const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, process.env) : undefined;
+  await preflightGeneratedAuthority(config, env);
+  await preflightPostgresDatabaseScope(config, env, options.credentialResolver, options.trustedContext);
+  const cloudTools = config.mode === "cloud" ? await fetchCloudToolMetadata(config, env) : undefined;
   const runtime = createMcpRuntime(config, {
+    env,
     storePath: options.storePath,
+    store: options.store,
     resultFormat: options.resultFormat,
     cloudTools,
     readRow: options.readRow,
     credentialResolver: options.credentialResolver,
+    trustedContext: options.trustedContext,
+    semanticActions: options.semanticActions,
   });
   const server = createSynapsorMcpServer(runtime, {
     toolNameStyle: options.toolNameStyle,

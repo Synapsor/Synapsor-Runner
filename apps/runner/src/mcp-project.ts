@@ -18,7 +18,7 @@ import {
 import { audit, fetchStdioMcpToolsCommand, mcpAuditToolNames } from "./mcp-audit.js";
 import { isManagedAuthoringEntry } from "./mcp-project-domain.js";
 import { defaultBlockedToolSurface, inspectMcpToolBoundary, mcpConfig, mcpConfigure, mcpServe, mcpServeHttp, mcpServeStreamableHttp, mcpSmoke } from "./mcp-runtime.js";
-import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
+import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 
 
 export async function mcp(args: string[]): Promise<number> {
@@ -80,15 +80,11 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   let authoring = requestedAuthoring;
   let toolNames: string[];
   if (requestedAuthoring) {
-    const runtime = await createScopedExploreBoundarySetRuntime({
-      projectRoot,
-      transport: "stdio",
-      env: process.env,
-    });
-    try {
-      await runtime.describe({ limit: 10, include_time_coverage: false });
-    } finally {
-      await runtime.close();
+    const activeBoundaries = await loadActivatedExplorationBoundaries(projectRoot);
+    if (activeBoundaries.length === 0) {
+      throw new Error(
+        `${definition.displayName} install refused because no active reviewed Read Boundary was found`,
+      );
     }
     toolNames = ["app.describe_data", "app.explore_data"];
   } else {
@@ -102,15 +98,11 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
     if (boundary.surface === "local_explore") {
       authoring = true;
       const localExploreRoot = path.dirname(absoluteConfig);
-      const runtime = await createScopedExploreBoundarySetRuntime({
-        projectRoot: localExploreRoot,
-        transport: "stdio",
-        env: process.env,
-      });
-      try {
-        await runtime.describe({ limit: 10, include_time_coverage: false });
-      } finally {
-        await runtime.close();
+      const activeBoundaries = await loadActivatedExplorationBoundaries(localExploreRoot);
+      if (activeBoundaries.length === 0) {
+        throw new Error(
+          `${definition.displayName} install refused because no active reviewed Read Boundary was found`,
+        );
       }
     }
   }
@@ -135,8 +127,8 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
     const actionConfigPath = optionalArg(rest, "--action-config") ?? "./synapsor.actions.runner.json";
     const absoluteActionConfig = path.resolve(projectRoot, actionConfigPath);
     const actionConfig = await readRuntimeConfig(absoluteActionConfig);
-    if (!actionConfig.action_boundary) {
-      throw new Error(`${definition.displayName} Action install refused because ${actionConfigPath} has no active reviewed Action Boundary`);
+    if (!actionConfig.action_boundary && !actionConfig.action_rules) {
+      throw new Error(`${definition.displayName} Action install refused because ${actionConfigPath} has no reviewed Action Boundary binding`);
     }
     const actionBoundary = await inspectMcpToolBoundary([
       "--config", absoluteActionConfig,

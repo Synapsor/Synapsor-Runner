@@ -9,6 +9,7 @@ import {
   initializeGuidedProject,
   preflightGuidedProjectInitialization,
   readGuidedOnboardingState,
+  reconcileGuidedProjectTrustedContext,
   updateGuidedOnboardingState,
 } from "./guided-project.js";
 
@@ -286,6 +287,58 @@ describe("guided onboarding project", () => {
       expect(environment).toContain("SYNAPSOR_TENANT_ID=");
       expect(environment).not.toContain("SYNAPSOR_PRINCIPAL=");
       expect(environment).toContain("SYNAPSOR_OPERATOR_ID=");
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reconciles a later reviewed principal scope into managed config and environment guidance", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-principal-reconcile-"));
+    try {
+      await fs.mkdir(path.join(projectRoot, ".synapsor"), { recursive: true });
+      await fs.writeFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "{}\n");
+      const build = buildFixture();
+      const result = await initializeGuidedProject({
+        projectRoot,
+        build,
+        runnerVersion: "1.8.0",
+      });
+      const active = {
+        ...structuredClone(build.exploration_boundary),
+        pack: {
+          name: "fitflow",
+          resources: [{
+            id: "public.members",
+            principal_key: { value: "principal_id" },
+          }],
+        },
+        activation: {
+          state: "active",
+          digest: `sha256:${"2".repeat(64)}`,
+          actor: "reviewer",
+          activated_at: "2026-09-03T00:00:00.000Z",
+          generation_lock_fingerprint: `sha256:${"1".repeat(64)}`,
+          reviewed_decisions: [],
+        },
+      } as never;
+
+      await expect(reconcileGuidedProjectTrustedContext({
+        projectRoot,
+        activeBoundaries: [active],
+      })).resolves.toEqual({
+        updated: true,
+        principal_environment: "SYNAPSOR_PRINCIPAL",
+      });
+
+      const config = JSON.parse(await fs.readFile(result.config_path, "utf8"));
+      expect(config.trusted_context.values).toEqual({
+        tenant_id_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      });
+      const environment = await fs.readFile(result.environment_path, "utf8");
+      expect(environment).toContain("SYNAPSOR_PRINCIPAL=");
+      expect(environment.match(/^SYNAPSOR_PRINCIPAL=/gm)).toHaveLength(1);
+      expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });
     }

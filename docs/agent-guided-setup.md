@@ -45,6 +45,19 @@ tools. A coding agent operating the terminal must preserve the same separation.
 
 ## Guided Procedure
 
+The product path has one entry point. A developer with a database URL should
+not have to run separate inspect, config, Read, Action, and MCP setup wizards:
+
+```bash
+npx -y @synapsor/runner start --from-env DATABASE_URL --cli
+```
+
+Runner performs metadata-only inspection, starts one model-guided job
+conversation, keeps all generated authority disabled until exact operator
+permissions, and prints the MCP install command when the selected Read and
+Action surfaces are usable. Manual controls remain available from the same
+screen.
+
 ### 1. Verify Local Prerequisites
 
 Run:
@@ -74,16 +87,17 @@ it into chat, then ask me to continue.
 
 ### 2. Start Or Resume The Guided Project
 
-From the intended project directory, run:
+From the intended project directory, run the preferred CLI:
 
 ```bash
-npx -y @synapsor/runner start --from-env DATABASE_URL
+npx -y @synapsor/runner start --from-env DATABASE_URL --cli
 ```
 
 For a fresh interactive project, Runner performs metadata-only inspection,
 creates disabled review artifacts, validates the generated project, initializes
-the local ledger, and starts the secured loopback Workbench. It prints one
-local URL if a browser cannot be opened.
+the local ledger, and starts one Boundary conversation. The human chooses a
+configured OpenAI, Anthropic, or loopback model, or selects the no-model path.
+Workbench remains an optional preview rather than the primary route.
 
 For an existing guided project, the same command resumes it. Resume and Try do
 not rescan the database, rewrite files, or change a digest. To inspect the live
@@ -95,76 +109,110 @@ result remains a disabled update that requires human review and activation. On
 this Start path, `--force` uses the same guarded reconciliation; prefer
 `--rescan` for clarity.
 
+Runner accepts one ordinary-language job of up to 2,000 characters. It derives
+separate, shorter representative Read questions rather than treating the whole
+job as one Explore question. If authoring pauses, the same command offers to
+resume the exact job, concise Read intent, accepted business answers, provider,
+and disabled drafts. It does not ask the human to restate them.
+
 Report:
 
 ```text
 Runner created or resumed a disabled local boundary. No source rows were read
 and the database was not changed.
-Next: review the security exceptions in Workbench.
+Next: choose the drafting path and review the exact model-metadata permission.
 ```
 
-Then stop. The human must review:
+The coding agent may explain the permission, but the human decides whether the
+named structural metadata may go to the named provider. `View exact Runner
+details` is a visible choice inside confirmations; `/details` is available at
+conversation prompts. Neither path calls the model or changes authority.
+
+Then stop for any human decision about:
 
 - fields kept out and fields still uncertain;
 - exact row identity;
 - trusted tenant and principal scope;
 - aggregate-safe dimensions and measures;
 - database-role and RLS posture;
-- the exact digest being activated.
+- the exact Read or Action authority being activated.
 
-Do not click or call activation endpoints for the user.
+Principal-column names are candidates, not proof. The human may confirm their
+business meaning only from application identity design or reviewed RLS policy.
+Concrete tenant and principal values are never needed while authoring reusable
+Boundaries. Do not click, type, or call an authority confirmation for the user.
 
-### 3. Continue After Human Activation
+### 3. Review Read And Action Separately
 
-After the user confirms that Workbench shows an active reviewed boundary,
-continue in the same Workbench session. The built-in Explore form performs the
-first bounded read and PM-style aggregate without SQL or plan JSON.
+One job may produce two disabled artifacts:
 
-The coding agent may verify the active local surface without copying an opaque
-handle:
+- the Read Boundary controls `app.describe_data` and `app.explore_data`;
+- the Action Boundary controls proposal-only business outcomes through
+  `app.describe_actions` and `app.request_change`.
 
-```bash
-npx -y @synapsor/runner try call --list --format json
-```
+The model may propose both, but cannot activate either. Runner presents the
+complete Read permission and the complete Action permission separately. Action
+activation also requires its exact Read dependency to be active. Approval and
+apply remain later, independent authorities.
 
-If no named capability is active yet, that is expected: a temporary local
-Scoped Explore boundary is not a production named tool. Ask the user to run the
-suggested aggregate in Workbench and select **Protect this analysis**.
+For a rule-derived action, verify that the agent supplies only an outcome and
+opaque subject references. Runner privately loads facts and derives the exact
+one-row effect. The model must not supply a patch, raw key, tenant, principal,
+approval mode, or executor. See the [Action Rule Engine](action-rule-engine.md).
 
-Protect creates public DSL, canonical JSON, tests, and a disabled named
-capability. Stop again for exact-digest human activation. Do not activate it
-for the user.
-
-### 4. Verify The First Named Tool
-
-After the human activates a protected named capability, run:
-
-```bash
-npx -y @synapsor/runner try call --list --format json
-```
-
-Use the tool name returned by that command. For a tool with generated sample
-input, run:
+After the human finishes the exact reviews, the coding agent may verify the
+surface:
 
 ```bash
-npx -y @synapsor/runner try call <tool-name> --sample --json
+synapsor-runner tools list \
+  --config ./synapsor.runner.json \
+  --store ./.synapsor/local.db
 ```
 
-Do not invent tenant or principal arguments. Trusted scope comes from the
-reviewed environment/session binding outside model input.
-
-Report:
+Expected after Read-only activation:
 
 ```text
-Your first safe named tool is working.
+app.describe_data
+app.explore_data
+```
+
+Expected after the dependent Action Boundary is also active:
+
+```text
+app.describe_data
+app.explore_data
+app.describe_actions
+app.request_change
+```
+
+The two namespaces remain independently activatable. There is no new MCP tool
+for every query or business outcome.
+
+### 4. Verify The Active Read Surface
+
+The coding agent may list reviewed tools without inventing scope arguments:
+
+```bash
+synapsor-runner tools list --config ./synapsor.runner.json
+```
+
+Terminal Ask or the Explore playground can exercise a reviewed Read Boundary.
+Do not invent tenant or principal arguments. At runtime, trusted scope comes
+from the reviewed environment/session binding outside model input.
+
+Report after a successful bounded read:
+
+```text
+Your reviewed Read Boundary is working.
 The result used only reviewed fields and trusted scope.
 Source database changed: no.
-Next: connect the same reviewed tool surface to your MCP client.
+Next: connect the same Read surface and, if activated, its separate Action
+surface to your MCP client.
 ```
 
 ### 5. Present MCP Setup
 
-Workbench displays ready-to-copy configurations for:
+Runner prints ready-to-copy configurations for:
 
 - Cursor project MCP;
 - Claude Code project MCP and Claude-compatible local stdio MCP;
@@ -185,11 +233,14 @@ Do not write into a client configuration without explicit user consent.
 Cursor, Claude Code, and VS Code have consent-gated project installers:
 
 ```bash
-synapsor-runner mcp install claude-code --project --dry-run
+synapsor-runner mcp install claude-code \
+  --project --authoring --include-actions --project-root . --dry-run
 ```
 
 Use `cursor` or `vscode` instead when that is the selected client. Show the
-dry-run result first. Installation remains a human choice.
+dry-run result first. Installation remains a human choice. When Action
+authority is active, the installer writes adjacent Read (`synapsor`) and Action
+(`synapsor-actions`) entries rather than combining their authority.
 
 ## Guided Write Action
 

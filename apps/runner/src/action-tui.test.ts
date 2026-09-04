@@ -3,6 +3,7 @@ import type { ReadStream, WriteStream } from "node:tty";
 import { describe, expect, it, vi } from "vitest";
 import {
   actionAuthorityRevisionNeedsVersionAdvance,
+  actionInspectionDatabaseUrlEnv,
   actionBoundaryActivationStatusLine,
   actionBoundaryApprovalStatusLine,
   actionBoundaryLimitSummary,
@@ -19,6 +20,7 @@ import {
   conventionalModelAuthoringSession,
   createTerminalActionPrompter,
   generatedGuidedRehearsalArgs,
+  mergeActionProjectInspections,
   rankActionIntent,
   renderActionControlPlaneTable,
   reviewActionDraft,
@@ -27,6 +29,7 @@ import {
   type ActionBoundaryInterviewContext,
   type ActionControlPrompter,
 } from "./action-tui.js";
+import type { SchemaInspection, TableInfo } from "@synapsor-runner/schema-inspector";
 import type { ActionOperatorService, ActionProposalDetail } from "./action-operator.js";
 import type { GuidedActionResourceOption } from "./guided-action.js";
 import { ACTION_SUGGESTION_VERSION, assessActionSuggestion } from "./action-design.js";
@@ -71,6 +74,152 @@ const options = {
 };
 
 describe("Safe Action terminal control plane", () => {
+  const inspectedTable = (
+    name: string,
+    privileges: { select?: boolean; insert?: boolean; update?: boolean } = {},
+    dataType = "integer",
+  ): TableInfo => ({
+    schema: "public",
+    name,
+    type: "table",
+    writable: true,
+    columns: [{
+      name: "id",
+      data_type: dataType,
+      nullable: false,
+      generated: false,
+      ordinal_position: 1,
+      enum_values: [],
+      suggestions: {
+        tenant: false,
+        sensitive: false,
+        immutable: true,
+        conflict: false,
+        large_or_binary: false,
+      },
+    }],
+    primary_key: ["id"],
+    unique_constraints: [],
+    foreign_keys: [],
+    indexes: [],
+    suggestions: {
+      tenant_columns: [],
+      conflict_columns: [],
+      sensitive_columns: [],
+      default_visible_columns: ["id"],
+    },
+    role_posture: {
+      owner: "owner",
+      current_role_is_owner: false,
+      current_role_can_assume_owner: false,
+      privileges: {
+        select: privileges.select === true,
+        insert: privileges.insert === true,
+        update: privileges.update === true,
+        delete: false,
+        truncate: false,
+        references: false,
+        trigger: false,
+      },
+      row_security_forced: false,
+      row_security_effective_for_current_role: false,
+    },
+  });
+  const inspection = (
+    user: string,
+    tables: TableInfo[],
+    writableRelations: string[],
+  ): SchemaInspection => ({
+    engine: "postgres",
+    server_version: "16.4",
+    current_user: user,
+    inspected_at: "2026-09-04T00:00:00.000Z",
+    schemas: ["public"],
+    tables,
+    warnings: ["metadata only"],
+    role_posture: {
+      verified: true,
+      superuser: false,
+      bypass_rls: false,
+      read_only: writableRelations.length === 0,
+      writable_relations: writableRelations,
+      owned_relations: [],
+      reasons: [],
+    },
+  });
+
+  it("proves Action operations with the configured writer credential instead of the read-only source", () => {
+    expect(actionInspectionDatabaseUrlEnv({
+      engine: "postgres",
+      sourceEnv: "DATABASE_URL",
+      configuredSources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "DATABASE_URL",
+          write_url_env: "CUSTOM_WRITER_URL",
+        },
+      },
+      env: {},
+    })).toBe("CUSTOM_WRITER_URL");
+  });
+
+  it("uses the conventional separate writer when a fresh read-only config has not recorded one yet", () => {
+    expect(actionInspectionDatabaseUrlEnv({
+      engine: "postgres",
+      sourceEnv: "DATABASE_URL",
+      configuredSources: {
+        local_postgres: { engine: "postgres", read_url_env: "DATABASE_URL" },
+      },
+      env: { SYNAPSOR_DATABASE_WRITE_URL: "postgresql://writer.example/db" },
+    })).toBe("SYNAPSOR_DATABASE_WRITE_URL");
+  });
+
+  it("retains single-credential authoring when no separate writer is configured", () => {
+    expect(actionInspectionDatabaseUrlEnv({
+      engine: "mysql",
+      sourceEnv: "DATABASE_URL",
+      configuredSources: {
+        local_mysql: { engine: "mysql", read_url_env: "DATABASE_URL" },
+      },
+      env: {},
+    })).toBe("DATABASE_URL");
+  });
+
+  it("combines reader-only verification resources with separately proven writer posture", () => {
+    const read = inspection("reader", [
+      inspectedTable("accounts", { select: true }),
+      inspectedTable("subscriptions", { select: true }),
+    ], []);
+    const write = inspection("writer", [
+      inspectedTable("subscriptions", { select: true, update: true }),
+      inspectedTable("audit_events", { insert: true }),
+    ], ["public.subscriptions", "public.audit_events"]);
+
+    const merged = mergeActionProjectInspections(read, write);
+
+    expect(merged.current_user).toBe("writer");
+    expect(merged.tables.map((table) => `${table.schema}.${table.name}`)).toEqual([
+      "public.accounts",
+      "public.audit_events",
+      "public.subscriptions",
+    ]);
+    expect(merged.tables.find((table) => table.name === "accounts")?.role_posture?.privileges.select).toBe(true);
+    expect(merged.tables.find((table) => table.name === "subscriptions")?.role_posture?.privileges.update).toBe(true);
+    expect(merged.role_posture?.writable_relations).toEqual(["public.subscriptions", "public.audit_events"]);
+    expect(merged.warnings.at(-1)).toContain("combines reader-visible verification metadata");
+  });
+
+  it("refuses incompatible overlapping read and writer schema shapes", () => {
+    const read = inspection("reader", [inspectedTable("subscriptions", { select: true })], []);
+    const write = inspection("writer", [inspectedTable("subscriptions", { update: true }, "text")], [
+      "public.subscriptions",
+    ]);
+
+    expect(() => mergeActionProjectInspections(read, write)).toThrow(
+      /ACTION_INSPECTION_SCHEMA_MISMATCH: public\.subscriptions differs/u,
+    );
+  });
+
   it("requires a reviewed version transition before promoting a proposal-only UPDATE", () => {
     const executable = {
       authority_posture: "executable" as const,
@@ -344,16 +493,16 @@ describe("Safe Action terminal control plane", () => {
     }]);
     const rendered = lines.join("\n");
 
-    expect(rendered).toContain("Action: UPDATE public.orders");
+    expect(rendered).toContain("UPDATE public.orders · proposal only");
     expect(rendered).toContain("credit_cents: 0 through 2500");
-    expect(rendered).toContain("proposal status must be one of \"open\"");
-    expect(rendered).toContain("Guards: identity id; conflict version");
-    expect(rendered).toContain("Policy fallback: at most 3 approvals per customer account + approval policy / UTC calendar day.");
+    expect(rendered).toContain("proposal status | one of \"open\"");
+    expect(rendered).toContain("identity id; conflict version");
+    expect(rendered).toContain("Limit: 3 approvals per customer account + approval policy / UTC day.");
     expect(rendered).toContain("At most 3 deterministic approvals");
-    expect(rendered).toContain("credit-per-principal");
+    expect(rendered).not.toContain("credit-per-principal");
     expect(rendered).toContain("trusted customer account + support representative");
     expect(rendered).toContain("rolling 24 hours");
-    expect(rendered).toContain("propose only; approval, apply, and writeback remain outside the agent");
+    expect(rendered).toContain("Apply and source writeback remain off");
     expect(rendered).not.toContain("+----------------");
   });
 
@@ -554,6 +703,157 @@ describe("Safe Action terminal control plane", () => {
       patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
       authority_posture: "proposal_only",
       writeback: { mode: "none" },
+    });
+  });
+
+  it("reuses an exact bound from the original job instead of asking the operator to repeat it", async () => {
+    const textLabels: string[] = [];
+    const decisionInterpreter = vi.fn(async (input: { answer: string }) => ({
+      state: "resolved" as const,
+      decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } } },
+      summary: "credit_cents: 0 through 2500",
+      model_message: "The disabled proposal will allow credit_cents from 0 through 2500. Should I use that exact range?",
+      correction_used: false,
+      authority_granted: false as const,
+      source_database_changed: false as const,
+    }));
+    const prompter = scriptedPrompter({
+      choices: [],
+      texts: ["yes", "human review"],
+      confirms: [],
+      onText: (label) => textLabels.push(label),
+    });
+    const job = "Let support propose credit_cents from 0 through 2500. Keep human approval.";
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      job,
+      [],
+      {
+        modelInterview: {
+          session: {
+            provider: "openai",
+            model: "gpt-5.6-terra",
+            openingOperatorMessage: job,
+            openingValidatedFacts: ["The model selected UPDATE public.orders."],
+          },
+          egressAcknowledged: true,
+          decisionInterpreter,
+        },
+      },
+    );
+
+    expect(decisionInterpreter).toHaveBeenCalledWith(expect.objectContaining({
+      answer: job,
+      decision: expect.objectContaining({ kind: "numeric_bounds", field: "credit_cents" }),
+    }));
+    expect(textLabels).not.toContain("What is the smallest and largest credit cents the agent may propose?");
+    expect(textLabels[0]).toBe("Press Enter to accept, or describe what should change");
+    expect(action).toMatchObject({
+      patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
+    });
+  });
+
+  it("turns an ambiguous original-job bound into one focused clarification", async () => {
+    const textLabels: string[] = [];
+    const decisionInterpreter = vi.fn()
+      .mockResolvedValueOnce({
+        state: "clarification" as const,
+        question: "What is the largest credit cents the agent may propose?",
+        model_message: "I still need the exact maximum credit amount.",
+        authority_granted: false as const,
+        source_database_changed: false as const,
+      })
+      .mockResolvedValueOnce({
+        state: "resolved" as const,
+        decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } } },
+        summary: "credit_cents: 0 through 2500",
+        model_message: "The disabled proposal will allow credit_cents from 0 through 2500. Should I use that exact range?",
+        correction_used: false,
+        authority_granted: false as const,
+        source_database_changed: false as const,
+      });
+    const job = "Let support propose a bounded order credit. Keep human approval.";
+    const prompter = scriptedPrompter({
+      choices: [],
+      texts: ["From zero through 2500 cents.", "yes", "human review"],
+      confirms: [],
+      onText: (label) => textLabels.push(label),
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      job,
+      [],
+      {
+        modelInterview: {
+          session: {
+            provider: "openai",
+            model: "gpt-5.6-terra",
+            openingOperatorMessage: job,
+          },
+          egressAcknowledged: true,
+          decisionInterpreter,
+        },
+      },
+    );
+
+    expect(decisionInterpreter).toHaveBeenCalledTimes(2);
+    expect(textLabels[0]).toBe("What is the largest credit cents the agent may propose?");
+    expect(textLabels.filter((label) => label.includes("smallest and largest"))).toHaveLength(0);
+    expect(action).toMatchObject({
+      patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
+    });
+  });
+
+  it("falls back to the normal focused question when interpreting the original job fails", async () => {
+    const choiceTitles: string[] = [];
+    const textLabels: string[] = [];
+    const decisionInterpreter = vi.fn()
+      .mockRejectedValueOnce(new Error("ACTION_BOUNDARY_INTERVIEW_INVALID: malformed model output."))
+      .mockResolvedValueOnce({
+        state: "resolved" as const,
+        decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 2500 } } },
+        summary: "credit_cents: 0 through 2500",
+        model_message: "The disabled proposal will allow credit_cents from 0 through 2500. Should I use that exact range?",
+        correction_used: false,
+        authority_granted: false as const,
+        source_database_changed: false as const,
+      });
+    const job = "Let support propose a bounded order credit. Keep human approval.";
+    const prompter = scriptedPrompter({
+      choices: [],
+      texts: ["From zero through 2500 cents.", "yes", "human review"],
+      confirms: [],
+      onChoose: (title) => choiceTitles.push(title),
+      onText: (label) => textLabels.push(label),
+    });
+
+    const action = await collectQuickProposalActionInput(
+      options,
+      prompter,
+      job,
+      [],
+      {
+        modelInterview: {
+          session: {
+            provider: "openai",
+            model: "gpt-5.6-terra",
+            openingOperatorMessage: job,
+          },
+          egressAcknowledged: true,
+          decisionInterpreter,
+        },
+      },
+    );
+
+    expect(decisionInterpreter).toHaveBeenCalledTimes(2);
+    expect(choiceTitles).not.toContain("MODEL INTERPRETATION NOT USED");
+    expect(textLabels[0]).toBe("What is the smallest and largest credit cents the agent may propose?");
+    expect(action).toMatchObject({
+      patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
     });
   });
 
@@ -2458,6 +2758,22 @@ describe("Safe Action terminal control plane", () => {
     expect(frame).not.toMatch(/\u001b\[[0-9;]*m/u);
     await emitKey(terminal.input, { name: "escape", sequence: "\u001b" });
     await expect(selection).resolves.toBeUndefined();
+    expect(terminal.input.isRaw).toBe(false);
+  });
+
+  it("lets Q select a visible Quit action without walking the menu", async () => {
+    const terminal = fakeTerminal(72, 12);
+    const prompter = createTerminalActionPrompter(terminal.input, terminal.output);
+    const selection = prompter.choose("ACTION BOUNDARY", [
+      { value: "review", label: "Review Action Boundary" },
+      { value: "quit", label: "Quit" },
+    ]);
+
+    await nextTurn();
+    const frame = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(frame).toContain("Q Quit");
+    await emitKey(terminal.input, { name: "q", sequence: "q" });
+    await expect(selection).resolves.toBe("quit");
     expect(terminal.input.isRaw).toBe(false);
   });
 

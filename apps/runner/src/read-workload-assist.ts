@@ -642,6 +642,72 @@ export function sanitizeReadWorkloadPlan(plan: ExplorePlan): Record<string, unkn
   return sanitized;
 }
 
+/**
+ * Reconstructs validation-only filter literals from reviewed metadata. Stored
+ * workload analyses retain literal shape, never the operator/model value, so a
+ * resumed draft must not pass that redaction descriptor to Explore as data.
+ */
+export function rehydrateSanitizedReadWorkloadPlan(
+  planShape: Record<string, unknown>,
+  boundary: Pick<ExplorationBoundaryDraft, "pack">,
+): Record<string, unknown> {
+  const plan = structuredClone(planShape);
+  if (!Array.isArray(plan.where) || plan.where.length === 0) return plan;
+  if (typeof plan.resource !== "string") {
+    throw new Error("READ_WORKLOAD_RESUME_INVALID: saved plan has no exact root resource.");
+  }
+  const root = resourceFor(boundary, plan.resource);
+  plan.where = plan.where.map((value, index) => {
+    if (!isRecord(value) || typeof value.field !== "string" || typeof value.op !== "string") {
+      throw new Error(`READ_WORKLOAD_RESUME_INVALID: saved filter ${index + 1} is malformed.`);
+    }
+    const target = typeof value.relationship === "string"
+      ? resourceFor(boundary, relationshipFor(root, value.relationship).target_resource)
+      : root;
+    if (!Object.hasOwn(target.field_types, value.field)) {
+      throw new Error(
+        `READ_WORKLOAD_RESUME_INVALID: ${target.id}.${value.field} is no longer a reviewed field.`,
+      );
+    }
+    const shape = value.value;
+    if (!isRecord(shape) || shape.redacted !== true) {
+      throw new Error(
+        `READ_WORKLOAD_RESUME_INVALID: saved filter ${index + 1} does not contain a redacted literal shape.`,
+      );
+    }
+    const placeholder = reviewedFilterPlaceholder(target, value.field);
+    if (value.op === "in") {
+      if (shape.kind !== "list" || !Number.isSafeInteger(shape.count) || Number(shape.count) < 1 || Number(shape.count) > 20) {
+        throw new Error(`READ_WORKLOAD_RESUME_INVALID: saved IN filter ${index + 1} has an invalid literal shape.`);
+      }
+      const enumValues = target.field_enums[value.field] ?? [];
+      const count = Number(shape.count);
+      return {
+        ...value,
+        value: Array.from({ length: count }, (_, itemIndex) =>
+          enumValues.length ? enumValues[itemIndex % enumValues.length] : placeholder),
+      };
+    }
+    if (shape.kind !== "scalar") {
+      throw new Error(`READ_WORKLOAD_RESUME_INVALID: saved filter ${index + 1} has an invalid scalar shape.`);
+    }
+    return { ...value, value: placeholder };
+  });
+  return plan;
+}
+
+function reviewedFilterPlaceholder(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  field: string,
+): string | number | boolean {
+  const enumValue = resource.field_enums[field]?.[0];
+  if (enumValue !== undefined) return enumValue;
+  const type = resource.field_types[field] ?? "";
+  if (/(?:int|numeric|decimal|real|double|float|money|number)/iu.test(type)) return 0;
+  if (/(?:bool)/iu.test(type)) return false;
+  return "__synapsor_reviewed_filter_placeholder__";
+}
+
 function validateAllowedEntry(
   entry: ReadWorkloadEntry,
   boundary: ActivatedExplorationBoundary,

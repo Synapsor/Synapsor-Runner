@@ -17,6 +17,15 @@ Runner is designed to protect the model-facing database boundary:
 - asymmetric sessions verify an explicit RS256/ES256 allowlist, issuer,
   audience, time bounds, and `kid` against bounded public-key/JWKS inputs;
 - proposal tools save a proposed change without mutating the source database;
+- rule-derived actions expose only `app.describe_actions` and
+  `app.request_change`; the latter accepts an activated outcome plus opaque
+  subject references and never accepts a patch, trusted scope, approval, or
+  apply instruction;
+- opaque subjects are random, expiring, one-use, and bound to source,
+  Read/Action authority, trusted scope, workflow session, permitted outcome,
+  and observed-version provenance;
+- Action Rule proposal creation loads bounded authoritative facts and derives
+  one exact effect through a portable typed evaluator with no model call;
 - optional freshness-required proposals re-read the target and declared
   same-source supporting rows before every approval, bind a short-lived proof
   to the exact proposal, and revalidate again in the final direct SQL
@@ -24,6 +33,9 @@ Runner is designed to protect the model-facing database boundary:
 - direct writeback enforces primary key, tenant/scope, allowed columns,
   expected-version/conflict guard, affected-row count, idempotency, and
   receipt/replay recording;
+- semantic direct writeback additionally locks and reloads every Verification
+  Boundary dependency, re-evaluates the active rule, and requires the newly
+  derived effect digest to match the approved proposal;
 - app-owned executors are called only after approval outside MCP;
 - manual apply remains the default; optional supervised execution requires
   contract permission plus a separate exact-digest deployment allowlist and
@@ -51,6 +63,8 @@ Runner is designed to protect the model-facing database boundary:
 - A model or prompt asks for broad SQL access.
 - A model tries to choose tenant scope or write credentials.
 - A model proposes a stale update after the source row changed.
+- A model nominates a forged, expired, cross-scope, or wrong-session opaque
+  subject, or tries to supply the effect for a fact-derived outcome.
 - A reviewer approves an obsolete target picture, or supporting evidence
   changes while the mutation target itself remains unchanged.
 - A retry could duplicate a write without an idempotency key.
@@ -113,6 +127,12 @@ Runner does not claim to solve:
   predicates, or unbounded/cross-table writes. The only multi-row direct path
   is the fixed, frozen, capped set described in [Bounded Set
   Writeback](bounded-set-writeback.md).
+- multi-row Action Rule effects. Version 1 supports one exact semantic
+  `INSERT` or `UPDATE`; it does not split a business transaction into multiple
+  proposals and call them atomic.
+- negative-existence or aggregate Action Rules whose truth could change through
+  an unlocked phantom row. Version 1 supports only row-local facts and positive
+  existence over a reviewed bounded set.
 - atomic freshness across databases, APIs, or app-owned handlers. Strict
   Runner freshness is same-source direct SQL only; an application executor
   owns equivalent transactional preconditions for richer effects.

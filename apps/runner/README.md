@@ -38,6 +38,19 @@ With `DATABASE_URL`, use the CLI:
 synapsor-runner start --cli --from-env DATABASE_URL
 ```
 
+That command is the shortest model-guided path:
+
+1. Runner inspects schema metadata without reading business rows.
+2. You describe one agent job in ordinary language.
+3. The model drafts Read and Action Boundaries; Runner asks only about business
+   choices it cannot prove, validates the result, and shows separate activation
+   permissions.
+4. After those exact permissions, Runner prints the MCP connection command.
+
+You do not hand-map every table, write policy JSON, or create another MCP tool
+for each business action. Manual and no-model editors remain available when you
+want them.
+
 Model-assisted drafting is recommended with OpenAI, Anthropic, or a local
 tool-capable model. After explicit egress consent, Runner sends only structural
 metadata. No-model cards and manual review remain available. All drafts start
@@ -47,11 +60,9 @@ See [Database To First Safe Tool](docs/guided-onboarding.md).
 
 ### Compile From Representative Jobs
 
-The first-run job flow turns one business intent into a minimized disabled
-**Read Boundary** and, for writes, a proposal-only **Action Boundary**. `W Agent
-job` reopens it. The Action Boundary inherits trusted scope, independently
-reviews mutable fields without widening read output, rehearses without writes,
-and activates separately. See
+One business intent becomes a minimized disabled **Read Boundary** and optional
+proposal-only **Action Boundary**. `W Agent job` reopens it. Each activates
+separately. See
 [Boundary Assist](docs/read-workload-boundary-assist.md).
 
 ## Prove The Boundary Without A Database
@@ -63,33 +74,10 @@ client, model, or global install:
 npx -y @synapsor/runner try --prove --no-open
 ```
 
-Type `APPROVE` or `REJECT` at the trusted terminal prompt. A deterministic
-simulated agent produces this abridged sequence:
-
-```text
-Actor:
-  deterministic simulated agent (no LLM call)
-Model-facing tools:
-  billing.inspect_invoice
-  billing.propose_late_fee_waiver
-  No execute_sql, approve, apply, or commit tool
-Proposed effect:
-  late_fee_cents: 5500 -> 0
-Source changed:
-  No
-
-Guarded commit complete.
-Receipt status: applied
-Rows affected: 1
-
-Extended proof:
-  restart-safe retry: yes
-  changed-intent operation reuse rejected: yes
-  stale apply refused: yes
-```
-
-Runner waits for an outside-model decision, rechecks the proposed effect, and
-records a receipt. Temporary state stays under `./.synapsor/try/`.
+Type `APPROVE` or `REJECT`. A deterministic simulated agent proposes a bounded
+late-fee waiver without SQL or commit authority. Runner then demonstrates
+outside-model approval, guarded commit, receipt, replay, and stale-intent
+refusal. Temporary state stays under `./.synapsor/try/`.
 `demo --quick` remains a noninteractive compatibility alias.
 
 ## What Runner Controls
@@ -103,7 +91,9 @@ tools.
 Raw database MCP   Agent -> execute_sql --------------------------> Database
 Synapsor Explore   Agent -> app.describe_data / app.explore_data
                             -> reviewed boundary -----------------> Database
-Synapsor writes    Agent -> exact proposal -> outside-model decision
+Synapsor actions   Agent -> bounded proposal or reviewed outcome
+                            -> Runner-derived exact effect
+                            -> outside-model decision
                             -> trusted guarded commit ------------> Receipt
 ```
 
@@ -136,6 +126,18 @@ synapsor-runner mcp install \
 
 See [Client Recipes](docs/client-recipes.md) for supported MCP hosts.
 
+After both Boundaries are active, include the independently reviewed Action
+surface explicitly:
+
+```bash
+synapsor-runner mcp install claude-code \
+  --project --authoring --include-actions --project-root . --yes
+synapsor-runner tools list --config ./synapsor.runner.json
+```
+
+The preview labels the adjacent Action surface separately; it never merges or
+widens the supplied Read config.
+
 Local development/staging Explore exposes only:
 
 ```text
@@ -149,30 +151,11 @@ highlighted editor with `synapsor-runner explore workbench --project-root .`.
 spending budget; `explore run` preserves enforcement and audit. See
 [Explore Plan Playground](docs/explore-plan-playground.md).
 
-Agents receive reviewed operations, never SQL. Plans may combine totals,
-distinct counts, dimensions, filters, comparisons, time windows, rankings, and
-many-to-one relationships. Every plan is scope-injected, read-only,
-budget-bounded, and small-cohort suppressed.
-
-```text
-Question
-Which reviewed regions contributed most to failed payments last week?
-
-Runner-verified result
-region       failed_payments
-west         184
-north        121
-
-1 additional group and its label were withheld below the reviewed cohort minimum.
-```
-
-When a question crosses the boundary, refusal is the result:
-
-```text
-REFUSED
-The requested customer relationship is proven by the schema but has not been reviewed.
-No source query executed.
-```
+Agents receive reviewed operations, never SQL. Plans combine totals,
+dimensions, filters, comparisons, time windows, rankings, and reviewed
+relationships. Every query is scope-injected, read-only, budget-bounded, and
+small-cohort suppressed. Boundary violations are refused before source
+execution.
 
 The model cannot activate the offered review path. Normal answers keep model
 interpretation separate from Runner-rendered facts; `/details` shows the exact
@@ -186,16 +169,10 @@ and [Explore And Protect](docs/auto-boundary-and-scoped-explore.md).
 
 ## Turn A Useful Question Into Production Access
 
-After an answer proves useful, run `/protect`. Runner freezes that one successful
-analysis into a named read-only capability with generated DSL, canonical JSON,
-tests, and provenance. It starts disabled.
-
-CLI and Workbench use the same review and separate human activation. The CLI
-needs no browser or copied digest; changed artifacts fail closed. Models cannot
-invoke Protect or activation.
-
-`/details A2 --sql` can show an operator-only parameterized statement with all
-values redacted. SQL never reaches the model, MCP response, or durable evidence.
+After an answer proves useful, `/protect` freezes it into a disabled named
+read-only capability with generated DSL, canonical JSON, tests, and provenance.
+Models cannot invoke Protect or activation. `/details A2 --sql` shows an
+operator-only parameterized statement with values redacted.
 
 For fixed production question shapes, switch the selected project client from
 temporary Explore to the activated named capability:
@@ -231,6 +208,28 @@ exact actions, Read Boundary scope, policies, execution profiles, and shared
 limits. Proposal-only `WRITEBACK NONE` is the default; suggestions grant
 nothing. The TUI handles rehearsal, activation, and the inbox.
 
+For fact-dependent actions, activate an Action Rule. The agent then sees one
+fixed surface, `app.describe_actions` plus `app.request_change`, even as the
+reviewed outcome catalog grows. It sends an outcome and opaque subject
+references; Runner privately reloads authoritative facts and derives the only
+permitted one-row effect. The model never supplies the patch, raw identity,
+trusted scope, approval, or apply command. See the
+[Action Rule Engine](docs/action-rule-engine.md).
+
+Active Read and Action Boundaries present four stable tools, not one per query
+or action:
+
+```text
+app.describe_data
+app.explore_data
+app.describe_actions
+app.request_change
+```
+
+The installer writes two MCP entries: Read (`synapsor`) owns the first pair;
+Action (`synapsor-actions`) owns the second. Separate namespaces keep Read and
+proposal authority independently activatable.
+
 Code-first remains:
 
 ```bash
@@ -260,41 +259,25 @@ mutation. See [Supervised Apply](docs/supervised-automatic-apply.md),
 TUI, Workbench, CI, DSL/Spec, stdio, Ask, and HTTP lifecycle is in the
 [Safe Action Human Control Plane](docs/safe-action-control-plane.md).
 
-## Other Paths
+## Audit An Existing MCP Server
 
-### Audit An Existing MCP Server
-
-Already have database MCP tools? Inspect a manifest, remote `tools/list`, or
-stdio server without invoking its business tools:
+Inspect a manifest, remote `tools/list`, or stdio server without invoking its
+business tools:
 
 ```bash
 npx -y @synapsor/runner audit --example dangerous-db-mcp
 synapsor-runner audit ./tools-list.json
 ```
 
-The audit flags raw SQL, arbitrary identifiers, model-controlled authority, and
+It flags raw SQL, arbitrary identifiers, model-controlled authority, and
 model-facing write execution. See [MCP Audit](docs/mcp-audit.md).
-
-### Keep Your Existing Service Layer
-
-Keep existing narrow authenticated business operations. Runner adds agent
-review, proposals, policy, approval, evidence, receipts, and replay. Multi-step
-transactions and external effects remain in an application-owned executor. See
-[Application Guardrails](docs/why-synapsor-vs-app-guardrails.md).
 
 ## Why Not Raw Text-To-SQL?
 
-Text-to-SQL can produce confident, plausible, wrong answers while holding much
-more authority than the question requires. A published
-[ReFoRCE](https://arxiv.org/abs/2502.00675) pipeline reports about 11% execution
-accuracy on the enterprise-scale [BEAVER benchmark](https://arxiv.org/abs/2409.02038).
-In [EntSQL](https://arxiv.org/abs/2606.03363), 54.6% of 982 observed failures
-were wrong filters.
-
-These benchmark-specific figures are not a Runner accuracy claim. Runner cannot
-decide what a business term means. It removes arbitrary SQL authority, limits
-the legal plan space, injects trusted scope, and records what was actually
-validated and executed.
+Text-to-SQL can produce plausible wrong answers while holding more authority
+than a question requires. Runner cannot decide business meaning; it removes
+arbitrary SQL authority, limits legal plans, injects trusted scope, and records
+what was validated and executed.
 
 ## Safety Model
 

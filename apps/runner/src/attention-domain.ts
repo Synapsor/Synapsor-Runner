@@ -1,4 +1,10 @@
-import { resolveSupervisedWorkerEligibility, type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import {
+  supervisedWorkerPolicies,
+  supervisedWorkerPolicyDigest,
+  supervisedWorkerPolicyName,
+  type RuntimeConfig,
+  type RuntimeSupervisedWorkerPolicy,
+} from "@synapsor-runner/mcp-server";
 import {
   ProposalStore,
   type StoredProposal,
@@ -22,7 +28,7 @@ export function notificationSinkHealth(
 export function requiredAttentionSinksHealthy(
   store: ProposalStore,
   config: RuntimeConfig,
-  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+  policy: RuntimeSupervisedWorkerPolicy,
 ): boolean {
   const required = policy.required_attention_sinks ?? [];
   if (required.length === 0) return true;
@@ -42,10 +48,12 @@ export function updateSupervisedWorkerBacklogAttention(
   const environment = config.supervised_worker?.profile ?? "unknown";
   const now = new Date().toISOString();
   const nowMs = Date.parse(now);
-  for (const policy of config.supervised_worker?.capabilities ?? []) {
+  for (const policy of supervisedWorkerPolicies(config)) {
+    const policyName = supervisedWorkerPolicyName(policy);
+    const policyDigest = supervisedWorkerPolicyDigest(policy);
     const matchingSinks = (config.notifications?.sinks ?? []).filter((sink) =>
       sink.enabled !== false
-      && (!sink.capabilities || sink.capabilities.includes(policy.capability))
+      && (!sink.capabilities || sink.capabilities.includes(policyName))
       && (!sink.environments || sink.environments.includes(environment))
       && (!sink.events || sink.events.includes("worker.queue_backlog")));
     const depthThreshold = Math.min(
@@ -63,10 +71,10 @@ export function updateSupervisedWorkerBacklogAttention(
     }>();
     for (const item of store.listWorkerQueue().filter((candidate) =>
       candidate.execution_mode === "supervised_worker"
-      && candidate.contract_digest === policy.contract_digest
+      && candidate.contract_digest === policyDigest
       && (candidate.status === "queued" || candidate.status === "retry_wait"))) {
       const proposal = store.getProposal(item.proposal_id);
-      if (!proposal || proposal.action !== policy.capability) continue;
+      if (!proposal || proposal.action !== policyName) continue;
       const scopeDigest = canonicalJsonDigest({
         tenant_id: proposal.tenant_id,
         principal: proposal.principal ?? null,
@@ -85,8 +93,8 @@ export function updateSupervisedWorkerBacklogAttention(
       const attentionKey = [
         environment,
         "worker.queue_backlog",
-        policy.capability,
-        policy.contract_digest,
+        policyName,
+        policyDigest,
         group.scope_digest,
       ].join(":");
       const stateKey = `notification_worker_backlog:${canonicalJsonDigest({ attention_key: attentionKey })}`;
@@ -123,12 +131,12 @@ export function updateSupervisedWorkerBacklogAttention(
         severity: "warning",
         environment,
         proposal_id: oldest.proposal_id,
-        capability: policy.capability,
-        contract_digest: policy.contract_digest,
+        capability: policyName,
+        contract_digest: policyDigest,
         attention_key: attentionKey,
         attention_required: true,
         immediate_default: true,
-        summary: `${policy.capability} trusted-execution queue needs operator attention`,
+        summary: `${policyName} trusted-execution queue needs operator attention`,
         worker_state: "backlog",
         workbench_path: workbenchAttentionPath(attentionKey),
         details: {
@@ -138,13 +146,13 @@ export function updateSupervisedWorkerBacklogAttention(
           queue_age_threshold_seconds: ageThreshold,
           source_database_changed: false,
         },
-        source_event_key: `worker-queue-backlog:${policy.contract_digest}:${group.scope_digest}:${firstObservedAt}`,
+        source_event_key: `worker-queue-backlog:${policyDigest}:${group.scope_digest}:${firstObservedAt}`,
         now,
       });
     }
-    for (const item of store.listAttentionItems({ capability: policy.capability, limit: 1_000 })) {
+    for (const item of store.listAttentionItems({ capability: policyName, limit: 1_000 })) {
       if (item.event_type !== "worker.queue_backlog"
-        || item.contract_digest !== policy.contract_digest
+        || item.contract_digest !== policyDigest
         || activeAttentionKeys.has(item.attention_key)
         || item.status === "resolved"
         || item.status === "expired") continue;
@@ -163,7 +171,9 @@ export function updateSupervisedProposalExpiryAttention(
   const nowMs = Date.parse(now);
   if (!Number.isFinite(nowMs)) throw new Error("proposal expiry scan requires a valid ISO timestamp");
 
-  for (const policy of config.supervised_worker?.capabilities ?? []) {
+  for (const policy of supervisedWorkerPolicies(config)) {
+    const policyName = supervisedWorkerPolicyName(policy);
+    const policyDigest = supervisedWorkerPolicyDigest(policy);
     const warningSeconds = Math.min(
       3_600,
       Math.max(60, Math.floor(policy.proposal_ttl_seconds / 10)),
@@ -171,7 +181,7 @@ export function updateSupervisedProposalExpiryAttention(
     const activeKeys = new Set<string>();
     for (const item of store.listWorkerQueue().filter((candidate) =>
       candidate.execution_mode === "supervised_worker"
-      && candidate.contract_digest === policy.contract_digest
+      && candidate.contract_digest === policyDigest
       && (
         candidate.status === "queued"
         || candidate.status === "retry_wait"
@@ -183,7 +193,7 @@ export function updateSupervisedProposalExpiryAttention(
       const proposal = store.getProposal(item.proposal_id);
       if (
         !proposal
-        || proposal.action !== policy.capability
+        || proposal.action !== policyName
         || (proposal.state !== "approved" && proposal.state !== "pending_worker")
       ) {
         continue;
@@ -196,8 +206,8 @@ export function updateSupervisedProposalExpiryAttention(
         environment,
         "proposal.expiring",
         proposal.proposal_id,
-        policy.capability,
-        policy.contract_digest,
+        policyName,
+        policyDigest,
       ].join(":");
       activeKeys.add(attentionKey);
       const existing = store.getAttentionItem(workbenchAttentionId(attentionKey));
@@ -207,12 +217,12 @@ export function updateSupervisedProposalExpiryAttention(
         severity: "warning",
         environment,
         proposal_id: proposal.proposal_id,
-        capability: policy.capability,
-        contract_digest: policy.contract_digest,
+        capability: policyName,
+        contract_digest: policyDigest,
         attention_key: attentionKey,
         attention_required: true,
         immediate_default: true,
-        summary: `${policy.capability} proposal is approaching expiry while operator action is still possible`,
+        summary: `${policyName} proposal is approaching expiry while operator action is still possible`,
         approval_source: proposal.change_set.approval.mode === "policy" ? "policy_auto" : "human",
         worker_state: item.status,
         expires_at: new Date(expiresAtMs).toISOString(),
@@ -222,18 +232,18 @@ export function updateSupervisedProposalExpiryAttention(
           warning_window_seconds: warningSeconds,
           source_database_changed: false,
         },
-        source_event_key: `proposal-expiring:${proposal.proposal_id}:${policy.contract_digest}`,
+        source_event_key: `proposal-expiring:${proposal.proposal_id}:${policyDigest}`,
         now,
       });
     }
 
     for (const attention of store.listAttentionItems({
-      capability: policy.capability,
+      capability: policyName,
       limit: 1_000,
     })) {
       if (
         attention.event_type !== "proposal.expiring"
-        || attention.contract_digest !== policy.contract_digest
+        || attention.contract_digest !== policyDigest
         || activeKeys.has(attention.attention_key)
         || attention.status === "resolved"
         || attention.status === "expired"
@@ -249,7 +259,7 @@ export function updateSupervisedProposalExpiryAttention(
 export function recordUnhealthySupervisionSinkAttention(
   store: ProposalStore,
   config: RuntimeConfig,
-  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+  policy: RuntimeSupervisedWorkerPolicy,
 ): void {
   const now = new Date().toISOString();
   const sinkStates = (policy.required_attention_sinks ?? []).map((sinkId) => {
@@ -295,13 +305,13 @@ export function recordUnhealthySupervisionSinkAttention(
     event_type: "worker.unhealthy",
     severity: "critical",
     environment,
-    capability: policy.capability,
-    contract_digest: policy.contract_digest,
+    capability: supervisedWorkerPolicyName(policy),
+    contract_digest: supervisedWorkerPolicyDigest(policy),
     attention_key: attentionKey,
     attention_required: true,
     immediate_default: true,
     failure_class: "REQUIRED_ATTENTION_SINK_UNHEALTHY",
-    summary: `${policy.capability} automatic execution is held because required supervision is unavailable`,
+    summary: `${supervisedWorkerPolicyName(policy)} automatic execution is held because required supervision is unavailable`,
     worker_state: "paused",
     workbench_path: workbenchAttentionPath(attentionKey),
     details: {
@@ -310,7 +320,7 @@ export function recordUnhealthySupervisionSinkAttention(
       degraded_duration_seconds: observedDurationSeconds,
       source_database_changed: false,
     },
-    source_event_key: `worker-sink-health:${policy.contract_digest}:${episode}:${firstObservedAt}`,
+    source_event_key: `worker-sink-health:${supervisedWorkerPolicyDigest(policy)}:${episode}:${firstObservedAt}`,
     now,
   });
 }
@@ -319,7 +329,7 @@ export function recordUnhealthySupervisionSinkAttention(
 export function resolveHealthySupervisionSinkAttention(
   store: ProposalStore,
   config: RuntimeConfig,
-  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+  policy: RuntimeSupervisedWorkerPolicy,
 ): void {
   const environment = config.supervised_worker?.profile ?? "unknown";
   const attentionKey = supervisionSinkAttentionKey(environment, policy);
@@ -347,18 +357,18 @@ export function resolveHealthySupervisionSinkAttention(
       event_type: "worker.recovered",
       severity: "informational",
       environment,
-      capability: policy.capability,
-      contract_digest: policy.contract_digest,
+      capability: supervisedWorkerPolicyName(policy),
+      contract_digest: supervisedWorkerPolicyDigest(policy),
       attention_required: false,
       immediate_default: true,
-      summary: `${policy.capability} required supervision is healthy again`,
+      summary: `${supervisedWorkerPolicyName(policy)} required supervision is healthy again`,
       worker_state: "active",
       workbench_path: "/",
       details: {
         resolved_attention_id: item.attention_id,
         source_database_changed: false,
       },
-      source_event_key: `worker-sink-recovered:${policy.contract_digest}:${String(previous.first_observed_at ?? item.first_seen_at)}`,
+      source_event_key: `worker-sink-recovered:${supervisedWorkerPolicyDigest(policy)}:${String(previous.first_observed_at ?? item.first_seen_at)}`,
       now,
     });
   }
@@ -367,13 +377,13 @@ export function resolveHealthySupervisionSinkAttention(
 
 function supervisionSinkAttentionKey(
   environment: string,
-  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+  policy: RuntimeSupervisedWorkerPolicy,
 ): string {
   return [
     environment,
     "worker.unhealthy",
-    policy.capability,
-    policy.contract_digest,
+    supervisedWorkerPolicyName(policy),
+    supervisedWorkerPolicyDigest(policy),
     "required_attention_sink",
   ].join(":");
 }
@@ -381,12 +391,12 @@ function supervisionSinkAttentionKey(
 
 function supervisionSinkHealthStateKey(
   environment: string,
-  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+  policy: RuntimeSupervisedWorkerPolicy,
 ): string {
   return `notification_worker_health:${canonicalJsonDigest({
     environment,
-    capability: policy.capability,
-    contract_digest: policy.contract_digest,
+    capability: supervisedWorkerPolicyName(policy),
+    contract_digest: supervisedWorkerPolicyDigest(policy),
   })}`;
 }
 

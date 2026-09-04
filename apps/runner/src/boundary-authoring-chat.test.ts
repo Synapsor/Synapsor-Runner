@@ -169,6 +169,36 @@ describe("Boundary authoring chat", () => {
     }
   });
 
+  it("offers exact details inside a reviewed-decision picker instead of advertising an unusable slash command", async () => {
+    const memory = memoryIo({ choices: ["__view_runner_details__", "yes"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    chat.rememberDetails("REVIEW USER/OWNER SCOPE", [
+      "support.charges: column principal_id [low-confidence candidate]",
+      "support.refunds: column principal_id [low-confidence candidate]",
+      "Agent authority changed: no",
+    ]);
+
+    await expect(chat.session.confirm(
+      "For trusted user scope, does principal_id store the authenticated principal ID?",
+      {
+        defaultValue: false,
+        context: ["Default is No because schema names alone are not authorization proof."],
+      },
+    )).resolves.toBe(true);
+
+    expect(memory.choices).toHaveLength(2);
+    expect(memory.choices[0]?.labels).toEqual([
+      "Yes, continue",
+      "View exact Runner details",
+      "No; go back",
+    ]);
+    const transcript = memory.writes.join("");
+    expect(transcript).toContain("RUNNER DETAILS");
+    expect(transcript).toContain("support.charges: column principal_id");
+    expect(transcript).toContain("you> View exact Runner details");
+    expect(transcript).toContain("you> Yes, continue");
+  });
+
   it("changes the selected model without printing a redundant checkpoint", () => {
     const memory = memoryIo();
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
@@ -464,6 +494,44 @@ describe("Boundary authoring chat", () => {
     expect(transcript).toContain("No model request, authority change, source query, or source write occurred.");
   });
 
+  it("restores the pending model question after /details", async () => {
+    const question = "Which reviewed refund method should the disabled draft store?";
+    const memory = memoryIo({ reads: ["/details", "original_payment"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    chat.rememberDetails("Validated refund target", [
+      "Target: INSERT support.refund_requests",
+      "Authority granted: no",
+    ]);
+
+    const answer = await chat.actionPrompter.text(question, {
+      conversation: { modelLines: [question] },
+    });
+
+    expect(answer).toBe("original_payment");
+    const transcript = memory.writes.join("");
+    expect(transcript.match(new RegExp(question.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "gu"))).toHaveLength(2);
+    expect(transcript.match(/model>/gu)).toHaveLength(1);
+    expect(transcript).toContain(`Pending: ${question}`);
+    expect(transcript.indexOf("RUNNER DETAILS")).toBeLessThan(transcript.lastIndexOf(question));
+    expect(memory.prompts).toEqual(["you> ", "you> "]);
+  });
+
+  it("does not repeat a context heading inside the retained details panel", () => {
+    const memory = memoryIo();
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    chat.rememberDetails("SET UP ONE AGENT JOB", [
+      "SET UP ONE AGENT JOB",
+      "SET UP ONE AGENT JOB",
+      "Describe one reviewed job in ordinary language.",
+    ]);
+
+    chat.showDetails();
+
+    const transcript = memory.writes.join("");
+    expect(transcript.match(/SET UP ONE AGENT JOB/gu)).toHaveLength(1);
+    expect(transcript).toContain("Describe one reviewed job in ordinary language.");
+  });
+
   it("keeps incomplete and unknown slash commands out of business-policy answers", async () => {
     const memory = memoryIo({ reads: ["/d", "/de", "/unknown", "Use the existing reviewed policy."] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
@@ -483,7 +551,7 @@ describe("Boundary authoring chat", () => {
     expect(transcript).toContain("The pending question and disabled draft are unchanged.");
   });
 
-  it("offers local diff and exact records without adding a model turn", async () => {
+  it("offers local diff and exact records while preserving one model turn", async () => {
     const memory = memoryIo({ reads: ["/diff", "/exact", "continue"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
     chat.rememberDetails("Validated combined draft", [
@@ -533,8 +601,12 @@ describe("Boundary authoring chat", () => {
       "The **disabled proposal** constrains `amount`; *review it* before continuing.",
       "- `amount` stays between the reviewed bounds",
       "The stale-row guard is selected. ??Which column detects stale proposals?",
+      "These are possible mappings. ??Which candidate",
+      "identifies the authenticated owner?",
       "??**What is the smallest and largest amount the agent may propose?**",
       "?What exact rolling window should apply?",
+      "The draft is ready. ❓Should I use it?",
+      "The draft is ready. ⁇Should I activate it?",
       "Escaped \\**markers\\** remain literal.",
     ]);
 
@@ -545,6 +617,8 @@ describe("Boundary authoring chat", () => {
     expect(plain).toContain("- amount stays between the reviewed bounds");
     expect(plain).toContain("The stale-row guard is selected. Which column detects stale proposals?");
     expect(plain).not.toContain("??Which column");
+    expect(plain).toContain("These are possible mappings. Which candidate");
+    expect(plain).not.toContain("??Which candidate");
     expect(plain).not.toContain("## Reviewed proposal");
     expect(plain).toContain("Escaped **markers** remain literal.");
     expect(plain).toContain("What is the smallest and largest amount the agent may propose?");
@@ -552,11 +626,32 @@ describe("Boundary authoring chat", () => {
     expect(plain).not.toContain("??What is the smallest");
     expect(plain).toContain("What exact rolling window should apply?");
     expect(plain).not.toContain("?What exact rolling window");
+    expect(plain).toContain("The draft is ready. Should I use it?");
+    expect(plain).toContain("The draft is ready. Should I activate it?");
+    expect(plain).not.toContain("❓");
+    expect(plain).not.toContain("⁇");
     expect(plain).not.toContain("`amount`");
     expect(plain).not.toContain("**disabled proposal**");
     expect(transcript).toMatch(/\u001b\[[0-9;]+mdisabled proposal\u001b\[0m/u);
     expect(transcript).toMatch(/\u001b\[[0-9;]+mamount\u001b\[0m/u);
     expect(transcript).toMatch(/\u001b\[[0-9;]+mreview it\u001b\[0m/u);
+  });
+
+  it("restores flattened scope candidates as readable lines", () => {
+    const memory = memoryIo({ columns: 240 });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+
+    chat.model([
+      "Which candidate owns support_ops.refund_requests??Candidate 1: column principal_id [low-confidence candidate]?Candidate 2: catalog-proven mandatory path refund_requests -> charges.principal_id?Answer with the candidate number or exact reviewed name, or say none.",
+    ]);
+
+    const transcript = memory.writes.join("");
+    expect(transcript).toContain("Which candidate owns support_ops.refund_requests?");
+    expect(transcript).toMatch(/\n\s+Candidate 1: column principal_id/u);
+    expect(transcript).toMatch(/\n\s+Candidate 2: catalog-proven mandatory path/u);
+    expect(transcript).toMatch(/\n\s+Answer with the candidate number/u);
+    expect(transcript).not.toMatch(/\?Candidate|\?Answer/u);
+    expect(transcript.match(/model>/gu)).toHaveLength(1);
   });
 
   it("renders generated Action DSL as a highlighted, indented terminal artifact", async () => {

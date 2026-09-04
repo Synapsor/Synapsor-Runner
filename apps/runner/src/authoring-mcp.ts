@@ -7,7 +7,9 @@ import {
   scopedExploreQueryToolOutputSchema,
   type ModelAuthorityMetadataMode,
   type LocalToolPresentationSink,
+  type SubjectReferenceService,
 } from "@synapsor-runner/mcp-server";
+import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { z } from "zod";
 import runnerPackage from "../package.json" with { type: "json" };
 import { EXPLORATION_TIME_BUCKETS } from "./auto-boundary.js";
@@ -490,7 +492,22 @@ function modelResourceIndex(resource: Record<string, unknown>): Record<string, u
     maximum_rows: modelNumber(resource.maximum_rows),
     maximum_groups: modelNumber(resource.maximum_groups),
     valid_plan_example: modelValidAggregatePlan(resource),
+    valid_plan_examples: withoutUndefined({
+      rows: modelValidRowsPlan(resource),
+      aggregate: modelValidAggregatePlan(resource),
+    }),
   });
+}
+
+function modelValidRowsPlan(resource: Record<string, unknown>): Record<string, unknown> | undefined {
+  const resourceId = modelString(resource.id);
+  const withheld = new Set(withheldFieldNames(resource.field_egress));
+  const selected = modelStrings(resource.selectable_fields)
+    .filter((field) => !withheld.has(field))
+    .slice(0, 3);
+  return resourceId && selected.length
+    ? { kind: "rows", resource: resourceId, select: selected }
+    : undefined;
 }
 
 function modelValidAggregatePlan(resource: Record<string, unknown>): Record<string, unknown> {
@@ -644,6 +661,11 @@ function omitUndefinedModelArguments<T>(value: T): T {
 export async function serveScopedExploreStdio(options: {
   projectRoot: string;
   env?: NodeJS.ProcessEnv;
+  store?: ProposalRuntimeStore;
+  subjectReferences?: {
+    service: SubjectReferenceService;
+    workflow_session_id: string;
+  };
   stdin?: Readable;
   stdout?: Writable;
   modelAuthorityMetadata?: ModelAuthorityMetadataMode;
@@ -652,6 +674,8 @@ export async function serveScopedExploreStdio(options: {
     projectRoot: options.projectRoot,
     transport: "stdio",
     env: options.env,
+    ...(options.store ? { store: options.store } : {}),
+    ...(options.subjectReferences ? { subjectReferences: options.subjectReferences } : {}),
     modelAuthorityMetadata: options.modelAuthorityMetadata ?? "semantic",
   });
   const server = createScopedExploreMcpServer(runtime);

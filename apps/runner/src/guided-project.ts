@@ -3,7 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
-import { hasReviewedPrincipalScope, type AutoBoundaryBuild } from "./auto-boundary.js";
+import {
+  hasReviewedPrincipalScope,
+  loadActivatedExplorationBoundaries,
+  type ActivatedExplorationBoundary,
+  type AutoBoundaryBuild,
+} from "./auto-boundary.js";
 
 export const GUIDED_ONBOARDING_VERSION = "synapsor.guided-onboarding.v1";
 
@@ -278,6 +283,79 @@ export async function updateGuidedOnboardingState(input: {
   };
   await writeAtomic(path.join(projectRoot, ".synapsor/guided-onboarding.json"), json(next));
   return next;
+}
+
+export async function reconcileGuidedProjectTrustedContext(input: {
+  projectRoot: string;
+  activeBoundaries?: readonly ActivatedExplorationBoundary[];
+}): Promise<{ updated: boolean; principal_environment?: string }> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const state = await readGuidedOnboardingState(projectRoot);
+  if (!state) return { updated: false };
+
+  const configPath = path.join(projectRoot, state.artifacts.runner_config);
+  const config = JSON.parse(await fs.readFile(configPath, "utf8")) as {
+    trusted_context?: {
+      provider?: unknown;
+      values?: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+  if (config.trusted_context?.provider !== "environment") {
+    throw new Error(
+      `Guided Runner config ${configPath} no longer uses environment trusted context; Runner will not rewrite it.`,
+    );
+  }
+
+  const activeBoundaries = input.activeBoundaries
+    ? [...input.activeBoundaries]
+    : await loadActivatedExplorationBoundaries(projectRoot);
+  const principalEnvironments = new Set(
+    activeBoundaries
+      .filter((boundary) => boundary.pack.resources.some(hasReviewedPrincipalScope))
+      .map((boundary) => boundary.trusted_context.provider === "environment"
+        ? boundary.trusted_context.principal_env
+        : undefined)
+      .filter((value): value is string => Boolean(value)),
+  );
+  if (principalEnvironments.size > 1) {
+    throw new Error(
+      "Active guided Read Boundaries disagree on the trusted principal environment variable; review one consistent deployment context.",
+    );
+  }
+
+  const principalEnvironment = [...principalEnvironments][0];
+  const values = { ...(config.trusted_context.values ?? {}) };
+  if (principalEnvironment) values.principal_env = principalEnvironment;
+  else delete values.principal_env;
+  const nextConfig = {
+    ...config,
+    trusted_context: {
+      ...config.trusted_context,
+      values,
+    },
+  };
+  const validation = validateRunnerCapabilityConfig(nextConfig);
+  if (!validation.ok) {
+    throw new Error(
+      `Reconciled guided Runner config is invalid: ${validation.errors.map((issue) => `${issue.code}: ${issue.message}`).join("; ")}`,
+    );
+  }
+
+  const before = json(config);
+  const after = json(nextConfig);
+  if (before !== after) await writeAtomic(configPath, after);
+  if (principalEnvironment) {
+    await extendEnvironmentExample(
+      path.join(projectRoot, ".env.example"),
+      `${principalEnvironment}=\n`,
+    );
+  }
+  return {
+    updated: before !== after,
+    ...(principalEnvironment ? { principal_environment: principalEnvironment } : {}),
+  };
 }
 
 export async function consumeGuidedGraduationTip(input: {

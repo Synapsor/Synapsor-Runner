@@ -13,21 +13,35 @@ import {
   rememberModelAuthoringTurn,
   type ModelAuthoringConversation,
 } from "./model-authoring-conversation.js";
+import {
+  MAX_BOUNDARY_ACTION_INTENT_CHARACTERS,
+  MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS,
+  MAX_BOUNDARY_READ_QUESTION_CHARACTERS,
+} from "./boundary-authoring-limits.js";
 
 const PLAN_BOUNDARY_JOB_TOOL = "runner.plan_boundary_job";
-const JOB_INTENT_MAX_CHARS = 500;
-const PLANNED_ACTION_INTENT_MAX_CHARS = 1_000;
 
 export type BoundaryJobReadState = {
   boundary_name: string;
   authority: "active" | "disabled" | "active_with_disabled_changes";
   fully_reviewed: boolean;
+  /** Resources in any exact Read revision that Runner can preserve locally. */
   resource_ids: string[];
+  /** Current serving authority, kept separate from a newer disabled candidate. */
+  active_resource_ids?: string[];
+  /** Current editor candidate, which may differ from serving authority. */
+  candidate_resource_ids?: string[];
   exact_reusable_revision_count: number;
+  /** Exact model-mapped drafts saved before their final Read review. */
+  resumable_draft_count?: number;
+  resumable_resource_ids?: string[];
 };
 
 export type BoundaryJobActionState = {
   capability: string;
+  kind?: "discretionary" | "rule_derived";
+  action_boundary_name?: string;
+  outcome?: string;
   operation?: "insert" | "update" | "delete";
   resource?: string;
   authority: "active" | "disabled";
@@ -46,10 +60,13 @@ export type BoundaryJobCurrentState = {
 
 export type BoundaryJobPlan = {
   state: "planned";
-  read_mode: "create" | "reuse" | "revise" | "none";
+  read_mode: "create" | "resume" | "reuse" | "revise" | "none";
   read_intent?: string;
   action_mode: "create" | "reuse" | "revise" | "none";
   action_intent?: string;
+  action_outcome?: string;
+  /** Distinguishes caller-selected values from effects Runner derives from verified facts. */
+  action_strategy?: "discretionary" | "rule_derived";
   summary: string;
   correction_used: boolean;
   authority_granted: false;
@@ -74,10 +91,12 @@ export type BoundaryJobPlanningSession = {
 
 type BoundaryJobPlanCore = {
   state: "planned";
-  read_mode: "create" | "reuse" | "revise" | "none";
+  read_mode: "create" | "resume" | "reuse" | "revise" | "none";
   read_intent?: string;
   action_mode: "create" | "reuse" | "revise" | "none";
   action_intent?: string;
+  action_outcome?: string;
+  action_strategy?: "discretionary" | "rule_derived";
   summary: string;
   authority_granted: false;
   source_database_changed: false;
@@ -103,13 +122,22 @@ export async function planModelBoundaryJob(input: {
   egressAcknowledged: boolean;
   signal?: AbortSignal;
 }): Promise<BoundaryJobPlan> {
-  const jobIntent = boundedText(input.jobIntent, "Boundary job", JOB_INTENT_MAX_CHARS);
+  const jobIntent = boundedText(
+    input.jobIntent,
+    "Boundary job",
+    MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS,
+  );
   const clarificationAnswer = input.clarificationAnswer === undefined
     ? undefined
-    : boundedText(input.clarificationAnswer, "Boundary job clarification", 1_000);
+    : boundedText(input.clarificationAnswer, "Boundary job clarification", 3_000);
   const state = normalizeCurrentState(input.currentState);
   const availableResourceIds = normalizeAvailableResourceIds(input.availableResourceIds ?? []);
   const explicitlyRequestedReadResources = requestedReadResourceIds(jobIntent, availableResourceIds);
+  const exactRevisionRoute = exactSoleSemanticActionRevisionRoute(jobIntent, state);
+  if (exactRevisionRoute) {
+    rememberModelAuthoringTurn(input.session.conversation, jobIntent, exactRevisionRoute.summary);
+    return exactRevisionRoute;
+  }
   const tools: AskToolDefinition[] = [jobPlanToolDefinition(state)];
   const authorityDigest = askToolSurfaceDigest(tools);
   const configuration = planningConfiguration(
@@ -130,7 +158,7 @@ export async function planModelBoundaryJob(input: {
         return refusal("Runner accepts one job split and one bounded correction only.");
       }
       try {
-        resolution = parseJobPlan(args, state, explicitlyRequestedReadResources);
+        resolution = parseJobPlan(args, state, explicitlyRequestedReadResources, jobIntent);
         return {
           ok: true,
           value: {
@@ -157,15 +185,19 @@ export async function planModelBoundaryJob(input: {
       ? [`Available reviewed resource IDs: ${JSON.stringify(availableResourceIds)}`]
       : []),
     `Call ${PLAN_BOUNDARY_JOB_TOOL} exactly once.`,
+    "Use read_mode=resume when the current exact disabled Read mapping already covers the requested reads and resumable_draft_count is positive. Resume preserves that draft and continues its pending review; it does not grant authority.",
     "Use read_mode=reuse when the requested reads should stay exactly as reviewed and exact_reusable_revision_count is positive.",
     "Use read_mode=revise only when the operator asks to change the reviewed Read Boundary. Use create only when a new Read draft is needed.",
     "For read_mode=create or revise, put only the requested read behavior in read_intent. Exclude proposal fields, approval rules, and apply/write instructions.",
     "Preserve every reviewed resource concept explicitly named in the operator's read request. Do not summarize a requested read area away.",
-    `Keep read_intent within 500 characters and action_intent within ${PLANNED_ACTION_INTENT_MAX_CHARS} characters. These are concise routing intents, not explanations.`,
+    `Keep read_intent within ${MAX_BOUNDARY_READ_QUESTION_CHARACTERS} characters and action_intent within ${MAX_BOUNDARY_ACTION_INTENT_CHARACTERS} characters. These are concise routing intents, not explanations.`,
     "Use action_mode=create or revise only for requested structured changes. Use reuse only when existing Action authority already represents the requested change and should remain unchanged.",
+    "For a rule-derived revision, select the exact existing outcome in action_outcome. If several outcomes are plausible, ask one clarification rather than choosing by similarity.",
+    "For create or revise, classify action_strategy=discretionary when the caller chooses a reviewed value. Use rule_derived when Runner must verify authoritative facts and deterministically calculate or copy the one exact permitted effect from a selected source row. Do not use rule_derived merely because approval has conditions.",
     "An Action draft depends on an exact reviewed Read revision. When Action work is requested and an exact reusable Read revision exists, choose read_mode=reuse unless the operator explicitly asked to revise reads.",
     "Trusted tenant/principal/account association is injected by Runner and may be enforced by reviewed SQL scope or PostgreSQL RLS. Never request a source field merely to recreate trusted scope.",
     "Approval counts, rolling windows, and aggregate approval limits are evaluated from Runner's proposal ledger. Never request a source table or source field for approval history.",
+    "This step only routes Read versus Action work. Preserve unresolved Action thresholds, bounds, reviewer rules, and rolling limits in action_intent; the focused Action authoring conversation asks those business questions later. Do not ask them here.",
     "When both modes are reuse or none, summarize the existing Read resources and Action capabilities from Current reviewed state. Do not merely repeat the operator request.",
     "If the job is genuinely ambiguous between Read and Action work, submit one concise clarification question. Do not guess.",
     "This plan grants no authority and cannot activate, approve, apply, execute SQL, or write source data.",
@@ -200,12 +232,12 @@ export async function planModelBoundaryJob(input: {
     toolName: PLAN_BOUNDARY_JOB_TOOL,
   });
   let correctionUsed = initial.correction_used;
-  if (!resolution && !correctionUsed) {
+  if (!resolution) {
     correctionUsed = true;
     await run([
       "Runner rejected the first job split. Do not repeat it.",
       `Validation issue: ${issue.slice(0, 700)}`,
-      "Submit one corrected create/reuse/revise/none plan or one clarification question.",
+      "Submit one corrected create/resume/reuse/revise/none plan or one clarification question.",
       question,
     ].join("\n"));
   }
@@ -219,12 +251,52 @@ export async function planModelBoundaryJob(input: {
   return result;
 }
 
+/**
+ * Do not ask a general routing model to rediscover an already exact route.
+ * This grants no authority: the focused Action model still drafts the change,
+ * Runner validates it, and the replacement remains disabled until review.
+ */
+function exactSoleSemanticActionRevisionRoute(
+  jobIntent: string,
+  state: BoundaryJobCurrentState,
+): Extract<BoundaryJobPlan, { state: "planned" }> | undefined {
+  if (state.read.exact_reusable_revision_count !== 1) return undefined;
+  const semanticActions = state.actions.filter((action) =>
+    action.kind === "rule_derived" && Boolean(action.outcome));
+  if (semanticActions.length !== 1) return undefined;
+  if (!/\b(?:change|revise|update|modify|set|require|increase|decrease)\b/iu.test(jobIntent)) return undefined;
+  if (!/\b(?:action|outcome|rule|policy|approval|reviewer|quorum|fallback|eligibility|effect|limit|threshold)\b/iu.test(jobIntent)) {
+    return undefined;
+  }
+  const preservesRead = /\b(?:keep|preserve|retain|reuse|leave)\b[^.!?]{0,180}\b(?:read|explore)\b[^.!?]{0,120}\b(?:unchanged|same|baseline|intact|as[- ]is)\b/iu.test(jobIntent)
+    || /\b(?:read|explore)\b[^.!?]{0,120}\b(?:unchanged|same|baseline|intact|as[- ]is)\b/iu.test(jobIntent);
+  if (!preservesRead) return undefined;
+  if (/\b(?:add|remove|include|exclude|expand|narrow)\b[^.!?]{0,100}\b(?:read|explore|table|resource|field|column)\b/iu.test(jobIntent)) {
+    return undefined;
+  }
+  const action = semanticActions[0]!;
+  return {
+    state: "planned",
+    read_mode: "reuse",
+    action_mode: "revise",
+    action_intent: jobIntent,
+    action_outcome: action.outcome!,
+    action_strategy: "rule_derived",
+    summary: `Keep the exact ${state.read.boundary_name} Read revision and prepare one disabled replacement for ${action.outcome}.`,
+    correction_used: false,
+    authority_granted: false,
+    source_database_changed: false,
+  };
+}
+
 function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinition {
-  const readModes = state.read.exact_reusable_revision_count > 0
-    ? ["create", "reuse", "revise", "none"]
-    : state.read.fully_reviewed
-      ? ["create", "revise", "none"]
-      : ["create", "none"];
+  const readModes = [
+    "create",
+    ...((state.read.resumable_draft_count ?? 0) > 0 ? ["resume"] : []),
+    ...(state.read.exact_reusable_revision_count > 0 ? ["reuse"] : []),
+    ...(state.read.fully_reviewed ? ["revise"] : []),
+    "none",
+  ];
   const actionModes = state.actions.length
     ? ["create", "reuse", "revise", "none"]
     : ["create", "none"];
@@ -241,13 +313,28 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinitio
           properties: {
             status: { type: "string", enum: ["planned"] },
             read_mode: { type: "string", enum: readModes },
-            read_intent: { type: "string", minLength: 1, maxLength: 500 },
+            read_intent: {
+              type: "string",
+              minLength: 1,
+              maxLength: MAX_BOUNDARY_READ_QUESTION_CHARACTERS,
+            },
             action_mode: { type: "string", enum: actionModes },
             action_intent: {
               type: "string",
               minLength: 1,
-              maxLength: PLANNED_ACTION_INTENT_MAX_CHARS,
+              maxLength: MAX_BOUNDARY_ACTION_INTENT_CHARACTERS,
               description: "Concise Action-only routing intent. Runner validates the exact Action separately.",
+            },
+            action_outcome: {
+              type: "string",
+              minLength: 1,
+              maxLength: 200,
+              description: "Exact existing semantic outcome selected from Current reviewed state for reuse or revision.",
+            },
+            action_strategy: {
+              type: "string",
+              enum: ["discretionary", "rule_derived"],
+              description: "Whether the caller supplies a bounded value or Runner derives the exact effect from verified facts.",
             },
             summary: { type: "string", minLength: 1, maxLength: 700 },
           },
@@ -274,11 +361,22 @@ function parseJobPlan(
   value: Record<string, unknown>,
   state: BoundaryJobCurrentState,
   explicitlyRequestedReadResources: string[],
+  jobIntent: string,
 ): BoundaryJobPlanCore {
   if (value.status === "clarification") {
+    const question = boundedText(
+      value.question,
+      "Boundary job clarification question",
+      MAX_BOUNDARY_READ_QUESTION_CHARACTERS,
+    );
+    if (asksForActionPolicyDetail(question)) {
+      throw new Error(
+        "Boundary job planning must preserve unresolved Action policy details in action_intent; threshold, limit, reviewer, and field decisions belong to focused Action authoring.",
+      );
+    }
     return {
       state: "clarification",
-      question: boundedText(value.question, "Boundary job clarification question", 500),
+      question,
       authority_granted: false,
       source_database_changed: false,
     };
@@ -286,10 +384,13 @@ function parseJobPlan(
   if (value.status !== "planned") {
     throw new Error("status must be planned or clarification.");
   }
-  const readMode = boundedMode(value.read_mode, "read_mode", ["create", "reuse", "revise", "none"]);
+  const readMode = boundedMode(value.read_mode, "read_mode", ["create", "resume", "reuse", "revise", "none"]);
   const actionMode = boundedMode(value.action_mode, "action_mode", ["create", "reuse", "revise", "none"]);
   if (readMode === "reuse" && state.read.exact_reusable_revision_count < 1) {
     throw new Error("read_mode=reuse requires one exact reusable local Read revision.");
+  }
+  if (readMode === "resume" && (state.read.resumable_draft_count ?? 0) < 1) {
+    throw new Error("read_mode=resume requires one exact resumable disabled Read mapping.");
   }
   if (readMode === "revise" && !state.read.fully_reviewed) {
     throw new Error("read_mode=revise requires an existing reviewed Read Boundary.");
@@ -309,30 +410,35 @@ function parseJobPlan(
   }
   const readIntent = value.read_intent === undefined
     ? undefined
-    : boundedText(value.read_intent, "read_intent", 500);
+    : boundedText(value.read_intent, "read_intent", MAX_BOUNDARY_READ_QUESTION_CHARACTERS);
   if ((readMode === "create" || readMode === "revise") && !readIntent) {
     throw new Error(`read_mode=${readMode} requires one bounded read_intent.`);
   }
-  if ((readMode === "reuse" || readMode === "none") && readIntent) {
-    throw new Error(`read_mode=${readMode} must not include read_intent.`);
-  }
+  // A model may restate the preserved Read intent beside reuse/resume/none.
+  // It carries no authority in those modes, so canonicalize it away rather
+  // than spending the operator's recovery path on harmless narration.
+  const effectiveReadIntent = readMode === "create" || readMode === "revise"
+    ? readIntent
+    : undefined;
   if (explicitlyRequestedReadResources.length) {
     if (readMode === "none") {
       throw new Error(
         `read_mode=none omitted explicitly requested reviewed reads: ${explicitlyRequestedReadResources.join(", ")}.`,
       );
     }
-    if (readMode === "reuse") {
-      const existing = new Set(state.read.resource_ids);
+    if (readMode === "resume" || readMode === "reuse") {
+      const existing = new Set(readMode === "resume"
+        ? state.read.resumable_resource_ids ?? []
+        : state.read.resource_ids);
       const missing = explicitlyRequestedReadResources.filter((resource) => !existing.has(resource));
       if (missing.length) {
         throw new Error(
-          `read_mode=reuse does not contain explicitly requested reviewed reads: ${missing.join(", ")}. Choose revise or create.`,
+          `read_mode=${readMode} does not contain explicitly requested reviewed reads: ${missing.join(", ")}. Choose revise or create.`,
         );
       }
     }
-    if (readIntent) {
-      const covered = new Set(requestedReadResourceIds(readIntent, explicitlyRequestedReadResources));
+    if (effectiveReadIntent) {
+      const covered = new Set(requestedReadResourceIds(effectiveReadIntent, explicitlyRequestedReadResources));
       const missing = explicitlyRequestedReadResources.filter((resource) => !covered.has(resource));
       if (missing.length) {
         throw new Error(
@@ -343,23 +449,105 @@ function parseJobPlan(
   }
   const actionIntent = value.action_intent === undefined
     ? undefined
-    : boundedText(value.action_intent, "action_intent", PLANNED_ACTION_INTENT_MAX_CHARS);
+    : boundedText(value.action_intent, "action_intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS);
   if ((actionMode === "create" || actionMode === "revise") && !actionIntent) {
     throw new Error(`action_mode=${actionMode} requires one bounded action_intent.`);
   }
-  if ((actionMode === "reuse" || actionMode === "none") && actionIntent) {
-    throw new Error(`action_mode=${actionMode} must not include action_intent.`);
+  // As with Read reuse, a restated Action intent is non-authoritative when the
+  // model selected reuse/none. Ignore it; the exact saved revision is used.
+  const effectiveActionIntent = actionMode === "create" || actionMode === "revise"
+    ? actionIntent
+    : undefined;
+  const submittedActionStrategy = value.action_strategy === undefined
+    ? effectiveActionIntent === undefined ? undefined : inferActionStrategy(effectiveActionIntent)
+    : boundedMode(value.action_strategy, "action_strategy", ["discretionary", "rule_derived"]);
+  const existingActionKinds = new Set<"discretionary" | "rule_derived">(
+    state.actions.map((action) => action.kind ?? "discretionary"),
+  );
+  const actionStrategy = actionMode === "revise" && existingActionKinds.size === 1
+    ? [...existingActionKinds][0]!
+    : submittedActionStrategy;
+  if ((actionMode === "create" || actionMode === "revise") && actionStrategy === undefined) {
+    throw new Error(`action_mode=${actionMode} requires one action_strategy.`);
+  }
+  if ((actionMode === "create" || actionMode === "revise")
+    && actionStrategy === "discretionary"
+    && requiresRuleDerivedAction(jobIntent)) {
+    throw new Error(
+      "action_strategy must be rule_derived because the operator requires Runner to verify authoritative facts and derive the exact effect. Do not replace that request with a caller-selected value or a different operation.",
+    );
+  }
+  if ((actionMode === "reuse" || actionMode === "none") && actionStrategy !== undefined) {
+    throw new Error(`action_mode=${actionMode} must not include action_strategy.`);
+  }
+  const requestedOutcome = value.action_outcome === undefined
+    ? undefined
+    : boundedText(value.action_outcome, "action_outcome", 200);
+  const semanticOutcomes = [...new Set(state.actions.flatMap((action) =>
+    action.kind === "rule_derived" && action.outcome ? [action.outcome] : []))].sort();
+  let actionOutcome = requestedOutcome;
+  if (actionMode === "revise" && actionStrategy === "rule_derived") {
+    if (actionOutcome === undefined && semanticOutcomes.length === 1) {
+      actionOutcome = semanticOutcomes[0];
+    }
+    if (actionOutcome === undefined) {
+      throw new Error(
+        semanticOutcomes.length
+          ? `action_mode=revise requires action_outcome to select one of ${semanticOutcomes.join(", ")}.`
+          : "action_mode=revise with action_strategy=rule_derived requires an existing semantic outcome.",
+      );
+    }
+    if (!semanticOutcomes.includes(actionOutcome)) {
+      throw new Error(`action_outcome must name one existing semantic outcome: ${semanticOutcomes.join(", ")}.`);
+    }
+  } else if (actionOutcome !== undefined) {
+    if (actionMode !== "reuse") {
+      throw new Error(`action_mode=${actionMode} must not include action_outcome.`);
+    }
+    if (!semanticOutcomes.includes(actionOutcome)) {
+      throw new Error(`action_outcome must name one existing semantic outcome: ${semanticOutcomes.join(", ")}.`);
+    }
   }
   return {
     state: "planned",
     read_mode: readMode,
-    ...(readIntent ? { read_intent: readIntent } : {}),
+    ...(effectiveReadIntent ? { read_intent: effectiveReadIntent } : {}),
     action_mode: actionMode,
-    ...(actionIntent ? { action_intent: actionIntent } : {}),
+    ...(effectiveActionIntent ? { action_intent: effectiveActionIntent } : {}),
+    ...(actionOutcome ? { action_outcome: actionOutcome } : {}),
+    ...(actionStrategy ? { action_strategy: actionStrategy } : {}),
     summary: boundedText(value.summary, "Boundary job summary", 700),
     authority_granted: false,
     source_database_changed: false,
   };
+}
+
+function inferActionStrategy(intent: string): "discretionary" | "rule_derived" {
+  return /\b(?:derive|calculate|compute|cop(?:y|ies|ied|ying)|verify|eligible|eligibility|authoritative|current\s+(?:facts?|state)|exact\s+(?:effect|amount|slot|value)|only\s+when|if\s+and\s+only\s+if)\b/iu.test(intent)
+    ? "rule_derived"
+    : "discretionary";
+}
+
+function requiresRuleDerivedAction(jobIntent: string): boolean {
+  const actionText = actionOrientedJobText(jobIntent);
+  if (!actionText) return false;
+  return /\b(?:derive|calculate|compute)\b[^.!?]{0,180}\b(?:effect|amount|value|refund|change)\b/iu.test(actionText)
+    || /\b(?:copy|copies|copied|copying)\b[^.!?]{0,180}\b(?:source|selected|current|row|record|charge|amount|value|field)\b/iu.test(actionText)
+    || /\b(?:exact|same)\s+(?:effect|amount|value|refund)\b[^.!?]{0,140}\b(?:from|as|equal(?:s|\s+to)?)\b/iu.test(actionText)
+    || /\b(?:refund|amount|value|effect)\b[^.!?]{0,120}\b(?:equal(?:s|\s+to)?|matching)\s+(?:that|the|its|selected|current|source)\b/iu.test(actionText)
+    || /\b(?:authoritative(?:ly)?|source[- ]proven|verified\s+(?:source|database))\b[^.!?]{0,180}\b(?:exact|equal|derive|calculate|compute|refund|effect|amount)\b/iu.test(actionText);
+}
+
+function actionOrientedJobText(jobIntent: string): string {
+  return jobIntent
+    .split(/(?<=[.!?;])\s+/u)
+    .filter((sentence) =>
+      /\b(?:propos(?:e|al|ing)|request\s+(?:a\s+)?(?:change|refund)|update|insert|delete|change|refund|write|apply)\b/iu.test(sentence))
+    .join(" ");
+}
+
+function asksForActionPolicyDetail(question: string): boolean {
+  return /\b(?:what|which)\b[^?]{0,180}\b(?:threshold|minimum|maximum|max(?:imum)?\s+(?:count|amount)|rolling\s+(?:limit|window)|approval\s+(?:count|limit)|reviewer\s+(?:count|role)|source\s+(?:field|column)|exact\s+(?:field|column))\b/iu.test(question);
 }
 
 function normalizeAvailableResourceIds(values: string[]): string[] {
@@ -457,8 +645,17 @@ const RESOURCE_MENTION_STOP_WORDS = new Set([
 function normalizeCurrentState(input: BoundaryJobCurrentState): BoundaryJobCurrentState {
   const resourceIds = [...new Set(input.read.resource_ids.map((resource) =>
     boundedText(resource, "Read resource id", 300)))].sort();
+  const activeResourceIds = [...new Set((input.read.active_resource_ids ?? []).map((resource) =>
+    boundedText(resource, "active Read resource id", 300)))].sort();
+  const candidateResourceIds = [...new Set((input.read.candidate_resource_ids ?? []).map((resource) =>
+    boundedText(resource, "candidate Read resource id", 300)))].sort();
   const actions = input.actions.map((action) => ({
     capability: boundedText(action.capability, "Action capability", 200),
+    ...(action.kind ? { kind: action.kind } : {}),
+    ...(action.action_boundary_name
+      ? { action_boundary_name: boundedText(action.action_boundary_name, "Action Boundary name", 200) }
+      : {}),
+    ...(action.outcome ? { outcome: boundedText(action.outcome, "Action outcome", 200) } : {}),
     ...(action.operation ? { operation: action.operation } : {}),
     ...(action.resource ? { resource: boundedText(action.resource, "Action resource id", 300) } : {}),
     authority: action.authority,
@@ -467,13 +664,23 @@ function normalizeCurrentState(input: BoundaryJobCurrentState): BoundaryJobCurre
     || input.read.exact_reusable_revision_count < 0) {
     throw new Error("exact_reusable_revision_count must be a non-negative integer.");
   }
+  const resumableDraftCount = input.read.resumable_draft_count ?? 0;
+  if (!Number.isSafeInteger(resumableDraftCount) || resumableDraftCount < 0) {
+    throw new Error("resumable_draft_count must be a non-negative integer.");
+  }
+  const resumableResourceIds = [...new Set((input.read.resumable_resource_ids ?? []).map((resource) =>
+    boundedText(resource, "resumable Read resource id", 300)))].sort();
   return {
     read: {
       boundary_name: boundedText(input.read.boundary_name, "Read Boundary name", 80),
       authority: input.read.authority,
       fully_reviewed: input.read.fully_reviewed === true,
       resource_ids: resourceIds,
+      ...(activeResourceIds.length ? { active_resource_ids: activeResourceIds } : {}),
+      ...(candidateResourceIds.length ? { candidate_resource_ids: candidateResourceIds } : {}),
       exact_reusable_revision_count: input.read.exact_reusable_revision_count,
+      resumable_draft_count: resumableDraftCount,
+      resumable_resource_ids: resumableResourceIds,
     },
     actions,
     control_plane: {

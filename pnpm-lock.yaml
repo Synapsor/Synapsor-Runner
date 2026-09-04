@@ -14,6 +14,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
         version: 1.29.0(zod@3.25.76)
+      '@synapsor-runner/action-rules':
+        specifier: workspace:*
+        version: link:packages/action-rules
       '@synapsor-runner/config':
         specifier: workspace:*
         version: link:packages/config
@@ -136,6 +139,22 @@ importers:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@22.19.21)(tsx@4.22.4)(yaml@2.8.3)
 
+  packages/action-rules:
+    dependencies:
+      '@synapsor-runner/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@synapsor/spec':
+        specifier: workspace:*
+        version: link:../spec
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.6(@types/node@22.19.21)(tsx@4.22.4)(yaml@2.8.3)
+
   packages/config:
     dependencies:
       '@synapsor-runner/protocol':
@@ -211,6 +230,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
         version: 1.29.0(zod@3.25.76)
+      '@synapsor-runner/action-rules':
+        specifier: workspace:*
+        version: link:../action-rules
       '@synapsor-runner/config':
         specifier: workspace:*
         version: link:../config
@@ -260,6 +282,9 @@ importers:
 
   packages/mysql:
     dependencies:
+      '@synapsor-runner/action-rules':
+        specifier: workspace:*
+        version: link:../action-rules
       '@synapsor-runner/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -279,6 +304,9 @@ importers:
 
   packages/postgres:
     dependencies:
+      '@synapsor-runner/action-rules':
+        specifier: workspace:*
+        version: link:../action-rules
       '@synapsor-runner/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -360,6 +388,9 @@ importers:
 
   packages/worker-core:
     dependencies:
+      '@synapsor-runner/action-rules':
+        specifier: workspace:*
+        version: link:../action-rules
       '@synapsor-runner/control-plane-client':
         specifier: workspace:*
         version: link:../control-plane-client

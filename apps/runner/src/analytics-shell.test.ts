@@ -2061,6 +2061,10 @@ describe("Synapsor Analytics shell", () => {
     terminalIo.write("Heading\nBody\n");
     expect(terminalChunks.join("")).toContain("  Heading\n  Body\n");
     expect(terminalIo.columns()).toBe(76);
+    terminalIo.write("The reviewed catalog supports grouping by Reason, Method, and Status without splitting ordinary words.\n");
+    const wrappedOutput = stripAnsi(terminalChunks.join(""));
+    expect(wrappedOutput).not.toMatch(/Reaso\n\s*n|comma\n\s*nds/u);
+    expect(wrappedOutput.split("\n").every((line) => line.length <= 80)).toBe(true);
     const streamOffset = terminalChunks.join("").length;
     terminalIo.writeChunk?.("runner> SET UP ONE ");
     terminalIo.writeChunk?.("AGENT JOB\n");
@@ -2126,6 +2130,46 @@ describe("Synapsor Analytics shell", () => {
     expect(readable.isRaw).toBe(true);
     io.close();
     expect(readable.isRaw).toBe(false);
+  });
+
+  it("lets typed yes select an affirmative chat confirmation before Enter", async () => {
+    const readable = new PassThrough() as PassThrough & {
+      isRaw: boolean;
+      setRawMode(value: boolean): void;
+    };
+    readable.isRaw = false;
+    readable.setRawMode = (value) => {
+      readable.isRaw = value;
+    };
+    const writable = new PassThrough() as PassThrough & { columns: number; rows: number };
+    writable.columns = 80;
+    writable.rows = 12;
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+
+    const choice = io.choose!({
+      title: "CONFIRM REVIEWED DECISION",
+      message: "Record this exact trusted user predicate?",
+      initialValue: "no",
+      options: [
+        { value: "yes", label: "Yes, continue" },
+        { value: "no", label: "No; go back" },
+      ],
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(stripAnsi(chunks.join(""))).toContain("> No; go back");
+
+    for (const name of ["y", "e", "s"]) {
+      readable.emit("keypress", name, { name, sequence: name });
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(stripAnsi(chunks.join(""))).toContain("> Yes, continue");
+    expect(stripAnsi(chunks.join(""))).toContain("Y/N Choose");
+
+    readable.emit("keypress", "", { name: "return", sequence: "\r" });
+    await expect(choice).resolves.toBe("yes");
+    io.close();
   });
 
   it("keeps the highlighted explanation readable without overflowing a short terminal", async () => {

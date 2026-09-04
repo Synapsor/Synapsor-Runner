@@ -27,6 +27,9 @@ export type StoredProposal = {
   proposal_hash: string;
   action: string;
   state: LocalProposalState;
+  scope_kind: "tenant" | "organization";
+  scope_id: string;
+  /** Backward-compatible accounting index. Use scope_kind/scope_id in new code. */
   tenant_id: string;
   principal?: string;
   capability?: string;
@@ -42,6 +45,66 @@ export type StoredProposal = {
   change_set: ChangeSet;
   created_at: string;
   updated_at: string;
+};
+
+export type ObservedSubjectReferenceState = "active" | "consumed" | "revoked";
+
+export type ObservedSubjectOutcomeAuthority = {
+  outcome: string;
+  action_boundary_digest: `sha256:${string}`;
+  action_rule_digest: `sha256:${string}`;
+};
+
+export type ProtectedSubjectIdentityV1 = {
+  algorithm: "A256GCM";
+  nonce: string;
+  ciphertext: string;
+  authentication_tag: string;
+};
+
+export type StoredObservedSubjectReference = {
+  schema_version: "synapsor.observed-subject-ref.v1";
+  subject_ref: string;
+  subject_ref_digest: `sha256:${string}`;
+  source_id: string;
+  resource: string;
+  protected_identity: ProtectedSubjectIdentityV1;
+  evidence_bundle_id: string;
+  read_boundary_digest: `sha256:${string}`;
+  generation_lock_fingerprint: `sha256:${string}`;
+  tenant_scope_fingerprint: `sha256:${string}`;
+  principal_scope_fingerprint?: `sha256:${string}`;
+  workflow_session_id: string;
+  observed_version_digest?: `sha256:${string}`;
+  outcome_authorities: ObservedSubjectOutcomeAuthority[];
+  issued_at: string;
+  expires_at: string;
+  state: ObservedSubjectReferenceState;
+  claim_id?: string;
+  consumed_at?: string;
+  revoked_at?: string;
+};
+
+export type ClaimObservedSubjectReferencesInput = {
+  subject_refs: string[];
+  claim_id: string;
+  outcome: string;
+  action_boundary_digest: `sha256:${string}`;
+  action_rule_digest: `sha256:${string}`;
+  read_boundary_digest: `sha256:${string}`;
+  generation_lock_fingerprint: `sha256:${string}`;
+  tenant_scope_fingerprint: `sha256:${string}`;
+  principal_scope_fingerprint?: `sha256:${string}`;
+  workflow_session_id: string;
+  now?: string;
+};
+
+export type RevokeObservedSubjectReferencesInput = {
+  subject_refs?: string[];
+  read_boundary_digest?: `sha256:${string}`;
+  action_boundary_digest?: `sha256:${string}`;
+  workflow_session_id?: string;
+  now?: string;
 };
 
 export type ProposalEvent = {
@@ -826,6 +889,7 @@ export type StoreStats = {
   proposals: number;
   evidence_bundles: number;
   evidence_items: number;
+  observed_subject_references: number;
   query_audit: number;
   explore_privacy_releases: number;
   explore_budget_reservations: number;
@@ -1114,6 +1178,10 @@ export type ProposalRuntimeStore = {
     created_at?: string;
   }): MaybePromise<void>;
   recordQueryAudit(input: QueryAuditRecordInput): MaybePromise<void>;
+  createObservedSubjectReference?(input: StoredObservedSubjectReference): MaybePromise<StoredObservedSubjectReference>;
+  getObservedSubjectReference?(subjectRef: string): MaybePromise<StoredObservedSubjectReference | undefined>;
+  claimObservedSubjectReferences?(input: ClaimObservedSubjectReferencesInput): MaybePromise<StoredObservedSubjectReference[]>;
+  revokeObservedSubjectReferences?(input: RevokeObservedSubjectReferencesInput): MaybePromise<number>;
   recordProductionExploreAuditEvent?(input: ProductionExploreAuditEventInput): MaybePromise<void>;
   findActiveProposal(input: ActiveProposalLookup): MaybePromise<StoredProposal | undefined>;
   createProposal(input: unknown): MaybePromise<StoredProposal>;

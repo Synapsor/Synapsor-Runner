@@ -7,8 +7,14 @@ export type ModelAuthoringConversation = {
   turns: AskHistoryTurn[];
 };
 
-export function createModelAuthoringConversation(): ModelAuthoringConversation {
-  return { turns: [] };
+export function createModelAuthoringConversation(
+  initialTurns: readonly AskHistoryTurn[] = [],
+): ModelAuthoringConversation {
+  const conversation: ModelAuthoringConversation = { turns: [] };
+  for (const turn of initialTurns) {
+    rememberModelAuthoringTurn(conversation, turn.question, turn.answer);
+  }
+  return conversation;
 }
 
 export function modelAuthoringHistory(

@@ -48,15 +48,26 @@ import {
   isShadowOutcomeDisposition,
 } from "./shadow-analysis.js";
 import { ProposalStoreError } from "./errors.js";
+import { proposalScopeIndex } from "./proposal-integrity.js";
 
 export function rowToProposal(row: unknown): StoredProposal | undefined {
   if (!isRecord(row)) return undefined;
+  const changeSet = parseChangeSet(JSON.parse(String(row.change_set_json)));
+  const scope = proposalScopeIndex(changeSet);
+  if (String(row.tenant_id) !== scope.id) {
+    throw new ProposalStoreError(
+      "PROPOSAL_SCOPE_INDEX_MISMATCH",
+      `proposal ${String(row.proposal_id)} scope index does not match its immutable change set`,
+    );
+  }
   return {
     proposal_id: String(row.proposal_id),
     proposal_version: Number(row.proposal_version),
     proposal_hash: String(row.proposal_hash),
     action: String(row.action),
     state: String(row.state) as LocalProposalState,
+    scope_kind: scope.kind,
+    scope_id: scope.id,
     tenant_id: String(row.tenant_id),
     principal: row.principal == null ? undefined : String(row.principal),
     capability: row.capability == null ? undefined : String(row.capability),
@@ -69,7 +80,7 @@ export function rowToProposal(row: unknown): StoredProposal | undefined {
     source_schema: String(row.source_schema),
     source_table: String(row.source_table),
     source_database_mutated: Number(row.source_database_mutated) === 1,
-    change_set: parseChangeSet(JSON.parse(String(row.change_set_json))),
+    change_set: changeSet,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
@@ -423,7 +434,11 @@ export function rowToWritebackJob(row: unknown): StoredWritebackJob | undefined 
   }
   const payloadJobId = handler ? payload.writeback_job_id : normalizedJob?.job_id;
   const payloadProposalId = handler ? payload.proposal_id : normalizedJob?.proposal_id;
-  const payloadProposalHash = handler ? payload.proposal_hash : normalizedJob?.approval_id;
+  const payloadProposalHash = handler
+    ? payload.proposal_hash
+    : normalizedJob?.protocol_version === "5.0"
+      ? normalizedJob.proposal_hash
+      : normalizedJob?.approval_id;
   if (
     payloadJobId !== String(row.writeback_job_id)
     || payloadProposalId !== String(row.proposal_id)
@@ -560,11 +575,12 @@ export function isStoredWritebackOperation(operation: string): operation is Stor
 }
 
 export function assertIntentMatchesJob(intent: StoredWritebackIntent, job: WritebackJob): void {
+  const proposalHash = job.protocol_version === "5.0" ? job.proposal_hash : job.approval_id;
   if (
     intent.idempotency_key !== job.idempotency_key
     || intent.writeback_job_id !== job.job_id
     || intent.proposal_id !== job.proposal_id
-    || intent.proposal_hash !== job.approval_id
+    || intent.proposal_hash !== proposalHash
   ) throw new ProposalStoreError("WRITEBACK_INTENT_IDENTITY_MISMATCH", `writeback intent ${intent.intent_id} does not match the immutable job identity`);
 }
 

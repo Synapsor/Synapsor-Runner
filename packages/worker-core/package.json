@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@synapsor-runner/action-rules": "workspace:*",
     "@synapsor-runner/control-plane-client": "workspace:*",
     "@synapsor-runner/protocol": "workspace:*"
   },

@@ -104,6 +104,7 @@ import {
 } from "./tool-catalog.js";
 import {
   configUsesHttpClaims,
+  resolveTrustedContext,
 } from "./trusted-context.js";
 
 export async function startHttpMcpServer(options: HttpMcpServerOptions = {}): Promise<HttpMcpServerHandle> {
@@ -562,15 +563,13 @@ export async function handleStreamableHttpMcpRequest(input: {
           }
         },
       });
-      if (streamableSessionFactory && !authentication.context) {
-        throw new McpRuntimeError("HTTP_TRUSTED_CONTEXT_REQUIRED", "This Streamable HTTP surface requires verified tenant and principal session context.");
-      }
       const runtime: StreamableHttpSessionRuntime = streamableSessionFactory
         ? await streamableSessionFactory({
           config,
           env,
           store: sharedStore,
-          trustedContext: authentication.context!,
+          trustedContext: authentication.context ?? resolveTrustedContext(config, env),
+          authenticationFingerprint: authentication.fingerprint,
           ...(toolNameStyle ? { toolNameStyle } : {}),
           ...(resultFormat ? { resultFormat } : {}),
         })

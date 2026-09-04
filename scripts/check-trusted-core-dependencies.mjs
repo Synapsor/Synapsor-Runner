@@ -10,6 +10,19 @@ const failures = [];
 
 const packagePolicies = [
   {
+    id: "action-rules",
+    root: "packages/action-rules/src",
+    facade: "index.ts",
+    facadeLineLimit: 200,
+    classify(moduleName) {
+      return moduleName === "index" ? "facade" : "foundation";
+    },
+    allowed: {
+      facade: new Set(["foundation"]),
+      foundation: new Set(["foundation"]),
+    },
+  },
+  {
     id: "proposal-store",
     root: "packages/proposal-store/src",
     facade: "index.ts",
@@ -50,7 +63,9 @@ const packagePolicies = [
         "result-envelope",
         "runtime-logging",
         "runtime-observability",
+        "semantic-actions",
         "source-runtime",
+        "subject-references",
         "tool-catalog",
         "tool-dispatch",
         "trusted-context",
@@ -86,6 +101,7 @@ const packageByRoot = new Map(
   packagePolicies.map((policy) => [path.resolve(root, policy.root), policy]),
 );
 const coreAliases = new Map([
+  ["@synapsor-runner/action-rules", "packages/action-rules/src/index.ts"],
   ["@synapsor-runner/proposal-store", "packages/proposal-store/src/index.ts"],
   ["@synapsor-runner/mcp-server", "packages/mcp-server/src/index.ts"],
   ["@synapsor/runner/authoring", "apps/runner/src/authoring.ts"],
@@ -263,6 +279,16 @@ for (const [filePath, imports] of importsByFile) {
   const policy = policyForFile(filePath);
   if (!policy) continue;
   for (const specifier of imports) {
+    if (
+      policy.id === "action-rules"
+      && specifier !== "@synapsor/spec"
+      && specifier !== "@synapsor-runner/protocol"
+      && !specifier.startsWith(".")
+    ) {
+      failures.push(
+        `${relative(filePath)} imports ${specifier}; the portable Action Rule runtime may depend only on Spec, Protocol, and its own modules.`,
+      );
+    }
     if (
       policy.id === "proposal-store"
       && (

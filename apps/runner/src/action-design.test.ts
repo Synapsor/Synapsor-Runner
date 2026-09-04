@@ -43,6 +43,20 @@ describe("ActionSuggestion authority boundary", () => {
     expect(result.structural_evidence.every((item) => item.state === "proven_candidate")).toBe(true);
   });
 
+  it("keeps a detailed Action intent bounded without forcing it into 500 characters", () => {
+    const accepted = "a".repeat(2_000);
+    expect(normalizeActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: accepted,
+      suggested_by: { kind: "operator" },
+    }).intent).toBe(accepted);
+    expect(() => normalizeActionSuggestion({
+      schema_version: ACTION_SUGGESTION_VERSION,
+      intent: "a".repeat(2_001),
+      suggested_by: { kind: "operator" },
+    })).toThrow("ACTION_SUGGESTION_TEXT_INVALID");
+  });
+
   it.each(["writeback", "approval", "tenant_id", "sql", "worker_policy"])(
     "refuses model-owned %s authority",
     (key) => {

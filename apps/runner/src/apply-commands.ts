@@ -24,7 +24,7 @@ import { BatchApplyResult, applyProposal, authorizeConfiguredJobApply, formatBat
 import { trustedCliContext } from "./operator-authority.js";
 import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge, withoutSharedPostgresLedgerMirror } from "./store-shared.js";
 import { hashReceipt, runnerReceiptConfig, toExecutionReceipt, writebackDatabaseScope, writebackTimeoutMs } from "./writeback-domain.js";
-import { createWritebackIntentAuthority, findProposalCapability, resolveSqlWriteDatabaseUrl, verifyLocalWritebackAuthority, writebackAffectedRows, writebackErrorCode, writebackResultStatus } from "./writeback-execution.js";
+import { createWritebackIntentAuthority, findProposalCapability, resolveSqlWriteDatabaseUrl, semanticActionVerifierForRuntime, verifyLocalWritebackAuthority, writebackAffectedRows, writebackErrorCode, writebackResultStatus } from "./writeback-execution.js";
 
 
 export async function validate(args: string[]): Promise<number> {
@@ -274,6 +274,10 @@ export async function apply(args: string[]): Promise<number> {
       job,
     ),
   };
+  if (runtimeConfig && configPath) {
+    const semanticVerifier = semanticActionVerifierForRuntime(runtimeConfig, configPath);
+    if (semanticVerifier) config.semanticActionVerifier = semanticVerifier;
+  }
   const intentAuthority = createWritebackIntentAuthority(runtimeConfig, job.source_id, process.env, localStore);
   if (intentAuthority.store) config.writebackIntentStore = intentAuthority.store;
   let result: WritebackResult;
@@ -286,7 +290,12 @@ export async function apply(args: string[]): Promise<number> {
   }
   operationalLog("info", "writeback_outcome", {
     proposal_id: job.proposal_id,
-    tenant: logIdentifier(job.target.tenant_guard.value),
+    scope_kind: job.target.tenant_guard ? "tenant" : "organization",
+    tenant: logIdentifier(
+      job.target.tenant_guard?.value
+      ?? (job.protocol_version === "5.0" ? job.target.organization_scope?.organization_id : undefined)
+      ?? "invalid-scope",
+    ),
     source: job.source_id,
     runner_id: config.runnerId,
     executor: "sql_update",

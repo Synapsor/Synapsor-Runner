@@ -7,6 +7,7 @@ import {
   resolveAskMaxOutputTokens,
   resolveAskProviderConfiguration,
   resolveAskSessionTokenBudget,
+  runAskProviderTurn,
   secureAskJsonRequest,
   WorkbenchAskSession,
   type AskProviderDependencies,
@@ -904,6 +905,86 @@ describe("Workbench BYOM Ask", () => {
     expect(result.answer).toBe("The reviewed loopback result contains 12 records.");
     expect(result.tool_calls).toHaveLength(1);
     expect(requests).toBe(2);
+  });
+
+  it("forces the exact required authoring tool for a loopback provider", async () => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const configuration = resolveAskProviderConfiguration({
+      provider: "openai_compatible",
+      model: "qwen3:8b",
+      base_url: "http://127.0.0.1:11434/v1",
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date("2026-09-03T00:00:00.000Z"));
+    const gateway = testGateway();
+    let requestBody: Record<string, unknown> | undefined;
+
+    const result = await runAskProviderTurn({
+      configuration,
+      question: "Submit the one reviewed draft.",
+      history: [],
+      gateway: gateway.gateway,
+      tools,
+      signal: new AbortController().signal,
+      authorityDigest,
+      requiredInitialToolName: "app.explore_data",
+      completeAfterRequiredTool: true,
+      dependencies: {
+        requestJson: async (request) => {
+          requestBody = structuredClone(request.body);
+          return openAiToolCall(
+            "call_required_loopback",
+            "app__explore_data",
+            { plan: { kind: "aggregate" } },
+          );
+        },
+      },
+    });
+
+    expect(requestBody).toMatchObject({
+      model: "qwen3:8b",
+      reasoning_effort: "none",
+      tool_choice: {
+        type: "function",
+        function: { name: "app__explore_data" },
+      },
+      tools: [{ function: { name: "app__explore_data" } }],
+      parallel_tool_calls: false,
+    });
+    expect(gateway.calls).toEqual([{
+      name: "app.explore_data",
+      args: { plan: { kind: "aggregate" } },
+    }]);
+    expect(result.tool_calls).toHaveLength(1);
+  });
+
+  it.each([
+    ["tool-free prose", openAiText("I will describe the draft instead.")],
+    ["a different tool", openAiToolCall("call_wrong_loopback", "app__other", {})],
+  ])("rejects %s when an exact loopback authoring tool is required", async (_label, providerResponse) => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const configuration = resolveAskProviderConfiguration({
+      provider: "openai_compatible",
+      model: "local-fixture",
+      base_url: "http://127.0.0.1:11434/v1",
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date("2026-09-03T00:00:00.000Z"));
+    const gateway = testGateway();
+
+    await expect(runAskProviderTurn({
+      configuration,
+      question: "Submit the one reviewed draft.",
+      history: [],
+      gateway: gateway.gateway,
+      tools,
+      signal: new AbortController().signal,
+      authorityDigest,
+      requiredInitialToolName: "app.explore_data",
+      completeAfterRequiredTool: true,
+      dependencies: { requestJson: async () => providerResponse },
+    })).rejects.toMatchObject({ code: "ASK_REQUIRED_TOOL_NOT_CALLED" });
+    expect(gateway.calls).toHaveLength(0);
   });
 
   it("runs the Anthropic tool-use protocol through the same gateway", async () => {
@@ -5267,6 +5348,85 @@ describe("Workbench BYOM Ask", () => {
     expect(result.tool_calls).toEqual([
       expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
     ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("accepts a correct reviewed resource named with first-person possessive wording", async () => {
+    let exploreCalls = 0;
+    const supportTickets = {
+      id: "support_ops.support_tickets",
+      label: "Support tickets",
+      fields: [{ id: "ticket_id" }, { id: "status" }],
+      selectable_fields: ["ticket_id", "status"],
+      operator_review_metadata: { boundary_resource_count: 2, fields: [] },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [supportTickets], source_database_changed: false } };
+        }
+        exploreCalls += 1;
+        return {
+          ok: true,
+          value: { ok: true, data: [{ ticket_id: "T-1", status: "open" }], source_database_changed: false },
+        };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [supportTickets], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5.6-terra",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("Show me my support tickets.", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? {
+              status: 200,
+              body: {
+                output: [{
+                  type: "function_call",
+                  call_id: "my_support_tickets",
+                  name: "app__explore_data",
+                  arguments: JSON.stringify({
+                    plan: {
+                      kind: "rows",
+                      resource: "support_ops.support_tickets",
+                      select: ["ticket_id", "status"],
+                      limit: 25,
+                    },
+                  }),
+                }],
+              },
+            }
+          : {
+              status: 200,
+              body: {
+                output: [{
+                  type: "message",
+                  role: "assistant",
+                  content: [{ type: "output_text", text: "Your reviewed support tickets are shown above." }],
+                }],
+              },
+            };
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(result.tool_calls[0]?.error_code).not.toBe("ASK_PLAN_INTENT_MISMATCH");
     expect(exploreCalls).toBe(1);
   });
 

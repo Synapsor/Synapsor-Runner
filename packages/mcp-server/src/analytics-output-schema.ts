@@ -251,6 +251,13 @@ const evidenceHandleSchema = z.object({
   note: z.string(),
 }).strict();
 
+const observedSubjectReferenceSchema = z.object({
+  row_index: z.number().int().nonnegative(),
+  resource: z.string().min(1),
+  ref: z.string().regex(/^obj_[A-Za-z0-9_-]{32,128}$/),
+  expires_at: z.string().datetime(),
+}).strict();
+
 const resultEnvelopeMetaSchema = z.object({
   tenant_id: z.string().optional(),
   principal: z.string().optional(),
@@ -662,6 +669,7 @@ export const scopedExploreQueryOutputSchema = z.object({
   untrusted_data: z.literal(true).optional(),
   untrusted_data_notice: z.string().optional(),
   data: z.array(z.record(jsonScalarSchema)).optional(),
+  subjects: z.array(observedSubjectReferenceSchema).max(100).optional(),
   model_egress: z.object({
     values_withheld: z.literal(true),
     tokenized_columns: z.array(z.string()),
@@ -723,6 +731,7 @@ export const scopedExploreQueryToolOutputSchema = z.object({
   details: safeRecordSchema.optional(),
   source_database_changed: z.literal(false),
   data: z.array(z.record(jsonScalarSchema)).optional(),
+  subjects: z.array(observedSubjectReferenceSchema).max(100).optional(),
   privacy: scopedExploreClientPrivacyEnvelopeSchema.optional(),
   audit: safeRecordSchema.optional(),
 }).passthrough();

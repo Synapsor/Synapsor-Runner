@@ -4,6 +4,12 @@ Synapsor Safe Actions let an agent request an `INSERT`, `UPDATE`, or `DELETE`
 business effect without giving that agent SQL, database credentials, approval,
 activation, or commit authority.
 
+Safe Actions have two reviewed forms. A bounded discretionary action lets the
+agent supply explicitly reviewed business values. A rule-derived outcome lets
+the agent name an outcome and opaque subjects while Runner privately loads
+facts and derives the only permitted one-row `INSERT` or `UPDATE`. See the
+[Action Rule Engine](action-rule-engine.md) for the latter path.
+
 The terminal control plane is the preferred authoring and operator interface.
 From an active local Ask session, enter:
 
@@ -25,7 +31,7 @@ engine.
 
 ## The Mental Model
 
-Six nouns explain the whole lifecycle.
+The core nouns explain the whole lifecycle.
 
 | Term | Meaning | Grants authority? |
 | --- | --- | --- |
@@ -34,6 +40,8 @@ Six nouns explain the whole lifecycle.
 | **ActionSuggestion** | Bounded convenience metadata naming an intent and possible resource, operation, and fields. | No. It cannot contain approval, execution, credentials, trusted identity, writeback, or SQL. |
 | **ActionDesign** | The human-reviewed choices and the schema proofs behind one business action. | Not by itself. It compiles a disabled revision. |
 | **ActionRevision** | One immutable semantic action: DSL, canonical JSON, tests, review explanation, exact digest, and authority posture. | Only when referenced by the exact active Action Boundary after rehearsal and activation. |
+| **Verification Boundary** | Runner-only resources, fields, scope, relationships, row bounds, locks, and transaction posture used to prove one rule-derived outcome. | No. It is private verification authority, not model-facing Read authority. |
+| **Action Rule** | A typed `WHEN` predicate, deterministic derivation, one-row effect, TTL, and approval-class binding. | Only through an exact activated Action Boundary revision. |
 | **Proposal** | One immutable requested effect, bound to the exact action digest, trusted scope, target, before/after state, guards, and approval posture. | It may become eligible for a separate approval and execution path. It is not itself a commit. |
 
 The normal progression is:
@@ -55,24 +63,43 @@ schema proofs
 
 At no point does Runner turn the model into a database administrator.
 
-For a new agent, Action Assist follows read setup rather than creating a second
-onboarding system. Compile representative reads with `W Workloads`, complete
-the exact read review, then press `Y Safe actions`. Drafting and disposable
-rehearsal may happen before read activation; activating the proposal action may
-not. Workbench uses the equivalent **Compile read workload -> Add safe action**
-path and keeps both activation decisions explicit. The handoff shares reviewed
-structural evidence only; read authority never implies write permission, and
-each Action revision retains its own rehearsal, digest, activation, approval,
-and execution posture. See
+For rule-derived outcomes the runtime progression is stricter:
+
+```text
+Explore row -> opaque subject reference
+  -> app.request_change(outcome, subject_refs)
+  -> private bounded fact load
+  -> typed eligibility evaluation
+  -> Runner-derived exact effect
+  -> immutable proposal
+  -> separate approval
+  -> optional transaction-time re-verification and one-row apply
+```
+
+For a new agent, Read and Action setup are one model-guided conversation rather
+than two onboarding systems:
+
+```bash
+synapsor-runner start --from-env DATABASE_URL --cli
+```
+
+Describe one job. After exact metadata-egress consent, the model proposes both
+disabled Boundaries and asks only for unresolved business meaning. Runner
+validates every identifier, relationship, rule, limit, effect, and scope
+binding. It then presents Read activation and proposal activation separately.
+Drafting and disposable rehearsal may happen before Read activation; proposal
+activation may not. Read authority never implies write permission, and each
+Action revision retains its own rehearsal, digest, approval, and execution
+posture. `W Agent job` reopens the same saved context for later changes. See
 [Boundary Assist](read-workload-boundary-assist.md).
 
-The default path is one proposal-action card, not the full authority wizard.
-Runner uses the business-intent sentence only to rank reviewed structural
-candidates, asks about ambiguity or missing bounds, saves a disabled revision,
-and runs generated bounded arguments through a disposable proposal ledger.
-One later confirmation activates proposal creation only. **Advanced action
-design** retains fixed values, transitions, custom approval, execution,
-receipts, workers, exact DSL, and manual rehearsal controls.
+The default model path is conversation first, not the full authority wizard.
+Runner uses business intent to rank reviewed structural candidates, lets the
+model explain unresolved choices, saves a disabled revision, and rehearses it
+without source writes. One later permission activates proposal creation only.
+The deterministic cards and **Advanced action design** remain available for
+fixed values, transitions, custom approval, execution, receipts, workers,
+exact DSL, and manual rehearsal controls.
 
 Drafting and rehearsal may use a fully reviewed read revision that is not yet
 active. The disabled action records the exact read boundary name and digest.
@@ -125,9 +152,16 @@ The human control plane may:
 
 The model-facing data plane may only:
 
-- discover an already active semantic action tool;
-- supply its bounded business arguments;
+- discover an already active bounded action or the fixed semantic outcome
+  catalog;
+- supply reviewed business arguments for a discretionary proposal, or one
+  activated outcome plus opaque subject references for a rule-derived action;
 - receive a proposal, refusal, or reviewed execution outcome.
+
+Rule-derived outcomes use exactly `app.describe_actions` and
+`app.request_change`. The request cannot contain a patch, primary key, trusted
+scope, approval choice, executor, SQL, or authority digest. Adding another
+reviewed outcome does not add another MCP tool.
 
 The model-facing catalog never includes generic authoring, activation,
 approval, apply, policy, credential, transaction, or SQL tools. This rule is
@@ -170,7 +204,13 @@ mutable fields and value grammar for the action. If conflict validation,
 before-state policy, or evidence needs an exact field that Explore does not
 return, the action contract makes that field Runner-readable and model-withheld;
 it does not widen Read Boundary output. Structurally kept-out fields remain
-unavailable. Runner then evaluates each operation:
+unavailable.
+
+The table below describes bounded discretionary Action revisions. A
+rule-derived revision instead uses a separate Verification Boundary and effect
+envelope, then derives exact values at runtime as described in
+[Action Rule Engine](action-rule-engine.md). Runner then evaluates each
+discretionary operation:
 
 A reviewed row identity may be one column of a composite source primary key
 only when every other primary-key column is a direct trusted tenant or
@@ -675,6 +715,7 @@ round-trips. The deterministic suite does not require a paid model call.
 
 ## Related References
 
+- [Action Rule Engine](action-rule-engine.md)
 - [Human Approval For AI Database Writes](human-approval-ai-database-writes.md)
 - [Guarded CRUD Writeback](guarded-crud-writeback.md)
 - [Approval Roles And Verified Operator Identity](approval-roles-and-operator-identity.md)

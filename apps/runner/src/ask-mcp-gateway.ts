@@ -1,6 +1,9 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ProposalStore } from "@synapsor-runner/proposal-store";
 import runnerPackage from "../package.json" with { type: "json" };
 import {
   createMcpRuntime,
@@ -33,9 +36,10 @@ import type {
 } from "./model-ask.js";
 import { AskError } from "./model-ask.js";
 import { readModelAuthorityMetadataMode } from "./model-output-config.js";
+import { createOptionalActionRuleRuntimeServices } from "./semantic-action-runtime.js";
 
 type ConnectedMcpSurface = {
-  kind: "runtime" | "authoring";
+  kind: "runtime" | "authoring" | "semantic_actions";
   client: Client;
   server: McpServer;
   localPresentation: TrustedLocalToolPresentationChannel;
@@ -78,6 +82,11 @@ export async function createWorkbenchAskMcpGateway(input: {
       }
       surfaces.push(authoring);
       assertExactAuthoringSurface(authoring.tools);
+      const semanticActions = await connectSemanticActionSurface(input);
+      if (semanticActions) {
+        assertExactSemanticActionSurface(semanticActions.tools);
+        surfaces.push(semanticActions);
+      }
       selectedMode = "authoring";
     } else {
       if (requestedMode === "authoring") {
@@ -273,17 +282,40 @@ async function connectRuntimeSurface(input: {
 
 async function connectAuthoringSurface(input: {
   configPath: string;
+  storePath: string;
   projectRoot: string;
   env: NodeJS.ProcessEnv;
 }): Promise<ConnectedMcpSurface | undefined> {
   let runtime: ScopedExploreBoundarySetRuntime | undefined;
+  let subjectStore: ProposalStore | undefined;
   try {
     const modelAuthorityMetadata = await readModelAuthorityMetadataMode(input.configPath);
+    const actionConfig = await optionalActionRuntimeConfig(input.projectRoot);
+    const semantic = actionConfig
+      ? await (async () => {
+          subjectStore = new ProposalStore(input.storePath);
+          return await createOptionalActionRuleRuntimeServices({
+            projectRoot: input.projectRoot,
+            config: actionConfig,
+            env: input.env,
+            store: subjectStore,
+          });
+        })()
+      : undefined;
     runtime = await createScopedExploreBoundarySetRuntime({
       projectRoot: input.projectRoot,
       transport: "loopback_workbench",
       env: input.env,
       modelAuthorityMetadata,
+      ...(subjectStore ? { store: subjectStore } : {}),
+      ...(semantic
+        ? {
+          subjectReferences: {
+            service: semantic.subjectReferences,
+            workflow_session_id: semantic.workflow_session_id,
+          },
+        }
+        : {}),
     });
     const localPresentation = new TrustedLocalToolPresentationChannel();
     const server = createScopedExploreMcpServer(runtime, { localPresentation });
@@ -291,7 +323,10 @@ async function connectAuthoringSurface(input: {
       "authoring",
       server,
       localPresentation,
-      () => runtime!.close(),
+      async () => {
+        await runtime!.close();
+        await subjectStore?.close();
+      },
     );
     surface.projectResultForModel = (tool, args, result) =>
       runtime!.projectResultForModel({
@@ -312,6 +347,7 @@ async function connectAuthoringSurface(input: {
     return surface;
   } catch (error) {
     await runtime?.close().catch(() => undefined);
+    await Promise.resolve(subjectStore?.close()).catch(() => undefined);
     if (error instanceof ScopedExploreError) {
       if (error.code === "EXPLORE_DISABLED") return undefined;
       if (error.code === "EXPLORE_LOCK_STALE"
@@ -340,6 +376,62 @@ async function connectAuthoringSurface(input: {
     }
     throw error;
   }
+}
+
+async function connectSemanticActionSurface(input: {
+  storePath: string;
+  projectRoot: string;
+  env: NodeJS.ProcessEnv;
+}): Promise<ConnectedMcpSurface | undefined> {
+  const config = await optionalActionRuntimeConfig(input.projectRoot);
+  if (!config) return undefined;
+  const store = new ProposalStore(input.storePath);
+  let runtime: McpRuntime | undefined;
+  try {
+    const semantic = await createOptionalActionRuleRuntimeServices({
+      projectRoot: input.projectRoot,
+      config,
+      env: input.env,
+      store,
+    });
+    if (!semantic) {
+      store.close();
+      return undefined;
+    }
+    runtime = createMcpRuntime(config, {
+      env: input.env,
+      store,
+      semanticActions: semantic.semanticActions,
+    });
+    const localPresentation = new TrustedLocalToolPresentationChannel();
+    const server = createSynapsorMcpServer(runtime, { localPresentation });
+    return await connectSurface(
+      "semantic_actions",
+      server,
+      localPresentation,
+      async () => {
+        await runtime!.close();
+        await store.close();
+      },
+    );
+  } catch (error) {
+    await runtime?.close().catch(() => undefined);
+    await Promise.resolve(store.close()).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function optionalActionRuntimeConfig(
+  projectRoot: string,
+): Promise<ReturnType<typeof loadRuntimeConfigFromFile> | undefined> {
+  const configPath = path.join(path.resolve(projectRoot), "synapsor.actions.runner.json");
+  try {
+    await fs.access(configPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  return loadRuntimeConfigFromFile(configPath);
 }
 
 function addAskOperatorReviewMetadata(
@@ -418,10 +510,15 @@ async function connectSurface(
 }
 
 function singleToolSurface(surfaces: ConnectedMcpSurface[]): AskToolDefinition[] {
-  if (surfaces.length > 1) {
+  const kinds = new Set(surfaces.map((surface) => surface.kind));
+  const validComposition = surfaces.length <= 1
+    || (surfaces.length === 2
+      && kinds.has("authoring")
+      && kinds.has("semantic_actions"));
+  if (!validComposition) {
     throw new AskError(
       "ASK_MIXED_TOOL_SURFACE_REFUSED",
-      "Ask refuses to combine authoring and runtime tool catalogs.",
+      "Ask refuses to combine unrelated or overlapping MCP tool catalogs.",
       409,
     );
   }
@@ -435,6 +532,19 @@ function singleToolSurface(surfaces: ConnectedMcpSurface[]): AskToolDefinition[]
     }
   }
   return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function assertExactSemanticActionSurface(tools: AskToolDefinition[]): void {
+  const expected = ["app.describe_actions", "app.request_change"];
+  const actual = tools.map((tool) => tool.name).sort();
+  if (actual.length !== expected.length
+    || actual.some((name, index) => name !== expected[index])) {
+    throw new AskError(
+      "ASK_ACTION_TOOL_SURFACE_INVALID",
+      "Verified Action Ask must expose exactly app.describe_actions and app.request_change.",
+      409,
+    );
+  }
 }
 
 function assertExactAuthoringSurface(tools: AskToolDefinition[]): void {

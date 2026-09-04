@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: synapsor_admin
       POSTGRES_PASSWORD: synapsor_admin_password
     ports:
-      - "55439:5432"
+      - "${SYNAPSOR_FLEET_POSTGRES_PORT:-55439}:5432"
     healthcheck:
       test: ["CMD-SHELL", "test \"$(psql -U synapsor_admin -d synapsor_fleet -tAc \"SELECT pg_postmaster_start_time() > initialized_at FROM public.synapsor_fixture_ready LIMIT 1\" 2>/dev/null | xargs)\" = t"]
       interval: 1s
@@ -21,7 +21,7 @@ services:
       MYSQL_DATABASE: synapsor_fleet
       MYSQL_ROOT_PASSWORD: root_password
     ports:
-      - "53309:3306"
+      - "${SYNAPSOR_FLEET_MYSQL_PORT:-53309}:3306"
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-proot_password"]
       interval: 2s

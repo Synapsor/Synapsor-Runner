@@ -24,7 +24,7 @@ import { assertReceiptTopologyForTransport, inspectMcpToolBoundary, mcpServeStre
 import { resultFormatOption } from "./mcp-shared.js";
 import { assertNoActiveStoreLease } from "./store-lease.js";
 import { capabilityOperation, formatSourceReceiptMode } from "./writeback-domain.js";
-import { verifyLocalWritebackAuthority } from "./writeback-execution.js";
+import { semanticActionVerifierForRuntime, verifyLocalWritebackAuthority } from "./writeback-execution.js";
 
 
 export async function startWorker(args: string[] = []): Promise<number> {
@@ -46,6 +46,11 @@ export async function startWorker(args: string[] = []): Promise<number> {
   if (Boolean(configPath) !== Boolean(storePath)) throw new Error("Cloud worker mode requires both --config and --store");
   if (once && (!configPath || !storePath)) throw new Error("Cloud worker --once requires both --config and --store so local reviewed authority is rechecked");
   const config = loadConfig();
+  if (configPath) {
+    const reviewedConfig = await readRuntimeConfig(configPath);
+    const semanticVerifier = semanticActionVerifierForRuntime(reviewedConfig, configPath);
+    if (semanticVerifier) config.semanticActionVerifier = semanticVerifier;
+  }
   const cloudLinkedWorker = configPath && storePath
     ? createCloudLinkedWorkerSync(configPath, storePath)
     : undefined;

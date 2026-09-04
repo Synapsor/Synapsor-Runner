@@ -67,6 +67,7 @@ describe("Ask access summaries", () => {
               status: "Status",
               created_at: "Created at",
             },
+            selectable_fields: ["id", "status"],
             groupable_fields: ["status"],
             aggregate_measures: ["total_cents"],
             count_distinct_fields: ["id"],
@@ -109,9 +110,15 @@ describe("Ask access summaries", () => {
           "grouping by Status",
           "day, week, or month using Created at",
         ],
-        suggestions: ["How did total cents change by week across status?"],
+        suggestions: [
+          "Show a few reviewed records from Orders.",
+          "How did total cents change by week across status?",
+        ],
       }],
-      suggestions: ["How did total cents change by week across status?"],
+      suggestions: [
+        "Show a few reviewed records from Orders.",
+        "How did total cents change by week across status?",
+      ],
     });
   });
 

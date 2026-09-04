@@ -54,6 +54,20 @@ const tools: AskToolDefinition[] = [
     },
   },
 ];
+const semanticActionTools: AskToolDefinition[] = [{
+  name: "app.describe_actions",
+  description: "Describe the active reviewed semantic outcomes.",
+  input_schema: { type: "object", properties: {}, additionalProperties: false },
+}, {
+  name: "app.request_change",
+  description: "Request one reviewed outcome with opaque subject references.",
+  input_schema: {
+    type: "object",
+    properties: { outcome: { type: "string" }, subject_refs: { type: "object" } },
+    required: ["outcome", "subject_refs"],
+    additionalProperties: false,
+  },
+}];
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -146,6 +160,60 @@ describe("try ask", () => {
       }),
       timeoutMs: 75_000,
     }));
+  });
+
+  it("accepts the complete fixed Action pair beside the reviewed Read pair", async () => {
+    const fixture = await askProject();
+    const sentToolNames: string[][] = [];
+    await expect(tryAsk([
+      "Pause notifications for the reviewed account if the active outcome permits it.",
+      "--project-root", fixture.root,
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+      "--provider", "openai",
+    ], {
+      env: fixture.env,
+      gatewayFactory: testGatewayFactory([], [...tools, ...semanticActionTools]),
+      confirmEgress: async () => true,
+      providerDependencies: {
+        requestJson: async (request) => {
+          const body = request.body as { tools?: Array<{ name?: string; function?: { name?: string } }> };
+          sentToolNames.push((body.tools ?? []).map((tool) => tool.name ?? tool.function?.name ?? ""));
+          return {
+            status: 200,
+            body: { choices: [{ message: { role: "assistant", content: "The reviewed request is ready." } }] },
+          };
+        },
+      },
+      bindPlansToAnswer: async () => undefined,
+    })).resolves.toBe(0);
+    expect(sentToolNames[0]).toEqual(expect.arrayContaining([
+      "app__describe_data",
+      "app__explore_data",
+      "app__describe_actions",
+      "app__request_change",
+    ]));
+  });
+
+  it("refuses a partial semantic Action surface instead of silently omitting a gate", async () => {
+    const fixture = await askProject();
+    await expect(tryAsk([
+      "Describe reviewed actions.",
+      "--project-root", fixture.root,
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+      "--provider", "openai",
+    ], {
+      env: fixture.env,
+      gatewayFactory: testGatewayFactory([], [...tools, semanticActionTools[0]!]),
+      confirmEgress: async () => true,
+      providerDependencies: {
+        requestJson: async () => {
+          throw new Error("provider must not be called");
+        },
+      },
+      bindPlansToAnswer: async () => undefined,
+    })).rejects.toThrow(/complete fixed Action pair/i);
   });
 
   it("uses a default-Yes interactive egress confirmation without exposing the fingerprint", async () => {
@@ -985,6 +1053,7 @@ async function exactConsent(
 
 function testGatewayFactory(
   calls: Array<{ name: string; args: Record<string, unknown> }>,
+  listedTools: AskToolDefinition[] = tools,
 ): (input: {
   configPath: string;
   storePath: string;
@@ -994,7 +1063,7 @@ function testGatewayFactory(
 }) => Promise<AskToolGateway> {
   return async () => ({
     mode: "authoring",
-    listTools: async () => structuredClone(tools),
+    listTools: async () => structuredClone(listedTools),
     callTool: async (name, args) => {
       calls.push({ name, args: structuredClone(args) });
       if (name === "app.describe_data") {

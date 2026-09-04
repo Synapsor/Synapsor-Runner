@@ -75,6 +75,19 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
   const cloudTools = options.cloudTools ?? [];
   const resultFormat = options.resultFormat ?? config.result_format ?? 1;
   const trustedContext = options.trustedContext;
+  const semanticActions = options.semanticActions;
+  const configuredTools = config.mode === "cloud"
+    ? cloudTools
+    : listedLocalCapabilities(config).map((capability) => toolMetadata(capability, config));
+  const semanticTools = semanticActions?.listTools() ?? [];
+  const configuredNames = new Set(configuredTools.map((tool) => tool.name));
+  const semanticCollision = semanticTools.find((tool) => configuredNames.has(tool.name));
+  if (semanticCollision) {
+    throw new McpRuntimeError(
+      "MCP_TOOL_METADATA_INVALID",
+      `Configured capability ${semanticCollision.name} collides with Runner's fixed semantic Action surface.`,
+    );
+  }
   const privacySessionId = crypto.randomBytes(32).toString("base64url");
   if (config.governance?.mode === "cloud_linked") loadCloudLinkedConnection(config, env);
   const cloudSynchronizer = ownsStore && config.governance?.mode === "cloud_linked"
@@ -89,12 +102,17 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
   return {
     config,
     store,
-    listTools: () => config.mode === "cloud"
-      ? cloudTools
-      : listedLocalCapabilities(config).map((capability) => toolMetadata(capability, config)),
+    listTools: () => [...semanticTools, ...configuredTools].map((tool) => structuredClone(tool)),
     callTool: async (name, args) => {
-      const capability = config.mode === "cloud" ? undefined : localCapabilities(config).find((item) => item.name === name);
+      const semanticTool = semanticActions?.hasTool(name) === true;
+      const capability = semanticTool || config.mode === "cloud"
+        ? undefined
+        : localCapabilities(config).find((item) => item.name === name);
       try {
+        if (semanticTool) {
+          assertStoreAvailable();
+          return await semanticActions!.callTool(name, args);
+        }
         if (capability?.kind === "proposal") await cloudSynchronizer?.synchronizeBeforeProposal();
         if (capability) {
           const context = resolveTrustedContext(config, env, capability, trustedContext);

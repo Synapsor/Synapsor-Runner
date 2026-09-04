@@ -1,5 +1,15 @@
+import { resolveActivatedActionRule } from "@synapsor-runner/action-rules";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { resolveSupervisedWorkerEligibility, type RuntimeCapabilityConfig, type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import {
+  resolveSemanticSupervisedWorkerEligibility,
+  resolveSupervisedWorkerEligibility,
+  supervisedWorkerPolicies,
+  supervisedWorkerPolicyDigest,
+  supervisedWorkerPolicyName,
+  type RuntimeCapabilityConfig,
+  type RuntimeConfig,
+  type RuntimeSupervisedWorkerPolicy,
+} from "@synapsor-runner/mcp-server";
 import {
   ProposalStore,
   workerControlDecisionSubject,
@@ -18,8 +28,8 @@ import { runnerProcessStartedAt } from "./cli-runtime.js";
 import { applyProposal } from "./guarded-apply.js";
 import { resolveOperatorIdentity, type OperatorIdentityConfig } from "./operator-identity.js";
 import { argsWithRuntimeStoreBridge, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge, withSharedPostgresRuntimeStoreReadBridge, withoutSharedPostgresLedgerMirror } from "./store-shared.js";
-import { assertSupervisedWriterPosture, currentSupervisedApprovalPolicy, workerControlAllowsPolicy, workerControlOperatorDecisionAction, workerPolicyError } from "./worker-policy.js";
-import { findProposalCapability } from "./writeback-execution.js";
+import { assertSemanticSupervisedWriterPosture, assertSupervisedWriterPosture, currentSupervisedApprovalPolicy, workerControlAllowsPolicy, workerControlOperatorDecisionAction, workerPolicyError } from "./worker-policy.js";
+import { findProposalCapability, loadSemanticProposalAuthority, loadSemanticRuntimeAuthority } from "./writeback-execution.js";
 
 
 export async function workerCommand(args: string[]): Promise<number> {
@@ -143,9 +153,10 @@ async function workerControlMutation(
     const controlTarget: WorkerControlTarget = { action, ...target };
     const current = store.workerControlState();
     const subject = workerControlDecisionSubject(current, controlTarget);
-    const policies = config.supervised_worker?.capabilities.filter((policy) =>
+    const policies = supervisedWorkerPolicies(config).filter((policy) =>
       !target.capability
-      || (policy.capability === target.capability && policy.contract_digest === target.contract_digest)) ?? [];
+      || (supervisedWorkerPolicyName(policy) === target.capability
+        && supervisedWorkerPolicyDigest(policy) === target.contract_digest));
     if (target.capability && policies.length !== 1) {
       throw new Error("worker capability control must target one configured exact capability/digest allowlist entry");
     }
@@ -215,9 +226,9 @@ async function workerCancel(args: string[]): Promise<number> {
     const proposal = requireLocalProposal(store, proposalId);
     const queue = store.getWorkerQueueItem(proposalId);
     if (!queue) throw new Error(`worker queue item not found for ${proposalId}`);
-    const policy = config.supervised_worker?.capabilities.find((candidate) =>
-      candidate.capability === proposal.action
-      && candidate.contract_digest === queue.contract_digest);
+    const policy = supervisedWorkerPolicies(config).find((candidate) =>
+      supervisedWorkerPolicyName(candidate) === proposal.action
+      && supervisedWorkerPolicyDigest(candidate) === queue.contract_digest);
     await confirmDangerousAction(args, `Cancel queued proposal ${proposalId} before worker lease?`);
     const identity = await resolveOperatorIdentity({
       config: config.operator_identity as OperatorIdentityConfig | undefined,
@@ -345,11 +356,12 @@ async function workerDeadLetterMutate(action: "requeue" | "discard", args: strin
 }
 
 
-function enqueueApprovedForSupervisedWorker(
+export async function enqueueApprovedForSupervisedWorker(
   store: ProposalStore,
   config: RuntimeConfig,
+  configPath: string,
   filters: { capability?: string; tenant?: string },
-): void {
+): Promise<void> {
   const proposals = [
     ...store.listProposals({ state: "approved", capability: filters.capability, tenant: filters.tenant }),
     ...store.listProposals({ state: "pending_worker", capability: filters.capability, tenant: filters.tenant }),
@@ -357,79 +369,129 @@ function enqueueApprovedForSupervisedWorker(
   for (const proposal of proposals) {
     const existing = store.getWorkerQueueItem(proposal.proposal_id);
     if (existing) continue;
-    let capability: RuntimeCapabilityConfig;
-    try {
-      capability = findProposalCapability(config, proposal);
-    } catch {
-      continue;
-    }
-    const eligibility = resolveSupervisedWorkerEligibility(config, capability, { phase: "queue" });
-    if (
-      !eligibility.eligible
-      || !eligibility.policy
-      || !eligibility.contract_digest
-      || proposal.change_set.contract?.digest !== eligibility.contract_digest
-    ) {
-      continue;
+    let policy: RuntimeSupervisedWorkerPolicy;
+    let authorityDigest: `sha256:${string}`;
+    if (proposal.change_set.schema_version === "synapsor.change-set.v4") {
+      try {
+        const authority = await loadSemanticProposalAuthority(config, configPath, proposal);
+        const eligibility = resolveSemanticSupervisedWorkerEligibility(config, authority.activated, { phase: "queue" });
+        if (!eligibility.eligible || !eligibility.policy || !eligibility.action_boundary_digest) continue;
+        policy = eligibility.policy;
+        authorityDigest = eligibility.action_boundary_digest;
+      } catch {
+        continue;
+      }
+    } else {
+      let capability: RuntimeCapabilityConfig;
+      try {
+        capability = findProposalCapability(config, proposal);
+      } catch {
+        continue;
+      }
+      const eligibility = resolveSupervisedWorkerEligibility(config, capability, { phase: "queue" });
+      if (!eligibility.eligible
+        || !eligibility.policy
+        || !eligibility.contract_digest
+        || proposal.change_set.contract?.digest !== eligibility.contract_digest) continue;
+      policy = eligibility.policy;
+      authorityDigest = eligibility.contract_digest;
     }
     try {
       store.enqueueWorkerProposal({
         proposal_id: proposal.proposal_id,
         execution_mode: "supervised_worker",
-        contract_digest: eligibility.contract_digest,
-        max_attempts: eligibility.policy.max_attempts,
-        queue_limit: eligibility.policy.queue_limit,
+        contract_digest: authorityDigest,
+        max_attempts: policy.max_attempts,
+        queue_limit: policy.queue_limit,
       });
     } catch (error) {
       const code = safeOperationalErrorCode(error);
       if (code !== "WORKER_QUEUE_LIMIT_EXCEEDED") throw error;
       const attentionKey = [
-        eligibility.profile ?? "unknown",
+        config.supervised_worker?.profile ?? "unknown",
         "policy.limit_exceeded",
-        capability.name,
-        eligibility.contract_digest,
+        proposal.action,
+        authorityDigest,
         "worker_queue",
       ].join(":");
       store.recordAttentionEvent({
         event_type: "policy.limit_exceeded",
         severity: "critical",
-        environment: eligibility.profile ?? "unknown",
-        capability: capability.name,
-        contract_digest: eligibility.contract_digest,
+        environment: config.supervised_worker?.profile ?? "unknown",
+        capability: proposal.action,
+        contract_digest: authorityDigest,
         attention_key: attentionKey,
         attention_required: true,
         immediate_default: true,
         failure_class: code,
-        summary: `${capability.name} supervised-execution queue reached its reviewed limit`,
+        summary: `${proposal.action} supervised-execution queue reached its reviewed limit`,
         workbench_path: workbenchAttentionPath(attentionKey),
         details: {
           failure_class: code,
           source_database_changed: false,
         },
-        source_event_key: `worker-queue-limit:${proposal.proposal_id}:${eligibility.contract_digest}`,
+        source_event_key: `worker-queue-limit:${proposal.proposal_id}:${authorityDigest}`,
       });
     }
   }
 }
 
 
-async function claimSupervisedWorkerItem(
+export async function claimSupervisedWorkerItem(
   store: ProposalStore,
   config: RuntimeConfig,
+  configPath: string,
   input: { workerId: string; capability?: string; tenant?: string },
 ): Promise<{
   item: WorkerQueueItem;
-  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>;
+  policy: RuntimeSupervisedWorkerPolicy;
 } | undefined> {
   const workerControl = store.workerControlState();
   updateSupervisedWorkerBacklogAttention(store, config);
   updateSupervisedProposalExpiryAttention(store, config);
   if (workerControl.mode !== "active") return undefined;
-  const policies = (config.supervised_worker?.capabilities ?? [])
-    .filter((policy) => !input.capability || policy.capability === input.capability)
-    .sort((left, right) => left.capability.localeCompare(right.capability)
-      || left.contract_digest.localeCompare(right.contract_digest));
+  const policies = supervisedWorkerPolicies(config)
+    .filter((policy) => !input.capability || supervisedWorkerPolicyName(policy) === input.capability)
+    .sort((left, right) => supervisedWorkerPolicyName(left).localeCompare(supervisedWorkerPolicyName(right))
+      || supervisedWorkerPolicyDigest(left).localeCompare(supervisedWorkerPolicyDigest(right)));
+  let semanticAuthority: Awaited<ReturnType<typeof loadSemanticRuntimeAuthority>> | undefined;
   for (const policy of policies) {
+    if ("outcome" in policy) {
+      try {
+        semanticAuthority ??= await loadSemanticRuntimeAuthority(config, configPath);
+        const activated = resolveActivatedActionRule(semanticAuthority.registry, policy.outcome);
+        const eligibility = resolveSemanticSupervisedWorkerEligibility(config, activated, {
+          workerIdentity: input.workerId,
+          phase: "execute",
+        });
+        if (!eligibility.eligible || !eligibility.policy || !eligibility.action_boundary_digest) continue;
+        if (!workerControlAllowsPolicy(workerControl, eligibility.policy)) continue;
+        if (!requiredAttentionSinksHealthy(store, config, eligibility.policy)) {
+          recordUnhealthySupervisionSinkAttention(store, config, eligibility.policy);
+          continue;
+        }
+        resolveHealthySupervisionSinkAttention(store, config, eligibility.policy);
+        await assertSemanticSupervisedWriterPosture(store, config, eligibility.policy, semanticAuthority.registry);
+        const item = store.claimWorkerItem({
+          workerId: input.workerId,
+          leaseSeconds: eligibility.policy.lease_seconds,
+          executionMode: "supervised_worker",
+          capability: policy.outcome,
+          tenant: input.tenant,
+          contractDigest: eligibility.action_boundary_digest,
+          maxConcurrent: eligibility.policy.concurrency,
+          rateLimit: {
+            executions: eligibility.policy.rate_limit.executions,
+            windowSeconds: eligibility.policy.rate_limit.window_seconds,
+          },
+          proposalTtlSeconds: eligibility.policy.proposal_ttl_seconds,
+        });
+        if (item) return { item, policy: eligibility.policy };
+      } catch {
+        continue;
+      }
+      continue;
+    }
     const capability = config.capabilities?.find((candidate) => candidate.name === policy.capability);
     if (!capability) continue;
     const eligibility = resolveSupervisedWorkerEligibility(config, capability, {
@@ -548,11 +610,11 @@ async function workerRun(args: string[]): Promise<number> {
     do {
       const store = new ProposalStore(storePath);
       let item;
-      let supervisedPolicy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]> | undefined;
+      let supervisedPolicy: RuntimeSupervisedWorkerPolicy | undefined;
       try {
         if (supervised) {
-          enqueueApprovedForSupervisedWorker(store, config, { capability, tenant });
-          const claimed = await claimSupervisedWorkerItem(store, config, {
+          await enqueueApprovedForSupervisedWorker(store, config, configPath, { capability, tenant });
+          const claimed = await claimSupervisedWorkerItem(store, config, configPath, {
             workerId,
             capability,
             tenant,

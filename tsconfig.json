@@ -4,6 +4,7 @@
     { "path": "./packages/config" },
     { "path": "./packages/protocol" },
     { "path": "./packages/spec" },
+    { "path": "./packages/action-rules" },
     { "path": "./packages/dsl" },
     { "path": "./packages/proposal-store" },
     { "path": "./packages/schema-inspector" },

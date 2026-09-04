@@ -20,8 +20,10 @@ import {
 } from "./terminal-ask-defaults.js";
 import { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
 import { guidedActionStatus } from "./guided-action.js";
+import { loadActiveActionRuleAuthority } from "./action-rule-authority.js";
 import { mcp } from "./mcp-project.js";
 import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
+import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 
 export { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
 
@@ -84,6 +86,27 @@ type RouteOption = {
   label: string;
   detail: string;
 };
+
+type McpClientPickerKey = {
+  name?: string;
+  ctrl?: boolean;
+};
+
+type McpClientPickerTransition = {
+  selected: number;
+  client?: ManagedMcpProjectClient;
+  cancelled?: true;
+};
+
+const managedMcpClientOptions: Array<{
+  id: ManagedMcpProjectClient;
+  label: string;
+  detail: string;
+}> = [
+  { id: "claude-code", label: "Claude Code", detail: "Project-scoped .mcp.json" },
+  { id: "cursor", label: "Cursor", detail: "Project-scoped .cursor/mcp.json" },
+  { id: "vscode", label: "VS Code", detail: "Project-scoped .vscode/mcp.json" },
+];
 
 const routeOptions: RouteOption[] = [
   {
@@ -177,13 +200,37 @@ export async function runPostActivationAskHandoff(
     try {
       const code = await (dependencies.runMcpInstall ?? mcp)(installArgs);
       if (code !== 0) return code;
-      write(formatMcpClientHandoff(input.projectRoot, selection.client, includeActions));
+      const runtimeBindings = await reviewedRuntimeBindingNames(input.projectRoot).catch(() => []);
+      write(formatMcpClientHandoff(
+        input.projectRoot,
+        selection.client,
+        includeActions,
+        runtimeBindings,
+      ));
       return 0;
     } catch (error) {
+      if (safeErrorMessage(error) === "confirmation declined") {
+        write([
+          "MCP install cancelled. Your reviewed boundaries remain active.",
+          input.selection
+            ? "No project client configuration was changed."
+            : "Back at connection choices.",
+          "",
+        ].join("\n"));
+        if (!input.selection) {
+          return runPostActivationAskHandoff({
+            ...input,
+            autoStartConfiguredProvider: false,
+            selection: undefined,
+          }, dependencies);
+        }
+        return 0;
+      }
       stderr.write([
         `Local MCP setup did not complete: ${safeErrorMessage(error)}`,
         "The reviewed Read and Action boundaries are unchanged.",
-        `Retry: ${cliCommandName()} mcp ${formatRetryArgs([...installArgs, "--yes"])}`,
+        `Retry after resolving the error: ${cliCommandName()} mcp ${formatRetryArgs(installArgs)}`,
+        "The retry shows the exact install preview again before writing project configuration.",
         "",
       ].join("\n"));
       return 1;
@@ -403,6 +450,7 @@ export function formatMcpClientHandoff(
   projectRoot: string,
   client: ManagedMcpProjectClient,
   includeActions: boolean,
+  runtimeBindings: ReviewedRuntimeBinding[] = [],
 ): string {
   const cmd = cliCommandName();
   const root = shellToken(projectRoot);
@@ -416,10 +464,17 @@ export function formatMcpClientHandoff(
     `Client: ${managedMcpClientLabel(client)}`,
     "Read entry: synapsor -> app.describe_data + app.explore_data",
     ...(includeActions
-      ? ["Action entry: synapsor-actions -> active reviewed proposal tools"]
+      ? ["Action entry: synapsor-actions -> app.describe_actions + app.request_change"]
       : ["Action entry: not installed because no active Action Boundary was found"]),
     "Do not start a separate server: the stdio client launches Runner for each MCP session.",
-    "Start or restart the client from the same trusted environment so tenant and principal values are inherited.",
+    ...(runtimeBindings.length
+      ? [
+          "Set this session's trusted identity before opening the client:",
+          ...runtimeBindings.map((binding) =>
+            `  export ${binding.environment}='<${binding.role}>'`),
+          "These values are required only for live scoped calls. They remain outside model arguments and saved project files.",
+        ]
+      : ["Start or restart the client from the trusted runtime environment required by this reviewed boundary."]),
     "",
     `  cd ${root}`,
     `  ${launch}`,
@@ -431,9 +486,50 @@ export function formatMcpClientHandoff(
   ].join("\n");
 }
 
-async function hasActiveActionRuntime(projectRoot: string): Promise<boolean> {
-  const status = await guidedActionStatus(projectRoot);
-  return Boolean(status.action_boundary.active?.authority.capabilities.length);
+type ReviewedRuntimeBinding = {
+  role: "tenant" | "principal";
+  environment: string;
+};
+
+async function reviewedRuntimeBindingNames(projectRoot: string): Promise<ReviewedRuntimeBinding[]> {
+  const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
+  const values = new Map<string, ReviewedRuntimeBinding>();
+  for (const boundary of boundaries) {
+    const trusted = boundary.trusted_context;
+    if (trusted.provider !== "environment") continue;
+    if (trusted.tenant_env) {
+      values.set(`tenant:${trusted.tenant_env}`, {
+        role: "tenant",
+        environment: trusted.tenant_env,
+      });
+    }
+    if (trusted.principal_env) {
+      values.set(`principal:${trusted.principal_env}`, {
+        role: "principal",
+        environment: trusted.principal_env,
+      });
+    }
+  }
+  return [...values.values()];
+}
+
+export async function hasActiveActionRuntime(
+  projectRoot: string,
+  dependencies: {
+    guidedStatus?: typeof guidedActionStatus;
+    loadSemanticAuthority?: typeof loadActiveActionRuleAuthority;
+  } = {},
+): Promise<boolean> {
+  const status = await (dependencies.guidedStatus ?? guidedActionStatus)(projectRoot);
+  if (status.action_boundary.active?.authority.capabilities.length) return true;
+  try {
+    const semantic = await (dependencies.loadSemanticAuthority
+      ?? loadActiveActionRuleAuthority)(projectRoot);
+    return semantic.registry.rules.length > 0;
+  } catch {
+    // Missing, stale, or invalid semantic authority must never be installed.
+    return false;
+  }
 }
 
 function managedMcpClientLabel(client: ManagedMcpProjectClient): string {
@@ -516,7 +612,7 @@ async function chooseRouteInTerminal(
   const theme = terminalTheme(!("NO_COLOR" in process.env));
 
   const render = () => {
-    const width = Math.min(terminalContentWidth(output.columns), 116);
+    const width = terminalContentWidth(output.columns);
     const lines = [
       theme.title("USE YOUR REVIEWED BOUNDARIES"),
       "Choose how you want an agent to use this project.",
@@ -569,16 +665,8 @@ async function chooseMcpClientInTerminal(
   if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
     throw new Error("The local MCP client choice requires a real terminal.");
   }
-  const options: Array<{
-    id: ManagedMcpProjectClient;
-    label: string;
-    detail: string;
-  }> = [
-    { id: "claude-code", label: "Claude Code", detail: "Project-scoped .mcp.json" },
-    { id: "cursor", label: "Cursor", detail: "Project-scoped .cursor/mcp.json" },
-    { id: "vscode", label: "VS Code", detail: "Project-scoped .vscode/mcp.json" },
-  ];
-  let selected: number | undefined;
+  const options = managedMcpClientOptions;
+  let selected = 0;
   const wasRaw = input.isRaw;
   const wasFlowing = input.readableFlowing === true;
   const renderer = createInPlaceTerminalRenderer(output, { maxRows: () => output.rows });
@@ -596,7 +684,7 @@ async function chooseMcpClientInTerminal(
   output.write("\u001b[?25l");
   const theme = terminalTheme(!("NO_COLOR" in process.env));
   const render = () => {
-    const width = Math.min(terminalContentWidth(output.columns), 116);
+    const width = terminalContentWidth(output.columns);
     const lines = [
       theme.title("CONNECT A LOCAL MCP CLIENT"),
       "Choose the client Runner may configure for this project.",
@@ -623,18 +711,10 @@ async function chooseMcpClientInTerminal(
     while (true) {
       render();
       const key = await nextKey();
-      if (key.name === "up") selected = selected === undefined
-        ? options.length - 1
-        : (selected - 1 + options.length) % options.length;
-      else if (key.name === "down") selected = selected === undefined
-        ? 0
-        : (selected + 1) % options.length;
-      else if (["1", "2", "3"].includes(key.name ?? "")) {
-        return options[Number(key.name) - 1]!.id;
-      } else if ((key.name === "return" || key.name === "enter") && selected !== undefined) {
-        return options[selected]!.id;
-      }
-      else if (key.name === "escape" || (key.ctrl && key.name === "c")) return undefined;
+      const transition = mcpClientPickerTransition(selected, key);
+      selected = transition.selected;
+      if (transition.client) return transition.client;
+      if (transition.cancelled) return undefined;
     }
   } finally {
     input.off("keypress", onKey);
@@ -643,6 +723,31 @@ async function chooseMcpClientInTerminal(
     input.setRawMode(wasRaw);
     if (!wasFlowing) input.pause();
   }
+}
+
+export function mcpClientPickerTransition(
+  selected: number,
+  key: McpClientPickerKey,
+): McpClientPickerTransition {
+  if (key.name === "up") {
+    return {
+      selected: (selected - 1 + managedMcpClientOptions.length)
+        % managedMcpClientOptions.length,
+    };
+  }
+  if (key.name === "down") {
+    return { selected: (selected + 1) % managedMcpClientOptions.length };
+  }
+  if (["1", "2", "3"].includes(key.name ?? "")) {
+    return { selected: Number(key.name) - 1 };
+  }
+  if (key.name === "return" || key.name === "enter") {
+    return { selected, client: managedMcpClientOptions[selected]!.id };
+  }
+  if (key.name === "escape" || (key.ctrl && key.name === "c")) {
+    return { selected, cancelled: true };
+  }
+  return { selected };
 }
 
 export function formatPostActivationRouteLine(input: {

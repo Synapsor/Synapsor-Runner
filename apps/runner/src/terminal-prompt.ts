@@ -292,7 +292,7 @@ export async function withRawTerminalScreen<T>(
   output.write("\u001b[?25l");
   const paintLatestFrame = () => renderer.render(latestLines);
   const render = (lines: string[]) => {
-    const width = Math.min(terminalContentWidth(output.columns), 116);
+    const width = terminalContentWidth(output.columns);
     const normalized = lines.flatMap((line) =>
       wrapStyledTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
     const maxRows = output.rows;

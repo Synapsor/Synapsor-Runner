@@ -875,7 +875,7 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("YOUR DATA BOUNDARY");
     expect(rendered).toContain("NAME");
     expect(rendered).toContain("TYPE");
-    expect(rendered).toContain("AGENT AUTHORITY");
+    expect(rendered).toContain("AI ACCESS");
     expect(rendered).toContain("READ");
     expect(rendered).toContain("ACTION");
     expect(rendered).toContain("reviewed_staging");
@@ -906,7 +906,7 @@ describe("boundary review terminal picker", () => {
     expect(firstViewPlain).toContain("STATUS");
     expect(firstViewPlain).toContain("TYPE");
     expect(firstViewPlain).toContain("CONTENT");
-    expect(firstViewPlain).toContain("AGENT AUTHORITY");
+    expect(firstViewPlain).toContain("AI ACCESS");
     expect(firstViewPlain).toContain("READ");
     expect(firstViewPlain).toContain("ACTION");
     expect(firstViewPlain).toContain("reviewed_staging");
@@ -954,9 +954,9 @@ describe("boundary review terminal picker", () => {
     const session = createBoundaryReviewInteractiveSession(input, output);
     const selected = session.chooseResource([summary("public.orders", 0)]);
     const firstView = stripAnsi(output.read()?.toString() ?? "");
-    expect(firstView).toContain("W Model-guided setup - Read + Action");
-    expect(firstView).toContain("W Model-guided Read + Action setup is always available.");
-    expect(firstView).toContain("The model drafts; Runner validates; only you review and activate.");
+    expect(firstView).toContain("W Model chat - create/edit Read + Action");
+    expect(firstView).toContain("W Model chat can create or edit Read + Action authority anytime.");
+    expect(firstView).toContain("Describe the business rule; Runner validates it; only you activate it.");
     await send(input, "w");
     await expect(selected).resolves.toEqual({ action: "workloads" });
   });
@@ -1071,13 +1071,60 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Linked Read Boundary: reviewed_staging");
     expect(rendered).toContain("Y reviews active proposal authority");
     expect(rendered).toContain("Y Safe actions - 2 active proposal actions [ACTIVE]");
-    expect(rendered).toContain("W Model-guided setup - Read + Action");
-    expect(rendered).toContain("W Model-guided Read + Action setup is always available.");
+    expect(rendered).toContain("W Model chat - create/edit Read + Action");
+    expect(rendered).toContain("W Model chat can create or edit Read + Action authority anytime.");
     expect(rendered).toContain("Manual controls stay available.");
     expect(rendered).not.toContain("Y Safe actions - prepare proposal [AVAILABLE]");
 
     await send(terminal.input, "q");
     await expect(selected).resolves.toBeUndefined();
+  });
+
+  it("shows verified outcomes as a separate Action Boundary with Runner-derived effects", async () => {
+    const terminal = fakeTerminal(132, 32);
+    const resource = summary("public.service_visits", 0);
+    resource.active = true;
+    resource.active_boundary_name = "reviewed_staging";
+    const selected = createBoundaryReviewInteractiveSession(
+      terminal.input,
+      terminal.output,
+    ).chooseResource(
+      [resource],
+      {
+        confirmed_decisions: 6,
+        outstanding_decisions: 0,
+        outstanding_resource_decisions: 0,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 0,
+        boundaries: [{
+          name: "reviewed_staging",
+          selected: true,
+          active: true,
+          matches_active_digest: true,
+          table_count: 1,
+          outstanding_decisions: 0,
+          verified_action_boundary_name: "field_service_actions",
+          verified_action_state: "active",
+          verified_action_active_count: 1,
+          verified_action_draft_count: 0,
+        }],
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("field_service_actions");
+    expect(rendered).toContain("ACTION");
+    expect(rendered).toContain("1 verified outcome");
+    expect(rendered).toContain("Agent nominates an outcome; Runner privately verifies facts and derives the exact bounded effect.");
+    expect(rendered).toContain("Y reviews this verified outcome authority");
+    expect(rendered).toContain("W Model chat - create/edit Read + Action");
+
+    await send(terminal.input, "y");
+    await expect(selected).resolves.toEqual({
+      action: "actions",
+      boundary_name: "reviewed_staging",
+    });
   });
 
   it("opens one boundary-wide privacy action from the boundary list", async () => {
@@ -1795,11 +1842,21 @@ describe("boundary review terminal picker", () => {
     );
     expect(exhaustive).not.toContain("path check_ins_location [");
 
+    const longResource = summary("support_ops.customer_accounts", 0);
+    const wide = formatBoundaryOverviewMap([longResource], {
+      exhaustive: true,
+      columns: 140,
+    });
+    expect(wide.split("\n").some((line) => line.includes("support_ops.customer_accounts"))).toBe(true);
+    expect(wide.split("\n").filter((line) => /^[+|]/u.test(line)).every(
+      (line) => line.length <= 140,
+    )).toBe(true);
+
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);
     const selected = session.chooseResource(resources);
     await send(input, "m");
-    await emitKey(input, { name: "escape", sequence: "\u001b" });
+    await emitKey(input, { name: "b", sequence: "B" });
     await send(input, "\r");
     await send(input, "r");
     await expect(selected).resolves.toEqual({
@@ -1879,7 +1936,7 @@ describe("boundary review terminal picker", () => {
       for (let index = 0; index < 12; index += 1) {
         await emitKey(input, { name: "down", sequence: "\u001b[B" });
       }
-      await send(input, "q");
+      await emitKey(input, { name: "q", sequence: "Q" });
       await expect(selected).resolves.toBeUndefined();
 
       const rendered = stripAnsi(output.read()?.toString() ?? "");

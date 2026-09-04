@@ -19,6 +19,9 @@ export type SynapsorContract = ExtensionFields & {
   receipts?: ReceiptSpec[];
   replay?: ReplaySpec[];
   external_actions?: ExternalActionSpec[];
+  verification_boundaries?: RuleVerificationBoundarySpecV1[];
+  derived_effect_envelopes?: DerivedEffectEnvelopeSpecV1[];
+  action_rules?: ActionRuleSpecV1[];
 };
 
 export type ContractMetadata = ExtensionFields & {
@@ -107,6 +110,235 @@ export type PatchBindingSpec = ExtensionFields & {
   fixed?: JsonScalar;
   from_arg?: string;
   from_item?: string;
+};
+
+/**
+ * Portable scalar types supported by the reviewed Action Rule evaluator.
+ * Financial values are integer minor units; JavaScript floating-point money
+ * is deliberately outside this authority language.
+ */
+export type ActionRuleScalarTypeSpecV1 = ExtensionFields & (
+  | { kind: "boolean" }
+  | { kind: "integer"; unit?: string }
+  | { kind: "money_minor"; currency: string }
+  | { kind: "string"; max_length: number; enum?: string[]; comparison: "exact" }
+  | { kind: "date" }
+  | { kind: "timestamp" }
+);
+
+export type ActionRuleScalarExpressionV1 = ExtensionFields & (
+  | {
+    kind: "literal";
+    value: JsonScalar;
+    value_type: ActionRuleScalarTypeSpecV1;
+  }
+  | {
+    kind: "trusted";
+    binding: "tenant" | "organization" | "principal" | "transaction_time";
+  }
+  | {
+    kind: "field";
+    binding: string;
+    field: string;
+  }
+  | {
+    kind: "derived";
+    name: string;
+  }
+  | {
+    kind: "aggregate";
+    operation: "count" | "sum" | "min" | "max";
+    binding: string;
+    field?: string;
+  }
+  | {
+    kind: "math";
+    operation: "add" | "subtract" | "min" | "max";
+    inputs: ActionRuleScalarExpressionV1[];
+  }
+  | {
+    kind: "scale";
+    operation: "multiply" | "divide";
+    input: ActionRuleScalarExpressionV1;
+    constant: number;
+    rounding: "floor" | "ceiling" | "half_even";
+  }
+  | {
+    kind: "clamp";
+    input: ActionRuleScalarExpressionV1;
+    minimum: ActionRuleScalarExpressionV1;
+    maximum: ActionRuleScalarExpressionV1;
+  }
+  | {
+    kind: "add_duration";
+    timestamp: ActionRuleScalarExpressionV1;
+    seconds: number;
+  }
+);
+
+export type ActionRuleBooleanExpressionV1 = ExtensionFields & (
+  | {
+    kind: "all" | "any";
+    expressions: ActionRuleBooleanExpressionV1[];
+  }
+  | {
+    kind: "not";
+    expression: ActionRuleBooleanExpressionV1;
+  }
+  | {
+    kind: "compare";
+    operator: "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
+    left: ActionRuleScalarExpressionV1;
+    right: ActionRuleScalarExpressionV1;
+  }
+  | {
+    kind: "null_check";
+    operator: "is_null" | "is_not_null";
+    value: ActionRuleScalarExpressionV1;
+  }
+  | {
+    kind: "in";
+    value: ActionRuleScalarExpressionV1;
+    values: ActionRuleScalarExpressionV1[];
+  }
+  | {
+    kind: "exists";
+    binding: string;
+    where: ActionRuleBooleanExpressionV1;
+  }
+);
+
+export type RuleVerificationFieldSpecV1 = ExtensionFields & {
+  name: string;
+  type: ActionRuleScalarTypeSpecV1;
+  nullable?: boolean;
+  model_visible?: boolean;
+};
+
+export type RuleVerificationScopeSpecV1 = ExtensionFields & (
+  | {
+    mode: "columns";
+    tenant_field: string;
+    principal_field?: string;
+  }
+  | {
+    mode: "inherited";
+    from_binding: string;
+  }
+  | {
+    mode: "single_organization";
+    organization_id: string;
+    principal_field?: string;
+  }
+);
+
+export type RuleVerificationBindingSourceSpecV1 = ExtensionFields & (
+  | { kind: "subject_ref" }
+  | {
+    kind: "relationship";
+    from_binding: string;
+    relationship: string;
+    local_field: string;
+    target_field: string;
+    direction: "forward" | "inverse";
+  }
+);
+
+export type RuleVerificationResourceSpecV1 = ExtensionFields & {
+  binding: string;
+  resource: string;
+  source: RuleVerificationBindingSourceSpecV1;
+  primary_key: string;
+  version_field?: string;
+  fields: RuleVerificationFieldSpecV1[];
+  scope: RuleVerificationScopeSpecV1;
+  cardinality: "one" | "many";
+  max_rows: number;
+  overflow: "ineligible" | "unsupported";
+  deterministic_order?: Array<{ field: string; direction: "asc" | "desc" }>;
+  lock: "for_update";
+};
+
+export type RuleVerificationBoundarySpecV1 = ExtensionFields & {
+  schema_version: "synapsor.verification-boundary.v1";
+  name: string;
+  source: string;
+  context: string;
+  generation_lock_fingerprint: `sha256:${string}`;
+  resources: RuleVerificationResourceSpecV1[];
+  lock_order: string[];
+  transaction: {
+    isolation: "read_committed" | "repeatable_read" | "serializable";
+    timezone: "UTC";
+  };
+};
+
+export type DerivedEffectFieldSpecV1 = ExtensionFields & {
+  name: string;
+  type: ActionRuleScalarTypeSpecV1;
+  minimum?: number;
+  maximum?: number;
+  values?: JsonScalar[];
+};
+
+export type DerivedEffectEnvelopeSpecV1 = ExtensionFields & {
+  schema_version: "synapsor.derived-effect-envelope.v1";
+  name: string;
+  source: string;
+  operation: "update" | "insert";
+  target_resource: string;
+  target_binding?: string;
+  primary_key: string;
+  tenant_key?: string;
+  organization_scope?: ProtectedReadOrganizationScopeSpec;
+  principal_scope_key?: string;
+  conflict_key?: string;
+  max_rows: 1;
+  allowed_fields: DerivedEffectFieldSpecV1[];
+  version_advance?: {
+    column: string;
+    strategy: "integer_increment";
+  };
+  deduplication?: {
+    components: Array<{
+      column: string;
+      source: "proposal_id" | "trusted_tenant" | "derived" | "fixed";
+      derived?: string;
+      fixed?: JsonScalar;
+    }>;
+  };
+  approval_classes: string[];
+  writeback: {
+    mode: "none" | "direct_sql";
+    supervised_worker: "disabled" | "allowed";
+  };
+};
+
+export type ActionRuleSubjectSpecV1 = ExtensionFields & {
+  binding: string;
+  resource: string;
+  input: "opaque_subject_ref";
+};
+
+export type ActionRuleSpecV1 = ExtensionFields & {
+  schema_version: "synapsor.action-rule.v1";
+  name: string;
+  outcome: string;
+  context: string;
+  source: string;
+  verification_boundary_ref: string;
+  effect_envelope_ref: string;
+  subjects: ActionRuleSubjectSpecV1[];
+  require: ActionRuleBooleanExpressionV1;
+  derive: Record<string, ActionRuleScalarExpressionV1>;
+  effect: {
+    operation: "update" | "insert";
+    target_resource: string;
+    target_binding?: string;
+    set: Record<string, ActionRuleScalarExpressionV1>;
+  };
+  approval_class: string;
+  ttl_seconds: number;
 };
 
 export type ProposalOperationKind = "update" | "insert" | "delete";

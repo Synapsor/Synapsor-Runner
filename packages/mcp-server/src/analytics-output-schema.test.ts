@@ -238,6 +238,32 @@ describe("analytical MCP output schemas", () => {
     expect(JSON.stringify(jsonSchema)).toContain("\"const\":\"refusal\"");
   });
 
+  it("accepts only opaque row-aligned subject references", () => {
+    const success = {
+      ...queryResult("ok"),
+      subjects: [{
+        row_index: 0,
+        resource: "public.sessions",
+        ref: `obj_${"a".repeat(43)}`,
+        expires_at: "2026-07-26T18:40:00.000Z",
+      }],
+    };
+    expect(scopedExploreQueryOutputSchema.safeParse(success).success).toBe(true);
+    expect(scopedExploreQueryToolOutputSchema.safeParse(success).success).toBe(true);
+    expect(scopedExploreQueryOutputSchema.safeParse({
+      ...success,
+      subjects: [{ ...success.subjects[0], primary_key: "session-1" }],
+    }).success).toBe(false);
+    expect(scopedExploreQueryOutputSchema.safeParse({
+      ...success,
+      subjects: [{ ...success.subjects[0], ref: "session-1" }],
+    }).success).toBe(false);
+    expect(scopedExploreQueryOutputSchema.safeParse({
+      ...success,
+      subjects: [{ ...success.subjects[0], row_index: -1 }],
+    }).success).toBe(false);
+  });
+
   it("publishes a compact Explore client schema without weakening full runtime validation", () => {
     const success = queryResult("ok");
     const refusal = {

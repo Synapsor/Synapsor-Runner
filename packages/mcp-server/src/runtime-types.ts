@@ -8,6 +8,10 @@ import type {
   ProposalRuntimeStore,
 } from "@synapsor-runner/proposal-store";
 import type {
+  ActivatedActionRuleV1,
+  ActionRuleFactLoaderAdapterV1,
+} from "@synapsor-runner/action-rules";
+import type {
   RuntimeActionBoundaryV1,
   FreshnessAuthorityV1,
   FreshnessProofV1,
@@ -29,6 +33,9 @@ import type {
 import type {
   LocalToolPresentationSink,
 } from "./local-presentation.js";
+import type {
+  SubjectReferenceAuthorityContext,
+} from "./subject-reference-types.js";
 
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
@@ -155,9 +162,7 @@ export type RuntimeCapabilityConfig = {
   writeback?: { mode: RuntimeWritebackMode; executor?: string };
 };
 
-export type RuntimeSupervisedWorkerCapabilityPolicy = {
-  capability: string;
-  contract_digest: `sha256:${string}`;
+export type RuntimeSupervisedWorkerPolicyBase = {
   mode: "supervised_worker";
   concurrency: number;
   queue_limit: number;
@@ -176,10 +181,25 @@ export type RuntimeSupervisedWorkerCapabilityPolicy = {
   required_attention_sinks?: string[];
 };
 
+export type RuntimeSupervisedWorkerCapabilityPolicy = RuntimeSupervisedWorkerPolicyBase & {
+  capability: string;
+  contract_digest: `sha256:${string}`;
+};
+
+export type RuntimeSupervisedWorkerOutcomePolicy = RuntimeSupervisedWorkerPolicyBase & {
+  outcome: string;
+  action_boundary_digest: `sha256:${string}`;
+};
+
+export type RuntimeSupervisedWorkerPolicy =
+  | RuntimeSupervisedWorkerCapabilityPolicy
+  | RuntimeSupervisedWorkerOutcomePolicy;
+
 export type RuntimeSupervisedWorkerConfig = {
   enabled: boolean;
   profile: "development" | "staging" | "production";
   capabilities: RuntimeSupervisedWorkerCapabilityPolicy[];
+  outcomes?: RuntimeSupervisedWorkerOutcomePolicy[];
 };
 
 export type SupervisedWorkerEligibility = {
@@ -190,6 +210,16 @@ export type SupervisedWorkerEligibility = {
   contract_digest?: `sha256:${string}`;
   profile?: RuntimeSupervisedWorkerConfig["profile"];
   policy?: RuntimeSupervisedWorkerCapabilityPolicy;
+};
+
+export type SemanticSupervisedWorkerEligibility = {
+  eligible: boolean;
+  code: string;
+  reasons: string[];
+  outcome: string;
+  action_boundary_digest?: `sha256:${string}`;
+  profile?: RuntimeSupervisedWorkerConfig["profile"];
+  policy?: RuntimeSupervisedWorkerOutcomePolicy;
 };
 
 export type RuntimeProposalFreshnessDependencyConfig = {
@@ -270,6 +300,15 @@ export type RuntimeProductionExploreConfig = {
   tenant_limits: ProductionExploreTenantLimits;
   source_max_connections?: number;
   max_sessions_per_principal?: number;
+};
+
+export type RuntimeActionRulesConfig = {
+  /** Project containing the immutable activated Action Rule authority. */
+  project_root: string;
+  /** Shared secret used only to bind opaque subjects across separate production Read and Action runtimes. */
+  subject_reference_hmac_key_env?: string;
+  /** Stable deployment namespace shared by the paired Read and Action runtimes. */
+  subject_reference_namespace?: string;
 };
 
 export type RuntimeActionBoundaryReference = RuntimeActionBoundaryV1;
@@ -444,6 +483,7 @@ export type RuntimeConfig = {
   supervised_worker?: RuntimeSupervisedWorkerConfig;
   notifications?: RuntimeNotificationsConfig;
   production_explore?: RuntimeProductionExploreConfig;
+  action_rules?: RuntimeActionRulesConfig;
 };
 
 export type IsolationAssuranceMode = "application_scope" | "postgres_rls" | "tenant_bound";
@@ -544,6 +584,8 @@ export type McpRuntimeOptions = {
    * log only when they render the same safe rejection inline.
    */
   logToolRejections?: boolean;
+  /** Adds the fixed semantic Action surface beside reviewed configured tools. */
+  semanticActions?: SemanticActionRuntime;
 };
 
 export type TenantCredentialResolver = {
@@ -601,10 +643,27 @@ export type LocalToolMetadata = {
   name: string;
   title: string;
   description: string;
-  kind: CapabilityKind;
+  kind: CapabilityKind | "action_catalog" | "semantic_action";
   input_schema: Record<string, unknown>;
   annotations: Record<string, unknown>;
 };
+
+export type SemanticActionRequestContext = {
+  trusted_context: TrustedContext;
+  subject_authority: SubjectReferenceAuthorityContext;
+  fact_loader: ActionRuleFactLoaderAdapterV1;
+  close?(): void | Promise<void>;
+};
+
+export type SemanticActionRuntime = {
+  listTools(): LocalToolMetadata[];
+  hasTool(name: string): boolean;
+  callTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>>;
+};
+
+export type SemanticActionContextResolver = (
+  activated: ActivatedActionRuleV1,
+) => Promise<SemanticActionRequestContext>;
 
 export type HttpMcpServerOptions = {
   configPath?: string;
@@ -640,6 +699,8 @@ export type StreamableHttpSessionFactory = ((input: {
   env: NodeJS.ProcessEnv;
   store: ProposalRuntimeStore;
   trustedContext: TrustedContext;
+  /** Stable opaque binding for this authenticated MCP session; never a bearer token. */
+  authenticationFingerprint: string;
   toolNameStyle?: ToolNameStyle;
   resultFormat?: ResultFormat;
 }) => Promise<StreamableHttpSessionRuntime>) & {

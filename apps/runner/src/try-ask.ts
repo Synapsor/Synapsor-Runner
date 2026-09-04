@@ -658,6 +658,35 @@ export async function tryAsk(
               storePath: reviewInput.storePath,
               env: reviewInput.env,
               modelSuggestionSession: reviewInput.modelSuggestionSession,
+              modelGuidedVerifiedActionRevision: async ({ modelSuggestionSession: currentModel }) => {
+                const { boundaryReviewCommand } = await import("./boundary-commands.js");
+                const { inspectDatabase } = await import("@synapsor-runner/schema-inspector");
+                const result = await boundaryReviewCommand(
+                  ["--project-root", reviewInput.projectRoot, "--access", "--job-first"],
+                  inspectDatabase,
+                  undefined,
+                  undefined,
+                  {
+                    startWithAgentJob: true,
+                    exitAfterAgentJob: true,
+                    modelAuthoringSession: currentModel ?? reviewInput.modelSuggestionSession,
+                  },
+                );
+                return result === 0
+                  ? {
+                      tone: "success" as const,
+                      title: "Returned from model-guided Boundary drafting.",
+                      lines: [
+                        "The verified Action view will reload the active authority and any disabled replacement.",
+                        "No authority changed except through an exact confirmation shown during that conversation.",
+                      ],
+                    }
+                  : {
+                      tone: "warning" as const,
+                      title: "Model-guided Boundary drafting did not complete.",
+                      lines: ["The existing active authority and source data remain unchanged."],
+                    };
+              },
               returnToAsk: true,
             });
             return 0;
@@ -1032,12 +1061,16 @@ function askJsonPayload(input: {
 
 function assertAnalyticsTools(names: string[]): void {
   const actual = [...names].sort();
-  const expected = ["app.describe_data", "app.explore_data"];
+  const readTools = ["app.describe_data", "app.explore_data"];
+  const actionTools = ["app.describe_actions", "app.request_change"];
+  const expected = actual.some((name) => actionTools.includes(name))
+    ? [...actionTools, ...readTools].sort()
+    : readTools;
   if (actual.length !== expected.length
     || actual.some((name, index) => name !== expected[index])) {
     throw new AskError(
       "ASK_AUTHORING_TOOL_SURFACE_INVALID",
-      "Synapsor Analytics exposes exactly app.describe_data and app.explore_data.",
+      "Synapsor Ask exposes the exact reviewed Read pair and, when active, the complete fixed Action pair.",
       409,
     );
   }

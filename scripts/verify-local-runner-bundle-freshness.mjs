@@ -19,6 +19,7 @@ try {
   await fsp.mkdir(path.join(fixtureRunnerRoot, "dist"), { recursive: true });
   await fsp.mkdir(path.join(fixtureRunnerRoot, "src"), { recursive: true });
   await fsp.mkdir(path.join(tempRoot, "packages/config/src"), { recursive: true });
+  await fsp.copyFile(path.join(runnerRoot, "package.json"), path.join(fixtureRunnerRoot, "package.json"));
   await fsp.copyFile(currentCli, fixtureCli);
   await fsp.copyFile(currentBundle, path.join(fixtureRunnerRoot, "dist/runner.mjs"));
   await fsp.symlink(path.join(runnerRoot, "node_modules"), path.join(fixtureRunnerRoot, "node_modules"), "dir");

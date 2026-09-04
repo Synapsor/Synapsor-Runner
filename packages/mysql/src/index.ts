@@ -1,7 +1,21 @@
 import crypto from "node:crypto";
 import mysql from "mysql2/promise";
-import type { InverseDescriptorV1, WritebackJob, WritebackResult } from "@synapsor-runner/protocol";
-import { assertCompensationJobIntegrity, assertFrozenSetJobIntegrity, classifyFrozenSetReconciliation, compensationInverseFromJob, type ApplyAdapter, type CompensationWritebackJob, type ReconciliationObservation, type RunnerConfig } from "@synapsor-runner/worker-core";
+import type {
+  ActionRuleFactLoaderAdapterV1,
+  ActionRuleFactQueryV1,
+  CompiledActionRuleV1,
+  CompiledRuleBindingV1,
+} from "@synapsor-runner/action-rules";
+import {
+  parseSemanticVerificationResult,
+  type InverseDescriptorV1,
+  type NormalizedWritebackJobV5,
+  type NormalizedWritebackResultV5,
+  type SemanticVerificationResultV1,
+  type WritebackJob,
+  type WritebackResult,
+} from "@synapsor-runner/protocol";
+import { assertCompensationJobIntegrity, assertFrozenSetJobIntegrity, assertSemanticActionReverification, classifyFrozenSetReconciliation, compensationInverseFromJob, type ApplyAdapter, type CompensationWritebackJob, type ReconciliationObservation, type RunnerConfig } from "@synapsor-runner/worker-core";
 
 export const mysqlReceiptMigration = `CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts (
   idempotency_key varchar(255) PRIMARY KEY,
@@ -9,6 +23,7 @@ export const mysqlReceiptMigration = `CREATE TABLE IF NOT EXISTS synapsor_writeb
   proposal_id varchar(512) NOT NULL,
   status varchar(64) NOT NULL,
   result_hash varchar(128),
+  semantic_verification_json json,
   created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   completed_at timestamp NULL
 )`;
@@ -35,11 +50,84 @@ type MutationOutcome = {
   tombstoneDigest?: `sha256:${string}`;
   memberEffects?: Array<{ primary_key: ColumnValue; before_digest?: string; after_digest?: string; tombstone_digest?: string }>;
   inverse?: InverseDescriptorV1;
+  semanticVerification?: NormalizedWritebackResultV5["semantic_verification"];
 };
 
 export function quoteMysqlIdentifier(identifier: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) throw new Error(`unsafe mysql identifier: ${identifier}`);
   return `\`${identifier}\``;
+}
+
+function validateActionRuleFactQuery(query: ActionRuleFactQueryV1): void {
+  if (query.engine !== "mysql") throw new Error("ACTION_RULE_ENGINE_MISMATCH");
+  if (query.projection.length < 1 || query.projection.length > 256 || new Set(query.projection).size !== query.projection.length) throw new Error("ACTION_RULE_INVALID_PROJECTION");
+  if (!Number.isSafeInteger(query.limit) || query.limit < 2 || query.limit > 101) throw new Error("ACTION_RULE_INVALID_ROW_BOUND");
+  if (query.predicates.length < 1 || query.predicates.length > 16) throw new Error("ACTION_RULE_INVALID_PREDICATES");
+  for (const predicate of query.predicates) {
+    if (predicate.operation === "in" && predicate.values.length > 100) throw new Error("ACTION_RULE_INVALID_PREDICATES");
+  }
+}
+
+export function buildMysqlActionRuleFactQuery(query: ActionRuleFactQueryV1): { sql: string; values: unknown[] } {
+  validateActionRuleFactQuery(query);
+  const values: unknown[] = [];
+  const where = query.predicates.map((predicate) => {
+    const column = quoteMysqlIdentifier(predicate.column);
+    if (predicate.operation === "eq") {
+      values.push(predicate.value);
+      return `${column} = ?`;
+    }
+    if (predicate.values.length === 0) return "FALSE";
+    values.push(...predicate.values);
+    return `${column} IN (${predicate.values.map(() => "?").join(", ")})`;
+  });
+  values.push(query.limit);
+  const order = query.order_by
+    .map((item) => `${quoteMysqlIdentifier(item.column)} ${item.direction.toUpperCase()}`)
+    .join(", ");
+  return {
+    sql: `SELECT ${query.projection.map(quoteMysqlIdentifier).join(", ")}\nFROM ${quoteMysqlIdentifier(query.schema)}.${quoteMysqlIdentifier(query.table)}\nWHERE ${where.join("\n  AND ")}\nORDER BY ${order}\nLIMIT ?${query.lock === "for_update" ? "\nFOR UPDATE" : ""}`,
+    values,
+  };
+}
+
+export function createMysqlActionRuleFactLoader(connection: MysqlApplyConnection): ActionRuleFactLoaderAdapterV1 {
+  const compatible = new Set<string>();
+  return {
+    engine: "mysql",
+    async assertResourceCompatible(binding: CompiledRuleBindingV1): Promise<void> {
+      const key = `${binding.resource.schema}.${binding.resource.table}`;
+      if (compatible.has(key)) return;
+      const [rows] = await connection.query<Record<string, unknown>[]>(
+        `SELECT ENGINE AS storage_engine, TABLE_COLLATION AS table_collation, TABLE_TYPE AS table_type\nFROM information_schema.TABLES\nWHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?\nLIMIT 1`,
+        [binding.resource.schema, binding.resource.table],
+      );
+      const row = rows[0];
+      if (!row || String(row.table_type).toUpperCase() !== "BASE TABLE" || String(row.storage_engine).toUpperCase() !== "INNODB") throw new Error("ACTION_RULE_MYSQL_INNODB_REQUIRED");
+      if (binding.resource.storage_engine !== undefined && String(row.storage_engine).toLowerCase() !== binding.resource.storage_engine.toLowerCase()) throw new Error("ACTION_RULE_MYSQL_STORAGE_ENGINE_DRIFT");
+      if (binding.resource.collation !== undefined && String(row.table_collation).toLowerCase() !== binding.resource.collation.toLowerCase()) throw new Error("ACTION_RULE_MYSQL_COLLATION_DRIFT");
+      compatible.add(key);
+    },
+    async load(query: ActionRuleFactQueryV1): Promise<Record<string, unknown>[]> {
+      const compiled = buildMysqlActionRuleFactQuery(query);
+      const [rows] = await connection.query<Record<string, unknown>[]>(compiled.sql, compiled.values);
+      return rows;
+    },
+  };
+}
+
+export async function configureMysqlActionRuleTransaction(connection: MysqlApplyConnection): Promise<void> {
+  await connection.query("SET SESSION time_zone = ?", ["+00:00"]);
+}
+
+export function mysqlActionRuleIsolation(
+  isolation: CompiledActionRuleV1["verification_boundary"]["transaction"]["isolation"],
+): string {
+  switch (isolation) {
+    case "read_committed": return "READ COMMITTED";
+    case "repeatable_read": return "REPEATABLE READ";
+    case "serializable": return "SERIALIZABLE";
+  }
 }
 
 function operationOf(job: WritebackJob): Operation { return job.operation ?? "single_row_update"; }
@@ -48,6 +136,11 @@ function principalScope(job: WritebackJob): { column: string; value: string | nu
   if (!scope) return undefined;
   if (scope.value === undefined) throw new Error("PRINCIPAL_SCOPE_VALUE_REQUIRED");
   return { column: scope.column, value: scope.value };
+}
+function tenantGuard(job: WritebackJob): { column: string; value: string | number | boolean | null } {
+  const guard = job.target.tenant_guard;
+  if (guard === undefined) throw new Error(job.protocol_version === "5.0" ? "SEMANTIC_SCOPE_INVALID" : "TENANT_GUARD_REQUIRED");
+  return guard;
 }
 function receiptAuthority(config: RunnerConfig): "source_db" | "runner_ledger" { return config.receipts?.authority ?? "source_db"; }
 
@@ -59,6 +152,17 @@ function sourceReceiptTable(config: RunnerConfig): string {
 
 export function mysqlReceiptMigrationForConfig(config: RunnerConfig): string {
   return mysqlReceiptMigration.replace("synapsor_writeback_receipts", sourceReceiptTable(config));
+}
+
+async function ensureMysqlReceiptSchema(connection: MysqlApplyConnection, config: RunnerConfig): Promise<void> {
+  await connection.query(mysqlReceiptMigrationForConfig(config));
+  try {
+    await connection.query(`SELECT semantic_verification_json FROM ${sourceReceiptTable(config)} WHERE 1 = 0`);
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+    if (code !== "ER_BAD_FIELD_ERROR" && code !== "1054") throw error;
+    await connection.query(`ALTER TABLE ${sourceReceiptTable(config)} ADD COLUMN semantic_verification_json JSON NULL`);
+  }
 }
 
 export function buildMysqlUpdate(job: WritebackJob): { sql: string; values: unknown[] } {
@@ -74,10 +178,11 @@ export function buildMysqlUpdate(job: WritebackJob): { sql: string; values: unkn
   if (job.protocol_version === "2.0" && job.version_advance?.strategy === "integer_increment") {
     setFragments.push(`${quoteMysqlIdentifier(job.version_advance.column)} = ${quoteMysqlIdentifier(job.version_advance.column)} + 1`);
   }
-  values.push(job.target.primary_key.value, job.target.tenant_guard.value);
+  const tenant = tenantGuard(job);
+  values.push(job.target.primary_key.value, tenant.value);
   const where = [
     `${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`,
-    `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`,
+    `${quoteMysqlIdentifier(tenant.column)} = ?`,
   ];
   const scope = principalScope(job);
   if (scope) {
@@ -100,12 +205,95 @@ export function buildMysqlInsert(job: WritebackJob): { sql: string; values: unkn
   };
 }
 
+function validateSemanticPatch(job: NormalizedWritebackJobV5): void {
+  const patchColumns = Object.keys(job.patch).sort();
+  const allowedColumns = [...job.allowed_columns].sort();
+  if (JSON.stringify(patchColumns) !== JSON.stringify(allowedColumns)) throw new Error("SEMANTIC_EFFECT_MISMATCH");
+  const guarded = new Set([
+    job.target.primary_key.column,
+    job.target.tenant_guard?.column,
+    job.target.principal_scope?.column,
+    job.conflict_guard.kind === "version_column" ? job.conflict_guard.column : undefined,
+    job.version_advance?.column,
+  ].filter((column): column is string => column !== undefined));
+  if (job.allowed_columns.some((column) => guarded.has(column))) throw new Error("SEMANTIC_EFFECT_MISMATCH");
+}
+
+function appendMysqlSemanticScope(
+  job: NormalizedWritebackJobV5,
+  values: unknown[],
+  where: string[],
+): void {
+  if (job.target.tenant_guard !== undefined) {
+    values.push(job.target.tenant_guard.value);
+    where.push(`${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`);
+  } else if (job.target.organization_scope === undefined) {
+    throw new Error("SEMANTIC_SCOPE_INVALID");
+  }
+  const principal = principalScope(job);
+  if (principal !== undefined) {
+    values.push(principal.value);
+    where.push(`${quoteMysqlIdentifier(principal.column)} = ?`);
+  }
+}
+
+export function buildMysqlSemanticUpdate(job: NormalizedWritebackJobV5): { sql: string; values: unknown[] } {
+  if (job.operation !== "single_row_update" || job.target.primary_key.value === undefined || job.conflict_guard.kind !== "version_column") {
+    throw new Error("SEMANTIC_EFFECT_MISMATCH");
+  }
+  validateSemanticPatch(job);
+  const values: unknown[] = [];
+  const assignments = job.allowed_columns.map((column) => {
+    values.push(job.patch[column]);
+    return `${quoteMysqlIdentifier(column)} = ?`;
+  });
+  if (job.version_advance !== undefined) {
+    if (job.version_advance.strategy !== "integer_increment" || job.version_advance.column !== job.conflict_guard.column) throw new Error("SEMANTIC_EFFECT_MISMATCH");
+    assignments.push(`${quoteMysqlIdentifier(job.version_advance.column)} = ${quoteMysqlIdentifier(job.version_advance.column)} + 1`);
+  }
+  values.push(job.target.primary_key.value);
+  const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`];
+  appendMysqlSemanticScope(job, values, where);
+  values.push(job.conflict_guard.expected_value);
+  where.push(`${quoteMysqlIdentifier(job.conflict_guard.column)} = ?`);
+  return {
+    sql: `UPDATE ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nSET ${assignments.join(", ")}\nWHERE ${where.join("\n  AND ")}`,
+    values,
+  };
+}
+
+function semanticInsertValues(job: NormalizedWritebackJobV5): Record<string, unknown> {
+  if (job.operation !== "single_row_insert" || job.deduplication === undefined || job.conflict_guard.kind !== "none") throw new Error("SEMANTIC_EFFECT_MISMATCH");
+  validateSemanticPatch(job);
+  const values: Record<string, unknown> = { ...job.patch };
+  for (const component of job.deduplication.components) {
+    if (Object.prototype.hasOwnProperty.call(values, component.column)) throw new Error("INSERT_DEDUP_COLUMN_COLLISION");
+    values[component.column] = component.value;
+  }
+  const principal = principalScope(job);
+  if (principal !== undefined) {
+    if (Object.prototype.hasOwnProperty.call(values, principal.column)) throw new Error("PRINCIPAL_SCOPE_COLUMN_COLLISION");
+    values[principal.column] = principal.value;
+  }
+  return values;
+}
+
+export function buildMysqlSemanticInsert(job: NormalizedWritebackJobV5): { sql: string; values: unknown[] } {
+  const row = semanticInsertValues(job);
+  const columns = Object.keys(row).sort();
+  return {
+    sql: `INSERT INTO ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} (${columns.map(quoteMysqlIdentifier).join(", ")})\nVALUES (${columns.map(() => "?").join(", ")})`,
+    values: columns.map((column) => row[column]),
+  };
+}
+
 export function buildMysqlDelete(job: WritebackJob): { sql: string; values: unknown[] } {
   if (operationOf(job) !== "single_row_delete") throw new Error("mysql delete builder requires single_row_delete");
   const conflictGuard = exactConflictGuard(job, "mysql delete");
   if (job.target.primary_key.value === undefined) throw new Error("mysql delete requires primary-key and exact version guards");
-  const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
-  const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
+  const tenant = tenantGuard(job);
+  const values: unknown[] = [job.target.primary_key.value, tenant.value];
+  const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(tenant.column)} = ?`];
   const scope = principalScope(job);
   if (scope) { values.push(scope.value); where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); }
   values.push(conflictGuard.expected_value);
@@ -132,7 +320,7 @@ function validatePatch(job: WritebackJob, engine: string): void {
   if (!patchColumns.length) throw new Error(`${engine} writeback patch must not be empty`);
   const allowed = new Set(job.allowed_columns);
   if (allowed.has(job.target.primary_key.column)) throw new Error(`${engine} primary key column must not be patch-allowlisted`);
-  if (allowed.has(job.target.tenant_guard.column)) throw new Error(`${engine} tenant guard column must not be patch-allowlisted`);
+  if (allowed.has(tenantGuard(job).column)) throw new Error(`${engine} tenant guard column must not be patch-allowlisted`);
   const scope = principalScope(job);
   if (scope && allowed.has(scope.column)) throw new Error(`${engine} principal scope column must not be patch-allowlisted`);
   for (const column of patchColumns) if (!allowed.has(column)) throw new Error(`${engine} patch column not allowlisted: ${column}`);
@@ -167,7 +355,15 @@ function identityForJob(job: WritebackJob, insertedPrimaryKey?: unknown): Column
   if (job.protocol_version === "2.0" && job.deduplication) {
     for (const component of job.deduplication.components) if (!identity.some((item) => item.column === component.column)) identity.push({ column: component.column, value: component.value });
   }
-  if (identity.length === 0) identity.push({ column: job.target.tenant_guard.column, value: job.target.tenant_guard.value });
+  if (job.protocol_version === "5.0" && job.deduplication) {
+    for (const component of job.deduplication.components) {
+      if (!identity.some((item) => item.column === component.column)) identity.push({ column: component.column, value: component.value });
+    }
+  }
+  if (identity.length === 0) {
+    const tenant = job.target.tenant_guard;
+    identity.push(tenant ?? { column: job.target.primary_key.column, value: null });
+  }
   return identity.slice(0, 8);
 }
 
@@ -178,7 +374,11 @@ function digest(value: unknown): `sha256:${string}` { return `sha256:${crypto.cr
 function resultHash(job: WritebackJob, status: string, version?: unknown): `sha256:${string}` { return digest({ job_id: job.job_id, status, version }); }
 
 function reconciliationProjection(job: WritebackJob): string[] {
-  const columns = new Set<string>([job.target.primary_key.column, job.target.tenant_guard.column, ...job.allowed_columns]);
+  const columns = new Set<string>([
+    job.target.primary_key.column,
+    ...(job.target.tenant_guard === undefined ? [] : [job.target.tenant_guard.column]),
+    ...job.allowed_columns,
+  ]);
   const scope = principalScope(job);
   if (scope) columns.add(scope.column);
   if (job.protocol_version === "3.0") {
@@ -235,10 +435,38 @@ export function buildMysqlReconciliationRead(job: WritebackJob): { sql: string; 
       values,
     };
   }
+  if (job.protocol_version === "5.0") {
+    const scope = principalScope(job);
+    const where: string[] = [];
+    const values: unknown[] = [];
+    if (job.operation === "single_row_insert" && job.deduplication !== undefined) {
+      for (const component of job.deduplication.components) {
+        where.push(`${quoteMysqlIdentifier(component.column)} = ?`);
+        values.push(component.value);
+      }
+    } else {
+      if (job.target.primary_key.value === undefined) throw new Error("RECONCILIATION_TARGET_IDENTITY_REQUIRED");
+      where.push(`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`);
+      values.push(job.target.primary_key.value);
+    }
+    if (job.target.tenant_guard !== undefined) {
+      where.push(`${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`);
+      values.push(job.target.tenant_guard.value);
+    }
+    if (scope !== undefined) {
+      where.push(`${quoteMysqlIdentifier(scope.column)} = ?`);
+      values.push(scope.value);
+    }
+    return {
+      sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\nLIMIT 2`,
+      values,
+    };
+  }
   if (job.target.primary_key.value === undefined) throw new Error("RECONCILIATION_TARGET_IDENTITY_REQUIRED");
   const scope = principalScope(job);
-  const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
-  const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
+  const tenant = tenantGuard(job);
+  const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(tenant.column)} = ?`];
+  const values: unknown[] = [job.target.primary_key.value, tenant.value];
   if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
   return {
     sql: `SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\nLIMIT 2`,
@@ -271,7 +499,8 @@ function reconciliationObservation(job: WritebackJob, row: Record<string, unknow
     ? Object.fromEntries(reconciliationProjection(job).map((column) => [column, scalar(row[column])]))
     : {};
   const expected: Record<string, string | number | boolean | null> = {
-    tenant: job.target.tenant_guard.value,
+    ...(job.target.tenant_guard === undefined ? {} : { tenant: job.target.tenant_guard.value }),
+    ...(!("organization_scope" in job.target) || job.target.organization_scope === undefined ? {} : { organization: job.target.organization_scope.organization_id }),
     ...(job.target.primary_key.value === undefined ? {} : { primary_key: job.target.primary_key.value }),
     ...(job.conflict_guard.kind === "version_column" ? { expected_version: job.conflict_guard.expected_value } : {}),
   };
@@ -455,7 +684,11 @@ async function sourceTransaction<T>(
 }
 
 export async function applyMysqlJob(job: WritebackJob, config: RunnerConfig): Promise<WritebackResult> {
-  if (config.dryRun) { validateOperation(job); return resultFromOutcome(job, config, { status: job.protocol_version === "4.0" ? "canceled" : "applied", affectedRows: 0, targetIdentity: identityForJob(job) }); }
+  if (config.dryRun) {
+    validateOperation(job);
+    if (job.protocol_version === "5.0") return failedResult(job, config, "SEMANTIC_REVERIFY_NOT_RUN");
+    return resultFromOutcome(job, config, { status: job.protocol_version === "4.0" ? "canceled" : "applied", affectedRows: 0, targetIdentity: identityForJob(job) });
+  }
   if (!config.databaseUrl) return failedResult(job, config, "DATABASE_UNAVAILABLE");
   const connection = await mysql.createConnection({ uri: config.databaseUrl, dateStrings: true });
   try { return await applyMysqlJobWithConnection(job, config, connection); }
@@ -465,15 +698,44 @@ export async function applyMysqlJob(job: WritebackJob, config: RunnerConfig): Pr
 
 export async function applyMysqlJobWithConnection(job: WritebackJob, config: RunnerConfig, connection: MysqlApplyConnection): Promise<WritebackResult> {
   validateOperation(job);
+  if (job.protocol_version === "5.0") {
+    return await withMysqlActionRuleTimezone(connection, job, () => applyMysqlJobWithConfiguredConnection(job, config, connection));
+  }
+  return await applyMysqlJobWithConfiguredConnection(job, config, connection);
+}
+
+async function withMysqlActionRuleTimezone<T>(connection: MysqlApplyConnection, job: NormalizedWritebackJobV5, fn: () => Promise<T>): Promise<T> {
+  const [rows] = await connection.query<Record<string, unknown>[]>("SELECT @@session.time_zone AS time_zone");
+  const previous = typeof rows[0]?.time_zone === "string" ? rows[0].time_zone : "SYSTEM";
+  await configureMysqlActionRuleTransaction(connection);
+  await connection.query(`SET TRANSACTION ISOLATION LEVEL ${mysqlActionRuleIsolation(
+    job.semantic_authority.proof.verification_transaction.isolation,
+  )}`);
+  let failed = false;
+  try {
+    return await fn();
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try {
+      await connection.query("SET SESSION time_zone = ?", [previous]);
+    } catch (error) {
+      if (!failed) throw error;
+    }
+  }
+}
+
+async function applyMysqlJobWithConfiguredConnection(job: WritebackJob, config: RunnerConfig, connection: MysqlApplyConnection): Promise<WritebackResult> {
   if (receiptAuthority(config) === "runner_ledger") return await applyWithRunnerLedger(job, config, connection);
-  if (config.receipts?.provisioning === "auto_migrate") await connection.query(mysqlReceiptMigrationForConfig(config));
+  if (config.receipts?.provisioning === "auto_migrate") await ensureMysqlReceiptSchema(connection, config);
   try {
     return await sourceTransaction(connection, async () => {
       const existing = await claimSourceReceipt(connection, job, config);
       if (existing) return existing;
-      const outcome = await mutateMysql(job, connection);
+      const outcome = await mutateMysql(job, connection, config);
       const result = resultFromOutcome(job, config, outcome);
-      await recordSourceReceipt(connection, job, config, outcome.status, resultHashFromResult(job, result));
+      await recordSourceReceipt(connection, job, config, result);
       return result;
     }, config.statementTimeoutMs);
   } catch (error) {
@@ -499,7 +761,7 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, co
   await config.testFailpoint?.("after_intent_applying");
   let result: WritebackResult;
   try {
-    const outcome = await sourceTransaction(connection, () => mutateMysql(job, connection), config.statementTimeoutMs, {
+    const outcome = await sourceTransaction(connection, () => mutateMysql(job, connection, config), config.statementTimeoutMs, {
       afterBegin: () => Promise.resolve(config.testFailpoint?.("after_source_begin")),
       afterMutation: () => Promise.resolve(config.testFailpoint?.("after_source_mutation")),
       beforeCommit: () => Promise.resolve(config.testFailpoint?.("before_source_commit")),
@@ -525,6 +787,11 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, co
 }
 
 function validateOperation(job: WritebackJob): void {
+  if (job.protocol_version === "5.0") {
+    if (job.operation === "single_row_update") buildMysqlSemanticUpdate(job);
+    else buildMysqlSemanticInsert(job);
+    return;
+  }
   if (job.protocol_version === "4.0") return assertCompensationJobIntegrity(job);
   if (job.protocol_version === "3.0") return validateSetJob(job);
   if (operationOf(job) === "single_row_update") buildMysqlUpdate(job);
@@ -532,7 +799,8 @@ function validateOperation(job: WritebackJob): void {
   else buildMysqlDelete(job);
 }
 
-async function mutateMysql(job: WritebackJob, connection: MysqlApplyConnection): Promise<MutationOutcome> {
+async function mutateMysql(job: WritebackJob, connection: MysqlApplyConnection, config: RunnerConfig): Promise<MutationOutcome> {
+  if (job.protocol_version === "5.0") return await mutateMysqlSemantic(job, connection, config);
   if (job.protocol_version === "4.0") return await mutateMysqlCompensation(job, connection);
   const freshnessConflict = await lockMysqlFreshnessDependencies(job, connection);
   if (freshnessConflict) {
@@ -603,6 +871,91 @@ EXISTS (SELECT 1 FROM information_schema.USER_PRIVILEGES WHERE REPLACE(GRANTEE, 
   return { status: "applied", affectedRows: 1, targetIdentity: identityForJob(job), resultVersion, beforeDigest, afterDigest: digest({ identity: identityForJob(job), patch: job.patch, version: resultVersion }) };
 }
 
+async function mutateMysqlSemantic(
+  job: NormalizedWritebackJobV5,
+  connection: MysqlApplyConnection,
+  config: RunnerConfig,
+): Promise<MutationOutcome> {
+  if (config.semanticActionVerifier === undefined) throw new Error("SEMANTIC_REVERIFIER_UNAVAILABLE");
+  const semanticVerification = await config.semanticActionVerifier({
+    job,
+    factLoader: createMysqlActionRuleFactLoader(connection),
+  });
+  assertSemanticActionReverification(job, semanticVerification);
+
+  if (job.operation === "single_row_update") {
+    if (job.conflict_guard.kind !== "version_column") throw new Error("SEMANTIC_EFFECT_MISMATCH");
+    const mutation = buildMysqlSemanticUpdate(job);
+    const [updated] = await connection.query<Record<string, unknown>>(mutation.sql, mutation.values);
+    const count = affectedRows(updated);
+    if (count !== 1) {
+      if (count === 0) return {
+        status: "conflict",
+        affectedRows: 0,
+        code: "SEMANTIC_AUTHORITY_STALE",
+        targetIdentity: identityForJob(job),
+        semanticVerification,
+      };
+      throw new Error("MULTI_ROW_WRITE_BLOCKED");
+    }
+    const values: unknown[] = [job.target.primary_key.value];
+    const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`];
+    appendMysqlSemanticScope(job, values, where);
+    const [rows] = await connection.query<Record<string, unknown>[]>(
+      `SELECT ${quoteMysqlIdentifier(job.conflict_guard.column)} AS __synapsor_result_version FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${where.join(" AND ")} LIMIT 2 FOR UPDATE`,
+      values,
+    );
+    if (rows.length !== 1) throw new Error("SEMANTIC_AUTHORITY_STALE");
+    const resultVersion = scalar(rows[0]?.__synapsor_result_version);
+    if (job.version_advance !== undefined) verifyVersionAdvanced(job, resultVersion);
+    const targetIdentity = identityForJob(job);
+    return {
+      status: "applied",
+      affectedRows: 1,
+      targetIdentity,
+      resultVersion,
+      beforeDigest: job.semantic_authority.proof.verified_facts_digest as `sha256:${string}`,
+      afterDigest: digest({ effect_digest: semanticVerification.effect_digest, version: resultVersion }),
+      semanticVerification,
+    };
+  }
+
+  const components = job.deduplication?.components;
+  if (components === undefined) throw new Error("SEMANTIC_EFFECT_MISMATCH");
+  await assertMysqlInsertDedupUniqueness(job, [components], connection);
+  const where = components.map((component) => `${quoteMysqlIdentifier(component.column)} = ?`);
+  const values: unknown[] = components.map((component) => component.value);
+  const principal = principalScope(job);
+  if (principal !== undefined) {
+    where.push(`${quoteMysqlIdentifier(principal.column)} = ?`);
+    values.push(principal.value);
+  }
+  const [existing] = await connection.query<Record<string, unknown>[]>(
+    `SELECT ${quoteMysqlIdentifier(job.target.primary_key.column)} AS __synapsor_primary_key FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)} WHERE ${where.join(" AND ")} LIMIT 2 FOR UPDATE`,
+    values,
+  );
+  if (existing.length > 1) throw new Error("INSERT_DEDUP_UNIQUENESS_UNPROVEN");
+  if (existing.length === 1) return {
+    status: "conflict",
+    affectedRows: 0,
+    code: "INSERT_DEDUP_CONFLICT",
+    targetIdentity: identityForJob(job, existing[0]?.__synapsor_primary_key),
+    semanticVerification,
+  };
+  const mutation = buildMysqlSemanticInsert(job);
+  const [inserted] = await connection.query<Record<string, unknown>>(mutation.sql, mutation.values);
+  const count = affectedRows(inserted);
+  if (count !== 1) throw new Error(count === 0 ? "INSERT_CONSTRAINT_FAILED" : "MULTI_ROW_WRITE_BLOCKED");
+  const targetIdentity = identityForJob(job, inserted.insertId);
+  return {
+    status: "applied",
+    affectedRows: 1,
+    targetIdentity,
+    afterDigest: digest({ effect_digest: semanticVerification.effect_digest, identity: targetIdentity }),
+    semanticVerification,
+  };
+}
+
 function freshnessDependencies(job: WritebackJob) {
   if (!("freshness" in job) || !job.freshness) return [];
   return job.freshness.dependencies;
@@ -613,13 +966,14 @@ async function lockMysqlFreshnessDependencies(
   connection: MysqlApplyConnection,
 ): Promise<string | undefined> {
   for (const dependency of freshnessDependencies(job)) {
+    const tenant = tenantGuard(job);
     const where = [
       `${quoteMysqlIdentifier(dependency.target.primary_key.column)} = ?`,
       `${quoteMysqlIdentifier(dependency.target.tenant_column)} = ?`,
     ];
     const values: unknown[] = [
       dependency.target.primary_key.value,
-      job.target.tenant_guard.value,
+      tenant.value,
     ];
     if (dependency.target.principal_column) {
       const scope = principalScope(job);
@@ -888,8 +1242,9 @@ async function lockTargetRow(job: WritebackJob, connection: MysqlApplyConnection
       : []),
     ...inverseColumns.filter((column) => job.conflict_guard.kind !== "version_column" || column !== job.conflict_guard.column).map(quoteMysqlIdentifier),
   ].join(", ");
-  const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(job.target.tenant_guard.column)} = ?`];
-  const values: unknown[] = [job.target.primary_key.value, job.target.tenant_guard.value];
+  const tenant = tenantGuard(job);
+  const where = [`${quoteMysqlIdentifier(job.target.primary_key.column)} = ?`, `${quoteMysqlIdentifier(tenant.column)} = ?`];
+  const values: unknown[] = [job.target.primary_key.value, tenant.value];
   const scope = principalScope(job);
   if (scope) { where.push(`${quoteMysqlIdentifier(scope.column)} = ?`); values.push(scope.value); }
   const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT ${projection} FROM ${quoteMysqlIdentifier(job.target.schema)}.${quoteMysqlIdentifier(job.target.table)}\nWHERE ${where.join("\n  AND ")}\nFOR UPDATE`, values);
@@ -986,7 +1341,7 @@ function affectedRows(result: unknown): number {
 }
 
 function verifyVersionAdvanced(job: WritebackJob, actual: unknown): void {
-  if (job.protocol_version !== "2.0" || job.operation !== "single_row_update" || !job.version_advance) return;
+  if ((job.protocol_version !== "2.0" && job.protocol_version !== "5.0") || job.operation !== "single_row_update" || !job.version_advance) return;
   if (actual === undefined || job.conflict_guard.kind !== "version_column") throw new Error("VERSION_DID_NOT_ADVANCE");
   if (job.version_advance.strategy === "integer_increment") {
     if (typeof job.conflict_guard.expected_value !== "number" || Number(actual) !== job.conflict_guard.expected_value + 1) throw new Error("VERSION_DID_NOT_ADVANCE");
@@ -995,20 +1350,53 @@ function verifyVersionAdvanced(job: WritebackJob, actual: unknown): void {
 
 async function claimSourceReceipt(connection: MysqlApplyConnection, job: WritebackJob, config: RunnerConfig): Promise<WritebackResult | undefined> {
   const table = sourceReceiptTable(config);
-  const [claim] = await connection.query<Record<string, unknown>>(`INSERT IGNORE INTO ${table} (idempotency_key, job_id, proposal_id, status, result_hash) VALUES (?, ?, ?, 'in_progress', NULL)`, [job.idempotency_key, job.job_id, job.proposal_id]);
+  const [claim] = await connection.query<Record<string, unknown>>(`INSERT IGNORE INTO ${table} (idempotency_key, job_id, proposal_id, status, result_hash, semantic_verification_json) VALUES (?, ?, ?, 'in_progress', NULL, NULL)`, [job.idempotency_key, job.job_id, job.proposal_id]);
   if (affectedRows(claim) === 1) return undefined;
-  const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT status, result_hash FROM ${table} WHERE idempotency_key = ? FOR UPDATE`, [job.idempotency_key]);
+  const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM ${table} WHERE idempotency_key = ? FOR UPDATE`, [job.idempotency_key]);
   if (!rows[0]) return failedResult(job, config, "SOURCE_RECEIPT_UNAVAILABLE");
-  return resultFromExistingReceipt(job, config, rows[0].status, rows[0].result_hash);
+  return resultFromExistingReceipt(job, config, rows[0]);
 }
 
-async function recordSourceReceipt(connection: MysqlApplyConnection, job: WritebackJob, config: RunnerConfig, status: string, hash: string): Promise<void> {
-  const [result] = await connection.query<Record<string, unknown>>(`UPDATE ${sourceReceiptTable(config)} SET status = ?, result_hash = ?, completed_at = CURRENT_TIMESTAMP WHERE idempotency_key = ?`, [status, hash, job.idempotency_key]);
-  if (affectedRows(result) !== 1) throw new Error("SOURCE_RECEIPT_UNAVAILABLE");
+async function recordSourceReceipt(connection: MysqlApplyConnection, job: WritebackJob, config: RunnerConfig, result: WritebackResult): Promise<void> {
+  const semanticVerification = job.protocol_version === "5.0" && result.protocol_version === "5.0"
+    ? JSON.stringify(result.semantic_verification)
+    : null;
+  const [updated] = await connection.query<Record<string, unknown>>(`UPDATE ${sourceReceiptTable(config)} SET status = ?, result_hash = ?, semantic_verification_json = ?, completed_at = CURRENT_TIMESTAMP WHERE idempotency_key = ?`, [result.status, resultHashFromResult(job, result), semanticVerification, job.idempotency_key]);
+  if (affectedRows(updated) !== 1) throw new Error("SOURCE_RECEIPT_UNAVAILABLE");
 }
 
-function resultFromExistingReceipt(job: WritebackJob, config: RunnerConfig, status: unknown, hash: unknown): WritebackResult {
+function storedSemanticVerification(job: NormalizedWritebackJobV5, value: unknown): SemanticVerificationResultV1 | undefined {
+  try {
+    const parsed = parseSemanticVerificationResult(typeof value === "string" ? JSON.parse(value) : value);
+    const proof = job.semantic_authority.proof;
+    if (!["reverified", "previously_reverified"].includes(parsed.status)
+      || parsed.proof_digest !== proof.proof_digest
+      || parsed.action_rule_digest !== proof.action_rule_digest
+      || parsed.compiled_plan_digest !== proof.compiled_plan_digest
+      || parsed.proposal_dependency_set_digest !== proof.dependency_set_digest
+      || parsed.dependency_set_digest !== proof.dependency_set_digest
+      || parsed.effect_digest !== proof.derived_effect_digest) return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function resultFromExistingReceipt(job: WritebackJob, config: RunnerConfig, row: Record<string, unknown>): WritebackResult {
+  if (row.job_id !== job.job_id || row.proposal_id !== job.proposal_id) return failedResult(job, config, "IDEMPOTENCY_KEY_COLLISION");
+  const status = row.status;
+  const hash = row.result_hash;
   const resultHashValue = typeof hash === "string" && hash ? hash as `sha256:${string}` : resultHash(job, "idempotent");
+  if (job.protocol_version === "5.0" && (status === "applied" || status === "already_applied")) {
+    const verification = storedSemanticVerification(job, row.semantic_verification_json);
+    if (verification === undefined) return failedResult(job, config, "SOURCE_RECEIPT_SEMANTIC_PROOF_UNAVAILABLE");
+    return resultFromOutcome(job, config, {
+      status: "already_applied",
+      affectedRows: 0,
+      targetIdentity: identityForJob(job),
+      semanticVerification: { ...verification, status: "previously_reverified" },
+    }, undefined, resultHashValue);
+  }
   if (status === "applied" || status === "already_applied") return resultFromOutcome(job, config, { status: "already_applied", affectedRows: 0, targetIdentity: identityForJob(job) }, undefined, resultHashValue);
   if (status === "conflict") return resultFromOutcome(job, config, { status: "conflict", affectedRows: 0, code: "IDEMPOTENT_CONFLICT", targetIdentity: identityForJob(job) }, undefined, resultHashValue);
   if (status === "failed") return failedResult(job, config, "IDEMPOTENT_FAILED");
@@ -1017,6 +1405,19 @@ function resultFromExistingReceipt(job: WritebackJob, config: RunnerConfig, stat
 
 function resultFromOutcome(job: WritebackJob, config: RunnerConfig, outcome: MutationOutcome, overrideCode?: string, overrideHash?: `sha256:${string}`): WritebackResult {
   const hash = overrideHash ?? resultHash(job, outcome.status, outcome.resultVersion);
+  if (job.protocol_version === "5.0") {
+    const proof = job.semantic_authority.proof;
+    const code = outcome.code ?? overrideCode;
+    const semanticVerification = outcome.semanticVerification ?? {
+      status: code === "SEMANTIC_AUTHORITY_STALE" ? "refused" as const : "not_run" as const,
+      proof_digest: proof.proof_digest,
+      action_rule_digest: proof.action_rule_digest,
+      compiled_plan_digest: proof.compiled_plan_digest,
+      proposal_dependency_set_digest: proof.dependency_set_digest,
+      effect_digest: proof.derived_effect_digest,
+    };
+    return wireResult({ protocol_version: "5.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identity: outcome.targetIdentity, before_digest: outcome.beforeDigest, after_digest: outcome.afterDigest, semantic_verification: semanticVerification, result_hash: hash, error_code: code, completed_at: new Date().toISOString() });
+  }
   if (job.protocol_version === "4.0") return wireResult({ protocol_version: "4.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identities: identityForJob(job), member_effects: outcome.memberEffects ?? [], ...((outcome.status === "applied" || outcome.status === "already_applied") ? { inverse: outcome.inverse ?? compensationInverseFromJob(job) } : {}), result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() });
   if (job.protocol_version === "3.0") return wireResult({ protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: outcome.memberEffects ?? [], ...(job.inverse_capture && (outcome.status === "applied" || outcome.status === "already_applied") ? { inverse: job.inverse_capture } : {}), result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() });
   if (job.protocol_version !== "2.0") return wireResult({ protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: outcome.status, affected_rows: outcome.affectedRows, result_version: outcome.resultVersion == null ? undefined : String(outcome.resultVersion), result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() });
@@ -1026,6 +1427,31 @@ function wireResult(result: Record<string, unknown>): WritebackResult { return O
 function failedResult(job: WritebackJob, config: RunnerConfig, code: string): WritebackResult { return resultFromOutcome(job, config, { status: "failed", affectedRows: 0, code, targetIdentity: identityForJob(job) }); }
 function reconciliationResult(job: WritebackJob, config: RunnerConfig, intentId: string, errorCode = "RECONCILIATION_REQUIRED"): WritebackResult {
   const authority = receiptAuthority(config);
+  if (job.protocol_version === "5.0") {
+    const proof = job.semantic_authority.proof;
+    return wireResult({
+      protocol_version: "5.0",
+      job_id: job.job_id,
+      runner_id: config.runnerId,
+      operation: job.operation,
+      receipt_authority: authority,
+      status: "reconciliation_required",
+      affected_rows: 0,
+      target_identity: identityForJob(job),
+      semantic_verification: {
+        status: "not_run",
+        proof_digest: proof.proof_digest,
+        action_rule_digest: proof.action_rule_digest,
+        compiled_plan_digest: proof.compiled_plan_digest,
+        proposal_dependency_set_digest: proof.dependency_set_digest,
+        effect_digest: proof.derived_effect_digest,
+      },
+      result_hash: resultHash(job, "reconciliation_required"),
+      error_code: errorCode,
+      intent_id: intentId,
+      completed_at: new Date().toISOString(),
+    });
+  }
   if (job.protocol_version === "4.0") return { protocol_version: "4.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: authority, status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
   if (job.protocol_version === "3.0") return { protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: authority, status: "reconciliation_required", affected_rows: 0, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: [], result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
   if (job.protocol_version !== "2.0") return { protocol_version: "1.0", job_id: job.job_id, runner_id: config.runnerId, status: "reconciliation_required", affected_rows: 0, result_hash: resultHash(job, "reconciliation_required"), error_code: errorCode, intent_id: intentId, completed_at: new Date().toISOString() };
@@ -1043,6 +1469,10 @@ function sourceReconciliationIntentId(job: WritebackJob): string {
 }
 function asAlreadyApplied(result: WritebackResult, job: WritebackJob, config: RunnerConfig): WritebackResult {
   if (result.status !== "applied" && result.status !== "already_applied") return result;
+  if (job.protocol_version === "5.0") {
+    if (result.protocol_version !== "5.0" || !["reverified", "previously_reverified"].includes(result.semantic_verification.status)) return failedResult(job, config, "RUNNER_LEDGER_SEMANTIC_PROOF_UNAVAILABLE");
+    return resultFromOutcome(job, config, { status: "already_applied", affectedRows: 0, targetIdentity: result.target_identity, semanticVerification: { ...result.semantic_verification, status: "previously_reverified" } }, undefined, result.result_hash as `sha256:${string}` | undefined);
+  }
   return resultFromOutcome(job, config, { status: "already_applied", affectedRows: 0, targetIdentity: identityForJob(job), resultVersion: "result_version" in result ? result.result_version : undefined }, undefined, result.result_hash as `sha256:${string}` | undefined);
 }
 function resultHashFromResult(job: WritebackJob, result: WritebackResult): `sha256:${string}` { return typeof result.result_hash === "string" && result.result_hash.startsWith("sha256:") ? result.result_hash as `sha256:${string}` : resultHash(job, result.status, "result_version" in result ? result.result_version : undefined); }
@@ -1057,7 +1487,8 @@ function safeErrorCode(error: unknown, operation?: Operation): string {
       ? "INSERT_DEDUP_CONFLICT"
       : "TRANSACTION_FAILED";
   }
-  for (const known of ["MYSQL_STATEMENT_TIMEOUT", "MYSQL_STATEMENT_TIMEOUT_INVALID", "MYSQL_STATEMENT_TIMEOUT_UNENFORCEABLE", "MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_DEDUP_UNIQUENESS_UNPROVEN", "INSERT_DEDUP_COMPONENT_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "DELETE_TRIGGER_VISIBILITY_REQUIRED", "DELETE_FK_VISIBILITY_REQUIRED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE", "SET_ROW_CAP_EXCEEDED", "SET_IDENTITY_NOT_UNIQUE", "SET_IDENTITY_ORDER_INVALID", "SET_PRIMARY_KEY_MISMATCH", "SET_VERSION_GUARD_REQUIRED", "SET_VERSION_GUARD_MISMATCH", "SET_TENANT_GUARD_MISMATCH", "SET_AFTER_STATE_MISMATCH", "SET_BEFORE_DIGEST_MISMATCH", "SET_AFTER_DIGEST_MISMATCH", "SET_TOMBSTONE_DIGEST_MISMATCH", "SET_AGGREGATE_BOUND_MISMATCH", "SET_AGGREGATE_VALUE_INVALID", "SET_DIGEST_MISMATCH", "SET_ATOMICITY_VIOLATION", "SET_DRIFT_CONFLICT", "BATCH_DEDUP_REQUIRED", "BATCH_IDENTITY_MISMATCH", "BATCH_COLUMN_NOT_ALLOWED", "COMPENSATION_UNAVAILABLE", "COMPENSATION_OPERATION_MISMATCH", "COMPENSATION_TARGET_MISMATCH", "COMPENSATION_TENANT_MISMATCH", "COMPENSATION_ROW_CAP_EXCEEDED", "COMPENSATION_IDENTITY_NOT_UNIQUE", "COMPENSATION_IDENTITY_ORDER_INVALID", "COMPENSATION_ALLOWLIST_MISMATCH", "COMPENSATION_PRIMARY_KEY_MISMATCH", "COMPENSATION_VERSION_GUARD_REQUIRED", "COMPENSATION_RESTORE_VALUES_REQUIRED", "COMPENSATION_EXPECTED_STATE_REQUIRED", "COMPENSATION_COLUMN_NOT_ALLOWED", "COMPENSATION_TARGET_PRESENT", "COMPENSATION_TARGET_MISSING", "COMPENSATION_TRIGGER_VISIBILITY_REQUIRED", "COMPENSATION_FK_VISIBILITY_REQUIRED", "COMPENSATION_TRIGGER_BLOCKED", "COMPENSATION_CASCADE_BLOCKED", "COMPENSATION_ATOMICITY_VIOLATION", "ROW_CHANGED_AFTER_FORWARD_WRITE"]) if (message.includes(known)) return known;
+  if (code === "ACTION_RULE_AUTHORITY_STALE") return "SEMANTIC_AUTHORITY_STALE";
+  for (const known of ["SEMANTIC_REVERIFIER_UNAVAILABLE", "SEMANTIC_REVERIFY_NOT_RUN", "SEMANTIC_AUTHORITY_STALE", "SEMANTIC_SCOPE_INVALID", "SEMANTIC_EFFECT_MISMATCH", "ACTION_RULE_NOT_ELIGIBLE", "ACTION_RULE_FACTS_UNKNOWN", "ACTION_RULE_SCOPE_UNPROVEN", "ACTION_RULE_ENGINE_MISMATCH", "ACTION_RULE_FACT_TYPE_MISMATCH", "ACTION_RULE_LOAD_PLAN_INVALID", "ACTION_RULE_SUBJECT_INVALID", "ACTION_RULE_MYSQL_INNODB_REQUIRED", "ACTION_RULE_MYSQL_STORAGE_ENGINE_DRIFT", "ACTION_RULE_MYSQL_COLLATION_DRIFT", "SOURCE_RECEIPT_SEMANTIC_PROOF_UNAVAILABLE", "RUNNER_LEDGER_SEMANTIC_PROOF_UNAVAILABLE", "MYSQL_STATEMENT_TIMEOUT", "MYSQL_STATEMENT_TIMEOUT_INVALID", "MYSQL_STATEMENT_TIMEOUT_UNENFORCEABLE", "MULTI_ROW_WRITE_BLOCKED", "VERSION_CONFLICT", "VERSION_DID_NOT_ADVANCE", "INSERT_DEDUP_CONFLICT", "INSERT_DEDUP_UNIQUENESS_UNPROVEN", "INSERT_DEDUP_COMPONENT_CONFLICT", "INSERT_CONSTRAINT_FAILED", "DELETE_CASCADE_BLOCKED", "DELETE_TRIGGER_BLOCKED", "DELETE_TRIGGER_VISIBILITY_REQUIRED", "DELETE_FK_VISIBILITY_REQUIRED", "SOURCE_RECEIPT_UNAVAILABLE", "RUNNER_LEDGER_UNAVAILABLE", "SET_ROW_CAP_EXCEEDED", "SET_IDENTITY_NOT_UNIQUE", "SET_IDENTITY_ORDER_INVALID", "SET_PRIMARY_KEY_MISMATCH", "SET_VERSION_GUARD_REQUIRED", "SET_VERSION_GUARD_MISMATCH", "SET_TENANT_GUARD_MISMATCH", "SET_AFTER_STATE_MISMATCH", "SET_BEFORE_DIGEST_MISMATCH", "SET_AFTER_DIGEST_MISMATCH", "SET_TOMBSTONE_DIGEST_MISMATCH", "SET_AGGREGATE_BOUND_MISMATCH", "SET_AGGREGATE_VALUE_INVALID", "SET_DIGEST_MISMATCH", "SET_ATOMICITY_VIOLATION", "SET_DRIFT_CONFLICT", "BATCH_DEDUP_REQUIRED", "BATCH_IDENTITY_MISMATCH", "BATCH_COLUMN_NOT_ALLOWED", "COMPENSATION_UNAVAILABLE", "COMPENSATION_OPERATION_MISMATCH", "COMPENSATION_TARGET_MISMATCH", "COMPENSATION_TENANT_MISMATCH", "COMPENSATION_ROW_CAP_EXCEEDED", "COMPENSATION_IDENTITY_NOT_UNIQUE", "COMPENSATION_IDENTITY_ORDER_INVALID", "COMPENSATION_ALLOWLIST_MISMATCH", "COMPENSATION_PRIMARY_KEY_MISMATCH", "COMPENSATION_VERSION_GUARD_REQUIRED", "COMPENSATION_RESTORE_VALUES_REQUIRED", "COMPENSATION_EXPECTED_STATE_REQUIRED", "COMPENSATION_COLUMN_NOT_ALLOWED", "COMPENSATION_TARGET_PRESENT", "COMPENSATION_TARGET_MISSING", "COMPENSATION_TRIGGER_VISIBILITY_REQUIRED", "COMPENSATION_FK_VISIBILITY_REQUIRED", "COMPENSATION_TRIGGER_BLOCKED", "COMPENSATION_CASCADE_BLOCKED", "COMPENSATION_ATOMICITY_VIOLATION", "ROW_CHANGED_AFTER_FORWARD_WRITE"]) if (code === known || message.includes(known)) return known;
   return "TRANSACTION_FAILED";
 }
 
@@ -1068,7 +1499,7 @@ export const mysqlAdapter: ApplyAdapter = {
     try {
       const [rows] = await connection.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version");
       if (receiptAuthority(config) === "source_db") {
-        if (config.receipts?.provisioning === "auto_migrate") await connection.query(mysqlReceiptMigrationForConfig(config));
+        if (config.receipts?.provisioning === "auto_migrate") await ensureMysqlReceiptSchema(connection, config);
         await connection.beginTransaction();
         try {
           const doctorId = `doctor-${Date.now()}`;

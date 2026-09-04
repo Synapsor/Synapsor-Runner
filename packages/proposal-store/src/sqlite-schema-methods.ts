@@ -34,6 +34,7 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
         proposals: this.countTable("proposals"),
         evidence_bundles: this.countTable("evidence_bundles"),
         evidence_items: this.countTable("evidence_items"),
+        observed_subject_references: this.countTable("observed_subject_references"),
         query_audit: this.countTable("query_audit"),
         explore_privacy_releases: this.countTable("explore_privacy_releases"),
         explore_budget_reservations: this.countTable("explore_budget_reservations"),
@@ -126,6 +127,7 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
         }
         if (proposalWhere) run("proposals", proposalWhere.sql, proposalWhere.params);
         else deleted.proposals = 0;
+        run("observed_subject_references", "expires_at < ?", [cutoffIso]);
       });
       return { cutoff: cutoffIso, dry_run: dryRun, deleted };
     },
@@ -216,6 +218,18 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
           item_json TEXT NOT NULL,
           created_at TEXT NOT NULL,
           FOREIGN KEY (evidence_bundle_id) REFERENCES evidence_bundles(evidence_bundle_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS observed_subject_references (
+          subject_ref TEXT PRIMARY KEY,
+          subject_ref_digest TEXT UNIQUE NOT NULL,
+          state TEXT NOT NULL CHECK (state IN ('active', 'consumed', 'revoked')),
+          claim_id TEXT,
+          record_json TEXT NOT NULL,
+          issued_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          consumed_at TEXT,
+          revoked_at TEXT
         );
   
         CREATE TABLE IF NOT EXISTS query_audit (
@@ -607,6 +621,11 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
         CREATE INDEX IF NOT EXISTS idx_evidence_bundles_fingerprint_created ON evidence_bundles(query_fingerprint, created_at);
   
         CREATE INDEX IF NOT EXISTS idx_evidence_items_bundle_id ON evidence_items(evidence_bundle_id);
+
+        CREATE INDEX IF NOT EXISTS idx_observed_subject_expiry
+          ON observed_subject_references(state, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_observed_subject_claim
+          ON observed_subject_references(claim_id);
   
         CREATE INDEX IF NOT EXISTS idx_query_audit_evidence_id ON query_audit(evidence_bundle_id);
         CREATE INDEX IF NOT EXISTS idx_query_audit_source_table_created ON query_audit(source_id, table_name, created_at);

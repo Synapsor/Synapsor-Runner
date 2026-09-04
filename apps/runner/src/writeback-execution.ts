@@ -1,7 +1,15 @@
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import {
+  assertSemanticActionAuthorityCurrent,
+  assertSemanticAuthorityCurrent,
+  createSemanticActionVerifier,
+  type ActivatedActionRuleApprovalClassV1,
+  type ActivatedActionRuleV1,
+} from "@synapsor-runner/action-rules";
+import {
   capabilityWritebackExecutor,
   capabilityWritebackMode,
+  resolveTrustedContext,
   validateFreshnessAuthorityAgainstCurrentConfig,
   type RuntimeConfig,
 } from "@synapsor-runner/mcp-server";
@@ -9,9 +17,10 @@ import { createPostgresPool } from "@synapsor-runner/postgres";
 import {
   PostgresWritebackIntentStore,
   ProposalStore,
+  semanticApprovalSetDigest,
   type StoredProposal
 } from "@synapsor-runner/proposal-store";
-import { parseFreshnessAuthority, parseFreshnessProof, parseWritebackJob, protocolVersions, type ExecutionReceiptV1, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { canonicalJsonStringify, parseFreshnessAuthority, parseFreshnessProof, parseWritebackJob, protocolVersions, type ExecutionReceiptV1, type NormalizedWritebackJobV5, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import {
   type RunnerConfig,
   type WritebackIntentStore
@@ -29,6 +38,8 @@ import { readRuntimeConfig, redactConfig } from "./cli-project.js";
 import { adapters } from "./cli-runtime.js";
 import { trustedCliContext } from "./operator-authority.js";
 import { verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
+import { loadActiveActionRuleAuthority } from "./action-rule-authority.js";
+import { semanticContextCapability } from "./semantic-action-runtime.js";
 import { hashReceipt, runnerReceiptConfig, toExecutionReceipt, writebackDatabaseScope, writebackTimeoutMs } from "./writeback-domain.js";
 
 const handlerReceiptStatuses = new Set(["applied", "already_applied", "conflict", "failed"]);
@@ -59,6 +70,8 @@ export async function applySqlJob(job: unknown, configPath: string, storePath: s
       parsedJob,
     ),
   };
+  const semanticVerifier = semanticActionVerifierForRuntime(runtimeConfig, configPath);
+  if (semanticVerifier) config.semanticActionVerifier = semanticVerifier;
   const intentAuthority = createWritebackIntentAuthority(runtimeConfig, parsedJob.source_id, env, store);
   if (config.receipts?.authority === "runner_ledger" && !intentAuthority.store) throw new Error("runner_ledger receipt authority requires --store or an authoritative shared runtime store");
   if (intentAuthority.store) config.writebackIntentStore = intentAuthority.store;
@@ -70,6 +83,63 @@ export async function applySqlJob(job: unknown, configPath: string, storePath: s
     await intentAuthority.close();
     store?.close();
   }
+}
+
+
+export function semanticActionVerifierForRuntime(
+  config: RuntimeConfig,
+  configPath: string,
+): RunnerConfig["semanticActionVerifier"] | undefined {
+  const projectRoot = semanticActionProjectRoot(config, configPath);
+  if (projectRoot === undefined) return undefined;
+  return createSemanticActionVerifier({
+    registry: async () => (await loadActiveActionRuleAuthority(projectRoot)).registry,
+  });
+}
+
+
+export function semanticActionProjectRoot(config: RuntimeConfig, configPath: string): string | undefined {
+  const configured = config.action_rules?.project_root;
+  if (!configured) return undefined;
+  return path.resolve(path.dirname(path.resolve(configPath)), configured);
+}
+
+export async function loadSemanticRuntimeAuthority(
+  config: RuntimeConfig,
+  configPath: string,
+) {
+  const projectRoot = semanticActionProjectRoot(config, configPath);
+  if (projectRoot === undefined) {
+    throw new Error("SEMANTIC_ACTION_RUNTIME_BINDING_REQUIRED: action_rules.project_root must bind the active Action Rule authority");
+  }
+  return loadActiveActionRuleAuthority(projectRoot);
+}
+
+
+export async function loadSemanticProposalAuthority(
+  config: RuntimeConfig,
+  configPath: string,
+  proposal: StoredProposal,
+): Promise<{
+  activated: ActivatedActionRuleV1;
+  approval: ActivatedActionRuleApprovalClassV1;
+}> {
+  if (proposal.change_set.schema_version !== protocolVersions.changeSetV4) {
+    throw new Error(`proposal ${proposal.proposal_id} is not a semantic Action proposal`);
+  }
+  const projectRoot = semanticActionProjectRoot(config, configPath);
+  if (projectRoot === undefined) {
+    throw new Error("SEMANTIC_ACTION_RUNTIME_BINDING_REQUIRED: action_rules.project_root must bind the active Action Rule authority");
+  }
+  const loaded = await loadActiveActionRuleAuthority(projectRoot);
+  const current = assertSemanticAuthorityCurrent(loaded.registry, proposal.change_set.semantic_authority);
+  if (proposal.action !== current.activated.compiled.outcome
+    || proposal.source_id !== current.activated.compiled.source
+    || proposal.source_schema !== current.activated.compiled.target_resource.schema
+    || proposal.source_table !== current.activated.compiled.target_resource.table) {
+    throw new Error("SEMANTIC_PROPOSAL_AUTHORITY_STALE: proposal target no longer matches the active Action Rule");
+  }
+  return current;
 }
 
 
@@ -683,6 +753,10 @@ export async function verifyLocalWritebackAuthority(
   if (Date.parse(String(job.lease_expires_at)) < Date.now()) {
     throw new Error("writeback job lease has expired");
   }
+  if (job.protocol_version === protocolVersions.normalizedWritebackJobV5) {
+    await verifyLocalSemanticWritebackAuthority(job, config, configPath, storePath, options);
+    return;
+  }
   const proposalCapabilities = (config.capabilities ?? []).filter((capability) => capability.kind === "proposal" && capability.source === job.source_id && capabilityWritebackMode(capability) === "direct_sql");
   const matching = proposalCapabilities.find((capability) => capabilityMatchesJob(capability, job));
   if (!matching) {
@@ -811,6 +885,123 @@ export async function verifyLocalWritebackAuthority(
 }
 
 
+async function verifyLocalSemanticWritebackAuthority(
+  job: NormalizedWritebackJobV5,
+  config: RuntimeConfig,
+  configPath: string,
+  storePath: string | undefined,
+  options: { cloudApproved?: boolean },
+): Promise<void> {
+  const projectRoot = semanticActionProjectRoot(config, configPath);
+  if (projectRoot === undefined) {
+    throw new Error("SEMANTIC_ACTION_RUNTIME_BINDING_REQUIRED: action_rules.project_root must bind the active Action Rule authority");
+  }
+  const loaded = await loadActiveActionRuleAuthority(projectRoot);
+  const { activated, approval } = assertSemanticActionAuthorityCurrent(loaded.registry, job);
+  const writeback = activated.compiled.effect_envelope.writeback;
+  if (writeback.mode !== "direct_sql" || writeback.supervised_worker !== "allowed") {
+    throw new Error("SEMANTIC_WRITEBACK_NOT_REVIEWED: this active outcome permits proposals only");
+  }
+  if (!storePath) {
+    throw new Error("SEMANTIC_PROPOSAL_STORE_REQUIRED: semantic writeback requires its authoritative proposal and approval ledger");
+  }
+
+  const store = new ProposalStore(storePath);
+  try {
+    const proposal = store.getProposal(job.proposal_id);
+    if (!proposal) throw new Error(`local semantic proposal not found for writeback job: ${job.proposal_id}`);
+    if (proposal.change_set.schema_version !== protocolVersions.changeSetV4) {
+      throw new Error("SEMANTIC_PROPOSAL_PROTOCOL_MISMATCH");
+    }
+    if (!new Set(["approved", "pending_worker", "applied"]).has(proposal.state)) {
+      throw new Error(`local semantic proposal ${job.proposal_id} is ${proposal.state}, not approved for writeback`);
+    }
+    if (proposal.proposal_hash !== job.proposal_hash
+      || proposal.change_set.integrity.proposal_hash !== job.proposal_hash
+      || proposal.action !== job.semantic_authority.proof.outcome
+      || canonicalJsonStringify(proposal.change_set.semantic_authority) !== canonicalJsonStringify(job.semantic_authority)
+      || canonicalJsonStringify(proposal.change_set.patch) !== canonicalJsonStringify(job.patch)
+      || proposal.source_id !== job.source_id
+      || proposal.source_schema !== job.target.schema
+      || proposal.source_table !== job.target.table) {
+      throw new Error("SEMANTIC_PROPOSAL_JOB_MISMATCH: writeback does not match the immutable local proposal");
+    }
+
+    const approvals = store.approvals(proposal.proposal_id);
+    if (semanticApprovalSetDigest(proposal, approvals) !== job.approval_id) {
+      throw new Error("SEMANTIC_APPROVAL_SET_MISMATCH: writeback approval authority changed");
+    }
+    const exactApprovals = approvals.filter((candidate) => candidate.status === "approved"
+      && candidate.proposal_hash === proposal.proposal_hash
+      && candidate.proposal_version === proposal.proposal_version);
+    const policyActor = `policy:${approval.name}`;
+    const exactPolicyApproval = exactApprovals.find((candidate) =>
+      candidate.approver === policyActor
+      && candidate.action_boundary_name === activated.action_boundary_name
+      && candidate.action_boundary_digest === activated.action_boundary_digest);
+    const humanApprovals = exactApprovals.filter((candidate) => !candidate.approver.startsWith("policy:"));
+    if (exactPolicyApproval) {
+      if (approval.mode !== "policy" || job.semantic_authority.proof.approval_path !== "automatic_eligible") {
+        throw new Error("SEMANTIC_POLICY_APPROVAL_STALE: the exact active Action Boundary did not grant this automatic approval");
+      }
+    } else if (new Set(humanApprovals.map((candidate) => candidate.approver)).size < approval.required_approvals) {
+      throw new Error("SEMANTIC_APPROVAL_QUORUM_MISSING");
+    }
+    if (job.semantic_authority.proof.approval_path !== "automatic_eligible"
+      && exactApprovals.some((candidate) => candidate.approver.startsWith("policy:"))) {
+      throw new Error("SEMANTIC_HUMAN_APPROVAL_REQUIRED");
+    }
+
+    if (!options.cloudApproved) {
+      const syntheticCapability = semanticApprovalCapability(activated, approval);
+      await verifyStoredApprovalAuthority(config, configPath, store, proposal, syntheticCapability);
+      const current = resolveTrustedContext(config, process.env, syntheticCapability);
+      if (job.target.tenant_guard !== undefined) {
+        if (current.tenant_id !== String(job.target.tenant_guard.value)
+          || proposal.scope_kind !== "tenant"
+          || proposal.scope_id !== current.tenant_id) {
+          throw new Error("current trusted tenant cannot apply this semantic proposal");
+        }
+      } else if (job.target.organization_scope?.organization_id !== current.tenant_id
+        || proposal.scope_kind !== "organization"
+        || proposal.scope_id !== current.tenant_id) {
+        throw new Error("current reviewed organization cannot apply this semantic proposal");
+      }
+      if (job.target.principal_scope?.value !== undefined
+        && current.principal !== String(job.target.principal_scope.value)) {
+        throw new Error("current trusted principal cannot apply this semantic proposal");
+      }
+    }
+  } finally {
+    store.close();
+  }
+}
+
+
+export function semanticApprovalCapability(
+  activated: ActivatedActionRuleV1,
+  approval: ActivatedActionRuleApprovalClassV1,
+): NonNullable<RuntimeConfig["capabilities"]>[number] {
+  const writeback = activated.compiled.effect_envelope.writeback;
+  return {
+    ...semanticContextCapability(activated),
+    approval: {
+      mode: approval.mode,
+      required_role: approval.required_role,
+      required_approvals: approval.required_approvals,
+      ...(approval.mode === "policy" ? { policy: approval.name } : {}),
+    },
+    writeback: {
+      mode: writeback.mode === "direct_sql" ? "direct_sql" : "none",
+      ...(writeback.mode === "direct_sql" ? { executor: "sql_update" } : {}),
+    },
+    ...(writeback.supervised_worker === "allowed"
+      ? { execution: { supervised_worker: "allowed" as const } }
+      : {}),
+  };
+}
+
+
 function verifyStoredFreshnessApprovalAuthority(
   store: ProposalStore,
   proposal: StoredProposal,
@@ -912,7 +1103,14 @@ function capabilityMatchesJob(capability: NonNullable<RuntimeConfig["capabilitie
   if (capability.target.schema !== job.target.schema) return false;
   if (capability.target.table !== job.target.table) return false;
   if (capability.target.primary_key !== job.target.primary_key.column) return false;
-  if (!capability.target.tenant_key || capability.target.tenant_key !== job.target.tenant_guard.column) return false;
+  if (job.target.tenant_guard !== undefined) {
+    if (!capability.target.tenant_key || capability.target.tenant_key !== job.target.tenant_guard.column) return false;
+  } else {
+    if (job.protocol_version !== "5.0"
+      || job.target.organization_scope === undefined
+      || capability.organization_scope?.mode !== "single_organization"
+      || capability.organization_scope.organization_id !== job.target.organization_scope.organization_id) return false;
+  }
   if ((capability.target.principal_scope_key ?? undefined) !== (job.target.principal_scope?.column ?? undefined)) return false;
   const reviewedOperation = capability.operation?.kind ?? "update";
   if (job.protocol_version === protocolVersions.normalizedWritebackJobV4) {

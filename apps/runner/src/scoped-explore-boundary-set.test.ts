@@ -132,6 +132,10 @@ describe("Scoped Explore active boundary routing", () => {
     const finance = validBoundary("finance", ["public.invoices"]);
     const exploredPlans: unknown[] = [];
     const validatedPlans: unknown[] = [];
+    const subjectReferences = {
+      service: { issue: vi.fn() },
+      workflow_session_id: "workflow_shared_subjects",
+    };
     const runtimeFactory = vi.fn(async (input: { boundaryName?: string }) => {
       const selected = [support, finance].find((candidate) => candidate.pack.name === input.boundaryName)!;
       return fakeChildRuntime(
@@ -145,6 +149,7 @@ describe("Scoped Explore active boundary routing", () => {
       const runtime = await createScopedExploreBoundarySetRuntime({
         projectRoot,
         transport: "stdio",
+        subjectReferences: subjectReferences as never,
         runtimeFactory: runtimeFactory as never,
       });
       try {
@@ -181,6 +186,9 @@ describe("Scoped Explore active boundary routing", () => {
         });
         expect(runtimeFactory).toHaveBeenCalledWith(expect.objectContaining({ boundaryName: "support" }));
         expect(runtimeFactory).toHaveBeenCalledWith(expect.objectContaining({ boundaryName: "finance" }));
+        expect(runtimeFactory).toHaveBeenCalledWith(expect.objectContaining({
+          subjectReferences,
+        }));
       } finally {
         await runtime.close();
       }

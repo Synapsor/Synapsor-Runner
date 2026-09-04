@@ -1,4 +1,4 @@
-import { createMcpRuntime, describeIsolationAssurance, modelAuthorityMetadataMode, preflightGeneratedAuthority, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpSessionFactory, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { createDefaultRuntimeStore, createMcpRuntime, createSynapsorMcpServer, DESCRIBE_ACTIONS_TOOL, describeIsolationAssurance, modelAuthorityMetadataMode, preflightGeneratedAuthority, REQUEST_CHANGE_TOOL, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpSessionFactory, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
@@ -30,9 +30,29 @@ import { readModelAuthorityMetadataMode } from "./model-output-config.js";
 import { writeStoreLease } from "./store-lease.js";
 import { sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror } from "./store-shared.js";
 import { capabilityOperation, formatSourceReceiptMode, sourceNeedsSqlWriteback } from "./writeback-domain.js";
+import {
+  authenticatedActionWorkflowId,
+  createOptionalActionRuleRuntimeServices,
+  createOptionalReadActionRuleRuntimeServices,
+} from "./semantic-action-runtime.js";
+import {
+  loadActiveActionRuleAuthority,
+  type LoadedActiveActionRuleAuthorityV1,
+} from "./action-rule-authority.js";
 
 const EXPLORE_TOOL_NAMES = ["app.describe_data", "app.explore_data"] as const;
+const SEMANTIC_ACTION_TOOL_NAMES = [DESCRIBE_ACTIONS_TOOL, REQUEST_CHANGE_TOOL] as const;
 type ExploreSurfaceMode = "local" | "production";
+type McpToolSurface = "capabilities" | "semantic_actions" | "local_explore" | "production_explore";
+
+type CompanionActionToolSurface = {
+  ok: boolean;
+  active: boolean;
+  configPath: string;
+  names: string[];
+  capabilityDetails: ToolPreviewCapabilityDetail[];
+  checks: Array<{ name: string; ok: boolean; detail: string }>;
+};
 
 
 export function productionExploreServeMode(args: readonly string[], config: RuntimeConfig): boolean {
@@ -124,10 +144,12 @@ export async function mcpServe(args: string[]): Promise<number> {
     const modelAuthorityMetadata = explicitConfigPath || await fileExists(configPath)
       ? await readModelAuthorityMetadataMode(configPath)
       : "semantic";
-    await serveScopedExploreStdio({
-      projectRoot,
-      modelAuthorityMetadata,
-    });
+    const config = await fileExists(configPath) ? await readRuntimeConfig(configPath) : undefined;
+    if (config) {
+      await serveLocalExploreStdio({ projectRoot, config, modelAuthorityMetadata });
+    } else {
+      await serveScopedExploreStdio({ projectRoot, modelAuthorityMetadata });
+    }
     return 0;
   }
   if (args.includes("--production-explore") && transport !== "streamable-http") {
@@ -155,8 +177,9 @@ export async function mcpServe(args: string[]): Promise<number> {
     process.stderr.write(
       `Active local Explore authority selected from ${configPath}; exposing exactly ${EXPLORE_TOOL_NAMES.join(" and ")}.\n`,
     );
-    await serveScopedExploreStdio({
+    await serveLocalExploreStdio({
       projectRoot: localExploreProjectRoot,
+      config,
       modelAuthorityMetadata: modelAuthorityMetadataMode(config),
     });
     return 0;
@@ -171,16 +194,33 @@ export async function mcpServe(args: string[]): Promise<number> {
   const resultFormat = resultFormatOption(args);
   const storePath = optionalResolvedLocalStorePath(args);
   const releaseLease = await writeStoreLease(mcpServeLeaseStorePath(config, storePath), "mcp", "stdio", args.includes("--allow-concurrent-store"));
+  const runtimeStore = createDefaultRuntimeStore(
+    config,
+    process.env,
+    storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db",
+  );
   try {
+    const semanticProjectRoot = configuredActionRuleProjectRoot(config);
+    const semantic = semanticProjectRoot
+      ? await createOptionalActionRuleRuntimeServices({
+          projectRoot: semanticProjectRoot,
+          config,
+          env: process.env,
+          store: runtimeStore,
+        })
+      : undefined;
     await serveStdio({
       configPath,
       storePath,
+      store: runtimeStore,
       config,
       toolNameStyle,
       resultFormat,
+      ...(semantic ? { semanticActions: semantic.semanticActions } : {}),
     });
     return 0;
   } finally {
+    await Promise.resolve(runtimeStore.close()).catch(() => undefined);
     await releaseLease();
   }
 }
@@ -305,7 +345,10 @@ export async function mcpServeStreamableHttp(args: string[]): Promise<number> {
       accessLog: process.stderr.isTTY === true,
       ...(productionExplore
         ? { streamableSessionFactory: productionExploreSessionFactory(config, process.env) }
-        : {}),
+        : configuredActionRuleProjectRoot(config)
+          && await hasActiveActionRuleAuthority(configuredActionRuleProjectRoot(config)!)
+          ? { streamableSessionFactory: semanticActionSessionFactory(config, process.env, configuredActionRuleProjectRoot(config)!) }
+          : {}),
     });
   } catch (error) {
     await releaseLease();
@@ -811,9 +854,10 @@ export function productionExploreSessionFactory(
     }
     return sharedExecutorLeasePromise.then((lease) => lease.executor);
   };
-  const factory: StreamableHttpSessionFactory = async ({ store, trustedContext }) => {
+  const factory: StreamableHttpSessionFactory = async ({ store, trustedContext, authenticationFingerprint }) => {
     if (closed) throw new Error("Production Explore session factory is closed.");
-    if (trustedContext.provenance !== "http_claims"
+    if (!trustedContext
+      || trustedContext.provenance !== "http_claims"
       || !trustedContext.tenant_id.trim()
       || !trustedContext.principal.trim()
       || (production.single_organization_id !== undefined
@@ -823,6 +867,16 @@ export function productionExploreSessionFactory(
         : "Production Explore requires verified tenant and principal HTTP claims for every MCP session.");
     }
     const executor = await sharedExecutor();
+    const semantic = await createOptionalReadActionRuleRuntimeServices({
+      projectRoot: production.project_root,
+      config,
+      env,
+      store,
+      key: hmacKey,
+      deployment_scope: production.accounting_namespace,
+      workflow_session_id: authenticatedActionWorkflowId(authenticationFingerprint),
+      trustedContext,
+    }, reportOptionalActionSubjectFailure);
     const runtime = await (dependencies.createBoundarySetRuntime ?? createScopedExploreBoundarySetRuntime)({
       projectRoot: production.project_root,
       transport: "streamable_http",
@@ -839,6 +893,14 @@ export function productionExploreSessionFactory(
       productionTenantLimits: tenantLimits,
       executor,
       modelAuthorityMetadata: modelAuthorityMetadataMode(config),
+      ...(semantic
+        ? {
+          subjectReferences: {
+            service: semantic.subjectReferences,
+            workflow_session_id: semantic.workflow_session_id,
+          },
+        }
+        : {}),
       ...(executor.inspectDatabase ? { inspectDatabaseFn: executor.inspectDatabase } : {}),
     });
     const server = (dependencies.createMcpServer ?? createScopedExploreMcpServer)(runtime, { mode: "production_http" });
@@ -863,6 +925,98 @@ export function productionExploreSessionFactory(
     });
   };
   return factory;
+}
+
+async function serveLocalExploreStdio(input: {
+  projectRoot: string;
+  config: RuntimeConfig;
+  modelAuthorityMetadata: ReturnType<typeof modelAuthorityMetadataMode>;
+}): Promise<void> {
+  const store = new ProposalStore(path.join(input.projectRoot, ".synapsor", "local.db"));
+  try {
+    const semantic = await createOptionalReadActionRuleRuntimeServices({
+      projectRoot: input.projectRoot,
+      config: input.config,
+      env: process.env,
+      store,
+    }, reportOptionalActionSubjectFailure);
+    await serveScopedExploreStdio({
+      projectRoot: input.projectRoot,
+      modelAuthorityMetadata: input.modelAuthorityMetadata,
+      store,
+      ...(semantic
+        ? {
+          subjectReferences: {
+            service: semantic.subjectReferences,
+            workflow_session_id: semantic.workflow_session_id,
+          },
+        }
+        : {}),
+    });
+  } finally {
+    await Promise.resolve(store.close()).catch(() => undefined);
+  }
+}
+
+const reportedOptionalActionSubjectFailures = new Set<string>();
+
+function reportOptionalActionSubjectFailure(error: unknown): void {
+  const code = typeof error === "object" && error !== null && typeof (error as { code?: unknown }).code === "string"
+    ? (error as { code: string }).code
+    : "ACTION_RULE_UNAVAILABLE";
+  if (reportedOptionalActionSubjectFailures.has(code)) return;
+  reportedOptionalActionSubjectFailures.add(code);
+  process.stderr.write(
+    `Warning: ${code}: Explore remains available, but it cannot issue opaque subjects for semantic Actions. Review Action authority and run doctor.\n`,
+  );
+}
+
+function configuredActionRuleProjectRoot(config: RuntimeConfig): string | undefined {
+  return config.action_rules?.project_root
+    ? path.resolve(config.action_rules.project_root)
+    : undefined;
+}
+
+async function hasActiveActionRuleAuthority(projectRoot: string): Promise<boolean> {
+  try {
+    await loadActiveActionRuleAuthority(projectRoot);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function semanticActionSessionFactory(
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv,
+  projectRoot: string,
+): StreamableHttpSessionFactory {
+  return async ({ store, trustedContext, authenticationFingerprint, toolNameStyle, resultFormat }) => {
+    const semantic = await createOptionalActionRuleRuntimeServices({
+      projectRoot,
+      config,
+      env,
+      store,
+      workflow_session_id: authenticatedActionWorkflowId(authenticationFingerprint),
+      trustedContext,
+    });
+    if (!semantic) throw new Error("No active semantic Action Rule authority is available.");
+    const runtime = createMcpRuntime(config, {
+      env,
+      store,
+      trustedContext,
+      semanticActions: semantic.semanticActions,
+      resultFormat,
+    });
+    const server = createSynapsorMcpServer(runtime, { toolNameStyle, resultFormat });
+    return {
+      connect: (transport) => server.connect(transport),
+      close: async () => {
+        await Promise.allSettled([server.close(), runtime.close()]);
+      },
+    };
+  };
 }
 
 type ProductionExploreExecutorLease = {
@@ -1632,6 +1786,18 @@ export async function toolsPreview(args: string[]): Promise<number> {
       isolation: boundary.isolation,
       not_exposed_to_mcp: defaultBlockedToolSurface(),
       graduated_trust: boundary.graduatedTrust,
+      ...(boundary.companionActionSurface
+        ? {
+          companion_action_surface: {
+            ok: boundary.companionActionSurface.ok,
+            active: boundary.companionActionSurface.active,
+            config_path: boundary.companionActionSurface.configPath,
+            exposed_to_mcp: boundary.companionActionSurface.names,
+            action_details: boundary.companionActionSurface.capabilityDetails,
+            checks: boundary.companionActionSurface.checks,
+          },
+        }
+        : {}),
       checks: boundary.checks,
     }, null, 2)}\n`);
   } else {
@@ -1643,7 +1809,7 @@ export async function toolsPreview(args: string[]): Promise<number> {
 
 export async function inspectMcpToolBoundary(args: string[]): Promise<{
   ok: boolean;
-  surface: "capabilities" | "local_explore" | "production_explore";
+  surface: McpToolSurface;
   configPath: string;
   storePath: string;
   aliasMode: ToolNameStyle;
@@ -1655,6 +1821,7 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
   isolation: SourceIsolationAssurance[];
   governance: LocalDoctorGovernance;
   graduatedTrust: { enabled: boolean; kill_switch: boolean; criteria: number; model_facing: false };
+  companionActionSurface?: CompanionActionToolSurface;
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }> {
   const configPath = runnerConfigPath(args, "./synapsor.runner.json");
@@ -1671,14 +1838,30 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
   const localExplore = !productionExplore
     && (parsed.capabilities?.length ?? 0) === 0
     && await hasActiveLocalExploreBoundary(parsed, configPath);
-  const surface = productionExplore ? "production_explore" : localExplore ? "local_explore" : "capabilities";
-  const aliasMode = surface === "capabilities" ? requestedAliasMode : "canonical";
+  const semanticProjectRoot = configuredActionRuleProjectRoot(parsed);
+  const semanticAuthority = !productionExplore && !localExplore && semanticProjectRoot !== undefined
+    ? await optionalActiveActionRuleAuthority(semanticProjectRoot)
+    : undefined;
+  const semanticActions = semanticAuthority !== undefined;
+  const surface: McpToolSurface = productionExplore
+    ? "production_explore"
+    : localExplore
+      ? "local_explore"
+      : semanticActions
+        ? "semantic_actions"
+        : "capabilities";
+  const capabilitySurface = surface === "capabilities" || surface === "semantic_actions";
+  const aliasMode = capabilitySurface ? requestedAliasMode : "canonical";
   const runtime = createMcpRuntime(parsed, { storePath });
   try {
-    const tools = surface === "capabilities" ? runtime.listTools() : [];
+    const tools = capabilitySurface ? runtime.listTools() : [];
     const autoApprovalDisabled = parsed.approvals?.disable_auto_approval === true;
-    const approvalPolicies = surface === "capabilities" ? approvalPolicySummaries(parsed) : [];
-    const capabilityDetails = surface === "capabilities" ? toolPreviewCapabilityDetails(parsed) : [];
+    const approvalPolicies = capabilitySurface ? approvalPolicySummaries(parsed) : [];
+    const capabilityDetails = surface === "semantic_actions" && semanticAuthority
+      ? semanticToolPreviewCapabilityDetails(semanticAuthority)
+      : capabilitySurface
+        ? toolPreviewCapabilityDetails(parsed)
+        : [];
     const isolation = describeIsolationAssurance(parsed);
     const cloudSync = await runtime.cloudSyncStatus();
     const governance: LocalDoctorGovernance = {
@@ -1691,8 +1874,21 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
       criteria: parsed.graduated_trust?.criteria?.length ?? 0,
       model_facing: false as const,
     };
-    const exposures = surface === "capabilities"
+    const configuredExposures = capabilitySurface
       ? toolNameExposures(tools.map((tool) => tool.name), aliasMode)
+      : [];
+    const exposures = surface === "semantic_actions"
+      ? [
+          ...SEMANTIC_ACTION_TOOL_NAMES.map((name) => ({
+            canonicalName: name,
+            exposedName: name,
+            isAlias: false,
+            style: "canonical" as const,
+          })),
+          ...configuredExposures,
+        ]
+      : surface === "capabilities"
+        ? configuredExposures
       : (localExplore || productionExploreActive)
         ? EXPLORE_TOOL_NAMES.map((name) => ({
           canonicalName: name,
@@ -1719,9 +1915,63 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];
     const ok = checks.every((check) => check.ok);
-    return { ok, surface, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, capabilityDetails, isolation, governance, graduatedTrust, checks };
+    const companionActionSurface = surface === "semantic_actions"
+      ? undefined
+      : await inspectCompanionActionToolSurface({ configPath, storePath });
+    return {
+      ok,
+      surface,
+      configPath,
+      storePath,
+      aliasMode,
+      names,
+      exposures,
+      autoApprovalDisabled,
+      approvalPolicies,
+      capabilityDetails,
+      isolation,
+      governance,
+      graduatedTrust,
+      ...(companionActionSurface ? { companionActionSurface } : {}),
+      checks,
+    };
   } finally {
     await runtime.close();
+  }
+}
+
+
+async function inspectCompanionActionToolSurface(input: {
+  configPath: string;
+  storePath: string;
+}): Promise<CompanionActionToolSurface | undefined> {
+  const primaryPath = path.resolve(input.configPath);
+  const actionConfigPath = path.join(path.dirname(primaryPath), "synapsor.actions.runner.json");
+  if (actionConfigPath === primaryPath || !await fileExists(actionConfigPath)) return undefined;
+  const action = await inspectMcpToolBoundary([
+    "--config", actionConfigPath,
+    "--store", input.storePath,
+  ]);
+  const active = action.surface === "semantic_actions"
+    && SEMANTIC_ACTION_TOOL_NAMES.every((name) => action.names.includes(name));
+  return {
+    ok: action.ok,
+    active,
+    configPath: actionConfigPath,
+    names: action.names,
+    capabilityDetails: action.capabilityDetails,
+    checks: action.checks,
+  };
+}
+
+async function optionalActiveActionRuleAuthority(
+  projectRoot: string,
+): Promise<LoadedActiveActionRuleAuthorityV1 | undefined> {
+  try {
+    return await loadActiveActionRuleAuthority(projectRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
   }
 }
 
@@ -1760,7 +2010,7 @@ export function defaultBlockedToolSurface(): string[] {
 
 function formatToolsPreview(input: {
   ok: boolean;
-  surface: "capabilities" | "local_explore" | "production_explore";
+  surface: McpToolSurface;
   configPath: string;
   storePath: string;
   aliasMode: ToolNameStyle;
@@ -1772,6 +2022,7 @@ function formatToolsPreview(input: {
   isolation: SourceIsolationAssurance[];
   governance: LocalDoctorGovernance;
   graduatedTrust: { enabled: boolean; kill_switch: boolean; criteria: number; model_facing: false };
+  companionActionSurface?: CompanionActionToolSurface;
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }): string {
   const exposedLines = input.exposures.length > 0
@@ -1779,7 +2030,7 @@ function formatToolsPreview(input: {
     : ["  - (none)"];
   const lines = [
     `Synapsor tools preview: ${input.ok ? "ok" : "failed"}`,
-    `Surface: ${input.surface === "production_explore" ? "production Explore" : input.surface === "local_explore" ? "local reviewed Explore" : "reviewed capabilities"}`,
+    `Surface: ${input.surface === "production_explore" ? "production Explore" : input.surface === "local_explore" ? "local reviewed Explore" : input.surface === "semantic_actions" ? "verified semantic Actions" : "reviewed capabilities"}`,
     `Config: ${input.configPath}`,
     `Store: ${input.storePath}`,
     `Alias mode: ${input.aliasMode}`,
@@ -1802,12 +2053,34 @@ function formatToolsPreview(input: {
     "Exposed to MCP:",
     ...exposedLines,
     "",
-    input.surface === "capabilities" ? "Reviewed capability boundary:" : "Reviewed Explore boundary:",
-    ...(input.surface === "capabilities"
+    input.surface === "semantic_actions"
+      ? "Verified Action Boundary:"
+      : input.surface === "capabilities"
+        ? "Reviewed capability boundary:"
+        : "Reviewed Explore boundary:",
+    ...(input.surface === "capabilities" || input.surface === "semantic_actions"
       ? formatToolPreviewCapabilityDetails(input.capabilityDetails)
       : [input.names.length > 0
         ? "  - exact active boundary authority; use /catalog or app.describe_data for reviewed resources"
         : "  - no exact active boundary; review and activate one before serving Explore"]),
+    ...(input.companionActionSurface
+      ? [
+        "",
+        `Companion Action surface: ${input.companionActionSurface.active ? "ACTIVE" : "NOT ACTIVE"}`,
+        `  Config: ${input.companionActionSurface.configPath}`,
+        "  Fixed model-facing tools:",
+        ...(input.companionActionSurface.names.length > 0
+          ? input.companionActionSurface.names.map((name) => `    - ${name}`)
+          : ["    - (none)"]),
+        ...(input.companionActionSurface.active
+          ? [
+            "  Reviewed semantic outcomes:",
+            ...formatToolPreviewCapabilityDetails(input.companionActionSurface.capabilityDetails),
+            `  Install Read + Action for Claude Code: ${cliCommandName()} mcp install claude-code --project --authoring --include-actions --project-root ${shellQuote(path.dirname(path.resolve(input.configPath)))}`,
+          ]
+          : ["  Activate an exact Action Boundary revision before exposing proposal tools."]),
+      ]
+      : []),
     "",
     "Not exposed to MCP:",
     ...defaultBlockedToolSurface().map((name) => `  - ${name}`),
@@ -1950,6 +2223,53 @@ function toolPreviewCapabilityDetails(config: RuntimeConfig): ToolPreviewCapabil
         : undefined,
     };
   });
+}
+
+function semanticToolPreviewCapabilityDetails(
+  authority: LoadedActiveActionRuleAuthorityV1,
+): ToolPreviewCapabilityDetail[] {
+  const approvalByName = new Map(authority.registry.approval_classes.map((item) => [item.name, item]));
+  return authority.registry.rules.map((activated) => {
+    const compiled = activated.compiled;
+    const envelope = compiled.effect_envelope;
+    const approval = approvalByName.get(compiled.approval_class);
+    return {
+      name: compiled.outcome,
+      kind: "proposal" as const,
+      operation: envelope.operation,
+      cardinality: "single" as const,
+      target: compiled.target_resource.name,
+      tenant_source: envelope.organization_scope
+        ? `frozen single organization ${envelope.organization_scope.organization_id}`
+        : `${envelope.tenant_key ?? "trusted database policy"} from Runner trusted context`,
+      ...(envelope.principal_scope_key
+        ? { principal_source: `${envelope.principal_scope_key} from required Runner trusted context` }
+        : {}),
+      writable_columns: envelope.allowed_fields.map((field) => field.name).sort(),
+      dedup_columns: envelope.deduplication?.components.map((component) => component.column) ?? [],
+      fixed_selection: [],
+      aggregate_bounds: [],
+      ...(envelope.operation === "update" && envelope.conflict_key
+        ? {
+          version_guard: envelope.conflict_key,
+          conflict_guard: {
+            mode: "exact_version_column" as const,
+            column: envelope.conflict_key,
+            assurance: "Runner reloads and re-verifies the exact current source revision before any supervised apply",
+          },
+          ...(envelope.version_advance
+            ? { version_advance: `${envelope.version_advance.column}:${envelope.version_advance.strategy}` }
+            : {}),
+        }
+        : {}),
+      receipt_mode: envelope.writeback.mode === "none" ? "proposal ledger only" : "Runner ledger",
+      reversibility: "not granted to the model-facing request surface",
+      approval: approval
+        ? `${approval.mode}${approval.mode === "policy" ? " with human fallback" : ""} role=${approval.required_role} quorum=${approval.required_approvals}`
+        : "human review",
+      max_rows: envelope.max_rows,
+    };
+  }).sort((left, right) => left.name.localeCompare(right.name));
 }
 
 

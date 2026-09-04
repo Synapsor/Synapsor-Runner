@@ -13,6 +13,7 @@ import {
   type WritebackJobV2,
   type WritebackJobV3,
   type WritebackJobV4,
+  type WritebackJobV5,
   type WritebackResult,
 } from "@synapsor-runner/protocol";
 import {
@@ -39,6 +40,7 @@ import {
   assertProposalIdentity,
   assertWritebackAllowed,
   assertNoSecretMaterial,
+  semanticApprovalSetDigest,
 } from "./proposal-integrity.js";
 import {
   buildEventQuery,
@@ -73,6 +75,12 @@ function validatedRecordedAt(value: string | undefined, label: string): string {
   return recordedAt;
 }
 
+function proposalHashFromWritebackJob(job: WritebackJob): string {
+  return job.protocol_version === protocolVersions.normalizedWritebackJobV5
+    ? job.proposal_hash
+    : job.approval_id;
+}
+
 export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & ProposalStoreWritebackInternalMethods & ThisType<ProposalStoreMethodContext> = {
   recordExecutionReceipt(input: unknown): StoredProposal {
       const receipt = parseExecutionReceipt(input);
@@ -88,7 +96,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       const job = parseWritebackJob(input);
       const proposal = this.requireProposal(job.proposal_id);
       assertWritebackAllowed(proposal, "recorded with a writeback job");
-      const proposalHash = job.approval_id;
+      const proposalHash = proposalHashFromWritebackJob(job);
       assertProposalIdentity(proposal, proposalHash, proposal.proposal_version);
       const now = new Date().toISOString();
       this.transaction(() => {
@@ -138,7 +146,8 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       const job = parseWritebackJob(jobInput);
       const proposal = this.requireProposal(job.proposal_id);
       assertWritebackAllowed(proposal, "recorded with a writeback intent");
-      assertProposalIdentity(proposal, job.approval_id, proposal.proposal_version);
+      const proposalHash = proposalHashFromWritebackJob(job);
+      assertProposalIdentity(proposal, proposalHash, proposal.proposal_version);
       const intentId = `wbi:${job.job_id}`;
       const existing = this.getWritebackIntent(intentId);
       if (existing) {
@@ -146,7 +155,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
           existing.idempotency_key !== job.idempotency_key
           || existing.writeback_job_id !== job.job_id
           || existing.proposal_id !== job.proposal_id
-          || existing.proposal_hash !== job.approval_id
+          || existing.proposal_hash !== proposalHash
         ) {
           throw new ProposalStoreError("WRITEBACK_INTENT_IDENTITY_MISMATCH", `writeback intent ${intentId} does not match the immutable job identity`);
         }
@@ -178,7 +187,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
           job.idempotency_key,
           job.job_id,
           job.proposal_id,
-          job.approval_id,
+          proposalHash,
           runnerId,
           job.operation ?? "single_row_update",
           JSON.stringify(job),
@@ -428,7 +437,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       });
     },
   
-  createWritebackJobFromProposal(proposalId: string, options: CreateWritebackJobOptions = {}): WritebackJobV1 | WritebackJobV2 | WritebackJobV3 | WritebackJobV4 {
+  createWritebackJobFromProposal(proposalId: string, options: CreateWritebackJobOptions = {}): WritebackJobV1 | WritebackJobV2 | WritebackJobV3 | WritebackJobV4 | WritebackJobV5 {
       const proposal = this.requireProposal(proposalId);
       assertWritebackAllowed(proposal, "converted into a writeback job");
       if (proposal.state !== "approved" && proposal.state !== "pending_worker") {
@@ -439,7 +448,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
         throw new ProposalStoreError("WRITEBACK_NOT_REQUIRED", `proposal ${proposalId} uses ${changeSet.writeback.mode}`);
       }
       const writebackExecutor = (changeSet.writeback as { executor?: unknown }).executor;
-      if (typeof writebackExecutor === "string" && writebackExecutor !== "sql_update" && writebackExecutor !== "trusted_worker_required") {
+      if (typeof writebackExecutor === "string" && writebackExecutor !== "sql_update" && writebackExecutor !== "trusted_worker_required" && writebackExecutor !== "semantic_rule") {
         throw new ProposalStoreError("WRITEBACK_NOT_DIRECT_SQL", `proposal ${proposalId} uses app-owned or non-local writeback executor ${writebackExecutor}`);
       }
       if (changeSet.source.kind !== "external_postgres" && changeSet.source.kind !== "external_mysql") {
@@ -455,6 +464,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
         attempt,
         expires_at: new Date(now + leaseSeconds * 1000).toISOString(),
       };
+      const tenantGuard = changeSet.guards.tenant;
       const common = {
         writeback_job_id: writebackJobId,
         proposal_id: proposal.proposal_id,
@@ -462,7 +472,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
         proposal_hash: proposal.proposal_hash,
         runner_scope: { project_id: options.project_id ?? "local", source_id: proposal.source_id },
         engine,
-        tenant_guard: changeSet.guards.tenant,
+        tenant_guard: tenantGuard!,
         ...(changeSet.guards.principal_scope ? { principal_scope: changeSet.guards.principal_scope } : {}),
         allowed_columns: changeSet.guards.allowed_columns,
         ...("freshness" in changeSet && changeSet.freshness
@@ -472,7 +482,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
         lease,
       } as const;
       const inverseCapture = inverseCaptureFromChangeSet(changeSet, writebackJobId);
-      const job: WritebackJobV1 | WritebackJobV2 | WritebackJobV3 | WritebackJobV4 = changeSet.schema_version === protocolVersions.changeSet
+      const job: WritebackJobV1 | WritebackJobV2 | WritebackJobV3 | WritebackJobV4 | WritebackJobV5 = changeSet.schema_version === protocolVersions.changeSet
         ? {
           schema_version: protocolVersions.writebackJob,
           ...common,
@@ -496,6 +506,44 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
           ...(changeSet.guards.version_advance ? { version_advance: changeSet.guards.version_advance } : {}),
           frozen_set: changeSet.frozen_set,
           ...(inverseCapture ? { inverse_capture: inverseCapture } : {}),
+        } : changeSet.schema_version === protocolVersions.changeSetV4 ? {
+          schema_version: protocolVersions.writebackJobV5,
+          writeback_job_id: writebackJobId,
+          proposal_id: proposal.proposal_id,
+          proposal_hash: proposal.proposal_hash,
+          approval_id: semanticApprovalSetDigest(proposal, this.approvals(proposal.proposal_id)),
+          ...(changeSet.contract ? {
+            contract: {
+              contract_id: options.project_id ?? "local",
+              contract_version_id: changeSet.contract.version,
+              digest: changeSet.contract.digest,
+            },
+          } : {}),
+          runner_scope: { project_id: options.project_id ?? "local", source_id: proposal.source_id },
+          engine,
+          operation: changeSet.operation,
+          target: {
+            schema: proposal.source_schema,
+            table: proposal.source_table,
+            primary_key: changeSet.source.primary_key,
+            ...(changeSet.guards.tenant ? { tenant_guard: changeSet.guards.tenant } : {}),
+            ...(changeSet.guards.organization_scope ? { organization_scope: changeSet.guards.organization_scope } : {}),
+            ...(changeSet.guards.principal_scope ? { principal_scope: changeSet.guards.principal_scope } : {}),
+          },
+          allowed_columns: changeSet.guards.allowed_columns,
+          patch: changeSet.patch,
+          conflict_guard: changeSet.guards.expected_version
+            ? {
+              kind: "version_column",
+              column: changeSet.guards.expected_version.column,
+              expected_value: changeSet.guards.expected_version.value,
+            }
+            : { kind: "none" },
+          ...(changeSet.guards.version_advance ? { version_advance: changeSet.guards.version_advance } : {}),
+          ...(changeSet.guards.deduplication ? { deduplication: changeSet.guards.deduplication } : {}),
+          semantic_authority: changeSet.semantic_authority,
+          idempotency_key: `semantic:${proposal.proposal_id}`,
+          lease,
         } : {
           schema_version: protocolVersions.writebackJobV4,
           writeback_job_id: writebackJobId,

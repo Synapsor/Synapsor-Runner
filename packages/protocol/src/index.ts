@@ -7,6 +7,46 @@ export {
 import {
   canonicalJsonDigest,
 } from "./canonical-json.js";
+export {
+  changeSetV4Schema,
+  eligibilityProofDigest,
+  eligibilityProofV1Schema,
+  executionReceiptV5Schema,
+  exactDerivedEffectDigest,
+  exactDerivedEffectV1Schema,
+  normalizedWritebackJobV5InputSchema,
+  normalizedWritebackResultV5Schema,
+  parseEligibilityProof,
+  parseSemanticAuthority,
+  parseSemanticVerificationResult,
+  semanticAuthorityV1Schema,
+  semanticDependencyV1Schema,
+  semanticProtocolVersions,
+  semanticSubjectBindingV1Schema,
+  semanticVerificationResultSchema,
+  writebackJobV5Schema,
+  type ChangeSetV4,
+  type EligibilityProofV1,
+  type ExecutionReceiptV5,
+  type ExactDerivedEffectProtocolV1,
+  type NormalizedWritebackJobV5,
+  type NormalizedWritebackResultV5,
+  type SemanticAuthorityV1,
+  type SemanticDependencyV1,
+  type SemanticSubjectBindingV1,
+  type SemanticVerificationResultV1,
+  type WritebackJobV5,
+} from "./semantic-action.js";
+import {
+  changeSetV4Schema,
+  executionReceiptV5Schema,
+  normalizedWritebackJobV5InputSchema,
+  normalizedWritebackResultV5Schema,
+  writebackJobV5Schema,
+  type ChangeSetV4,
+  type ExecutionReceiptV5,
+  type WritebackJobV5,
+} from "./semantic-action.js";
 
 export {
   PrivacyBoundaryError,
@@ -45,16 +85,19 @@ export const protocolVersions = {
   changeSet: "synapsor.change-set.v1",
   changeSetV2: "synapsor.change-set.v2",
   changeSetV3: "synapsor.change-set.v3",
+  changeSetV4: "synapsor.change-set.v4",
   compensationChangeSet: "synapsor.compensation-change-set.v1",
   inverseDescriptor: "synapsor.inverse-descriptor.v1",
   writebackJob: "synapsor.writeback-job.v1",
   writebackJobV2: "synapsor.writeback-job.v2",
   writebackJobV3: "synapsor.writeback-job.v3",
   writebackJobV4: "synapsor.writeback-job.v4",
+  writebackJobV5: "synapsor.writeback-job.v5",
   executionReceipt: "synapsor.execution-receipt.v1",
   executionReceiptV2: "synapsor.execution-receipt.v2",
   executionReceiptV3: "synapsor.execution-receipt.v3",
   executionReceiptV4: "synapsor.execution-receipt.v4",
+  executionReceiptV5: "synapsor.execution-receipt.v5",
   runnerRegistration: "synapsor.runner-registration.v1",
   runnerControl: "synapsor.runner-control.v1",
   runnerProposal: "synapsor.runner-proposal.v1",
@@ -66,6 +109,7 @@ export const protocolVersions = {
   normalizedWritebackJobV2: "2.0",
   normalizedWritebackJobV3: "3.0",
   normalizedWritebackJobV4: "4.0",
+  normalizedWritebackJobV5: "5.0",
 } as const;
 
 export const writebackEngineSchema = z.enum(["postgres", "mysql"]);
@@ -1073,7 +1117,7 @@ export const normalizedWritebackJobV4InputSchema = z.object({
   if (JSON.stringify(job.target.principal_scope) !== JSON.stringify(job.compensation.principal_scope)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "compensation principal mismatch", path: ["target", "principal_scope"] });
 });
 
-export const writebackJobSchema = z.union([legacyWritebackJobSchema, normalizedWritebackJobV4InputSchema, normalizedWritebackJobV3InputSchema, normalizedWritebackJobV2InputSchema, normalizedWritebackJobV1Schema, writebackJobV4Schema, writebackJobV3Schema, writebackJobV2Schema]);
+export const writebackJobSchema = z.union([legacyWritebackJobSchema, normalizedWritebackJobV5InputSchema, normalizedWritebackJobV4InputSchema, normalizedWritebackJobV3InputSchema, normalizedWritebackJobV2InputSchema, normalizedWritebackJobV1Schema, writebackJobV5Schema, writebackJobV4Schema, writebackJobV3Schema, writebackJobV2Schema]);
 
 export const executionReceiptV1Schema = z.object({
   schema_version: z.literal(protocolVersions.executionReceipt),
@@ -1311,7 +1355,7 @@ export const normalizedWritebackResultV4Schema = z.object({
   if (result.status === "reconciliation_required" && !result.intent_id) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "reconciliation_required results require intent_id", path: ["intent_id"] });
 });
 
-export const writebackResultSchema = z.union([legacyWritebackResultSchema, normalizedExecutionReceiptV1Schema, normalizedWritebackResultV4Schema, normalizedWritebackResultV3Schema, normalizedWritebackResultV2Schema]);
+export const writebackResultSchema = z.union([legacyWritebackResultSchema, normalizedExecutionReceiptV1Schema, normalizedWritebackResultV5Schema, normalizedWritebackResultV4Schema, normalizedWritebackResultV3Schema, normalizedWritebackResultV2Schema]);
 
 export const runnerRegistrationV1Schema = z.object({
   schema_version: z.literal(protocolVersions.runnerRegistration),
@@ -1342,7 +1386,7 @@ export const runnerProposalV1Schema = z.object({
     contract_version_id: z.string().min(1),
     digest: sha256,
   }),
-  change_set: z.union([changeSetV1Schema, changeSetV2Schema, changeSetV3Schema, compensationChangeSetV1Schema]),
+  change_set: z.union([changeSetV1Schema, changeSetV2Schema, changeSetV3Schema, changeSetV4Schema, compensationChangeSetV1Schema]),
   evidence_metadata: z.record(z.unknown()).optional(),
   query_audit: z.record(z.unknown()).optional(),
 }).superRefine((proposal, ctx) => {
@@ -1388,7 +1432,7 @@ export type ChangeSetV1 = z.infer<typeof changeSetV1Schema>;
 export type ChangeSetV2 = z.infer<typeof changeSetV2Schema>;
 export type ChangeSetV3 = z.infer<typeof changeSetV3Schema>;
 export type CompensationChangeSetV1 = z.infer<typeof compensationChangeSetV1Schema>;
-export type ChangeSet = ChangeSetV1 | ChangeSetV2 | ChangeSetV3 | CompensationChangeSetV1;
+export type ChangeSet = ChangeSetV1 | ChangeSetV2 | ChangeSetV3 | ChangeSetV4 | CompensationChangeSetV1;
 export type WritebackJobV1 = z.infer<typeof writebackJobV1Schema>;
 export type WritebackJobV2 = z.input<typeof writebackJobV2Schema>;
 export type WritebackJobV3 = z.input<typeof writebackJobV3Schema>;
@@ -1397,7 +1441,7 @@ export type ExecutionReceiptV1 = z.infer<typeof executionReceiptV1Schema>;
 export type ExecutionReceiptV2 = z.infer<typeof executionReceiptV2Schema>;
 export type ExecutionReceiptV3 = z.infer<typeof executionReceiptV3Schema>;
 export type ExecutionReceiptV4 = z.infer<typeof executionReceiptV4Schema>;
-export type ExecutionReceipt = ExecutionReceiptV1 | ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4;
+export type ExecutionReceipt = ExecutionReceiptV1 | ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4 | ExecutionReceiptV5;
 export type InverseDescriptorV1 = z.infer<typeof inverseDescriptorV1Schema>;
 export type FreshnessDependencyV1 = z.infer<typeof freshnessDependencyV1Schema>;
 export type FreshnessAuthorityV1 = z.infer<typeof freshnessAuthorityV1Schema>;
@@ -1523,7 +1567,7 @@ function normalizeConflictGuard(guard: z.infer<typeof publicConflictGuardSchema>
 }
 
 export function parseChangeSet(input: unknown): ChangeSet {
-  return z.union([changeSetV1Schema, changeSetV2Schema, changeSetV3Schema, compensationChangeSetV1Schema]).parse(input);
+  return z.union([changeSetV1Schema, changeSetV2Schema, changeSetV3Schema, changeSetV4Schema, compensationChangeSetV1Schema]).parse(input);
 }
 
 export function parseFreshnessAuthority(input: unknown): FreshnessAuthorityV1 {
@@ -1539,7 +1583,7 @@ export function parseWritebackJob(input: unknown): WritebackJob {
 }
 
 export function parseExecutionReceipt(input: unknown): ExecutionReceipt {
-  return z.union([executionReceiptV1Schema, executionReceiptV2Schema, executionReceiptV3Schema, executionReceiptV4Schema]).parse(input);
+  return z.union([executionReceiptV1Schema, executionReceiptV2Schema, executionReceiptV3Schema, executionReceiptV4Schema, executionReceiptV5Schema]).parse(input);
 }
 
 export function parseWritebackResult(input: unknown): WritebackResult {

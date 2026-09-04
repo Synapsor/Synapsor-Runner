@@ -123,11 +123,14 @@ await writeFile(
     "#!/usr/bin/env node",
     "import { spawnSync } from 'node:child_process';",
     "import { existsSync, readdirSync, statSync } from 'node:fs';",
-    "import { dirname, join } from 'node:path';",
+    "import { basename, dirname, join } from 'node:path';",
     "import { fileURLToPath } from 'node:url';",
     "",
     "const __dirname = dirname(fileURLToPath(import.meta.url));",
-    "const commandName = 'synapsor-runner';",
+    "const invokedPath = process.argv[1] ?? '';",
+    "const commandName = basename(invokedPath) === 'cli.js'",
+    "  ? `${JSON.stringify(process.execPath)} ${JSON.stringify(invokedPath)}`",
+    "  : 'synapsor-runner';",
     "const runnerBundle = join(__dirname, 'runner.mjs');",
     "const repositoryRoot = join(__dirname, '..', '..', '..');",
     "const sourceRoots = [",
@@ -185,6 +188,7 @@ const packageRoot = resolve(root, "apps/runner");
 await cp(resolve(root, "README.md"), resolve(packageRoot, "README.md"));
 
 const publicDocs = [
+  "action-rule-engine.md",
   "agent-database-permissions.md",
   "ai-agent-production-database.md",
   "alternatives.md",

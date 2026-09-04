@@ -1240,6 +1240,9 @@ export function createTerminalAnalyticsShellIo(input: {
     const wasFlowing = readable.readableFlowing === true;
     const color = !("NO_COLOR" in process.env);
     const theme = terminalTheme(color);
+    const yesIndex = choice.options.findIndex((option) => option.value === "yes");
+    const noIndex = choice.options.findIndex((option) => option.value === "no");
+    const isBinaryConfirmation = choice.options.length === 2 && yesIndex >= 0 && noIndex >= 0;
 
     const nextKey = () => {
       const queued = queuedKeys.shift();
@@ -1292,7 +1295,9 @@ export function createTerminalAnalyticsShellIo(input: {
           ];
         }),
         "",
-        `${theme.key("Up/Down")} Move   ${theme.key("Enter")} Select   ${theme.key("Esc")} Back`,
+        `${theme.key("Up/Down")} Move   `
+          + (isBinaryConfirmation ? `${theme.key("Y/N")} Choose   ` : "")
+          + `${theme.key("Enter")} Select   ${theme.key("Esc")} Back`,
       ].flatMap((line) =>
         wrapStyledTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
       pickerRenderer.render(lines);
@@ -1315,6 +1320,10 @@ export function createTerminalAnalyticsShellIo(input: {
           selected = 0;
         } else if (key.name === "end") {
           selected = choice.options.length - 1;
+        } else if (isBinaryConfirmation && key.name?.toLowerCase() === "y") {
+          selected = yesIndex;
+        } else if (isBinaryConfirmation && key.name?.toLowerCase() === "n") {
+          selected = noIndex;
         } else if (key.name === "return" || key.name === "enter") {
           return choice.options[selected]!.value;
         } else if (key.name === "escape" || (key.ctrl && key.name === "c")) {
@@ -1581,7 +1590,14 @@ export function createTerminalAnalyticsShellIo(input: {
     readConversation,
     choose,
     write: (value) => {
-      writable.write(terminal ? padTerminalBlock(value) : value);
+      if (!terminal) {
+        writable.write(value);
+        return;
+      }
+      const width = terminalContentWidth(terminalColumns());
+      const wrapped = value.split(/\r?\n/u).flatMap((line) =>
+        wrapStyledTerminalLine(line, width).map((physicalLine) => padTerminalLine(physicalLine)));
+      writable.write(wrapped.join("\n"));
     },
     writeChunk: (value) => {
       writable.write(value);

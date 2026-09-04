@@ -26,7 +26,7 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "supervised_worker", "notifications", "production_explore", "model_output", "action_boundary", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "supervised_worker", "notifications", "production_explore", "action_rules", "model_output", "action_boundary", "strict", "result_format"]);
 const MODEL_OUTPUT_KEYS = new Set(["authority_metadata"]);
 const ACTION_BOUNDARY_KEYS = new Set(["schema_version", "name", "digest", "authority"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
@@ -75,6 +75,11 @@ const PRODUCTION_EXPLORE_TENANT_LIMIT_KEYS = new Set([
   "requests_per_minute",
   "max_response_cells_per_response",
 ]);
+const ACTION_RULES_KEYS = new Set([
+  "project_root",
+  "subject_reference_hmac_key_env",
+  "subject_reference_namespace",
+]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const GOVERNANCE_KEYS = new Set(["mode", "connection_file", "evidence_residency", "queue_when_unavailable", "sync_interval_ms", "max_attempts", "outbox_retention_days"]);
 const GENERATED_AUTHORITY_KEYS = new Set([
@@ -88,10 +93,27 @@ const MINIMUM_COHORT_OVERRIDE_KEYS = new Set([
   "minimum_cohort_size",
   "review_digest",
 ]);
-const SUPERVISED_WORKER_KEYS = new Set(["enabled", "profile", "capabilities"]);
+const SUPERVISED_WORKER_KEYS = new Set(["enabled", "profile", "capabilities", "outcomes"]);
 const SUPERVISED_WORKER_CAPABILITY_KEYS = new Set([
   "capability",
   "contract_digest",
+  "mode",
+  "concurrency",
+  "queue_limit",
+  "lease_seconds",
+  "max_attempts",
+  "proposal_ttl_seconds",
+  "rate_limit",
+  "write_url_env",
+  "require_least_privilege_writer",
+  "writer_posture_fingerprint",
+  "worker_identity",
+  "control_role",
+  "required_attention_sinks",
+]);
+const SUPERVISED_WORKER_OUTCOME_KEYS = new Set([
+  "outcome",
+  "action_boundary_digest",
   "mode",
   "concurrency",
   "queue_limit",
@@ -347,6 +369,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validateSessionAuth(input.session_auth, input.trusted_context, input.contexts, strict, errors);
   validateHttpSecurity(input.http_security, input.session_auth, input.trusted_context, input.contexts, strict, errors, warnings);
   validateProductionExplore(input.production_explore, input, strict, errors);
+  validateActionRules(input.action_rules, strict, errors);
   validateRateLimits(input.rate_limits, strict, errors);
   validateMetrics(input.metrics, strict, errors);
   validateGraduatedTrust(input.graduated_trust, strict, errors);
@@ -362,6 +385,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
     hasContracts,
     input.generated_authority,
     input.production_explore,
+    input.action_rules,
   );
   validateActionBoundary(input.action_boundary, input.capabilities, hasContracts, strict, errors);
   validateNotifications(input.notifications, strict, errors);
@@ -373,6 +397,38 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateActionRules(
+  value: unknown,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.action_rules", code: "ACTION_RULES_NOT_OBJECT", message: "action_rules must describe the local immutable Action Rule authority and optional shared subject-reference binding." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, ACTION_RULES_KEYS, "$.action_rules", errors);
+  if (!isNonEmptyString(value.project_root)
+    || value.project_root.includes("://")
+    || /[\u0000-\u001f\u007f]/.test(value.project_root)) {
+    errors.push({ path: "$.action_rules.project_root", code: "ACTION_RULES_PROJECT_ROOT_REQUIRED", message: "action_rules.project_root must name the local project containing the activated Action Rule authority." });
+  }
+  const keyEnv = value.subject_reference_hmac_key_env;
+  const namespace = value.subject_reference_namespace;
+  if (keyEnv !== undefined && !isEnvName(keyEnv)) {
+    errors.push({ path: "$.action_rules.subject_reference_hmac_key_env", code: "ACTION_RULES_HMAC_KEY_ENV_INVALID", message: "subject_reference_hmac_key_env must name an environment variable." });
+  }
+  if (namespace !== undefined
+    && (!isNonEmptyString(namespace)
+      || namespace.length > 128
+      || !/^[a-z][a-z0-9_.:-]*$/.test(namespace))) {
+    errors.push({ path: "$.action_rules.subject_reference_namespace", code: "ACTION_RULES_NAMESPACE_INVALID", message: "subject_reference_namespace must be a stable lower-case deployment namespace." });
+  }
+  if ((keyEnv === undefined) !== (namespace === undefined)) {
+    errors.push({ path: "$.action_rules", code: "ACTION_RULES_SHARED_SUBJECT_BINDING_INCOMPLETE", message: "Production subject references require both subject_reference_hmac_key_env and subject_reference_namespace; omit both for one local project runtime." });
+  }
 }
 
 function validateActionBoundary(
@@ -883,8 +939,16 @@ function validateSupervisedWorker(
     errors.push({ path: "$.supervised_worker.capabilities", code: "SUPERVISED_WORKER_CAPABILITIES_REQUIRED", message: "supervised_worker.capabilities must be an explicit exact-digest allowlist." });
     return;
   }
-  if (value.enabled === true && value.capabilities.length === 0) {
-    errors.push({ path: "$.supervised_worker.capabilities", code: "SUPERVISED_WORKER_ALLOWLIST_REQUIRED", message: "enabled supervised-worker execution requires at least one exact capability/digest allowlist entry." });
+  const outcomeEntries = value.outcomes === undefined
+    ? []
+    : Array.isArray(value.outcomes)
+      ? value.outcomes
+      : undefined;
+  if (outcomeEntries === undefined) {
+    errors.push({ path: "$.supervised_worker.outcomes", code: "SUPERVISED_WORKER_OUTCOMES_INVALID", message: "supervised_worker.outcomes must be an exact outcome/Action Boundary digest allowlist when present." });
+  }
+  if (value.enabled === true && value.capabilities.length === 0 && (outcomeEntries?.length ?? 0) === 0) {
+    errors.push({ path: "$.supervised_worker", code: "SUPERVISED_WORKER_ALLOWLIST_REQUIRED", message: "enabled supervised-worker execution requires at least one exact capability or semantic outcome allowlist entry." });
   }
   if (config.mode !== "review" && value.enabled === true) {
     errors.push({ path: "$.mode", code: "SUPERVISED_WORKER_REVIEW_MODE_REQUIRED", message: "supervised-worker execution requires Runner review mode." });
@@ -1080,6 +1144,135 @@ function validateSupervisedWorker(
     }
     if (operationKind === "insert" && !isRecord(operation.deduplication)) {
       errors.push({ path: `${path}.capability`, code: "SUPERVISED_WORKER_INSERT_DEDUP_REQUIRED", message: "supervised-worker INSERT requires reviewed deterministic source deduplication." });
+    }
+  }
+  if (outcomeEntries) {
+    validateSupervisedWorkerOutcomes({
+      entries: outcomeEntries,
+      config,
+      deployment: value,
+      strict,
+      errors,
+      notificationSinks,
+      seen,
+    });
+  }
+}
+
+function validateSupervisedWorkerOutcomes(input: {
+  entries: unknown[];
+  config: JsonRecord;
+  deployment: JsonRecord;
+  strict: boolean;
+  errors: ConfigIssue[];
+  notificationSinks: Map<string, JsonRecord>;
+  seen: Set<string>;
+}): void {
+  const sources = isRecord(input.config.sources) ? input.config.sources : {};
+  for (const [index, rawEntry] of input.entries.entries()) {
+    const path = `$.supervised_worker.outcomes[${index}]`;
+    if (!isRecord(rawEntry)) {
+      input.errors.push({ path, code: "SUPERVISED_WORKER_OUTCOME_NOT_OBJECT", message: "each semantic supervised-worker allowlist entry must be an object." });
+      continue;
+    }
+    if (input.strict) checkUnknownKeys(rawEntry, SUPERVISED_WORKER_OUTCOME_KEYS, path, input.errors);
+    if (!isQualifiedName(rawEntry.outcome)) {
+      input.errors.push({ path: `${path}.outcome`, code: "INVALID_SUPERVISED_WORKER_OUTCOME", message: "outcome must be one fixed qualified semantic outcome name." });
+    }
+    if (typeof rawEntry.action_boundary_digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(rawEntry.action_boundary_digest)) {
+      input.errors.push({ path: `${path}.action_boundary_digest`, code: "INVALID_SUPERVISED_WORKER_DIGEST", message: "action_boundary_digest must be the exact canonical sha256 digest." });
+    }
+    if (rawEntry.mode !== "supervised_worker") {
+      input.errors.push({ path: `${path}.mode`, code: "INVALID_SUPERVISED_WORKER_MODE", message: "mode must be supervised_worker." });
+    }
+    for (const [key, minimum, maximum] of [
+      ["concurrency", 1, 32],
+      ["queue_limit", 1, 10000],
+      ["lease_seconds", 15, 3600],
+      ["max_attempts", 1, 100],
+      ["proposal_ttl_seconds", 60, 2_592_000],
+    ] as const) {
+      if (!Number.isSafeInteger(rawEntry[key]) || Number(rawEntry[key]) < minimum || Number(rawEntry[key]) > maximum) {
+        input.errors.push({ path: `${path}.${key}`, code: "INVALID_SUPERVISED_WORKER_BOUND", message: `${key} must be an integer from ${minimum} through ${maximum}.` });
+      }
+    }
+    if (!isEnvName(rawEntry.write_url_env)) {
+      input.errors.push({ path: `${path}.write_url_env`, code: "SUPERVISED_WORKER_WRITE_ENV_REQUIRED", message: "write_url_env must name the separately configured writer credential environment variable." });
+    }
+    if (rawEntry.require_least_privilege_writer !== undefined && typeof rawEntry.require_least_privilege_writer !== "boolean") {
+      input.errors.push({ path: `${path}.require_least_privilege_writer`, code: "INVALID_SUPERVISED_WORKER_POSTURE_MODE", message: "require_least_privilege_writer must be an explicit boolean when present." });
+    }
+    if (rawEntry.writer_posture_fingerprint !== undefined
+      && (typeof rawEntry.writer_posture_fingerprint !== "string" || !/^sha256:[a-f0-9]{64}$/.test(rawEntry.writer_posture_fingerprint))) {
+      input.errors.push({ path: `${path}.writer_posture_fingerprint`, code: "INVALID_SUPERVISED_WORKER_POSTURE_FINGERPRINT", message: "writer_posture_fingerprint must be the reviewed non-secret sha256 posture digest." });
+    }
+    if (rawEntry.require_least_privilege_writer === true && rawEntry.writer_posture_fingerprint === undefined) {
+      input.errors.push({ path: `${path}.writer_posture_fingerprint`, code: "SUPERVISED_WORKER_POSTURE_FINGERPRINT_REQUIRED", message: "hardened writer posture requires an exact reviewed posture fingerprint." });
+    }
+    if (input.deployment.enabled === true && input.deployment.profile === "production"
+      && (rawEntry.require_least_privilege_writer !== true || rawEntry.writer_posture_fingerprint === undefined)) {
+      input.errors.push({ path, code: "SUPERVISED_WORKER_PRODUCTION_POSTURE_REQUIRED", message: "production supervised execution requires live least-privilege writer verification bound to an exact reviewed posture fingerprint." });
+    }
+    if (rawEntry.worker_identity !== undefined && !isSafeName(rawEntry.worker_identity)) {
+      input.errors.push({ path: `${path}.worker_identity`, code: "INVALID_SUPERVISED_WORKER_IDENTITY", message: "worker_identity must be a fixed safe operator identity." });
+    }
+    if (rawEntry.control_role !== undefined && !isSafeName(rawEntry.control_role)) {
+      input.errors.push({ path: `${path}.control_role`, code: "INVALID_SUPERVISED_WORKER_CONTROL_ROLE", message: "control_role must be a fixed safe operator role." });
+    }
+    if (rawEntry.required_attention_sinks !== undefined) {
+      if (!Array.isArray(rawEntry.required_attention_sinks)
+        || rawEntry.required_attention_sinks.length < 1
+        || rawEntry.required_attention_sinks.length > 8
+        || rawEntry.required_attention_sinks.some((sink) => !isSafeName(sink))) {
+        input.errors.push({ path: `${path}.required_attention_sinks`, code: "INVALID_REQUIRED_ATTENTION_SINKS", message: "required_attention_sinks must contain 1 through 8 fixed sink ids." });
+      } else {
+        const notifications = isRecord(input.config.notifications) ? input.config.notifications : undefined;
+        if (notifications?.enabled !== true) {
+          input.errors.push({ path: "$.notifications.enabled", code: "HEALTH_GATE_NOTIFICATIONS_REQUIRED", message: "required attention sinks need notifications.enabled=true." });
+        }
+        for (const [sinkIndex, sinkId] of rawEntry.required_attention_sinks.entries()) {
+          const sink = input.notificationSinks.get(String(sinkId));
+          if (!sink || sink.enabled === false) {
+            input.errors.push({ path: `${path}.required_attention_sinks[${sinkIndex}]`, code: "REQUIRED_ATTENTION_SINK_UNAVAILABLE", message: `required attention sink ${String(sinkId)} must name an enabled configured sink.` });
+          }
+        }
+      }
+    }
+    if (!isRecord(rawEntry.rate_limit)) {
+      input.errors.push({ path: `${path}.rate_limit`, code: "SUPERVISED_WORKER_RATE_LIMIT_REQUIRED", message: "rate_limit must define a bounded execution window." });
+    } else {
+      if (input.strict) checkUnknownKeys(rawEntry.rate_limit, SUPERVISED_WORKER_RATE_LIMIT_KEYS, `${path}.rate_limit`, input.errors);
+      if (!Number.isSafeInteger(rawEntry.rate_limit.executions) || Number(rawEntry.rate_limit.executions) < 1 || Number(rawEntry.rate_limit.executions) > 100000) {
+        input.errors.push({ path: `${path}.rate_limit.executions`, code: "INVALID_SUPERVISED_WORKER_RATE", message: "rate_limit.executions must be an integer from 1 through 100000." });
+      }
+      if (!Number.isSafeInteger(rawEntry.rate_limit.window_seconds) || Number(rawEntry.rate_limit.window_seconds) < 1 || Number(rawEntry.rate_limit.window_seconds) > 86400) {
+        input.errors.push({ path: `${path}.rate_limit.window_seconds`, code: "INVALID_SUPERVISED_WORKER_WINDOW", message: "rate_limit.window_seconds must be an integer from 1 through 86400." });
+      }
+    }
+    const key = `${String(rawEntry.outcome)}:${String(rawEntry.action_boundary_digest)}`;
+    if (input.seen.has(key)) {
+      input.errors.push({ path, code: "DUPLICATE_SUPERVISED_WORKER_ALLOWLIST", message: "each capability or semantic outcome/digest control target may appear only once." });
+    }
+    input.seen.add(key);
+
+    if (!isRecord(input.config.action_rules) || !isNonEmptyString(input.config.action_rules.project_root)) {
+      input.errors.push({ path: "$.action_rules.project_root", code: "SUPERVISED_WORKER_ACTION_RULE_AUTHORITY_REQUIRED", message: "semantic supervised execution requires action_rules.project_root so runtime can reload exact active authority." });
+    }
+    const matchingSources = Object.entries(sources).filter(([, source]) =>
+      isRecord(source) && source.write_url_env === rawEntry.write_url_env && source.read_only !== true);
+    if (matchingSources.length === 0) {
+      input.errors.push({ path: `${path}.write_url_env`, code: "SUPERVISED_WORKER_WRITER_MISMATCH", message: "write_url_env must match a configured writable source without embedding a credential." });
+    }
+    for (const [sourceName, source] of matchingSources) {
+      if (!isRecord(source) || !isRecord(source.receipts)) {
+        input.errors.push({ path: `$.sources.${sourceName}.receipts`, code: "SUPERVISED_WORKER_RECEIPT_AUTHORITY_REQUIRED", message: "semantic supervised execution requires explicit source_db or runner_ledger receipt authority." });
+      } else if (rawEntry.require_least_privilege_writer === true
+        && source.receipts.authority === "source_db"
+        && (source.receipts.provisioning !== "precreated"
+          || !isSafeIdentifier(source.receipts.schema)
+          || !isSafeIdentifier(source.receipts.table))) {
+        input.errors.push({ path: `$.sources.${sourceName}.receipts`, code: "SUPERVISED_WORKER_PRECREATED_RECEIPT_REQUIRED", message: "hardened semantic execution with source_db receipts requires an explicitly named precreated receipt table." });
+      }
     }
   }
 }
@@ -2289,6 +2482,7 @@ function validateCapabilities(
   hasContracts = false,
   generatedAuthority?: unknown,
   productionExplore?: unknown,
+  actionRules?: unknown,
 ): void {
   if (mode === "cloud" && value === undefined) return;
   if (hasContracts && value === undefined) return;
@@ -2297,6 +2491,10 @@ function validateCapabilities(
     && productionExplore.enabled === true
     && (value === undefined || (Array.isArray(value) && value.length === 0));
   if (productionExploreSurface) return;
+  const semanticActionSurface = isRecord(actionRules)
+    && isNonEmptyString(actionRules.project_root)
+    && (value === undefined || (Array.isArray(value) && value.length === 0));
+  if (semanticActionSurface) return;
   const emptyReadOnlyShell = mode === "read_only"
     && Array.isArray(value)
     && value.length === 0;

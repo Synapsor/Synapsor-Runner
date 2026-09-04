@@ -1,4 +1,19 @@
-import { evaluateApprovalPolicy, resolveSupervisedWorkerEligibility, type RuntimeCapabilityConfig, type RuntimeConfig, type RuntimeSupervisedWorkerCapabilityPolicy } from "@synapsor-runner/mcp-server";
+import {
+  resolveActivatedActionRule,
+  type RuntimeActionRuleRegistryV1,
+} from "@synapsor-runner/action-rules";
+import {
+  evaluateApprovalPolicy,
+  resolveSupervisedWorkerEligibility,
+  supervisedWorkerPolicies,
+  supervisedWorkerPolicyDigest,
+  supervisedWorkerPolicyName,
+  type RuntimeCapabilityConfig,
+  type RuntimeConfig,
+  type RuntimeSupervisedWorkerCapabilityPolicy,
+  type RuntimeSupervisedWorkerOutcomePolicy,
+  type RuntimeSupervisedWorkerPolicy,
+} from "@synapsor-runner/mcp-server";
 import {
   ProposalStore,
   type PolicyApprovalLimit,
@@ -249,28 +264,151 @@ export function assessSupervisedWriterPosture(
   };
 }
 
+export function assessSemanticSupervisedWriterPosture(
+  config: RuntimeConfig,
+  policy: RuntimeSupervisedWorkerOutcomePolicy,
+  registry: RuntimeActionRuleRegistryV1,
+  inspection: SchemaInspection,
+): SupervisedWriterPostureAssessment {
+  const reasons: string[] = [];
+  const fingerprint = rolePostureFingerprint(inspection);
+  const role = inspection.role_posture;
+  const allowed = new Map<string, Set<keyof NonNullable<TableInfo["role_posture"]>["privileges"]>>();
+  const required = new Map<string, Set<"insert" | "update" | "select">>();
+  const rlsRequired = new Set<string>();
+  const addAllowed = (
+    relation: string,
+    privileges: Array<keyof NonNullable<TableInfo["role_posture"]>["privileges"]>,
+  ) => {
+    const existing = allowed.get(relation) ?? new Set();
+    privileges.forEach((privilege) => existing.add(privilege));
+    allowed.set(relation, existing);
+  };
+  const addRequired = (relation: string, privilege: "insert" | "update" | "select") => {
+    const existing = required.get(relation) ?? new Set();
+    existing.add(privilege);
+    required.set(relation, existing);
+  };
+
+  for (const candidate of config.supervised_worker?.outcomes ?? []) {
+    if (candidate.write_url_env !== policy.write_url_env) continue;
+    let activated;
+    try {
+      activated = resolveActivatedActionRule(registry, candidate.outcome);
+    } catch {
+      reasons.push("allowlisted_outcome_unresolved");
+      continue;
+    }
+    if (activated.action_boundary_digest !== candidate.action_boundary_digest) {
+      reasons.push("action_boundary_digest_changed");
+      continue;
+    }
+    const compiled = activated.compiled;
+    const source = config.sources?.[compiled.source];
+    if (!source || source.engine !== inspection.engine || source.write_url_env !== policy.write_url_env) {
+      reasons.push("writer_source_mismatch");
+      continue;
+    }
+    const target = compiled.target_resource;
+    const targetRelation = `${target.schema}.${target.table}`;
+    const operation = compiled.effect_envelope.operation;
+    addAllowed(targetRelation, ["select", operation]);
+    addRequired(targetRelation, "select");
+    addRequired(targetRelation, operation);
+    if (source.database_scope?.mode === "postgres_rls") rlsRequired.add(targetRelation);
+
+    for (const binding of compiled.bindings) {
+      const relation = `${binding.resource.schema}.${binding.resource.table}`;
+      addAllowed(relation, ["select"]);
+      addRequired(relation, "select");
+      if (source.database_scope?.mode === "postgres_rls") rlsRequired.add(relation);
+    }
+    if (source.receipts?.authority === "source_db") {
+      if (source.receipts.provisioning !== "precreated" || !source.receipts.schema || !source.receipts.table) {
+        reasons.push("precreated_receipt_relation_required");
+      } else {
+        const receiptRelation = `${source.receipts.schema}.${source.receipts.table}`;
+        addAllowed(receiptRelation, ["select", "insert", "update"]);
+        addRequired(receiptRelation, "select");
+        addRequired(receiptRelation, "insert");
+        addRequired(receiptRelation, "update");
+      }
+    }
+  }
+
+  const enginePrivilegePostureSafe = inspection.engine === "mysql"
+    ? (role?.superuser === false || role?.superuser === "unsupported")
+      && (role?.bypass_rls === false || role?.bypass_rls === "unsupported")
+    : role?.superuser === false && role?.bypass_rls === false;
+  if (!role?.verified) reasons.push("writer_posture_unverified");
+  if (!enginePrivilegePostureSafe) reasons.push("writer_privileged_role");
+  if ((role?.owned_relations.length ?? 0) > 0) reasons.push("writer_owns_relation");
+  if (!policy.writer_posture_fingerprint) reasons.push("writer_posture_fingerprint_missing");
+  else if (fingerprint !== policy.writer_posture_fingerprint) reasons.push("writer_posture_fingerprint_changed");
+
+  const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
+  for (const [relation, requiredPrivileges] of required.entries()) {
+    const table = tables.get(relation);
+    if (!table?.role_posture) {
+      reasons.push("writer_relation_posture_unavailable");
+      continue;
+    }
+    for (const privilege of requiredPrivileges) {
+      if (!table.role_posture.privileges[privilege]) reasons.push(`writer_${privilege}_missing`);
+    }
+    if (rlsRequired.has(relation)
+      && (table.row_level_security !== true || table.role_posture.row_security_effective_for_current_role !== true)) {
+      reasons.push("writer_rls_not_effective");
+    }
+  }
+  for (const table of inspection.tables) {
+    const relation = `${table.schema}.${table.name}`;
+    const posture = table.role_posture;
+    if (!posture) {
+      reasons.push("writer_relation_posture_unavailable");
+      continue;
+    }
+    const granted = Object.entries(posture.privileges)
+      .filter(([, enabled]) => enabled)
+      .map(([privilege]) => privilege as keyof typeof posture.privileges);
+    if (granted.length === 0) continue;
+    const reviewed = allowed.get(relation);
+    if (!reviewed) reasons.push("writer_unreviewed_relation_privilege");
+    else if (granted.some((privilege) => !reviewed.has(privilege))) reasons.push("writer_excess_relation_privilege");
+    if (posture.current_role_is_owner || posture.current_role_can_assume_owner) reasons.push("writer_owns_relation");
+  }
+  return {
+    ok: reasons.length === 0,
+    fingerprint,
+    expected_fingerprint: policy.writer_posture_fingerprint ?? null,
+    reasons: [...new Set(reasons)].sort(),
+    allowed_relations: [...allowed.keys()].sort(),
+    writable_relations: [...(role?.writable_relations ?? [])].sort(),
+  };
+}
+
 
 function supervisedWriterPostureKey(
   environment: string,
-  policy: RuntimeSupervisedWorkerCapabilityPolicy,
+  policy: RuntimeSupervisedWorkerPolicy,
 ): string {
   return `supervised_writer_posture:${canonicalJsonDigest({
     environment,
-    capability: policy.capability,
-    contract_digest: policy.contract_digest,
+    authority: supervisedWorkerPolicyName(policy),
+    authority_digest: supervisedWorkerPolicyDigest(policy),
   })}`;
 }
 
 
 function supervisedWriterPostureAttentionKey(
   environment: string,
-  policy: RuntimeSupervisedWorkerCapabilityPolicy,
+  policy: RuntimeSupervisedWorkerPolicy,
 ): string {
   return [
     environment,
     "credential.posture_changed",
-    policy.capability,
-    policy.contract_digest,
+    supervisedWorkerPolicyName(policy),
+    supervisedWorkerPolicyDigest(policy),
   ].join(":");
 }
 
@@ -278,7 +416,7 @@ function supervisedWriterPostureAttentionKey(
 function recordSupervisedWriterPosture(
   store: ProposalStore,
   environment: string,
-  policy: RuntimeSupervisedWorkerCapabilityPolicy,
+  policy: RuntimeSupervisedWorkerPolicy,
   assessment: SupervisedWriterPostureAssessment,
 ): void {
   const stateKey = supervisedWriterPostureKey(environment, policy);
@@ -292,8 +430,8 @@ function recordSupervisedWriterPosture(
     status: assessment.ok ? "healthy" : "invalid",
     checked_at: new Date().toISOString(),
     occurrence,
-    capability: policy.capability,
-    contract_digest: policy.contract_digest,
+    capability: supervisedWorkerPolicyName(policy),
+    contract_digest: supervisedWorkerPolicyDigest(policy),
     expected_fingerprint: assessment.expected_fingerprint,
     observed_fingerprint: assessment.fingerprint,
     reason_codes: assessment.reasons,
@@ -314,13 +452,13 @@ function recordSupervisedWriterPosture(
     event_type: "credential.posture_changed",
     severity: "critical",
     environment,
-    capability: policy.capability,
-    contract_digest: policy.contract_digest,
+    capability: supervisedWorkerPolicyName(policy),
+    contract_digest: supervisedWorkerPolicyDigest(policy),
     attention_key: attentionKey,
     attention_required: true,
     immediate_default: true,
     failure_class: "SUPERVISED_WORKER_CREDENTIAL_POSTURE_INVALID",
-    summary: `${policy.capability} writer posture no longer matches reviewed least privilege`,
+    summary: `${supervisedWorkerPolicyName(policy)} writer posture no longer matches reviewed least privilege`,
     workbench_path: workbenchAttentionPath(attentionKey),
     details: {
       reason_codes: assessment.reasons.join(","),
@@ -330,7 +468,7 @@ function recordSupervisedWriterPosture(
       writable_relation_count: assessment.writable_relations.length,
       source_database_changed: false,
     },
-    source_event_key: `worker-posture:${policy.contract_digest}:${occurrence}:${canonicalJsonDigest({
+    source_event_key: `worker-posture:${supervisedWorkerPolicyDigest(policy)}:${occurrence}:${canonicalJsonDigest({
       fingerprint: assessment.fingerprint,
       reasons: assessment.reasons,
     })}`,
@@ -387,6 +525,53 @@ export async function assertSupervisedWriterPosture(
   return assessment;
 }
 
+export async function assertSemanticSupervisedWriterPosture(
+  store: ProposalStore,
+  config: RuntimeConfig,
+  policy: RuntimeSupervisedWorkerOutcomePolicy,
+  registry: RuntimeActionRuleRegistryV1,
+  env: NodeJS.ProcessEnv = process.env,
+  inspect: typeof inspectDatabase = inspectDatabase,
+): Promise<SupervisedWriterPostureAssessment | undefined> {
+  if (policy.require_least_privilege_writer !== true) return undefined;
+  const environment = config.supervised_worker?.profile ?? "unknown";
+  let assessment: SupervisedWriterPostureAssessment;
+  try {
+    const activated = resolveActivatedActionRule(registry, policy.outcome);
+    const source = config.sources?.[activated.compiled.source];
+    if (!source || source.write_url_env !== policy.write_url_env) throw new Error("writer source is unavailable");
+    const inspection = await inspect({
+      engine: source.engine,
+      databaseUrlEnv: policy.write_url_env,
+      statementTimeoutMs: source.statement_timeout_ms ?? 5_000,
+      env,
+    });
+    assessment = assessSemanticSupervisedWriterPosture(config, policy, registry, inspection);
+  } catch {
+    assessment = {
+      ok: false,
+      fingerprint: canonicalJsonDigest({
+        environment,
+        outcome: policy.outcome,
+        action_boundary_digest: policy.action_boundary_digest,
+        posture: "inspection_unavailable",
+      }),
+      expected_fingerprint: policy.writer_posture_fingerprint ?? null,
+      reasons: ["writer_posture_inspection_failed"],
+      allowed_relations: [],
+      writable_relations: [],
+    };
+  }
+  recordSupervisedWriterPosture(store, environment, policy, assessment);
+  if (!assessment.ok) {
+    throw workerPolicyError(
+      "SUPERVISED_WORKER_CREDENTIAL_POSTURE_INVALID",
+      `semantic supervised writer posture failed closed: ${assessment.reasons.join(", ")}`,
+    );
+  }
+  return assessment;
+}
+
 
 export function workerPolicyError(code: string, message: string): Error & { code: string } {
   return Object.assign(new Error(message), { code });
@@ -405,10 +590,12 @@ export function workerControlOperatorDecisionAction(action: WorkerControlAction)
 
 export function workerControlAllowsPolicy(
   state: ReturnType<ProposalStore["workerControlState"]>,
-  policy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]>,
+  policy: RuntimeSupervisedWorkerPolicy,
 ): boolean {
+  const name = supervisedWorkerPolicyName(policy);
+  const digest = supervisedWorkerPolicyDigest(policy);
   const control = state.capability_controls.find((entry) =>
-    entry.capability === policy.capability
-    && entry.contract_digest === policy.contract_digest);
+    entry.capability === name
+    && entry.contract_digest === digest);
   return control?.status !== "disabled" && control?.status !== "revoked";
 }

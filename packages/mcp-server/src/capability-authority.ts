@@ -1,11 +1,31 @@
 import type {
+  ActivatedActionRuleV1,
+} from "@synapsor-runner/action-rules";
+import type {
   ContextProvider,
   RuntimeWritebackMode,
   RuntimeCapabilityConfig,
+  RuntimeSupervisedWorkerPolicy,
+  SemanticSupervisedWorkerEligibility,
   SupervisedWorkerEligibility,
   RuntimeConfig,
   TrustedContextBindingMode,
 } from "./runtime-types.js";
+
+export function supervisedWorkerPolicyName(policy: RuntimeSupervisedWorkerPolicy): string {
+  return "capability" in policy ? policy.capability : policy.outcome;
+}
+
+export function supervisedWorkerPolicyDigest(policy: RuntimeSupervisedWorkerPolicy): `sha256:${string}` {
+  return "contract_digest" in policy ? policy.contract_digest : policy.action_boundary_digest;
+}
+
+export function supervisedWorkerPolicies(config: RuntimeConfig): RuntimeSupervisedWorkerPolicy[] {
+  return [
+    ...(config.supervised_worker?.capabilities ?? []),
+    ...(config.supervised_worker?.outcomes ?? []),
+  ];
+}
 
 export function resolveSupervisedWorkerEligibility(
   config: RuntimeConfig,
@@ -64,6 +84,63 @@ export function resolveSupervisedWorkerEligibility(
     reasons: uniqueReasons,
     capability: capability.name,
     ...(digest ? { contract_digest: digest } : {}),
+    ...(deployment ? { profile: deployment.profile } : {}),
+    ...(policy ? { policy } : {}),
+  };
+}
+
+export function resolveSemanticSupervisedWorkerEligibility(
+  config: RuntimeConfig,
+  activated: ActivatedActionRuleV1,
+  options: { workerIdentity?: string; phase?: "queue" | "execute" } = {},
+): SemanticSupervisedWorkerEligibility {
+  const reasons: string[] = [];
+  const deployment = config.supervised_worker;
+  const digest = activated.action_boundary_digest;
+  if (!deployment?.enabled) reasons.push("deployment_disabled");
+  if (config.mode !== "review") reasons.push("review_mode_required");
+  if (config.governance?.mode === "cloud_linked") reasons.push("cloud_linked_local_execution_forbidden");
+  if (activated.compiled.effect_envelope.writeback.supervised_worker !== "allowed") {
+    reasons.push("action_boundary_permission_missing");
+  }
+  const policy = deployment?.outcomes?.find((entry) =>
+    entry.outcome === activated.compiled.outcome
+    && entry.action_boundary_digest === digest
+    && entry.mode === "supervised_worker");
+  if (!policy) reasons.push("deployment_allowlist_mismatch");
+  if (
+    options.phase !== "queue"
+    && policy?.worker_identity
+    && policy.worker_identity !== options.workerIdentity
+  ) {
+    reasons.push("worker_identity_mismatch");
+  }
+
+  const envelope = activated.compiled.effect_envelope;
+  const source = config.sources?.[envelope.source];
+  if (!source || source.read_only === true || !source.write_url_env) {
+    reasons.push("writable_source_unavailable");
+  } else {
+    if (policy && policy.write_url_env !== source.write_url_env) reasons.push("writer_reference_mismatch");
+    if (!source.receipts) reasons.push("receipt_authority_missing");
+  }
+  if (!envelope.tenant_key && !envelope.organization_scope) reasons.push("trusted_scope_missing");
+  if (envelope.writeback.mode !== "direct_sql") reasons.push("direct_sql_required");
+  if (envelope.max_rows !== 1) reasons.push("single_row_required");
+  if (envelope.operation === "update" && !envelope.conflict_key) {
+    reasons.push("exact_conflict_guard_required");
+  }
+  if (envelope.operation === "insert" && !envelope.deduplication?.components.length) {
+    reasons.push("insert_deduplication_required");
+  }
+
+  const uniqueReasons = [...new Set(reasons)];
+  return {
+    eligible: uniqueReasons.length === 0,
+    code: uniqueReasons.length === 0 ? "SEMANTIC_SUPERVISED_WORKER_ELIGIBLE" : uniqueReasons[0]!.toUpperCase(),
+    reasons: uniqueReasons,
+    outcome: activated.compiled.outcome,
+    action_boundary_digest: digest,
     ...(deployment ? { profile: deployment.profile } : {}),
     ...(policy ? { policy } : {}),
   };

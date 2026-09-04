@@ -6,6 +6,8 @@ import {
   formatMcpClientHandoff,
   formatPostActivationAskSelection,
   formatPostActivationRouteLine,
+  hasActiveActionRuntime,
+  mcpClientPickerTransition,
   preferredRoute,
   runPostActivationAskHandoff,
   soleConfiguredHostedRoute,
@@ -14,6 +16,39 @@ import {
 import { ProviderCredentialInputCancelledError } from "./secret-input.js";
 
 describe("post-activation Ask handoff", () => {
+  it("discovers either legacy or verified semantic Action authority for the MCP handoff", async () => {
+    const noLegacy = vi.fn(async () => ({
+      action_boundary: { active: undefined },
+    }) as Awaited<ReturnType<typeof import("./guided-action.js").guidedActionStatus>>);
+    const semantic = vi.fn(async () => ({
+      registry: { rules: [{ compiled: { outcome: "support.refund_requested" } }] },
+    }) as unknown as Awaited<ReturnType<typeof import("./action-rule-authority.js").loadActiveActionRuleAuthority>>);
+
+    await expect(hasActiveActionRuntime("/tmp/reviewed-project", {
+      guidedStatus: noLegacy,
+      loadSemanticAuthority: semantic,
+    })).resolves.toBe(true);
+    expect(semantic).toHaveBeenCalledOnce();
+
+    await expect(hasActiveActionRuntime("/tmp/reviewed-project", {
+      guidedStatus: async () => ({
+        action_boundary: {
+          active: { authority: { capabilities: [{ capability: "legacy.propose" }] } },
+        },
+      }) as Awaited<ReturnType<typeof import("./guided-action.js").guidedActionStatus>>,
+      loadSemanticAuthority: vi.fn(async () => {
+        throw new Error("semantic lookup should not run");
+      }),
+    })).resolves.toBe(true);
+
+    await expect(hasActiveActionRuntime("/tmp/reviewed-project", {
+      guidedStatus: noLegacy,
+      loadSemanticAuthority: async () => {
+        throw new Error("ACTION_RULE_READ_AUTHORITY_STALE");
+      },
+    })).resolves.toBe(false);
+  });
+
   it("colors keyboard focus without inverse-video highlighting", () => {
     const selected = formatPostActivationRouteLine({
       option: { label: "OpenAI", detail: "Start terminal chat" },
@@ -27,6 +62,15 @@ describe("post-activation Ask handoff", () => {
       selected: true,
       color: false,
     })).toBe("> OpenAI                Start terminal chat");
+  });
+
+  it("keeps numeric MCP-client shortcuts on the picker until Enter reviews the install", () => {
+    const direct = mcpClientPickerTransition(0, { name: "2" });
+    expect(direct).toEqual({ selected: 1 });
+    expect(mcpClientPickerTransition(direct.selected, { name: "enter" }))
+      .toEqual({ selected: 1, client: "cursor" });
+    expect(mcpClientPickerTransition(0, { name: "escape" }))
+      .toEqual({ selected: 0, cancelled: true });
   });
 
   it("prefers an already configured hosted provider", () => {
@@ -324,11 +368,24 @@ describe("post-activation Ask handoff", () => {
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
       .toContain("Client: Claude Code");
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
-      .toContain("synapsor-actions -> active reviewed proposal tools");
+      .toContain("synapsor-actions -> app.describe_actions + app.request_change");
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
       .toContain("Do not start a separate server");
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
       .toContain("cannot activate boundaries, approve proposals, or apply source changes");
+    const scopedHandoff = formatMcpClientHandoff(
+      "/tmp/reviewed-project",
+      "claude-code",
+      true,
+      [
+        { role: "tenant", environment: "SYNAPSOR_TENANT_ID" },
+        { role: "principal", environment: "SYNAPSOR_PRINCIPAL" },
+      ],
+    );
+    expect(scopedHandoff).toContain("export SYNAPSOR_TENANT_ID='<tenant>'");
+    expect(scopedHandoff).toContain("export SYNAPSOR_PRINCIPAL='<principal>'");
+    expect(scopedHandoff).toContain("required only for live scoped calls");
+    expect(scopedHandoff).toContain("app.describe_actions + app.request_change");
     expect(formatHttpMcpHandoff("/tmp/reviewed-project"))
       .toContain("mcp serve --transport streamable-http --production-explore");
     expect(formatHttpMcpHandoff("/tmp/reviewed-project"))
@@ -370,5 +427,64 @@ describe("post-activation Ask handoff", () => {
     expect(errors.join("")).toContain(
       "try ask --project-root /tmp/reviewed-project --provider openai --model gpt-5.6-terra",
     );
+  });
+
+  it("returns a declined MCP install to connection choices without adding --yes", async () => {
+    const routes: Array<PostActivationAskRoute | undefined> = ["mcp-client", "later"];
+    const output: string[] = [];
+    const errors: string[] = [];
+    const install = vi.fn(async () => {
+      throw new Error("confirmation declined");
+    });
+
+    await expect(runPostActivationAskHandoff(
+      { projectRoot: "/tmp/reviewed-project" },
+      {
+        chooseRoute: async () => routes.shift(),
+        chooseMcpClient: async () => "claude-code",
+        hasActiveActions: async () => true,
+        runMcpInstall: install,
+        stdout: { write: (value) => {
+          output.push(String(value));
+          return true;
+        } },
+        stderr: { write: (value) => {
+          errors.push(String(value));
+          return true;
+        } },
+      },
+    )).resolves.toBe(0);
+
+    expect(install).toHaveBeenCalledOnce();
+    expect(output.join("")).toContain("Back at connection choices");
+    expect(output.join("")).toContain("reviewed boundaries remain active");
+    expect(errors.join("")).not.toContain("--yes");
+  });
+
+  it("keeps MCP failure recovery reviewed and does not recommend --yes", async () => {
+    const errors: string[] = [];
+    await expect(runPostActivationAskHandoff(
+      {
+        projectRoot: "/tmp/reviewed-project",
+        selection: { route: "mcp-client", client: "claude-code" },
+      },
+      {
+        hasActiveActions: async () => true,
+        runMcpInstall: async () => {
+          throw new Error("project file is not writable");
+        },
+        stdout: { write: vi.fn(() => true) },
+        stderr: { write: (value) => {
+          errors.push(String(value));
+          return true;
+        } },
+      },
+    )).resolves.toBe(1);
+
+    const error = errors.join("");
+    expect(error).toContain("Retry after resolving the error:");
+    expect(error).toContain("mcp install claude-code");
+    expect(error).not.toContain("--yes");
+    expect(error).toContain("shows the exact install preview again");
   });
 });

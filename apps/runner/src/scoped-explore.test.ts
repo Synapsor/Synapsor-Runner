@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import type { SubjectReferenceService } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
@@ -208,6 +209,149 @@ describe("Scoped Explore", () => {
     }, fixture.boundary)).toThrowError(expect.objectContaining({
       code: "EXPLORE_FIELD_FORBIDDEN",
     }));
+  });
+
+  it("projects hidden subject identity only for actionable row queries", async () => {
+    const fixture = await activatedFixture();
+    const rowPlan = validateExplorePlan({
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["region"],
+      limit: 2,
+    }, fixture.boundary);
+    const requirement = {
+      resource: "public.subscriptions",
+      primary_key: "id",
+      version_field: "monthly_revenue_cents",
+      outcomes: ["subscription.change_region"],
+    };
+    const [postgres] = compileExplorePlan(
+      rowPlan,
+      fixture.boundary,
+      { tenant: "tenant-acme", principal: "pm-1" },
+      "postgres",
+      requirement,
+    );
+    const [mysql] = compileExplorePlan(
+      rowPlan,
+      fixture.boundary,
+      { tenant: "tenant-acme", principal: "pm-1" },
+      "mysql",
+      requirement,
+    );
+    expect(postgres).toMatchObject({
+      subject_projection: {
+        resource: "public.subscriptions",
+        primary_key_alias: "__synapsor_subject_primary_key",
+        version_alias: "__synapsor_subject_version",
+      },
+    });
+    expect(postgres?.sql).toContain('t0."id" AS "__synapsor_subject_primary_key"');
+    expect(postgres?.sql).toContain('t0."monthly_revenue_cents" AS "__synapsor_subject_version"');
+    expect(mysql?.sql).toContain("t0.`id` AS `__synapsor_subject_primary_key`");
+    expect(mysql?.sql).toContain("t0.`monthly_revenue_cents` AS `__synapsor_subject_version`");
+
+    const [aggregate] = compileExplorePlan(
+      validateExplorePlan(aggregatePlan("one"), fixture.boundary),
+      fixture.boundary,
+      { tenant: "tenant-acme", principal: "pm-1" },
+      "postgres",
+      requirement,
+    );
+    expect(aggregate).not.toHaveProperty("subject_projection");
+    expect(aggregate?.sql).not.toContain("__synapsor_subject_primary_key");
+  });
+
+  it("returns row-aligned opaque subjects while keeping primary keys out of model data", async () => {
+    const fixture = await activatedFixture();
+    const store = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
+    const observationRequirement = vi.fn(async () => ({
+      resource: "public.subscriptions",
+      primary_key: "id",
+      version_field: "monthly_revenue_cents",
+      outcomes: ["subscription.change_region"],
+    }));
+    const issue = vi.fn(async () => [{
+      row_index: 0,
+      resource: "public.subscriptions",
+      ref: `obj_${"r".repeat(43)}`,
+      expires_at: "2026-07-22T12:10:00.000Z",
+    }]);
+    const subjectService: SubjectReferenceService = {
+      observationRequirement,
+      issue,
+      claim: vi.fn(async () => { throw new Error("claim is not used by Explore"); }),
+    };
+    const executeBatch = vi.fn(async ({ queries }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) =>
+      queries.map((query) => [{
+        region: "north",
+        [query.subject_projection!.primary_key_alias]: "subscription-secret-id",
+        [query.subject_projection!.version_alias!]: 7,
+      }]));
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      store,
+      executor: {
+        execute: async () => [],
+        executeBatch,
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => fixture.inspection,
+      subjectReferences: {
+        service: subjectService,
+        workflow_session_id: "workflow-test-1",
+      },
+      clock: () => Date.parse("2026-07-22T12:00:00.000Z"),
+    });
+    try {
+      const result = await runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      });
+      expect(result.data).toEqual([{ region: "north" }]);
+      expect(result.subjects).toEqual([{
+        row_index: 0,
+        resource: "public.subscriptions",
+        ref: `obj_${"r".repeat(43)}`,
+        expires_at: "2026-07-22T12:10:00.000Z",
+      }]);
+      expect(JSON.stringify(result.data)).not.toContain("subscription-secret-id");
+      expect(issue).toHaveBeenCalledWith(expect.objectContaining({
+        resource: "public.subscriptions",
+        workflow_session_id: "workflow-test-1",
+        observations: [{
+          row_index: 0,
+          primary_key_value: "subscription-secret-id",
+          observed_version_value: 7,
+        }],
+      }));
+      const persistedAudit = store.listQueryAudit()[0]?.payload as Record<string, unknown>;
+      expect(persistedAudit).toMatchObject({
+        protected_subject_identity_persisted: true,
+        subject_reference_count: 1,
+      });
+      const projected = projectScopedExploreResultForModel({
+        tool: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "rows",
+            resource: "public.subscriptions",
+            select: ["region"],
+            limit: 1,
+          },
+        },
+        result,
+        boundary: fixture.boundary,
+      });
+      expect(projected.value).toHaveProperty("subjects", result.subjects);
+    } finally {
+      await runtime.close();
+      store.close();
+    }
   });
 
   it("restores exact authority metadata on the MCP wire only when configured", async () => {
@@ -3492,6 +3636,14 @@ describe("Scoped Explore", () => {
       });
       expect(projected.resources[0].fields[0]).not.toHaveProperty("operations");
       expect(projected.resources[0].fields[0]).not.toHaveProperty("allowed_values");
+      expect(projected.resources[0].valid_plan_examples).toEqual({
+        rows: {
+          kind: "rows",
+          resource: "public.subscriptions",
+          select: expect.arrayContaining(["region"]),
+        },
+        aggregate: projected.resources[0].valid_plan_example,
+      });
       expect(projected.next_action).toMatch(/final catalog page/i);
       const pagedProjection = projectDescribeDataForModel({
         ...description,

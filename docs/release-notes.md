@@ -163,9 +163,40 @@ Prepared package versions: `@synapsor/runner@1.8.0`,
   policy, credential, and SQL tools remain absent, and the locked production
   Explore two-tool surface is not widened.
 
-Prepared package versions: `@synapsor/runner@1.8.0` and
-`synapsor-runner@1.8.0`. Spec and DSL remain `1.10.0` because the public
-Explore plan grammar is unchanged.
+### Fixed Semantic Action Rule Surface
+
+- Rule-derived actions add two stable tools, `app.describe_actions` and
+  `app.request_change`, beside the two stable Explore tools. Adding another
+  reviewed business outcome changes the activated catalog, not the MCP tool
+  count. The request contains only an outcome and opaque subject references;
+  it cannot contain SQL, a patch, a raw primary key, trusted scope, approval,
+  or apply instructions.
+- Eligible Explore rows may mint random, expiring, one-use subject references
+  bound to the exact Read and Action authority, trusted scope, workflow, and
+  source identity. Aggregates and suppressed rows never mint them. Forged,
+  expired, wrong-scope, wrong-session, or stale-authority references fail
+  closed without disclosing protected identity.
+- The portable Action Rule compiler binds a private Verification Boundary,
+  one-row effect envelope, typed `WHEN` rule, deterministic derivation,
+  approval class, Read dependency, schema lock, and Action Boundary under
+  canonical digests. PostgreSQL and MySQL share the evaluator while retaining
+  engine-specific parameter binding, row locking, transaction posture, and
+  exact mutation lowering.
+- Runtime evaluation never calls a model. Runner loads bounded authoritative
+  facts, proves scope/cardinality/version/eligibility, derives the only legal
+  effect, proves envelope containment, and creates an immutable proposal.
+  Eligibility, automatic or human approval, and apply remain separate gates.
+- A supervised apply reloads and locks the same facts, re-evaluates the same
+  rule, re-derives the effect, compares its digest, requires one affected row,
+  and records an idempotent receipt inside the guarded transaction. Drift,
+  ambiguity, overflow, tampering, or an unknown commit outcome cannot widen or
+  replay the mutation silently.
+- Model-guided authoring accepts one job of up to 2,000 characters and derives
+  separately bounded Read questions. Interrupted jobs retain that concise Read
+  intent and accepted business answers; resuming does not restage the broad
+  catalog or turn the full job into one invalid Read question. Low-confidence
+  principal candidates remain default-deny with complete per-resource evidence
+  available from the same confirmation screen.
 
 ## 1.7.15 (published 2026-08-27)
 

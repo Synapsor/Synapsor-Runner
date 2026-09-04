@@ -11,6 +11,7 @@ import {
   type WritebackJobV2,
   type WritebackJobV3,
   type WritebackJobV4,
+  type WritebackJobV5,
   type WritebackResult,
 } from "@synapsor-runner/protocol";
 import {
@@ -85,6 +86,9 @@ import {
   type PolicyApprovalDecision,
   type WorkerPolicyExecutionLimits,
   type RecordHandlerWritebackJobInput,
+  type StoredObservedSubjectReference,
+  type ClaimObservedSubjectReferencesInput,
+  type RevokeObservedSubjectReferencesInput,
 } from "./domain-types.js";
 export interface ProposalStoreSchemaMethods {
   close(): void;
@@ -180,7 +184,7 @@ export interface ProposalStoreWritebackMethods {
   listWritebackIntents(options?: { status?: WritebackIntentStatus; proposal_id?: string; limit?: number }): StoredWritebackIntent[];
   reconcileWritebackIntent(input: ReconcileWritebackIntentInput): StoredWritebackIntent;
   recordHandlerWritebackJob(input: RecordHandlerWritebackJobInput): void;
-  createWritebackJobFromProposal(proposalId: string, options?: CreateWritebackJobOptions): WritebackJobV1 | WritebackJobV2 | WritebackJobV3 | WritebackJobV4;
+  createWritebackJobFromProposal(proposalId: string, options?: CreateWritebackJobOptions): WritebackJobV1 | WritebackJobV2 | WritebackJobV3 | WritebackJobV4 | WritebackJobV5;
   recordEvidenceBundle(input: {
       evidence_bundle_id: string;
       proposal_id?: string;
@@ -194,6 +198,13 @@ export interface ProposalStoreWritebackMethods {
   getEvidenceBundle(evidenceBundleId: string): StoredEvidenceBundle | undefined;
   events(proposalId: string): ProposalEvent[];
   listEvents(filters?: EventSearchFilters): ProposalEvent[];
+}
+
+export interface ProposalStoreSubjectReferenceMethods {
+  createObservedSubjectReference(input: StoredObservedSubjectReference): StoredObservedSubjectReference;
+  getObservedSubjectReference(subjectRef: string): StoredObservedSubjectReference | undefined;
+  claimObservedSubjectReferences(input: ClaimObservedSubjectReferencesInput): StoredObservedSubjectReference[];
+  revokeObservedSubjectReferences(input: RevokeObservedSubjectReferencesInput): number;
 }
 
 export interface ProposalStoreWritebackInternalMethods {
@@ -622,7 +633,7 @@ export interface ProposalStoreCoreInternalMethods {
   transaction<T>(fn: () => T): T;
 }
 
-export interface ProposalStorePublicMethods extends ProposalStoreSchemaMethods, ProposalStoreProposalMethods, ProposalStoreWritebackMethods, ProposalStoreWorkerMethods, ProposalStoreMetricsPolicyMethods, ProposalStoreAttentionMethods, ProposalStoreCloudControlMethods, ProposalStoreShadowMethods {}
+export interface ProposalStorePublicMethods extends ProposalStoreSchemaMethods, ProposalStoreProposalMethods, ProposalStoreWritebackMethods, ProposalStoreSubjectReferenceMethods, ProposalStoreWorkerMethods, ProposalStoreMetricsPolicyMethods, ProposalStoreAttentionMethods, ProposalStoreCloudControlMethods, ProposalStoreShadowMethods {}
 
 export interface ProposalStoreInternalMethods extends ProposalStoreSchemaInternalMethods, ProposalStoreWritebackInternalMethods, ProposalStoreWorkerInternalMethods, ProposalStoreMetricsPolicyInternalMethods, ProposalStoreAttentionInternalMethods, ProposalStoreCloudControlInternalMethods, ProposalStoreShadowInternalMethods, ProposalStoreCoreInternalMethods {}
 

@@ -1,5 +1,10 @@
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
-import { preflightGeneratedAuthority, resolveSupervisedWorkerEligibility } from "@synapsor-runner/mcp-server";
+import {
+  preflightGeneratedAuthority,
+  resolveSemanticSupervisedWorkerEligibility,
+  resolveSupervisedWorkerEligibility,
+  type RuntimeSupervisedWorkerPolicy,
+} from "@synapsor-runner/mcp-server";
 import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
@@ -13,8 +18,8 @@ import { optionalArg } from "./cli-options.js";
 import { envWithDemoDefaults, operatorIdentityForDecision, readRuntimeConfig, redactConfig, requireLocalProposal, resolveProposalId, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
 import { TrustedOperatorInvocation, trustedCliContext } from "./operator-authority.js";
 import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge, withoutSharedPostgresLedgerMirror } from "./store-shared.js";
-import { assertSupervisedPolicyApprovalCurrent, assertSupervisedWriterPosture, supervisedWorkerEligibilityCode, workerControlAllowsPolicy, workerPolicyError } from "./worker-policy.js";
-import { applyCommandHandlerProposal, applyHttpHandlerProposal, applySqlJob, executorConfig, findProposalCapability, formatApplyResult, formatHandlerApplyResult, logProposalWritebackOutcome, proposalExecutorName, verifyStoredApprovalAuthority } from "./writeback-execution.js";
+import { assertSemanticSupervisedWriterPosture, assertSupervisedPolicyApprovalCurrent, assertSupervisedWriterPosture, supervisedWorkerEligibilityCode, workerControlAllowsPolicy, workerPolicyError } from "./worker-policy.js";
+import { applyCommandHandlerProposal, applyHttpHandlerProposal, applySqlJob, executorConfig, findProposalCapability, formatApplyResult, formatHandlerApplyResult, loadSemanticProposalAuthority, loadSemanticRuntimeAuthority, logProposalWritebackOutcome, proposalExecutorName, semanticApprovalCapability, verifyStoredApprovalAuthority } from "./writeback-execution.js";
 
 
 export async function authorizeConfiguredJobApply(
@@ -127,8 +132,14 @@ export async function applyProposal(
     if (invocation.expectedProposalHash && proposal.proposal_hash !== invocation.expectedProposalHash) {
       throw new Error("PROPOSAL_CHANGED: reload the approved proposal before applying it.");
     }
-    const capability = findProposalCapability(config, proposal);
-    let supervisedPolicy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]> | undefined;
+    const semanticAuthority = proposal.change_set.schema_version === "synapsor.change-set.v4"
+      ? await loadSemanticProposalAuthority(config, configPath, proposal)
+      : undefined;
+    const capability = semanticAuthority
+      ? semanticApprovalCapability(semanticAuthority.activated, semanticAuthority.approval)
+      : findProposalCapability(config, proposal);
+    let supervisedPolicy: RuntimeSupervisedWorkerPolicy | undefined;
+    let semanticSupervisedExecution = false;
     if (workerExecutionMode !== undefined) {
       if (workerExecutionMode !== "supervised_worker" || !workerLeaseId) {
         throw workerPolicyError(
@@ -144,24 +155,51 @@ export async function applyProposal(
       if (queueItem.execution_mode !== "supervised_worker") {
         throw workerPolicyError("SUPERVISED_WORKER_QUEUE_MODE_MISMATCH", "worker queue item is not supervised execution authority");
       }
-      const eligibility = resolveSupervisedWorkerEligibility(config, capability, {
-        workerIdentity: runnerId,
-        phase: "execute",
-      });
-      if (!eligibility.eligible || !eligibility.policy || !eligibility.contract_digest) {
-        throw workerPolicyError(
-          supervisedWorkerEligibilityCode(eligibility.reasons),
-          `supervised execution authority no longer matches: ${eligibility.reasons.join(", ")}`,
-        );
-      }
-      if (
-        queueItem.contract_digest !== eligibility.contract_digest
-        || queueItem.contract_digest !== capability.contract_provenance?.digest
-      ) {
-        throw workerPolicyError(
-          "SUPERVISED_WORKER_DIGEST_STALE",
-          "queued contract digest no longer matches the exact active capability digest",
-        );
+      let policy: RuntimeSupervisedWorkerPolicy;
+      if (semanticAuthority) {
+        const eligibility = resolveSemanticSupervisedWorkerEligibility(config, semanticAuthority.activated, {
+          workerIdentity: runnerId,
+          phase: "execute",
+        });
+        if (!eligibility.eligible || !eligibility.policy || !eligibility.action_boundary_digest) {
+          throw workerPolicyError(
+            supervisedWorkerEligibilityCode(eligibility.reasons),
+            `semantic supervised execution authority no longer matches: ${eligibility.reasons.join(", ")}`,
+          );
+        }
+        if (
+          queueItem.contract_digest !== eligibility.action_boundary_digest
+          || queueItem.contract_digest !== semanticAuthority.activated.action_boundary_digest
+          || proposal.action !== semanticAuthority.activated.compiled.outcome
+        ) {
+          throw workerPolicyError(
+            "SUPERVISED_WORKER_DIGEST_STALE",
+            "queued outcome authority no longer matches the exact active Action Boundary revision",
+          );
+        }
+        policy = eligibility.policy;
+        semanticSupervisedExecution = true;
+      } else {
+        const eligibility = resolveSupervisedWorkerEligibility(config, capability, {
+          workerIdentity: runnerId,
+          phase: "execute",
+        });
+        if (!eligibility.eligible || !eligibility.policy || !eligibility.contract_digest) {
+          throw workerPolicyError(
+            supervisedWorkerEligibilityCode(eligibility.reasons),
+            `supervised execution authority no longer matches: ${eligibility.reasons.join(", ")}`,
+          );
+        }
+        if (
+          queueItem.contract_digest !== eligibility.contract_digest
+          || queueItem.contract_digest !== capability.contract_provenance?.digest
+        ) {
+          throw workerPolicyError(
+            "SUPERVISED_WORKER_DIGEST_STALE",
+            "queued contract digest no longer matches the exact active capability digest",
+          );
+        }
+        policy = eligibility.policy;
       }
       const workerControl = store.workerControlState();
       if (workerControl.mode !== "active") {
@@ -170,25 +208,36 @@ export async function applyProposal(
           `supervised execution is ${workerControl.mode}; no new source mutation may begin`,
         );
       }
-      if (!workerControlAllowsPolicy(workerControl, eligibility.policy)) {
+      if (!workerControlAllowsPolicy(workerControl, policy)) {
         throw workerPolicyError(
           "SUPERVISED_WORKER_DIGEST_REVOKED",
-          "supervised execution is disabled or revoked for this exact capability digest",
+          "supervised execution is disabled or revoked for this exact authority digest",
         );
       }
-      if (!requiredAttentionSinksHealthy(store, config, eligibility.policy)) {
+      if (!requiredAttentionSinksHealthy(store, config, policy)) {
         throw workerPolicyError(
           "SUPERVISED_WORKER_ATTENTION_SINK_UNHEALTHY",
           "required supervision sinks are not healthy; approved work remains held",
         );
       }
-      await assertSupervisedWriterPosture(
-        store,
-        config,
-        eligibility.policy,
-        envWithDemoDefaults(config, configPath),
-      );
-      supervisedPolicy = eligibility.policy;
+      if (semanticAuthority && "outcome" in policy) {
+        const runtimeAuthority = await loadSemanticRuntimeAuthority(config, configPath);
+        await assertSemanticSupervisedWriterPosture(
+          store,
+          config,
+          policy,
+          runtimeAuthority.registry,
+          envWithDemoDefaults(config, configPath),
+        );
+      } else if ("capability" in policy) {
+        await assertSupervisedWriterPosture(
+          store,
+          config,
+          policy,
+          envWithDemoDefaults(config, configPath),
+        );
+      }
+      supervisedPolicy = policy;
     } else if (workerLeaseId) {
       throw workerPolicyError(
         "SUPERVISED_WORKER_MODE_REQUIRED",
@@ -237,7 +286,9 @@ export async function applyProposal(
           "the supervised proposal exceeded its reviewed execution TTL",
         );
       }
-      assertSupervisedPolicyApprovalCurrent(store, config, capability, proposal);
+      if (!semanticSupervisedExecution) {
+        assertSupervisedPolicyApprovalCurrent(store, config, capability, proposal);
+      }
       await preflightGeneratedAuthority(config, envWithDemoDefaults(config, configPath));
     }
     const executorName = proposalExecutorName(proposal, capability);

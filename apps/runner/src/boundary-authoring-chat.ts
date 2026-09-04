@@ -43,6 +43,7 @@ export type BoundaryAuthoringChat = {
   streamRunner(title: string, lines?: string[], tone?: BoundaryAuthoringTone): Promise<void>;
   streamCheckpoint(title: string, lines?: string[], tone?: BoundaryAuthoringTone): Promise<void>;
   streamModel(lines: string[]): Promise<void>;
+  readOperator?(defaultValue?: string): Promise<string | undefined>;
   rememberDetails(title: string, lines: string[]): void;
   showDetails(): void;
   providerStream(event: AskProviderStreamEvent): void;
@@ -98,9 +99,14 @@ function renderInlineModelMarkdown(
   value: string,
   theme: ReturnType<typeof terminalTheme>,
 ): string {
-  // Some providers prefix a Markdown-formatted question with a stray `?`.
-  // Treat it as a rendering artifact only when the remainder is itself a
-  // complete question; ordinary punctuation elsewhere remains untouched.
+  // Providers sometimes prefix a question with a decorative question-mark
+  // glyph. A few terminal fonts render those glyphs as one or two literal
+  // question marks, so normalize both forms before applying inline styles.
+  value = value.replace(/(?:[\u2047-\u2049\u2753\u2754]\ufe0f?)+\s*/gu, "");
+  value = value.replace(
+    /(^|\s)\?+\s*(?=(?:\*\*)?(?:what|which|who|when|where|why|how|should|does|do|is|are|can|could|will|would|may)\b)/giu,
+    "$1",
+  );
   value = value.replace(
     /(^|\s)\?+\s*(?=(?:\*\*)?\p{Lu}[^?\n]*\?)/gu,
     "$1",
@@ -152,6 +158,26 @@ function renderInlineModelMarkdown(
   }
   flush();
   return rendered;
+}
+
+function normalizeModelDisplayLines(lines: string[]): string[] {
+  return lines.flatMap((line) => line
+    // Some providers flatten a multi-line question into question-mark
+    // separators. Restore only the known candidate/answer labels so prose
+    // questions and business punctuation retain their original meaning.
+    .replace(
+      /(\?)\?+(?=(?:Candidate\s+\d+\s*:|Answer\s+with\b))/giu,
+      "$1\n",
+    )
+    .replace(
+      /(\])\?+(?=Candidate\s+\d+\s*:)/giu,
+      "$1\n",
+    )
+    .replace(
+      /([\p{L}\p{N}_)])\?+(?=Answer\s+with\b)/giu,
+      "$1\n",
+    )
+    .split("\n"));
 }
 
 function terminalOutputChunks(
@@ -324,6 +350,10 @@ export function createBoundaryAuthoringChat(input: {
   let latestDetails: { title: string; lines: string[] } | undefined;
   let permissionGuide: BoundaryAuthoringPermissionGuide | undefined;
   let lastTranscriptTurn: BoundaryAuthoringSpeaker | "operator" | "checkpoint" | undefined;
+  let pendingConversationQuestion: {
+    speaker: BoundaryAuthoringSpeaker;
+    lines: string[];
+  } | undefined;
   const transcriptIndent = io.isTerminal?.() === true ? "  " : "";
   const transcriptWidth = () => Math.max(24, io.columns());
 
@@ -439,6 +469,36 @@ export function createBoundaryAuthoringChat(input: {
       roleLines(speaker, line, index, firstStyle, continueTurn)).join("\n")}\n`);
     lastTranscriptTurn = speaker;
   };
+  const rememberPendingQuestion = (
+    speaker: BoundaryAuthoringSpeaker,
+    lines: string[],
+  ) => {
+    const normalized = meaningfulContext(lines);
+    let questionIndex = -1;
+    for (let index = normalized.length - 1; index >= 0; index -= 1) {
+      if (normalized[index]!.includes("?")) {
+        questionIndex = index;
+        break;
+      }
+    }
+    pendingConversationQuestion = questionIndex < 0
+      ? undefined
+      : { speaker, lines: [normalized[questionIndex]!] };
+  };
+  const restorePendingQuestion = () => {
+    if (!pendingConversationQuestion) return;
+    lastTranscriptTurn = "checkpoint";
+    const label = `${transcriptIndent}${theme.key("Pending:")} `;
+    const labelWidth = Array.from(stripTerminalAnsi(label)).length;
+    const content = pendingConversationQuestion.speaker === "model"
+      ? renderInlineModelMarkdown(pendingConversationQuestion.lines[0]!, theme)
+      : pendingConversationQuestion.lines[0]!;
+    const wrapped = wrapStyledTerminalLine(
+      content,
+      Math.max(12, transcriptWidth() - labelWidth),
+    ).map((line, index) => `${index === 0 ? label : " ".repeat(labelWidth)}${line}`);
+    writeTranscript(`${wrapped.join("\n")}\n`);
+  };
   const runner = (
     title: string,
     lines: string[] = [],
@@ -458,12 +518,20 @@ export function createBoundaryAuthoringChat(input: {
           : theme.bold;
     writeRole("runner", [title, ...lines], titleStyle);
   };
-  const model = (lines: string[]) => writeRole("model", lines);
+  const model = (lines: string[]) => {
+    const normalized = normalizeModelDisplayLines(lines);
+    writeRole("model", normalized);
+    rememberPendingQuestion("model", normalized);
+  };
   const rememberDetails = (title: string, lines: string[]) => {
     const facts = meaningfulContext(lines);
+    const normalizedTitle = transcriptText(title).trim().replace(/:$/u, "");
+    while (facts.length && facts[0]!.trim().replace(/:$/u, "") === normalizedTitle) {
+      facts.shift();
+    }
     if (!facts.length) return;
     latestDetails = {
-      title: transcriptText(title),
+      title: normalizedTitle,
       lines: facts,
     };
   };
@@ -600,7 +668,11 @@ export function createBoundaryAuthoringChat(input: {
     io.clearStatus?.();
     checkpoint(title, lines, tone);
   };
-  const streamModel = (lines: string[]) => streamRole("model", lines);
+  const streamModel = async (lines: string[]) => {
+    const normalized = normalizeModelDisplayLines(lines);
+    await streamRole("model", normalized);
+    rememberPendingQuestion("model", normalized);
+  };
   const writeContext = async (context: string[] | undefined, speaker: BoundaryAuthoringSpeaker = "runner") => {
     const lines = meaningfulContext(context);
     if (!lines.length) return;
@@ -622,6 +694,7 @@ export function createBoundaryAuthoringChat(input: {
   };
   const read = async (prompt: string, speaker: BoundaryAuthoringSpeaker = "runner") => {
     writeRole(speaker, [prompt]);
+    pendingConversationQuestion = { speaker, lines: [prompt] };
     return readAnswer();
   };
   const readAnswer = async (defaultValue?: string) => {
@@ -649,23 +722,28 @@ export function createBoundaryAuthoringChat(input: {
               : ["Type /help to list Boundary-authoring commands."]),
             "The pending question and disabled draft are unchanged.",
           ], "warning");
+          restorePendingQuestion();
           continue;
         }
       }
       if (command === "/details") {
         showDetails();
+        restorePendingQuestion();
         continue;
       }
       if (command === "/diff") {
         showDiff();
+        restorePendingQuestion();
         continue;
       }
       if (command === "/exact") {
         showDetails();
+        restorePendingQuestion();
         continue;
       }
       if (command === "/help") {
         showHelp();
+        restorePendingQuestion();
         continue;
       }
       if (command?.startsWith("/")) {
@@ -673,8 +751,10 @@ export function createBoundaryAuthoringChat(input: {
           "Type /help to list Boundary-authoring commands.",
           "The pending question and disabled draft are unchanged.",
         ], "warning");
+        restorePendingQuestion();
         continue;
       }
+      pendingConversationQuestion = undefined;
       return answer;
     }
   };
@@ -797,6 +877,25 @@ export function createBoundaryAuthoringChat(input: {
       if (!explanationShown) continue;
     }
   };
+  const chooseReviewedDecision = async (choice: ChoiceInput): Promise<string | undefined> => {
+    if (!latestDetails) return choose(choice);
+    while (true) {
+      const selected = await choose({
+        ...choice,
+        options: [
+          ...choice.options.slice(0, 1),
+          {
+            value: viewRunnerDetailsChoiceValue,
+            label: "View exact Runner details",
+            detail: "Inspect the deterministic record without changing the disabled draft.",
+          },
+          ...choice.options.slice(1),
+        ],
+      });
+      if (selected !== viewRunnerDetailsChoiceValue) return selected;
+      showDetails();
+    }
+  };
   const confirm = async (
     prompt: string,
     options: { context?: string[]; defaultValue?: boolean } = {},
@@ -832,7 +931,7 @@ export function createBoundaryAuthoringChat(input: {
     } satisfies ChoiceInput;
     const selected = permission
       ? await choosePermission(choice, permissionContext)
-      : await choose(choice);
+      : await chooseReviewedDecision(choice);
     return selected === undefined ? undefined : selected === "yes";
   };
 
@@ -989,6 +1088,7 @@ export function createBoundaryAuthoringChat(input: {
     streamRunner,
     streamCheckpoint,
     streamModel,
+    readOperator: readAnswer,
     rememberDetails,
     showDetails,
     providerStream: (event) => {

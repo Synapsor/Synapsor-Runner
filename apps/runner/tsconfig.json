@@ -6,6 +6,7 @@
     "outDir": "dist"
   },
   "references": [
+    { "path": "../../packages/action-rules" },
     { "path": "../../packages/protocol" },
     { "path": "../../packages/proposal-store" },
     { "path": "../../packages/control-plane-client" },

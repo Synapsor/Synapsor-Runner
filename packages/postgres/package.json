@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@synapsor-runner/action-rules": "workspace:*",
     "@synapsor-runner/protocol": "workspace:*",
     "@synapsor-runner/worker-core": "workspace:*",
     "pg": "^8.13.0"

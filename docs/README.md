@@ -29,6 +29,10 @@ your database, then read deeper concepts.
   scriptable JSON to review `INSERT`/`UPDATE`/`DELETE` proposal authority,
   rehearse an exact digest, activate, promote, and operate proposals without
   giving the model approval, apply, credential, or SQL tools.
+- [Action Rule Engine](action-rule-engine.md): let an agent request one
+  activated business outcome while Runner privately verifies authoritative
+  facts and derives the only permitted one-row effect behind the fixed
+  `app.request_change` tool.
 - [Workbench Ask With Your Model](workbench-ask.md): preview browser UI for
   optional local OpenAI, Anthropic, and custom-provider chat over the exact
   reviewed tool surface, with direct-egress consent, session-only credentials,
@@ -136,6 +140,10 @@ your database, then read deeper concepts.
 
 ## 05 Generate Capabilities
 
+- [Action Rule Engine](action-rule-engine.md): author portable reviewed
+  eligibility rules, private Verification Boundaries, exact effect envelopes,
+  approval classes, and transaction-time re-verification without adding one
+  MCP tool per business situation.
 - [Safe Action Human Control Plane](safe-action-control-plane.md): canonical
   ActionSuggestion, ActionDesign, immutable revision, rehearsal, activation,
   promotion, proposal, approval, execution, receipt, and replay lifecycle.

@@ -597,6 +597,7 @@ describe("production Explore startup posture", () => {
         principal: "principal-a",
         provenance: "http_claims" as const,
       },
+      authenticationFingerprint: "auth-session-a",
     };
 
     const [first, second, third] = await Promise.all([
@@ -660,6 +661,7 @@ describe("production Explore startup posture", () => {
         principal: "principal-recovery",
         provenance: "http_claims" as const,
       },
+      authenticationFingerprint: "auth-session-recovery",
     };
 
     await expect(factory(sessionInput)).rejects.toThrow("transient boundary read failure");
@@ -713,6 +715,7 @@ describe("production Explore startup posture", () => {
         principal: "analyst-7",
         provenance: "http_claims",
       },
+      authenticationFingerprint: "auth-session-single-org",
     });
     expect(runtimeInput?.sessionContext).toEqual({
       tenant_id: "internal-finance",
@@ -728,6 +731,7 @@ describe("production Explore startup posture", () => {
         principal: "analyst-7",
         provenance: "http_claims",
       },
+      authenticationFingerprint: "auth-session-wrong-org",
     })).rejects.toThrow(/exact reviewed organization identity/i);
     await session.close();
     await factory.close?.();

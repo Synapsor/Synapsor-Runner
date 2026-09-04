@@ -1,4 +1,4 @@
-import { type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import { supervisedWorkerPolicies, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import {
   attentionDecisionSubject,
   notificationReplayDecisionSubject,
@@ -431,7 +431,7 @@ async function notificationsDispatch(args: string[]): Promise<number> {
   try {
     updateSupervisedWorkerBacklogAttention(store, config);
     updateSupervisedProposalExpiryAttention(store, config);
-    for (const policy of config.supervised_worker?.capabilities ?? []) {
+    for (const policy of supervisedWorkerPolicies(config)) {
       if ((policy.required_attention_sinks ?? []).length === 0) continue;
       if (!requiredAttentionSinksHealthy(store, config, policy)) {
         recordUnhealthySupervisionSinkAttention(store, config, policy);

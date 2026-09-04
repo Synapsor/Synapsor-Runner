@@ -1,17 +1,221 @@
 import crypto from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   applyMysqlJobWithConnection,
+  buildMysqlActionRuleFactQuery,
   buildMysqlDelete,
   buildMysqlInsert,
   buildMysqlReconciliationRead,
   buildMysqlUpdate,
   normalizeVersionValue,
+  mysqlActionRuleIsolation,
   versionValuesMatch,
   type MysqlApplyConnection
 } from "./index.js";
 import type { WritebackIntentStore } from "@synapsor-runner/worker-core";
 import { canonicalJsonDigest, canonicalJsonStringify, parseWritebackJob, parseWritebackResult, protocolVersions } from "@synapsor-runner/protocol";
+import { ActionRuleError, createSemanticAdapterConformanceVector, type ActionRuleFactQueryV1 } from "@synapsor-runner/action-rules";
+
+describe("mysql Action Rule fact queries", () => {
+  it("lowers every reviewed transaction isolation level exactly", () => {
+    expect(mysqlActionRuleIsolation("read_committed")).toBe("READ COMMITTED");
+    expect(mysqlActionRuleIsolation("repeatable_read")).toBe("REPEATABLE READ");
+    expect(mysqlActionRuleIsolation("serializable")).toBe("SERIALIZABLE");
+  });
+
+  it("binds every subject and trusted-scope value in a bounded locking query", () => {
+    const query: ActionRuleFactQueryV1 = {
+      binding: "order",
+      engine: "mysql",
+      source: "local_mysql",
+      schema: "inventory",
+      table: "orders",
+      projection: ["order_id", "version"],
+      predicates: [
+        { operation: "eq", column: "order_id", value: "order_1" },
+        { operation: "eq", column: "tenant_id", value: "tenant_1" },
+      ],
+      order_by: [{ column: "order_id", direction: "asc" }],
+      limit: 2,
+      lock: "for_update",
+    };
+    const compiled = buildMysqlActionRuleFactQuery(query);
+    expect(compiled.sql).toContain("FROM `inventory`.`orders`");
+    expect(compiled.sql).toContain("`order_id` = ?");
+    expect(compiled.sql).toContain("`tenant_id` = ?");
+    expect(compiled.sql).toContain("LIMIT ?\nFOR UPDATE");
+    expect(compiled.sql).not.toContain("order_1");
+    expect(compiled.values).toEqual(["order_1", "tenant_1", 2]);
+  });
+});
+
+class SemanticMysqlIntentStore implements WritebackIntentStore {
+  result?: ReturnType<typeof parseWritebackResult>;
+  readonly calls: string[] = [];
+
+  claimWritebackIntent() {
+    this.calls.push("claim");
+    return this.result === undefined
+      ? { decision: "proceed" as const, intent_id: "wbi:semantic-mysql" }
+      : { decision: "existing_result" as const, intent_id: "wbi:semantic-mysql", result: this.result };
+  }
+
+  markWritebackIntentApplying() { this.calls.push("applying"); }
+
+  completeWritebackIntent(_intentId: string, result: Parameters<WritebackIntentStore["completeWritebackIntent"]>[1]) {
+    this.calls.push("complete");
+    this.result = parseWritebackResult(result);
+  }
+
+  requireWritebackReconciliation() { this.calls.push("reconciliation"); }
+}
+
+class SemanticMysqlConnection implements MysqlApplyConnection {
+  readonly queryLog: Array<{ sql: string; values: unknown[] }> = [];
+  updateCount = 0;
+
+  constructor(private readonly commitUnknown = false) {}
+
+  get sqlLog(): string[] { return this.queryLog.map((entry) => entry.sql); }
+
+  async beginTransaction(): Promise<void> { this.queryLog.push({ sql: "BEGIN", values: [] }); }
+
+  async commit(): Promise<void> {
+    this.queryLog.push({ sql: "COMMIT", values: [] });
+    if (this.commitUnknown) throw new Error("connection lost after COMMIT");
+  }
+
+  async rollback(): Promise<void> { this.queryLog.push({ sql: "ROLLBACK", values: [] }); }
+
+  async query<T = unknown>(sql: string, values: unknown[] = []): Promise<[T, unknown]> {
+    const normalized = sql.trim();
+    this.queryLog.push({ sql: normalized, values });
+    if (normalized === "SELECT @@session.time_zone AS time_zone") {
+      return [[{ time_zone: "+05:30" }] as T, undefined];
+    }
+    if (normalized.startsWith("SET SESSION time_zone = ?")) return [{} as T, undefined];
+    if (normalized === "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ") return [{} as T, undefined];
+    if (normalized.startsWith("SELECT")
+      && normalized.includes("FROM `support_cases`.`case_actions`")
+      && normalized.includes("`status`")
+      && normalized.includes("FOR UPDATE")) {
+      return [[{ case_id: "case_1", status: "open", tenant_id: "acme", version: 7 }] as T, undefined];
+    }
+    if (normalized.startsWith("UPDATE `support_cases`.`case_actions`")) {
+      this.updateCount += 1;
+      return [{ affectedRows: 1 } as T, undefined];
+    }
+    if (normalized.startsWith("SELECT `version` AS __synapsor_result_version")
+      && normalized.includes("FROM `support_cases`.`case_actions`")) {
+      return [[{ __synapsor_result_version: 8 }] as T, undefined];
+    }
+    throw new Error(`unexpected semantic MySQL query: ${normalized}`);
+  }
+}
+
+describe("mysql semantic Action adapter conformance", () => {
+  it("re-verifies with parameterized locked facts inside the transaction and replays idempotently", async () => {
+    const vector = createSemanticAdapterConformanceVector("mysql");
+    const store = new SemanticMysqlIntentStore();
+    const connection = new SemanticMysqlConnection();
+    const semanticActionVerifier = vi.fn(async ({ job: candidate, factLoader }) => {
+      expect(candidate).toEqual(vector.job);
+      expect(factLoader.engine).toBe("mysql");
+      expect(connection.sqlLog).toContain("BEGIN");
+      expect(await factLoader.load(vector.fact_query)).toEqual([vector.fact_row]);
+      return vector.reverification;
+    });
+    const semanticConfig = {
+      ...config,
+      receipts: { authority: "runner_ledger" as const },
+      writebackIntentStore: store,
+      semanticActionVerifier,
+    };
+
+    const applied = await applyMysqlJobWithConnection(vector.job, semanticConfig, connection);
+    expect(applied).toMatchObject({
+      protocol_version: "5.0",
+      status: "applied",
+      affected_rows: 1,
+      semantic_verification: { status: "reverified", effect_digest: vector.reverification.effect_digest },
+    });
+    const factQuery = connection.queryLog.find((entry) => entry.sql.startsWith("SELECT") && entry.sql.includes("`status`") && entry.sql.includes("case_actions"));
+    expect(factQuery).toMatchObject({ values: ["case_1", "acme", 2] });
+    expect(factQuery?.sql).not.toContain("case_1");
+    expect(connection.sqlLog.indexOf("BEGIN")).toBeLessThan(connection.sqlLog.findIndex((sql) => sql.startsWith("SELECT") && sql.includes("`status`")));
+    expect(connection.sqlLog.indexOf("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+      .toBeLessThan(connection.sqlLog.indexOf("BEGIN"));
+    expect(connection.sqlLog.findIndex((sql) => sql.startsWith("SELECT") && sql.includes("`status`"))).toBeLessThan(connection.sqlLog.findIndex((sql) => sql.startsWith("UPDATE")));
+    expect(connection.sqlLog.findIndex((sql) => sql.startsWith("UPDATE"))).toBeLessThan(connection.sqlLog.indexOf("COMMIT"));
+
+    const replayed = await applyMysqlJobWithConnection(vector.job, semanticConfig, connection);
+    expect(replayed).toMatchObject({
+      protocol_version: "5.0",
+      status: "already_applied",
+      affected_rows: 0,
+      semantic_verification: { status: "previously_reverified" },
+    });
+    expect(connection.updateCount).toBe(1);
+    expect(semanticActionVerifier).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back stale semantic authority before any mutation", async () => {
+    const vector = createSemanticAdapterConformanceVector("mysql");
+    const store = new SemanticMysqlIntentStore();
+    const connection = new SemanticMysqlConnection();
+    const result = await applyMysqlJobWithConnection(vector.job, {
+      ...config,
+      receipts: { authority: "runner_ledger" as const },
+      writebackIntentStore: store,
+      semanticActionVerifier: async () => ({
+        ...vector.reverification,
+        effect_digest: canonicalJsonDigest({ effect: "drifted" }),
+      }),
+    }, connection);
+
+    expect(result).toMatchObject({ status: "failed", error_code: "SEMANTIC_AUTHORITY_STALE", affected_rows: 0 });
+    expect(connection.updateCount).toBe(0);
+    expect(connection.sqlLog).toContain("ROLLBACK");
+    expect(connection.sqlLog).not.toContain("COMMIT");
+  });
+
+  it("preserves a coded Action Rule stale refusal when its message is explanatory", async () => {
+    const vector = createSemanticAdapterConformanceVector("mysql");
+    const connection = new SemanticMysqlConnection();
+    const result = await applyMysqlJobWithConnection(vector.job, {
+      ...config,
+      receipts: { authority: "runner_ledger" as const },
+      writebackIntentStore: new SemanticMysqlIntentStore(),
+      semanticActionVerifier: async () => {
+        throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Current facts no longer prove this effect.");
+      },
+    }, connection);
+
+    expect(result).toMatchObject({ status: "failed", error_code: "SEMANTIC_AUTHORITY_STALE", affected_rows: 0 });
+    expect(connection.updateCount).toBe(0);
+    expect(connection.sqlLog).toContain("ROLLBACK");
+  });
+
+  it("marks a lost semantic COMMIT acknowledgement for reconciliation", async () => {
+    const vector = createSemanticAdapterConformanceVector("mysql");
+    const store = new SemanticMysqlIntentStore();
+    const connection = new SemanticMysqlConnection(true);
+    const result = await applyMysqlJobWithConnection(vector.job, {
+      ...config,
+      receipts: { authority: "runner_ledger" as const },
+      writebackIntentStore: store,
+      semanticActionVerifier: async ({ factLoader }) => {
+        await factLoader.load(vector.fact_query);
+        return vector.reverification;
+      },
+    }, connection);
+
+    expect(result).toMatchObject({ status: "reconciliation_required", error_code: "RECONCILIATION_REQUIRED" });
+    expect(connection.updateCount).toBe(1);
+    expect(store.calls).toContain("reconciliation");
+    expect(connection.sqlLog).not.toContain("ROLLBACK");
+  });
+});
 
 const job = {
   protocol_version: "1.0" as const,
@@ -152,7 +356,7 @@ describe("mysql adapter", () => {
   it("returns an idempotent receipt without touching the business row", async () => {
     const connection = new FakeMysqlConnection({
       claimAffectedRows: 0,
-      receiptRow: { status: "applied", result_hash: "sha256:existing" }
+      receiptRow: { job_id: job.job_id, proposal_id: job.proposal_id, status: "applied", result_hash: "sha256:existing" }
     });
 
     const result = await applyMysqlJobWithConnection(job, config, connection);
@@ -162,6 +366,18 @@ describe("mysql adapter", () => {
     expect(connection.sqlLog.some((sql) => /CREATE\s+TABLE/i.test(sql))).toBe(false);
     expect(connection.sqlLog.some((sql) => sql.includes("UPDATE `appdb`.`orders`"))).toBe(false);
     expect(connection.sqlLog).toContain("COMMIT");
+  });
+
+  it("refuses an idempotency key already bound to another job", async () => {
+    const connection = new FakeMysqlConnection({
+      claimAffectedRows: 0,
+      receiptRow: { job_id: "wbj_other", proposal_id: job.proposal_id, status: "applied", result_hash: "sha256:existing" },
+    });
+    await expect(applyMysqlJobWithConnection(job, config, connection)).resolves.toMatchObject({
+      status: "failed",
+      error_code: "IDEMPOTENCY_KEY_COLLISION",
+    });
+    expect(connection.sqlLog.some((sql) => sql.includes("UPDATE `appdb`.`orders`"))).toBe(false);
   });
 
   it("records stale-row conflicts before update", async () => {
@@ -1002,7 +1218,7 @@ class FakeMysqlConnection implements MysqlApplyConnection {
     if (sql.startsWith("INSERT IGNORE INTO synapsor_writeback_receipts")) {
       return [{ affectedRows: this.options.claimAffectedRows ?? 1 } as T, undefined];
     }
-    if (sql.startsWith("SELECT status, result_hash FROM synapsor_writeback_receipts")) {
+    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM synapsor_writeback_receipts")) {
       return [[...(this.options.receiptRow ? [this.options.receiptRow] : [])] as T, undefined];
     }
     if (sql.startsWith("SELECT") && sql.includes("FROM `appdb`.`order_eligibility`") && sql.includes("FOR UPDATE")) {
@@ -1132,9 +1348,9 @@ class ConcurrentMysqlConnection implements MysqlApplyConnection {
       }
       return [{ affectedRows: 0 } as T, undefined];
     }
-    if (sql.startsWith("SELECT status, result_hash FROM synapsor_writeback_receipts")) {
+    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM synapsor_writeback_receipts")) {
       await this.state.finalizedPromise;
-      return [[{ status: this.state.receiptStatus, result_hash: this.state.resultHash }] as T, undefined];
+      return [[{ job_id: job.job_id, proposal_id: job.proposal_id, status: this.state.receiptStatus, result_hash: this.state.resultHash }] as T, undefined];
     }
     if (sql.startsWith("SELECT") && sql.includes("FROM `appdb`.`orders`") && sql.includes("FOR UPDATE")) {
       return [[{ __synapsor_conflict_value: "2026-05-16 00:00:00.123456" }] as T, undefined];

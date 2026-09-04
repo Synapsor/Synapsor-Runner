@@ -13,6 +13,7 @@ import {
   rankReadWorkloadPlanCardsForJob,
   recommendReadWorkloadPlanCardsForJob,
   readWorkloadFromPlanCards,
+  rehydrateSanitizedReadWorkloadPlan,
   sanitizeReadWorkloadPlan,
   type ReadWorkloadPlanCard,
   type ReadWorkloadSet,
@@ -336,6 +337,49 @@ describe("Read workload boundary compiler", () => {
       value: { redacted: true, kind: "scalar", type: "string" },
     }]);
     expect(JSON.stringify(shape)).not.toContain("open-value-from-user");
+  });
+
+  it("rehydrates redacted saved filters from reviewed types without recovering source literals", () => {
+    const boundary = generatedBoundary();
+    const original = validateExplorePlan({
+      ...allowedPlan(),
+      where: [
+        { field: "status", op: "in", value: ["open-value-from-user", "closed"] },
+        { field: "amount", op: "gte", value: 250 },
+      ],
+    }, activated(boundary));
+    const shape = sanitizeReadWorkloadPlan(original);
+
+    const rehydrated = rehydrateSanitizedReadWorkloadPlan(shape, boundary);
+
+    expect(rehydrated.where).toEqual([
+      { field: "status", op: "in", value: ["open-value-from-user", "closed"] },
+      { field: "amount", op: "gte", value: 0 },
+    ]);
+    expect(JSON.stringify(rehydrated)).not.toContain("250");
+    expect(() => validateExplorePlan(rehydrated, activated(boundary))).not.toThrow();
+    expect(shape.where).toEqual([
+      {
+        field: "status",
+        op: "in",
+        value: { redacted: true, kind: "list", count: 2, element_types: ["string"] },
+      },
+      {
+        field: "amount",
+        op: "gte",
+        value: { redacted: true, kind: "scalar", type: "number" },
+      },
+    ]);
+  });
+
+  it("refuses a malformed saved filter shape instead of treating it as a value", () => {
+    expect(() => rehydrateSanitizedReadWorkloadPlan({
+      kind: "aggregate",
+      resource: "public.orders",
+      measures: [{ function: "count" }],
+      where: [{ field: "status", op: "eq", value: { kind: "scalar", type: "string" } }],
+      top_n: 1,
+    }, generatedBoundary())).toThrow("does not contain a redacted literal shape");
   });
 
   it("normalizes a bounded exact-plan workload and rejects model identity on operator input", () => {
