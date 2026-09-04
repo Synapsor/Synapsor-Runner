@@ -325,6 +325,10 @@ export function compileActionRuleModelDraft(input: {
       ...(field.values === undefined ? {} : { values: field.values }),
     };
   });
+  const resolvedTargetBinding = draft.effect.operation === "update"
+    ? requiredTargetBinding(draft.effect.target_binding, bindings, target)
+    : undefined;
+  if (resolvedTargetBinding) draft.effect.target_binding = resolvedTargetBinding;
   const approvalClassName = safeRuleName(draft.approval.class_name, "approval class");
   const envelope: DerivedEffectEnvelopeSpecV1 = {
     schema_version: "synapsor.derived-effect-envelope.v1",
@@ -334,7 +338,7 @@ export function compileActionRuleModelDraft(input: {
     target_resource: target.name,
     ...(draft.effect.operation === "update"
       ? {
-          target_binding: requiredTargetBinding(draft.effect.target_binding, bindings, target),
+          target_binding: resolvedTargetBinding!,
           conflict_key: requiredVersionField(target),
           ...(integerVersionAdvance(target) ? { version_advance: integerVersionAdvance(target) } : {}),
         }
@@ -624,13 +628,28 @@ function validateEffectBounds(
 
 function requiredTargetBinding(
   value: string | undefined,
-  bindings: Map<string, { catalog: ActionRuleCatalogResourceV1 }>,
+  bindings: Map<string, {
+    draft: ActionRuleVerificationDraftResourceV1;
+    catalog: ActionRuleCatalogResourceV1;
+    verification: RuleVerificationBoundarySpecV1["resources"][number];
+  }>,
   target: ActionRuleCatalogResourceV1,
 ): string {
-  if (!value) invalid("Derived UPDATE requires one exact subject target binding.");
-  const binding = bindings.get(value);
-  if (!binding || binding.catalog.name !== target.name) invalid(`UPDATE target binding ${value} does not identify ${target.name}.`);
-  return value;
+  const eligible = [...bindings.entries()].filter(([, binding]) =>
+    binding.catalog.name === target.name
+    && binding.draft.source.kind === "subject_ref"
+    && binding.verification.cardinality === "one");
+  if (value) {
+    if (!eligible.some(([name]) => name === value)) {
+      invalid(`The proposed UPDATE target does not identify one exact reviewed ${target.name} row.`);
+    }
+    return value;
+  }
+  if (eligible.length === 1) return eligible[0]![0];
+  if (!eligible.length) {
+    invalid(`Runner could not identify which reviewed ${target.name} row the proposed change would update.`);
+  }
+  invalid(`Runner found multiple reviewed ${target.name} subject rows and will not guess which one to update.`);
 }
 
 function requiredVersionField(resource: ActionRuleCatalogResourceV1): string {

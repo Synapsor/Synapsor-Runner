@@ -5022,6 +5022,7 @@ describe("boundary operator-plane CLI", () => {
     let semanticActionAttempt = 0;
     let revisionCompiledRequiredApprovals: number | undefined;
     const semanticRecoveryChoices: string[][] = [];
+    const semanticRecoveryContexts: string[][] = [];
     const preparedActionPrincipalKeys: Array<string | undefined> = [];
     const clarificationQuestion = "What maximum maintenance proposals may auto-approve in a rolling 24 hours?";
     let clarificationAnswer: string | undefined;
@@ -5030,9 +5031,8 @@ describe("boundary operator-plane CLI", () => {
     ): Promise<ModelActionRuleDraftResult> => {
       semanticActionAttempt += 1;
       if (semanticActionAttempt === 1) {
-        throw new AskError(
-          "ASK_REQUIRED_TOOL_NOT_CALLED",
-          "The model returned prose instead of the required verified Action draft.",
+        throw new Error(
+          "ACTION_RULE_MODEL_DRAFT_INVALID: Derived UPDATE requires one exact subject target binding.",
         );
       }
       if (semanticActionAttempt === 2) {
@@ -5189,6 +5189,7 @@ describe("boundary operator-plane CLI", () => {
     });
     const answers = [operatorJob];
     let readActivationReviewCount = 0;
+    const rememberFailureDetails = vi.fn();
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async (_resources, _overview, options) => {
         boundaryListStarts.push(options?.startAtBoundaryList);
@@ -5200,11 +5201,12 @@ describe("boundary operator-plane CLI", () => {
         if (prompt === clarificationQuestion) return "Why does Runner need this limit?";
         throw new Error(`Unexpected semantic Action text prompt: ${prompt}`);
       },
-      chooseOption: async (title, options) => {
+      chooseOption: async (title, options, choiceOptions) => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         if (title === "ACTION BOUNDARY MODEL DRAFT FAILED") {
           semanticRecoveryChoices.push(options.map((option) => option.value));
+          semanticRecoveryContexts.push(choiceOptions?.context ?? []);
           return "retry";
         }
         if (title === "ACTIVATE READ BOUNDARY") {
@@ -5217,6 +5219,7 @@ describe("boundary operator-plane CLI", () => {
       confirm: async () => true,
       confirmActivation: async () => false,
       confirmReviewedDisabled: async () => true,
+      rememberDetails: rememberFailureDetails,
     };
     const modelAuthoringNarrator = vi.fn(async (
       narration: Parameters<typeof import("./model-authoring-narration.js").narrateValidatedAuthoringStep>[0],
@@ -5295,6 +5298,18 @@ describe("boundary operator-plane CLI", () => {
         "details",
         "back",
       ]]);
+      expect(semanticRecoveryContexts[0]?.join("\n")).toContain(
+        "Runner could not identify one exact reviewed row for the proposed change. No Action draft was saved.",
+      );
+      expect(semanticRecoveryContexts[0]?.join("\n")).not.toMatch(/target_binding|subject target binding/iu);
+      expect(rememberFailureDetails).toHaveBeenCalledWith(
+        "ACTION BOUNDARY MODEL DRAFT FAILED",
+        expect.arrayContaining([
+          "Runner could not identify one exact reviewed row for the proposed change. No Action draft was saved.",
+          "Exact local validation: Derived UPDATE requires one exact subject target binding.",
+          "The rejected draft was not saved or executed. No model output became authority and no source query or write ran.",
+        ]),
+      );
       expect(legacyActionGenerator).not.toHaveBeenCalled();
       expect(legacyActionReview).not.toHaveBeenCalled();
       const reviewed = await loadBoundaryReviewContext(root);

@@ -3,6 +3,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type {
   ActionRuleBooleanExpressionV1,
   ActionRuleScalarExpressionV1,
+  ActionRuleScalarTypeSpecV1,
   JsonScalar,
 } from "@synapsor/spec";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
@@ -498,6 +499,165 @@ function reconcileRunnerScopedEffect(
   };
 }
 
+function validateAndResolveEffectSubmission(input: {
+  submission: EffectSubmission;
+  verification: VerificationSubmission | undefined;
+  builtCatalog: BuiltActionRuleAuthoringCatalogV1;
+}): EffectSubmission {
+  if (!input.verification) {
+    throw new Error("ACTION_RULE_EFFECT_VERIFICATION_REQUIRED: an Effect draft requires the accepted Verification draft from this same authoring run.");
+  }
+  const target = input.builtCatalog.catalog.resources.find((resource) =>
+    resource.name === input.submission.target_resource);
+  const targetAuthoring = input.builtCatalog.authoring.resources.find((resource) =>
+    resource.name === input.submission.target_resource);
+  if (!target || !targetAuthoring) {
+    throw new Error(
+      `ACTION_RULE_EFFECT_TARGET_UNAVAILABLE: ${input.submission.target_resource} is outside the reviewed Action catalog.`,
+    );
+  }
+  if (!targetAuthoring.operations[input.submission.operation]) {
+    throw new Error(
+      `ACTION_RULE_EFFECT_OPERATION_UNAVAILABLE: ${input.submission.operation.toUpperCase()} ${target.name} is not source-proven for this Action draft.`,
+    );
+  }
+
+  const targetFields = new Map(target.fields.map((field) => [field.name, field]));
+  const writable = new Map(targetAuthoring.fields.map((field) => [field.name, field.writable]));
+  const allowedNames = new Set<string>();
+  for (const field of input.submission.allowed_fields) {
+    if (allowedNames.has(field.name)) {
+      throw new Error(`ACTION_RULE_EFFECT_FIELD_DUPLICATED: ${target.name}.${field.name} appears more than once.`);
+    }
+    const catalogField = targetFields.get(field.name);
+    if (!catalogField || writable.get(field.name) !== true) {
+      throw new Error(
+        `ACTION_RULE_EFFECT_FIELD_UNAVAILABLE: ${target.name}.${field.name} is not a reviewed writable field.`,
+      );
+    }
+    validateModelEffectBounds(field, catalogField.type);
+    allowedNames.add(field.name);
+  }
+  const setEntries = Object.entries(input.submission.set);
+  if (!setEntries.length) {
+    throw new Error("ACTION_RULE_EFFECT_SET_REQUIRED: a derived effect must set at least one reviewed field.");
+  }
+  const verificationBindings = new Map(input.verification.resources.map((resource) =>
+    [resource.binding, resource] as const));
+  for (const [field, expression] of setEntries) {
+    if (!allowedNames.has(field)) {
+      throw new Error(
+        `ACTION_RULE_EFFECT_FIELD_OUTSIDE_ENVELOPE: ${target.name}.${field} is not listed in allowed_fields.`,
+      );
+    }
+    validateModelEffectExpressionBindings(expression, verificationBindings, `effect.set.${field}`);
+  }
+
+  if (input.submission.operation === "insert") {
+    if (input.submission.target_binding !== undefined) {
+      throw new Error(
+        "ACTION_RULE_INSERT_TARGET_BINDING_FORBIDDEN: INSERT does not accept target_binding; Runner derives its proposal identity and deduplication guard.",
+      );
+    }
+    return structuredClone(input.submission);
+  }
+  if (!target.version_field) {
+    throw new Error(
+      `ACTION_RULE_UPDATE_CONFLICT_GUARD_UNAVAILABLE: ${target.name} has no unambiguous reviewed version field for stale-proposal detection.`,
+    );
+  }
+  const eligible = input.verification.resources.filter((resource) =>
+    resource.resource === target.name && resource.source.kind === "subject_ref");
+  if (input.submission.target_binding !== undefined) {
+    if (!eligible.some((resource) => resource.binding === input.submission.target_binding)) {
+      throw new Error([
+        `ACTION_RULE_UPDATE_TARGET_INVALID: ${JSON.stringify(input.submission.target_binding)} does not identify one reviewed ${target.name} subject row.`,
+        `Eligible one-row subject targets: ${formatEligibleUpdateTargets(eligible)}.`,
+        "For UPDATE, target_binding must exactly equal one listed binding for target_resource.",
+      ].join(" "));
+    }
+    return structuredClone(input.submission);
+  }
+  if (eligible.length === 1) {
+    return {
+      ...structuredClone(input.submission),
+      target_binding: eligible[0]!.binding,
+    };
+  }
+  if (!eligible.length) {
+    throw new Error([
+      `ACTION_RULE_UPDATE_TARGET_UNAVAILABLE: Runner could not identify which reviewed ${target.name} row the proposed change would update.`,
+      `The accepted Verification draft must contain ${target.name} as one one-row subject_ref before the Effect draft can be accepted.`,
+    ].join(" "));
+  }
+  throw new Error([
+    `ACTION_RULE_UPDATE_TARGET_AMBIGUOUS: Runner found multiple reviewed ${target.name} subject rows for this proposed change.`,
+    `Eligible one-row subject targets: ${formatEligibleUpdateTargets(eligible)}.`,
+    "Select the target that matches the operator's business object; do not ask the operator for an internal binding name.",
+  ].join(" "));
+}
+
+function formatEligibleUpdateTargets(resources: VerificationSubmission["resources"]): string {
+  return resources.length
+    ? resources.map((resource) => `${resource.binding} (${resource.resource}; cardinality one)`).join(", ")
+    : "none";
+}
+
+function validateModelEffectBounds(
+  field: EffectSubmission["allowed_fields"][number],
+  type: ActionRuleScalarTypeSpecV1,
+): void {
+  if ((field.minimum !== undefined || field.maximum !== undefined)
+    && type.kind !== "integer" && type.kind !== "money_minor") {
+    throw new Error(
+      `ACTION_RULE_EFFECT_BOUND_TYPE_INVALID: numeric bounds are not valid for ${field.name} (${type.kind}).`,
+    );
+  }
+  if (field.minimum !== undefined && field.maximum !== undefined && field.minimum > field.maximum) {
+    throw new Error(`ACTION_RULE_EFFECT_BOUNDS_REVERSED: ${field.name} has a minimum above its maximum.`);
+  }
+  if (field.values === undefined) return;
+  if (type.kind !== "string" && type.kind !== "boolean") {
+    throw new Error(
+      `ACTION_RULE_EFFECT_VALUE_TYPE_INVALID: exact allowed values are not valid for ${field.name} (${type.kind}).`,
+    );
+  }
+  if (type.kind === "string" && type.enum
+    && field.values.some((value) => typeof value !== "string" || !type.enum!.includes(value))) {
+    throw new Error(
+      `ACTION_RULE_EFFECT_VALUE_UNREVIEWED: ${field.name} contains a value outside its schema-declared allowlist.`,
+    );
+  }
+}
+
+function validateModelEffectExpressionBindings(
+  value: unknown,
+  bindings: Map<string, ActionRuleVerificationDraftResourceV1>,
+  path: string,
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => validateModelEffectExpressionBindings(item, bindings, `${path}[${index}]`));
+    return;
+  }
+  if (!isRecord(value)) return;
+  if (value.kind === "field") {
+    const binding = typeof value.binding === "string" ? bindings.get(value.binding) : undefined;
+    if (!binding) {
+      throw new Error(
+        `ACTION_RULE_EFFECT_BINDING_UNAVAILABLE: ${path} references a binding outside the accepted Verification draft.`,
+      );
+    }
+    if (typeof value.field !== "string" || !binding.fields.includes(value.field)) {
+      throw new Error(
+        `ACTION_RULE_EFFECT_SOURCE_FIELD_UNAVAILABLE: ${path} references a field outside accepted binding ${binding.binding}.`,
+      );
+    }
+  }
+  for (const [name, item] of Object.entries(value)) {
+    validateModelEffectExpressionBindings(item, bindings, `${path}.${name}`);
+  }
+}
+
 async function runPhaseWithClarification(input: {
   phase: PhaseName;
   intent: string;
@@ -627,7 +787,25 @@ async function runFocusedPhase(input: {
         }
         if (parsed.state === "clarification") clarificationQuestion = parsed.question;
         else {
-          submission = parsed.submission;
+          if (input.phase === "effect") {
+            const effective = revision
+              ? mergeRevisionSubmission({
+                  phase: "effect",
+                  candidate: parsed.submission,
+                  current: input.submissions.effect!,
+                  baseline: input.input.existingDraft!,
+                  changedFields: parsed.changed_fields,
+                }) as EffectSubmission
+              : parsed.submission as EffectSubmission;
+            const resolved = validateAndResolveEffectSubmission({
+              submission: effective,
+              verification: input.submissions.verification as VerificationSubmission | undefined,
+              builtCatalog: input.input.builtCatalog,
+            });
+            submission = revision ? parsed.submission : resolved;
+          } else {
+            submission = parsed.submission;
+          }
           changedFields = parsed.changed_fields;
         }
         return {
@@ -829,36 +1007,7 @@ function phaseTool(
     name: TOOL_EFFECT,
     title: "Draft one derived effect envelope",
     description: "Select one target and deterministic effect expressions within reviewed writable fields.",
-    input_schema: phaseInputSchema(
-      ["name", "operation", "target_resource", "allowed_fields", "set", "writeback"],
-      {
-        name: { type: "string" }, operation: { type: "string", enum: ["update", "insert"] },
-        target_resource: { type: "string" }, target_binding: { type: "string" },
-        allowed_fields: {
-          type: "array", minItems: 1, maxItems: 32,
-          items: {
-            type: "object", additionalProperties: false, required: ["name"],
-            properties: {
-              name: { type: "string" },
-              minimum: { type: "number" },
-              maximum: { type: "number" },
-              values: { type: "array", maxItems: 128, items: jsonScalarSchema() },
-            },
-          },
-        },
-        set: {
-          type: "object",
-          minProperties: 1,
-          maxProperties: 32,
-          additionalProperties: compatibleFlatEnvelope
-            ? { type: "object" }
-            : { $ref: "#/$defs/scalar_expression" },
-        },
-        writeback: { type: "string", enum: ["proposal_only", "supervised"] },
-      },
-      compatibleFlatEnvelope,
-      revision ? revisionFieldsForPhase(phase) : undefined,
-    ),
+    input_schema: effectPhaseInputSchema(compatibleFlatEnvelope, revision),
   };
   if (phase === "rule") return {
     name: TOOL_RULE,
@@ -1000,6 +1149,106 @@ function phaseInputSchema(
   };
 }
 
+function effectPhaseInputSchema(
+  compatibleFlatEnvelope: boolean,
+  revision: boolean,
+): Record<string, unknown> {
+  const revisionFields = revision ? revisionFieldsForPhase("effect") : undefined;
+  const properties = effectDraftProperties(compatibleFlatEnvelope, true);
+  if (compatibleFlatEnvelope) {
+    // Some local OpenAI-compatible servers reject nested discriminated unions.
+    // Keep their wire envelope flat, then enforce the operation-specific shape
+    // synchronously in validateAndResolveEffectSubmission.
+    return phaseInputSchema(
+      ["name", "operation", "target_resource", "allowed_fields", "set", "writeback"],
+      properties,
+      true,
+      revisionFields,
+    );
+  }
+  const revisionProperties = revisionFields
+    ? {
+        changed_fields: {
+          type: "array",
+          uniqueItems: true,
+          maxItems: revisionFields.length,
+          items: { type: "string", enum: revisionFields },
+        },
+      }
+    : {};
+  const required = ["status", ...(revision ? ["changed_fields"] : []), "name", "operation", "target_resource"];
+  return {
+    type: "object",
+    $defs: actionRuleExpressionDefinitions(),
+    oneOf: [
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["status", "question"],
+        properties: {
+          status: { const: "clarification" },
+          question: { type: "string", minLength: 1, maxLength: 500 },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: [...required, "target_binding", "allowed_fields", "set", "writeback"],
+        properties: {
+          status: { const: "draft" },
+          ...revisionProperties,
+          ...properties,
+          operation: { const: "update" },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: [...required, "allowed_fields", "set", "writeback"],
+        properties: {
+          status: { const: "draft" },
+          ...revisionProperties,
+          ...effectDraftProperties(compatibleFlatEnvelope, false),
+          operation: { const: "insert" },
+        },
+      },
+    ],
+  };
+}
+
+function effectDraftProperties(
+  compatibleFlatEnvelope: boolean,
+  includeTargetBinding: boolean,
+): Record<string, unknown> {
+  return {
+    name: { type: "string" },
+    operation: { type: "string", enum: ["update", "insert"] },
+    target_resource: { type: "string" },
+    ...(includeTargetBinding ? { target_binding: { type: "string" } } : {}),
+    allowed_fields: {
+      type: "array", minItems: 1, maxItems: 32,
+      items: {
+        type: "object", additionalProperties: false, required: ["name"],
+        properties: {
+          name: { type: "string" },
+          minimum: { type: "number" },
+          maximum: { type: "number" },
+          values: { type: "array", maxItems: 128, items: jsonScalarSchema() },
+        },
+      },
+    },
+    set: {
+      type: "object",
+      minProperties: 1,
+      maxProperties: 32,
+      additionalProperties: compatibleFlatEnvelope
+        ? { type: "object" }
+        : { $ref: "#/$defs/scalar_expression" },
+    },
+    writeback: { type: "string", enum: ["proposal_only", "supervised"] },
+  };
+}
+
 function actionRuleExpressionDefinitions(): Record<string, unknown> {
   const scalarReference = { $ref: "#/$defs/scalar_expression" };
   const booleanReference = { $ref: "#/$defs/boolean_expression" };
@@ -1109,7 +1358,8 @@ function phaseInstruction(phase: PhaseName): string {
     ].join(" ");
     case "effect": return [
       "Draft only the maximum one-row effect and exact deterministic set expressions. The agent must not supply these derived patch values. Use proposal_only unless the operator explicitly requested separately supervised execution.",
-      "A draft uses only the top-level keys status, name, operation, target_resource, optional target_binding, allowed_fields, set, and writeback. Copy target and field identifiers byte-for-byte from the catalog, and encode each set value as an Action Rule scalar expression.",
+      "An UPDATE draft must include target_binding and it must name one exact subject_ref binding for target_resource from the accepted Verification draft. An INSERT draft must omit target_binding. Runner resolves an omitted UPDATE binding only when exactly one eligible subject exists; it never guesses between multiple subjects.",
+      "A draft uses only the top-level keys status, name, operation, target_resource, allowed_fields, set, writeback, and target_binding only for UPDATE. Copy target and field identifiers byte-for-byte from the catalog, and encode each set value as an Action Rule scalar expression.",
       "For every field expression, copy binding byte-for-byte from the resources in the already validated Verification draft. A word such as subject, target, row, or item is not a binding unless that exact value appears there.",
       "A source-field expression has exactly kind=field, binding=<an exact accepted Verification binding>, and field=<an exact field on that binding>. A constant has kind=literal, value, and the exact reviewed value_type. Never copy placeholder identifiers, submit expression strings, or submit the JSON Schema.",
       "Expression identifiers, source bindings, and the mapping from verified fields into deterministic effect values are Runner-resolved mechanics. Never ask the operator to name them. Approval mode, reviewer role, and approval-ledger state are separate control-store policy and must never be encoded into a source status field. If a fixed business value such as the initial status of a new row is genuinely missing, ask only which reviewed business value the row should store.",
@@ -1128,7 +1378,7 @@ function phaseInstruction(phase: PhaseName): string {
       "required_role is a control-store reviewer-role label, not a database field or verification binding. Approval history and rolling-limit accounting live in Runner's separate control store; never ask the operator to locate either in source metadata.",
       "Every automatic-approval count or total is an elapsed rolling window from 60 seconds through 365 days. Preserve exact operator durations such as 15 days as 1296000 window_seconds; never round to a menu preset. Lifetime, all-time, and non-resetting counters are unsupported in this revision: say so once and ask for one rolling replacement instead of repeating the same question or approximating it.",
       "Policy mode requires exactly two circuit-breaker classes: one count scoped to boundary or capability, plus one count scoped to tenant, tenant_principal, or tenant_object. Any one trusted-scope form is sufficient. A tenant_principal limit already protects trusted tenant scope, so do not ask for or invent a redundant tenant-only limit.",
-      "Translate 'per tenant plus principal', 'per customer', 'per user within a tenant', or equivalent authenticated-owner wording to tenant_principal. Translate 'for this action' or an overall outcome total to capability. Preserve the operator's exact maximum and rolling duration.",
+      "Scope wording is exact: 'same customer account', 'same organization', or 'per tenant' means tenant; 'same signed-in person', 'per principal', or 'per user within a tenant' means tenant_principal; 'same exact target row/object/subscription' means tenant_object; 'for this action' or an overall outcome total means capability. Bare 'per customer' is ambiguous between an account and a person, so ask one concise business-facing clarification instead of guessing. Preserve the operator's exact maximum and rolling duration.",
       "The optional shared-limit capability field means the exact semantic outcome, not the rule name or approval class. Copy it only from the already validated Rule draft outcome. Runner will bind any submitted value back to that exact outcome before compilation.",
       "For human review use exactly: {\"status\":\"draft\",\"class_name\":\"area.human_review\",\"mode\":\"human\",\"required_role\":\"reviewer\",\"required_approvals\":1,\"shared_limits\":[]} and omit auto_approve_when.",
     ].join(" ");
@@ -1159,6 +1409,9 @@ function parsePhaseSubmission(
     if (value.operation !== "update" && value.operation !== "insert") throw new Error("effect operation must be update or insert.");
     if (!Array.isArray(value.allowed_fields) || !isRecord(value.set)) throw new Error("effect fields and deterministic set expressions are required.");
     if (value.writeback !== "proposal_only" && value.writeback !== "supervised") throw new Error("effect writeback posture is invalid.");
+    if (!revision && value.operation === "insert" && value.target_binding !== undefined) {
+      throw new Error("INSERT effect drafts must omit target_binding; inserts use Runner-derived deduplication instead of an existing subject row.");
+    }
     return { state: "submitted", submission: {
       name: boundedText(value.name, "effect name", 256),
       operation: value.operation,
@@ -1410,7 +1663,7 @@ function isRedundantTrustedScopeLimitQuestion(question: string, intent: string):
   const namesTenantPrincipalLimit = [
     /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:approval(?:s)?\s+)?per\s+(?:trusted\s+)?tenant\s+(?:plus|and)\s+principal\b/u,
     /\bat\s+most\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b.{0,100}\btenant\s+(?:plus|and)\s+principal\b/u,
-    /\bper\s+(?:authenticated\s+)?(?:customer|user|agent)\b.{0,100}\b(?:rolling|hour|day|week|month|year)s?\b/u,
+    /\bper\s+(?:(?:authenticated|signed[- ]in)\s+)?(?:person|user|agent|principal)\b.{0,100}\b(?:rolling|hour|day|week|month|year)s?\b/u,
   ].some((pattern) => pattern.test(normalizedIntent));
   const asksForTenantBreaker = /\b(?:tenant|trusted scope)\b/u.test(normalizedQuestion)
     && /\b(?:maximum|limit|count|how many|circuit breaker|per tenant)\b/u.test(normalizedQuestion);

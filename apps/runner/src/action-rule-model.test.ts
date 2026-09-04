@@ -78,8 +78,296 @@ describe("model-guided Action Rule authoring", () => {
     ]);
     expect(requestBodies[0]!.match(/Draft only the private Verification Boundary/g)).toHaveLength(1);
     expect(requestBodies[1]).toContain("billing.pause_account_verification");
+    const effectRequest = JSON.parse(requestBodies[1]!) as {
+      tools: Array<{ parameters?: Record<string, unknown>; function?: { parameters?: Record<string, unknown> } }>;
+    };
+    const effectSchema = effectRequest.tools[0]?.parameters
+      ?? effectRequest.tools[0]?.function?.parameters;
+    const effectVariants = effectSchema?.oneOf as Array<{
+      required?: string[];
+      properties?: Record<string, { const?: string }>;
+    }>;
+    const updateVariant = effectVariants.find((variant) => variant.properties?.operation?.const === "update");
+    const insertVariant = effectVariants.find((variant) => variant.properties?.operation?.const === "insert");
+    expect(updateVariant?.required).toContain("target_binding");
+    expect(insertVariant?.required).not.toContain("target_binding");
+    expect(insertVariant?.properties).not.toHaveProperty("target_binding");
+    expect(requestBodies[1]).toContain("An UPDATE draft must include target_binding");
+    expect(requestBodies[1]).not.toContain("optional target_binding");
     expect(requestBodies[3]).toContain("A tenant_principal limit already satisfies trusted scope");
     expect(requestBodies[3]).toContain("do not ask for or invent a redundant tenant-only limit");
+  });
+
+  it("uses the same operation-aware Effect contract for Anthropic authoring", async () => {
+    const calls: string[] = [];
+    let effectSchema: Record<string, unknown> | undefined;
+    const requestJson = vi.fn(async (
+      request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0],
+    ) => {
+      const body = request.body as Record<string, unknown>;
+      const tools = body.tools as Array<{ name?: string; input_schema?: Record<string, unknown> }>;
+      const tool = tools[0];
+      if (!tool?.name) throw new Error("Expected one forced Anthropic Action Rule authoring tool.");
+      calls.push(tool.name);
+      if (tool.name.endsWith("submit_effect_envelope_draft")) {
+        effectSchema = structuredClone(tool.input_schema);
+      }
+      return {
+        status: 200,
+        body: {
+          content: [{
+            type: "tool_use",
+            id: `toolu_${calls.length}`,
+            name: tool.name,
+            input: payloadFor(tool.name),
+          }],
+        },
+      };
+    });
+
+    const result = await generateModelActionRuleDraft({
+      session: {
+        provider: "anthropic",
+        model: "claude-test",
+        dependencies: { requestJson },
+      },
+      intent: "Let an eligible account request a temporary pause, but require human review.",
+      builtCatalog: builtCatalog(),
+      readBoundary: boundary(),
+      readBoundaryDigest: readDigest,
+      egressAcknowledged: true,
+      env: { ANTHROPIC_API_KEY: "provider-test-key" },
+    });
+
+    expect(result).toMatchObject({
+      state: "ready",
+      provider: "anthropic",
+      authority_granted: false,
+      source_database_changed: false,
+    });
+    expect(calls).toHaveLength(4);
+    const variants = effectSchema?.oneOf as Array<{
+      required?: string[];
+      properties?: Record<string, { const?: string }>;
+    }>;
+    const updateVariant = variants.find((variant) => variant.properties?.operation?.const === "update");
+    const insertVariant = variants.find((variant) => variant.properties?.operation?.const === "insert");
+    expect(updateVariant?.required).toContain("target_binding");
+    expect(insertVariant?.required).not.toContain("target_binding");
+    expect(insertVariant?.properties).not.toHaveProperty("target_binding");
+    expect(JSON.stringify(requestJson.mock.calls.map(([request]) => request.body)))
+      .not.toContain("provider-test-key");
+  });
+
+  it("infers one unambiguous UPDATE subject when a provider omits target_binding", async () => {
+    const calls: string[] = [];
+    const requestJson = phaseResponder(calls, (name) => {
+      if (!name.endsWith("submit_effect_envelope_draft")) return undefined;
+      const effect = payloadFor(name);
+      delete effect.target_binding;
+      return effect;
+    });
+    const askClarification = vi.fn(async () => "The operator should not be asked for a Runner binding.");
+
+    const result = await generateModelActionRuleDraft({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-terra",
+        dependencies: { requestJson },
+      },
+      intent: "Let an eligible account request a temporary pause, but require human review.",
+      builtCatalog: builtCatalog(),
+      readBoundary: boundary(),
+      readBoundaryDigest: readDigest,
+      egressAcknowledged: true,
+      askClarification,
+      env: { OPENAI_API_KEY: "provider-test-key" },
+    });
+
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(calls.filter((name) => name.endsWith("submit_effect_envelope_draft"))).toHaveLength(1);
+    expect(result.compiled.draft.effect.target_binding).toBe("account");
+    expect(result.compiled.effect_envelope).toMatchObject({
+      operation: "update",
+      target_resource: "billing.accounts",
+      target_binding: "account",
+      max_rows: 1,
+      writeback: { mode: "none" },
+    });
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+  });
+
+  it("internally corrects an explicit UPDATE binding that points at another subject", async () => {
+    const calls: string[] = [];
+    const requestBodies: string[] = [];
+    let effectCalls = 0;
+    const requestJson = phaseResponder(calls, (name) => {
+      if (!name.endsWith("submit_effect_envelope_draft")) return undefined;
+      const effect = payloadFor(name);
+      if (effectCalls++ === 0) effect.target_binding = "other";
+      return effect;
+    }, requestBodies);
+
+    const result = await generateModelActionRuleDraft({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-terra",
+        dependencies: { requestJson },
+      },
+      intent: "Let an eligible account request a temporary pause, but require human review.",
+      builtCatalog: builtCatalog(),
+      readBoundary: boundary(),
+      readBoundaryDigest: readDigest,
+      egressAcknowledged: true,
+      env: { OPENAI_API_KEY: "provider-test-key" },
+    });
+
+    expect(calls.filter((name) => name.endsWith("submit_effect_envelope_draft"))).toHaveLength(2);
+    expect(result.compiled.draft.effect.target_binding).toBe("account");
+    expect(result.correction_used).toBe(true);
+    expect(requestBodies.some((body) => body.includes("Eligible one-row subject targets"))).toBe(true);
+  });
+
+  it("asks one business clarification rather than guessing between UPDATE subjects", async () => {
+    const calls: string[] = [];
+    let verificationCalls = 0;
+    let effectCalls = 0;
+    const requestJson = phaseResponder(calls, (name) => {
+      if (name.endsWith("submit_verification_boundary_draft")) {
+        verificationCalls += 1;
+        return {
+          status: "draft",
+          name: "billing.pause_account_verification",
+          resources: ["primary_account", "secondary_account"].map((binding) => ({
+            binding,
+            resource: "billing.accounts",
+            source: { kind: "subject_ref" },
+            fields: ["status", "risk_hold"],
+          })),
+        };
+      }
+      if (name.endsWith("submit_effect_envelope_draft")) {
+        const effect = payloadFor(name);
+        if (effectCalls++ === 0) delete effect.target_binding;
+        else if (effectCalls === 2) {
+          return {
+            status: "clarification",
+            question: "Should the proposal change the customer's primary or secondary account record?",
+          };
+        } else effect.target_binding = "primary_account";
+        return effect;
+      }
+      if (name.endsWith("submit_action_rule_draft")) {
+        return rulePayload(eligiblePredicate("primary_account"));
+      }
+      return undefined;
+    });
+    const askClarification = vi.fn(async () => "Change the customer's primary account record.");
+
+    const result = await generateModelActionRuleDraft({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-terra",
+        dependencies: { requestJson },
+      },
+      intent: "Let an eligible account request a temporary pause, but require human review.",
+      builtCatalog: builtCatalog(),
+      readBoundary: boundary(),
+      readBoundaryDigest: readDigest,
+      egressAcknowledged: true,
+      askClarification,
+      env: { OPENAI_API_KEY: "provider-test-key" },
+    });
+
+    expect(verificationCalls).toBe(1);
+    expect(askClarification).toHaveBeenCalledWith(
+      "Should the proposal change the customer's primary or secondary account record?",
+    );
+    expect(result.compiled.draft.effect.target_binding).toBe("primary_account");
+    expect(result.clarification_count).toBe(1);
+  });
+
+  it("fails before Rule or approval drafting when UPDATE has no reviewed subject target", async () => {
+    const calls: string[] = [];
+    const requestJson = phaseResponder(calls, (name) => {
+      if (name.endsWith("submit_verification_boundary_draft")) {
+        return {
+          status: "draft",
+          name: "billing.pause_account_verification",
+          resources: [{
+            binding: "supporting_account",
+            resource: "billing.accounts",
+            source: {
+              kind: "relationship",
+              from_binding: "missing_parent",
+              relationship: "missing_relationship",
+              direction: "forward",
+            },
+            fields: ["status", "risk_hold"],
+          }],
+        };
+      }
+      if (!name.endsWith("submit_effect_envelope_draft")) return undefined;
+      const effect = payloadFor(name);
+      delete effect.target_binding;
+      return effect;
+    });
+
+    await expect(generateModelActionRuleDraft({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-terra",
+        dependencies: { requestJson },
+      },
+      intent: "Let an eligible account request a temporary pause, but require human review.",
+      builtCatalog: builtCatalog(),
+      readBoundary: boundary(),
+      readBoundaryDigest: readDigest,
+      egressAcknowledged: true,
+      env: { OPENAI_API_KEY: "provider-test-key" },
+    })).rejects.toThrow(/could not identify which reviewed billing\.accounts row/u);
+    expect(calls.filter((name) => name.endsWith("submit_action_rule_draft"))).toHaveLength(0);
+    expect(calls.filter((name) => name.endsWith("submit_approval_policy_draft"))).toHaveLength(0);
+  });
+
+  it("keeps INSERT free of target_binding and retains Runner-derived deduplication", async () => {
+    const calls: string[] = [];
+    const insertCatalog = structuredClone(builtCatalog());
+    insertCatalog.authoring.resources[0]!.operations.insert = true;
+    const requestJson = phaseResponder(calls, (name) => {
+      if (!name.endsWith("submit_effect_envelope_draft")) return undefined;
+      const effect = payloadFor(name);
+      effect.operation = "insert";
+      delete effect.target_binding;
+      return effect;
+    });
+
+    const result = await generateModelActionRuleDraft({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-terra",
+        dependencies: { requestJson },
+      },
+      intent: "Let an agent propose one new paused account record for human review.",
+      builtCatalog: insertCatalog,
+      readBoundary: boundary(),
+      readBoundaryDigest: readDigest,
+      egressAcknowledged: true,
+      env: { OPENAI_API_KEY: "provider-test-key" },
+    });
+
+    expect(result.compiled.draft.effect).not.toHaveProperty("target_binding");
+    expect(result.compiled.effect_envelope).toMatchObject({
+      operation: "insert",
+      deduplication: {
+        components: [
+          { column: "account_id", source: "proposal_id" },
+          { column: "tenant_id", source: "trusted_tenant" },
+        ],
+      },
+      writeback: { mode: "none" },
+    });
   });
 
   it("normalizes an omitted empty approval-limit list before authority validation", async () => {
@@ -110,6 +398,67 @@ describe("model-guided Action Rule authoring", () => {
       shared_limits: [],
     });
     expect(calls.filter((name) => name.endsWith("submit_approval_policy_draft"))).toHaveLength(1);
+  });
+
+  it("repairs a per-person counter that weakens an explicit customer-account limit", async () => {
+    const calls: string[] = [];
+    const requestBodies: string[] = [];
+    let approvalCalls = 0;
+    const requestJson = phaseResponder(calls, (name) => {
+      if (!name.endsWith("submit_approval_policy_draft")) return undefined;
+      approvalCalls += 1;
+      return {
+        status: "draft",
+        class_name: "billing.policy_pause",
+        mode: "policy",
+        auto_approve_when: eligiblePredicate(),
+        required_role: "billing_reviewer",
+        required_approvals: 1,
+        shared_limits: [
+          {
+            id: "pause_action_24h",
+            kind: "count",
+            scope: "capability",
+            maximum: 10,
+            window_seconds: 86_400,
+            capability: "billing.pause_account",
+          },
+          {
+            id: "pause_account_24h",
+            kind: "count",
+            scope: approvalCalls === 1 ? "tenant_principal" : "tenant",
+            maximum: 3,
+            window_seconds: 86_400,
+            capability: "billing.pause_account",
+          },
+        ],
+      };
+    }, requestBodies);
+    const askClarification = vi.fn(async () => "The account-wide limit was already stated.");
+
+    const result = await generateModelActionRuleDraft({
+      session: {
+        provider: "openai",
+        model: "gpt-5.6-terra",
+        dependencies: { requestJson },
+      },
+      intent: "Auto-approve at most 10 plan changes for this action in a rolling 24-hour period and no more than 3 for the same customer account in a rolling 24-hour period.",
+      builtCatalog: builtCatalog(),
+      readBoundary: boundary(),
+      readBoundaryDigest: readDigest,
+      egressAcknowledged: true,
+      askClarification,
+      env: { OPENAI_API_KEY: "provider-test-key" },
+    });
+
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(calls.filter((name) => name.endsWith("submit_approval_policy_draft"))).toHaveLength(2);
+    expect(result.compiled.approval_class.shared_limits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: "capability", maximum: 10, window_seconds: 86_400 }),
+      expect.objectContaining({ scope: "tenant", maximum: 3, window_seconds: 86_400 }),
+    ]));
+    expect(requestBodies.some((body) => body.includes("same customer account"))).toBe(true);
+    expect(requestBodies.some((body) => body.includes("Bare 'per customer' is ambiguous"))).toBe(true);
   });
 
   it("repairs omitted automatic-policy limits from the stated intent without repeating them to the operator", async () => {
@@ -1687,20 +2036,20 @@ function rulePayload(require: ActionRuleBooleanExpressionV1): Record<string, unk
   };
 }
 
-function eligiblePredicate(): ActionRuleBooleanExpressionV1 {
+function eligiblePredicate(binding = "account"): ActionRuleBooleanExpressionV1 {
   return {
     kind: "all",
     expressions: [
       {
         kind: "compare",
         operator: "eq",
-        left: { kind: "field", binding: "account", field: "status" },
+        left: { kind: "field", binding, field: "status" },
         right: statusLiteral("active"),
       },
       {
         kind: "compare",
         operator: "eq",
-        left: { kind: "field", binding: "account", field: "risk_hold" },
+        left: { kind: "field", binding, field: "risk_hold" },
         right: { kind: "literal", value: false, value_type: { kind: "boolean" } },
       },
     ],

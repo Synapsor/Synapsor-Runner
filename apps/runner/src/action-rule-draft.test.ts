@@ -64,6 +64,23 @@ describe("model-authored Action Rule draft compilation", () => {
     });
   });
 
+  it("canonically fills the only one-row subject target for an UPDATE", () => {
+    const attempted = draft();
+    delete attempted.effect.target_binding;
+
+    const result = compileActionRuleModelDraft({
+      draft: attempted,
+      builtCatalog: builtCatalog(),
+      readBoundary: boundary(),
+      readBoundaryDigest: readDigest,
+      activatedAt: "2026-09-03T01:00:00.000Z",
+    });
+
+    expect(result.draft.effect.target_binding).toBe("account");
+    expect(result.effect_envelope.target_binding).toBe("account");
+    expect(attempted.effect.target_binding).toBeUndefined();
+  });
+
   it("adds both reviewed relationship keys without asking the model to name join columns", () => {
     const attempted = draft();
     attempted.verification.resources.push({

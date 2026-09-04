@@ -3162,7 +3162,7 @@ function isRequiredBoundaryToolFailure(error: unknown): error is AskError {
 
 type BoundaryModelDraftFailure =
   | { kind: "required_tool" }
-  | { kind: "reviewed_grammar"; blockers: string[] };
+  | { kind: "reviewed_grammar"; blockers: string[]; details?: string[] };
 
 function recoverableActionModelDraftFailure(error: unknown): BoundaryModelDraftFailure | undefined {
   if (isRequiredBoundaryToolFailure(error)) return { kind: "required_tool" };
@@ -3186,10 +3186,30 @@ function recoverableActionRuleModelDraftFailure(error: unknown): BoundaryModelDr
   }
   const blocked = /^(?:ACTION_RULE_[A-Z0-9_]+):\s*(.*)$/isu.exec(error.message);
   if (!blocked) return undefined;
+  const exact = (blocked[1]?.trim() || "The verified outcome did not fit the reviewed Action Rule grammar.")
+    .replace(/^(?:(?:ACTION_RULE_[A-Z0-9_]+):\s*)+/iu, "");
+  const summary = actionRuleModelFailureSummary(exact);
   return {
     kind: "reviewed_grammar",
-    blockers: [blocked[1]?.trim() || "The verified outcome did not fit the reviewed Action Rule grammar."],
+    blockers: [summary],
+    ...(summary === exact ? {} : { details: [summary, `Exact local validation: ${exact}`] }),
   };
+}
+
+function actionRuleModelFailureSummary(message: string): string {
+  const target = /reviewed\s+([A-Za-z_][A-Za-z0-9_.:-]*)\s+(?:subject\s+)?row/iu.exec(message)?.[1]
+    ?? /UPDATE\s+([A-Za-z_][A-Za-z0-9_-]*\.[A-Za-z_][A-Za-z0-9_.:-]*)/iu.exec(message)?.[1];
+  if (/multiple reviewed .* subject rows|TARGET_AMBIGUOUS/iu.test(message)) {
+    return target
+      ? `Runner found more than one reviewed ${target} row that could be changed and will not guess which business object the agent meant.`
+      : "Runner found more than one reviewed row that could be changed and will not guess which business object the agent meant.";
+  }
+  if (/target_binding|subject target binding|which reviewed .* row .* update|TARGET_(?:INVALID|UNAVAILABLE)/iu.test(message)) {
+    return target
+      ? `Runner could not identify one exact reviewed ${target} row for the proposed change. No Action draft was saved.`
+      : "Runner could not identify one exact reviewed row for the proposed change. No Action draft was saved.";
+  }
+  return message;
 }
 
 function recoverableReadModelDraftFailure(error: unknown): BoundaryModelDraftFailure | undefined {
@@ -3225,7 +3245,14 @@ async function promptRunnerGuidedModelFallback(input: {
         "Runner discarded the responses. No model output became authority and no source query or write ran.",
         "The deterministic path uses the same job and reviewed structural catalog; you still review the exact disabled draft.",
       ];
-  input.session.rememberDetails?.(title, context);
+  const detailsContext = grammarFailure?.details
+    ? [
+        `${boundaryModelLabel(input)} submitted a structured ${input.stage} draft, but Runner validation refused it.`,
+        ...grammarFailure.details,
+        "The rejected draft was not saved or executed. No model output became authority and no source query or write ran.",
+      ]
+    : context;
+  input.session.rememberDetails?.(title, detailsContext);
   if (input.session.chooseOption) {
     while (true) {
       const selected = await input.session.chooseOption(
@@ -3271,7 +3298,7 @@ async function promptRunnerGuidedModelFallback(input: {
         },
       );
       if (selected === "details") {
-        input.session.present?.(`${input.stage.toUpperCase()} FAILURE DETAILS`, context, "danger");
+        input.session.present?.(`${input.stage.toUpperCase()} FAILURE DETAILS`, detailsContext, "danger");
         continue;
       }
       return selected === "runner" || selected === "retry" || selected === "change_model"

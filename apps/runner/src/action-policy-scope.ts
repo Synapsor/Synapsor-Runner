@@ -27,7 +27,7 @@ export function explicitTrustedPolicyScope(value: string): ExplicitTrustedPolicy
     " ",
   );
   const objectMatch = answer.match(
-    /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:exact\s+)?(?:target\s+)?(?:row|record|object)\b/i,
+    /\b(?:(?:per|for\s+each|for\s+every|each|every)\s+(?:exact\s+)?(?:target\s+)?(?:row|record|object)|for\s+(?:this|the\s+same)\s+exact\s+(?:target\s+)?(?:row|record|object|subscription))\b/i,
   );
   if (objectMatch) return { scope: "tenant_object", phrase: JSON.stringify(objectMatch[0]) };
   const boundaryMatch = answer.match(
@@ -45,11 +45,11 @@ export function explicitTrustedPolicyScope(value: string): ExplicitTrustedPolicy
     return { scope: "tenant_principal", phrase: JSON.stringify(tenantPrincipalMatch[0]) };
   }
   const accountMatch = answer.match(
-    /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:(?:trusted|customer)\s+)?account\b/i,
+    /\b(?:(?:per|for\s+each|for\s+every|each|every)\s+(?:(?:trusted|customer)\s+)?account|for\s+(?:the\s+)?same\s+(?:customer\s+)?account)\b/i,
   );
   if (accountMatch) return { scope: "tenant", phrase: JSON.stringify(accountMatch[0]) };
   const principalMatch = answer.match(
-    /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:authenticated\s+)?(?:agent|operator|principal|user|customer)\b/i,
+    /\b(?:(?:per|for\s+each|for\s+every|each|every)\s+(?:(?:authenticated|signed[- ]in|trusted)\s+)?(?:person|agent|operator|principal|user)|for\s+(?:the\s+)?same\s+(?:(?:authenticated|signed[- ]in|trusted)\s+)?(?:person|agent|operator|principal|user)(?:\s+in\s+(?:an?|the|that|same)\s+(?:customer\s+)?account)?)\b/i,
   );
   if (principalMatch) return { scope: "tenant_principal", phrase: JSON.stringify(principalMatch[0]) };
   const tenantMatch = answer.match(
@@ -73,11 +73,11 @@ export function explicitTrustedPolicyScopes(value: string): ExplicitTrustedPolic
     return " ".repeat(phrase.length);
   });
   const patterns: Array<[ExplicitTrustedPolicyScope["scope"], RegExp]> = [
-    ["tenant_object", /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:exact\s+)?(?:target\s+)?(?:row|record|object)\b/gi],
+    ["tenant_object", /\b(?:(?:per|for\s+each|for\s+every|each|every)\s+(?:exact\s+)?(?:target\s+)?(?:row|record|object)|for\s+(?:this|the\s+same)\s+exact\s+(?:target\s+)?(?:row|record|object|subscription))\b/gi],
     ["boundary", /\b(?:across|for|per|within)\s+(?:the\s+)?(?:whole\s+|entire\s+|this\s+)?action\s+boundary\b/gi],
     ["capability", /\b(?:across|for|per|within)\s+(?:this\s+|the\s+|each\s+|every\s+)?(?:exact\s+)?(?:action|capability)\b/gi],
-    ["tenant_principal", /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:authenticated\s+)?(?:agent|operator|principal|user|customer)\b/gi],
-    ["tenant", /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:(?:trusted|customer)\s+)?account\b/gi],
+    ["tenant_principal", /\b(?:(?:per|for\s+each|for\s+every|each|every)\s+(?:(?:authenticated|signed[- ]in|trusted)\s+)?(?:person|agent|operator|principal|user)|for\s+(?:the\s+)?same\s+(?:(?:authenticated|signed[- ]in|trusted)\s+)?(?:person|agent|operator|principal|user)(?:\s+in\s+(?:an?|the|that|same)\s+(?:customer\s+)?account)?)\b/gi],
+    ["tenant", /\b(?:(?:per|for\s+each|for\s+every|each|every)\s+(?:(?:trusted|customer)\s+)?account|for\s+(?:the\s+)?same\s+(?:customer\s+)?account)\b/gi],
     ["tenant", /\b(?:per|for\s+each|for\s+every|each|every)\s+(?:trusted\s+)?(?:tenant|org|organization|organisation)\b/gi],
   ];
   for (const [scope, pattern] of patterns) {
