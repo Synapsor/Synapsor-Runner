@@ -4,12 +4,37 @@ import {
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
 import type { AskProviderDependencies } from "./model-ask.js";
+import { parseReadPolicySettings } from "./read-boundary-policy-revision.js";
 import {
   generateModelReadBoundaryRevision,
   readBoundaryRevisionCatalog,
 } from "./read-boundary-revision-model.js";
 
 describe("model-assisted Read Boundary field exposure revisions", () => {
+  it("edits bounded operations, labels and limits without broadening trusted authority", async () => {
+    const result = await generateModelReadBoundaryRevision({
+      instruction: "Allow filtering status, label it Order status, and cap results at 20 rows.",
+      provider: "openai", model: "gpt-test", apiKey: "test-only", boundary: boundary(), egressAcknowledged: true,
+      dependencies: { requestJson: async () => ({ status: 200, body: { output: [{
+        type: "function_call", call_id: "revision", name: "runner__submit_read_boundary_revision",
+        arguments: JSON.stringify({ resource_changes: [{ resource: "public.orders", settings: {
+          filterable_fields: ["status"], max_rows: 20, field_metadata: [{ field: "status", label: "Order status" }],
+        } }] }),
+      }] } }) },
+    });
+    expect(result.changes).toEqual([]);
+    expect(result.policy_changes).toEqual([{ resource: "public.orders", settings: {
+      filterable_fields: ["status"], max_rows: 20, field_metadata: [{ field: "status", label: "Order status" }],
+    } }]);
+    expect(result.authority_granted).toBe(false);
+    const resource = readBoundaryRevisionCatalog(boundary()).resources[0]!;
+    for (const setting of [
+      { tenant_key: "status" }, { max_rows: 1e12 }, { max_rows: 0 },
+      { filterable_fields: ["tenant_id"] }, { selectable_fields: ["invented"] },
+      { relationship_ids: ["invented_path"] }, { field_metadata: [{ field: "invented", label: "Meaning" }] },
+    ]) expect(() => parseReadPolicySettings(setting, resource)).toThrow();
+  });
+
   it.each(["openai", "anthropic"] as const)(
     "accepts one exact %s revision while granting no authority",
     async (provider) => {

@@ -63,10 +63,12 @@ export type {
   ProposalFreshnessEvaluation,
 } from "./runtime-types.js";
 export {
+  createInactiveSemanticActionRuntime,
   createSemanticActionRuntime,
   DESCRIBE_ACTIONS_TOOL,
   REQUEST_CHANGE_TOOL,
 } from "./semantic-actions.js";
+export { semanticActionInputSchema } from "./semantic-action-schema.js";
 export type { SemanticActionContinuation } from "./semantic-actions.js";
 export {
   buildDerivedChangeSet,

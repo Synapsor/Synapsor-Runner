@@ -24,10 +24,10 @@ if (provider !== "openai" && provider !== "anthropic" && provider !== "openai_co
   throw new Error("--provider must be openai, anthropic, or openai_compatible.");
 }
 
-const fixtures = [fieldServiceFixture(), customerSupportFixture(), inventoryFixture(), universityEnrollmentFixture()]
+const fixtures = [fieldServiceFixture(), customerSupportFixture(), inventoryFixture(), universityEnrollmentFixture(), codedPreferencesFixture()]
   .filter((fixture) => requestedDomain === undefined || fixture.id === requestedDomain);
 if (!fixtures.length) {
-  throw new Error(`Unknown --domain ${requestedDomain}. Use field-service, customer-support, inventory, or university-enrollment.`);
+  throw new Error(`Unknown --domain ${requestedDomain}. Use field-service, customer-support, inventory, university-enrollment, or coded-preferences.`);
 }
 
 for (const fixture of fixtures) {
@@ -48,6 +48,7 @@ for (const fixture of fixtures) {
     egressAcknowledged: true,
     askClarification: async (question) => {
       clarifications.push(question);
+      if (clarifications.length > 4) throw new Error(`${fixture.id}: repeated clarification did not resolve the job; stopping qualification.`);
       process.stderr.write(`CLARIFICATION ${fixture.id} ${clarifications.length}: ${question}\n`);
       return fixture.clarification;
     },
@@ -68,9 +69,21 @@ for (const fixture of fixtures) {
       && limit.maximum === expectedLimit.maximum
       && limit.window_seconds === expectedLimit.window_seconds
       && limit.capability === result.compiled.rule.outcome), true,
-    `missing ${fixture.id} ${expectedLimit.scope} ${expectedLimit.kind} approval limit`);
+    `missing ${fixture.id} ${expectedLimit.scope} ${expectedLimit.kind} approval limit: ${JSON.stringify(result.compiled.approval_class.shared_limits)}`);
   }
-  assert.equal(clarifications.length <= 2, true);
+  assert.equal(clarifications.length <= 4, true);
+  if (fixture.id === "customer-support") {
+    assert.equal(result.compiled.rule.inputs.length, 1);
+    assert.equal(result.compiled.rule.inputs[0].minimum, 1);
+    assert.equal(result.compiled.rule.inputs[0].maximum, 2500);
+    assert.match(JSON.stringify(result.compiled.rule.effect.set.amount), /"input"/u);
+  }
+  if (fixture.id === "coded-preferences") {
+    assert.ok(clarifications.length >= 1, "Coded business meanings require operator clarification.");
+    assert.deepEqual(Object.keys(result.compiled.rule.effect.set), ["c7"]);
+    assert.match(JSON.stringify(result.compiled.rule.effect.set.c7), /"P"/u);
+    assert.match(JSON.stringify(result.compiled.rule.require), /b9/u);
+  }
 
   process.stdout.write([
     `PASS ${provider}[${model}] ${fixture.id}`,
@@ -180,8 +193,8 @@ function customerSupportFixture() {
     id: "customer-support", engine: "postgres", readName: "support_read", resources, relationships: [],
     intent: [
       "Draft a proposal-only outcome for an authenticated customer to request a refund for one opaque charge subject.",
-      "The charge must be settled and refundable_amount must be between 1 and 2500 USD minor units inclusive.",
-      "Insert one support.refund_requests row whose charge_id and amount are derived from the charge and whose reason is duplicate_charge.",
+      "The charge must be settled. The client supplies one reviewed business input named requested_amount from 1 through 2500 USD minor units; it must also be no more than the charge's refundable_amount.",
+      "Insert one support.refund_requests row whose charge_id is derived from the charge, amount is requested_amount, and reason is duplicate_charge.",
       "Require one support_reviewer. Automatically approve only eligible duplicate-charge requests, otherwise keep the eligible proposal for human review.",
       "Limit automatic approvals to 100 for this exact action in a rolling 24-hour window and one per trusted tenant plus principal in a rolling 15-day window. Do not enable writeback.",
     ].join(" "),
@@ -235,6 +248,21 @@ function inventoryFixture() {
     ].join(" "),
     clarification: "Use inventory.orders as the opaque subject and stock_holds_order_fk inverse to load at most 10 holds ordered by hold_id ascending. Require one inventory_reviewer.",
     expected: { operation: "insert", target: "inventory.reservations" },
+  });
+}
+
+function codedPreferencesFixture() {
+  return fixture({
+    id: "coded-preferences", engine: "postgres", readName: "communications_read",
+    resources: [resource({
+      name: "records.r17", engine: "postgres", primaryKey: "k1", tenantKey: "k2", principalKey: "k3", versionField: "v1",
+      fields: [field("k1", STRING_ID), field("k2", STRING_ID), field("k3", STRING_ID), field("v1", INTEGER),
+        field("c7", enumType(1, ["A", "P"])), field("b9", { kind: "boolean" })],
+      visible: ["c7"], verificationOnly: ["b9"], writable: ["c7"], update: true,
+    })], relationships: [],
+    intent: "Let a signed-in customer request pausing their own optional reminders, but only while reminders are active and no mandatory-notice hold applies. Require one communications_reviewer; prepare proposals only and never apply changes.",
+    clarification: "records.r17 holds reminder preferences. c7 is reminder status: A means active, P means paused. b9 is the mandatory-notice hold: true blocks this change, false permits it. The reviewed k2 and k3 bindings are the existing trusted organization and customer scope, not user arguments. Set only c7 to P if c7 is A and b9 is false; require one communications_reviewer. Keep proposal-only operation.",
+    expected: { operation: "update", target: "records.r17" },
   });
 }
 

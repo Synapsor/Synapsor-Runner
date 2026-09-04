@@ -620,6 +620,41 @@ function customerSupportFixture(): {
 }
 
 describe("portable Action Rule compiler and evaluator", () => {
+  it("derives a customer-selected refund amount through reviewed business inputs", () => {
+    const fixture = customerSupportFixture();
+    fixture.rule.inputs = [{ name: "requested_amount", description: "Refund amount in USD cents", type: { kind: "money_minor", currency: "USD" }, minimum: 1, maximum: 2500 }];
+    fixture.rule.effect.set.amount = { kind: "input", name: "requested_amount" };
+    const compiled = compileActionRule({ rule: fixture.rule, verification_boundary: fixture.boundary, effect_envelope: fixture.envelope, catalog: fixture.catalog });
+    const evaluate = (inputs: Record<string, unknown>) => evaluateActionRule({ compiled, facts: fixture.facts, proposal_id: "input_refund", inputs });
+    const result = evaluate({ requested_amount: 1200 });
+    expect(result).toMatchObject({ result: "eligible", effect: { set: { amount: 1200 }, tenant_guard: { value: "northstar_mobile" } } });
+    for (const inputs of [{}, { requested_amount: 0 }, { requested_amount: 2501 }, { requested_amount: "1200" }, { requested_amount: 1.5 }, { requested_amount: 1200, tenant: "attacker" }]) {
+      expect(evaluate(inputs)).not.toHaveProperty("effect");
+    }
+    expect(evaluate({ requested_amount: 1 }).result).toBe("eligible");
+    expect(evaluate({ requested_amount: 2500 }).result).toBe("eligible");
+  });
+
+  it("refuses undeclared input expressions and unbounded business numbers", () => {
+    const fixture = customerSupportFixture();
+    fixture.rule.effect.set.amount = { kind: "input", name: "requested_amount" };
+    const compile = () => compileActionRule({ rule: fixture.rule, verification_boundary: fixture.boundary, effect_envelope: fixture.envelope, catalog: fixture.catalog });
+    expect(compile).toThrow(/input/i);
+    fixture.rule.inputs = [{ name: "requested_amount", description: "Refund amount", type: { kind: "money_minor", currency: "USD" } }];
+    expect(compile).toThrow(/bound|minimum|maximum/i);
+  });
+
+  it.each([false, true])("refuses business inputs as related-row identity (indirect: %s)", (indirect) => {
+    const fixture = customerSupportFixture();
+    fixture.catalog.relationships.push({ name: "refund_charge_fk", from_resource: "support.refund_requests", to_resource: "support.charges",
+      local_field: "charge_id", target_field: "charge_id", cardinality: "many_to_one", nullable: false, target_unique: true });
+    fixture.rule.inputs = [{ name: "charge", description: "Untrusted nominated charge", type: stringId }];
+    fixture.rule.derive.charge_key = { kind: "input", name: "charge" };
+    fixture.rule.effect.set.charge_id = indirect ? { kind: "derived", name: "charge_key" } : { kind: "input", name: "charge" };
+    expect(() => compileActionRule({ rule: fixture.rule, verification_boundary: fixture.boundary, effect_envelope: fixture.envelope, catalog: fixture.catalog }))
+      .toThrow(/Relationship identity.*business input/u);
+  });
+
   it("rejects an unknown untrusted boolean AST kind before canonical hashing", () => {
     const fixture = fieldServiceFixture();
     fixture.rule.require = { kind: "and", expressions: [] } as unknown as ActionRuleSpecV1["require"];
@@ -1264,8 +1299,15 @@ function fieldServiceRuntimeAdapter(
 
 async function eligibleFieldServiceRuntime(options: {
   approvalClasses?: ActionRuleApprovalClassSourceV1[];
+  withInput?: boolean;
 } = {}) {
   const fixture = fieldServiceFixture();
+  if (options.withInput) {
+    const type = fixture.catalog.resources[0]!.fields.find((field) => field.name === "status")!.type;
+    fixture.envelope.allowed_fields.push({ name: "status", type });
+    fixture.rule.inputs = [{ name: "requested_status", description: "Requested appointment status", type }];
+    fixture.rule.effect.set.status = { kind: "input", name: "requested_status" };
+  }
   const compiled = compileActionRule({
     rule: fixture.rule,
     verification_boundary: fixture.boundary,
@@ -1292,6 +1334,7 @@ async function eligibleFieldServiceRuntime(options: {
   const decision = await evaluateSemanticActionEligibility({
     registry,
     outcome: fixture.rule.outcome,
+    ...(options.withInput ? { inputs: { requested_status: "scheduled" } } : {}),
     subjects: [
       {
         binding: "appointment",
@@ -1355,6 +1398,25 @@ async function eligibleFieldServiceRuntime(options: {
 }
 
 describe("semantic Action eligibility and transaction re-verification", () => {
+  it("binds reviewed business inputs into the proof and refuses tampering before fact loading", async () => {
+    const { fixture, registry, decision, job } = await eligibleFieldServiceRuntime({ withInput: true });
+    expect(decision.semantic_authority.business_inputs).toEqual({ requested_status: "scheduled" });
+    expect(decision.semantic_authority.proof.business_inputs_digest)
+      .toBe(canonicalJsonDigest({ requested_status: "scheduled" }));
+    const verifier = createSemanticActionVerifier({ registry, clock: () => "2026-09-02T20:02:00.000Z" });
+    expect(await verifier({ job, factLoader: fieldServiceRuntimeAdapter(fixture) })).toMatchObject({ status: "reverified" });
+    const replacements: Array<Record<string, string> | undefined> = [undefined, {}, { requested_status: "canceled" }, { requested_status: "scheduled", tenant_id: "another" }];
+    for (const inputs of replacements) {
+      const changed = structuredClone(job);
+      if (inputs === undefined) delete changed.semantic_authority.business_inputs;
+      else changed.semantic_authority.business_inputs = inputs;
+      let loaded = false;
+      await expect(verifier({ job: changed, factLoader: { engine: "postgres", async load() { loaded = true; return []; } } }))
+        .rejects.toBeDefined();
+      expect(loaded).toBe(false);
+    }
+  });
+
   it("binds a separate exact policy and marks only a matching predicate automatic-eligible", async () => {
     const automatic = await eligibleFieldServiceRuntime({ approvalClasses: [automaticReschedulePolicy()] });
     expect(automatic.decision.approval).toMatchObject({

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { buildAutoBoundary } from "./auto-boundary.js";
 import { boundaryDeleteCommand } from "./boundary-commands.js";
-import { start } from "./guided-start.js";
+import { reviewUnresolvedOrganizationScope, start } from "./guided-start.js";
 import {
   activateInstantCliBoundary,
   type InstantCliBoundaryActivationResult,
@@ -17,6 +17,53 @@ describe("guided start surfaces", () => {
   afterEach(() => {
     process.chdir(suiteCwd);
     vi.restoreAllMocks();
+  });
+
+  it("offers explicit single-organization scope before saving a fresh unscoped database", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-scope-choice-"));
+    process.chdir(root);
+    const review = vi.fn(async () => {
+      await expect(fs.stat(path.join(root, "synapsor.runner.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      return { mode: "single_organization" as const, organizationId: "university-operations" };
+    });
+    try {
+      await start(["--from-env", "DATABASE_URL", "--cli"], {
+        interactive: true, schemaInspector: async () => singleOrganizationInspection(),
+        reviewUnresolvedOrganizationScope: review, runBoundaryReview: async () => 0,
+      });
+      expect(review).toHaveBeenCalledOnce();
+      const draft = JSON.parse(await fs.readFile(path.join(root, "synapsor/generated/exploration-boundary.draft.json"), "utf8"));
+      expect(draft.organization_scope).toMatchObject({ organization_id: "university-operations" });
+      expect(draft.activation?.enabled).not.toBe(true);
+    } finally { process.chdir(suiteCwd); await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("cancels an unresolved scope decision without saving draft artifacts", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-scope-cancel-"));
+    process.chdir(root);
+    const review = vi.fn(async () => undefined);
+    const continuation = vi.fn(async () => 0);
+    try {
+      await start(["--from-env", "DATABASE_URL", "--cli"], {
+        interactive: true, schemaInspector: async () => singleOrganizationInspection(),
+        reviewUnresolvedOrganizationScope: review, runBoundaryReview: continuation,
+      });
+      expect(review).toHaveBeenCalledOnce();
+      expect(continuation).not.toHaveBeenCalled();
+      await expect(fs.stat(path.join(root, "synapsor.runner.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.stat(path.join(root, "synapsor/generated"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { process.chdir(suiteCwd); await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("does not infer whole-organization permission and validates its audit label", async () => {
+    const chooseOption = vi.fn(async (_title: string, _choices: unknown[], _options?: { initialValue?: string }) => "tenant");
+    const promptText = vi.fn().mockResolvedValueOnce("").mockResolvedValueOnce("bad label").mockResolvedValueOnce("university");
+    await expect(reviewUnresolvedOrganizationScope({ chooseOption, promptText })).resolves.toEqual({ mode: "tenant" });
+    expect(promptText).not.toHaveBeenCalled();
+    expect(chooseOption.mock.calls[0]?.[2]).toMatchObject({ initialValue: "tenant" });
+    chooseOption.mockResolvedValueOnce("single_organization");
+    await expect(reviewUnresolvedOrganizationScope({ chooseOption, promptText })).resolves.toEqual({ mode: "single_organization", organizationId: "university" });
+    expect(promptText).toHaveBeenCalledTimes(3);
   });
 
   it("refuses an elevated source role before creating guided authority", async () => {

@@ -1679,13 +1679,13 @@ export default defineCapability({
         ok: true,
         client: "claude-code",
         includes_action_boundary: true,
-        tools: ["app.describe_data", "app.explore_data"],
+        tools: ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"],
         action_tools: ["membership.set_loyalty_balance"],
         entries: [
           {
             name: "synapsor",
             boundary_type: "read",
-            tools: ["app.describe_data", "app.explore_data"],
+            tools: ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"],
           },
           {
             name: "synapsor-actions",
@@ -2488,13 +2488,13 @@ export default defineCapability({
         client: "cursor",
         client_name: "Cursor",
         destination: ".cursor/mcp.json",
-        tools: ["app.describe_data", "app.explore_data"],
+        tools: ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"],
         action_tools: [],
         includes_action_boundary: false,
         entries: [{
           name: "synapsor",
           boundary_type: "read",
-          tools: ["app.describe_data", "app.explore_data"],
+          tools: ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"],
         }],
         credentials_in_client_config: false,
         model_can_install: false,

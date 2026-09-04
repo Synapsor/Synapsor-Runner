@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import {
   resolveActivatedActionRule,
+  validateActionRuleInputs,
   type ActivatedActionRuleV1,
   type ActionRuleSubjectIdentityV1,
   type RuntimeActionRuleRegistryV1,
@@ -85,6 +86,7 @@ export type SubjectReferenceService = {
   claim(input: SubjectReferenceAuthorityContext & {
     outcome: string;
     subject_refs: Record<string, string>;
+    inputs?: Record<string, unknown>;
     now?: string;
   }): Promise<ResolvedSubjectRequest>;
 };
@@ -453,12 +455,14 @@ export function createSubjectReferenceService(input: {
         const now = canonicalTimestamp(request.now ?? input.clock?.());
         const registry = await loadRegistry();
         const activated = resolveActivatedActionRule(registry, request.outcome);
+        const inputs = validateActionRuleInputs(activated.compiled.rule, request.inputs);
         const expectedBindings = activated.compiled.rule.subjects.map((subject) => subject.binding).sort();
         const suppliedBindings = Object.keys(request.subject_refs).sort();
         if (canonicalJsonStringify(expectedBindings) !== canonicalJsonStringify(suppliedBindings)) throw unavailable();
         const orderedRefs = activated.compiled.rule.subjects.map((subject) => request.subject_refs[subject.binding]!);
         const requestDigest = canonicalJsonDigest({
           outcome: request.outcome,
+          ...(Object.keys(inputs).length ? { inputs } : {}),
           subject_refs: activated.compiled.rule.subjects.map((subject) => ({
             binding: subject.binding,
             ref: request.subject_refs[subject.binding],

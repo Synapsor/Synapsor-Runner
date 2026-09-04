@@ -107,6 +107,7 @@ export type EvaluateActionRuleInputV1 = {
   compiled: CompiledActionRuleV1;
   facts: ActionRuleFactSetV1;
   proposal_id: string;
+  inputs?: Record<string, unknown>;
 };
 
 export type ActionRuleDependencyV1 = {

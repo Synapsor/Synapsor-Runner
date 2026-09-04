@@ -7,6 +7,7 @@ export type {
   AgentContextSpec,
   ActionRuleBooleanExpressionV1,
   ActionRuleScalarExpressionV1,
+  ActionRuleInputSpecV1,
   ActionRuleScalarTypeSpecV1,
   ActionRuleSpecV1,
   ActionRuleSubjectSpecV1,

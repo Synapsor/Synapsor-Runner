@@ -3,6 +3,7 @@ import {
   evaluateSemanticActionEligibility,
   resolveActivatedApprovalClass,
   resolveActivatedActionRule,
+  validateActionRuleInputs,
   type ActivatedActionRuleV1,
   type ActionRuleFactSetV1,
   type RuntimeActionRuleRegistryV1,
@@ -37,6 +38,24 @@ const OUTCOME_PATTERN = /^[A-Za-z_][A-Za-z0-9_.:-]{0,255}$/u;
 const BINDING_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 const SUBJECT_REFERENCE_PATTERN = /^obj_[A-Za-z0-9_-]{32,128}$/u;
 
+export function createInactiveSemanticActionRuntime(): SemanticActionRuntime {
+  return {
+    listTools: () => semanticActionToolMetadata(),
+    hasTool: (name) => name === DESCRIBE_ACTIONS_TOOL || name === REQUEST_CHANGE_TOOL,
+    async callTool(name, args) {
+      if (name === DESCRIBE_ACTIONS_TOOL) {
+        assertExactKeys(args, []);
+        return { ok: true, actions: [], availability: "operator_review_required", source_database_changed: false };
+      }
+      if (name === REQUEST_CHANGE_TOOL) {
+        parseRequestChange(args);
+        throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "No reviewed Action authority is available. An operator must activate an Action Boundary; no proposal or source change was created.");
+      }
+      throw new McpRuntimeError("MCP_TOOL_NOT_FOUND", "The requested tool is not available.");
+    },
+  };
+}
+
 type RegistryLoader = RuntimeActionRuleRegistryV1
   | (() => RuntimeActionRuleRegistryV1 | Promise<RuntimeActionRuleRegistryV1>);
 
@@ -50,6 +69,7 @@ export function createSemanticActionRuntime(input: {
   registry: RegistryLoader;
   subjectReferences: SubjectReferenceService;
   resolveContext: SemanticActionContextResolver;
+  unavailableOutcomes?: () => string[] | Promise<string[]>;
   onProposalReady?: (input: {
     proposal: StoredProposal;
     activated: ActivatedActionRuleV1;
@@ -66,7 +86,7 @@ export function createSemanticActionRuntime(input: {
     async callTool(name, args) {
       if (name === DESCRIBE_ACTIONS_TOOL) {
         assertExactKeys(args, []);
-        return describeActions(await loadRegistry());
+        return describeActions(await loadRegistry(), await input.unavailableOutcomes?.() ?? []);
       }
       if (name !== REQUEST_CHANGE_TOOL) {
         throw new McpRuntimeError("MCP_TOOL_NOT_FOUND", "The requested Synapsor Action tool is not available.");
@@ -75,6 +95,15 @@ export function createSemanticActionRuntime(input: {
       try {
         const registry = await loadRegistry();
         const expected = resolveActivatedActionRule(registry, request.outcome);
+        if ((await input.unavailableOutcomes?.() ?? []).includes(request.outcome)) {
+          throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "This outcome needs operator review of its changed Read dependency. Other reviewed outcomes remain available. No proposal or source change was created.");
+        }
+        let businessInputs: ReturnType<typeof validateActionRuleInputs>;
+        try {
+          businessInputs = validateActionRuleInputs(expected.compiled.rule, request.inputs);
+        } catch (error) {
+          throw new McpRuntimeError("ARGUMENT_INVALID", error instanceof Error ? error.message : "Invalid reviewed business inputs.");
+        }
         const resolvedContext = await input.resolveContext(expected);
         try {
           assertRuntimeContext(expected, resolvedContext);
@@ -82,6 +111,7 @@ export function createSemanticActionRuntime(input: {
             ...resolvedContext.subject_authority,
             outcome: request.outcome,
             subject_refs: request.subject_refs,
+            inputs: businessInputs,
           });
           assertSameActivatedAuthority(expected, claimed.activated);
 
@@ -106,6 +136,7 @@ export function createSemanticActionRuntime(input: {
             trusted_context_digest: claimed.trusted_context_digest,
             evidence_provenance_digest: claimed.evidence_provenance_digest,
             verified_at: verifiedAt,
+            inputs: businessInputs,
           });
           if (decision.result !== "eligible") {
             await recordSemanticRefusal(input.store, {
@@ -208,11 +239,12 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
     {
       name: REQUEST_CHANGE_TOOL,
       title: "Request a reviewed change",
-      description: "Nominate one activated business outcome using opaque subject references from Explore. Runner independently reloads authoritative facts and may create an immutable proposal; this tool cannot approve, apply, or accept a patch.",
+      description: "Request one activated business outcome using opaque Explore references and only the typed business inputs described by app.describe_actions. Runner validates those inputs and reloads authoritative facts to derive an immutable proposal; this tool cannot approve, apply, or accept an arbitrary patch.",
       kind: "semantic_action",
       input_schema: {
         outcome: { type: "string", required: true },
         subject_refs: { type: "object", required: true },
+        inputs: { type: "object", required: false },
       },
       annotations: {
         readOnlyHint: false,
@@ -226,13 +258,19 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
   ];
 }
 
-function describeActions(registry: RuntimeActionRuleRegistryV1): Record<string, unknown> {
+function describeActions(registry: RuntimeActionRuleRegistryV1, unavailable: string[] = []): Record<string, unknown> {
   const actions = registry.rules.map((entry) => resolveActivatedActionRule(registry, entry.compiled.outcome));
   return {
     ok: true,
     actions: actions.map((activated) => ({
       outcome: activated.compiled.outcome,
+      availability: unavailable.includes(activated.compiled.outcome) ? "operator_review_required" : "available",
       description: humanizeOutcome(activated.compiled.outcome),
+      inputs: (activated.compiled.rule.inputs ?? []).map((definition) => ({
+        ...definition,
+        required: true,
+        origin: "caller_business_input",
+      })),
       subjects: activated.compiled.rule.subjects.map((subject) => ({
         binding: subject.binding,
         resource: subject.resource,
@@ -271,8 +309,12 @@ function describeActions(registry: RuntimeActionRuleRegistryV1): Record<string, 
 function parseRequestChange(args: Record<string, unknown>): {
   outcome: string;
   subject_refs: Record<string, string>;
+  inputs?: Record<string, unknown>;
 } {
-  assertExactKeys(args, ["outcome", "subject_refs"]);
+  assertExactKeys(args, ["outcome", "subject_refs", ...(Object.hasOwn(args, "inputs") ? ["inputs"] : [])]);
+  if (args.inputs !== undefined && !isRecord(args.inputs)) {
+    throw new McpRuntimeError("ARGUMENT_INVALID", "inputs must be an object of reviewed business values.");
+  }
   if (typeof args.outcome !== "string" || !OUTCOME_PATTERN.test(args.outcome)) {
     throw new McpRuntimeError("ARGUMENT_INVALID", "outcome must be one exact activated semantic outcome.");
   }
@@ -290,7 +332,7 @@ function parseRequestChange(args: Record<string, unknown>): {
     }
     subjectRefs[binding] = value;
   }
-  return { outcome: args.outcome, subject_refs: subjectRefs };
+  return { outcome: args.outcome, subject_refs: subjectRefs, ...(isRecord(args.inputs) ? { inputs: args.inputs } : {}) };
 }
 
 function assertExactKeys(value: Record<string, unknown>, expected: string[]): void {
@@ -541,7 +583,8 @@ async function semanticProposalResult(
     exact_effect: "Runner-derived and sealed in the operator proposal record",
     source_database_changed: continuation?.source_database_changed ?? proposal.source_database_mutated,
     model_authority: {
-      supplied_outcome_and_opaque_subjects_only: true,
+      supplied_outcome_and_opaque_subjects_only: !Object.keys(proposal.change_set.semantic_authority.business_inputs ?? {}).length,
+      supplied_only_reviewed_business_inputs: true,
       supplied_patch: false,
       approval: false,
       apply: false,

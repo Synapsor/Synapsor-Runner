@@ -64,3 +64,4 @@ export {
   type SemanticAdapterConformanceVectorV1,
 } from "./conformance.js";
 export * from "./types.js";
+export { validateActionRuleInputs } from "./inputs.js";

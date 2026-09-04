@@ -16,6 +16,7 @@ import {
   wrapStyledTerminalLine,
 } from "./terminal-layout.js";
 import { renderTerminalSynapsorDslFrame } from "./terminal-syntax.js";
+import { createTerminalModelStream } from "./terminal-model-stream.js";
 
 export type BoundaryAuthoringSpeaker = "runner" | "model";
 type BoundaryAuthoringTone = "normal" | "success" | "warning" | "danger";
@@ -354,6 +355,11 @@ export function createBoundaryAuthoringChat(input: {
     speaker: BoundaryAuthoringSpeaker;
     lines: string[];
   } | undefined;
+  let liveRenderer: ReturnType<typeof createTerminalModelStream> | undefined;
+  let liveText = "";
+  let livePending = Promise.resolve();
+  const liveResponses: string[] = [];
+  const responseKey = (text: string) => transcriptText(text).trim().replace(/\s+/gu, " ");
   const transcriptIndent = io.isTerminal?.() === true ? "  " : "";
   const transcriptWidth = () => Math.max(24, io.columns());
 
@@ -435,6 +441,39 @@ export function createBoundaryAuthoringChat(input: {
   const writeTranscript = (value: string) => {
     if (io.writeChunk) io.writeChunk(value);
     else io.write(value);
+  };
+  const finishLiveResponse = () => {
+    if (!liveRenderer) return;
+    liveRenderer.finish();
+    liveRenderer = undefined;
+    liveResponses.push(responseKey(liveText));
+    if (liveResponses.length > 12) liveResponses.shift();
+    rememberPendingQuestion("model", liveText.split(/\r?\n/u));
+    liveText = "";
+  };
+  const appendLiveText = (text: string) => {
+    if (!liveRenderer) {
+      const continuation = `${transcriptIndent}${" ".repeat(7)}`;
+      liveRenderer = createTerminalModelStream({
+        width: transcriptWidth,
+        prefix: lastTranscriptTurn === "model" ? continuation : `${transcriptIndent}${role("model")} `,
+        continuation,
+        bold: theme.bold, code: theme.value,
+        write: (chunk) => {
+          livePending = livePending.then(async () => {
+            io.clearStatus?.();
+            writeTranscript(chunk);
+            if (io.isTerminal?.() === true && streamLineDelayMs > 0) {
+              const visible = Array.from(stripTerminalAnsi(chunk)).length;
+              await new Promise<void>((resolve) => setTimeout(resolve, streamLineDelayMs * Math.min(1, visible / 14)));
+            }
+          });
+        },
+      });
+    }
+    liveText += text;
+    liveRenderer.push(text);
+    lastTranscriptTurn = "model";
   };
   const checkpoint = (
     title: string,
@@ -643,6 +682,8 @@ export function createBoundaryAuthoringChat(input: {
     lines: string[] = [],
     tone: BoundaryAuthoringTone = "normal",
   ) => {
+    finishLiveResponse();
+    await livePending;
     const routine = compactRoutineCheckpoint(title, lines);
     if (routine) {
       rememberDetails(title, lines);
@@ -669,6 +710,14 @@ export function createBoundaryAuthoringChat(input: {
     checkpoint(title, lines, tone);
   };
   const streamModel = async (lines: string[]) => {
+    finishLiveResponse();
+    await livePending;
+    const streamed = liveResponses.indexOf(responseKey(lines.join("\n")));
+    if (streamed >= 0) {
+      liveResponses.splice(streamed, 1);
+      rememberPendingQuestion("model", lines);
+      return;
+    }
     const normalized = normalizeModelDisplayLines(lines);
     await streamRole("model", normalized);
     rememberPendingQuestion("model", normalized);
@@ -698,6 +747,9 @@ export function createBoundaryAuthoringChat(input: {
     return readAnswer();
   };
   const readAnswer = async (defaultValue?: string) => {
+    finishLiveResponse();
+    await livePending;
+    io.clearStatus?.();
     const defaultHint = defaultValue ? `${theme.dim(`[${defaultValue}]`)} ` : "";
     while (true) {
       const prompt = `${theme.focus("you>")} ${defaultHint}`;
@@ -759,6 +811,8 @@ export function createBoundaryAuthoringChat(input: {
     }
   };
   const choose = async (choice: ChoiceInput): Promise<string | undefined> => {
+    finishLiveResponse();
+    await livePending;
     const available = choice.options.filter((option) => !option.disabled);
     if (!available.length) return undefined;
     const unavailable = choice.options.filter((option) => option.disabled);
@@ -1093,6 +1147,14 @@ export function createBoundaryAuthoringChat(input: {
     rememberDetails,
     showDetails,
     providerStream: (event) => {
+      if (event.operator_text && event.phase === "text_delta" && event.text) {
+        appendLiveText(event.text);
+        return;
+      }
+      if (event.operator_text && event.phase === "completed") {
+        finishLiveResponse();
+        return;
+      }
       if (event.phase === "started") {
         streamedCharacters = 0;
         lastProviderStatusCharacters = 0;
@@ -1118,9 +1180,13 @@ export function createBoundaryAuthoringChat(input: {
       io.setStatus?.(message);
       try {
         const result = await operation();
+        finishLiveResponse();
+        await livePending;
         io.clearStatus?.();
         return result;
       } catch (error) {
+        finishLiveResponse();
+        await livePending;
         io.clearStatus?.();
         throw error;
       }

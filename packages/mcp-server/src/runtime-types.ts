@@ -305,6 +305,8 @@ export type RuntimeProductionExploreConfig = {
 export type RuntimeActionRulesConfig = {
   /** Project containing the immutable activated Action Rule authority. */
   project_root: string;
+  /** Explicit migration-only opt-in to configured per-capability tools beside the fixed surface. */
+  legacy_tools?: "enabled" | "disabled";
   /** Shared secret used only to bind opaque subjects across separate production Read and Action runtimes. */
   subject_reference_hmac_key_env?: string;
   /** Stable deployment namespace shared by the paired Read and Action runtimes. */

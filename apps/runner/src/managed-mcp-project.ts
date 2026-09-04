@@ -238,6 +238,7 @@ export async function installManagedMcpProjectSet(input: {
     entryKind: ManagedMcpProjectEntryKind;
   }>;
   now?: string;
+  removeEntryKinds?: ManagedMcpProjectEntryKind[];
 }): Promise<{ previews: ManagedMcpProjectPreview[]; backup?: string }> {
   if (input.entries.length === 0) throw new Error("Managed MCP project install set requires at least one entry");
   const entryKinds = input.entries.map((entry) => entry.entryKind);
@@ -258,10 +259,22 @@ export async function installManagedMcpProjectSet(input: {
     throw new Error("Managed MCP project entries must share one project client configuration");
   }
   const changed = previews.filter((preview) => preview.action !== "unchanged");
-  if (changed.length === 0) return { previews };
+  const removals: ManagedMcpProjectStatus[] = [];
+  for (const kind of input.removeEntryKinds ?? []) {
+    if (entryKinds.includes(kind)) throw new Error("Cannot install and remove the same managed entry.");
+    const status = await managedMcpProjectStatus(input.client, input.projectRoot, kind);
+    if (status.state === "not_installed") continue;
+    if (status.state !== "installed") throw new Error("Refusing to replace an unowned or changed companion MCP entry.");
+    removals.push(status);
+  }
+  if (changed.length === 0 && removals.length === 0) return { previews };
 
   const existing = await readOptionalJsonDocument(destination);
   let updatedDocument = existing?.text ?? "{}\n";
+  for (const removal of removals) {
+    updatedDocument = applyEdits(updatedDocument, modify(updatedDocument,
+      [definition.serversKey, removal.paths.serverName], undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } }));
+  }
   for (const preview of changed) {
     updatedDocument = setManagedEntry(
       updatedDocument,
@@ -272,11 +285,12 @@ export async function installManagedMcpProjectSet(input: {
   }
   const backup = existing ? await backupFile(destination, input.now) : undefined;
   const priorMarkers = new Map<string, string | undefined>();
-  for (const preview of changed) {
+  for (const preview of [...changed, ...removals]) {
     priorMarkers.set(preview.paths.marker, await readOptionalText(preview.paths.marker));
   }
   try {
     await writeTextAtomic(destination, updatedDocument);
+    for (const removal of removals) await fs.rm(removal.paths.marker, { force: true });
     for (const preview of changed) {
       const marker: ManagedInstallMarker = {
         schema_version: definition.markerVersion,

@@ -189,6 +189,7 @@ await cp(resolve(root, "README.md"), resolve(packageRoot, "README.md"));
 
 const publicDocs = [
   "action-rule-engine.md",
+  "design-reviewed-business-inputs.md",
   "agent-database-permissions.md",
   "ai-agent-production-database.md",
   "alternatives.md",

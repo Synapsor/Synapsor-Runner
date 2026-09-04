@@ -234,13 +234,13 @@ Cursor, Claude Code, and VS Code have consent-gated project installers:
 
 ```bash
 synapsor-runner mcp install claude-code \
-  --project --authoring --include-actions --project-root . --dry-run
+  --project --authoring --project-root . --dry-run
 ```
 
 Use `cursor` or `vscode` instead when that is the selected client. Show the
-dry-run result first. Installation remains a human choice. When Action
-authority is active, the installer writes adjacent Read (`synapsor`) and Action
-(`synapsor-actions`) entries rather than combining their authority.
+dry-run result first. Installation remains a human choice. Local stdio uses one
+`synapsor` entry with four fixed tools. Read and Action authority are independently
+reviewed; sharing a transport does not activate either one.
 
 ## Guided Write Action
 

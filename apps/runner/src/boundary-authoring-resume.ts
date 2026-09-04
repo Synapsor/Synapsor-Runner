@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { AskHistoryTurn } from "./model-ask.js";
+import { parseActionRuleAuthoringCheckpoint, type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import {
   createModelAuthoringConversation,
   modelAuthoringHistory,
@@ -36,6 +37,9 @@ export type BoundaryAuthoringResumeAction = {
   intent: string;
   outcome?: string;
   strategy?: "discretionary" | "rule_derived";
+  checkpoint?: ActionRuleAuthoringCheckpoint;
+  intents?: string[];
+  completed_outcomes?: string[];
 };
 
 export type BoundaryAuthoringResumeState = {
@@ -248,10 +252,19 @@ function normalizeAction(value: BoundaryAuthoringResumeAction): BoundaryAuthorin
     && value.strategy !== "rule_derived") {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Action strategy is invalid.");
   }
+  if (value.intents && (!Array.isArray(value.intents) || value.intents.length < 1 || value.intents.length > 8)) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Action intents must contain 1-8 jobs.");
+  }
+  if (value.completed_outcomes && (!Array.isArray(value.completed_outcomes) || value.completed_outcomes.length > (value.intents?.length ?? 1))) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: completed outcomes exceed the saved job.");
+  }
   return {
     intent: reviewedText(value.intent, "Action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS),
     ...(value.outcome ? { outcome: reviewedName(value.outcome, "Action outcome", 200) } : {}),
     ...(value.strategy ? { strategy: value.strategy } : {}),
+    ...(value.checkpoint ? { checkpoint: parseActionRuleAuthoringCheckpoint(value.checkpoint) } : {}),
+    ...(value.intents ? { intents: value.intents.map((intent) => reviewedText(intent, "Action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS)) } : {}),
+    ...(value.completed_outcomes ? { completed_outcomes: value.completed_outcomes.map((outcome) => reviewedName(outcome, "Action outcome", 200)) } : {}),
   };
 }
 

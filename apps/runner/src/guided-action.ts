@@ -2551,6 +2551,8 @@ function configWithGuidedAction(input: {
       project_root: relativeConfigPath(outputConfigDirectory, input.projectRoot),
     };
   }
+  // Selecting the per-action manual workflow is an explicit compatibility opt-in.
+  config.action_rules = { ...(config.action_rules as Record<string, unknown>), legacy_tools: "enabled" };
   delete config.production_explore;
   const existingContracts = Array.isArray(config.contracts)
     ? config.contracts.filter((item): item is string => typeof item === "string")

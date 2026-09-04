@@ -45,6 +45,7 @@ export function compileActionRuleBooleanPredicate(input: {
   const expression = normalizeActionRuleBooleanExpression(input.expression);
   const context: CompileContext = {
     bindings: new Map(input.compiled.bindings.map((binding) => [binding.binding, binding])),
+    inputs: new Map((input.compiled.rule.inputs ?? []).map((value) => [value.name, value.type])),
     derivedTypes: new Map(Object.entries(input.compiled.derived_types)),
   };
   inferBoolean(expression, context, input.path ?? "approval.auto_approve_when");
@@ -57,6 +58,7 @@ type InferredType = {
 };
 
 type CompileContext = {
+  inputs: Map<string, ActionRuleScalarTypeSpecV1>;
   bindings: Map<string, CompiledRuleBindingV1>;
   derivedTypes: Map<string, ActionRuleScalarTypeSpecV1>;
 };
@@ -282,6 +284,11 @@ function inferScalar(
   rowBinding?: string,
 ): InferredType {
   switch (expression.kind) {
+    case "input": {
+      const type = context.inputs.get(expression.name);
+      if (!type) fail("ACTION_RULE_INVALID", `${path} references undeclared business input ${expression.name}.`, path);
+      return { type, nullable: false };
+    }
     case "literal":
       assertLiteralMatchesType(expression, path);
       return { type: expression.value_type, nullable: expression.value === null };
@@ -439,6 +446,18 @@ function derivationOrder(rule: ActionRuleSpecV1): string[] {
   return result;
 }
 
+function usesBusinessInput(expression: ActionRuleScalarExpressionV1, rule: ActionRuleSpecV1): boolean {
+  switch (expression.kind) {
+    case "input": return true;
+    case "derived": return usesBusinessInput(rule.derive[expression.name]!, rule);
+    case "math": return expression.inputs.some((input) => usesBusinessInput(input, rule));
+    case "scale": return usesBusinessInput(expression.input, rule);
+    case "clamp": return [expression.input, expression.minimum, expression.maximum].some((input) => usesBusinessInput(input, rule));
+    case "add_duration": return usesBusinessInput(expression.timestamp, rule);
+    default: return false;
+  }
+}
+
 function assertFieldTypeMatches(
   declared: ActionRuleScalarTypeSpecV1,
   catalog: ActionRuleScalarTypeSpecV1,
@@ -594,7 +613,7 @@ export function compileActionRule(input: CompileActionRuleInput): CompiledAction
     if (binding === undefined || binding.verification.source.kind !== "subject_ref") fail("ACTION_RULE_INVALID", `Subject ${subject.binding} has no matching Verification Boundary root.`);
   }
 
-  const context: CompileContext = { bindings, derivedTypes: new Map() };
+  const context: CompileContext = { bindings, derivedTypes: new Map(), inputs: new Map((rule.inputs ?? []).map((value) => [value.name, value.type])) };
   inferBoolean(rule.require, context, "rule.require");
   const order = derivationOrder(rule);
   for (const name of order) {
@@ -606,6 +625,13 @@ export function compileActionRule(input: CompileActionRuleInput): CompiledAction
   const targetResource = catalogResources.get(envelope.target_resource);
   if (targetResource === undefined) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Effect target ${envelope.target_resource} is not in the inspected catalog.`);
   const effectFieldTypes = assertEnvelope(envelope, rule, targetResource, bindings, context);
+  for (const relationship of catalog.relationships) {
+    if (relationship.from_resource !== targetResource.name) continue;
+    const expression = rule.effect.set[relationship.local_field];
+    if (expression && usesBusinessInput(expression, rule)) {
+      fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Relationship identity ${relationship.local_field} must come from a verified subject or fact, not a business input.`, `rule.effect.set.${relationship.local_field}`);
+    }
+  }
   const ruleDigest = actionRuleDigest(rule);
   const boundaryDigest = verificationBoundaryDigest(boundary);
   const envelopeDigest = effectEnvelopeDigest(envelope);

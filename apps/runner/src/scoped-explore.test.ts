@@ -4,6 +4,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { SubjectReferenceService } from "@synapsor-runner/mcp-server";
+import { createInactiveSemanticActionRuntime } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
@@ -42,6 +43,32 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
+  it("keeps all four tools discoverable before Action activation and dispatches reviewed inputs", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection, executor: fixedExecutor([]),
+    });
+    const inactive = createInactiveSemanticActionRuntime();
+    const dispatch = vi.fn(inactive.callTool);
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: { ...inactive, callTool: dispatch } });
+    const client = new Client({ name: "fixed-four-tools", version: "1" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
+      expect(names).toEqual(["app.describe_actions", "app.describe_data", "app.explore_data", "app.request_change"]);
+      expect((await client.callTool({ name: "app.describe_actions", arguments: {} })).structuredContent).toMatchObject({ actions: [] });
+      const args = { outcome: "customer.update_preference", subject_refs: { customer: `obj_${"a".repeat(40)}` }, inputs: { ceiling: 2500 } };
+      const denied = await client.callTool({ name: "app.request_change", arguments: args });
+      expect(denied.isError).toBe(true);
+      expect(denied.structuredContent).toMatchObject({ error_code: "SEMANTIC_ACTION_UNAVAILABLE" });
+      expect(dispatch).toHaveBeenLastCalledWith("app.request_change", args);
+      expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual(names);
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
   it("classifies a missing reviewed source environment before database inspection", async () => {
     const fixture = await activatedFixture();
     const inspectDatabaseFn = vi.fn(async () => fixture.inspection);

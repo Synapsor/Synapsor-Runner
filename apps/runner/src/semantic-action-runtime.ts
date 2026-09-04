@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import mysql from "mysql2/promise";
 import {
+  ActionRuleError,
   resolveActivatedActionRule,
   type ActionRuleFactLoaderAdapterV1,
   type ActivatedActionRuleV1,
@@ -97,7 +98,7 @@ export async function createOptionalActionRuleRuntimeServices(
   }
   let authority: LoadedActiveActionRuleAuthorityV1;
   const authorityLoader = input.authorityLoader
-    ?? (async () => await loadActiveActionRuleAuthority(projectRoot));
+    ?? (async () => await loadActiveActionRuleAuthority(projectRoot, { dependency_check: "report" }));
   try {
     authority = await authorityLoader();
   } catch (error) {
@@ -131,6 +132,7 @@ export async function createOptionalActionRuleRuntimeServices(
     store: input.store,
     registry,
     subjectReferences,
+    unavailableOutcomes: async () => (await loadAuthority()).unavailable_outcomes ?? [],
     onProposalReady: async ({ proposal, activated }) => {
       if (proposal.state === "applied") {
         return { execution: "completed", source_database_changed: true };
@@ -159,7 +161,11 @@ export async function createOptionalActionRuleRuntimeServices(
       }
     },
     resolveContext: async (expected) => {
-      const current = resolveActivatedActionRule((await loadAuthority()).registry, expected.compiled.outcome);
+      const loaded = await loadAuthority();
+      if (loaded.unavailable_outcomes?.includes(expected.compiled.outcome)) {
+        throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "This outcome requires operator review of its Read dependency.");
+      }
+      const current = resolveActivatedActionRule(loaded.registry, expected.compiled.outcome);
       assertSameRuleRevision(expected, current);
       const trustedContext = resolveTrustedContext(
         input.config,

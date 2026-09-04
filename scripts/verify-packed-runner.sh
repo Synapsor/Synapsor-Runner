@@ -216,9 +216,10 @@ done
 
 npx synapsor-runner --help >/dev/null
 node "$PACKED_ROOT/dist/cli.js" --help > direct-launcher-help.txt
-grep -F "synapsor-runner try --prove" direct-launcher-help.txt >/dev/null
+DIRECT_COMMAND="$(node -e 'console.log(`${JSON.stringify(process.execPath)} ${JSON.stringify(process.argv[1])}`)' "$PACKED_ROOT/dist/cli.js")"
+grep -F "$DIRECT_COMMAND try --prove" direct-launcher-help.txt >/dev/null
 grep -F "action       Review Safe Actions and operate immutable proposals" direct-launcher-help.txt >/dev/null
-grep -F "synapsor-runner action review --project-root ." direct-launcher-help.txt >/dev/null
+grep -F "$DIRECT_COMMAND action review --project-root ." direct-launcher-help.txt >/dev/null
 if grep -F "synapsor try --prove" direct-launcher-help.txt >/dev/null; then
   echo "packed Runner launcher confused the local binary with the Cloud CLI" >&2
   exit 1

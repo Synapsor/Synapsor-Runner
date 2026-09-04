@@ -42,7 +42,7 @@ const stateType: ActionRuleScalarTypeSpecV1 = {
 };
 const integer = { kind: "integer" } as const;
 
-function semanticFixture(options: { automaticApproval?: boolean; requiredApprovals?: number } = {}) {
+function semanticFixture(options: { automaticApproval?: boolean; requiredApprovals?: number; businessInput?: boolean } = {}) {
   const catalog: ActionRuleCatalogV1 = {
     schema_version: "synapsor.action-rule-catalog.v1",
     generation_lock_fingerprint: lock,
@@ -130,6 +130,10 @@ function semanticFixture(options: { automaticApproval?: boolean; requiredApprova
     approval_class: "billing.standard_change",
     ttl_seconds: 300,
   };
+  if (options.businessInput) {
+    rule.inputs = [{ name: "notification_state", description: "Requested notification preference", type: stateType }];
+    rule.effect.set.status = { kind: "input", name: "notification_state" };
+  }
   const compiled = compileActionRule({
     catalog,
     verification_boundary: verificationBoundary,
@@ -194,6 +198,8 @@ function authorityContext(): SubjectReferenceAuthorityContext {
 }
 
 function createFixtureRuntime(options: {
+  unavailableOutcomes?: () => string[];
+  businessInput?: boolean;
   status?: "active" | "paused";
   automaticApproval?: boolean;
   requiredApprovals?: number;
@@ -202,6 +208,7 @@ function createFixtureRuntime(options: {
 } = {}) {
   const store = new ProposalStore();
   const { registry, activated } = semanticFixture({
+    businessInput: options.businessInput,
     automaticApproval: options.automaticApproval,
     requiredApprovals: options.requiredApprovals,
   });
@@ -221,6 +228,7 @@ function createFixtureRuntime(options: {
     store,
     registry,
     subjectReferences,
+    ...(options.unavailableOutcomes ? { unavailableOutcomes: options.unavailableOutcomes } : {}),
     ...(options.onProposalReady ? { onProposalReady: options.onProposalReady } : {}),
     async resolveContext() {
       return {
@@ -306,6 +314,46 @@ const configuredReadCapability: NonNullable<RuntimeConfig["capabilities"]>[numbe
 };
 
 describe("fixed semantic Action MCP", () => {
+  it("keeps fixed tools discoverable while a stale outcome is blocked before facts or proposals", async () => {
+    let unavailable = ["billing.pause_notifications"];
+    const fixture = createFixtureRuntime({ unavailableOutcomes: () => unavailable });
+    try {
+      const tools = fixture.semanticActions.listTools();
+      expect(await fixture.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, {})).toMatchObject({
+        actions: [{ outcome: unavailable[0], availability: "operator_review_required" }],
+      });
+      const ref = await issueSubject(fixture);
+      const request = { outcome: "billing.pause_notifications", subject_refs: { preference: ref } };
+      await expect(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)).rejects.toMatchObject({ code: "SEMANTIC_ACTION_UNAVAILABLE" });
+      expect(fixture.queries).toHaveLength(0);
+      expect(await fixture.store.listProposals()).toHaveLength(0);
+      unavailable = [];
+      expect(fixture.semanticActions.listTools()).toEqual(tools);
+      expect(await fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)).toMatchObject({ request_disposition: "created" });
+    } finally { fixture.store.close(); }
+  });
+
+  it("discovers and validates business inputs before consuming subjects and binds replay to exact values", async () => {
+    const fixture = createFixtureRuntime({ businessInput: true });
+    try {
+      const catalog = await fixture.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, {});
+      expect(catalog).toMatchObject({ actions: [{ inputs: [{ name: "notification_state", required: true, type: { kind: "string", enum: ["active", "paused"] } }] }] });
+      const ref = await issueSubject(fixture);
+      const request = { outcome: "billing.pause_notifications", subject_refs: { preference: ref } };
+      for (const inputs of [undefined, {}, { notification_state: "anything" }, { notification_state: "paused", tenant_id: "attacker" }]) {
+        await expect(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, { ...request, ...(inputs ? { inputs } : {}) })).rejects.toMatchObject({ code: "ARGUMENT_INVALID" });
+      }
+      expect(fixture.queries).toHaveLength(0);
+      const accepted = await fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, { ...request, inputs: { notification_state: "paused" } });
+      expect(accepted).toMatchObject({ request_disposition: "created", source_database_changed: false });
+      expect(await fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, { ...request, inputs: { notification_state: "paused" } })).toMatchObject({ request_disposition: "already_recorded" });
+      await expect(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, { ...request, inputs: { notification_state: "active" } })).rejects.toMatchObject({ code: "SUBJECT_REFERENCE_UNAVAILABLE" });
+      expect(fixture.semanticActions.listTools().map((tool) => tool.name)).toEqual([DESCRIBE_ACTIONS_TOOL, REQUEST_CHANGE_TOOL]);
+    } finally {
+      fixture.store.close();
+    }
+  });
+
   it("describes only activated outcomes and accepts no model patch or trusted scope", async () => {
     const fixture = createFixtureRuntime();
     try {
@@ -627,8 +675,8 @@ describe("fixed semantic Action MCP", () => {
     }
   });
 
-  it("exposes the exact two-tool contract through the official MCP client", async () => {
-    const fixture = createFixtureRuntime();
+  it.each([false, true])("exposes the exact two-tool contract through the official MCP client (business inputs: %s)", async (businessInput) => {
+    const fixture = createFixtureRuntime({ businessInput });
     const ref = await issueSubject(fixture);
     const runtime = createMcpRuntime(serverConfig, {
       store: fixture.store,
@@ -657,6 +705,7 @@ describe("fixed semantic Action MCP", () => {
         arguments: {
           outcome: "billing.pause_notifications",
           subject_refs: { preference: ref },
+          ...(businessInput ? { inputs: { notification_state: "paused" } } : {}),
         },
       });
       expect(result.isError).not.toBe(true);
@@ -684,10 +733,28 @@ describe("fixed semantic Action MCP", () => {
     }
   });
 
-  it("keeps explicit reviewed capabilities beside the fixed semantic tools during migration", () => {
+  it("does not expose or dispatch configured per-action tools from a fixed runtime", async () => {
+    const fixture = createFixtureRuntime();
+    const runtime = createMcpRuntime({ ...serverConfig, capabilities: [configuredReadCapability] }, {
+      store: fixture.store, semanticActions: fixture.semanticActions,
+      readRow: async () => { throw new Error("Legacy reader must not execute"); },
+      logToolRejections: false,
+    });
+    try {
+      expect(runtime.listTools().map((tool) => tool.name)).toEqual([DESCRIBE_ACTIONS_TOOL, REQUEST_CHANGE_TOOL]);
+      await expect(runtime.callTool("billing.inspect_preference", { preference_id: "private" }))
+        .rejects.toMatchObject({ code: "MCP_TOOL_NOT_FOUND" });
+    } finally {
+      await runtime.close();
+      fixture.store.close();
+    }
+  });
+
+  it("keeps explicit reviewed capabilities beside the fixed semantic tools during migration", async () => {
     const fixture = createFixtureRuntime();
     const runtime = createMcpRuntime({
       ...serverConfig,
+      action_rules: { project_root: ".", legacy_tools: "enabled" },
       capabilities: [configuredReadCapability],
     }, {
       store: fixture.store,
@@ -701,7 +768,7 @@ describe("fixed semantic Action MCP", () => {
         "billing.inspect_preference",
       ]);
     } finally {
-      void runtime.close();
+      await runtime.close();
       fixture.store.close();
     }
   });

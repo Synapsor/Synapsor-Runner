@@ -2,6 +2,10 @@ import type { Readable, Writable } from "node:stream";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
+  createInactiveSemanticActionRuntime,
+  semanticActionInputSchema,
+  McpRuntimeError,
+  type SemanticActionRuntime,
   projectAuthorityMetadataForModel,
   scopedExploreDescribeToolOutputSchema,
   scopedExploreQueryToolOutputSchema,
@@ -71,6 +75,7 @@ export function createScopedExploreMcpServer(
   options: {
     mode?: "local_authoring" | "production_http";
     localPresentation?: LocalToolPresentationSink;
+    semanticActions?: SemanticActionRuntime;
   } = {},
 ): McpServer {
   const production = options.mode === "production_http";
@@ -223,6 +228,19 @@ export function createScopedExploreMcpServer(
     { name: production ? "synapsor-runner-production-explore" : "synapsor-runner-authoring", version: runnerPackage.version },
     { capabilities: { tools: {} } },
   );
+  if (options.semanticActions) {
+    const actions = options.semanticActions;
+    for (const tool of actions.listTools()) {
+      server.registerTool(tool.name, {
+        title: tool.title, description: tool.description,
+        inputSchema: semanticActionInputSchema(tool.name),
+        annotations: { readOnlyHint: tool.name === "app.describe_actions", destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      }, async (args, extra) => toolResult(() => actions.callTool(tool.name, args), undefined, {
+        requestMeta: extra._meta, localPresentation: options.localPresentation,
+        authorityMetadata: runtime.model_authority_metadata ?? "semantic",
+      }));
+    }
+  }
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
     description: "Metadata only; never answers a data question. Without resource, lists a compact index of exact active resource ids and direct analysis. With one exact resource id, returns focused fields and relationship details. Copy ids into app.explore_data for values; use boundary only to disambiguate overlaps. No source rows.",
@@ -662,6 +680,7 @@ export async function serveScopedExploreStdio(options: {
   projectRoot: string;
   env?: NodeJS.ProcessEnv;
   store?: ProposalRuntimeStore;
+  semanticActions?: SemanticActionRuntime;
   subjectReferences?: {
     service: SubjectReferenceService;
     workflow_session_id: string;
@@ -678,7 +697,9 @@ export async function serveScopedExploreStdio(options: {
     ...(options.subjectReferences ? { subjectReferences: options.subjectReferences } : {}),
     modelAuthorityMetadata: options.modelAuthorityMetadata ?? "semantic",
   });
-  const server = createScopedExploreMcpServer(runtime);
+  const server = createScopedExploreMcpServer(runtime, {
+    semanticActions: options.semanticActions ?? createInactiveSemanticActionRuntime(),
+  });
   const input = options.stdin ?? process.stdin;
   const transport = new StdioServerTransport(input, options.stdout ?? process.stdout);
   try {
@@ -765,18 +786,18 @@ async function toolResult(
         : {}),
     };
   } catch (error) {
-    const payload = error instanceof ScopedExploreError
+    const payload = error instanceof ScopedExploreError || error instanceof McpRuntimeError
       ? {
         ok: false,
         outcome: {
           type: "refusal" as const,
           code: error.code,
           message: error.message,
-          ...(error.details ? { details: error.details } : {}),
+          ...(error instanceof ScopedExploreError && error.details ? { details: error.details } : {}),
         },
         error_code: error.code,
         message: error.message,
-        ...(error.details ? { details: error.details } : {}),
+        ...(error instanceof ScopedExploreError && error.details ? { details: error.details } : {}),
         source_database_changed: false,
       }
       : {

@@ -125,6 +125,7 @@ const eligibilityProofUnsignedSchema = z.object({
   }).strict(),
   trusted_context_digest: sha256,
   subject_bindings_digest: sha256,
+  business_inputs_digest: sha256.optional(),
   evidence_provenance_digest: sha256,
   verified_facts_digest: sha256,
   dependency_set_digest: sha256,
@@ -147,10 +148,15 @@ export const eligibilityProofV1Schema = eligibilityProofUnsignedSchema.extend({
 
 export const semanticAuthorityV1Schema = z.object({
   proof: eligibilityProofV1Schema,
+  business_inputs: z.record(safeIdentifier, scalar).optional(),
   subject_bindings: z.array(semanticSubjectBindingV1Schema).min(1).max(8),
   dependencies: z.array(semanticDependencyV1Schema).min(1).max(100),
   effect: exactDerivedEffectV1Schema,
 }).strict().superRefine((semantic, ctx) => {
+  if ((semantic.business_inputs !== undefined || semantic.proof.business_inputs_digest !== undefined)
+    && (!semantic.business_inputs || semantic.proof.business_inputs_digest !== canonicalJsonDigest(semantic.business_inputs))) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "business inputs must match their immutable proof digest", path: ["business_inputs"] });
+  }
   const sortedSubjects = [...semantic.subject_bindings].sort((left, right) => left.binding.localeCompare(right.binding));
   if (canonicalJsonStringify(sortedSubjects) !== canonicalJsonStringify(semantic.subject_bindings)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "subject bindings must be canonically sorted", path: ["subject_bindings"] });
   const sortedDependencies = [...semantic.dependencies].sort((left, right) => {

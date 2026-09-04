@@ -93,7 +93,7 @@ export function semanticActionVerifierForRuntime(
   const projectRoot = semanticActionProjectRoot(config, configPath);
   if (projectRoot === undefined) return undefined;
   return createSemanticActionVerifier({
-    registry: async () => (await loadActiveActionRuleAuthority(projectRoot)).registry,
+    registry: async (outcome) => (await loadActiveActionRuleAuthority(projectRoot, { outcome })).registry,
   });
 }
 
@@ -131,7 +131,7 @@ export async function loadSemanticProposalAuthority(
   if (projectRoot === undefined) {
     throw new Error("SEMANTIC_ACTION_RUNTIME_BINDING_REQUIRED: action_rules.project_root must bind the active Action Rule authority");
   }
-  const loaded = await loadActiveActionRuleAuthority(projectRoot);
+  const loaded = await loadActiveActionRuleAuthority(projectRoot, { outcome: proposal.change_set.semantic_authority.proof.outcome });
   const current = assertSemanticAuthorityCurrent(loaded.registry, proposal.change_set.semantic_authority);
   if (proposal.action !== current.activated.compiled.outcome
     || proposal.source_id !== current.activated.compiled.source

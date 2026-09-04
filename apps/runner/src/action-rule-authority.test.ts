@@ -587,6 +587,52 @@ describe("semantic Action Rule authority persistence", () => {
     changedReadBoundary.activation.digest = `sha256:${"f".repeat(64)}`;
     await expect(loadActiveActionRuleAuthority(root, { read_boundaries: [changedReadBoundary] }))
       .rejects.toMatchObject({ code: "ACTION_RULE_READ_AUTHORITY_STALE" });
+    const report = await loadActiveActionRuleAuthority(root, {
+      read_boundaries: [changedReadBoundary], dependency_check: "report",
+    });
+    expect(report.unavailable_outcomes).toEqual(["billing.pause_notifications"]);
+    expect(report.registry).toEqual(loaded.registry);
+    expect(report.authority.digest).toBe(loaded.authority.digest);
+    await expect(loadActiveActionRuleAuthority(root, {
+      read_boundaries: [changedReadBoundary], outcome: "billing.pause_notifications",
+    })).rejects.toMatchObject({ code: "ACTION_RULE_READ_AUTHORITY_STALE" });
+    await expect(loadActiveActionRuleAuthority(root, { outcome: "invented.outcome" }))
+      .rejects.toMatchObject({ code: "ACTION_RULE_OUTCOME_UNAVAILABLE" });
+  });
+
+  it("isolates stale outcomes without rewriting the signed registry or shared approval classes", async () => {
+    const root = await temporaryRoot();
+    const first = activeReadBoundary();
+    const second = activeReadBoundary();
+    second.pack.name = "reviewed_notifications";
+    second.activation.digest = canonicalJsonDigest({ ...second, activation: "reviewed" });
+    await writeActiveReadSet(root, first);
+    const activePath = path.join(root, ".synapsor/exploration-boundaries.active.json");
+    const activeSet = JSON.parse(await fs.readFile(activePath, "utf8"));
+    activeSet.boundaries.push(second);
+    await fs.writeFile(activePath, JSON.stringify(activeSet));
+    const source = authoritySource(first.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({
+      name: "independent_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [first, second].map((read, index) => ({
+        read_boundary_name: read.pack.name, read_boundary_digest: read.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope,
+        rule: { ...source.rule, name: `billing.pause_${index}`, outcome: `billing.pause_${index}` },
+      })),
+      reviews: [0, 1].map((index) => ({ ...authorityReview(), outcome: `billing.pause_${index}` })),
+    });
+    await writeActionRuleAuthorityDraft(root, draft);
+    await activateActionRuleAuthority({ projectRoot: root, name: draft.authority.name,
+      expected_digest: draft.digest, confirmation: `ACTIVATE ${draft.digest}`, actor: "reviewer" });
+    const before = await loadActiveActionRuleAuthority(root);
+    const changed = structuredClone(first);
+    changed.activation.digest = `sha256:${"f".repeat(64)}`;
+    const report = await loadActiveActionRuleAuthority(root, { read_boundaries: [changed, second], dependency_check: "report" });
+    expect(report.unavailable_outcomes).toEqual(["billing.pause_0"]);
+    expect(report.registry).toEqual(before.registry);
+    expect(report.authority.digest).toBe(before.authority.digest);
+    await expect(loadActiveActionRuleAuthority(root, { read_boundaries: [changed, second], outcome: "billing.pause_1" })).resolves.toMatchObject({ authority: { digest: before.authority.digest } });
+    await expect(loadActiveActionRuleAuthority(root, { read_boundaries: [changed, second], outcome: "billing.pause_0" })).rejects.toMatchObject({ code: "ACTION_RULE_READ_AUTHORITY_STALE" });
   });
 
   it("refuses a changed active pointer even when its embedded authority still parses", async () => {

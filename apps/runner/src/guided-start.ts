@@ -74,7 +74,7 @@ import {
   type InstantCliBoundaryActivationInput,
   type InstantCliBoundaryActivationResult,
 } from "./instant-cli-boundary.js";
-import { terminalTheme } from "./boundary-cli-picker.js";
+import { createBoundaryReviewInteractiveSession, terminalTheme, type BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { mcpSmoke } from "./mcp-runtime.js";
 import {
   resolveAskMaxOutputTokens,
@@ -120,6 +120,7 @@ export type GuidedStartDependencies = {
   openWorkbench?: (args: string[]) => Promise<number>;
   validateTrustedScopeDefinition?: typeof validateExploreTrustedScopeDefinition;
   interactive?: boolean;
+  reviewUnresolvedOrganizationScope?: () => Promise<{ mode: "tenant" } | { mode: "single_organization"; organizationId: string } | undefined>;
 };
 
 
@@ -560,7 +561,7 @@ async function startAutoBoundary(
     statePreserved: "Existing project and review files were not replaced, no model-facing authority was created, and the source database was not changed.",
   });
   const evidence = await loadStructuredProjectEvidence(project);
-  const build = buildAutoBoundary({
+  const buildInput = {
     inspection,
     project,
     parsedEvidence: evidence.parsed,
@@ -569,7 +570,21 @@ async function startAutoBoundary(
     configuredTrustedContext: defaultLocalTrustedContextAuthority(singleOrganization),
     inspectedSchema: optionalArg(args, "--schema"),
     ...(singleOrganization ? { singleOrganization: { organizationId: organizationId! } } : {}),
-  });
+  };
+  let build = buildAutoBoundary(buildInput);
+  const reviewScope = dependencies.reviewUnresolvedOrganizationScope
+    ?? (process.stdin.isTTY && process.stderr.isTTY ? reviewUnresolvedOrganizationScope : undefined);
+  if (cliMode && !singleOrganization && reviewScope && build.graph.resources.length > 0
+    && build.graph.resources.every((resource) => !resource.tenant_key.selected && resource.tenant_key.candidates.length === 0)) {
+    const scope = await reviewScope();
+    if (!scope) return 0;
+    if (scope.mode === "single_organization") {
+      build = buildAutoBoundary({ ...buildInput,
+        configuredTrustedContext: defaultLocalTrustedContextAuthority(true),
+        singleOrganization: { organizationId: scope.organizationId },
+      });
+    }
+  }
   (dependencies.validateTrustedScopeDefinition ?? validateExploreTrustedScopeDefinition)({
     boundary: build.exploration_boundary,
     inspection,
@@ -652,6 +667,31 @@ async function startAutoBoundary(
     "--instant-onboarding",
     ...(args.includes("--no-graduation-tip") ? ["--no-graduation-tip"] : []),
   ]);
+}
+
+export async function reviewUnresolvedOrganizationScope(
+  session: Pick<BoundaryReviewInteractiveSession, "chooseOption" | "promptText"> = createBoundaryReviewInteractiveSession(),
+): Promise<{ mode: "tenant" } | { mode: "single_organization"; organizationId: string } | undefined> {
+  const mode = await session.chooseOption?.("WHOSE DATA IS IN THIS DATABASE?", [
+    { value: "tenant", label: "Separate customers or organizations", detail: "Keep isolation required. Review coded ownership fields or database policies with the model." },
+    { value: "single_organization", label: "One organization owns all rows", detail: "Explicit whole-organization scope, without a tenant filter. Per-person restrictions can still be reviewed." },
+  ], { initialValue: "tenant", context: [
+    "Runner could not prove a tenant key from metadata. This is not permission to share rows.",
+    "Choose whole-organization scope only for a database isolated to that organization.",
+    "Nothing has been saved or activated. Esc stops here.",
+  ] });
+  if (mode !== "single_organization") return mode === "tenant" ? { mode: "tenant" } : undefined;
+  let error: string | undefined;
+  for (;;) {
+    const organizationId = (await session.promptText("Organization label for this reviewed database", { context: [
+      "Used for audit and accounting, not a customer ID or a model argument.",
+      "Example: university-operations. Whole-organization access still requires final review and activation.",
+      ...(error ? [error] : []),
+    ] }))?.trim();
+    if (organizationId === undefined) return undefined;
+    if (/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(organizationId)) return { mode: "single_organization", organizationId };
+    error = "Enter 1-128 letters, numbers, dots, underscores, colons, or hyphens; start with a letter or number.";
+  }
 }
 
 async function guidedActiveBoundaryExists(projectRoot: string): Promise<boolean> {

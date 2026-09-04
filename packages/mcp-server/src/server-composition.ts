@@ -2,6 +2,7 @@ import type {
   Readable,
   Writable,
 } from "node:stream";
+import { semanticActionInputSchema } from "./semantic-action-schema.js";
 import {
   McpServer,
   ResourceTemplate,
@@ -153,15 +154,7 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
         if (tool.name !== DESCRIBE_ACTIONS_TOOL && tool.name !== REQUEST_CHANGE_TOOL) {
           throw new McpRuntimeError("MCP_TOOL_METADATA_INVALID", `Unsupported local tool metadata for ${tool.name}.`);
         }
-        const inputSchema = tool.name === DESCRIBE_ACTIONS_TOOL
-          ? z.object({}).strict()
-          : z.object({
-            outcome: z.string().regex(/^[A-Za-z_][A-Za-z0-9_.:-]{0,255}$/u),
-            subject_refs: z.record(
-              z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u),
-              z.string().regex(/^obj_[A-Za-z0-9_-]{32,128}$/u),
-            ).refine((value) => Object.keys(value).length >= 1 && Object.keys(value).length <= 8),
-          }).strict();
+        const inputSchema = semanticActionInputSchema(tool.name);
         const toolConfig = {
           title: tool.title,
           description: tool.description,

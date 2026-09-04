@@ -64,8 +64,9 @@ export type BoundaryJobPlan = {
   read_intent?: string;
   action_mode: "create" | "reuse" | "revise" | "none";
   action_intent?: string;
+  action_intents?: string[];
   action_outcome?: string;
-  /** Distinguishes caller-selected values from effects Runner derives from verified facts. */
+  /** Fixed outcomes by default; discretionary only for an existing legacy revision. */
   action_strategy?: "discretionary" | "rule_derived";
   summary: string;
   correction_used: boolean;
@@ -95,6 +96,7 @@ type BoundaryJobPlanCore = {
   read_intent?: string;
   action_mode: "create" | "reuse" | "revise" | "none";
   action_intent?: string;
+  action_intents?: string[];
   action_outcome?: string;
   action_strategy?: "discretionary" | "rule_derived";
   summary: string;
@@ -192,8 +194,9 @@ export async function planModelBoundaryJob(input: {
     "Preserve every reviewed resource concept explicitly named in the operator's read request. Do not summarize a requested read area away.",
     `Keep read_intent within ${MAX_BOUNDARY_READ_QUESTION_CHARACTERS} characters and action_intent within ${MAX_BOUNDARY_ACTION_INTENT_CHARACTERS} characters. These are concise routing intents, not explanations.`,
     "Use action_mode=create or revise only for requested structured changes. Use reuse only when existing Action authority already represents the requested change and should remain unchanged.",
+    "For a job with multiple new business actions, put each independent one-row outcome in action_intents (at most eight), preserving its business criteria. Set action_intent to the first entry. Do not silently drop additional requested actions. A revision edits one named outcome; other outcomes remain unchanged.",
     "For a rule-derived revision, select the exact existing outcome in action_outcome. If several outcomes are plausible, ask one clarification rather than choosing by similarity.",
-    "For create or revise, classify action_strategy=discretionary when the caller chooses a reviewed value. Use rule_derived when Runner must verify authoritative facts and deterministically calculate or copy the one exact permitted effect from a selected source row. Do not use rule_derived merely because approval has conditions.",
+    "For every new Action choose action_strategy=rule_derived. This fixed-tool engine supports both values derived from private facts and caller-selected bounded business inputs. Never create a separate MCP tool for a new business behavior. discretionary is compatibility-only when editing an existing legacy capability.",
     "An Action draft depends on an exact reviewed Read revision. When Action work is requested and an exact reusable Read revision exists, choose read_mode=reuse unless the operator explicitly asked to revise reads.",
     "Trusted tenant/principal/account association is injected by Runner and may be enforced by reviewed SQL scope or PostgreSQL RLS. Never request a source field merely to recreate trusted scope.",
     "Approval counts, rolling windows, and aggregate approval limits are evaluated from Runner's proposal ledger. Never request a source table or source field for approval history.",
@@ -325,6 +328,11 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinitio
               maxLength: MAX_BOUNDARY_ACTION_INTENT_CHARACTERS,
               description: "Concise Action-only routing intent. Runner validates the exact Action separately.",
             },
+            action_intents: {
+              type: "array", minItems: 1, maxItems: 8,
+              items: { type: "string", minLength: 1, maxLength: MAX_BOUNDARY_ACTION_INTENT_CHARACTERS },
+              description: "Independent business outcomes for a multi-action create job; each keeps its own requested rules.",
+            },
             action_outcome: {
               type: "string",
               minLength: 1,
@@ -334,7 +342,7 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinitio
             action_strategy: {
               type: "string",
               enum: ["discretionary", "rule_derived"],
-              description: "Whether the caller supplies a bounded value or Runner derives the exact effect from verified facts.",
+              description: "rule_derived is the fixed-tool engine including bounded business inputs; discretionary is legacy revision compatibility only.",
             },
             summary: { type: "string", minLength: 1, maxLength: 700 },
           },
@@ -458,13 +466,23 @@ function parseJobPlan(
   const effectiveActionIntent = actionMode === "create" || actionMode === "revise"
     ? actionIntent
     : undefined;
+  let actionIntents: string[] | undefined;
+  if (value.action_intents !== undefined) {
+    if (actionMode !== "create" || !Array.isArray(value.action_intents) || value.action_intents.length < 1 || value.action_intents.length > 8) {
+      throw new Error("action_intents must contain 1-8 separate business outcomes for action_mode=create.");
+    }
+    actionIntents = value.action_intents.map((intent) => boundedText(intent, "Action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS));
+    if (new Set(actionIntents).size !== actionIntents.length || actionIntents[0] !== actionIntent) {
+      throw new Error("action_intents must be distinct and its first entry must match action_intent.");
+    }
+  }
   const submittedActionStrategy = value.action_strategy === undefined
     ? effectiveActionIntent === undefined ? undefined : inferActionStrategy(effectiveActionIntent)
     : boundedMode(value.action_strategy, "action_strategy", ["discretionary", "rule_derived"]);
   const existingActionKinds = new Set<"discretionary" | "rule_derived">(
     state.actions.map((action) => action.kind ?? "discretionary"),
   );
-  const actionStrategy = actionMode === "revise" && existingActionKinds.size === 1
+  const actionStrategy = actionMode === "create" ? "rule_derived" : actionMode === "revise" && existingActionKinds.size === 1
     ? [...existingActionKinds][0]!
     : submittedActionStrategy;
   if ((actionMode === "create" || actionMode === "revise") && actionStrategy === undefined) {
@@ -514,6 +532,7 @@ function parseJobPlan(
     ...(effectiveReadIntent ? { read_intent: effectiveReadIntent } : {}),
     action_mode: actionMode,
     ...(effectiveActionIntent ? { action_intent: effectiveActionIntent } : {}),
+    ...(actionIntents ? { action_intents: actionIntents } : {}),
     ...(actionOutcome ? { action_outcome: actionOutcome } : {}),
     ...(actionStrategy ? { action_strategy: actionStrategy } : {}),
     summary: boundedText(value.summary, "Boundary job summary", 700),

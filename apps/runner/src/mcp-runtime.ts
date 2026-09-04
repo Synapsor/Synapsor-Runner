@@ -175,11 +175,12 @@ export async function mcpServe(args: string[]): Promise<number> {
       );
     }
     process.stderr.write(
-      `Active local Explore authority selected from ${configPath}; exposing exactly ${EXPLORE_TOOL_NAMES.join(" and ")}.\n`,
+      `Active local Read authority selected from ${configPath}; fixed Read and Action tools are available. Only activated outcomes permit proposals.\n`,
     );
     await serveLocalExploreStdio({
       projectRoot: localExploreProjectRoot,
       config,
+      disableActions: readOnly,
       modelAuthorityMetadata: modelAuthorityMetadataMode(config),
     });
     return 0;
@@ -930,13 +931,16 @@ export function productionExploreSessionFactory(
 async function serveLocalExploreStdio(input: {
   projectRoot: string;
   config: RuntimeConfig;
+  disableActions?: boolean;
   modelAuthorityMetadata: ReturnType<typeof modelAuthorityMetadataMode>;
 }): Promise<void> {
   const store = new ProposalStore(path.join(input.projectRoot, ".synapsor", "local.db"));
   try {
-    const semantic = await createOptionalReadActionRuleRuntimeServices({
+    const actionConfigPath = path.join(input.projectRoot, "synapsor.actions.runner.json");
+    const actionConfig = await fileExists(actionConfigPath) ? await readRuntimeConfig(actionConfigPath) : input.config;
+    const semantic = input.disableActions ? undefined : await createOptionalReadActionRuleRuntimeServices({
       projectRoot: input.projectRoot,
-      config: input.config,
+      config: actionConfig,
       env: process.env,
       store,
     }, reportOptionalActionSubjectFailure);
@@ -944,6 +948,7 @@ async function serveLocalExploreStdio(input: {
       projectRoot: input.projectRoot,
       modelAuthorityMetadata: input.modelAuthorityMetadata,
       store,
+      ...(semantic ? { semanticActions: semantic.semanticActions } : {}),
       ...(semantic
         ? {
           subjectReferences: {
@@ -979,7 +984,7 @@ function configuredActionRuleProjectRoot(config: RuntimeConfig): string | undefi
 
 async function hasActiveActionRuleAuthority(projectRoot: string): Promise<boolean> {
   try {
-    await loadActiveActionRuleAuthority(projectRoot);
+    await loadActiveActionRuleAuthority(projectRoot, { dependency_check: "report" });
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
@@ -1885,12 +1890,12 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
             isAlias: false,
             style: "canonical" as const,
           })),
-          ...configuredExposures,
+          ...configuredExposures.filter((exposure) => !SEMANTIC_ACTION_TOOL_NAMES.some((name) => name === exposure.canonicalName)),
         ]
       : surface === "capabilities"
         ? configuredExposures
       : (localExplore || productionExploreActive)
-        ? EXPLORE_TOOL_NAMES.map((name) => ({
+        ? [...EXPLORE_TOOL_NAMES, ...(localExplore ? SEMANTIC_ACTION_TOOL_NAMES : [])].map((name) => ({
           canonicalName: name,
           exposedName: name,
           isAlias: false,
@@ -1968,7 +1973,7 @@ async function optionalActiveActionRuleAuthority(
   projectRoot: string,
 ): Promise<LoadedActiveActionRuleAuthorityV1 | undefined> {
   try {
-    return await loadActiveActionRuleAuthority(projectRoot);
+    return await loadActiveActionRuleAuthority(projectRoot, { dependency_check: "report" });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;

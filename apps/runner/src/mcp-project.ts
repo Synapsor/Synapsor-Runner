@@ -68,7 +68,7 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   }
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
   const requestedAuthoring = rest.includes("--authoring");
-  const includeActions = rest.includes("--include-actions");
+  let includeActions = rest.includes("--include-actions");
   if (includeActions && !requestedAuthoring) {
     throw new Error("--include-actions requires --authoring so local Explore and proposal tools remain separate managed MCP runtimes");
   }
@@ -76,6 +76,23 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
     throw new Error("--action-config requires --include-actions");
   }
   const configPath = runnerConfigPath(rest, "./synapsor.runner.json");
+  const companion = await managedMcpProjectStatus(client, projectRoot, "actions");
+  if (requestedAuthoring && (companion.state === "unowned" || companion.state === "tampered")) {
+    throw new Error("The synapsor-actions entry is unowned or changed. Review it before installing the unified four-tool entry; Runner has not changed the client file.");
+  }
+  let foldSemanticCompanion = false;
+  if (requestedAuthoring && (includeActions || companion.state === "installed")) {
+    const selectedActionConfig = path.resolve(projectRoot,
+      optionalArg(rest, "--action-config") ?? (companion.state === "installed" ? companion.paths.configArgument : "./synapsor.actions.runner.json"));
+    const companionConfig = await readRuntimeConfig(selectedActionConfig);
+    foldSemanticCompanion = Boolean(companionConfig.action_rules && companionConfig.action_rules.legacy_tools !== "enabled");
+    if (foldSemanticCompanion) {
+      if (selectedActionConfig !== path.join(projectRoot, "synapsor.actions.runner.json")) {
+        throw new Error("The unified local entry loads synapsor.actions.runner.json from the project root. Review that config before migrating a custom Action config; no client entry was changed.");
+      }
+      includeActions = false;
+    }
+  }
   const storePath = resolvedLocalStorePath(rest);
   let authoring = requestedAuthoring;
   let toolNames: string[];
@@ -86,7 +103,7 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
         `${definition.displayName} install refused because no active reviewed Read Boundary was found`,
       );
     }
-    toolNames = ["app.describe_data", "app.explore_data"];
+    toolNames = ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"];
   } else {
     const absoluteConfig = path.resolve(projectRoot, configPath);
     await readRuntimeConfig(absoluteConfig);
@@ -172,9 +189,11 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   ));
   const report = includeActions
     ? managedMcpProjectSetLifecycleReport(client, reports)
-    : reports[0]!;
+    : { ...reports[0]!, ...(foldSemanticCompanion && companion.state === "installed" ? { removes_owned_entry: "synapsor-actions" } : {}) };
   const json = rest.includes("--json");
-  if (rest.includes("--dry-run") || runtimes.every((runtime) => runtime.preview.action === "unchanged")) {
+  const removeCompanion = foldSemanticCompanion && companion.state === "installed";
+  if (!json && removeCompanion) process.stdout.write("The owned synapsor-actions entry will be merged into synapsor: four fixed tools, separate Read and Action authority. The client file will be backed up.\n");
+  if (rest.includes("--dry-run") || (!removeCompanion && runtimes.every((runtime) => runtime.preview.action === "unchanged"))) {
     if (json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     else process.stdout.write(includeActions
       ? formatManagedMcpProjectSetPreview(report)
@@ -193,6 +212,7 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   const installed = await installManagedMcpProjectSet({
     client,
     projectRoot,
+    ...(removeCompanion ? { removeEntryKinds: ["actions" as const] } : {}),
     entries: runtimes.map((runtime) => ({
       configPath: runtime.configPath,
       storePath: runtime.storePath,
@@ -233,7 +253,10 @@ async function mcpProjectStatus(args: string[]): Promise<number> {
   ]), `mcp status ${client}`);
   if (!rest.includes("--project")) throw new Error(`mcp status ${client} requires --project`);
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
-  const includeActions = rest.includes("--include-actions");
+  const companion = await managedMcpProjectStatus(client, projectRoot, "actions");
+  const primary = await managedMcpProjectStatus(client, projectRoot, "explore");
+  const unified = companion.state === "not_installed" && primary.state === "installed" && isManagedAuthoringEntry(primary.entry);
+  const includeActions = rest.includes("--include-actions") && !unified;
   const checkLaunch = rest.includes("--check-launch");
   const timeoutMs = Number(optionalArg(rest, "--timeout-ms") ?? "10000");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) {
@@ -304,7 +327,7 @@ async function managedMcpProjectStatusReport(input: {
   if (status.state === "installed") {
     let staticBoundaryOk = true;
     if (authoring) {
-      tools = ["app.describe_data", "app.explore_data"];
+      tools = ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"];
     } else {
       const configPath = path.resolve(input.projectRoot, status.paths.configArgument);
       const boundary = await inspectMcpToolBoundary(["--config", configPath, "--store", ":memory:"]);

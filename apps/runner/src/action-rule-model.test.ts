@@ -7,8 +7,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
-import { generateModelActionRuleDraft } from "./action-rule-model.js";
+import { generateFocusedModelActionRuleDraft as generateModelActionRuleDraft, generateModelActionRuleDraft as converseActionRuleDraft } from "./action-rule-model.js";
 import type { AskProviderDependencies } from "./model-ask.js";
+import type { ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 
 const lock = `sha256:${"a".repeat(64)}` as const;
 const readDigest = `sha256:${"b".repeat(64)}` as const;
@@ -19,6 +20,134 @@ const statusType: ActionRuleScalarTypeSpecV1 = {
   comparison: "exact",
   enum: ["active", "paused"],
 };
+
+describe("conversational Action authoring tools", () => {
+  it.skipIf(!process.env.SYNAPSOR_LIVE_AUTHORING_PROVIDER)("qualifies live creation and a day-two edit through the same tools", async () => {
+    const provider = process.env.SYNAPSOR_LIVE_AUTHORING_PROVIDER as "openai" | "openai_compatible" | "anthropic";
+    const progress: string[] = [];
+    const session = {
+      provider,
+      model: process.env.SYNAPSOR_LIVE_AUTHORING_MODEL ?? "gpt-5.6-terra",
+      ...(process.env.SYNAPSOR_LIVE_AUTHORING_BASE_URL ? { baseUrl: process.env.SYNAPSOR_LIVE_AUTHORING_BASE_URL } : {}),
+      dependencies: { onProgress: (event: { phase: "provider" | "tool"; tool?: string }) => { progress.push(event.tool ?? event.phase); } },
+    };
+    const common = { session, builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest, egressAcknowledged: true };
+    const created = await converseActionRuleDraft({
+      ...common,
+      intent: "Let a signed-in customer request pausing their own billing account. Only active accounts without a risk hold qualify. Set status to paused. Require one billing_reviewer for every proposal. Keep it proposal-only, never apply or write anything.",
+      askClarification: async (question) => { throw new Error(`Unnecessary operator question: ${question}`); },
+    }).catch((error) => { throw new Error(`${String(error)}; authoring steps: ${progress.join(", ")}`, { cause: error }); });
+    expect(created.compiled.effect_envelope.writeback.mode).toBe("none");
+    expect(created.compiled.approval_class.required_approvals).toBe(1);
+    const edited = await converseActionRuleDraft({ ...common, existingDraft: created.compiled.draft, intent: "Require two distinct billing reviewers instead of one. Keep every other business rule and setting unchanged." });
+    expect(edited.revision?.changed_phases).toEqual(["approval"]);
+    expect(edited.compiled.approval_class.required_approvals).toBe(2);
+    expect(edited.compiled.draft.effect).toEqual(created.compiled.draft.effect);
+  }, 300_000);
+
+  const requestInput = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => ({
+    session: { provider: "openai" as const, model: "gpt-5.6-terra", dependencies: { requestJson } },
+    intent: "Let an eligible account request a temporary pause, with human review.",
+    builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest,
+    egressAcknowledged: true, env: { OPENAI_API_KEY: "provider-test-key" },
+  });
+  const call = (name: string, args = payloadFor(name)) => ({
+    status: 200,
+    body: { output: [{ type: "function_call", call_id: `call_${name}`, name: name.replaceAll(".", "__"), arguments: JSON.stringify(args) }] },
+  });
+  const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
+
+  it("lets the model choose component order and repair compiler feedback without a user interruption", async () => {
+    const requests: string[] = [];
+    const steps = [
+      call("runner.submit_approval_policy_draft"),
+      call("runner.submit_action_rule_draft", rulePayload(eligiblePredicate("wrong_alias"))),
+      call("runner.submit_verification_boundary_draft"),
+      call("runner.submit_effect_envelope_draft"),
+      call("runner.validate_action_draft", {}),
+      call("runner.submit_action_rule_draft"),
+      call("runner.validate_action_draft", {}),
+      say("The pause draft is ready for your review. Existing authority is unchanged."),
+    ];
+    const requestJson = vi.fn(async (request) => {
+      requests.push(JSON.stringify(request.body));
+      return steps.shift()!;
+    });
+    const askClarification = vi.fn();
+    const result = await converseActionRuleDraft({ ...requestInput(requestJson), askClarification });
+    expect(result).toMatchObject({ state: "ready", correction_used: true, clarification_count: 0, authority_granted: false });
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(requests[0]).toContain("runner__inspect_action_draft");
+    expect(requests[5]).toContain("needs_repair");
+    expect(result.compiled.rule.outcome).toBe("billing.pause_account");
+  });
+
+  it("retains draft state across more than two business questions and treats blank input as no decision", async () => {
+    const requests: string[] = [];
+    const steps = [
+      call("runner.submit_verification_boundary_draft"),
+      say("Should pauses always need a reviewer?"),
+      say("A reviewer checks the request before it can proceed. Which team should review?"),
+      say("Is one billing reviewer sufficient?"),
+      say("I still need the reviewer count; nothing has been accepted."),
+      call("runner.submit_approval_policy_draft"),
+      call("runner.submit_action_rule_draft"),
+      call("runner.submit_effect_envelope_draft"),
+      call("runner.validate_action_draft", {}),
+      say("The draft requires one billing reviewer."),
+    ];
+    const requestJson = vi.fn(async (request) => { requests.push(JSON.stringify(request.body)); return steps.shift()!; });
+    const answers = ["Why?", "Billing reviewers", "", "Yes, one billing reviewer"];
+    const askClarification = vi.fn(async () => answers.shift());
+    const result = await converseActionRuleDraft({ ...requestInput(requestJson), askClarification });
+    expect(result.clarification_count).toBe(4);
+    expect(askClarification).toHaveBeenCalledTimes(4);
+    expect(requests[4]).toContain("I have not supplied a decision");
+    expect(requests[4]).toContain("billing.pause_account_verification");
+  });
+
+  it("edits only the selected component of an existing rule, without recreating its effect", async () => {
+    const existing = await generateModelActionRuleDraft(requestInput(phaseResponder([])));
+    const steps = [
+      call("runner.submit_approval_policy_draft", { ...payloadFor("runner.submit_approval_policy_draft"), required_approvals: 2, changed_fields: ["required_approvals"] }),
+      call("runner.validate_action_draft", {}),
+      say("The revised draft requires two distinct billing reviewers."),
+    ];
+    const requestJson = vi.fn(async () => steps.shift()!);
+    const result = await converseActionRuleDraft({
+      ...requestInput(requestJson), existingDraft: existing.compiled.draft,
+      intent: "Change only the fallback reviewer count to two. Keep every other rule and value unchanged.",
+    });
+    expect(result.revision?.changed_phases).toEqual(["approval"]);
+    expect(result.compiled.draft.effect).toEqual(existing.compiled.draft.effect);
+    expect(result.compiled.approval_class.required_approvals).toBe(2);
+    expect(requestJson).toHaveBeenCalledTimes(3);
+  });
+
+  it("resumes disabled components after an interruption and rejects a changed structural binding", async () => {
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const initialSteps = [call("runner.submit_verification_boundary_draft"), say("Which team reviews this?")];
+    await expect(converseActionRuleDraft({
+      ...requestInput(vi.fn(async () => initialSteps.shift()!)),
+      onCheckpoint: async (value) => { checkpoint = value; },
+      askClarification: async () => undefined,
+    })).rejects.toThrow("CANCELLED");
+    expect(checkpoint?.components.verification).toBeDefined();
+    const resumedSteps = [
+      call("runner.submit_approval_policy_draft"), call("runner.submit_action_rule_draft"),
+      call("runner.submit_effect_envelope_draft"), call("runner.validate_action_draft", {}), say("The paused draft is ready."),
+    ];
+    const requestJson = vi.fn(async () => resumedSteps.shift()!);
+    const resumed = await converseActionRuleDraft({ ...requestInput(requestJson), checkpoint });
+    expect(resumed.state).toBe("ready");
+    expect(requestJson).toHaveBeenCalledTimes(5);
+    const staleRequest = vi.fn();
+    await expect(converseActionRuleDraft({
+      ...requestInput(staleRequest), checkpoint, readBoundaryDigest: `sha256:${"f".repeat(64)}`,
+    })).rejects.toThrow("CHECKPOINT_STALE");
+    expect(staleRequest).not.toHaveBeenCalled();
+  });
+});
 
 describe("model-guided Action Rule authoring", () => {
   it("uses four focused required tools and compiles one disabled semantic authority", async () => {

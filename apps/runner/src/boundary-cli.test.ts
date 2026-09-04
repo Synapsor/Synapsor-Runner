@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -4336,7 +4337,7 @@ describe("boundary operator-plane CLI", () => {
       };
     });
     let actionDraftAttempt = 0;
-    let resumedConversation: Array<{ question: string; answer: string }> | undefined;
+    let resumedMessages: string[] | undefined;
     const modelActionRuleGenerator = vi.fn(async (input: Parameters<typeof generateModelActionRuleDraft>[0]) => {
       actionDraftAttempt += 1;
       if (actionDraftAttempt === 1) {
@@ -4344,8 +4345,13 @@ describe("boundary operator-plane CLI", () => {
           "What is the maximum number of automatically approved follow-ups in a rolling 24-hour window?",
         );
         expect(answer).toBe("At most three per customer each rolling 24 hours.");
+        await input.onCheckpoint?.(actionRuleAuthoringCheckpoint({
+          intent_digest: canonicalJsonDigest(input.intent),
+          context_digest: canonicalJsonDigest({ catalog: input.builtCatalog.catalog, read: input.readBoundaryDigest, baseline: null }),
+          components: {}, operator_messages: [answer!],
+        }));
       } else {
-        resumedConversation = input.session.conversation?.turns;
+        resumedMessages = input.checkpoint?.operator_messages;
       }
       throw new AskError(
         "ASK_REQUIRED_TOOL_NOT_CALLED",
@@ -4487,12 +4493,7 @@ describe("boundary operator-plane CLI", () => {
       expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
       expect(resumedPlanner).not.toHaveBeenCalled();
       expect(metadataEgressPrompts).toHaveLength(1);
-      expect(resumedConversation).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          question: "What is the maximum number of automatically approved follow-ups in a rolling 24-hour window?",
-          answer: "At most three per customer each rolling 24 hours.",
-        }),
-      ]));
+      expect(resumedMessages).toEqual(["At most three per customer each rolling 24 hours."]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -5037,6 +5038,9 @@ describe("boundary operator-plane CLI", () => {
       }
       if (semanticActionAttempt === 2) {
         clarificationAnswer = await input.askClarification?.(clarificationQuestion);
+        if (clarificationAnswer === "Why does Runner need this limit?") {
+          clarificationAnswer = await input.askClarification?.(`It bounds automatic approval. ${clarificationQuestion}`);
+        }
       }
       if (input.existingDraft) {
         const revised = structuredClone(input.existingDraft);
@@ -5228,6 +5232,7 @@ describe("boundary operator-plane CLI", () => {
       : "The exact disabled drafts are ready for review.");
     const semanticChat = testBoundaryAuthoringChat(session);
     semanticChat.readOperator = vi.fn()
+      .mockResolvedValueOnce("Why does Runner need this limit?")
       .mockResolvedValueOnce("At most ten proposals in a rolling 24 hours.")
       .mockResolvedValueOnce("Keep the service visit id private and use opaque references instead.");
     semanticChat.streamModel = vi.fn(async () => undefined);
@@ -5260,7 +5265,7 @@ describe("boundary operator-plane CLI", () => {
       expect(modelBoundaryJobPlanner).toHaveBeenCalledWith(expect.objectContaining({ jobIntent: operatorJob }));
       expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
       expect(clarificationAnswer).toBe("At most ten proposals in a rolling 24 hours.");
-      expect(semanticChat.readOperator).toHaveBeenCalledTimes(2);
+      expect(semanticChat.readOperator).toHaveBeenCalledTimes(3);
       expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledOnce();
       const readRevisionDetails = vi.mocked(semanticChat.rememberDetails).mock.calls
         .find(([title]) => title.includes("READ BOUNDARY REVISION"));
@@ -5284,7 +5289,7 @@ describe("boundary operator-plane CLI", () => {
         "manual_editor",
       ]);
       expect(boundaryListStarts[0]).toBe(true);
-      expect(modelAuthoringNarrator).toHaveBeenCalledWith(expect.objectContaining({
+      expect(modelAuthoringNarrator).not.toHaveBeenCalledWith(expect.objectContaining({
         operatorMessage: "Why does Runner need this limit?",
         nextQuestion: clarificationQuestion,
       }));
@@ -5515,6 +5520,69 @@ describe("boundary operator-plane CLI", () => {
           "Human-review quorum: 1 distinct maintenance_reviewer approval -> 2 distinct maintenance_reviewer approvals",
         ]),
       );
+      const intents = ["Prepare a three-hour follow-up.", "Prepare a four-hour follow-up."];
+      const completedIntents: string[] = [];
+      const multiDiagnostics: string[] = [];
+      let interruptSecond = true;
+      const multiGenerator = vi.fn(async (input: Parameters<typeof generateModelActionRuleDraft>[0]): Promise<ModelActionRuleDraftResult> => {
+        if (input.intent === intents[1] && interruptSecond) {
+          interruptSecond = false;
+          throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
+        }
+        const draft = structuredClone(modelActionRuleGenerator.mock.calls[2]![0].existingDraft!);
+        const suffix = input.intent === intents[0] ? "three" : "four";
+        draft.name = draft.outcome = `maintenance.followup_${suffix}`;
+        draft.effect.name = `maintenance.effect_${suffix}`;
+        draft.verification.name = `maintenance.verification_${suffix}`;
+        const hours = draft.effect.set.estimated_hours!;
+        if (hours.kind !== "literal") throw new Error("Expected literal fixture hours.");
+        hours.value = suffix === "three" ? 3 : 4;
+        draft.review.then = `Propose a ${suffix}-hour follow-up.`;
+        let compiled;
+        try {
+          compiled = compileActionRuleModelDraft({ draft, builtCatalog: input.builtCatalog, readBoundary: input.readBoundary, readBoundaryDigest: input.readBoundaryDigest });
+        } catch (error) { multiDiagnostics.push(String(error)); throw error; }
+        completedIntents.push(input.intent);
+        return { state: "ready", compiled, provider: input.session.provider, model: input.session.model,
+          correction_used: false, clarification_count: 0, authority_granted: false, source_database_changed: false };
+      });
+      const multiPlanner = vi.fn(async () => ({
+        state: "planned" as const, read_mode: "reuse" as const, action_mode: "create" as const,
+        action_strategy: "rule_derived" as const, action_intent: intents[0]!, action_intents: intents,
+        summary: "Reuse the reviewed reads and prepare both new outcomes.", correction_used: false,
+        authority_granted: false as const, source_database_changed: false as const,
+      }));
+      for (const resume of [false, true]) {
+        const multiSession: BoundaryReviewInteractiveSession = {
+          ...session,
+          chooseResource: async (_resources, _overview, options) => { multiDiagnostics.push(JSON.stringify(options)); return undefined; },
+          promptText: async () => "Keep the reads and prepare separate three-hour and four-hour follow-up outcomes.",
+          chooseOption: async (title, _options, choiceOptions) => {
+            multiDiagnostics.push(`${title}: ${(choiceOptions?.context ?? []).join(" ")}`);
+            if (title === "START BOUNDARY DRAFTING") return resume ? "resume" : "model";
+            if (title === "ACTION BOUNDARY MODEL DRAFT FAILED") return "back";
+            if (title === "ACTIVATE READ BOUNDARY") return "finish";
+            throw new Error(`Unexpected multi-outcome prompt: ${title}`);
+          },
+        };
+        await boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
+          multiSession, undefined, {
+            startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
+            modelBoundaryJobPlanner: multiPlanner, modelReadWorkloadGenerator,
+            modelActionRuleGenerator: multiGenerator, modelAuthoringNarrator: revisionNarrator,
+            actionProjectInspector: async () => inspection,
+            boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(multiSession),
+          });
+      }
+      expect(multiPlanner).toHaveBeenCalledOnce();
+      expect(completedIntents, multiDiagnostics.join("\n")).toEqual(intents);
+      expect(multiGenerator).toHaveBeenCalledTimes(3);
+      const multiple = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+      expect(multiple?.authority.rules.map((entry) => entry.rule.outcome).sort()).toEqual([
+        "maintenance.create_inspection_followup", "maintenance.followup_four", "maintenance.followup_three",
+      ]);
+      const finalReadDigest = explorationBoundaryCandidateDigest((await loadBoundaryReviewContext(root)).candidate);
+      expect(multiple?.authority.rules.every((entry) => entry.read_boundary_digest === finalReadDigest)).toBe(true);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -10588,7 +10656,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("lists the exact two tools for an active local Explore-only project", async () => {
+  it("lists the fixed four tools for an active local Read project, even before Action activation", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-explore-tools-"));
     const inspection = boundaryInspection();
     const build = buildAutoBoundary({
@@ -10644,12 +10712,12 @@ describe("boundary operator-plane CLI", () => {
         ok: true,
         surface: "local_explore",
         alias_mode: "canonical",
-        exposed_to_mcp: ["app.describe_data", "app.explore_data"],
+        exposed_to_mcp: ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"],
       });
       expect(preview.checks).toContainEqual({
         name: "model-facing tools present",
         ok: true,
-        detail: "app.describe_data, app.explore_data",
+        detail: "app.describe_data, app.explore_data, app.describe_actions, app.request_change",
       });
       expect(JSON.stringify(preview)).not.toContain("semantic tools present");
 

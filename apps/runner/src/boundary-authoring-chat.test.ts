@@ -54,6 +54,32 @@ function memoryIo(input: {
 }
 
 describe("Boundary authoring chat", () => {
+  it("renders actual text deltas before completion, formats split markup, and drains before input", async () => {
+    let columns = 64;
+    const memory = memoryIo({ reads: ["Why?"], columns: () => columns });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: true });
+    chat.providerStream({ phase: "started", operator_text: true });
+    chat.providerStream({ phase: "text_delta", operator_text: true, text: "The **reviewed ", characters: 15 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(memory.writes.join("")).toContain("The ");
+    expect(memory.prompts).toHaveLength(0);
+    chat.providerStream({ phase: "text_delta", operator_text: true, text: "range** for `amount` is 10 through 500. " });
+    columns = 48;
+    chat.providerStream({ phase: "text_delta", operator_text: true, text: "Would you like to review the details?" });
+    chat.providerStream({ phase: "tool_delta", text: '{"private":true}', characters: 16 });
+    chat.providerStream({ phase: "completed", operator_text: true });
+    await chat.streamModel(["The **reviewed range** for `amount` is 10 through 500. Would you like to review the details?"]);
+    expect(await chat.readOperator!()).toBe("Why?");
+    const transcript = memory.writes.join("");
+    const plain = transcript.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
+    expect(plain.match(/model>/gu)).toHaveLength(1);
+    expect(plain).not.toMatch(/\*\*|`amount`|private/);
+    expect(transcript).toContain("\u001b[");
+    expect(plain).toContain("details?\n");
+    expect(Math.max(...plain.split("\n").map((line) => line.length))).toBeLessThanOrEqual(64);
+    expect(memory.prompts).toHaveLength(1);
+  });
+
   it("uses the available width in a wide terminal instead of stopping at column 116", () => {
     const memory = memoryIo({ columns: 220 });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });

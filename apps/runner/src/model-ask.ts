@@ -250,6 +250,8 @@ export type AskProviderStreamEvent = {
   phase: "started" | "text_delta" | "tool_started" | "tool_delta" | "completed";
   characters?: number;
   tool?: string;
+  text?: string;
+  operator_text?: boolean;
 };
 
 export type AskProviderDependencies = {
@@ -599,7 +601,11 @@ export async function runAskProviderTurn(input: {
   requiredInitialToolName?: string;
   completeAfterRequiredTool?: boolean;
   allowToolFreeAuthoringResponse?: boolean;
+  conversationalAuthoring?: boolean;
 }): Promise<AskTurnResult> {
+  if (input.conversationalAuthoring && (input.gateway.mode !== "authoring" || input.tools.some((tool) => !tool.name.startsWith("runner.")))) {
+    throw new AskError("ASK_AUTHORING_SURFACE_INVALID", "Conversational drafting requires an operator-only authoring tool surface.", 400);
+  }
   if (input.allowToolFreeAuthoringResponse
     && (input.gateway.mode !== "authoring" || input.tools.length !== 0 || input.requiredInitialToolName)) {
     throw new AskError(
@@ -864,7 +870,7 @@ function openAiResponsesStreamAssembler(
       start();
       const type = typeof event.type === "string" ? event.type : "";
       if (type === "response.output_text.delta" && typeof event.delta === "string") {
-        emitProviderStream(onEvent, { phase: "text_delta", characters: event.delta.length });
+        emitProviderStream(onEvent, { phase: "text_delta", characters: event.delta.length, text: event.delta });
       } else if (type === "response.output_item.added" && isRecord(event.item)
         && event.item.type === "function_call" && typeof event.item.name === "string") {
         emitProviderStream(onEvent, { phase: "tool_started", tool: event.item.name });
@@ -920,7 +926,7 @@ function openAiChatStreamAssembler(
         if (!isRecord(choice.delta)) continue;
         if (typeof choice.delta.content === "string" && choice.delta.content) {
           content += choice.delta.content;
-          emitProviderStream(onEvent, { phase: "text_delta", characters: choice.delta.content.length });
+          emitProviderStream(onEvent, { phase: "text_delta", characters: choice.delta.content.length, text: choice.delta.content });
         }
         if (!Array.isArray(choice.delta.tool_calls)) continue;
         for (const raw of choice.delta.tool_calls) {
@@ -1019,7 +1025,7 @@ function anthropicStreamAssembler(
       if (!block) return;
       if (event.delta.type === "text_delta" && typeof event.delta.text === "string") {
         block.text = `${typeof block.text === "string" ? block.text : ""}${event.delta.text}`;
-        emitProviderStream(onEvent, { phase: "text_delta", characters: event.delta.text.length });
+        emitProviderStream(onEvent, { phase: "text_delta", characters: event.delta.text.length, text: event.delta.text });
       } else if (event.delta.type === "input_json_delta" && typeof event.delta.partial_json === "string") {
         const next = `${partialInputs.get(index) ?? ""}${event.delta.partial_json}`;
         if (next.length > 32_768) {
@@ -1069,6 +1075,7 @@ async function runOpenAiCompatibleTurn(input: {
   requiredInitialToolName?: string;
   completeAfterRequiredTool?: boolean;
   allowToolFreeAuthoringResponse?: boolean;
+  conversationalAuthoring?: boolean;
 }): Promise<AskTurnResult> {
   const messages: Array<Record<string, unknown>> = [
     { role: "system", content: input.providerSystemPrompt ?? askSystemPrompt() },
@@ -1087,8 +1094,9 @@ async function runOpenAiCompatibleTurn(input: {
   let dataToolGroundingCorrectionSent = false;
   let localDirectCatalogTrace: AskToolTrace | undefined;
   let intentRepairAttempts = 0;
+  let authoringEmptyCorrectionSent = false;
 
-  for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
+  for (let iteration = 0; iteration < (input.conversationalAuthoring ? 12 : MAX_TOOL_ITERATIONS); iteration += 1) {
     assertAskNotCancelled(input.signal);
     if (input.authorityGuard) {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
@@ -1176,9 +1184,14 @@ async function runOpenAiCompatibleTurn(input: {
       ...(toolCalls.length ? { tool_calls: toolCalls.map((call) => call.raw) } : {}),
     });
     if (toolCalls.length === 0) {
-      if (input.allowToolFreeAuthoringResponse) {
+      if (input.allowToolFreeAuthoringResponse || input.conversationalAuthoring) {
         const answer = safeAnswerIfPresent(message.content);
         if (!answer) {
+          if (input.conversationalAuthoring && !authoringEmptyCorrectionSent) {
+            authoringEmptyCorrectionSent = true;
+            messages.push({ role: "user", content: "Your response was empty. Continue using the available disabled authoring tools, or ask one specific business question if information is missing. After successful validation, briefly explain the reviewed draft. Do not claim activation or writes." });
+            continue;
+          }
           throw new AskError(
             "ASK_AUTHORING_NARRATION_MISSING",
             "The provider returned no text for the tool-free authoring narration.",
@@ -1416,7 +1429,7 @@ async function runOpenAiCompatibleTurn(input: {
         authorityGuard: input.authorityGuard,
       }), providerHistory);
     }
-    if (toolCalls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + toolCalls.length > MAX_TOOL_CALLS_PER_TURN) {
+    if (toolCalls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + toolCalls.length > (input.conversationalAuthoring ? 24 : MAX_TOOL_CALLS_PER_TURN)) {
       throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "The provider requested more tools than the bounded Ask session permits.", 422);
     }
     const compoundQuestions = input.configuration.provider === "openai_compatible"
@@ -2016,6 +2029,7 @@ async function runAnthropicTurn(input: {
   requiredInitialToolName?: string;
   completeAfterRequiredTool?: boolean;
   allowToolFreeAuthoringResponse?: boolean;
+  conversationalAuthoring?: boolean;
 }): Promise<AskTurnResult> {
   const messages: Array<Record<string, unknown>> = [
     ...historyMessages(input.history),
@@ -2033,7 +2047,7 @@ async function runAnthropicTurn(input: {
   let dataToolGroundingCorrectionSent = false;
   let intentRepairAttempts = 0;
 
-  for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
+  for (let iteration = 0; iteration < (input.conversationalAuthoring ? 12 : MAX_TOOL_ITERATIONS); iteration += 1) {
     assertAskNotCancelled(input.signal);
     if (input.authorityGuard) {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
@@ -2107,7 +2121,7 @@ async function runAnthropicTurn(input: {
     }
     messages.push({ role: "assistant", content: blocks });
     if (calls.length === 0) {
-      if (input.allowToolFreeAuthoringResponse) {
+      if (input.allowToolFreeAuthoringResponse || input.conversationalAuthoring) {
         const answer = safeAnswerIfPresent(blocks
           .filter((block) => block.type === "text")
           .map((block) => String(block.text ?? ""))
@@ -2179,7 +2193,7 @@ async function runAnthropicTurn(input: {
         authorityGuard: input.authorityGuard,
       }), providerHistory);
     }
-    if (calls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + calls.length > MAX_TOOL_CALLS_PER_TURN) {
+    if (calls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + calls.length > (input.conversationalAuthoring ? 24 : MAX_TOOL_CALLS_PER_TURN)) {
       throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "The provider requested more tools than the bounded Ask session permits.", 422);
     }
     const results: Array<Record<string, unknown>> = [];

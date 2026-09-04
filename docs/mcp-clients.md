@@ -50,26 +50,25 @@ authoring tools. `--authoring` remains available when you want to state the
 mode explicitly. Omitting it no longer creates a zero-tool entry: Runner either
 detects the active local boundary or refuses with activation guidance.
 
-When the same project also has an active reviewed Action Boundary, explicitly
-request both local runtimes:
+Local stdio exposes the fixed Read and Action tools through one project entry:
 
 ```bash
 synapsor-runner mcp install claude-code \
   --project \
   --authoring \
-  --include-actions \
   --project-root .
 ```
 
-Runner first shows one combined preview and asks once. It then owns two
-separate entries in the selected client's project file:
+Runner shows the exact tool preview and asks once. It owns one entry:
 
-- `synapsor`: exactly `app.describe_data` and `app.explore_data`;
-- `synapsor-actions`: only the active reviewed proposal tools.
+- `synapsor`: `app.describe_data`, `app.explore_data`, `app.describe_actions`, and `app.request_change`.
 
-The split is deliberate. Approval, apply, revert, policy editing, boundary
-activation, credentials, trusted identity arguments, and SQL are in neither
-entry. Trusted tenant and principal values are inherited from the process that
+Read and Action activation remain separate. Empty Action discovery grants no
+proposal authority. An old intact Runner-owned semantic companion is migrated
+with backup on reinstall; modified or unowned entries are not overwritten.
+`--include-actions` remains supported for explicit legacy per-capability deployments.
+Approval, apply, revert, policy editing, boundary activation, credentials,
+trusted identity arguments, and SQL are not tools. Trusted values are inherited from the process that
 launches the client; Runner does not write them to project configuration.
 
 ## Stdio
@@ -144,8 +143,8 @@ For an active Read plus Action Boundary, use the combined form for both install
 and launch verification:
 
 ```bash
-synapsor-runner mcp install claude-code --project --authoring --include-actions --yes
-synapsor-runner mcp status claude-code --project --include-actions --check-launch
+synapsor-runner mcp install claude-code --project --authoring --yes
+synapsor-runner mcp status claude-code --project --check-launch
 ```
 
 | Client | Managed project file | Server map |
@@ -160,8 +159,8 @@ its own entry with a client-specific integrity marker under `.synapsor/`.
 Repeating install is idempotent. VS Code JSON-with-comments, comments, and
 trailing commas are preserved. `mcp uninstall <client> --project --yes`
 removes only an intact Runner-owned entry and creates another backup.
-Pass `--include-actions` to status or uninstall when both independently owned
-entries should be checked or removed together.
+For a legacy two-entry installation, pass `--include-actions` to status or
+uninstall to check or remove both. Unified installs need no companion.
 
 No managed client file contains a database URL, credential, trusted tenant or
 principal value, approval authority, or apply authority. Claude Code asks the

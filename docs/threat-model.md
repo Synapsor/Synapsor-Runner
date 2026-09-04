@@ -19,8 +19,11 @@ Runner is designed to protect the model-facing database boundary:
 - proposal tools save a proposed change without mutating the source database;
 - rule-derived actions expose only `app.describe_actions` and
   `app.request_change`; the latter accepts an activated outcome plus opaque
-  subject references and never accepts a patch, trusted scope, approval, or
-  apply instruction;
+  subject references plus explicitly reviewed typed business inputs. It never
+  accepts a patch, trusted scope, approval, or apply instruction;
+- business inputs are part of the reviewed rule digest, validated before
+  references are claimed, bound to request/proof identity, and revalidated
+  at execution. Inputs cannot directly or transitively set relationship keys;
 - opaque subjects are random, expiring, one-use, and bound to source,
   Read/Action authority, trusted scope, workflow session, permitted outcome,
   and observed-version provenance;
@@ -68,6 +71,8 @@ Runner is designed to protect the model-facing database boundary:
 - A reviewer approves an obsolete target picture, or supporting evidence
   changes while the mutation target itself remains unchanged.
 - A retry could duplicate a write without an idempotency key.
+- A client substitutes different business inputs when retrying a reference or
+  tampers with stored inputs after approval.
 - A developer accidentally exposes approval or commit tools to the MCP client.
 - A reviewer needs evidence/replay for what was read and proposed.
 - A valid JWT session could otherwise execute an environment-bound contract
@@ -85,6 +90,14 @@ Runner is designed to protect the model-facing database boundary:
   otherwise reconstruct a cohort below the reviewed minimum by subtraction.
 
 ## Fleet Trust Boundaries
+
+Operator authoring and client execution are separate protocols. Authoring tools
+can only prepare disabled typed components and report deterministic validation.
+Provider prose is not evidence of successful validation. Partial conversation
+checkpoints are local, bound to exact catalog/Read/baseline revisions, and
+revalidated on resume. Metadata egress and activation remain explicit operator
+decisions. New rules do not introduce new client tool names; legacy per-action
+tools require an explicit compatibility configuration.
 
 - The TLS load balancer and configured identity issuer are trusted to deliver
   the original bearer token without inventing tenant headers.

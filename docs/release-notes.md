@@ -17,6 +17,21 @@ Prepared package versions: `@synapsor/runner@1.8.0`,
 
 ### Boundary Assist And Unified Read-to-Action Onboarding
 
+- New model-guided Action jobs use the fixed outcome tools even when the caller
+  chooses a bounded value. Reviewed `inputs` are typed, bound into immutable
+  proofs, and revalidated before execution; they cannot select target identities
+  or supply arbitrary patches. Per-capability tools are compatibility opt-in
+  when an Action Rule runtime is configured.
+- Action authoring is a tool-driven conversation with resumable components,
+  model-visible validation feedback, multiple outcomes, and real provider-text
+  streaming. Read revisions support labels, allowed operations, exposure and
+  limits. A stale Read dependency disables the affected outcomes without
+  rewriting signed authority or disabling unrelated outcomes.
+- Local stdio exposes the four fixed Read/Action tools from one managed entry.
+  An unchanged owned semantic companion entry can be migrated with backup;
+  unrelated and edited client entries are preserved. Production HTTP keeps its
+  existing separate authenticated endpoints.
+
 - Fresh terminal onboarding now starts with one agent job. Model-assisted
   structural mapping is recommended when OpenAI, Anthropic, or a local endpoint
   is configured; Runner-guided exact cards and full manual authoring remain

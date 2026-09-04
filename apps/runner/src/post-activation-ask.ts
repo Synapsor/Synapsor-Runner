@@ -462,10 +462,10 @@ export function formatMcpClientHandoff(
   return [
     "LOCAL STDIO MCP READY",
     `Client: ${managedMcpClientLabel(client)}`,
-    "Read entry: synapsor -> app.describe_data + app.explore_data",
-    ...(includeActions
-      ? ["Action entry: synapsor-actions -> app.describe_actions + app.request_change"]
-      : ["Action entry: not installed because no active Action Boundary was found"]),
+    "Synapsor entry: app.describe_data + app.explore_data + app.describe_actions + app.request_change",
+    includeActions
+      ? "Active outcomes are discovered behind the same Action tools; Read and Action activation remain separate."
+      : "No Action is active yet. Action discovery is empty and change requests are refused until activation.",
     "Do not start a separate server: the stdio client launches Runner for each MCP session.",
     ...(runtimeBindings.length
       ? [

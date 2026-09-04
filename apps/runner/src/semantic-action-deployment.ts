@@ -453,6 +453,7 @@ function actionRuleBinding(input: {
   const namespace = productionNamespace ?? existingNamespace;
   return {
     project_root: projectRoot,
+    legacy_tools: input.existing?.legacy_tools === "enabled" ? "enabled" : "disabled",
     ...(key && namespace
       ? {
           subject_reference_hmac_key_env: key,

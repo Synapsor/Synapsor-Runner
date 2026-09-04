@@ -126,7 +126,7 @@ describe("model Boundary job planning", () => {
     expect(requestJson).toHaveBeenCalledTimes(2);
   });
 
-  it("repairs a discretionary route when authoritative facts must derive the exact effect", async () => {
+  it("routes new outcomes to fixed tools even when a model uses the legacy strategy label", async () => {
     let attempt = 0;
     const requestBodies: string[] = [];
     const requestJson = vi.fn(async (request: { body: unknown }) => {
@@ -167,10 +167,10 @@ describe("model Boundary job planning", () => {
       read_mode: "reuse",
       action_mode: "create",
       action_strategy: "rule_derived",
-      correction_used: true,
+      correction_used: false,
     });
-    expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(requestBodies[1]).toContain("must be rule_derived");
+    expect(requestJson).toHaveBeenCalledTimes(1);
+    expect(requestBodies[0]).toContain("bounded business inputs");
   });
 
   it("routes a copied source-row refund through verified Action Rules", async () => {
@@ -230,10 +230,10 @@ describe("model Boundary job planning", () => {
       read_mode: "create",
       action_mode: "create",
       action_strategy: "rule_derived",
-      correction_used: true,
+      correction_used: false,
     });
-    expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(requestBodies[1]).toContain("must be rule_derived");
+    expect(requestJson).toHaveBeenCalledTimes(1);
+    expect(requestBodies[0]).toContain("bounded business inputs");
   });
 
   it("reuses an exact Read revision and routes an action-only continuation to Action drafting", async () => {

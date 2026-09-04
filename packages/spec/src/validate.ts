@@ -165,7 +165,7 @@ const EFFECT_DEDUP_KEYS = new Set(["components"]);
 const EFFECT_DEDUP_COMPONENT_KEYS = new Set(["column", "source", "derived", "fixed"]);
 const EFFECT_VERSION_ADVANCE_KEYS = new Set(["column", "strategy"]);
 const EFFECT_WRITEBACK_KEYS = new Set(["mode", "supervised_worker"]);
-const ACTION_RULE_KEYS = new Set(["schema_version", "name", "outcome", "context", "source", "verification_boundary_ref", "effect_envelope_ref", "subjects", "require", "derive", "effect", "approval_class", "ttl_seconds"]);
+const ACTION_RULE_KEYS = new Set(["schema_version", "name", "outcome", "context", "source", "verification_boundary_ref", "effect_envelope_ref", "subjects", "inputs", "require", "derive", "effect", "approval_class", "ttl_seconds"]);
 const ACTION_RULE_SUBJECT_KEYS = new Set(["binding", "resource", "input"]);
 const ACTION_RULE_EFFECT_KEYS = new Set(["operation", "target_resource", "target_binding", "set"]);
 const ACTION_RULE_SCALAR_TYPE_KEYS = new Set(["kind", "unit", "currency", "max_length", "enum", "comparison"]);
@@ -180,6 +180,7 @@ const ACTION_RULE_SCALAR_TYPE_VARIANT_KEYS = {
   timestamp: new Set(["kind"]),
 } as const;
 const ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS = {
+  input: new Set(["kind", "name"]),
   literal: new Set(["kind", "value", "value_type"]),
   trusted: new Set(["kind", "binding"]),
   field: new Set(["kind", "binding", "field"]),
@@ -2328,6 +2329,7 @@ function validateActionRuleAuthority(
     if (!boundaryNames.has(String(raw.verification_boundary_ref))) errors.push({ path: `${path}.verification_boundary_ref`, code: "UNKNOWN_VERIFICATION_BOUNDARY", message: "verification_boundary_ref must reference this contract." });
     if (!envelopeNames.has(String(raw.effect_envelope_ref))) errors.push({ path: `${path}.effect_envelope_ref`, code: "UNKNOWN_EFFECT_ENVELOPE", message: "effect_envelope_ref must reference this contract." });
     validateActionRuleSubjects(raw.subjects, path, resourceNames, errors);
+    if (raw.inputs !== undefined) validateRuleInputs(raw.inputs, `${path}.inputs`, errors);
     validateRuleBooleanExpression(raw.require, `${path}.require`, errors, 0);
     if (!isRecord(raw.derive)) errors.push({ path: `${path}.derive`, code: "ACTION_RULE_DERIVE_NOT_OBJECT", message: "derive must map fixed names to scalar expressions." });
     else for (const [name, expression] of Object.entries(raw.derive)) {
@@ -2553,11 +2555,36 @@ function validateRuleLiteralValue(value: unknown, type: unknown, path: string, e
   if (!valid) errors.push({ path, code: "ACTION_RULE_LITERAL_TYPE_MISMATCH", message: "literal value must exactly match its declared portable type." });
 }
 
+function validateRuleInputs(value: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!Array.isArray(value) || value.length > 32) {
+    errors.push({ path, code: "INVALID_ACTION_INPUTS", message: "inputs must contain at most 32 reviewed business inputs." });
+    return;
+  }
+  const names = new Set<string>();
+  value.forEach((input, index) => {
+    const location = `${path}[${index}]`;
+    if (!isRecord(input)) { errors.push({ path: location, code: "INVALID_ACTION_INPUT", message: "input must be an object." }); return; }
+    checkUnknownKeys(input, new Set(["name", "description", "type", "minimum", "maximum"]), location, errors);
+    if (!isSafeIdentifier(input.name) || names.has(String(input.name)) || ["__proto__", "constructor", "prototype"].includes(String(input.name))) errors.push({ path: location, code: "INVALID_ACTION_INPUT", message: "input name must be safe and unique." });
+    names.add(String(input.name));
+    if (typeof input.description !== "string" || !input.description.trim() || input.description.length > 500) errors.push({ path: location, code: "INVALID_ACTION_INPUT", message: "input requires a concise business description." });
+    validateRuleScalarType(input.type, `${location}.type`, errors);
+    const numeric = isRecord(input.type) && ["integer", "money_minor"].includes(String(input.type.kind));
+    if (numeric && (!Number.isSafeInteger(input.minimum) || !Number.isSafeInteger(input.maximum) || Number(input.minimum) > Number(input.maximum))) errors.push({ path: location, code: "INVALID_ACTION_INPUT", message: "numeric inputs require finite reviewed minimum and maximum bounds." });
+    if (!numeric && (input.minimum !== undefined || input.maximum !== undefined)) errors.push({ path: location, code: "INVALID_ACTION_INPUT", message: "non-numeric inputs cannot have numeric bounds." });
+    if (isRecord(input.type) && input.type.kind === "string" && Number(input.type.max_length) > 4096) errors.push({ path: location, code: "INVALID_ACTION_INPUT", message: "business text inputs cannot exceed 4096 characters." });
+  });
+}
+
 function validateRuleScalarExpression(value: unknown, path: string, errors: ValidationIssue[], depth: number): void {
   if (depth > 24) { errors.push({ path, code: "ACTION_RULE_EXPRESSION_TOO_DEEP", message: "rule expressions may be at most 24 levels deep." }); return; }
   if (!isRecord(value)) { errors.push({ path, code: "ACTION_RULE_SCALAR_EXPRESSION_REQUIRED", message: "scalar expression must be an object." }); return; }
   checkUnknownKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, path, errors);
   switch (value.kind) {
+    case "input":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.input, path, errors);
+      if (!isSafeIdentifier(value.name)) errors.push({ path: `${path}.name`, code: "INVALID_ACTION_INPUT_REFERENCE", message: "input reference must name a reviewed business input." });
+      return;
     case "literal":
       checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.literal, path, errors);
       if (!isJsonScalar(value.value)) errors.push({ path: `${path}.value`, code: "INVALID_ACTION_RULE_LITERAL", message: "literal must be a finite JSON scalar." });

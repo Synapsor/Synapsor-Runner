@@ -155,7 +155,7 @@ The model-facing data plane may only:
 - discover an already active bounded action or the fixed semantic outcome
   catalog;
 - supply reviewed business arguments for a discretionary proposal, or one
-  activated outcome plus opaque subject references for a rule-derived action;
+  activated outcome plus opaque subject references and reviewed typed business inputs for a rule-derived action;
 - receive a proposal, refusal, or reviewed execution outcome.
 
 Rule-derived outcomes use exactly `app.describe_actions` and

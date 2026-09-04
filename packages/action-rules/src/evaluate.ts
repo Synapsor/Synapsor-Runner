@@ -6,6 +6,7 @@ import type {
   JsonScalar,
 } from "@synapsor/spec";
 import { ActionRuleError } from "./errors.js";
+import { validateActionRuleInputs } from "./inputs.js";
 import {
   actionRuleDigest,
   effectEnvelopeDigest,
@@ -34,6 +35,7 @@ type ScalarResult = KnownScalar | UnknownScalar;
 type Truth = true | false | "unknown";
 
 type EvaluationContext = {
+  inputs: Record<string, JsonScalar>;
   compiled: CompiledActionRuleV1;
   facts: ActionRuleFactSetV1;
   rows: Record<string, ActionRuleFactRowV1[]>;
@@ -153,6 +155,12 @@ function scalar(
   path: string,
 ): ScalarResult {
   switch (expression.kind) {
+    case "input": {
+      const definition = context.compiled.rule.inputs?.find((input) => input.name === expression.name);
+      return definition && Object.hasOwn(context.inputs, expression.name)
+        ? { known: true, value: context.inputs[expression.name]!, type: definition.type }
+        : unknownScalar(`${path} business input is unavailable.`);
+    }
     case "literal":
       return scalarMatchesType(expression.value, expression.value_type, true)
         ? { known: true, value: expression.value, type: expression.value_type }
@@ -554,6 +562,12 @@ function deriveEffect(input: EvaluateActionRuleInputV1, context: EvaluationConte
 
 export function evaluateActionRule(input: EvaluateActionRuleInputV1): ActionRuleEvaluationV1 {
   assertCompiledIntegrity(input.compiled);
+  let inputs: Record<string, JsonScalar>;
+  try {
+    inputs = validateActionRuleInputs(input.compiled.rule, input.inputs);
+  } catch (error) {
+    return unknownEvaluation("ACTION_RULE_INVALID", error instanceof Error ? error.message : "Invalid business inputs.", input.facts, []);
+  }
   let normalized: ReturnType<typeof normalizeAndValidateFacts>;
   try {
     normalized = normalizeAndValidateFacts(input.compiled, input.facts);
@@ -581,6 +595,7 @@ export function evaluateActionRule(input: EvaluateActionRuleInputV1): ActionRule
   const relationshipProblem = validateScopeAndRelationships(input.compiled, normalized.facts);
   if (relationshipProblem !== undefined) return unknownEvaluation("ACTION_RULE_SCOPE_UNPROVEN", relationshipProblem, normalized.facts, normalized.dependencies);
   const context: EvaluationContext = {
+    inputs,
     compiled: input.compiled,
     facts: normalized.facts,
     rows: Object.fromEntries(Object.entries(normalized.facts.bindings).map(([name, value]) => [name, value.rows])),
@@ -607,6 +622,7 @@ export function evaluateActionRule(input: EvaluateActionRuleInputV1): ActionRule
 }
 
 export function evaluateActionRuleApprovalPredicate(input: {
+  inputs?: Record<string, unknown>;
   compiled: CompiledActionRuleV1;
   facts: ActionRuleFactSetV1;
   expression: ActionRuleBooleanExpressionV1;
@@ -626,6 +642,7 @@ export function evaluateActionRuleApprovalPredicate(input: {
       return { result: "unknown", safe_code: "ACTION_RULE_SCOPE_UNPROVEN", reason: relationshipProblem };
     }
     const context: EvaluationContext = {
+      inputs: validateActionRuleInputs(input.compiled.rule, input.inputs),
       compiled: input.compiled,
       facts: normalized.facts,
       rows: Object.fromEntries(Object.entries(normalized.facts.bindings).map(([name, value]) => [name, value.rows])),

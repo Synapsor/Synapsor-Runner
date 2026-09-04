@@ -920,8 +920,10 @@ Preview, confirm, and merge a project-scoped Synapsor entry into
 Runner preserves other servers/settings, creates a backup before changing an
 existing file, records explicit ownership, and never writes database URLs,
 credentials, trusted identity, approval, apply, revert, or policy authority.
---authoring installs the active local development/staging Scoped Explore
-boundary with exactly app.describe_data and app.explore_data. It validates the
+--authoring installs one local development/staging entry with four fixed tools:
+app.describe_data, app.explore_data, app.describe_actions, app.request_change.
+Read and Action activation remain separate; inactive actions grant no authority.
+It validates the
 current generation lock and database role before installation. When the
 reviewed config is read-only, has no named capabilities, and has an active local
 boundary, Runner selects this mode automatically even if --authoring is omitted.
@@ -930,11 +932,12 @@ inactive Explore-only project refuses installation instead of writing a
 zero-tool entry. Re-run after Protect activates a named capability to install
 that narrower runtime surface.
 
---include-actions is the local agent handoff for a project with both boundary
-types active. Runner validates both surfaces before changing the client file,
-then installs two independently owned stdio entries: synapsor exposes exactly
-app.describe_data + app.explore_data, while synapsor-actions exposes only the
-active reviewed proposal tools from synapsor.actions.runner.json. Trusted
+The unified entry loads reviewed Action authority from synapsor.actions.runner.json.
+No additional client tools are needed when reviewed outcomes or rules change.
+--include-actions retains a separate companion only for explicit legacy
+per-action compatibility. An unchanged Runner-owned semantic companion is
+migrated into the unified entry with a client-file backup. Edited or unowned
+companions are never overwritten. Trusted
 tenant/principal values are inherited from the client process environment and
 are never written to the project config. Approval, apply, policy editing,
 activation, credentials, and SQL remain outside both MCP entries.
@@ -945,8 +948,8 @@ activation, credentials, and SQL remain outside both MCP entries.
 Verify Runner's project-scoped client ownership marker and print the exact
 reviewed model-facing tools. --check-launch performs a real stdio initialize +
 tools/list handshake with the configured command.
---include-actions checks the independently owned Read and Action entries and
-prints their exact tool lists separately.
+--include-actions also checks an existing legacy companion; unified installs
+report the four tools from their single entry.
 `,
     "mcp uninstall": `Usage:
   ${cmd} mcp uninstall <cursor|claude-code|vscode> --project [--project-root .] [--include-actions] [--dry-run] [--yes] [--json]

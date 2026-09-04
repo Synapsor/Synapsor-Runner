@@ -57,6 +57,7 @@ export type ActionRuleAuthorityActivationV1 = {
 
 export type LoadedActiveActionRuleAuthorityV1 = LoadedActionRuleAuthorityV1 & {
   activation: ActionRuleAuthorityActivationV1;
+  unavailable_outcomes?: string[];
 };
 
 type ExistingActionRuleAuthorityV1 =
@@ -315,7 +316,11 @@ export async function activateActionRuleAuthority(input: {
 
 export async function loadActiveActionRuleAuthority(
   projectRootInput: string,
-  options: { read_boundaries?: ActivatedExplorationBoundary[] } = {},
+  options: {
+    read_boundaries?: ActivatedExplorationBoundary[];
+    dependency_check?: "all" | "report";
+    outcome?: string;
+  } = {},
 ): Promise<LoadedActiveActionRuleAuthorityV1> {
   const projectRoot = path.resolve(projectRootInput);
   const activation = await readActionRuleAuthorityActivation(projectRoot);
@@ -325,8 +330,15 @@ export async function loadActiveActionRuleAuthority(
   const loaded = parseActionRuleAuthority(activation.authority, activation.digest);
   const readBoundaries = options.read_boundaries
     ?? await loadActivatedExplorationBoundaries(projectRoot);
-  assertReadDependenciesActive(loaded, readBoundaries);
-  return { ...loaded, activation };
+  const unavailable = unavailableReadDependencies(loaded, readBoundaries);
+  if (options.outcome && !loaded.registry.rules.some((entry) => entry.compiled.outcome === options.outcome)) {
+    throw authorityError("ACTION_RULE_OUTCOME_UNAVAILABLE", "The requested outcome is not active.");
+  }
+  const blocked = options.outcome ? unavailable.filter((outcome) => outcome === options.outcome) : unavailable;
+  if (options.dependency_check !== "report" && blocked.length) throw staleReadDependency(blocked[0]!);
+  // Preserve the exact signed registry and approval classes, including shared counters.
+  // Availability is runtime state, never a rewritten authority or a new digest.
+  return { ...loaded, activation, ...(unavailable.length ? { unavailable_outcomes: unavailable } : {}) };
 }
 
 export async function deactivateActionRuleAuthority(projectRootInput: string): Promise<boolean> {
@@ -340,19 +352,31 @@ function assertReadDependenciesActive(
   loaded: LoadedActionRuleAuthorityV1,
   boundaries: ActivatedExplorationBoundary[],
 ): void {
+  const unavailable = unavailableReadDependencies(loaded, boundaries);
+  if (unavailable.length) throw staleReadDependency(unavailable[0]!);
+}
+
+function staleReadDependency(outcome: string): Error {
+  return authorityError("ACTION_RULE_READ_AUTHORITY_STALE",
+    `Action Rule outcome ${outcome} is not bound to its exact active Read Boundary revision.`);
+}
+
+function unavailableReadDependencies(
+  loaded: LoadedActionRuleAuthorityV1,
+  boundaries: ActivatedExplorationBoundary[],
+): string[] {
   const activeByName = new Map(boundaries.map((boundary) => [boundary.pack.name, boundary]));
+  const unavailable: string[] = [];
   for (const activated of loaded.registry.rules) {
     const readBoundary = activeByName.get(activated.read_boundary_name);
     if (!readBoundary
       || readBoundary.activation.digest !== activated.read_boundary_digest
       || readBoundary.generation_lock_fingerprint !== activated.compiled.generation_lock_fingerprint
       || readBoundary.source !== activated.compiled.source) {
-      throw authorityError(
-        "ACTION_RULE_READ_AUTHORITY_STALE",
-        `Action Rule outcome ${activated.compiled.outcome} is not bound to its exact active Read Boundary revision.`,
-      );
+      unavailable.push(activated.compiled.outcome);
     }
   }
+  return unavailable;
 }
 
 function parseDraft(value: unknown): ActionRuleAuthorityDraftV1 {

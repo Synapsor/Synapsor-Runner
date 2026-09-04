@@ -127,6 +127,7 @@ export type ActionRuleScalarTypeSpecV1 = ExtensionFields & (
 );
 
 export type ActionRuleScalarExpressionV1 = ExtensionFields & (
+  | { kind: "input"; name: string }
   | {
     kind: "literal";
     value: JsonScalar;
@@ -320,6 +321,14 @@ export type ActionRuleSubjectSpecV1 = ExtensionFields & {
   input: "opaque_subject_ref";
 };
 
+export type ActionRuleInputSpecV1 = {
+  name: string;
+  description: string;
+  type: ActionRuleScalarTypeSpecV1;
+  minimum?: number;
+  maximum?: number;
+};
+
 export type ActionRuleSpecV1 = ExtensionFields & {
   schema_version: "synapsor.action-rule.v1";
   name: string;
@@ -329,6 +338,7 @@ export type ActionRuleSpecV1 = ExtensionFields & {
   verification_boundary_ref: string;
   effect_envelope_ref: string;
   subjects: ActionRuleSubjectSpecV1[];
+  inputs?: ActionRuleInputSpecV1[];
   require: ActionRuleBooleanExpressionV1;
   derive: Record<string, ActionRuleScalarExpressionV1>;
   effect: {

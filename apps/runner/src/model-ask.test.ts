@@ -907,6 +907,38 @@ describe("Workbench BYOM Ask", () => {
     expect(requests).toBe(2);
   });
 
+  it.each([false, true])("bounds empty conversational provider recovery (remains empty: %s)", async (remainsEmpty) => {
+    const authoringTools = [{ ...tools[0]!, name: "runner.inspect_draft" }];
+    const authorityDigest = askToolSurfaceDigest(authoringTools);
+    const configuration = resolveAskProviderConfiguration({
+      provider: "openai_compatible", model: "local-fixture", base_url: "http://127.0.0.1:11434/v1",
+      authority_digest: authorityDigest, egress_acknowledged: true,
+    }, {}, new Date("2026-09-03T00:00:00.000Z"));
+    const requestJson = vi.fn().mockResolvedValueOnce(openAiText("")).mockResolvedValue(openAiText(remainsEmpty ? "" : "Which code means paused?"));
+    const run = runAskProviderTurn({ configuration, question: "Draft the change.", history: [],
+      gateway: { ...testGateway().gateway, mode: "authoring" }, tools: authoringTools,
+      authorityDigest, signal: new AbortController().signal, conversationalAuthoring: true,
+      dependencies: { requestJson },
+    });
+    if (remainsEmpty) await expect(run).rejects.toMatchObject({ code: "ASK_AUTHORING_NARRATION_MISSING" });
+    else expect((await run).answer).toBe("Which code means paused?");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
+  it("never enables conversational authoring behavior for client data tools", async () => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const configuration = resolveAskProviderConfiguration({
+      provider: "openai_compatible", model: "local-fixture", base_url: "http://127.0.0.1:11434/v1",
+      authority_digest: authorityDigest, egress_acknowledged: true,
+    }, {}, new Date("2026-09-03T00:00:00.000Z"));
+    const requestJson = vi.fn();
+    await expect(runAskProviderTurn({ configuration, question: "Read data.", history: [],
+      gateway: testGateway().gateway, tools, authorityDigest, signal: new AbortController().signal,
+      conversationalAuthoring: true, dependencies: { requestJson },
+    })).rejects.toThrow(/authoring/i);
+    expect(requestJson).not.toHaveBeenCalled();
+  });
+
   it("forces the exact required authoring tool for a loopback provider", async () => {
     const authorityDigest = askToolSurfaceDigest(tools);
     const configuration = resolveAskProviderConfiguration({

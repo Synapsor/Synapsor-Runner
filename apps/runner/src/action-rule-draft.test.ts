@@ -10,6 +10,7 @@ import {
   actionRuleModelDraftFromAuthority,
   actionRuleDraftDiagnostics,
   compileActionRuleModelDraft,
+  hasExactActionRowPath,
   type ActionRuleModelDraftV1,
 } from "./action-rule-draft.js";
 
@@ -24,6 +25,19 @@ const statusType: ActionRuleScalarTypeSpecV1 = {
 };
 
 describe("model-authored Action Rule draft compilation", () => {
+  it("permits only uniquely proven related-row targets", () => {
+    const built = relatedBuiltCatalog();
+    const root = draft().verification.resources[0]!;
+    const link = built.catalog.relationships[0]!;
+    const related = { binding: "policy", resource: link.to_resource, source: { kind: "relationship" as const, from_binding: root.binding,
+      relationship: link.name, direction: "forward" as const }, fields: [] };
+    expect(hasExactActionRowPath(related, [root, related], built.catalog)).toBe(true);
+    link.target_unique = false;
+    expect(hasExactActionRowPath(related, [root, related], built.catalog)).toBe(false);
+    link.target_unique = true;
+    link.cardinality = "one_to_many";
+    expect(hasExactActionRowPath(related, [root, related], built.catalog)).toBe(false);
+  });
   it("resolves trusted mechanics from reviewed metadata and compiles one semantic outcome", () => {
     const result = compileActionRuleModelDraft({
       draft: draft(),

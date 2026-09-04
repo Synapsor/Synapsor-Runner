@@ -3720,10 +3720,12 @@ async function handleRequest(input: {
         env: { ...process.env, ...bootstrapState.trustedContext },
         mode: "authoring",
       });
-      const tools = (await gateway.listTools()).map((tool) => tool.name).sort();
-      if (tools.join("\n") !== ["app.describe_data", "app.explore_data"].sort().join("\n")) {
+      const readTools = (await gateway.listTools()).map((tool) => tool.name).sort();
+      if (readTools.join("\n") !== ["app.describe_data", "app.explore_data"].sort().join("\n")) {
         throw new Error("Managed client setup refused because the live authoring tool boundary was not exactly the reviewed Explore pair.");
       }
+      // Local Ask stays read-only; the installed stdio endpoint has a stable four-tool catalog.
+      const tools = ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"];
       const actionStatus = await guidedActionStatus(projectRoot);
       const actionConfigPath = path.join(projectRoot, "synapsor.actions.runner.json");
       const actionConfigExists = await fs.access(actionConfigPath).then(() => true).catch(() => false);
@@ -3733,7 +3735,9 @@ async function handleRequest(input: {
             "--store", ":memory:",
           ])
         : undefined;
-      const includeActions = Boolean(
+      const semanticOnly = actionBoundary?.surface === "semantic_actions"
+        && actionBoundary.names.every((name) => name === "app.describe_actions" || name === "app.request_change");
+      const includeActions = !semanticOnly && Boolean(
         actionStatus.action_boundary.active?.authority.capabilities.length
         || (actionBoundary?.surface === "semantic_actions" && actionBoundary.names.length > 0),
       );
@@ -3758,6 +3762,7 @@ async function handleRequest(input: {
       const installed = await installManagedMcpProjectSet({
         client,
         projectRoot,
+        ...(semanticOnly ? { removeEntryKinds: ["actions" as const] } : {}),
         entries: [{
           configPath,
           storePath,

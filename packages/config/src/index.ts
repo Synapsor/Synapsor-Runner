@@ -77,6 +77,7 @@ const PRODUCTION_EXPLORE_TENANT_LIMIT_KEYS = new Set([
 ]);
 const ACTION_RULES_KEYS = new Set([
   "project_root",
+  "legacy_tools",
   "subject_reference_hmac_key_env",
   "subject_reference_namespace",
 ]);
@@ -410,6 +411,9 @@ function validateActionRules(
     return;
   }
   if (strict) checkUnknownKeys(value, ACTION_RULES_KEYS, "$.action_rules", errors);
+  if (value.legacy_tools !== undefined && value.legacy_tools !== "enabled" && value.legacy_tools !== "disabled") {
+    errors.push({ path: "$.action_rules.legacy_tools", code: "ACTION_RULES_LEGACY_TOOLS_INVALID", message: "legacy_tools must be enabled or disabled; fixed Action tools are the default." });
+  }
   if (!isNonEmptyString(value.project_root)
     || value.project_root.includes("://")
     || /[\u0000-\u001f\u007f]/.test(value.project_root)) {

@@ -51,31 +51,31 @@ application. `View exact Runner details` shows every resource and candidate in
 the same decision screen without accepting it. Column naming alone never
 authorizes scope.
 
-After activation, install both independently reviewed surfaces:
+After Read activation, install the fixed local surface once:
 
 ```bash
 synapsor-runner mcp install claude-code \
-  --project --authoring --include-actions --project-root . --yes
+  --project --authoring --project-root . --yes
 ```
 
-`synapsor-runner tools list --config ./synapsor.runner.json` reports the Read
-surface and adjacent Action surface separately. The resulting client has four
+`synapsor-runner tools list --config ./synapsor.runner.json` reports four local
+tools. Action authority stays disabled until separately reviewed. The client has four
 stable tools: `app.describe_data`, `app.explore_data`,
 `app.describe_actions`, and `app.request_change`.
 
 ## The Core Distinction
 
-There are two supported proposal patterns.
+New model-guided jobs use the fixed semantic surface for both patterns.
 
 | Pattern | Agent supplies | Runner enforces |
 | --- | --- | --- |
-| Bounded discretionary proposal | Reviewed business arguments within an exact action revision | Types, values, scope, conflict guards, approval, limits, and execution posture |
-| Rule-derived outcome | One activated outcome name plus opaque subject references | Private facts, eligibility, exact derived effect, approval, limits, and transaction-time re-verification |
+| Caller-selected business value | Outcome, opaque subjects, reviewed typed `inputs` | Exact keys, types, bounds, units and deterministic effect derivation |
+| Fact-derived outcome | Outcome and opaque subject references | Private facts, eligibility, exact derived effect, approval, limits, and transaction-time re-verification |
 
-Use a discretionary proposal when the caller is allowed to choose a bounded
-value, such as a requested notification threshold. Use a rule-derived outcome
-when current authoritative facts must determine the only legal effect, such as
-restoring an eligible course registration.
+Both use `app.request_change`; neither accepts a database patch. The older
+per-capability discretionary tools remain explicit compatibility only. See
+[reviewed business inputs](design-reviewed-business-inputs.md) for proof binding
+and rejection rules.
 
 ## Four Separate Authorities
 
@@ -99,7 +99,7 @@ reinterpret old authority against a new schema.
 `app.describe_actions` lists activated outcomes and the opaque subject bindings
 each one needs. It reads no source rows and grants no authority.
 
-`app.request_change` accepts exactly two top-level properties:
+`app.request_change` requires two properties and permits optional reviewed `inputs`:
 
 ```json
 {
@@ -137,23 +137,25 @@ generic unavailable result without revealing which check failed.
 
 ## Compile Path
 
-The authoring model, when enabled, produces four typed drafts:
+The authoring model uses a conversational tool loop to edit four typed components
+in the order the job needs, including revisiting earlier decisions:
 
 ```text
-structural metadata
-  -> Verification draft
-  -> effect draft
-  -> rule draft
-  -> approval draft
-  -> Runner validation
-  -> canonical compiler
-  -> disabled Action Boundary revision
+operator conversation + reviewed structural metadata
+  <-> model edits verification / effect / rule / approval components
+  <-> Runner validates and returns typed diagnostics
+  -> exact disabled revision for operator review
 ```
 
 Model output is untrusted. The compiler independently resolves exact catalog
 resources, keys, relationships, scope, value types, lock ordering, transaction
-posture, deduplication, and effect containment. A provider gets one bounded
-structured-output correction; repeated or ambiguous output is discarded.
+posture, deduplication, and effect containment. Autonomous work is bounded;
+genuine operator follow-ups are not treated as failed retries. Accepted components
+and business answers are checkpointed against the exact job and catalog.
+Unknown coded meanings require clarification, not guessed labels or row sampling.
+One job can prepare multiple outcomes; each stays disabled until review.
+Read edits can change exposure, operations, labels and limits. Runner preflights
+dependent Action revisions before changing the reviewed Read dependency.
 
 No model participates in runtime rule evaluation.
 

@@ -1643,7 +1643,7 @@ describe("guided write actions", () => {
     const config = JSON.parse(await fs.readFile(actionConfigPath, "utf8"));
     expect(config.mode).toBe("review");
     expect(config.production_explore).toBeUndefined();
-    expect(config.action_rules).toEqual({ project_root: "./" });
+    expect(config.action_rules).toEqual({ project_root: "./", legacy_tools: "enabled" });
     expect(config.sources.local_postgres).toMatchObject({
       read_url_env: "DATABASE_URL",
       read_only: true,

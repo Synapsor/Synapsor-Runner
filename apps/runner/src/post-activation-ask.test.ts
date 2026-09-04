@@ -368,7 +368,7 @@ describe("post-activation Ask handoff", () => {
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
       .toContain("Client: Claude Code");
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
-      .toContain("synapsor-actions -> app.describe_actions + app.request_change");
+      .toContain("app.explore_data + app.describe_actions + app.request_change");
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
       .toContain("Do not start a separate server");
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { createInactiveSemanticActionRuntime } from "./semantic-actions.js";
 import fs from "node:fs";
 import {
   assertValidRunnerCapabilityConfig,
@@ -75,8 +76,10 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
   const cloudTools = options.cloudTools ?? [];
   const resultFormat = options.resultFormat ?? config.result_format ?? 1;
   const trustedContext = options.trustedContext;
-  const semanticActions = options.semanticActions;
-  const configuredTools = config.mode === "cloud"
+  const semanticActions = options.semanticActions
+    ?? (config.action_rules && config.action_rules.legacy_tools !== "enabled" ? createInactiveSemanticActionRuntime() : undefined);
+  const fixedOnly = Boolean(config.action_rules || semanticActions) && config.action_rules?.legacy_tools !== "enabled";
+  const configuredTools = fixedOnly ? [] : config.mode === "cloud"
     ? cloudTools
     : listedLocalCapabilities(config).map((capability) => toolMetadata(capability, config));
   const semanticTools = semanticActions?.listTools() ?? [];
@@ -109,6 +112,9 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
         ? undefined
         : localCapabilities(config).find((item) => item.name === name);
       try {
+        if (fixedOnly && !semanticTool) {
+          throw new McpRuntimeError("MCP_TOOL_NOT_FOUND", "This runtime exposes only the fixed Action tools. Discover allowed outcomes with app.describe_actions.");
+        }
         if (semanticTool) {
           assertStoreAvailable();
           return await semanticActions!.callTool(name, args);

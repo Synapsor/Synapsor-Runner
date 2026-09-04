@@ -14,6 +14,7 @@ import type {
   CompiledActionRuleV1,
 } from "./types.js";
 import { ActionRuleError } from "./errors.js";
+import { validateActionRuleInputDefinitions } from "./inputs.js";
 
 function canonicalClone<T>(value: T): T {
   return JSON.parse(canonicalJsonStringify(value)) as T;
@@ -29,6 +30,7 @@ const SCALAR_TYPE_KEYS = {
   timestamp: new Set(["kind"]),
 } as const;
 const SCALAR_EXPRESSION_KEYS = {
+  input: new Set(["kind", "name"]),
   literal: new Set(["kind", "value", "value_type"]),
   trusted: new Set(["kind", "binding"]),
   field: new Set(["kind", "binding", "field"]),
@@ -140,6 +142,10 @@ function normalizeScalarExpression(
   const normalized = canonicalCloneAt(expression, path);
   const raw = record(normalized, path);
   switch (normalized.kind) {
+    case "input":
+      onlyKeys(raw, SCALAR_EXPRESSION_KEYS.input, path);
+      string(normalized.name, `${path}.name`);
+      return normalized;
     case "literal":
       onlyKeys(raw, SCALAR_EXPRESSION_KEYS.literal, path);
       own(raw, "value", path);
@@ -315,6 +321,11 @@ export function normalizeActionRule(rule: ActionRuleSpecV1): ActionRuleSpecV1 {
   record(normalized.effect, "rule.effect");
   record(normalized.effect.set, "rule.effect.set");
   own(raw, "require", "rule");
+  if (normalized.inputs !== undefined) {
+    validateActionRuleInputDefinitions(normalized.inputs);
+    for (const input of normalized.inputs) assertScalarTypeShape(input.type, `rule.inputs.${input.name}.type`);
+    normalized.inputs.sort((a, b) => a.name.localeCompare(b.name));
+  }
   normalized.subjects = [...normalized.subjects]
     .sort((left, right) => left.binding.localeCompare(right.binding));
   normalized.require = normalizeActionRuleBooleanExpression(normalized.require, "rule.require");

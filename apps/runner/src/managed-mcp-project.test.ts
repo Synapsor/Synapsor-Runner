@@ -222,10 +222,11 @@ describe("managed MCP project client names", () => {
       "utf8",
     ))).toMatchObject({ server_name: "synapsor-actions" });
 
-    await uninstallManagedMcpProject({
+    await installManagedMcpProjectSet({
       client: "claude-code",
       projectRoot: root,
-      entryKind: "actions",
+      entries: [{ authoring: true, entryKind: "explore" }],
+      removeEntryKinds: ["actions"],
     });
     const withoutActions = parse(await fs.readFile(destination, "utf8"));
     expect(withoutActions.mcpServers.synapsor.command).toBe("npx");
@@ -274,6 +275,20 @@ describe("managed MCP project client names", () => {
 });
 
 describe("managed MCP project command surface", () => {
+  it.each([false, true])("refuses unified migration without changing an unowned/edited companion (%s)", async (owned) => {
+    const root = await projectFixture();
+    const destination = path.join(root, ".mcp.json");
+    if (owned) await installManagedMcpProject({ client: "claude-code", projectRoot: root, entryKind: "actions" });
+    const document = owned ? parse(await fs.readFile(destination, "utf8")) : { mcpServers: {} };
+    document.mcpServers["synapsor-actions"] = { command: "project-owned", args: [] };
+    await fs.writeFile(destination, JSON.stringify(document));
+    const before = await fs.readFile(destination, "utf8");
+    await expect(mcp(["install", "claude-code", "--project", "--authoring", "--yes", "--project-root", root]))
+      .rejects.toThrow(/unowned or changed/);
+    expect(await fs.readFile(destination, "utf8")).toBe(before);
+    await expect(fs.stat(path.join(root, ".synapsor/claude-code-project.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("requires explicit authoring for the combined Read and Action install", async () => {
     const root = await projectFixture();
     await expect(mcp([

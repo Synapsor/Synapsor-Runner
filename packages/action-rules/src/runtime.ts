@@ -8,6 +8,7 @@ import {
   type SemanticAuthorityV1,
 } from "@synapsor-runner/protocol";
 import { ActionRuleError } from "./errors.js";
+import { validateActionRuleInputs } from "./inputs.js";
 import {
   loadActionRuleFacts,
   type ActionRuleFactLoaderAdapterV1,
@@ -30,6 +31,7 @@ import type {
 } from "./types.js";
 
 export type SemanticActionEligibilityInputV1 = {
+  inputs?: Record<string, unknown>;
   registry: RuntimeActionRuleRegistryV1;
   outcome: string;
   subjects: ActionRuleSubjectIdentityV1[];
@@ -165,6 +167,7 @@ export async function evaluateSemanticActionEligibility(
   const verifiedAt = canonicalTimestamp(input.verified_at, "Eligibility verification time");
   const activated = resolveActivatedActionRule(input.registry, input.outcome);
   const approval = resolveActivatedApprovalClass(input.registry, input.outcome);
+  const inputs = validateActionRuleInputs(activated.compiled.rule, input.inputs);
   const loaded = await loadActionRuleFacts({
     compiled: activated.compiled,
     subjects: input.subjects,
@@ -176,6 +179,7 @@ export async function evaluateSemanticActionEligibility(
     compiled: activated.compiled,
     facts: loaded.facts,
     proposal_id: input.proposal_id,
+    inputs,
   });
   if (evaluation.result !== "eligible") return { result: evaluation.result, activated, evaluation };
 
@@ -188,6 +192,7 @@ export async function evaluateSemanticActionEligibility(
       compiled: activated.compiled,
       facts: loaded.facts,
       expression: approvalBinding.auto_approve_when!,
+      inputs,
     })
     : undefined;
   const approvalPath = approval.mode === "policy" && approvalPredicate?.result === "match"
@@ -212,6 +217,7 @@ export async function evaluateSemanticActionEligibility(
     verification_transaction: structuredClone(activated.compiled.verification_boundary.transaction),
     trusted_context_digest: input.trusted_context_digest,
     subject_bindings_digest: canonicalJsonDigest(subjectBindings),
+    ...(Object.keys(inputs).length ? { business_inputs_digest: canonicalJsonDigest(inputs) } : {}),
     evidence_provenance_digest: input.evidence_provenance_digest,
     verified_facts_digest: evaluation.verified_facts_digest,
     dependency_set_digest: evaluation.dependency_set_digest,
@@ -225,6 +231,7 @@ export async function evaluateSemanticActionEligibility(
   };
   const semanticAuthority = parseSemanticAuthority({
     proof: { ...unsignedProof, proof_digest: eligibilityProofDigest(unsignedProof) },
+    ...(Object.keys(inputs).length ? { business_inputs: inputs } : {}),
     subject_bindings: subjectBindings,
     dependencies: evaluation.dependencies,
     effect: evaluation.effect,
@@ -287,7 +294,7 @@ function trustedFactsFromJob(job: NormalizedWritebackJobV5, checkedAt: string): 
 }
 
 export function createSemanticActionVerifier(input: {
-  registry: RuntimeActionRuleRegistryV1 | (() => RuntimeActionRuleRegistryV1 | Promise<RuntimeActionRuleRegistryV1>);
+  registry: RuntimeActionRuleRegistryV1 | ((outcome: string) => RuntimeActionRuleRegistryV1 | Promise<RuntimeActionRuleRegistryV1>);
   clock?: () => string;
 }): (request: {
   job: NormalizedWritebackJobV5;
@@ -295,8 +302,13 @@ export function createSemanticActionVerifier(input: {
 }) => Promise<SemanticActionReverificationV1> {
   return async ({ job, factLoader }) => {
     const checkedAt = canonicalTimestamp(input.clock?.(), "Transaction verification time");
-    const registry = typeof input.registry === "function" ? await input.registry() : input.registry;
+    const registry = typeof input.registry === "function" ? await input.registry(job.semantic_authority.proof.outcome) : input.registry;
     const { activated, approval } = assertSemanticActionAuthorityCurrent(registry, job);
+    const inputs = validateActionRuleInputs(activated.compiled.rule, job.semantic_authority.business_inputs);
+    if ((Object.keys(inputs).length || job.semantic_authority.proof.business_inputs_digest)
+      && canonicalJsonDigest(inputs) !== job.semantic_authority.proof.business_inputs_digest) {
+      throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Business inputs no longer match the immutable proposal proof.");
+    }
     if (Date.parse(job.semantic_authority.proof.valid_until) <= Date.parse(checkedAt)) {
       throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The semantic proposal proof has expired.");
     }
@@ -312,6 +324,7 @@ export function createSemanticActionVerifier(input: {
       compiled: activated.compiled,
       facts: loaded.facts,
       proposal_id: job.proposal_id,
+      inputs,
     });
     const proof = job.semantic_authority.proof;
     const approvalBinding = approval.rules.find((binding) => binding.outcome === proof.outcome);
@@ -322,6 +335,7 @@ export function createSemanticActionVerifier(input: {
           compiled: activated.compiled,
           facts: loaded.facts,
           expression: approvalBinding.auto_approve_when,
+          inputs,
         })
       : undefined;
     if (evaluation.result !== "eligible"

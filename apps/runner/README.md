@@ -51,24 +51,19 @@ You do not hand-map every table, write policy JSON, or create another MCP tool
 for each business action. Manual and no-model editors remain available when you
 want them.
 
-Model-assisted drafting is recommended with OpenAI, Anthropic, or a local
-tool-capable model. After explicit egress consent, Runner sends only structural
-metadata. No-model cards and manual review remain available. All drafts start
-disabled; only the operator activates them.
+Choose OpenAI, Anthropic, or a local tool-capable model. Structural metadata and
+business answers leave the machine only after explicit egress consent.
 
 See [Database To First Safe Tool](docs/guided-onboarding.md).
 
 ### Compile From Representative Jobs
 
-One business intent becomes a minimized disabled **Read Boundary** and optional
-proposal-only **Action Boundary**. `W Agent job` reopens it. Each activates
-separately. See
+`W Agent job` reopens the saved Read and Action drafts. See
 [Boundary Assist](docs/read-workload-boundary-assist.md).
 
 ## Prove The Boundary Without A Database
 
-Run with no database, Docker, account, API key, MCP
-client, model, or global install:
+Try a deterministic simulation without a database or model:
 
 ```bash
 npx -y @synapsor/runner try --prove --no-open
@@ -108,8 +103,7 @@ or start with [safe Postgres MCP](docs/safe-postgres-mcp.md),
 ## Ask A Useful Question
 
 After review, use terminal Ask, preview Workbench, or MCP. They share one
-execution path. Supply an OpenAI/Anthropic key or loopback model. Keys and
-history stay in memory; loopback traffic stays local.
+execution path. Keys stay in memory; loopback traffic stays local.
 
 ```bash
 synapsor-runner try ask --provider openai --model gpt-5.6-terra
@@ -119,31 +113,14 @@ Runner can also configure an MCP client without putting database credentials
 in its project file:
 
 ```bash
-synapsor-runner mcp install \
-  <cursor|claude-code|claude-desktop|vscode|generic-stdio> \
+synapsor-runner mcp install claude-code \
   --project --authoring --project-root . --yes
 ```
 
 See [Client Recipes](docs/client-recipes.md) for supported MCP hosts.
 
-After both Boundaries are active, include the independently reviewed Action
-surface explicitly:
-
-```bash
-synapsor-runner mcp install claude-code \
-  --project --authoring --include-actions --project-root . --yes
-synapsor-runner tools list --config ./synapsor.runner.json
-```
-
-The preview labels the adjacent Action surface separately; it never merges or
-widens the supplied Read config.
-
-Local development/staging Explore exposes only:
-
-```text
-app.describe_data
-app.explore_data
-```
+The single local entry exposes the four fixed tools listed below. Read and
+Action authority remain separate; adding outcomes needs no client reinstall.
 
 Replay a fixed plan with `synapsor-runner explore playground`, or open its
 highlighted editor with `synapsor-runner explore workbench --project-root .`.
@@ -174,8 +151,8 @@ read-only capability with generated DSL, canonical JSON, tests, and provenance.
 Models cannot invoke Protect or activation. `/details A2 --sql` shows an
 operator-only parameterized statement with values redacted.
 
-For fixed production question shapes, switch the selected project client from
-temporary Explore to the activated named capability:
+For existing per-capability integrations only, switch the selected client to
+an activated named capability:
 
 ```bash
 CLIENT=claude-code # or cursor / vscode
@@ -185,9 +162,8 @@ synapsor-runner mcp install "$CLIENT" --project \
   --yes
 ```
 
-Protected capabilities remain the narrowest production choice. For reviewed
-ad-hoc analytics, `synapsor-runner config init --production-explore` generates
-secured runtime config from the boundary without secrets.
+The fixed-tool route uses `synapsor-runner config init --production-explore`
+for secured production Read config without secrets.
 
 ## Let Agents Propose Bounded Changes
 
@@ -208,10 +184,10 @@ exact actions, Read Boundary scope, policies, execution profiles, and shared
 limits. Proposal-only `WRITEBACK NONE` is the default; suggestions grant
 nothing. The TUI handles rehearsal, activation, and the inbox.
 
-For fact-dependent actions, activate an Action Rule. The agent then sees one
+For new actions, activate an Action Rule. The agent then sees one
 fixed surface, `app.describe_actions` plus `app.request_change`, even as the
 reviewed outcome catalog grows. It sends an outcome and opaque subject
-references; Runner privately reloads authoritative facts and derives the only
+references and, where reviewed, bounded business inputs; Runner privately reloads authoritative facts and derives the only
 permitted one-row effect. The model never supplies the patch, raw identity,
 trusted scope, approval, or apply command. See the
 [Action Rule Engine](docs/action-rule-engine.md).
@@ -226,11 +202,20 @@ app.describe_actions
 app.request_change
 ```
 
-The installer writes two MCP entries: Read (`synapsor`) owns the first pair;
-Action (`synapsor-actions`) owns the second. Separate namespaces keep Read and
-proposal authority independently activatable.
+Local stdio uses one `synapsor` MCP entry with all four tools. Before Action
+activation, Action discovery is empty and change requests are refused. Adding
+or revising outcomes does not change the tool list. Read and Action authority
+remain independently activatable. Production HTTP retains separate authenticated
+Read and Action endpoints with the same four tools across them.
 
-Code-first remains:
+Describe a job or a later policy change in the model-guided `W` conversation.
+The model edits disabled components, reads compiler feedback, and asks for missing
+business meaning. `/details` shows exact records. Approval and source execution
+still require their own reviewed authority. Existing per-capability deployments
+remain a compatibility path; mixed Action Rule deployments expose those tools
+only with explicit `action_rules.legacy_tools: "enabled"`.
+
+Explicit per-action compatibility remains:
 
 ```bash
 synapsor-runner start \

@@ -11,6 +11,7 @@ import {
 import type { ActionBoundarySharedLimitV1 } from "@synapsor-runner/protocol";
 import type {
   ActionRuleBooleanExpressionV1,
+  ActionRuleInputSpecV1,
   ActionRuleScalarExpressionV1,
   ActionRuleScalarTypeSpecV1,
   ActionRuleSpecV1,
@@ -42,6 +43,7 @@ export type ActionRuleModelDraftV1 = {
   schema_version: typeof ACTION_RULE_MODEL_DRAFT_VERSION;
   name: string;
   outcome: string;
+  inputs?: ActionRuleInputSpecV1[];
   verification: {
     name: string;
     resources: ActionRuleVerificationDraftResourceV1[];
@@ -119,6 +121,7 @@ export function actionRuleModelDraftFromAuthority(input: {
   }
   return normalizeDraft({
     schema_version: ACTION_RULE_MODEL_DRAFT_VERSION,
+    ...(source.rule.inputs ? { inputs: structuredClone(source.rule.inputs) } : {}),
     name: source.rule.name,
     outcome: source.rule.outcome,
     verification: {
@@ -384,6 +387,7 @@ export function compileActionRuleModelDraft(input: {
     verification_boundary_ref: verificationBoundary.name,
     effect_envelope_ref: envelope.name,
     subjects,
+    ...(draft.inputs ? { inputs: structuredClone(draft.inputs) } : {}),
     require: draft.require,
     derive: draft.derive,
     effect: {
@@ -626,6 +630,25 @@ function validateEffectBounds(
   }
 }
 
+export function hasExactActionRowPath(
+  resource: ActionRuleVerificationDraftResourceV1,
+  resources: ActionRuleVerificationDraftResourceV1[],
+  catalog: ActionRuleCatalogV1,
+  visited = new Set<string>(),
+): boolean {
+  if (visited.has(resource.binding)) return false;
+  if (resource.source.kind === "subject_ref") return true;
+  const source = resource.source;
+  const link = catalog.relationships.find((candidate) => candidate.name === source.relationship);
+  const parent = resources.find((candidate) => candidate.binding === source.from_binding);
+  if (!link || !parent || !link.target_unique) return false;
+  const forward = source.direction === "forward";
+  if (parent.resource !== (forward ? link.from_resource : link.to_resource)
+    || resource.resource !== (forward ? link.to_resource : link.from_resource)
+    || (forward ? link.cardinality === "one_to_many" : link.cardinality === "many_to_one")) return false;
+  return hasExactActionRowPath(parent, resources, catalog, new Set([...visited, resource.binding]));
+}
+
 function requiredTargetBinding(
   value: string | undefined,
   bindings: Map<string, {
@@ -637,7 +660,6 @@ function requiredTargetBinding(
 ): string {
   const eligible = [...bindings.entries()].filter(([, binding]) =>
     binding.catalog.name === target.name
-    && binding.draft.source.kind === "subject_ref"
     && binding.verification.cardinality === "one");
   if (value) {
     if (!eligible.some(([name]) => name === value)) {
