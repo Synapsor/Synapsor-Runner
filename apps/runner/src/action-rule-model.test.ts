@@ -44,6 +44,12 @@ describe("conversational Action authoring tools", () => {
     expect(edited.revision?.changed_phases).toEqual(["approval"]);
     expect(edited.compiled.approval_class.required_approvals).toBe(2);
     expect(edited.compiled.draft.effect).toEqual(created.compiled.draft.effect);
+    const executable = await converseActionRuleDraft({ ...common, existingDraft: edited.compiled.draft,
+      intent: "Automatically execute each approved pause after the two billing reviewers approve it. Keep all eligibility rules, fields and review requirements unchanged. Prepare only the disabled configuration now; do not activate anything during setup." });
+    expect(executable.compiled.draft.effect.writeback).toBe("supervised");
+    expect(executable.compiled.draft.require).toEqual(edited.compiled.draft.require);
+    expect(executable.compiled.draft.approval).toEqual(edited.compiled.draft.approval);
+    expect(executable.authority_granted).toBe(false);
   }, 300_000);
 
   const requestInput = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => ({
@@ -57,6 +63,33 @@ describe("conversational Action authoring tools", () => {
     body: { output: [{ type: "function_call", call_id: `call_${name}`, name: name.replaceAll(".", "__"), arguments: JSON.stringify(args) }] },
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
+
+  it.each([false, true])("repairs approval-only execution without another business question (resumed: %s)", async (resume) => {
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const intent = "Automatically approve and complete eligible account pauses.";
+    const componentCalls = [call("runner.submit_verification_boundary_draft"), call("runner.submit_approval_policy_draft"),
+      call("runner.submit_action_rule_draft"), call("runner.submit_effect_envelope_draft")];
+    if (resume) {
+      const paused = [...componentCalls, say("Pause for now?")];
+      await expect(converseActionRuleDraft({ ...requestInput(async () => paused.shift()!), intent,
+        onCheckpoint: async (value) => { checkpoint = value; }, askClarification: async () => undefined,
+      })).rejects.toThrow("CANCELLED");
+    }
+    const steps = [...(resume ? [] : componentCalls), call("runner.validate_action_draft", {}),
+      call("runner.submit_effect_envelope_draft", { ...payloadFor("runner.submit_effect_envelope_draft"), writeback: "supervised" }),
+      call("runner.validate_action_draft", {}), say("Execution configuration is drafted; separate operator review is still required.")];
+    const requests: string[] = [];
+    const askClarification = vi.fn();
+    const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), intent, checkpoint, askClarification });
+    expect(requests.join("\n")).toContain("ACTION_EXECUTION_INTENT_UNMET");
+    expect(result.compiled.effect_envelope.writeback).toMatchObject({ mode: "direct_sql", supervised_worker: "allowed" });
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(steps).toEqual([]);
+  });
 
   it("discovers and prepares an exact composite link in chat, retaining it across pause/resume", async () => {
     const built = builtCatalog();

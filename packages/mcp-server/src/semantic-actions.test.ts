@@ -15,7 +15,7 @@ import type {
   DerivedEffectEnvelopeSpecV1,
   RuleVerificationBoundarySpecV1,
 } from "@synapsor/spec";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createMcpRuntime,
   createSemanticActionRuntime,
@@ -314,6 +314,41 @@ const configuredReadCapability: NonNullable<RuntimeConfig["capabilities"]>[numbe
 };
 
 describe("fixed semantic Action MCP", () => {
+  it.each([
+    [false, false, "approved_pending_execution"],
+    [false, true, "approved_pending_execution"],
+    [true, false, "attention_required"],
+    [true, true, "completed"],
+  ] as const)("requires durable execution AND a receipt before reporting completion (%s, %s)", async (applied, receipt, expectedStatus) => {
+    let continued = false;
+    let proposalId = "";
+    const fixture = createFixtureRuntime({ automaticApproval: true, onProposalReady: async ({ proposal }) => {
+      continued = true; proposalId = proposal.proposal_id;
+      return { execution: "completed", source_database_changed: true };
+    } });
+    const read = fixture.store.getProposal.bind(fixture.store);
+    vi.spyOn(fixture.store, "getProposal").mockImplementation((id) => {
+      const saved = read(id);
+      return saved && continued && applied ? { ...saved, state: "applied", source_database_mutated: true } : saved;
+    });
+    vi.spyOn(fixture.store, "receipts").mockImplementation(() => receipt ? [{
+      receipt_id: 1, writeback_job_id: "job_test", proposal_id: proposalId, runner_id: "test_worker",
+      status: "applied", idempotency_key: "test", source_database_mutated: true, created_at: new Date().toISOString(),
+      receipt: { schema_version: "synapsor.execution-receipt.v1", writeback_job_id: "job_test", proposal_id: proposalId,
+        runner_id: "test_worker", status: "applied", rows_affected: 1, idempotency_key: "test",
+        source_database_mutated: true, executed_at: new Date().toISOString(), receipt_hash: `sha256:${"a".repeat(64)}` },
+    }] : []);
+    try {
+      const ref = await issueSubject(fixture);
+      const result = await fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, {
+        outcome: "billing.pause_notifications", subject_refs: { preference: ref },
+      });
+      expect(result).toMatchObject({ status: expectedStatus, execution: applied && receipt ? "completed" : "held",
+        source_database_changed: applied });
+      if (!applied) expect(await fixture.store.approvals(proposalId)).toHaveLength(1);
+    } finally { fixture.store.close(); }
+  });
+
   it("keeps fixed tools discoverable while a stale outcome is blocked before facts or proposals", async () => {
     let unavailable = ["billing.pause_notifications"];
     const fixture = createFixtureRuntime({ unavailableOutcomes: () => unavailable });

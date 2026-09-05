@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { assertActionExecutionIntentPreserved } from "./action-execution-intent.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type {
   ActionRuleBooleanExpressionV1,
@@ -290,6 +291,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
             return phaseRefusal("This outcome name belongs to another prepared action in the same job. Choose a distinct business outcome; do not overwrite it.");
           }
           assertExplicitApprovalIntentPreserved(intent, draft.approval);
+          assertActionExecutionIntentPreserved([intent, ...operatorMessages], draft.effect.writeback);
           const result = compileActionRuleModelDraft({ draft, ...context });
           if (initial && ACTION_RULE_PHASES.every((phase) => canonicalJsonDigest(initial[phase]) === canonicalJsonDigest(submissions[phase]))) {
             return phaseRefusal("The draft has no change from the reviewed baseline. Make the requested edit or ask what should change; do not claim a revision was saved.");
@@ -483,6 +485,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
   for (let repairCount = 0; repairCount <= MAX_FINAL_COMPILER_REPAIRS; repairCount += 1) {
     try {
       assertExplicitApprovalIntentPreserved(intent, draft.approval);
+      assertActionExecutionIntentPreserved([intent], draft.effect.writeback);
       compiled = compileActionRuleModelDraft({
         draft,
         ...activeContext,
@@ -1600,7 +1603,7 @@ function phaseInstruction(phase: PhaseName): string {
       "Do not nest the draft under object, boundary, conditions, derivation, subject_ref, or another wrapper.",
     ].join(" ");
     case "effect": return [
-      "Draft only the maximum one-row effect and exact deterministic set expressions. The agent must not supply these derived patch values. Use proposal_only unless the operator explicitly requested separately supervised execution.",
+      "Draft only the maximum one-row effect and exact deterministic set expressions. The agent must not supply these derived patch values. Natural requests to automatically complete, execute or apply eligible changes mean writeback=supervised. This prepares DISABLED execution configuration for a later exact operator review, never enables writes during setup. The operator need not know the term supervised. Approval alone is not completion. Use proposal_only for approval-only, test-without-writes or unspecified execution intent; preserve existing posture during unrelated edits. If the requested execution is unsupported, explain its concrete blocker instead of silently falling back to proposal_only.",
       "An UPDATE draft must include target_binding naming one exact row for target_resource from the accepted Verification draft: a subject_ref or a unique reviewed relationship path from a subject. Many-row targets are forbidden. An INSERT draft must omit target_binding. Runner resolves an omitted UPDATE binding only when exactly one eligible row binding exists; it never guesses between multiple targets.",
       "A draft uses only the top-level keys status, name, operation, target_resource, allowed_fields, set, writeback, and target_binding only for UPDATE. Copy target and field identifiers byte-for-byte from the catalog, and encode each set value as an Action Rule scalar expression.",
       "For every field expression, copy binding byte-for-byte from the resources in the already validated Verification draft. A word such as subject, target, row, or item is not a binding unless that exact value appears there.",

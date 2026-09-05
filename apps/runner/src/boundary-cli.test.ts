@@ -4978,7 +4978,8 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (writeback) => {
+  it.each(["proposal_only", "supervised", "repair_on_resume"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+    const writeback = posture === "repair_on_resume" ? "proposal_only" : posture;
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-semantic-action-"));
     const inspection = principalScopeInspection();
     const build = buildAutoBoundary({
@@ -4993,7 +4994,8 @@ describe("boundary operator-plane CLI", () => {
       sourceEnv: "DATABASE_URL",
       inspectedSchema: "public",
     });
-    const operatorJob = "When an authenticated customer's own scheduled service visit needs follow-up, let the agent request one bounded maintenance action.";
+    const operatorJob = "When an authenticated customer's own scheduled service visit needs follow-up, let the agent request one bounded maintenance action."
+      + (posture === "proposal_only" ? "" : " Automatically approve and complete eligible follow-ups.");
     const modelBoundaryJobPlanner = vi.fn(async () => ({
       state: "planned" as const,
       read_mode: "create" as const,
@@ -5220,9 +5222,9 @@ describe("boundary operator-plane CLI", () => {
         if (title === "ACTIVATE READ BOUNDARY") {
           const review = choiceOptions?.context?.join("\n") ?? "";
           expect(review).toContain("Read review -> Action review");
-          expect(review).toContain("approval is not execution");
-          expect(review).toContain(writeback === "supervised" ? "Automatic completion: requested" : "Execution: proposal-only");
-          if (writeback === "supervised") expect(review).toContain("Execution prerequisites:");
+          expect(review).toContain(posture === "repair_on_resume" ? "UNMET REQUEST:" : writeback === "supervised" ? "execution review PENDING" : "Execution: proposal-only");
+          expect(review).not.toMatch(/\+\d+ more|small-group minimum|fields per|1000 queries/u);
+          if (writeback === "supervised") expect(review).toContain("verify the writer");
           readReviewChoiceValues.push(options.map((option) => option.value));
           readActivationReviewCount += 1;
           return readActivationReviewCount === 1 ? "revise_model" : "finish";
@@ -5292,6 +5294,7 @@ describe("boundary operator-plane CLI", () => {
       ]);
       expect(readReviewChoiceValues[0]).toEqual([
         "activate",
+        ...(posture === "repair_on_resume" ? ["prepare_execution"] : []),
         "revise_model",
         "details",
         "finish",
@@ -5386,15 +5389,28 @@ describe("boundary operator-plane CLI", () => {
       const resumedPlanner = vi.fn(async () => {
         throw new Error("Authority review must not re-plan the saved job.");
       });
+      let executionPrepared = false;
       const resumedSession: BoundaryReviewInteractiveSession = {
         chooseResource: async () => undefined,
         editFieldTiers: async () => undefined,
         promptText: async (prompt) => {
           throw new Error(`Unexpected resumed semantic Action text prompt: ${prompt}`);
         },
-        chooseOption: async (title) => {
+        chooseOption: async (title, choices, options) => {
           if (title === "START BOUNDARY DRAFTING") return "resume";
-          if (title === "ACTIVATE READ BOUNDARY") return "finish";
+          if (title === "ACTIVATE READ BOUNDARY") {
+            if (posture === "repair_on_resume" && !executionPrepared) {
+              expect(options?.context?.join("\n")).toContain("UNMET REQUEST:");
+              expect(choices.some((choice) => choice.value === "prepare_execution")).toBe(true);
+              executionPrepared = true;
+              return "prepare_execution";
+            }
+            if (posture === "repair_on_resume") {
+              expect(options?.context?.join("\n")).toContain("execution review PENDING");
+              expect(choices.some((choice) => choice.value === "prepare_execution")).toBe(false);
+            }
+            return "finish";
+          }
           throw new Error(`Unexpected resumed semantic Action choice: ${title}`);
         },
         confirm: async () => true,
@@ -5421,6 +5437,17 @@ describe("boundary operator-plane CLI", () => {
       )).resolves.toBe(0);
       expect(resumedPlanner).not.toHaveBeenCalled();
       expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
+      if (posture === "repair_on_resume") {
+        expect(executionPrepared).toBe(true);
+        const updated = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+        if (!updated || !semantic) throw new Error("Expected saved Action drafts");
+        expect(updated.authority.rules[0]!.effect_envelope.writeback).toMatchObject({ mode: "direct_sql", supervised_worker: "allowed" });
+        expect(updated.authority.rules[0]!.rule.require).toEqual(semantic.authority.rules[0]!.rule.require);
+        expect(updated.authority.rules[0]!.rule.effect.set).toEqual(semantic.authority.rules[0]!.rule.effect.set);
+        expect(updated.authority.approval_classes).toEqual(semantic.authority.approval_classes);
+        expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(exactReadDigest);
+        await expect(fs.access(path.join(root, ".synapsor/action-rules/active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      }
 
       const revisionJob = "Keep the reviewed reads and change the maintenance outcome to require two reviewers.";
       let revisionReusableReadCount: number | undefined;
@@ -6712,9 +6739,10 @@ describe("boundary operator-plane CLI", () => {
       candidateBefore = JSON.stringify(before.candidate);
       const summary = formatReadActivationBusinessSummary(before.bundle).join("\n");
       expect(summary).toContain("service visits");
-      expect(summary).toContain("Scope concern:");
-      expect(summary).toContain("Excluded fields:");
-      expect(summary).toContain("zero Read links is not itself an error");
+      expect(summary).toContain("Scope decision:");
+      expect(summary).toContain("Excluded:");
+      expect(summary).not.toMatch(/relationships|scheduled_at|tenant_id|fingerprint|\+\d+ more/u);
+      expect(summary.split("\n").length).toBeLessThanOrEqual(6);
       await expect(boundaryReviewCommandInternal(["--project-root", root, "--access"], async () => inspection,
         chat.session)).resolves.toBe(0);
       expect(reviews, writes.join("\n")).toHaveLength(2);

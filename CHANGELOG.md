@@ -4,6 +4,15 @@
 
 ### Read Activation Review
 
+- Keeps default activation decisions concise; exhaustive fields and limits stay
+  in complete offline details. Internal-field concerns have a named model-revision
+  route, and manual access editing remains reachable from disabled drafts.
+- Preserves natural automatic-completion requests in Action drafting, checks for
+  proposal-only mismatches and offers existing drafts a disabled execution-only
+  revision. Read, Action and execution approvals remain separate. Missing
+  execution configuration is not setup completion; policy enabled is not worker
+  running. Runtime completion requires durable execution and a successful receipt.
+
 - Opens the complete local Read revision directly from the activation gate,
   with paginated fields, exposure tiers, scope paths, relationships, limits and
   fingerprint. Returning preserves the exact pending revision; viewing details

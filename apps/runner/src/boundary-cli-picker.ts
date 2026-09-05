@@ -964,7 +964,7 @@ async function chooseResource(
   let showReviewItems = false;
   const focusedAccess = options?.initialView === "access";
   const startingBoundaryName = options?.startingBoundaryName;
-  let showBoundaryList = options?.startAtBoundaryList === true || !focusedAccess;
+  let showBoundaryList = options?.startAtBoundaryList ?? !focusedAccess;
   let resourceView: ResourcePickerView = resources.some(
     (resource) => resource.included || resource.active,
   ) ? "boundary" : "all";
@@ -1412,6 +1412,7 @@ async function chooseResource(
           "",
           ...packTerminalActions([
             `${theme.key("Up/Down")} Select`,
+            `${theme.key("E")} Edit access manually`,
             `${theme.key("Enter")} ${highlightedBoundary.selected
               ? (focusedAccess ? "Edit" : "Review")
               : "Open"}`,
@@ -1459,7 +1460,7 @@ async function chooseResource(
           actionNotice = undefined;
           continue;
         }
-        if (key.name === "return" || key.name === "enter") {
+        if (key.name === "return" || key.name === "enter" || key.name === "e") {
           if (!highlightedBoundary.selected) {
             return { action: "switch", boundary_name: highlightedBoundary.name };
           }

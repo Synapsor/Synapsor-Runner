@@ -17,6 +17,7 @@ import {
   inspectDatabase
 } from "@synapsor-runner/schema-inspector";
 import crypto from "node:crypto";
+import { explicitActionExecutionIntent } from "./action-execution-intent.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -3960,6 +3961,8 @@ type ReadBoundaryReviewDisposition = "activated" | "finish" | "manual_editor";
 
 type ReadBoundaryReviewOptions = {
   sequenceSummary?: () => string[];
+  executionPreparationNeeded?: () => boolean;
+  prepareExecution?: () => Promise<void>;
   reviseWithModel?: () => Promise<boolean>;
   onDisposition?: (disposition: ReadBoundaryReviewDisposition) => void;
 };
@@ -4937,6 +4940,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let semanticActionAuthorityDraft: ActionRuleAuthorityDraftV1 | undefined;
   let semanticActionActivation: ActionRuleAuthorityActivationV1 | undefined;
   let semanticExecutionEnabled = false;
+  const semanticExecutionRunCommands: string[] = [];
   const preMappedActions: Array<{
     intent: string;
     result: Awaited<ReturnType<typeof generateModelActionSuggestion>>;
@@ -6800,6 +6804,38 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         }
       }
     : undefined;
+  const unmetExecutionEntries = () => semanticActionDrafts.filter((entry) =>
+    explicitActionExecutionIntent([entry.intent]) === "automatic"
+    && entry.result.compiled.effect_envelope.writeback.mode !== "direct_sql");
+  const prepareRequestedExecution = async () => {
+    // Compile all changed outcomes before saving; preserve the Read revision,
+    // private facts, business rules and approval limits byte-for-byte.
+    const prepared = unmetExecutionEntries().map((entry) => ({
+      entry,
+      compiled: compileActionRuleModelDraft({
+        draft: { ...entry.result.compiled.draft, effect: { ...entry.result.compiled.draft.effect, writeback: "supervised" } },
+        builtCatalog: entry.catalog,
+        readBoundary: context.candidate,
+        readBoundaryDigest: committed.candidate_digest,
+      }),
+    }));
+    for (const { entry, compiled } of prepared) {
+      const saved = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, compiled);
+      await writeActionRuleAuthorityDraft(input.projectRoot, saved);
+      entry.result = { ...entry.result, compiled };
+      semanticActionAuthorityDraft = saved;
+    }
+    if (prepared.length) {
+      const current = semanticActionDrafts.at(-1)!;
+      semanticActionModelResult = current.result;
+      semanticActionModelDraft = current.result.compiled.draft;
+      await persistAuthoringResume("authority_review");
+      await writeRunner("EXECUTION REVIEW PREPARED", [
+        "Automatic completion: separate execution review pending; execution remains OFF.",
+        "Business rules, approval limits and Read access are unchanged. Writer checks and your execution confirmation are still required.",
+      ]);
+    }
+  };
   const modelGuidedReadReviewReady = Boolean(input.authoringChat && modelAssistRecord);
   const preparedSemanticAction = Boolean(semanticActionAuthorityDraft);
   if ((actionDrafts.length || preparedSemanticAction || modelGuidedReadReviewReady)
@@ -6815,19 +6851,18 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     const reviewResult = await input.completeReadReview("activate", input.session, {
       sequenceSummary: () => {
         const automatic = semanticActionDrafts.filter((entry) => entry.result.compiled.effect_envelope.writeback.mode === "direct_sql");
-        const policy = semanticActionDrafts.filter((entry) => entry.result.compiled.approval_class.mode === "policy");
+        const missing = unmetExecutionEntries();
         return [
-          `Next: Read review -> Action review${automatic.length ? " -> execution review" : ""}. Each grants only its own authority.`,
-          ...(semanticActionDrafts.length ? [
-            `Action intent: ${semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome).join(", ")}.`,
-            `Approval: ${policy.length} outcome(s) have deterministic approval with human fallback; approval is not execution.`,
-            automatic.length
-              ? "Automatic completion: requested in the draft, not enabled by this Read review. The later execution review must enable the exact policy and writer/worker; until then even approved requests do not change source rows."
-              : "Execution: proposal-only. No source changes will run automatically; source writes require a separately reviewed execution policy.",
-            ...(automatic.length ? ["Execution prerequisites: activate the linked Read and Action revisions, verify the writer role and source posture, configure the control store and trusted operator, then enable the supervised worker."] : []),
-          ] : [actionDrafts.length ? "Action drafts need their own approval and execution review; this gate grants reads only." : "This job has no prepared Action draft; Read activation cannot approve or execute changes."]),
+          ...(missing.length
+            ? ["UNMET REQUEST: automatic completion is not configured. This draft would only propose changes. Choose Prepare requested automatic execution to retain the rules and prepare a separate execution review."]
+            : automatic.length
+              ? ["Automatic completion: execution review PENDING, not enabled. After Action review, verify the writer and explicitly enable execution; an operator-run worker must then process approved requests."]
+              : semanticActionDrafts.length ? ["Execution: proposal-only; approved requests will not change source data."] : []),
+          `Next: Read review${semanticActionDrafts.length || actionDrafts.length ? " -> Action review" : ""}${automatic.length || missing.length ? " -> execution review" : ""}. This decision grants reads only.`,
         ];
       },
+      executionPreparationNeeded: () => unmetExecutionEntries().length > 0,
+      prepareExecution: prepareRequestedExecution,
       ...(reviseReadWithModel ? { reviseWithModel: reviseReadWithModel } : {}),
       onDisposition: (disposition) => {
         reviewNavigation = disposition === "manual_editor" ? "manual_editor" : "boundary_list";
@@ -6843,6 +6878,13 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     });
   }
   if (readBoundaryActive && semanticActionAuthorityDraft && semanticActionModelResult) {
+    if (unmetExecutionEntries().length && input.session.chooseOption) {
+      const choice = await input.session.chooseOption("AUTOMATIC COMPLETION IS NOT CONFIGURED", [
+        { value: "prepare", label: "Prepare requested automatic execution", detail: "Keep the business rules and approval limits. Prepare a disabled replacement for separate Action and execution review; no writes." },
+        { value: "later", label: "Keep execution unconfigured for now", detail: "The request remains unfinished and saved for resume. Approval alone is not completion." },
+      ], { initialValue: "later" });
+      if (choice === "prepare") await prepareRequestedExecution();
+    }
     const compiled = semanticActionModelResult.compiled;
     const revisionReview = semanticActionRevisionBaseline
       ? semanticActionRevisionDiffLines(
@@ -6887,6 +6929,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           inspectDatabaseFn: input.schemaInspector,
         });
         if (executionNotice) {
+          semanticExecutionRunCommands.push(...executionNotice.lines.filter((line) => line.startsWith("Run: ")));
           const lines = [
             ...executionNotice.lines,
             ...(executionNotice.footer ? [executionNotice.footer] : []),
@@ -6956,11 +6999,12 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     : actionDrafts.filter(({ draft }) => activeActionCapabilities.has(draft.capability)).length;
   const allPreparedActionsActive = preparedActionCount > 0
     && activatedPreparedActions === preparedActionCount;
-  const semanticExecutionRequested = semanticActionDrafts.some((entry) => entry.result.compiled.effect_envelope.writeback.mode === "direct_sql");
+  const semanticExecutionMissing = unmetExecutionEntries().length > 0;
+  const semanticExecutionRequested = semanticExecutionMissing || semanticActionDrafts.some((entry) => entry.result.compiled.effect_envelope.writeback.mode === "direct_sql");
   const proposalSetupComplete = readBoundaryActive
     && (actionIntents.length === 0 || allPreparedActionsActive);
   const setupComplete = proposalSetupComplete
-    && (!semanticExecutionRequested || semanticExecutionEnabled);
+    && !semanticExecutionMissing && (!semanticExecutionRequested || semanticExecutionEnabled);
   const activeActionBoundary = finalActionStatus.action_boundary.active;
   const currentActionBoundary = activeActionBoundary ?? finalActionStatus.action_boundary.draft;
   const semanticPolicy = semanticActionDrafts.some((entry) => entry.result.compiled.approval_class.mode === "policy");
@@ -7004,13 +7048,15 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       "Apply",
       semanticExecutionRequested ? "Supervised worker" : "Source writeback",
       semanticExecutionRequested
-        ? semanticExecutionEnabled ? "WORKER ON" : "OFF"
+        ? semanticExecutionMissing ? "NOT CONFIGURED" : semanticExecutionEnabled ? "ENABLED" : "OFF"
         : "NOT ALLOWED",
       "Cannot apply",
     ],
   ];
   const finalTitle = setupComplete
-    ? "SETUP COMPLETE"
+    ? semanticExecutionRequested ? "BOUNDARIES ACTIVE; START EXECUTION WORKER" : "SETUP COMPLETE"
+    : semanticExecutionMissing
+      ? "AUTOMATIC COMPLETION NOT CONFIGURED"
     : proposalSetupComplete && semanticExecutionRequested
       ? "PROPOSALS ACTIVE; EXECUTION OFF"
       : "BOUNDARY DRAFTS SAVED";
@@ -7032,7 +7078,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       "Source database changed during setup: no.",
     ],
     footer: setupComplete
-      ? "Next: choose terminal Ask, local stdio MCP, or production HTTP MCP."
+      ? semanticExecutionRequested
+        ? `Execution policy enabled; worker process not started by setup. ${semanticExecutionRunCommands.join(" ") || "Open the Action Boundary for its worker command."} Then connect the MCP client. Approval is not completion; only execution with a receipt completes a request.`
+        : "Next: choose terminal Ask, local stdio MCP, or production HTTP MCP."
+      : semanticExecutionMissing
+        ? "Next: resume this job and choose Prepare requested automatic execution. Approval alone will not complete a change."
       : proposalSetupComplete && semanticExecutionRequested
         ? `Next: review supervised execution for ${semanticActionModelResult?.compiled.rule.outcome ?? "this outcome"}, or keep proposal-only operation.`
       : readBoundaryActive
@@ -7057,7 +7107,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         : deterministicPolicyPrepared
           ? "deterministic policy draft with human fallback"
           : "human review"} · execution ${semanticExecutionRequested
-            ? semanticExecutionEnabled ? "worker on" : "off"
+            ? semanticExecutionMissing ? "not configured" : semanticExecutionEnabled ? "enabled; run worker" : "off"
             : "not allowed"} · source unchanged`,
       `${finalNotice.footer ?? "Continue from the Boundary screen."} · /details shows the exact authority record`,
     ], finalNotice.tone);
@@ -10104,11 +10154,10 @@ async function confirmAndActivateFocusedBoundary(input: {
     ...(activationReviewNotice ? activationReviewNotice.trimEnd().split("\n") : []),
   ];
   const conversationReviewContext = [
+    ...(input.reviewOptions?.sequenceSummary?.() ?? ["Sequence: this decision grants Read access only. Action approval and source execution require separate reviews."]),
     ...formatReadActivationBusinessSummary(context.bundle),
     ...authorityReplacementContext,
-    ...(input.reviewOptions?.sequenceSummary?.() ?? ["Sequence: this decision grants Read access only. Action approval and source execution require separate reviews."]),
-    ...(activationReviewNotice ? activationReviewNotice.trimEnd().split("\n") : []),
-    "View exact Read Boundary details opens the complete local revision. Enter/Esc returns to this same permission.",
+    "Exact details: every field, exclusion, scope, relationship, limit and fingerprint; return to this same decision.",
   ];
   if (conversation) {
     input.session.rememberDetails?.("Exact Read Boundary review", activationContext);
@@ -10195,6 +10244,13 @@ async function confirmAndActivateFocusedBoundary(input: {
               ? "Replace the currently active Explore authority with only the candidate summarized above."
               : "Grant only the reviewed Explore authority summarized above.",
           },
+          ...(input.reviewOptions?.executionPreparationNeeded?.()
+            ? [{
+                value: "prepare_execution",
+                label: "Prepare requested automatic execution",
+                detail: "Keep the business rule and approval limits; prepare disabled execution configuration for separate operator review. No writes.",
+              }]
+            : []),
           ...(input.reviewOptions?.reviseWithModel
             ? [{
                 value: "revise_model",
@@ -10241,6 +10297,17 @@ async function confirmAndActivateFocusedBoundary(input: {
       if (choice === "revise_model" && input.reviewOptions?.reviseWithModel) {
         const revised = await input.reviewOptions.reviseWithModel();
         if (revised) return confirmAndActivateFocusedBoundary(input);
+        continue;
+      }
+      if (choice === "prepare_execution" && input.reviewOptions?.prepareExecution) {
+        try {
+          await input.reviewOptions.prepareExecution();
+          return confirmAndActivateFocusedBoundary(input);
+        } catch (error) {
+          const lines = [redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+            "Execution preparation is blocked for this exact draft. No execution authority was enabled. Revise the Action draft with the model or manual controls before retrying."];
+          input.session.present?.("EXECUTION PREPARATION BLOCKED", lines, "danger");
+        }
         continue;
       }
       accepted = choice === "activate";
@@ -10713,28 +10780,22 @@ export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle
   const visibleControls = catalog.resources.flatMap((resource) => resource.fields
     .filter((field) => field.current_exposure === "model_and_runner" && readBoundaryFieldReviewNote(field.roles, "MODEL")?.startsWith("REVIEW:"))
     .map((field) => `${resource.id}.${field.id}`));
-  const principalCount = resources.filter(hasReviewedPrincipalScope).length;
   const sharedCount = resources.filter((resource) => resource.shared_reference_scope).length;
-  const readable = resources.map((resource) => {
-    const fields = resource.selectable_fields.filter((field) => !resource.kept_out_fields.includes(field)
-      && !(resource.model_withheld_fields ?? []).includes(field));
-    const name = resource.label ?? resource.id.split(".").at(-1)!.replaceAll("_", " ");
-    return `${name} (${fields.length ? summarizeAuthorityItems(fields, 3) : "reviewed analysis only"})`;
-  });
+  const unscopedCount = resources.filter((resource) => !resource.shared_reference_scope && !hasReviewedPrincipalScope(resource)).length;
+  const readable = resources.map((resource) => resource.label ?? resource.id.split(".").at(-1)!.replaceAll("_", " "));
   return [
-    `Boundary: ${bundle.candidate.pack.name} | pending Read activation`,
-    `Readable information: ${summarizeAuthorityItems(readable, 8)}.`,
+    `Readable information: ${readable.join(", ")}.`,
     bundle.candidate.organization_scope
-      ? "Isolation: whole-organization access, not customer-specific row filtering."
-      : `Isolation: trusted account scope is enforced${sharedCount ? ` except for ${sharedCount} explicitly shared reference table(s)` : " on every resource"}; the agent cannot choose another account.`,
-    principalCount === resources.length && resources.length
-      ? "Customer isolation: every resource also requires the authenticated principal through reviewed columns, paths or database RLS. Identity comes from the trusted session, not model arguments."
-      : `Scope concern: ${resources.length - principalCount} resource(s) do not have principal row filtering. Do not assume access is limited to one customer; inspect the scope details.`,
-    `Excluded fields: ${excluded.length ? summarizeAuthorityItems(excluded, 8) : "none; review whether sensitive fields need exclusion"}.`,
-    ...(visibleControls.length ? [`Review concern: model-facing internal identifiers or policy controls: ${summarizeAuthorityItems(visibleControls, 5)}. Revise before activation if these should be private.`] : []),
-    `Read relationships: ${resources.reduce((total, resource) => total + resource.relationships.length, 0)} customer-facing links. Private Action verification links are reviewed separately; zero Read links is not itself an error.`,
-    `Limits: small-group minimum ${[...new Set(resources.map((resource) => resource.minimum_cohort_size))].join(", ")}; ${bundle.candidate.budgets.max_queries_per_session} queries and ${bundle.candidate.budgets.max_extracted_cells_per_session} cells per trusted scope / 24h.`,
-    "This Read gate does not approve requests, enable execution, or change source rows.",
+      ? "Scope decision: whole-organization access, not one customer's information."
+      : unscopedCount === 0 && resources.length > sharedCount
+        ? "Whose information: only the authenticated customer's records within their account. Identity comes from the trusted session, never agent arguments."
+        : resources.length === sharedCount
+          ? "Whose information: reviewed shared references, not customer-private records."
+          : `Scope decision: account isolation is enforced, but ${unscopedCount} non-shared resource(s) lack individual customer filtering. Inspect exact scope before activation.`,
+    ...(sharedCount ? [`Shared references: ${sharedCount} reviewed resource(s) are intentionally common across accounts; inspect exact scope.`] : []),
+    `Excluded: ${excluded.length} distinct fields kept out. Exact details names each exclusion and every Runner-only field.`,
+    ...(visibleControls.length ? [`Privacy decision: ${visibleControls.length} internal identifiers or control fields are model-visible. Choose Revise this Read Boundary and say "keep internal IDs, versions and approval controls private", or inspect the REVIEW-marked fields in exact details.`] : []),
+    "Grants: reviewed read access only. No request is approved or executed by this activation.",
   ];
 }
 

@@ -533,13 +533,19 @@ async function semanticProposalResult(
   disposition: "created" | "existing",
   continuation?: SemanticActionContinuation,
 ): Promise<Record<string, unknown>> {
+  // A continuation may have run synchronously. Its label is not execution
+  // evidence: reload durable state and require the successful receipt.
+  proposal = await store.getProposal(proposal.proposal_id) ?? proposal;
   if (proposal.change_set.schema_version !== protocolVersions.changeSetV4) {
     throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "Runner could not load the semantic proposal result safely.");
   }
-  const execution = continuation?.execution
-    ?? (proposal.state === "applied"
-      ? "completed"
-      : proposal.state === "approved" || proposal.state === "pending_worker"
+  const completed = proposal.state === "applied" && (await store.receipts(proposal.proposal_id)).some((record) =>
+    record.proposal_id === proposal.proposal_id && record.status === "applied"
+    && record.receipt.status === "applied" && record.receipt.source_database_mutated === true
+    && record.receipt.rows_affected > 0);
+  const execution = completed ? "completed"
+    : continuation?.execution === "completed" || proposal.state === "applied" ? "held"
+    : continuation?.execution ?? (proposal.state === "approved" || proposal.state === "pending_worker"
         ? "not_enabled"
         : proposal.state === "pending_review"
           ? "human_review"
@@ -581,7 +587,7 @@ async function semanticProposalResult(
     execution,
     eligibility: "verified from current authoritative facts",
     exact_effect: "Runner-derived and sealed in the operator proposal record",
-    source_database_changed: continuation?.source_database_changed ?? proposal.source_database_mutated,
+    source_database_changed: proposal.source_database_mutated,
     model_authority: {
       supplied_outcome_and_opaque_subjects_only: !Object.keys(proposal.change_set.semantic_authority.business_inputs ?? {}).length,
       supplied_only_reviewed_business_inputs: true,
@@ -612,7 +618,7 @@ function semanticActionStatus(
   state: StoredProposal["state"],
   execution: SemanticActionContinuation["execution"],
 ): "completed" | "approved_pending_execution" | "pending_human_review" | "closed" | "attention_required" {
-  if (state === "applied" || execution === "completed") return "completed";
+  if (execution === "completed") return "completed";
   if (state === "approved" || state === "pending_worker") return "approved_pending_execution";
   if (state === "pending_review") return "pending_human_review";
   if (state === "rejected" || state === "canceled") return "closed";

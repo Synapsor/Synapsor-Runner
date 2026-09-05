@@ -41,6 +41,8 @@ assert.equal(result.authority_granted, false);
 assert.equal(result.source_database_changed, false);
 assert.equal(result.compiled.effect_envelope.target_resource, "telecom.subscriptions");
 assert.equal(result.compiled.effect_envelope.operation, "update");
+assert.deepEqual(result.compiled.effect_envelope.writeback, { mode: "direct_sql", supervised_worker: "allowed" },
+  "Automatic completion must prepare separately reviewed execution, not silently become approval-only.");
 const target = result.compiled.verification_boundary.resources.find((resource) => resource.binding === result.compiled.effect_envelope.target_binding);
 assert.equal(target.source.kind, "relationship", "Target must come from the selected offer, not an unrelated subject reference.");
 assert.equal(target.source.relationship, link.name);

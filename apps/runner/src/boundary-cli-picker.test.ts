@@ -603,6 +603,22 @@ describe("boundary review terminal picker", () => {
     });
   });
 
+  it.each([true, false])("keeps manual fields reachable from a disabled general Boundary review (list: %s)", async (startAtBoundaryList) => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource([summary("public.equipment", 0)], undefined,
+      { initialView: "boundaries", startAtBoundaryList });
+    const first = stripAnsi(output.read()?.toString() ?? "");
+    if (startAtBoundaryList) {
+      expect(first).toContain("E Edit access manually");
+      await send(input, "e");
+    } else {
+      expect(first).toContain("Edit columns");
+    }
+    await send(input, "\r");
+    await expect(selected).resolves.toEqual({ resource_id: "public.equipment", action: "review" });
+  });
+
   it("explains unavailable table controls without leaving the access editor", async () => {
     const { input, output } = fakeTerminal();
     const included = summary("public.orders", 0);

@@ -11,6 +11,38 @@ import {
 } from "./read-boundary-revision-model.js";
 
 describe("model-assisted Read Boundary field exposure revisions", () => {
+  it("retains the exact 36-field privacy diff without hiding business references or discarding private facts", async () => {
+    const reviewed = boundary();
+    const names = ["accounts", "memberships", "subscribers", "subscriptions", "lines", "usage", "invoices", "payments", "preferences", "cases", "notes", "offers"];
+    reviewed.pack.resources = names.map((table) => {
+      const resource = structuredClone(reviewed.pack.resources[0]!);
+      return { ...resource, id: `telecom.${table}`, schema: "telecom", table,
+        field_types: { ...resource.field_types, invoice_number: "text", case_number: "text" },
+        selectable_fields: [...resource.selectable_fields, "invoice_number", "case_number"] };
+    });
+    const before = structuredClone(reviewed);
+    const fields = ["id", "version", "auto_approval_eligible"];
+    const result = await generateModelReadBoundaryRevision({
+      instruction: "Keep useful customer information visible, but keep internal IDs, versions and approval controls private. Runner still needs them. Preserve invoice and case numbers, rules and limits.",
+      provider: "openai", model: "gpt-5.6-terra", apiKey: "test-only", boundary: reviewed, egressAcknowledged: true,
+      dependencies: { requestJson: async () => ({ status: 200, body: { output: [{
+        type: "function_call", call_id: "privacy", name: "runner__submit_read_boundary_revision",
+        arguments: JSON.stringify({ resource_changes: reviewed.pack.resources.map((resource) => ({
+          resource: resource.id, field_exposure: fields.map((field) => ({ field, exposure: "runner_only" })),
+        })) }),
+      }] } }) },
+    });
+    expect(result.changes.map(({ resource, field, before, after }) => ({ resource, field, before, after })))
+      .toEqual(reviewed.pack.resources.flatMap((resource) => fields.map((field) => ({
+        resource: resource.id, field, before: "model_and_runner", after: "runner_only",
+      }))));
+    expect(result.changes).toHaveLength(36);
+    expect(result.policy_changes ?? []).toEqual([]);
+    expect(result.changes.some((change) => ["invoice_number", "case_number", "tenant_id", "principal_id"].includes(change.field))).toBe(false);
+    expect(reviewed).toEqual(before);
+    expect(result.authority_granted).toBe(false);
+  });
+
   it("edits bounded operations, labels and limits without broadening trusted authority", async () => {
     const result = await generateModelReadBoundaryRevision({
       instruction: "Allow filtering status, label it Order status, and cap results at 20 rows.",
