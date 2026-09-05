@@ -1150,22 +1150,7 @@ async function runOpenAiCompatibleTurn(input: {
     if (input.authorityGuard) {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
     }
-    let message: Record<string, unknown>;
-    try {
-      message = openAiMessage(response.body);
-    } catch (error) {
-      if (iteration === 0
-        && input.requiredInitialToolName
-        && error instanceof AskError
-        && error.code === "ASK_PROVIDER_RESPONSE_INVALID") {
-        throw new AskError(
-          "ASK_REQUIRED_TOOL_NOT_CALLED",
-          "The provider did not submit the one required structured tool call.",
-          502,
-        );
-      }
-      throw error;
-    }
+    const message = openAiMessage(response.body);
     usage = mergeUsage(usage, openAiUsage(response.body));
     const toolCalls = openAiToolCalls(message);
     if (iteration === 0 && input.requiredInitialToolName) {

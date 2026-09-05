@@ -4,14 +4,138 @@ import {
   DEFAULT_REVIEWED_EXPLORATION_BUDGETS,
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
-import type { AskProviderDependencies } from "./model-ask.js";
+import { AskError, type AskProviderDependencies } from "./model-ask.js";
 import {
   createModelAuthoringConversation,
   rememberModelAuthoringTurn,
 } from "./model-authoring-conversation.js";
 import { generateModelReadWorkload, readWorkloadCatalog } from "./read-workload-model.js";
+import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
+
+function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malformed" | "arguments" | "blocked") {
+  if (kind === "malformed") return { status: 200, body: { output: [] } };
+  if (kind === "missing") return { status: 200, body: {
+    choices: [{ message: { role: "assistant", content: "I can help with that." } }],
+  } };
+  return { status: 200, body: { output: [{
+    type: "function_call", call_id: "call_read_diagnostic", name: "runner__submit_read_workloads",
+    arguments: kind === "arguments" ? "{broken" : JSON.stringify({
+      allowed: [{
+        id: kind === "invalid_id" ? "INVALID ID" : "my_orders",
+        description: "List my orders",
+        plan: { kind: "rows", resource: "public.orders", select: [kind === "blocked" ? "nonexistent" : "status"] },
+      }], forbidden: [],
+    }),
+  }] } };
+}
 
 describe("model-assisted Read workload mapping", () => {
+  it("keeps a long original job while requesting concise schema-compatible plan descriptions", async () => {
+    const job = "Help customers read their account, bills, services, support history, and eligible plan offers. ".repeat(4).trim();
+    expect(job.length).toBeGreaterThan(280);
+    const requestJson = vi.fn().mockResolvedValue(diagnosticResponse("valid"));
+    await generateModelReadWorkload({
+      name: "long_job", allowedQuestions: [job],
+      provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
+      generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
+      dependencies: { requestJson },
+    });
+    const sent = JSON.stringify(requestJson.mock.calls[0]?.[0].body);
+    expect(sent).toContain(job);
+    expect(sent).toContain("1 through 280 characters");
+    expect(sent).not.toContain("Preserve each question in description");
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
+  it.each([
+    ["invalid_id", "validation", "READ_WORKLOAD_BLOCKED", "READ_WORKLOAD_ID_INVALID"],
+    ["missing", "required_tool", "ASK_REQUIRED_TOOL_NOT_CALLED", "required structured tool call"],
+    ["malformed", "provider_response", "ASK_PROVIDER_RESPONSE_INVALID", "no assistant text or function call"],
+    ["arguments", "provider_response", "ASK_TOOL_ARGUMENTS_INVALID", "malformed tool arguments"],
+  ] as const)("retains initial and correction diagnostics for %s without mutating the boundary", async (kind, category, code, reason) => {
+    const boundary = generatedBoundary();
+    const before = structuredClone(boundary);
+    const requests: string[] = [];
+    const requestJson = vi.fn(async (request) => {
+      requests.push(JSON.stringify(request.body));
+      return diagnosticResponse(kind);
+    });
+    const error = await generateModelReadWorkload({
+      name: "diagnostic_test", allowedQuestions: ["List my orders"],
+      provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
+      generatedBoundary: boundary, egressAcknowledged: true, deferNarration: true,
+      dependencies: { requestJson },
+    }).catch((error) => error);
+    expect(error).toBeInstanceOf(ReadWorkloadDraftError);
+    expect(error.diagnostics).toEqual([
+      expect.objectContaining({ attempt: 1, phase: "initial", category, code }),
+      expect.objectContaining({ attempt: 2, phase: "correction", category, code }),
+    ]);
+    expect(error.message).toContain(reason);
+    if (kind === "invalid_id") expect(requests[1]).toContain("READ_WORKLOAD_ID_INVALID");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(boundary).toEqual(before);
+  });
+
+  it.each(["invalid_id", "malformed", "arguments", "missing"] as const)("recovers %s with one valid correction", async (kind) => {
+    const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse(kind))
+      .mockResolvedValueOnce(diagnosticResponse("valid"));
+    const result = await generateModelReadWorkload({
+      name: "corrected_read", allowedQuestions: ["List my orders"],
+      provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
+      generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
+      dependencies: { requestJson },
+    });
+    expect(result.analysis.status).toBe("ready");
+    expect(result.authority_granted).toBe(false);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["missing", "malformed"] as const)("does not lose rejected draft details when correction returns %s", async (kind) => {
+    const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse("invalid_id"))
+      .mockResolvedValueOnce(diagnosticResponse(kind));
+    const error = await generateModelReadWorkload({
+      name: "mixed_failure", allowedQuestions: ["List my orders"],
+      provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
+      generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
+      dependencies: { requestJson },
+    }).catch((error) => error);
+    expect(error).toBeInstanceOf(ReadWorkloadDraftError);
+    expect(error.diagnostics[0]).toMatchObject({ phase: "initial", category: "validation" });
+    expect(error.diagnostics[1]).toMatchObject({ phase: "correction", category: kind === "missing" ? "required_tool" : "provider_response" });
+    expect(error.message).toContain("READ_WORKLOAD_ID_INVALID");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains compiler blockers from both submitted attempts in a blocked result", async () => {
+    const requestJson = vi.fn().mockResolvedValue(diagnosticResponse("blocked"));
+    const result = await generateModelReadWorkload({
+      name: "blocked_reads", allowedQuestions: ["List my orders"],
+      provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
+      generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
+      dependencies: { requestJson },
+    });
+    expect(result.analysis.status).toBe("blocked");
+    expect(result.diagnostics).toHaveLength(2);
+    expect(result.diagnostics?.every((diagnostic) => diagnostic.category === "validation")).toBe(true);
+    expect(result.authority_granted).toBe(false);
+  });
+
+  it("preserves a validation refusal when its correction times out without another automatic retry", async () => {
+    const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse("invalid_id"))
+      .mockRejectedValueOnce(new AskError("ASK_PROVIDER_TIMEOUT", "The provider did not respond within the Ask timeout.", 504));
+    const error = await generateModelReadWorkload({
+      name: "timed_out_correction", allowedQuestions: ["List my orders"],
+      provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
+      generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
+      dependencies: { requestJson },
+    }).catch((error) => error);
+    expect(error.diagnostics).toEqual([
+      expect.objectContaining({ phase: "initial", category: "validation" }),
+      expect.objectContaining({ phase: "correction", category: "provider_request", code: "ASK_PROVIDER_TIMEOUT" }),
+    ]);
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
   it("carries prior authoring history into mapping and returns actual validated model prose", async () => {
     const conversation = createModelAuthoringConversation();
     rememberModelAuthoringTurn(
@@ -310,7 +434,7 @@ describe("model-assisted Read workload mapping", () => {
 
     expect(result.analysis.status).toBe("ready");
     expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(requests[1]).toContain("previous response was discarded");
+    expect(requests[1]).toContain("previous response did not contain exactly the required structured tool call");
     expect(requests[1]).toContain("Call runner.submit_read_workloads exactly once now");
   });
 
@@ -686,7 +810,7 @@ describe("model-assisted Read workload mapping", () => {
       egressAcknowledged: true,
       clarificationHandler,
       dependencies: { requestJson },
-    })).rejects.toThrow(/READ_WORKLOAD_ASSISTANCE_REQUEST_REPEATED/);
+    })).rejects.toThrow(/READ_WORKLOAD_CLARIFICATION_REFUSED/);
     expect(requestJson).toHaveBeenCalledTimes(2);
     expect(clarificationHandler).toHaveBeenCalledOnce();
   });
@@ -1029,7 +1153,7 @@ describe("model-assisted Read workload mapping", () => {
       egressAcknowledged: true,
       valueRequestHandler,
       dependencies: { requestJson },
-    })).rejects.toThrow(/READ_WORKLOAD_NOT_SUBMITTED/);
+    })).rejects.toThrow(/READ_WORKLOAD_VALUE_REQUEST_REFUSED/);
     expect(valueRequestHandler).not.toHaveBeenCalled();
     expect(requestJson).toHaveBeenCalledTimes(1);
   });

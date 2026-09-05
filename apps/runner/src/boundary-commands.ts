@@ -228,6 +228,7 @@ import {
   type ModelReadValueContextDecision,
   type ModelReadValueRequest,
 } from "./read-workload-model.js";
+import { ReadWorkloadDraftError, readWorkloadDiagnosticLines, type ReadWorkloadDiagnostic } from "./read-workload-diagnostics.js";
 import {
   generateModelReadBoundaryRevision,
   readBoundaryRevisionCatalog,
@@ -3162,16 +3163,24 @@ async function promptReadBoundaryValueContext(input: {
   }
 }
 
-function isRequiredBoundaryToolFailure(error: unknown): error is AskError {
-  return error instanceof AskError && error.code === "ASK_REQUIRED_TOOL_NOT_CALLED";
+function recoverableBoundaryProviderFailure(error: unknown): BoundaryModelDraftFailure | undefined {
+  if (!(error instanceof AskError)) return undefined;
+  if (error.code === "ASK_REQUIRED_TOOL_NOT_CALLED") return { kind: "required_tool" };
+  if (["ASK_PROVIDER_RESPONSE_INVALID", "ASK_TOOL_ARGUMENTS_INVALID"].includes(error.code)) {
+    return { kind: "provider_format", reason: `${error.code}: ${redactCliErrorMessage(error.message)}` };
+  }
+  return undefined;
 }
 
 type BoundaryModelDraftFailure =
   | { kind: "required_tool" }
+  | { kind: "provider_format"; reason: string }
+  | { kind: "read_diagnostic"; diagnostics: ReadWorkloadDiagnostic[] }
   | { kind: "reviewed_grammar"; blockers: string[]; details?: string[] };
 
 function recoverableActionModelDraftFailure(error: unknown): BoundaryModelDraftFailure | undefined {
-  if (isRequiredBoundaryToolFailure(error)) return { kind: "required_tool" };
+  const providerFailure = recoverableBoundaryProviderFailure(error);
+  if (providerFailure) return providerFailure;
   if (!(error instanceof Error)) return undefined;
   if (/^ACTION_SUGGESTION_(?:SET_)?NOT_SUBMITTED:/i.test(error.message)) {
     return { kind: "required_tool" };
@@ -3185,7 +3194,8 @@ function recoverableActionModelDraftFailure(error: unknown): BoundaryModelDraftF
 }
 
 function recoverableActionRuleModelDraftFailure(error: unknown): BoundaryModelDraftFailure | undefined {
-  if (isRequiredBoundaryToolFailure(error)) return { kind: "required_tool" };
+  const providerFailure = recoverableBoundaryProviderFailure(error);
+  if (providerFailure) return providerFailure;
   if (!(error instanceof Error)) return undefined;
   if (/^ACTION_RULE_(?:AUTHORING_)?(?:NOT_SUBMITTED|CLARIFICATION_REQUIRED):/iu.test(error.message)) {
     return { kind: "required_tool" };
@@ -3219,7 +3229,9 @@ function actionRuleModelFailureSummary(message: string): string {
 }
 
 function recoverableReadModelDraftFailure(error: unknown): BoundaryModelDraftFailure | undefined {
-  if (isRequiredBoundaryToolFailure(error)) return { kind: "required_tool" };
+  if (error instanceof ReadWorkloadDraftError) return { kind: "read_diagnostic", diagnostics: error.diagnostics };
+  const providerFailure = recoverableBoundaryProviderFailure(error);
+  if (providerFailure) return providerFailure;
   if (!(error instanceof Error)) return undefined;
   if (/^READ_WORKLOAD_NOT_SUBMITTED:/i.test(error.message)) return { kind: "required_tool" };
   if (/^READ_WORKLOAD_(?:ASSISTANCE_REQUEST_REPEATED|CLARIFICATION_DECLINED|CLARIFICATION_REQUIRED|OPAQUE_METADATA_CLARIFICATION_REQUIRED|VALUE_CONTEXT_REQUIRED):/i.test(error.message)) {
@@ -3238,8 +3250,31 @@ async function promptRunnerGuidedModelFallback(input: {
   failure?: BoundaryModelDraftFailure;
 }): Promise<"runner" | "retry" | "change_model" | "back"> {
   const grammarFailure = input.failure?.kind === "reviewed_grammar" ? input.failure : undefined;
+  const providerFailure = input.failure?.kind === "provider_format" ? input.failure : undefined;
+  const diagnostics = input.failure?.kind === "read_diagnostic" ? input.failure.diagnostics : undefined;
+  const lastDiagnostic = diagnostics?.at(-1);
   const title = `${input.stage.toUpperCase()} MODEL DRAFT FAILED`;
-  const context = grammarFailure
+  const context = lastDiagnostic
+    ? [
+        lastDiagnostic.category === "validation"
+          ? "Runner received the structured submission, but its Read validation rejected it."
+          : lastDiagnostic.category === "provider_response"
+            ? "Runner could not parse the provider response or its tool arguments."
+            : lastDiagnostic.category === "provider_request"
+              ? "The provider request did not complete. This is not a Read workload validation refusal."
+              : "The response did not contain exactly the required Read authoring tool call.",
+        ...lastDiagnostic.reasons.slice(0, 2).map((reason) => `Why: ${reason}`),
+        "No model output became authority and no source query or write ran.",
+        "Keep your job unchanged to retry. View failure details for each attempt.",
+      ]
+    : providerFailure
+      ? [
+          `${boundaryModelLabel(input)} returned a malformed response or tool arguments.`,
+          providerFailure.reason,
+          "No model output became authority and no source query or write ran.",
+          "Retry the same job or choose another model; manual guidance remains optional.",
+        ]
+    : grammarFailure
     ? [
         `${boundaryModelLabel(input)} submitted a structured ${input.stage} draft, but Runner validation refused it.`,
         ...grammarFailure.blockers.slice(0, 4).map((blocker) => `Why: ${blocker}`),
@@ -3247,11 +3282,20 @@ async function promptRunnerGuidedModelFallback(input: {
         "The deterministic path reuses this job and reviewed structural catalog; you still review the exact disabled draft.",
       ]
     : [
-        `${boundaryModelLabel(input)} did not produce the required bounded ${input.stage} authoring tool after its internal correction attempt.`,
+        `${boundaryModelLabel(input)} did not complete the required bounded ${input.stage} authoring tool submission.`,
         "Runner discarded the responses. No model output became authority and no source query or write ran.",
         "The deterministic path uses the same job and reviewed structural catalog; you still review the exact disabled draft.",
       ];
-  const detailsContext = grammarFailure?.details
+  const detailsContext = diagnostics
+    ? [
+        `Provider: ${boundaryModelLabel(input)}`,
+        ...readWorkloadDiagnosticLines(diagnostics),
+        diagnostics.some((diagnostic) => diagnostic.phase === "correction")
+          ? "The internal correction did not complete a valid Read draft."
+          : "No internal correction failure was recorded.",
+        "No model output became authority and no source query or write ran. Existing active authority is unchanged.",
+      ]
+    : grammarFailure?.details
     ? [
         `${boundaryModelLabel(input)} submitted a structured ${input.stage} draft, but Runner validation refused it.`,
         ...grammarFailure.details,
@@ -3264,13 +3308,6 @@ async function promptRunnerGuidedModelFallback(input: {
       const selected = await input.session.chooseOption(
         title,
         [
-          ...(input.allowRunnerFallback === false
-            ? []
-            : [{
-                value: "runner",
-                label: "Continue this job with Runner's deterministic recommendation [recommended]",
-                detail: "No further model requests. Runner uses the same job and reviewed structural catalog.",
-              }]),
           ...(input.allowModelRetry
             ? [
                 {
@@ -3290,6 +3327,13 @@ async function promptRunnerGuidedModelFallback(input: {
             label: `View why ${input.stage} drafting failed`,
             detail: "Shows the exact local failure stage and validation reason without another model request.",
           },
+          ...(input.allowRunnerFallback === false
+            ? []
+            : [{
+                value: "runner",
+                label: "Continue without a model",
+                detail: "Runner's deterministic path uses the same job and reviewed catalog; no further model requests.",
+              }]),
           {
             value: "back",
             label: "Back to Agent job",
@@ -3297,9 +3341,7 @@ async function promptRunnerGuidedModelFallback(input: {
           },
         ],
         {
-          initialValue: input.allowRunnerFallback === false
-            ? input.allowModelRetry ? "retry" : "back"
-            : "runner",
+          initialValue: input.allowModelRetry ? "retry" : "back",
           context,
         },
       );
@@ -5102,10 +5144,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     let mapped: Awaited<ReturnType<typeof generateModelReadWorkload>> | undefined;
     let operatorRetryUsed = false;
     while (!workload && !mapped) {
-      let failure:
-        | { kind: "required_tool" }
-        | { kind: "reviewed_grammar"; blockers: string[] }
-        | undefined;
+      let failure: BoundaryModelDraftFailure | undefined;
       try {
         mapped = await runWithProgress(
           "Mapping requested reads with the selected model",
@@ -5151,7 +5190,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         if (!failure) throw error;
       }
       if (mapped?.analysis.status === "blocked") {
-        failure = {
+        failure = mapped.diagnostics?.length ? { kind: "read_diagnostic", diagnostics: mapped.diagnostics } : {
           kind: "reviewed_grammar",
           blockers: mapped.analysis.blockers,
         };

@@ -162,7 +162,7 @@ describe("model-assisted Safe Action suggestions", () => {
     expect(result.assessments).toHaveLength(1);
     expect(result.assessments[0]?.status).toBe("suggested");
     expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(requests[1]).toContain("previous response was discarded");
+    expect(requests[1]).toContain("previous response did not contain exactly the required structured tool call");
     expect(requests[1]).toContain("Call runner.suggest_safe_actions exactly once now");
   });
 
@@ -699,7 +699,7 @@ describe("model-assisted Safe Action suggestions", () => {
     expect(requests[1]).toContain("that scope used 1 hour");
   });
 
-  it("fails closed after one bounded retry when a provider ignores the required structured suggestion tool", async () => {
+  it("fails closed with the actual response error after one bounded retry of an empty provider response", async () => {
     const requestJson = vi.fn(async () => ({
       status: 200,
       body: {
@@ -718,7 +718,7 @@ describe("model-assisted Safe Action suggestions", () => {
       env: { OPENAI_API_KEY: "provider-test-key" },
       egressAcknowledged: true,
       dependencies: { requestJson },
-    })).rejects.toMatchObject({ code: "ASK_REQUIRED_TOOL_NOT_CALLED" });
+    })).rejects.toMatchObject({ code: "ASK_PROVIDER_RESPONSE_INVALID" });
     expect(requestJson).toHaveBeenCalledTimes(2);
   });
 });

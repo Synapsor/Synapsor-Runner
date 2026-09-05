@@ -17,6 +17,11 @@ Prepared package versions: `@synapsor/runner@1.8.0`,
 
 ### Boundary Assist And Unified Read-to-Action Onboarding
 
+- Read drafting retains sanitized initial/correction diagnostics and distinguishes
+  missing tool calls, malformed provider output, provider request failures, and
+  rejected workloads. Model retry stays first; deterministic guidance remains
+  optional. Mapping instructions request concise descriptions within the same
+  280-character limit enforced by the schema, without discarding the original job.
 - New model-guided Action jobs use the fixed outcome tools even when the caller
   chooses a bounded value. Reviewed `inputs` are typed, bound into immutable
   proofs, and revalidated before execution; they cannot select target identities

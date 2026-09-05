@@ -66,6 +66,7 @@ import {
   READ_WORKLOAD_SET_VERSION,
 } from "./read-workload-assist.js";
 import { generateModelReadWorkload } from "./read-workload-model.js";
+import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
 import { generateModelReadBoundaryRevision } from "./read-boundary-revision-model.js";
 import { AskError } from "./model-ask.js";
 import {
@@ -5588,7 +5589,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 30_000);
 
-  it("retries a refused Action Boundary draft once without restarting the agent job", async () => {
+  it.each(["ASK_REQUIRED_TOOL_NOT_CALLED", "ASK_PROVIDER_RESPONSE_INVALID", "ASK_TOOL_ARGUMENTS_INVALID"])("retries Action drafting after %s without restarting the agent job", async (failureCode) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-action-model-retry-"));
     const inspection = actionTargetInspection();
     const build = buildAutoBoundary({
@@ -5632,8 +5633,8 @@ describe("boundary operator-plane CLI", () => {
       actionAttempt += 1;
       if (actionAttempt === 1) {
         throw new AskError(
-          "ASK_REQUIRED_TOOL_NOT_CALLED",
-          "The model returned prose instead of the required Action Boundary tool.",
+          failureCode,
+          "The initial provider response was refused.",
         );
       }
       const assessment = assessActionSuggestion({
@@ -5701,10 +5702,10 @@ describe("boundary operator-plane CLI", () => {
       expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
       expect(modelActionSuggestionSetGenerator).toHaveBeenCalledTimes(2);
       expect(recoveryChoices).toEqual([[
-        "runner",
         "retry",
         "change_model",
         "details",
+        "runner",
         "back",
       ]]);
       expect(runDelegationActionReview).toHaveBeenCalledOnce();
@@ -5854,7 +5855,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it("continues the same job through Runner guidance when a local model returns prose instead of the required tool", async () => {
+  it.each(["required_tool", "validation", "mixed"] as const)("offers model retry and exact %s details while preserving optional Runner guidance", async (failureKind) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-model-fallback-"));
     const inspection = actionTargetInspection();
     const build = buildAutoBoundary({
@@ -5880,6 +5881,12 @@ describe("boundary operator-plane CLI", () => {
       activated_actions: [],
     }));
     const modelReadWorkloadGenerator = vi.fn(async () => {
+      if (failureKind !== "required_tool") throw new ReadWorkloadDraftError([
+        { attempt: 1, phase: "initial", category: "validation", code: "READ_WORKLOAD_BLOCKED", reasons: ["READ_WORKLOAD_ID_INVALID: allowed[0].id must be one stable lower-case id."] },
+        failureKind === "mixed"
+          ? { attempt: 2, phase: "correction", category: "provider_response", code: "ASK_TOOL_ARGUMENTS_INVALID", reasons: ["The provider returned malformed tool arguments."] }
+          : { attempt: 2, phase: "correction", category: "validation", code: "READ_WORKLOAD_BLOCKED", reasons: ["READ_WORKLOAD_ID_INVALID: allowed[0].id must be one stable lower-case id."] },
+      ]);
       throw new AskError(
         "ASK_REQUIRED_TOOL_NOT_CALLED",
         "The local model returned prose instead of the required authoring tool.",
@@ -5899,7 +5906,8 @@ describe("boundary operator-plane CLI", () => {
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         if (title === "READ BOUNDARY MODEL DRAFT FAILED") {
-          expect(options?.initialValue).toBe("runner");
+          expect(options?.initialValue).toBe("retry");
+          expect(_choices[0]?.value).toBe("retry");
           fallbackChoices.push(title);
           return fallbackChoices.length === 1 ? "details" : "runner";
         }
@@ -5962,10 +5970,18 @@ describe("boundary operator-plane CLI", () => {
         title: "READ BOUNDARY FAILURE DETAILS",
         tone: "danger",
         lines: expect.arrayContaining([
-          expect.stringContaining("required bounded Read Boundary authoring tool"),
+          expect.stringContaining(failureKind === "required_tool"
+            ? "required bounded Read Boundary authoring tool" : "READ_WORKLOAD_ID_INVALID"),
           expect.stringContaining("no source query or write ran"),
         ]),
       }));
+      const failureText = fallbackDetails.map((detail) => detail.lines.join("\n")).join("\n");
+      if (failureKind !== "required_tool") {
+        expect(failureText).toContain("Attempt 1 (initial)");
+        expect(failureText).toContain("Attempt 2 (correction)");
+        expect(failureText).not.toContain("did not produce");
+        if (failureKind === "mixed") expect(failureText).toContain("ASK_TOOL_ARGUMENTS_INVALID");
+      }
       expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
       expect(runDelegationActionReview).toHaveBeenCalledOnce();
       expect(runDelegationActionReview).toHaveBeenCalledWith(expect.objectContaining({
@@ -6063,7 +6079,7 @@ describe("boundary operator-plane CLI", () => {
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         if (title === "READ BOUNDARY MODEL DRAFT FAILED") {
-          expect(options?.initialValue).toBe("runner");
+          expect(options?.initialValue).toBe("retry");
           fallbackContexts.push(options?.context ?? []);
           fallbackOptionValues.push(choices.map((choice) => choice.value));
           return "runner";
@@ -6098,10 +6114,10 @@ describe("boundary operator-plane CLI", () => {
       expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
       expect(fallbackContexts).toHaveLength(1);
       expect(fallbackOptionValues).toEqual([[
-        "runner",
         "retry",
         "change_model",
         "details",
+        "runner",
         "back",
       ]]);
       expect(fallbackContexts[0]?.join("\n")).toContain("dimensions");
@@ -6215,10 +6231,10 @@ describe("boundary operator-plane CLI", () => {
 
       expect(modelReadWorkloadGenerator).toHaveBeenCalledTimes(2);
       expect(recoveryChoices).toEqual([[
-        "runner",
         "retry",
         "change_model",
         "details",
+        "runner",
         "back",
       ]]);
       const reviewed = await loadBoundaryReviewContext(root);
