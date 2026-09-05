@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
 import path from "node:path";
 import mysql from "mysql2/promise";
 import { Pool, type PoolClient } from "pg";
@@ -1688,6 +1689,8 @@ export function projectScopedExploreResultForModel(input: {
     }
   }
   const columns = new Set(modelWithheldExploreOutputColumns(plan, input.boundary));
+  const equalityWithheld = new Set(plan.kind === "rows" ? [...columns].filter((field) =>
+    reviewedModelAnalysisOperations(resourceFor(input.boundary, plan.resource), field).length === 0) : []);
   if (columns.size === 0) {
     return finalize(projected, false, operatorMetadataWithheld);
   }
@@ -1701,7 +1704,9 @@ export function projectScopedExploreResultForModel(input: {
       for (const column of columns) {
         if (!Object.hasOwn(row, column)) continue;
         const value = row[column];
-        const key = JSON.stringify(value);
+        // Raw-only private access does not grant equality analysis. Keep cell
+        // tokens unlinkable; separately reviewed analytical results retain it.
+        const key = equalityWithheld.has(column) ? `private-cell:${nextToken}` : JSON.stringify(value);
         let token = tokens.get(key);
         if (!token) {
           token = `[withheld:${nonce}:${nextToken}]`;
@@ -1717,6 +1722,7 @@ export function projectScopedExploreResultForModel(input: {
     values_withheld: true,
     tokenized_columns: [...columns].sort(),
     token_scope: "this_tool_response_only",
+    ...(equalityWithheld.size ? { value_equality_withheld_columns: [...equalityWithheld].sort() } : {}),
   };
   return finalize(projected, true, operatorMetadataWithheld);
 }

@@ -18,6 +18,7 @@ import {
 import { renderTerminalSynapsorDslFrame } from "./terminal-syntax.js";
 import { createTerminalModelStream } from "./terminal-model-stream.js";
 import { authoringExplanationFailure, type AuthoringExplanationFailure } from "./authoring-explanation-failure.js";
+import type { ReviewSection } from "./read-boundary-review-view.js";
 
 export type BoundaryAuthoringSpeaker = "runner" | "model";
 type BoundaryAuthoringTone = "normal" | "success" | "warning" | "danger";
@@ -63,7 +64,7 @@ type ChoiceInput = {
   message: string;
   options: BoundaryPromptChoice[];
   initialValue?: string;
-  exactDetails?: { title: string; lines: string[] };
+  exactDetails?: { title: string; lines: string[]; sections?: ReviewSection[] };
 };
 
 const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 32;
@@ -493,9 +494,16 @@ export function createBoundaryAuthoringChat(input: {
           ? theme.danger
           : theme.key;
     const facts = meaningfulContext(lines);
+    const factStyle = (line: string, index: number) => {
+      if (/^\|\s*DECISION\s*\|/u.test(line)) return theme.bold(line);
+      if (/^\|\s*(?:Privacy decision|UNMET REQUEST|Automatic completion)\s*\|/u.test(line)) return theme.warning(line);
+      if (/^\|/u.test(line)) return line;
+      if (/^\+-/u.test(line)) return theme.dim(line);
+      return index === 0 ? theme.value(line) : theme.dim(line);
+    };
     const rendered = [
       `${transcriptIndent}${style(`${marker} ${transcriptText(title)}`)}`,
-      ...facts.map((line, index) => `${transcriptIndent}  ${index === 0 ? theme.value(line) : theme.dim(line)}`),
+      ...facts.map((line, index) => `${transcriptIndent}  ${factStyle(line, index)}`),
       "",
     ].flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
     writeTranscript(rendered.join("\n"));
@@ -577,7 +585,7 @@ export function createBoundaryAuthoringChat(input: {
       lines: facts,
     };
   };
-  const renderedDetails = (record: { title: string; lines: string[] }) => {
+  const renderedDetails = (record: { title: string; lines: string[] }, wrap = true) => {
     const detailLines = record.lines.map((line) => {
       const safe = transcriptText(line);
       if (!safe.trim()) return "";
@@ -588,12 +596,17 @@ export function createBoundaryAuthoringChat(input: {
       if (/^REVIEW BEFORE ACTIVATION:/u.test(safe)) return theme.warning(safe);
       if (/^[A-Z][A-Z0-9 /+_-]{2,}:?$/u.test(safe.trim())) return theme.title(safe.trim().replace(/:$/u, ""));
       const fact = safe.match(/^([^:]{1,40}):\s+(.+)$/u);
-      if (fact && !/^\s*["{\[|]/u.test(safe)) return `${theme.dim(`${fact[1]!.trim()}:`)} ${theme.value(fact[2]!.trim())}`;
+      if (fact && !/^\s*["{\[|]/u.test(safe)) {
+        const value = fact[2]!.trim();
+        const style = fact[1] === "Raw access" ? value === "RUNNER ONLY" ? theme.runnerOnly
+          : value === "KEPT OUT" ? theme.keptOut : value === "MODEL RAW" ? theme.visible : theme.dim : theme.value;
+        return `${theme.dim(`${fact[1]!.trim()}:`)} ${style(value)}`;
+      }
       return safe;
     });
     return [theme.scope(record.title), ...detailLines, "",
       theme.dim("No model request, authority change, source query, or source write occurred.")]
-      .flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
+      .flatMap((line) => wrap ? wrapStyledTerminalLine(line, transcriptWidth()) : [line]);
   };
   const showDetails = () => {
     lastTranscriptTurn = "checkpoint";
@@ -616,8 +629,32 @@ export function createBoundaryAuthoringChat(input: {
     await livePending;
     rememberDetails(title, lines);
     lastTranscriptTurn = "checkpoint";
-    if (io.review && latestDetails) await io.review("EXACT REVIEW - READ ONLY", renderedDetails(latestDetails));
+    // The pager owns wrapping so it can reflow both narrower and wider resizes.
+    if (io.review && latestDetails) await io.review("EXACT REVIEW - READ ONLY", renderedDetails(latestDetails, false));
     else showDetails();
+  };
+  const browseReviewSections = async (title: string, sections: ReviewSection[]): Promise<void> => {
+    if (!io.choose) {
+      const flatten = (items: ReviewSection[]): string[] => items.flatMap((section) =>
+        [section.title, ...section.lines, ...flatten(section.children ?? [])]);
+      await showReviewDetails(title, flatten(sections));
+      return;
+    }
+    let initialValue: string | undefined;
+    while (true) {
+      const selected = await io.choose({ title, message: "Local review only. Select a section; Esc returns without changing the pending revision.",
+        ...(initialValue ? { initialValue } : {}),
+        options: [...sections.map((section, index) => ({ value: `section:${index}`, label: section.title })),
+          { value: "back", label: "Return" }],
+      });
+      if (!selected || selected === "back") return;
+      const section = sections[Number(selected.slice("section:".length))];
+      if (!section) continue;
+      initialValue = selected;
+      if (section.children?.length) {
+        await browseReviewSections(section.title, [{ id: "overview", title: "Overview", lines: section.lines }, ...section.children]);
+      } else await showReviewDetails(section.title, section.lines);
+    }
   };
   const showDiff = () => {
     lastTranscriptTurn = "checkpoint";
@@ -887,7 +924,7 @@ export function createBoundaryAuthoringChat(input: {
     const retainExact = () => {
       if (exact) rememberDetails(exact.title, [...exact.lines, ...(failure ? ["", "EXPLANATION DIAGNOSTICS",
         `Category: ${failure.category}`, `Code: ${failure.code}`, `Retry possible: ${failure.retryable ? "yes" : "after correcting the reported issue"}`,
-        failure.guidance, "Pending authority revision unchanged."] : [])]);
+        failure.guidance, ...(failure.mismatch ? [`Mismatch: ${failure.mismatch}`] : []), "Pending authority revision unchanged."] : [])]);
     };
     retainExact();
     const hasExactDetailsChoice = choice.options.some((option) =>
@@ -921,11 +958,14 @@ export function createBoundaryAuthoringChat(input: {
           "The pending revision is unchanged. Exact details work without the model; diagnostics are included there.",
         ], "warning");
         retainExact();
-        if (choice.exactDetails) checkpoint("LOCAL REVIEW SUMMARY", request.context, "normal");
+        if (choice.exactDetails && !choice.exactDetails.sections) checkpoint("LOCAL REVIEW SUMMARY", request.context, "normal");
       }
     };
 
     await explain();
+    if (failure && choice.exactDetails?.sections) {
+      checkpoint("Model explanation unavailable", ["Local review is ready below. Exact details include diagnostics; retry is optional."], "warning");
+    }
     if (choice.exactDetails) checkpoint("READ REVIEW SUMMARY", request.context, "normal");
     retainExact();
     if (verifiedCheckpointTitle && request.context.length) {
@@ -958,7 +998,15 @@ export function createBoundaryAuthoringChat(input: {
       if (selected === "__retry_boundary_explanation__") { await explain(lastQuestion); continue; }
       if (selected === "details" && choice.exactDetails) {
         retainExact();
-        await showReviewDetails(latestDetails!.title, latestDetails!.lines);
+        if (choice.exactDetails.sections) {
+          await browseReviewSections(exact!.title, [...choice.exactDetails.sections, {
+            id: "diagnostics", title: "Explanation diagnostics", lines: failure
+              ? [`Category: ${failure.category}`, `Code: ${failure.code}`, `Retry possible: ${failure.retryable ? "yes" : "no"}`, failure.guidance,
+                ...(failure.mismatch ? [`Mismatch: ${failure.mismatch}`] : []),
+                "No correction was applied to authority. Explanation retry is optional; local details remain available."]
+              : ["No explanation failure recorded for this pending review."],
+          }]);
+        } else await showReviewDetails(latestDetails!.title, latestDetails!.lines);
         continue;
       }
       if (selected === viewRunnerDetailsChoiceValue) {

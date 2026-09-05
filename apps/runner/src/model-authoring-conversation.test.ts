@@ -281,6 +281,7 @@ describe("model-assisted Boundary authoring conversation", () => {
 
   it("drops narration that turns an approval ceiling into a threshold", async () => {
     const conversation = createModelAuthoringConversation();
+    const failure = vi.fn();
     const requestJson = vi.fn(async () => ({
       status: 200,
       body: {
@@ -304,12 +305,16 @@ describe("model-assisted Boundary authoring conversation", () => {
         conversation,
       },
       operatorMessage: "Review this policy.",
+      onFailure: failure,
       validatedFacts: [
         "This action | 24 hours | 10 approvals",
         "Anything above the reviewed ceiling requires human review.",
       ],
       egressAcknowledged: true,
     })).resolves.toBeUndefined();
+    expect(failure).toHaveBeenCalledWith(expect.objectContaining({
+      code: "NARRATION_VALIDATION_REJECTED", mismatch: expect.stringMatching(/ceiling/iu),
+    }));
     expect(modelAuthoringHistory(conversation)).toEqual([]);
   });
 

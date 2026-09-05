@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Buffer } from "node:buffer";
+import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   assertDatabaseGrammarFeature,
@@ -161,6 +162,8 @@ export function reviewedBoundaryOperationRepairFields(
 }
 
 export type BoundaryResourceReviewRequest = {
+  /** Remove model inference grants, retaining separately reviewed private access. */
+  private_model_fields?: string[];
   resource_id: string;
   metadata?: {
     label?: string | null;
@@ -1182,6 +1185,9 @@ export async function prepareBoundaryReviewMutationBatch(
     assertRequestedExposureState(request, next);
     candidate = next;
   }
+  for (const request of requests) {
+    if (request.private_model_fields?.length) restrictPrivateFieldAnalysis(candidate, request.resource_id, request.private_model_fields);
+  }
   const reviewed = reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
   // Every request must survive later resource rebuilds and final normalization.
   // The generated baseline already includes the whole batch, so intermediate
@@ -2042,6 +2048,9 @@ function buildReviewedCandidate(input: {
     relationship.unmatched_rows = input.request.nullable_relationship.unmatched_rows;
   }
   pruneRelationshipsOutsideBoundary(candidate);
+  if (input.request.private_model_fields?.length) {
+    restrictPrivateFieldAnalysis(candidate, input.request.resource_id, input.request.private_model_fields);
+  }
   assertRequestedRelationshipsRetained(input.request, input.generated, candidate);
   return reviewExplorationBoundaryCandidate(input.generated, candidate).candidate;
 }
@@ -2617,6 +2626,11 @@ function assertBindingsEqual(
 
 function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest): void {
   if (!request.resource_id.trim()) throw new Error("Boundary resource review requires a resource ID.");
+  if (request.private_model_fields !== undefined && (!Array.isArray(request.private_model_fields)
+    || request.private_model_fields.some((field) => typeof field !== "string"
+      || !request.withhold_from_model_fields?.includes(field)))) {
+    throw new Error("Private model fields require matching Runner-only decisions.");
+  }
   if (request.include && request.exclude) throw new Error("Boundary resource review cannot include and exclude the same resource.");
   const tenantModes = [
     request.tenant_key,
@@ -2789,6 +2803,7 @@ function validateBoundaryRequestAgainstResource(
     ...(request.withhold_from_model_fields ?? []),
     ...(request.allow_reviewed_fields ?? []),
     ...(request.selectable_fields ?? []),
+    ...(request.private_model_fields ?? []),
     ...(request.filterable_fields ?? []),
     ...(request.sortable_fields ?? []),
     ...(request.groupable_fields ?? []),
@@ -2933,6 +2948,13 @@ function assertRequestedExposureState(
       );
     }
   }
+  if (request.private_model_fields?.length) {
+    const narrowed = structuredClone(candidate);
+    restrictPrivateFieldAnalysis(narrowed, request.resource_id, request.private_model_fields);
+    if (canonicalJsonDigest(narrowed) !== canonicalJsonDigest(candidate)) {
+      throw new Error(`Reviewed private-analysis restriction for ${request.resource_id} was not reflected in the disabled candidate.`);
+    }
+  }
   for (const field of request.allow_reviewed_fields ?? []) {
     if (!resource.selectable_fields.includes(field)
       || resource.kept_out_fields.includes(field)
@@ -3041,6 +3063,7 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
       : {}),
     keep_out_fields: [...(request.keep_out_fields ?? [])].sort(),
     withhold_from_model_fields: [...(request.withhold_from_model_fields ?? [])].sort(),
+    ...(request.private_model_fields !== undefined ? { private_model_fields: [...request.private_model_fields].sort() } : {}),
     allow_reviewed_fields: [...(request.allow_reviewed_fields ?? [])].sort(),
     selectable_fields: sortedOrNull(request.selectable_fields),
     filterable_fields: sortedOrNull(request.filterable_fields),

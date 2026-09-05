@@ -55,6 +55,41 @@ function memoryIo(input: {
 }
 
 describe("Boundary authoring chat", () => {
+  it("passes complete logical lines to the pager for narrow and wide reflow", async () => {
+    const memory = memoryIo({ columns: 46 });
+    const review = vi.fn(async (_title: string, _lines: string[]) => undefined);
+    memory.io.review = review;
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const line = "Scope: " + "long reviewed field and scope information ".repeat(4);
+    await chat.session.showReviewDetails!("Exact field", [line]);
+    expect(review.mock.calls[0]![1]).toContain(line.trim());
+    chat.close();
+  });
+  it("browses resources and diagnostics without dumping JSON or changing the pending decision", async () => {
+    const memory = memoryIo({ choices: ["details", "section:0", "section:1", "back", "section:2", "back", "activate"] });
+    const reviews: string[] = [];
+    memory.io.review = async (_title, lines) => { reviews.push(lines.join("\n")); };
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: true });
+    chat.setPermissionGuide!(async (request) => { request.onFailure?.({ code: "NARRATION_VALIDATION_REJECTED", category: "Explanation failed validation",
+      retryable: true, guidance: "Use local review", mismatch: "Explanation claimed authority enabled." }); return undefined; });
+    const options = { initialValue: "finish", context: ["Pending customer Read activation"], exactDetails: {
+      title: "Reviewed revision", lines: ["RAW_JSON_MUST_NOT_BE_DUMPED"], sections: [
+        { id: "resources", title: "Resources", lines: ["1 resource"], children: [
+          { id: "r17", title: "r17 | RUNNER ONLY", lines: ["Raw access: Runner only", "Model analysis: none"] },
+        ] },
+        { id: "json", title: "Raw JSON", lines: ["RAW_JSON_MUST_NOT_BE_DUMPED"] },
+      ],
+    } };
+    expect(await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
+      { value: "activate", label: "Activate" }, { value: "details", label: "View exact details" }, { value: "finish", label: "Leave disabled" },
+    ], options)).toBe("activate");
+    expect(reviews).toHaveLength(2);
+    expect(reviews[0]).toContain("Model analysis:");
+    expect(reviews[1]).toContain("Explanation claimed authority enabled.");
+    expect(memory.writes.join("") + reviews.join("\n")).not.toContain("RAW_JSON_MUST_NOT_BE_DUMPED");
+    expect(options.exactDetails.lines).toEqual(["RAW_JSON_MUST_NOT_BE_DUMPED"]);
+    chat.close();
+  });
   it("keeps exact authority details independent of summary and failed explanations", async () => {
     const memory = memoryIo({ choices: ["details", "__ask_boundary_model__", "details", "__retry_boundary_explanation__", "activate"],
       reads: ["What fields and customer scope are enabled?"] });

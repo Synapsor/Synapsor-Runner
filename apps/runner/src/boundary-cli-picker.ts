@@ -193,7 +193,7 @@ export type BoundaryPromptChoice = {
 };
 
 type BoundaryChoicePromptOptions = BoundaryPromptOptions & {
-  exactDetails?: { title: string; lines: string[] };
+  exactDetails?: { title: string; lines: string[]; sections?: import("./read-boundary-review-view.js").ReviewSection[] };
   initialValue?: string;
   requireExplicitSelection?: boolean;
 };

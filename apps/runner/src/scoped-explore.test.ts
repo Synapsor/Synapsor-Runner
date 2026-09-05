@@ -35,6 +35,10 @@ import {
 import { createScopedExploreMcpServer, projectDescribeDataForModel } from "./authoring-mcp.js";
 import { compileOperatorExploreEvidence } from "./explore-operator-evidence.js";
 import { captureExploreParameterizedSql } from "./explore-parameterized-sql.js";
+import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
+import { readBoundaryReviewSections, readRevisionDiff } from "./read-boundary-review-view.js";
+import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
+import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 
 const temporaryRoots: string[] = [];
 
@@ -43,6 +47,53 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
+  it("distinguishes raw withholding from private analysis and refuses inference plans after privacy revision", async () => {
+    const fixture = await activatedFixture();
+    const original = structuredClone(fixture.boundary);
+    const resource = fixture.boundary.pack.resources.find((item) => item.id === "public.subscriptions")!;
+    resource.model_withheld_fields = ["region"];
+    resource.count_distinct_fields.push("region");
+    const filterPlan = { kind: "rows", resource: resource.id, select: ["region"], where: [{ field: "region", op: "eq", value: "west" }] };
+    const inferencePlans = [filterPlan,
+      { kind: "rows", resource: resource.id, select: ["region"], order_by: [{ field: "region", direction: "asc" }] },
+      { kind: "aggregate", resource: resource.id, measures: [{ function: "count" }], dimensions: [{ field: "region" }] },
+      { kind: "aggregate", resource: resource.id, measures: [{ function: "count_distinct", field: "region" }] },
+    ];
+    // Existing raw-withheld analytical policies remain compatible until revised.
+    for (const plan of inferencePlans) expect(() => validateExplorePlan(plan, fixture.boundary)).not.toThrow();
+    const analyticalRows = projectScopedExploreResultForModel({ tool: "app.explore_data", boundary: fixture.boundary,
+      arguments: { plan: { kind: "rows", resource: resource.id, select: ["region"] } },
+      result: { ok: true, data: [{ region: "west" }, { region: "west" }] } });
+    const analyticalTokens = analyticalRows.value.data as Array<{ region: string }>;
+    expect(analyticalTokens[0]!.region).toBe(analyticalTokens[1]!.region);
+    const before = { ...structuredClone(fixture.boundary), activation: "disabled_unreviewed" as const, unresolved_decisions: [] };
+    const candidate: ExplorationBoundaryDraft = { ...structuredClone(fixture.boundary), activation: "disabled_unreviewed", unresolved_decisions: [] };
+    restrictPrivateFieldAnalysis(candidate, resource.id, ["region"]);
+    fixture.boundary.pack = candidate.pack;
+    const revised = candidate.pack.resources.find((item) => item.id === resource.id)!;
+    expect(revised.selectable_fields).toContain("region");
+    expect(revised.model_withheld_fields).toContain("region");
+    expect(revised.tenant_key).toBe(resource.tenant_key);
+    for (const plan of inferencePlans) expect(() => validateExplorePlan(plan, fixture.boundary)).toThrow();
+    const rawResult = { ok: true, data: [{ region: "west" }, { region: "west" }, { region: "east" }], source_database_changed: false };
+    const projected = projectScopedExploreResultForModel({ tool: "app.explore_data", boundary: fixture.boundary,
+      arguments: { plan: { kind: "rows", resource: resource.id, select: ["region"] } }, result: rawResult });
+    const tokens = (projected.value.data as Array<{ region: string }>).map((row) => row.region);
+    expect(new Set(tokens).size).toBe(3);
+    expect(projected.value.model_egress).toMatchObject({ value_equality_withheld_columns: ["region"] });
+    expect(rawResult.data[0]!.region).toBe("west");
+    expect(JSON.stringify(projected.value)).not.toMatch(/west|east/);
+    const field = readBoundaryRevisionCatalog(candidate).resources.find((item) => item.id === resource.id)!.fields.find((item) => item.id === "region")!;
+    expect(field).toMatchObject({ current_exposure: "runner_only", raw_return: false, model_operations: [] });
+    const diff = readRevisionDiff(before, candidate);
+    expect(diff.lines[0]).toContain("1 changed resource-qualified fields");
+    expect(diff.children![0]!.lines.join("\n")).toContain("Model analysis after: none");
+    const sections = readBoundaryReviewSections({ boundary: candidate, digest: "test-digest", changes: diff });
+    expect(sections.map((item) => item.id)).toEqual(["resources", "changes", "scope", "dependencies", "json"]);
+    expect(sections[0]!.lines.join("\n")).not.toContain('"activation"');
+    expect(sections.at(-1)!.lines.join("\n")).toContain("disabled_unreviewed");
+    expect(original.activation).toEqual(fixture.boundary.activation);
+  });
   it("keeps all four tools discoverable before Action activation and dispatches reviewed inputs", async () => {
     const fixture = await activatedFixture();
     const runtime = await createScopedExploreRuntime({

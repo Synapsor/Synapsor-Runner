@@ -4978,8 +4978,9 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised", "repair_on_resume", "privacy_retry"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
-    const writeback = posture === "repair_on_resume" ? "proposal_only" : posture === "privacy_retry" ? "supervised" : posture;
+  it.each(["proposal_only", "supervised", "repair_on_resume", "privacy_retry", "guided_privacy", "decline_privacy"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+    const writeback = posture === "supervised" || posture === "privacy_retry" ? "supervised" : "proposal_only";
+    const guidedPrivacy = posture === "guided_privacy" || posture === "decline_privacy";
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-semantic-action-"));
     const inspection = principalScopeInspection();
     const build = buildAutoBoundary({
@@ -4995,7 +4996,7 @@ describe("boundary operator-plane CLI", () => {
       inspectedSchema: "public",
     });
     const operatorJob = "When an authenticated customer's own scheduled service visit needs follow-up, let the agent request one bounded maintenance action."
-      + (posture === "proposal_only" ? "" : " Automatically approve and complete eligible follow-ups.");
+      + (writeback === "proposal_only" && posture !== "repair_on_resume" ? "" : " Automatically approve and complete eligible follow-ups.");
     const modelBoundaryJobPlanner = vi.fn(async () => ({
       state: "planned" as const,
       read_mode: "create" as const,
@@ -5207,6 +5208,7 @@ describe("boundary operator-plane CLI", () => {
     let readActivationReviewCount = 0;
     const rememberFailureDetails = vi.fn();
     const session: BoundaryReviewInteractiveSession = {
+      terminalColumns: 80,
       chooseResource: async (_resources, _overview, options) => {
         boundaryListStarts.push(options?.startAtBoundaryList);
         return undefined;
@@ -5220,6 +5222,11 @@ describe("boundary operator-plane CLI", () => {
       chooseOption: async (title, options, choiceOptions) => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
+        if (title === "SAVE DISABLED PRIVACY REVISION") {
+          expect(choiceOptions?.exactDetails?.sections?.[0]?.id).toBe("changes");
+          expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(preRevisionReadDigest);
+          return posture === "decline_privacy" ? "back" : "save";
+        }
         if (title === "ACTION BOUNDARY MODEL DRAFT FAILED") {
           semanticRecoveryChoices.push(options.map((option) => option.value));
           semanticRecoveryContexts.push(choiceOptions?.context ?? []);
@@ -5230,10 +5237,10 @@ describe("boundary operator-plane CLI", () => {
           expect(review).toContain("Read review -> Action review");
           expect(review).toContain(posture === "repair_on_resume" ? "UNMET REQUEST:" : writeback === "supervised" ? "execution review PENDING" : "Execution: proposal-only");
           expect(review).not.toMatch(/\+\d+ more|small-group minimum|fields per|1000 queries/u);
-          if (writeback === "supervised") expect(review).toContain("verify the writer");
+          if (writeback === "supervised") expect(review).toContain("Once execution is enabled");
           readReviewChoiceValues.push(options.map((option) => option.value));
           readActivationReviewCount += 1;
-          return readActivationReviewCount <= (posture === "privacy_retry" ? 2 : 1) ? "revise_model" : "finish";
+          return readActivationReviewCount <= (posture === "privacy_retry" ? 2 : 1) ? guidedPrivacy ? "privacy" : "revise_model" : "finish";
         }
         throw new Error(`Unexpected semantic Action choice: ${title}`);
       },
@@ -5283,8 +5290,16 @@ describe("boundary operator-plane CLI", () => {
       expect(modelBoundaryJobPlanner).toHaveBeenCalledWith(expect.objectContaining({ jobIntent: operatorJob }));
       expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
       expect(clarificationAnswer).toBe("At most ten proposals in a rolling 24 hours.");
-      expect(semanticChat.readOperator).toHaveBeenCalledTimes(posture === "privacy_retry" ? 4 : 3);
+      expect(semanticChat.readOperator).toHaveBeenCalledTimes(guidedPrivacy ? 2 : posture === "privacy_retry" ? 4 : 3);
       expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledTimes(posture === "privacy_retry" ? 2 : 1);
+      if (posture === "decline_privacy") {
+        const unchanged = await loadBoundaryReviewContext(root);
+        expect(unchanged.bundle.candidate_digest).toBe(preRevisionReadDigest);
+        expect(unchanged.candidate.pack.resources[0]!.model_withheld_fields ?? []).not.toContain("id");
+        expect(unchanged.candidate.activation).toBe("disabled_unreviewed");
+        expect(semanticChat.rememberDetails).not.toHaveBeenCalledWith("READ BOUNDARY REVISION", expect.anything());
+        return;
+      }
       if (posture === "privacy_retry") {
         expect(modelReadBoundaryRevisionGenerator.mock.calls[1]![0].instruction).toBe(
           "Keep the service visit id private and use opaque references instead.",
@@ -5296,10 +5311,10 @@ describe("boundary operator-plane CLI", () => {
       }
       const readRevisionDetails = vi.mocked(semanticChat.rememberDetails).mock.calls
         .find(([title]) => title === "READ BOUNDARY REVISION");
-      expect(readRevisionDetails).toEqual([
+      expect(readRevisionDetails, JSON.stringify(vi.mocked(semanticChat.rememberDetails).mock.calls)).toEqual([
         "READ BOUNDARY REVISION",
         expect.arrayContaining([
-          "public.service_visits.id: Model + Runner -> Runner only",
+          "public.service_visits.id: NO RAW RETURN -> RUNNER ONLY",
           expect.stringMatching(/^Read digest changed: sha256:.+ -> sha256:.+$/),
           "Dependent Action revision: rebuilt and revalidated against the new exact Read digest",
           "Read authority: unchanged",
@@ -5311,6 +5326,7 @@ describe("boundary operator-plane CLI", () => {
       expect(readReviewChoiceValues[0]).toEqual([
         "activate",
         ...(posture === "repair_on_resume" ? ["prepare_execution"] : []),
+        "privacy",
         "revise_model",
         "details",
         "finish",
@@ -5407,6 +5423,7 @@ describe("boundary operator-plane CLI", () => {
       });
       let executionPrepared = false;
       const resumedSession: BoundaryReviewInteractiveSession = {
+        terminalColumns: 80,
         chooseResource: async () => undefined,
         editFieldTiers: async () => undefined,
         promptText: async (prompt) => {
@@ -6793,7 +6810,7 @@ describe("boundary operator-plane CLI", () => {
     }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
     const writes: string[] = [];
     const reviews: string[] = [];
-    const choices = ["details", "__ask_boundary_model__", "details", "activate"];
+    const choices = ["details", "section:0", "section:1", "section:1", "back", "back", "section:2", "section:4", "back", "__ask_boundary_model__", "details", "section:5", "back", "activate"];
     const guide = vi.fn(async () => { throw new AskError("ASK_PROVIDER_TIMEOUT", "private-provider-body"); });
     let digest: string;
     let candidateBefore: string;
@@ -6801,9 +6818,10 @@ describe("boundary operator-plane CLI", () => {
       columns: () => 76,
       read: async () => "What may the customer read?",
       choose: async (choice) => {
-        expect(choice.title).toBe("PERMISSION REQUIRED");
-        expect(choice.initialValue).toBe("finish");
-        expect(choice.options.find((option) => option.value === "finish")?.label).not.toContain("recommended");
+        if (choice.title === "PERMISSION REQUIRED") {
+          expect(choice.initialValue).toBe("finish");
+          expect(choice.options.find((option) => option.value === "finish")?.label).not.toContain("recommended");
+        }
         return choices.shift();
       },
       review: async (_title, lines) => {
@@ -6832,16 +6850,16 @@ describe("boundary operator-plane CLI", () => {
       expect(summary.split("\n").length).toBeLessThanOrEqual(6);
       await expect(boundaryReviewCommandInternal(["--project-root", root, "--access"], async () => inspection,
         chat.session)).resolves.toBe(0);
-      expect(reviews, writes.join("\n")).toHaveLength(2);
+      expect(reviews, writes.join("\n")).toHaveLength(4);
       expect(guide).toHaveBeenCalledTimes(2);
-      for (const review of reviews) {
-        for (const fact of ["public.service_visits", "scheduled_at", "tenant_id", "Model + Runner", "Runner only", "Kept out", "Tenant scope", "Query volume", "COMPLETE REVIEWED REVISION (JSON)", digest]) {
-          expect(review.replace(/\s+/gu, "")).toContain(fact.replace(/\s+/gu, ""));
-        }
-        expect(review.split("\n").filter((line) => /^\s*[+|]/u.test(line)).every((line) => line.length <= 72)).toBe(true);
+      for (const fact of ["public.service_visits", "scheduled_at", "tenant_id", "trusted_context", "budgets", digest]) {
+        expect(reviews.join("\n").replace(/\s+/gu, "")).toContain(fact.replace(/\s+/gu, ""));
       }
-      expect(reviews[1]).toContain("ASK_PROVIDER_TIMEOUT");
-      expect(writes.join("")).toContain("LOCAL REVIEW SUMMARY");
+      expect(reviews[0]).not.toContain('"activation"');
+      expect(reviews[3]).toContain("ASK_PROVIDER_TIMEOUT");
+      expect(writes.join("").match(/READ REVIEW SUMMARY/gu)).toHaveLength(1);
+      expect(writes.join("")).not.toContain("LOCAL REVIEW SUMMARY");
+      expect(writes.join("")).toContain("Exact details work without the model");
       expect(writes.join("")).not.toContain("private-provider-body");
       expect((await loadActivatedExplorationBoundaries(root))[0]?.activation.digest).toBe(digest);
       expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(digest);
@@ -7092,9 +7110,10 @@ describe("boundary operator-plane CLI", () => {
       expect(replacementChoices[0]?.labels).toContain(
         "Keep current active Read Boundary and finish",
       );
-      expect(replacementChoices[0]?.context.join("\n")).toContain(
-        `Removes active tables (1): ${removed.id}`,
-      );
+      const replacementReview = replacementChoices[0]!.context;
+      expect(replacementReview.map((line) => line.split("|")[1]?.trim() ?? line)
+        .join(" ").replace(/\s+/gu, " ")).toContain("Removes active tables (1)");
+      expect(replacementReview.join("\n")).toContain(removed.id);
       expect((await loadActivatedExplorationBoundaries(root)).find((boundary) =>
         boundary.pack.name === build.exploration_boundary.pack.name)?.activation.digest
       ).toBe(initialDigest);
@@ -7302,7 +7321,9 @@ describe("boundary operator-plane CLI", () => {
       const bundle = (await loadBoundaryReviewContext(root)).bundle;
       const plain = formatFocusedBoundaryActivationReview(bundle, false, true, 76);
       const styled = formatFocusedBoundaryActivationReview(bundle, true, true, 76);
-      const normalized = plain.replace(/\s+/gu, " ");
+      // Rejoin the note column independently of wrapped field names and borders.
+      const normalized = plain.split("Reviewer notes\n")[1]!.split("\n")
+        .map((line) => line.split("|")[2] ?? line).join(" ").replace(/\s+/gu, " ");
       expect(plain).toContain("READ TABLE 1/1");
       expect(plain).toContain("Field access:");
       expect(plain).toContain("Model + Runner");
@@ -11601,6 +11622,7 @@ describe("boundary operator-plane CLI", () => {
       expect(before.candidate.pack.resources).toHaveLength(2);
       const requests = before.candidate.pack.resources.map((resource) => ({
         resource_id: resource.id, withhold_from_model_fields: ["id", "scheduled_at"],
+        private_model_fields: ["id", "scheduled_at"],
         actor: "privacy-reviewer", reason: "Keep exact identifiers and verification fields private.",
       }));
       const preview = await prepareBoundaryReviewMutationBatch(root, requests, async () => inspection);
@@ -11609,6 +11631,12 @@ describe("boundary operator-plane CLI", () => {
         expect(resource.model_withheld_fields).toEqual(["id", "scheduled_at"]);
         expect(resource.selectable_fields).toEqual(expect.arrayContaining(["id", "scheduled_at", "status"]));
         expect(resource.kept_out_fields).not.toEqual(expect.arrayContaining(["id"]));
+        for (const field of ["id", "scheduled_at"]) {
+          expect(resource.filterable_fields[field]).toBeUndefined();
+          expect(resource.sortable_fields).not.toContain(field);
+          expect(resource.count_distinct_fields).not.toContain(field);
+          expect(resource.time_bucket_fields[field]).toBeUndefined();
+        }
       }
       expect((await loadBoundaryReviewContext(root)).candidate).toEqual(before.candidate);
       // Keep the final consistency check even for callers outside model chat.

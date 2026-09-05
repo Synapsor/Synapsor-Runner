@@ -233,10 +233,12 @@ import { ReadWorkloadDraftError, readWorkloadDiagnosticLines, type ReadWorkloadD
 import {
   generateModelReadBoundaryRevision,
   readBoundaryRevisionCatalog,
+  reviewedModelAnalysisOperations,
   type ReadBoundaryFieldExposure,
   type ModelReadBoundaryRevisionResult,
 } from "./read-boundary-revision-model.js";
 import { parseReadPolicySettings } from "./read-boundary-policy-revision.js";
+import { readBoundaryReviewSections, readRevisionDiff, loadReadReviewDiff, saveReadReviewDiff, type ReviewSection } from "./read-boundary-review-view.js";
 import {
   READ_WORKLOAD_ANALYSIS_VERSION,
   analyzeReadWorkloadSet,
@@ -3963,7 +3965,9 @@ type ReadBoundaryReviewOptions = {
   sequenceSummary?: () => string[];
   executionPreparationNeeded?: () => boolean;
   prepareExecution?: () => Promise<void>;
-  reviseWithModel?: () => Promise<boolean>;
+  reviseWithModel?: (instruction?: string) => Promise<boolean>;
+  reviewChanges?: () => ReviewSection | undefined;
+  privateDependencies?: () => string[];
   onDisposition?: (disposition: ReadBoundaryReviewDisposition) => void;
 };
 
@@ -6616,8 +6620,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     && (actionIntents.length === 0 || (semanticActionModelDraft && semanticActionCatalog)),
   );
   let failedReadRevisionInstruction: string | undefined;
+  let latestReadRevisionDiff: ReviewSection | undefined;
   const reviseReadWithModel = canReviseReadWithModel
-    ? async (): Promise<boolean> => {
+    ? async (guidedInstruction?: string): Promise<boolean> => {
         const chat = input.authoringChat!;
         const modelSession = modelAssistSession!;
         const narrator = input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep;
@@ -6625,10 +6630,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           failedReadRevisionInstruction
             ? "Your previous revision request is retained. Say retry to use it again, or describe what should change."
             : "What should change in this Read Boundary?",
-          "You can revise field visibility, operations, labels, reviewed relationships, privacy or limits in ordinary language.",
-          "The existing job and trusted scope stay unchanged; dependent Actions will be revalidated before saving.",
         ].join(" ");
-        const opening = await runWithProgress(
+        const opening = guidedInstruction ? undefined : await runWithProgress(
           `${boundaryModelLabel(modelSession)} is preparing the Read revision question`,
           () => narrator({
             session: modelSession,
@@ -6646,7 +6649,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             egressAcknowledged: true,
           }),
         );
-        if (opening?.trim()) {
+        if (guidedInstruction) {
+          await chat.streamModel(["I'll prepare a privacy revision for review, preserving customer-facing references and benefits. I'll ask if a field's meaning is unclear."]);
+        } else if (opening?.trim()) {
           await chat.streamModel(opening.trim().split(/\r?\n/u));
         } else {
           await chat.streamModel([revisionQuestion]);
@@ -6683,7 +6688,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           return answer;
         };
 
-        const answer = await readModelAnswer(revisionQuestion);
+        const answer = guidedInstruction ?? await readModelAnswer(revisionQuestion);
         const instruction = answer?.trim().toLowerCase() === "retry" && failedReadRevisionInstruction
           ? failedReadRevisionInstruction
           : answer;
@@ -6762,17 +6767,35 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             }),
           );
           const expansionChanges = revision.changes.filter((change) =>
-            change.after === "model_and_runner" && change.before !== "model_and_runner");
-          if (expansionChanges.length) {
+            change.after === "model_and_runner" && change.before !== "model_and_runner"
+            || change.before === "kept_out" && change.after === "runner_only");
+          const preparedPreview = validatedPreview?.revision === revisionKey(revision) ? validatedPreview.preview
+            : await prepareModelReadBoundaryExposureRevision({ projectRoot: input.projectRoot, schemaInspector: input.schemaInspector,
+              context, revision, validateCandidate });
+          let guidedRevisionReviewed = false;
+          if (guidedInstruction && input.session.chooseOption) {
+            const diff = readRevisionDiff(context.candidate, preparedPreview.candidate, revision.changes);
+            const accepted = await input.session.chooseOption("SAVE DISABLED PRIVACY REVISION", [
+              { value: "save", label: "Save this disabled privacy revision" },
+              { value: "details", label: "View exact privacy changes" },
+              { value: "back", label: "Keep the current draft" },
+            ], { initialValue: "back", context: [...diff.lines,
+              `${expansionChanges.length} new access grants (including previously kept-out fields). Inspect exact changes before saving.`,
+              "Business rules and scope are preserved; Action dependencies passed validation. Activation remains separate."],
+              exactDetails: { title: "Privacy revision", lines: [...diff.lines, ...(diff.children ?? []).flatMap((child) => [child.title, ...child.lines])], sections: [diff] } });
+            if (accepted !== "save") return false;
+            guidedRevisionReviewed = true;
+          }
+          if (expansionChanges.length && !guidedRevisionReviewed) {
             const accepted = await input.session.confirm(
-              `Save ${expansionChanges.length} model-facing field exposure expansion${expansionChanges.length === 1 ? "" : "s"} in this disabled draft?`,
+              `Save ${expansionChanges.length} new field access grant${expansionChanges.length === 1 ? "" : "s"} in this disabled draft?`,
               {
                 defaultValue: false,
                 context: [
-                  "MODEL-FACING EXPOSURE EXPANSION",
+                  "NEW FIELD ACCESS - REVIEW REQUIRED",
                   ...expansionChanges.map((change) =>
-                    `${change.resource}.${change.field}: ${formatReadBoundaryExposure(change.before)} -> Model + Runner`),
-                  "These raw reviewed values would become available to the model only after separate Read Boundary activation.",
+                    `${change.resource}.${change.field}: ${formatReadBoundaryExposure(change.before)} -> ${formatReadBoundaryExposure(change.after)}`),
+                  "Kept-out to Runner-only adds private Runner access. Model + Runner allows model return. Neither becomes active until the separate Read activation.",
                   "Declining keeps the exact Read and Action drafts unchanged.",
                 ],
               },
@@ -6786,15 +6809,20 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           }
 
           const previousDigest = committed.candidate_digest;
+          const previousCandidate = structuredClone(context.candidate);
           const revised = await applyModelReadBoundaryExposureRevision({
             projectRoot: input.projectRoot,
             schemaInspector: input.schemaInspector,
             context,
             revision,
             validateCandidate,
-            ...(validatedPreview?.revision === revisionKey(revision) ? { preview: validatedPreview.preview } : {}),
+            preview: preparedPreview,
           });
           context = revised.context;
+          latestReadRevisionDiff = readRevisionDiff(previousCandidate, context.candidate, revision.changes);
+          await saveReadReviewDiff(input.projectRoot, context.bundle.candidate_digest, latestReadRevisionDiff).catch(() => {
+            chat.checkpoint("Change history not persisted", ["The disabled revision is saved. Its exact diff remains available in this session."], "warning");
+          });
           mappingBoundary = revised.context.candidate;
           workload = revised.workload;
           committed = revised.committed;
@@ -6814,7 +6842,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           });
 
           const exactChanges = [
-            ...revision.changes.map((change) => `${change.resource}.${change.field}: ${formatReadBoundaryExposure(change.before)} -> ${formatReadBoundaryExposure(change.after)}`),
+            ...latestReadRevisionDiff.lines,
+            ...(latestReadRevisionDiff.children ?? []).flatMap((change) => [change.title, ...change.lines]),
             ...(revision.policy_changes ?? []).flatMap((change) => Object.entries(change.settings).map(([key, value]) => `${change.resource} ${key}: ${JSON.stringify(value)}`)),
           ];
           chat.rememberDetails("READ BOUNDARY REVISION", [
@@ -6924,14 +6953,19 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ...(missing.length
             ? ["UNMET REQUEST: automatic completion is not configured. This draft would only propose changes. Choose Prepare requested automatic execution to retain the rules and prepare a separate execution review."]
             : automatic.length
-              ? ["Automatic completion: execution review PENDING, not enabled. After Action review, verify the writer and explicitly enable execution; an operator-run worker must then process approved requests."]
+              ? ["Automatic completion: execution review PENDING, not enabled. Once execution is enabled, eligible changes can complete automatically."]
               : semanticActionDrafts.length ? ["Execution: proposal-only; approved requests will not change source data."] : []),
-          `Next: Read review${semanticActionDrafts.length || actionDrafts.length ? " -> Action review" : ""}${automatic.length || missing.length ? " -> execution review" : ""}. This decision grants reads only.`,
+          `Next: Read review${semanticActionDrafts.length || actionDrafts.length ? " -> Action review" : ""}${automatic.length || missing.length ? " -> execution review" : ""}.`,
         ];
       },
       executionPreparationNeeded: () => unmetExecutionEntries().length > 0,
       prepareExecution: prepareRequestedExecution,
       ...(reviseReadWithModel ? { reviseWithModel: reviseReadWithModel } : {}),
+      reviewChanges: () => latestReadRevisionDiff,
+      privateDependencies: () => semanticActionModelDraft
+        ? ["Private Action verification is separate from model-facing Read operations. This draft remains subject to separate Action and execution review.",
+          ...JSON.stringify(semanticActionModelDraft, null, 2).split("\n")]
+        : ["No dependent semantic Action draft is attached to this review."],
       onDisposition: (disposition) => {
         reviewNavigation = disposition === "manual_editor" ? "manual_editor" : "boundary_list";
       },
@@ -7830,9 +7864,16 @@ export async function prepareModelReadBoundaryExposureRevision(
   }
   const requests = [...byResource.entries()].map(([resourceId, changes]): BoundaryResourceReviewRequest => ({
     resource_id: resourceId,
+    ...(changes.some((change) => change.after === "runner_only") ? (() => {
+      const previous = input.context.candidate.pack.resources.find((resource) => resource.id === resourceId)!;
+      return { filterable_fields: Object.keys(previous.filterable_fields), sortable_fields: previous.sortable_fields,
+        groupable_fields: previous.groupable_fields, aggregate_measures: previous.aggregate_measures,
+        count_distinct_fields: previous.count_distinct_fields, time_bucket_fields: Object.keys(previous.time_bucket_fields) };
+    })() : {}),
     ...settings.get(resourceId),
     keep_out_fields: changes.filter((change) => change.after === "kept_out").map((change) => change.field),
     withhold_from_model_fields: changes.filter((change) => change.after === "runner_only").map((change) => change.field),
+    private_model_fields: changes.filter((change) => change.after === "runner_only" && change.model_operations !== "preserve_reviewed").map((change) => change.field),
     allow_reviewed_fields: changes.filter((change) => change.after === "model_and_runner").map((change) => change.field),
     actor: localInteractiveActor(),
     reason: "Applied an operator-requested, model-assisted field-exposure revision to the disabled Read Boundary.",
@@ -10231,12 +10272,14 @@ async function confirmAndActivateFocusedBoundary(input: {
     ...(authorityReplacementContext.length ? ["", ...authorityReplacementContext] : []),
     ...(activationReviewNotice ? activationReviewNotice.trimEnd().split("\n") : []),
   ];
-  const conversationReviewContext = [
+  const conversationReviewContext = formatReadActivationDecisionSummary([
     ...(input.reviewOptions?.sequenceSummary?.() ?? ["Sequence: this decision grants Read access only. Action approval and source execution require separate reviews."]),
     ...formatReadActivationBusinessSummary(context.bundle),
     ...authorityReplacementContext,
-    "Exact details: every field, exclusion, scope, relationship, limit and fingerprint; return to this same decision.",
-  ];
+  ], terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns));
+  const changesForReview = input.reviewOptions?.reviewChanges?.()
+    ?? await loadReadReviewDiff(input.projectRoot, context.bundle.candidate_digest)
+    ?? (activeBoundary ? readRevisionDiff({ ...activeBoundary, activation: "disabled_unreviewed", unresolved_decisions: [] }, context.candidate) : undefined);
   if (conversation) {
     input.session.rememberDetails?.("Exact Read Boundary review", activationContext);
   }
@@ -10330,7 +10373,8 @@ async function confirmAndActivateFocusedBoundary(input: {
               }]
             : []),
           ...(input.reviewOptions?.reviseWithModel
-            ? [{
+            ? [{ value: "privacy", label: "Review privacy",
+                detail: "Prepare private internal IDs, conflict guards and approval controls; preserve business references and benefits. Review the exact change before activation." }, {
                 value: "revise_model",
                 label: "Revise this Read Boundary with the current model",
                 detail: "Keep this job and its Action draft, describe only the visibility correction, then review the rebuilt disabled revisions.",
@@ -10359,7 +10403,9 @@ async function confirmAndActivateFocusedBoundary(input: {
         {
           initialValue: "finish",
           context: conversationReviewContext,
-          exactDetails: { title: "Exact Read Boundary review", lines: activationContext },
+          exactDetails: { title: "Exact Read Boundary review", lines: activationContext,
+            sections: readBoundaryReviewSections({ boundary: context.candidate, digest: context.bundle.candidate_digest,
+              changes: changesForReview, privateDependencies: input.reviewOptions?.privateDependencies?.() }) },
         },
       );
       if (choice === "details") {
@@ -10372,8 +10418,10 @@ async function confirmAndActivateFocusedBoundary(input: {
         }
         continue;
       }
-      if (choice === "revise_model" && input.reviewOptions?.reviseWithModel) {
-        const revised = await input.reviewOptions.reviseWithModel();
+      if ((choice === "revise_model" || choice === "privacy") && input.reviewOptions?.reviseWithModel) {
+        const revised = await input.reviewOptions.reviseWithModel(choice === "privacy"
+          ? "Keep internal database IDs, conflict/version guards and private approval controls private for Runner, without model filtering, sorting, grouping or aggregates on them. Preserve useful customer-facing references and plan/service benefits, existing business rules, approval limits and automatic-completion intent. Use structural roles and reviewed metadata, not name fragments alone. Ask if meaning is ambiguous. Review any new private access from previously kept-out fields."
+          : undefined);
         if (revised) return confirmAndActivateFocusedBoundary(input);
         continue;
       }
@@ -10612,10 +10660,10 @@ function readBoundaryFieldReviewNote(
   const labels: string[] = [];
   if (roles.includes("trusted_scope")) labels.push("trusted scope");
   if (roles.includes("record_identity")) labels.push("record identity");
-  else if (roles.includes("internal_identifier_candidate")) labels.push("internal identifier");
+  else if (roles.includes("internal_identifier_candidate")) labels.push("possible internal identifier");
   if (roles.includes("relationship_key")) labels.push("relationship key");
-  if (roles.includes("conflict_or_version_guard")) labels.push("conflict/version guard");
-  if (roles.includes("private_policy_candidate")) labels.push("private policy fact");
+  if (roles.includes("conflict_or_version_guard")) labels.push("possible conflict/version guard");
+  if (roles.includes("private_policy_candidate")) labels.push("possible private policy fact");
   const unique = [...new Set(labels)];
   if (!unique.length) return undefined;
   const roleSummary = unique.join(", ");
@@ -10854,14 +10902,16 @@ function styleBoundaryReviewAsciiTable(
 export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle): string[] {
   const resources = bundle.candidate.pack.resources;
   const catalog = readBoundaryRevisionCatalog(bundle.candidate);
-  const excluded = [...new Set(resources.flatMap((resource) => resource.kept_out_fields))];
+  const excluded = resources.flatMap((resource) => resource.kept_out_fields);
   const visibleControls = catalog.resources.flatMap((resource) => resource.fields
-    .filter((field) => field.current_exposure === "model_and_runner" && readBoundaryFieldReviewNote(field.roles, "MODEL")?.startsWith("REVIEW:"))
+    .filter((field) => field.raw_return && readBoundaryFieldReviewNote(field.roles, "MODEL")?.startsWith("REVIEW:"))
     .map((field) => `${resource.id}.${field.id}`));
   const sharedCount = resources.filter((resource) => resource.shared_reference_scope).length;
   const unscopedCount = resources.filter((resource) => !resource.shared_reference_scope && !hasReviewedPrincipalScope(resource)).length;
   const readable = resources.map((resource) => resource.label ?? resource.id.split(".").at(-1)!.replaceAll("_", " "));
+  const inferred = catalog.resources.flatMap((resource) => resource.fields.filter((field) => field.current_exposure === "runner_only" && field.model_operations.length));
   return [
+    ...(visibleControls.length || inferred.length ? [`Privacy decision: ${visibleControls.length} possible internal/control fields allow raw model return; ${inferred.length} raw-withheld fields allow model analysis. Choose Review privacy or inspect Resources and fields.`] : []),
     `Readable information: ${readable.join(", ")}.`,
     bundle.candidate.organization_scope
       ? "Scope decision: whole-organization access, not one customer's information."
@@ -10871,10 +10921,20 @@ export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle
           ? "Whose information: reviewed shared references, not customer-private records."
           : `Scope decision: account isolation is enforced, but ${unscopedCount} non-shared resource(s) lack individual customer filtering. Inspect exact scope before activation.`,
     ...(sharedCount ? [`Shared references: ${sharedCount} reviewed resource(s) are intentionally common across accounts; inspect exact scope.`] : []),
-    `Excluded: ${excluded.length} distinct fields kept out. Exact details names each exclusion and every Runner-only field.`,
-    ...(visibleControls.length ? [`Privacy decision: ${visibleControls.length} internal identifiers or control fields are model-visible. Choose Revise this Read Boundary and say "keep internal IDs, versions and approval controls private", or inspect the REVIEW-marked fields in exact details.`] : []),
+    `Excluded: ${excluded.length} resource-qualified fields kept out; exact details lists every field and operation.`,
     "Grants: reviewed read access only. No request is approved or executed by this activation.",
   ];
+}
+
+export function formatReadActivationDecisionSummary(lines: string[], columns: number): string[] {
+  if (columns < 96) return lines;
+  const width = Math.min(160, columns);
+  const rows = lines.map((line) => {
+    const separator = line.indexOf(":");
+    return separator > 0 && separator < 30 ? [line.slice(0, separator), line.slice(separator + 1).trim()] : ["Review", line];
+  });
+  return renderBoundaryMapTable(["DECISION", "REVIEWED SUMMARY"], rows,
+    { widths: [22, width - 29], rowSeparators: false });
 }
 
 export function formatBoundaryChatReviewSummary(

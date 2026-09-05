@@ -11,6 +11,33 @@ import {
 } from "./read-boundary-revision-model.js";
 
 describe("model-assisted Read Boundary field exposure revisions", () => {
+  it("does not classify business policy names as private controls and reports actual return authority", () => {
+    const draft = boundary();
+    const resource = draft.pack.resources[0]!;
+    Object.assign(resource.field_types, { data_policy: "text", target_data_policy: "text", eligibility_terms: "text", x17: "text", created_at: "timestamp" });
+    resource.selectable_fields.push("data_policy", "target_data_policy", "eligibility_terms");
+    const catalog = readBoundaryRevisionCatalog(draft).resources[0]!;
+    for (const name of ["data_policy", "target_data_policy", "eligibility_terms", "x17"]) {
+      expect(catalog.fields.find((field) => field.id === name)!.roles).not.toContain("private_policy_candidate");
+    }
+    expect(catalog.fields.find((field) => field.id === "created_at")).toMatchObject({ raw_return: false, model_operations: [] });
+    expect(catalog.fields.find((field) => field.id === "auto_approval_eligible")!.roles).toContain("private_policy_candidate");
+  });
+
+  it("can remove inference operations from an already raw-withheld field without changing raw visibility", async () => {
+    const draft = boundary();
+    draft.pack.resources[0]!.model_withheld_fields = ["status"];
+    const result = await generateModelReadBoundaryRevision({
+      instruction: "Keep status entirely private; remove model analysis but retain Runner verification.",
+      provider: "openai", model: "gpt-test", apiKey: "test-only", boundary: draft, egressAcknowledged: true,
+      dependencies: { requestJson: async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "privacy",
+        name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{ resource: "public.orders",
+          field_exposure: [{ field: "status", exposure: "runner_only", model_operations: "none" }],
+        }] }),
+      }] } }) },
+    });
+    expect(result.changes).toMatchObject([{ before: "runner_only", after: "runner_only", field: "status", model_operations: "none" }]);
+  });
   it("corrects a Runner-only decision that also removes the field from selectable_fields", async () => {
     const original = boundary();
     const before = structuredClone(original);

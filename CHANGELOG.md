@@ -2,6 +2,23 @@
 
 ## 1.8.0 (unreleased)
 
+### Navigable Authority Review
+
+- Raw-only withheld fields now use unlinkable cell tokens, so equality of
+  private values is not exposed without reviewed analytical permissions.
+
+- Separates concise activation decisions from resource/field navigation, exact
+  changes, scope and limits, private Action dependencies, raw JSON and narration
+  diagnostics. Details remain available offline and return to the same decision.
+- Adds guided privacy review with a disabled preview, precise raw-return versus
+  model-analysis labels, and a digest-bound field/operation diff on resume.
+  Bringing an excluded field into private use is reviewed as new access.
+- Model-guided full privacy removes discretionary inference operations while
+  retaining private verification and opaque references. Existing intentional
+  raw-withheld analytical policies remain compatible; retaining analysis is an
+  explicit option. Business fields are no longer marked private merely because
+  their name contains `policy` or `eligibility`.
+
 ### Privacy Revision Recovery
 
 - Validates the complete Read candidate and dependent Actions inside the model

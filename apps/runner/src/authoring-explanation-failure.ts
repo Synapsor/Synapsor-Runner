@@ -5,6 +5,8 @@ export type AuthoringExplanationFailure = {
   code: string;
   retryable: boolean;
   guidance: string;
+  /** Fixed validator description only; never raw provider content. */
+  mismatch?: string;
 };
 
 // Use fixed diagnostics only; provider bodies, URLs and credentials are not review content.

@@ -35,8 +35,9 @@ export async function narrateValidatedAuthoringStep(input: {
   responseStyle?: "validated_result" | "permission" | "opening";
   onFailure?: (failure: AuthoringExplanationFailure) => void;
 }): Promise<string | undefined> {
-  const unavailable = (code: string) => {
-    input.onFailure?.(authoringExplanationFailure(new AskError(code, "Explanation unavailable.")));
+  const unavailable = (code: string, mismatch?: string) => {
+    input.onFailure?.({ ...authoringExplanationFailure(new AskError(code, "Explanation unavailable.")),
+      ...(mismatch ? { mismatch } : {}) });
     return undefined;
   };
   if (!input.session.conversation) return unavailable("NARRATION_CONTEXT_MISSING");
@@ -123,8 +124,9 @@ export async function narrateValidatedAuthoringStep(input: {
     });
     if (result.answer_source !== "model" || !result.answer.trim()) return unavailable("NARRATION_EMPTY");
     const answer = result.answer.trim();
-    if (opening && !openingNarrationIsSafe(answer, input.nextQuestion)) return unavailable("NARRATION_VALIDATION_REJECTED");
-    if (narrationContradictsValidatedRecord(answer, input.validatedFacts)) return unavailable("NARRATION_VALIDATION_REJECTED");
+    if (opening && !openingNarrationIsSafe(answer, input.nextQuestion)) return unavailable("NARRATION_VALIDATION_REJECTED", "Opening exceeded the greeting contract or changed the next question.");
+    const mismatch = narrationContradictsValidatedRecord(answer, input.validatedFacts);
+    if (mismatch) return unavailable("NARRATION_VALIDATION_REJECTED", mismatch);
     rememberModelAuthoringTurn(
       input.session.conversation,
       input.operatorMessage,
@@ -155,36 +157,36 @@ function openingNarrationIsSafe(answer: string, nextQuestion?: string): boolean 
     .test(introduction);
 }
 
-function narrationContradictsValidatedRecord(answer: string, facts: string[]): boolean {
+function narrationContradictsValidatedRecord(answer: string, facts: string[]): string | undefined {
   const normalizedAnswer = answer.toLowerCase().replace(/\s+/gu, " ");
   const record = facts.join(" ").toLowerCase().replace(/\s+/gu, " ");
   const erasesOperatorHistory = /\b(?:no (?:prior |previous )?operator decision (?:was |has been )?(?:supplied|made|recorded)|the operator (?:has|had) not (?:supplied|made|recorded|confirmed|accepted) (?:a|any) decision)\b/u
     .test(normalizedAnswer);
-  if (erasesOperatorHistory) return true;
+  if (erasesOperatorHistory) return "Explanation denied prior operator decisions.";
   const scopeResolved = /(?:trusted (?:tenant\/principal )?scope|target row identity)[^.]{0,120}(?:already resolved|are separate runner-validated controls|remain unchanged|passed runner validation)/u.test(record)
     || /scope[^.]{0,80}(?:is|was|has been) (?:resolved|validated)/u.test(record);
   const claimsMissingScope = /(?:scope|tenant|principal|row identity)[^.]{0,80}(?:incomplete|unresolved|missing|not (?:yet )?(?:resolved|validated)|still (?:needs|requires))/u.test(normalizedAnswer);
   const questionsResolvedScope = /(?:is|are|was|were|has|have|whether|confirm|check|clarify|need(?:s|ed)? to know)[^.?!]{0,90}(?:scope|tenant|principal|row identity)[^.?!]{0,90}(?:resolved|validated|available|known|provided|complete)[?!]/u.test(normalizedAnswer)
     || /(?:scope|tenant|principal|row identity)[^.?!]{0,90}(?:already )?(?:resolved|validated|available|known|provided|complete)[?!]/u.test(normalizedAnswer);
-  if (scopeResolved && (claimsMissingScope || questionsResolvedScope)) return true;
+  if (scopeResolved && (claimsMissingScope || questionsResolvedScope)) return "Explanation reopened already validated scope.";
 
   const principalNotConfigured = /(?:no principal (?:row )?(?:limit|scope)|principal (?:row )?(?:limit|scope) (?:is )?not configured|tenant-only scope)/u.test(record);
   const claimsPrincipalScope = /(?:tenant\s*(?:\+|plus|and)\s*principal|principal (?:row )?(?:scope|isolation|filter|limit)[^.]{0,40}(?:active|applied|configured|enforced|validated)|scoped by (?:both )?tenant and principal)/u.test(normalizedAnswer)
     && !/(?:no|not|without)[^.]{0,30}principal/u.test(normalizedAnswer);
-  if (principalNotConfigured && claimsPrincipalScope) return true;
+  if (principalNotConfigured && claimsPrincipalScope) return "Explanation claimed principal isolation absent from this revision.";
 
   const authorityOff = /(?:no authority|authority[^.]{0,60}(?:off|disabled|unchanged|not active)|approval and apply authority remain off)/u.test(record);
   const claimsAuthorityOn = (/(?:(?:read|action|proposal|approval|apply) )?authority[^.]{0,40}(?:active|enabled|granted|approved)/u.test(normalizedAnswer)
     || /(?:proposal|approval|apply|writeback)[^.]{0,30}(?:is|was|has been) (?:active|enabled|granted|approved)/u.test(normalizedAnswer))
     && !/(?:no|not|never|without)[^.]{0,30}(?:authority|proposal|approval|apply|writeback)[^.]{0,30}(?:active|enabled|granted|approved)/u.test(normalizedAnswer);
-  if (authorityOff && claimsAuthorityOn) return true;
+  if (authorityOff && claimsAuthorityOn) return "Explanation claimed authority enabled while the record says disabled or unchanged.";
 
   const misstatesApprovalCeiling = /\bafter\s+\d+(?:\.\d+)?\s+(?:approvals?|proposals?)\b/u.test(normalizedAnswer)
     && /\b\d+(?:\.\d+)?\s+(?:approvals?|proposals?)\b/u.test(record);
-  if (misstatesApprovalCeiling) return true;
+  if (misstatesApprovalCeiling) return "Explanation treated an approval ceiling as a threshold to reach.";
 
   const sourceUnchanged = /(?:source (?:database|data|row|rows)[^.]{0,60}(?:unchanged|changed: no|did not change)|no source[^.]{0,50}(?:change|write))/u.test(record);
   const claimsSourceChanged = /(?:source (?:database|data|row|rows)|database)[^.]{0,50}(?:changed|updated|written|mutated)/u.test(normalizedAnswer)
     && !/(?:not|no|never|without)[^.]{0,24}(?:changed|updated|written|mutated)/u.test(normalizedAnswer);
-  return sourceUnchanged && claimsSourceChanged;
+  return sourceUnchanged && claimsSourceChanged ? "Explanation claimed a source change without a source-write receipt." : undefined;
 }
