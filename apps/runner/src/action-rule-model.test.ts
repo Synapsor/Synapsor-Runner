@@ -11,6 +11,8 @@ import { generateFocusedModelActionRuleDraft as generateModelActionRuleDraft, ge
 import type { AskProviderDependencies } from "./model-ask.js";
 import type { ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { inspectActionRelationships } from "./action-rule-relationship-review.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { evaluateActionRule, evaluateActionRuleApprovalPredicate } from "@synapsor-runner/action-rules";
 
 const lock = `sha256:${"a".repeat(64)}` as const;
 const readDigest = `sha256:${"b".repeat(64)}` as const;
@@ -212,6 +214,110 @@ describe("conversational Action authoring tools", () => {
     expect(result.compiled.draft.effect).toEqual(existing.compiled.draft.effect);
     expect(result.compiled.approval_class.required_approvals).toBe(2);
     expect(requestJson).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([false, true])("reopens a same-job draft after mistaken second-action creation (resume: %s)", async (resume) => {
+    const existing = await generateModelActionRuleDraft(requestInput(phaseResponder([])));
+    const baseline = existing.compiled.draft;
+    const before = structuredClone(baseline);
+    const selection = { outcome: baseline.outcome, digest: canonicalJsonDigest(baseline), covered_intent_indexes: [0, 1] };
+    const pendingIntents = ["Route valid pauses to billing review.", "Refuse invalid pauses."];
+    const requests: string[] = [];
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const initialSteps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"),
+      call("runner.validate_action_draft", {}), call("runner.reopen_prepared_action", selection)];
+    const common = { preparedDrafts: [baseline], reservedOutcomes: [baseline.outcome], pendingIntents,
+      intent: "Use the same pause action and policy. Only change the human fallback to two billing reviewers; retain its eligibility, effect and all other settings.",
+      onCheckpoint: async (value: ActionRuleAuthoringCheckpoint) => { checkpoint = value; } };
+    if (resume) {
+      const paused = [...initialSteps, say("Keep the same action with two reviewers?")];
+      await expect(converseActionRuleDraft({ ...requestInput(async (request) => {
+        requests.push(JSON.stringify(request.body)); return paused.shift()!;
+      }), ...common, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+      expect(checkpoint?.reopened_draft).toEqual(selection);
+    }
+    const steps = [...(resume ? [] : initialSteps),
+      call("runner.submit_approval_policy_draft", { ...payloadFor("runner.submit_approval_policy_draft"), required_approvals: 2, changed_fields: ["required_approvals"] }),
+      call("runner.reopen_prepared_action", selection), // An identical retry must not discard the edit.
+      call("runner.validate_action_draft", {}), say("One pause action, with two billing reviewers. Review activation next.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), ...common, ...(resume ? { checkpoint } : {}) });
+    expect(requests.join("\n")).toContain("ACTION_OUTCOME_COLLISION");
+    expect(result.revision).toEqual({ outcome: baseline.outcome, changed_phases: ["approval"], reopened_draft: selection });
+    expect(result.compiled.approval_class.required_approvals).toBe(2);
+    expect(result.compiled.draft).toEqual({ ...baseline, approval: { ...baseline.approval, required_approvals: 2 } });
+    expect(baseline).toEqual(before);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(steps).toEqual([]);
+    if (resume) {
+      const requestJson = vi.fn();
+      await expect(converseActionRuleDraft({ ...requestInput(requestJson), ...common, checkpoint,
+        preparedDrafts: [{ ...baseline, approval: { ...baseline.approval, required_approvals: 3 } }],
+      })).rejects.toThrow("REVISION_STALE");
+      expect(requestJson).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps genuine outcome collisions closed and gives a guided revision recovery", async () => {
+    const requests: string[] = [];
+    const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"),
+      call("runner.validate_action_draft", {}), say("This different action cannot claim the existing pause outcome.")];
+    await expect(converseActionRuleDraft({ ...requestInput(async (request) => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), reservedOutcomes: ["billing.pause_account"], askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    expect(requests.at(-1)).toContain("ACTION_OUTCOME_COLLISION");
+    expect(requests.at(-1)).not.toContain("Choose a distinct business outcome");
+  });
+
+  it("keeps validity separate from automatic eligibility when revising one policy", async () => {
+    const existing = await generateModelActionRuleDraft(requestInput(phaseResponder([])));
+    const baseline = existing.compiled.draft;
+    const predicate = eligiblePredicate();
+    if (predicate.kind !== "all") throw new Error("Expected fixture conjunction");
+    const policy = { ...payloadFor("runner.submit_approval_policy_draft"), mode: "policy", auto_approve_when: predicate.expressions[1],
+      shared_limits: [{ id: "all_pauses", kind: "count", scope: "capability", maximum: 10, window_seconds: 86400 },
+        { id: "tenant_pauses", kind: "count", scope: "tenant", maximum: 3, window_seconds: 86400 }],
+      changed_fields: ["mode", "auto_approve_when", "shared_limits"] };
+    const steps = [call("runner.reopen_prepared_action", { outcome: baseline.outcome, digest: canonicalJsonDigest(baseline), covered_intent_indexes: [0] }),
+      call("runner.submit_action_rule_draft", { ...rulePayload(predicate.expressions[0]!), changed_fields: ["require", "review.human_review"] }),
+      call("runner.submit_approval_policy_draft", policy), call("runner.validate_action_draft", {}), say("Valid accounts can pause; risk holds need human review.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async () => steps.shift()!), preparedDrafts: [baseline],
+      reservedOutcomes: [baseline.outcome], intent: "Use the same pause action. Active accounts qualify. Auto-approve only without a risk hold, at most 10 overall and 3 per tenant per rolling 24 hours; otherwise use one billing reviewer. Invalid accounts are refused. Keep the same effect and proposal-only posture." });
+    const compiled = result.compiled.loaded.registry.rules[0]!.compiled;
+    const facts = (status: string, hold: boolean) => ({ bindings: { account: { rows: [{ account_id: "a", tenant_id: "t", principal_id: "p", status, risk_hold: hold, version: 1 }] } },
+      trusted: { tenant: "t", principal: "p", transaction_time: "2026-09-05T12:00:00.000Z" }, subject_provenance_digest: readDigest });
+    for (const hold of [false, true]) {
+      expect(evaluateActionRule({ compiled, facts: facts("active", hold), proposal_id: "test" }).result).toBe("eligible");
+      expect(evaluateActionRuleApprovalPredicate({ compiled, facts: facts("active", hold),
+        expression: result.compiled.draft.approval.auto_approve_when! }).result).toBe(hold ? "no_match" : "match");
+    }
+    expect(evaluateActionRule({ compiled, facts: facts("paused", false), proposal_id: "invalid" }).result).toBe("ineligible");
+    expect(result.compiled.draft.effect).toEqual(baseline.effect);
+    expect(result.compiled.draft.verification).toEqual(baseline.verification);
+    expect(result.compiled.approval_class.required_approvals).toBe(1);
+  });
+
+  it("rejects stale or out-of-agenda reopen requests and can reuse an already-correct draft", async () => {
+    const existing = await generateModelActionRuleDraft(requestInput(phaseResponder([])));
+    const baseline = existing.compiled.draft;
+    const selected = { outcome: baseline.outcome, digest: canonicalJsonDigest(baseline), covered_intent_indexes: [0] };
+    const checkpoints = vi.fn();
+    const requests: string[] = [];
+    const steps = [call("runner.reopen_prepared_action", { ...selected, digest: readDigest }),
+      call("runner.reopen_prepared_action", { ...selected, covered_intent_indexes: [0, 1] }),
+      call("runner.reopen_prepared_action", selected), call("runner.validate_action_draft", {}), say("The same draft already requires one billing reviewer; no second action is needed.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
+      if (steps.length >= 3) expect(checkpoints).not.toHaveBeenCalled();
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), preparedDrafts: [baseline], reservedOutcomes: [baseline.outcome], onCheckpoint: checkpoints });
+    expect(requests.join("\n")).toContain("ACTION_RULE_REVISION_STALE");
+    expect(checkpoints).toHaveBeenCalledOnce();
+    expect(result.revision?.changed_phases).toEqual([]);
+    expect(result.compiled.draft).toEqual(baseline);
   });
 
   it("resumes disabled components after an interruption and rejects a changed structural binding", async () => {

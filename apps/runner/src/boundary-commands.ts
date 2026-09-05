@@ -5379,9 +5379,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         process.env,
       );
       if (ruleDerivedAction) {
-        const partialActionCheckpoint = resumePastPlanning ? resumeAction?.checkpoint : undefined;
+        let partialActionCheckpoint = resumePastPlanning ? resumeAction?.checkpoint : undefined;
         const partialActionIndex = resumeAction?.completed_outcomes?.length ?? 0;
-        for (const [semanticIndex, semanticIntent] of actionIntents.entries()) {
+        for (let semanticIndex = 0; semanticIndex < actionIntents.length; semanticIndex += 1) {
+        const semanticIntent = actionIntents[semanticIndex]!;
         semanticActionModelResult = undefined;
         semanticActionModelDraft = undefined;
         semanticActionRevisionBaseline = undefined;
@@ -5491,6 +5492,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                 session: ruleSession,
                 intent: semanticIntent,
                 reservedOutcomes: semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome),
+                preparedDrafts: semanticActionDrafts.map((entry) => entry.result.compiled.draft),
+                pendingIntents: actionIntents.slice(semanticIndex),
                 builtCatalog: semanticActionCatalog!,
                 ...(partialActionCheckpoint && semanticIndex === partialActionIndex ? { checkpoint: partialActionCheckpoint } : {}),
                 onCheckpoint: async (checkpoint) => {
@@ -5678,6 +5681,25 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         if (!semanticActionModelResult) {
           throw new Error("ACTION_RULE_MODEL_DRAFT_INCOMPLETE: no validated semantic Action draft is available.");
         }
+        if (semanticIndex === partialActionIndex) partialActionCheckpoint = undefined;
+        const reopened = semanticActionModelResult.revision?.reopened_draft;
+        const reopenedIndex = reopened
+          ? semanticActionDrafts.findIndex((entry) => entry.result.compiled.rule.outcome === reopened.outcome)
+          : -1;
+        if (reopened) {
+          const previous = semanticActionDrafts[reopenedIndex];
+          if (!previous || canonicalJsonDigest(previous.result.compiled.draft) !== reopened.digest
+            || semanticActionModelResult.compiled.rule.outcome !== reopened.outcome
+            || !reopened.covered_intent_indexes.includes(0)
+            || new Set(reopened.covered_intent_indexes).size !== reopened.covered_intent_indexes.length
+            || reopened.covered_intent_indexes.some((index) => !Number.isInteger(index) || index < 0 || semanticIndex + index >= actionIntents.length)) {
+            throw new Error("ACTION_RULE_REVISION_STALE: the selected prepared draft or job agenda changed. The saved revision is unchanged.");
+          }
+          semanticActionRevisionBaseline = previous.result.compiled.draft;
+          semanticActionRevisionCatalog = previous.catalog.catalog;
+        } else if (semanticActionDrafts.some((entry) => entry.result.compiled.rule.outcome === semanticActionModelResult!.compiled.rule.outcome)) {
+          throw new Error("ACTION_OUTCOME_COLLISION: creation cannot replace an earlier outcome; reopen its exact disabled draft for revision.");
+        }
         semanticActionModelDraft = semanticActionModelResult.compiled.draft;
         const semanticResourceIds = [...new Set(
           semanticActionModelDraft.verification.resources.map((resource) => resource.resource),
@@ -5772,19 +5794,46 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           `Verified Action outcome (${semanticIndex + 1}/${actionIntents.length})`,
           ...semanticActionReviewLines(semanticActionModelResult.compiled).map((line) => `- ${line}`),
         );
-        semanticActionDrafts.push({
+        const preparedEntry = {
           intent: semanticIntent, result: semanticActionModelResult, catalog: semanticActionCatalog,
           ...(semanticActionRevisionBaseline ? { baseline: semanticActionRevisionBaseline } : {}),
-        });
+        };
+        if (resumedOutcome) {
+          // Loading an earlier completed item must not erase the interrupted
+          // next item's checkpoint before its provider has made any progress.
+          semanticActionDrafts.push(preparedEntry);
+          continue;
+        }
         // Persist completed outcomes before starting another one. They remain
         // disabled and will all be rebound to the final reviewed Read revision.
         const saved = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, semanticActionModelResult.compiled);
         await writeActionRuleAuthorityDraft(input.projectRoot, saved);
+        if (reopened) {
+          const priorIntent = semanticActionDrafts[reopenedIndex]!.intent;
+          semanticActionDrafts[reopenedIndex] = { ...preparedEntry, intent: priorIntent };
+          const covered = new Set(reopened.covered_intent_indexes.map((index) => semanticIndex + index));
+          const coveredIntents = actionIntents.filter((_intent, index) => covered.has(index));
+          actionIntents = actionIntents.filter((_intent, index) => !covered.has(index));
+          semanticIndex -= 1;
+          const diff = semanticActionRevisionDiffLines(semanticActionRevisionBaseline!, semanticActionModelResult.compiled,
+            semanticActionModelResult.revision?.changed_phases ?? []);
+          input.authoringChat?.rememberDetails("SAME ACTION REVISED", [
+            ...diff, "Covered by this same action:", ...coveredIntents,
+            "Read dependency revalidation and separate Action/execution reviews follow. No authority or source data changed.",
+          ]);
+        } else {
+          semanticActionDrafts.push(preparedEntry);
+        }
         resumeAction = {
           intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived",
           completed_outcomes: semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome),
         };
         await persistAuthoringResume("action_drafting");
+        if (reopened) await input.authoringChat?.streamCheckpoint("One Action draft; policy clarification incorporated", [
+          ...semanticActionRevisionDiffLines(semanticActionRevisionBaseline!, semanticActionModelResult.compiled,
+            semanticActionModelResult.revision?.changed_phases ?? []),
+          "The duplicate planning entries are resolved by this same action. Review activation next; execution remains separate.",
+        ], "normal");
         }
       } else {
       if (!mappedWorkload) {

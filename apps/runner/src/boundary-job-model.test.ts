@@ -75,6 +75,8 @@ describe("model Boundary job planning", () => {
     });
     expect(requestBody).toContain("resumable_draft_count");
     expect(requestBody).toContain("read_mode=resume");
+    expect(requestBody).toContain("branches of ONE business action, not separate action_intents");
+    expect(requestBody).toContain("never create a refusal-only or approval-routing-only action");
     expect(requestBody).not.toContain("memory-key");
   });
 

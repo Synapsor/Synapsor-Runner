@@ -5619,6 +5619,77 @@ describe("boundary operator-plane CLI", () => {
       ]);
       const finalReadDigest = explorationBoundaryCandidateDigest((await loadBoundaryReviewContext(root)).candidate);
       expect(multiple?.authority.rules.every((entry) => entry.read_boundary_digest === finalReadDigest)).toBe(true);
+      if (posture === "proposal_only") {
+        const splitIntents = ["Complete a scheduled-visit follow-up.", "Send valid exceptions to a reviewer.", "Refuse invalid follow-ups."];
+        const splitPlanner = vi.fn(async () => ({ ...await multiPlanner(), action_intent: splitIntents[0]!, action_intents: splitIntents }));
+        let pauseSecond = true;
+        const splitGenerator = vi.fn(async (input: Parameters<typeof generateModelActionRuleDraft>[0]): Promise<ModelActionRuleDraftResult> => {
+          if (input.intent === splitIntents[1] && pauseSecond) {
+            pauseSecond = false;
+            expect(input.pendingIntents).toEqual(splitIntents.slice(1));
+            expect(input.preparedDrafts).toHaveLength(1);
+            throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
+          }
+          expect(input.intent).not.toBe(splitIntents[2]);
+          const baseline = input.preparedDrafts?.[0];
+          const draft = structuredClone(baseline ?? modelActionRuleGenerator.mock.calls[2]![0].existingDraft!);
+          if (baseline) {
+            draft.approval.required_approvals = 3;
+            draft.review.human_review = "Three maintenance reviewers review the same follow-up.";
+          } else {
+            draft.name = draft.outcome = "maintenance.same_followup";
+            draft.effect.name = "maintenance.same_followup_effect";
+            draft.verification.name = "maintenance_same_followup_verification";
+            draft.approval.class_name = "maintenance.same_followup_approval";
+            draft.effect.writeback = "supervised";
+          }
+          return { state: "ready", compiled: compileActionRuleModelDraft({ draft, ...input }),
+            provider: input.session.provider, model: input.session.model, correction_used: false,
+            clarification_count: 0, authority_granted: false, source_database_changed: false,
+            ...(baseline ? { revision: { outcome: baseline.outcome, changed_phases: ["approval", "rule"],
+              reopened_draft: { outcome: baseline.outcome, digest: canonicalJsonDigest(baseline), covered_intent_indexes: [0, 1] } } } : {}),
+          };
+        });
+        const splitContexts: string[] = [];
+        const splitChats: BoundaryAuthoringChat[] = [];
+        for (const resume of [false, true, true]) {
+          const splitSession: BoundaryReviewInteractiveSession = { ...session,
+            chooseResource: async () => undefined,
+            promptText: async () => "One follow-up action: routine completion, human fallback and invalid refusal.",
+            chooseOption: async (title, _options, options) => {
+              splitContexts.push(`${title}: ${(options?.context ?? []).join(" ")}`);
+              if (title === "START BOUNDARY DRAFTING") return resume ? "resume" : "model";
+              if (title === "ACTIVATE READ BOUNDARY") return "finish";
+              if (title === "ACTION BOUNDARY MODEL DRAFT FAILED") return "back";
+              throw new Error(`Unexpected same-action review: ${title}`);
+            },
+          };
+          const chat = testBoundaryAuthoringChat(splitSession);
+          vi.spyOn(chat, "streamCheckpoint");
+          splitChats.push(chat);
+          await boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
+            splitSession, undefined, { startWithAgentJob: true,
+              modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
+              modelBoundaryJobPlanner: splitPlanner, modelReadWorkloadGenerator,
+              modelActionRuleGenerator: splitGenerator, modelAuthoringNarrator: revisionNarrator,
+              actionProjectInspector: async () => inspection, boundaryAuthoringChatFactory: () => chat,
+            });
+        }
+        expect(splitPlanner, splitContexts.join("\n")).toHaveBeenCalledOnce();
+        expect(splitGenerator, splitContexts.join("\n")).toHaveBeenCalledTimes(3);
+        const single = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+        expect(single?.authority.rules.map((entry) => entry.rule.outcome).sort()).toEqual([
+          "maintenance.create_inspection_followup", "maintenance.followup_four", "maintenance.followup_three", "maintenance.same_followup",
+        ]);
+        expect(single?.authority.approval_classes.find((entry) => entry.name === "maintenance.same_followup_approval")?.required_approvals).toBe(3);
+        const savedResume = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+        expect(savedResume.action.intents).toEqual([splitIntents[0]]);
+        expect(savedResume.action.completed_outcomes).toEqual(["maintenance.same_followup"]);
+        expect(splitChats[1]!.streamCheckpoint).toHaveBeenCalledWith("One Action draft; policy clarification incorporated",
+          expect.arrayContaining([expect.stringContaining("Human-review quorum:")]), "normal");
+        expect(splitContexts.join("\n")).toContain("execution review PENDING");
+        await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      }
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

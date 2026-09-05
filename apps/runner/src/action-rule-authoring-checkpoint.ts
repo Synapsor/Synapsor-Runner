@@ -7,6 +7,7 @@ export type ActionRuleAuthoringCheckpoint = {
   components: Partial<Record<"verification" | "effect" | "rule" | "approval", Record<string, unknown>>>;
   operator_messages?: string[];
   reviewed_relationships?: string[];
+  reopened_draft?: { outcome: string; digest: `sha256:${string}`; covered_intent_indexes: number[] };
   digest: `sha256:${string}`;
 };
 
@@ -22,12 +23,23 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const record = value as Record<string, unknown>;
   if (record.schema_version !== "synapsor.action-authoring-checkpoint.v1"
-    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "reviewed_relationships", "digest"].includes(key))
+    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "reviewed_relationships", "reopened_draft", "digest"].includes(key))
     || ![record.intent_digest, record.context_digest, record.digest].every((digest) => typeof digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(digest))
     || !record.components || typeof record.components !== "object" || Array.isArray(record.components)) throw fail();
   if (record.operator_messages !== undefined && (!Array.isArray(record.operator_messages)
     || record.operator_messages.length > 16
     || record.operator_messages.some((message) => typeof message !== "string" || !message.trim() || message.length > 4_000))) throw fail();
+  if (record.reopened_draft !== undefined) {
+    const selected = record.reopened_draft as ActionRuleAuthoringCheckpoint["reopened_draft"];
+    if (!selected || typeof selected !== "object" || Array.isArray(selected)
+      || Object.keys(selected).some((key) => !["outcome", "digest", "covered_intent_indexes"].includes(key))
+      || typeof selected.outcome !== "string" || !selected.outcome.trim() || selected.outcome.length > 256
+      || typeof selected.digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(selected.digest)
+      || !Array.isArray(selected.covered_intent_indexes) || !selected.covered_intent_indexes.includes(0)
+      || selected.covered_intent_indexes.length > 8
+      || new Set(selected.covered_intent_indexes).size !== selected.covered_intent_indexes.length
+      || selected.covered_intent_indexes.some((index) => !Number.isInteger(index) || index < 0 || index > 7)) throw fail();
+  }
   for (const [phase, component] of Object.entries(record.components)) {
     if (!["verification", "effect", "rule", "approval"].includes(phase)
       || !component || typeof component !== "object" || Array.isArray(component)) throw fail();

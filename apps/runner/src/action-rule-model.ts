@@ -128,6 +128,7 @@ export type ModelActionRuleDraftResult = {
   revision?: {
     outcome: string;
     changed_phases: Array<"verification" | "effect" | "rule" | "approval">;
+    reopened_draft?: NonNullable<ActionRuleAuthoringCheckpoint["reopened_draft"]>;
   };
   usage?: AskTurnResult["usage"];
 };
@@ -180,6 +181,8 @@ export type ModelActionRuleDraftInput = {
   readBoundaryDigest: `sha256:${string}`;
   existingDraft?: ActionRuleModelDraftV1;
   reservedOutcomes?: string[];
+  preparedDrafts?: ActionRuleModelDraftV1[];
+  pendingIntents?: string[];
   checkpoint?: ActionRuleAuthoringCheckpoint;
   onCheckpoint?: (checkpoint: ActionRuleAuthoringCheckpoint) => Promise<void>;
   onRelationshipReview?: (lines: string[]) => void;
@@ -199,19 +202,36 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let context: ActionRuleModelPreparedContext = {
     builtCatalog: input.builtCatalog, readBoundary: input.readBoundary, readBoundaryDigest: input.readBoundaryDigest,
   };
-  const baseline = input.existingDraft
+  let baseline = input.existingDraft
     ? compileActionRuleModelDraft({ draft: input.existingDraft, ...context }).draft
     : undefined;
-  const initial = baseline ? phaseSubmissionsFromDraft(baseline) : undefined;
+  let initial = baseline ? phaseSubmissionsFromDraft(baseline) : undefined;
   const submissions: Partial<Record<PhaseName, PhaseSubmission>> = initial ? structuredClone(initial) : {};
   let operatorMessages: string[] = [];
   const reviewedRelationships = new Set<string>();
+  let reopenedDraft: ActionRuleAuthoringCheckpoint["reopened_draft"];
+  const preparedDrafts = (input.preparedDrafts ?? []).map((draft) =>
+    compileActionRuleModelDraft({ draft, ...context }).draft);
+  const pendingIntents = input.pendingIntents ?? [intent];
+  const reopen = (selection: NonNullable<typeof reopenedDraft>) => {
+    const selected = preparedDrafts.find((draft) => draft.outcome === selection.outcome
+      && canonicalJsonDigest(draft) === selection.digest);
+    if (!selected || selection.covered_intent_indexes.some((index) => index >= pendingIntents.length)) {
+      throw new Error("ACTION_RULE_REVISION_STALE: select an exact prepared draft and only the listed pending intents. No authority changed.");
+    }
+    baseline = structuredClone(selected);
+    initial = phaseSubmissionsFromDraft(baseline);
+    Object.assign(submissions, structuredClone(initial));
+    reopenedDraft = structuredClone(selection);
+  };
   const contextDigest = () => canonicalJsonDigest({
     catalog: context.builtCatalog.catalog, read: context.readBoundaryDigest, baseline: baseline ?? null,
+    ...(reopenedDraft ? { pending_intents: pendingIntents } : {}),
   });
   if (input.checkpoint) {
     const saved = parseActionRuleAuthoringCheckpoint(input.checkpoint);
     operatorMessages = saved.operator_messages ?? [];
+    if (saved.reopened_draft) reopen(saved.reopened_draft);
     if (saved.intent_digest !== canonicalJsonDigest(intent) || saved.context_digest !== contextDigest()) {
       throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: the job or reviewed structure changed. Start a fresh draft; active authority is unchanged.");
     }
@@ -236,8 +256,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     components: structuredClone(submissions) as ActionRuleAuthoringCheckpoint["components"],
     ...(operatorMessages.length ? { operator_messages: operatorMessages } : {}),
     ...(reviewedRelationships.size ? { reviewed_relationships: [...reviewedRelationships].sort() } : {}),
+    ...(reopenedDraft ? { reopened_draft: reopenedDraft } : {}),
   }));
-  const tools = ACTION_RULE_PHASES.map((phase) => conversationalPhaseTool(phase, input.session.provider === "openai_compatible", !!baseline));
+  const tools = ACTION_RULE_PHASES.map((phase) => conversationalPhaseTool(phase, input.session.provider === "openai_compatible", !!baseline || preparedDrafts.length > 0));
   tools.push(...actionRelationshipTools);
   tools.push({
     name: "runner.inspect_action_draft", title: "Inspect current disabled Action draft",
@@ -247,6 +268,16 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     name: "runner.validate_action_draft", title: "Compile the disabled Action draft",
     description: "Validate all components together. Repair typed diagnostics using any draft tool, or ask the operator about missing business meaning. Success prepares an exact review; it never activates authority.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
+  });
+  if (preparedDrafts.length) tools.push({
+    name: "runner.reopen_prepared_action", title: "Revise an exact prepared Action draft",
+    description: "Reopen one earlier disabled draft in this job instead of creating a duplicate. Preserves its immutable outcome/target and all components; then submit only explicit changed_fields. List pending intent indexes covered by this SAME action, including index 0 (the current intent). Do not absorb independent business effects. No saved or active authority is overwritten by this tool.",
+    input_schema: { type: "object", additionalProperties: false, required: ["outcome", "digest", "covered_intent_indexes"], properties: {
+      outcome: { type: "string", enum: preparedDrafts.map((draft) => draft.outcome) },
+      digest: { type: "string", pattern: "^sha256:[a-f0-9]{64}$" },
+      covered_intent_indexes: { type: "array", minItems: 1, maxItems: pendingIntents.length, uniqueItems: true,
+        items: { type: "integer", minimum: 0, maximum: pendingIntents.length - 1 } },
+    } },
   });
   const authorityDigest = askToolSurfaceDigest(tools);
   const configuration = providerConfiguration(input, authorityDigest);
@@ -262,6 +293,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     missing: ACTION_RULE_PHASES.filter((phase) => !submissions[phase]),
     diagnostics,
     reviewed_relationships: [...reviewedRelationships].sort(),
+    ...(baseline ? { editing_outcome: baseline.outcome } : {}),
+    ...(reopenedDraft ? { reopened_draft: reopenedDraft } : {}),
     authority_granted: false, source_database_changed: false,
   });
   const gateway: AskToolGateway = {
@@ -270,6 +303,20 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       if (name === "runner.inspect_action_draft") return { ok: true, value: snapshot() };
       if (compiled) return phaseRefusal("The exact draft is ready for operator review. No later model edit is accepted in this turn.");
       try {
+        if (name === "runner.reopen_prepared_action") {
+          const selection = actionRuleAuthoringCheckpoint({
+            intent_digest: canonicalJsonDigest(intent), context_digest: contextDigest(), components: {},
+            reopened_draft: args as NonNullable<typeof reopenedDraft>,
+          }).reopened_draft!;
+          if (reopenedDraft) {
+            if (canonicalJsonDigest(reopenedDraft) !== canonicalJsonDigest(selection)) return phaseRefusal("Finish the current exact revision before selecting another prepared draft.");
+            return { ok: true, value: snapshot() };
+          }
+          reopen(selection);
+          diagnostics = [];
+          await saveCheckpoint().catch((error) => { infrastructureFailure = error; throw error; });
+          return { ok: true, value: { status: "disabled_revision_opened", ...snapshot() } };
+        }
         if (name === "runner.inspect_action_relationships" || name === "runner.review_action_relationship") {
           const result = inspectActionRelationships({ built: context.builtCatalog, args, reviewed: reviewedRelationships,
             prepare: name === "runner.review_action_relationship" });
@@ -287,13 +334,13 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           });
           submissions.approval = bindApprovalLimitsToValidatedOutcome(submissions.approval as ApprovalSubmission, submissions.rule as RuleSubmission);
           const draft = assembleDraft(submissions);
-          if (input.reservedOutcomes?.includes(draft.outcome)) {
-            return phaseRefusal("This outcome name belongs to another prepared action in the same job. Choose a distinct business outcome; do not overwrite it.");
+          if (input.reservedOutcomes?.includes(draft.outcome) && baseline?.outcome !== draft.outcome) {
+            return phaseRefusal("ACTION_OUTCOME_COLLISION: this outcome already has a prepared draft. If the operator is clarifying that SAME action, call runner.reopen_prepared_action with its exact digest, then revise only requested fields. A genuinely different action cannot claim this outcome. Never ask the operator to invent an internal name or repeat the job.");
           }
           assertExplicitApprovalIntentPreserved(intent, draft.approval);
           assertActionExecutionIntentPreserved([intent, ...operatorMessages], draft.effect.writeback);
           const result = compileActionRuleModelDraft({ draft, ...context });
-          if (initial && ACTION_RULE_PHASES.every((phase) => canonicalJsonDigest(initial[phase]) === canonicalJsonDigest(submissions[phase]))) {
+          if (initial && !reopenedDraft && ACTION_RULE_PHASES.every((phase) => canonicalJsonDigest(initial![phase]) === canonicalJsonDigest(submissions[phase]))) {
             return phaseRefusal("The draft has no change from the reviewed baseline. Make the requested edit or ask what should change; do not claim a revision was saved.");
           }
           compiled = result;
@@ -340,6 +387,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     "For caller-selected business values declare bounded inputs on the rule and reference them with {kind:'input',name:'...'}. Numeric inputs require integer minimum and maximum, money uses minor units with explicit currency, strings require max_length and schema enums when available. Inputs cannot select target keys, relationship keys, trusted identity, SQL, arbitrary patches or approval decisions. Effects remain derived from exact input expressions and verified facts.",
     "Reuse the current components and operator answers. A validation failure is feedback to you: repair it and retry validate_action_draft. Do not ask the operator to repeat an already supplied bound, unit, or limit. Never guess a missing business threshold or silently broaden a rule.",
     "When editing a baseline, changed_fields lists only the explicitly requested component properties. Unlisted values and the existing outcome, target, operation and authority names remain unchanged.",
+    "Invalid-request refusal, automatic approval, human fallback (including limit overruns), and automatic completion belong to one action. Put validity in require and routine auto-eligibility in auto_approve_when; a valid non-auto-eligible request goes to the same approval class's human fallback. Never require auto-approval eligibility merely to propose a valid request.",
+    "Earlier prepared drafts are editable through runner.reopen_prepared_action. If planning mistakenly split one action into routine/exception/refusal intents, reopen the exact earlier draft and identify the pending intents covered by the same policy. Do not invent duplicate outcomes or tell the operator these drafts cannot be edited. Opening resets local components to that baseline: reapply the operator's clarification using changed_fields, preserving unrelated values and supervised completion. List only genuinely covered pending intents; independent effects remain separate. If the baseline already implements the clarification, validate it unchanged and explain that no policy edit was needed.",
     "Call runner.validate_action_draft when complete. Only a ready_for_review result means compilation passed; then briefly summarize the business result without claiming activation, approval or a write. Otherwise ask one clear business question. Avoid status narration between tool calls; the UI shows progress. Keep your visible response short.",
     ...ACTION_RULE_PHASES.map((phase) => `${phase} component rules: ${phaseInstruction(phase)}`),
   ].join("\n");
@@ -361,7 +410,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         `Original operator job: ${JSON.stringify(intent)}`,
         `Current normalized structural catalog: ${serializeAuthoringCatalog(context.builtCatalog)}`,
         `Current disabled draft: ${JSON.stringify(snapshot())}`,
-        `Other outcomes already prepared by this job; do not replace: ${JSON.stringify(input.reservedOutcomes ?? [])}`,
+        `Reserved outcomes (creation cannot overwrite): ${JSON.stringify(input.reservedOutcomes ?? [])}`,
+        `Prepared drafts available for exact revision: ${JSON.stringify(preparedDrafts.map((draft) => ({ outcome: draft.outcome, digest: canonicalJsonDigest(draft), draft })))}`,
+        `Pending business intents (zero-based indexes): ${JSON.stringify(pendingIntents.map((intent, index) => ({ index, intent })))}`,
         `Operator message: ${JSON.stringify(operatorMessage)}`,
         `Earlier business answers for this exact outcome: ${JSON.stringify(operatorMessages)}`,
       ].join("\n"),
@@ -377,7 +428,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       message: result.answer, correction_used: correctionUsed, clarification_count: clarificationCount,
       authority_granted: false, source_database_changed: false,
       ...(usage ? { usage } : {}),
-      ...(initial && baseline ? { revision: { outcome: baseline.outcome, changed_phases: ACTION_RULE_PHASES.filter((phase) => canonicalJsonDigest(initial[phase]) !== canonicalJsonDigest(submissions[phase])) } } : {}),
+      ...(initial && baseline ? { revision: { outcome: baseline.outcome, changed_phases: ACTION_RULE_PHASES.filter((phase) => canonicalJsonDigest(initial![phase]) !== canonicalJsonDigest(submissions[phase])), ...(reopenedDraft ? { reopened_draft: reopenedDraft } : {}) } } : {}),
     };
     if (!input.askClarification) throw new Error(`ACTION_RULE_MODEL_CLARIFICATION_REQUIRED: ${response}`);
     const answer = await input.askClarification(response);

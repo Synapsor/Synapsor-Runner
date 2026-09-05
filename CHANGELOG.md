@@ -2,6 +2,17 @@
 
 ## 1.8.0 (unreleased)
 
+### Same-Job Action Revisions
+
+- Keeps eligibility, automatic approval, human fallback and refusal in one
+  business outcome. A model can reopen an exact earlier disabled draft when
+  planning mistakenly split its policy branches into multiple actions.
+- Preserves outcome and effect identity, unaffected settings, reviewed scope
+  and separate execution review. Changed fields are validated as a disabled
+  replacement; unrelated outcome collisions remain refused. Interrupted edits
+  retain the selected baseline and resolved job agenda, with a concise policy
+  diff before activation rather than another naming prompt or manual detour.
+
 ### Read Activation Review
 
 - Keeps default activation decisions concise; exhaustive fields and limits stay
