@@ -4978,8 +4978,8 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised", "repair_on_resume"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
-    const writeback = posture === "repair_on_resume" ? "proposal_only" : posture;
+  it.each(["proposal_only", "supervised", "repair_on_resume", "privacy_retry"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+    const writeback = posture === "repair_on_resume" ? "proposal_only" : posture === "privacy_retry" ? "supervised" : posture;
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-semantic-action-"));
     const inspection = principalScopeInspection();
     const build = buildAutoBoundary({
@@ -5179,23 +5179,29 @@ describe("boundary operator-plane CLI", () => {
       expect(resource.kept_out_fields).not.toContain("id");
       expect(resource.model_withheld_fields ?? []).not.toContain("id");
       preRevisionReadDigest = explorationBoundaryCandidateDigest(input.boundary);
-      return {
-        changes: [{
-          resource: "public.service_visits",
-          field: "id",
-          before: "model_and_runner",
-          after: "runner_only",
-          rationale: "Use opaque object references instead of returning the internal row identifier.",
-        }],
-        provider: input.provider,
-        model: input.model,
-        model_exposure_expansions: 0,
-        correction_used: false,
-        authority_granted: false,
-        source_query_executed: false,
-        explore_budget_consumed: false,
-        source_database_changed: false,
-      };
+      const before = await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8");
+      let attempt = 0;
+      expect(input.validateRevision).toBeTypeOf("function");
+      const result = await generateModelReadBoundaryRevision({
+        ...input,
+        dependencies: { requestJson: async (request) => {
+          attempt += 1;
+          expect(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8")).toBe(before);
+          if (attempt === 2) expect(JSON.stringify(request)).toContain("settings.selectable_fields removes Runner's access");
+          return { status: 200, body: { output: [{
+            type: "function_call", call_id: "privacy", name: "runner__submit_read_boundary_revision",
+            arguments: JSON.stringify({ resource_changes: [{ resource: resource.id,
+              field_exposure: [{ field: "id", exposure: "runner_only" }],
+              ...(attempt === 1 || (posture === "privacy_retry" && modelReadBoundaryRevisionGenerator.mock.calls.length === 1)
+                ? { settings: { selectable_fields: resource.selectable_fields.filter((field) => field !== "id") } } : {}),
+            }] }),
+          }] } };
+        } },
+      });
+      expect(attempt).toBe(2);
+      expect(result.correction_used).toBe(true);
+      expect(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8")).toBe(before);
+      return result;
     });
     const answers = [operatorJob];
     let readActivationReviewCount = 0;
@@ -5227,7 +5233,7 @@ describe("boundary operator-plane CLI", () => {
           if (writeback === "supervised") expect(review).toContain("verify the writer");
           readReviewChoiceValues.push(options.map((option) => option.value));
           readActivationReviewCount += 1;
-          return readActivationReviewCount === 1 ? "revise_model" : "finish";
+          return readActivationReviewCount <= (posture === "privacy_retry" ? 2 : 1) ? "revise_model" : "finish";
         }
         throw new Error(`Unexpected semantic Action choice: ${title}`);
       },
@@ -5246,6 +5252,7 @@ describe("boundary operator-plane CLI", () => {
       .mockResolvedValueOnce("Why does Runner need this limit?")
       .mockResolvedValueOnce("At most ten proposals in a rolling 24 hours.")
       .mockResolvedValueOnce("Keep the service visit id private and use opaque references instead.");
+    if (posture === "privacy_retry") vi.mocked(semanticChat.readOperator).mockResolvedValueOnce("retry");
     semanticChat.streamModel = vi.fn(async () => undefined);
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
@@ -5276,10 +5283,19 @@ describe("boundary operator-plane CLI", () => {
       expect(modelBoundaryJobPlanner).toHaveBeenCalledWith(expect.objectContaining({ jobIntent: operatorJob }));
       expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
       expect(clarificationAnswer).toBe("At most ten proposals in a rolling 24 hours.");
-      expect(semanticChat.readOperator).toHaveBeenCalledTimes(3);
-      expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledOnce();
+      expect(semanticChat.readOperator).toHaveBeenCalledTimes(posture === "privacy_retry" ? 4 : 3);
+      expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledTimes(posture === "privacy_retry" ? 2 : 1);
+      if (posture === "privacy_retry") {
+        expect(modelReadBoundaryRevisionGenerator.mock.calls[1]![0].instruction).toBe(
+          "Keep the service visit id private and use opaque references instead.",
+        );
+        expect(semanticChat.rememberDetails).toHaveBeenCalledWith("READ BOUNDARY REVISION NOT SAVED", expect.arrayContaining([
+          expect.stringContaining("settings.selectable_fields removes Runner's access"),
+          "The exact disabled Read and Action drafts are unchanged.",
+        ]));
+      }
       const readRevisionDetails = vi.mocked(semanticChat.rememberDetails).mock.calls
-        .find(([title]) => title.includes("READ BOUNDARY REVISION"));
+        .find(([title]) => title === "READ BOUNDARY REVISION");
       expect(readRevisionDetails).toEqual([
         "READ BOUNDARY REVISION",
         expect.arrayContaining([
@@ -11568,6 +11584,44 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it("preserves and reports every Runner-only decision across an atomic multi-table batch", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-privacy-batch-"));
+    const inspection = boundaryInspection();
+    const second = structuredClone(inspection.tables[0]!);
+    second.name = "x17";
+    inspection.tables.push(second);
+    const build = buildAutoBoundary({ inspection,
+      project: { root, package_manager: "npm", frameworks: ["node"], schema_inputs: [], database_env_names: ["DATABASE_URL"] },
+      sourceEnv: "DATABASE_URL", inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const before = await loadBoundaryReviewContext(root);
+      expect(before.candidate.pack.resources).toHaveLength(2);
+      const requests = before.candidate.pack.resources.map((resource) => ({
+        resource_id: resource.id, withhold_from_model_fields: ["id", "scheduled_at"],
+        actor: "privacy-reviewer", reason: "Keep exact identifiers and verification fields private.",
+      }));
+      const preview = await prepareBoundaryReviewMutationBatch(root, requests, async () => inspection);
+      for (const diff of preview.semantic_diff) expect(diff.added_model_withheld_fields).toEqual(["id", "scheduled_at"]);
+      for (const resource of preview.candidate.pack.resources) {
+        expect(resource.model_withheld_fields).toEqual(["id", "scheduled_at"]);
+        expect(resource.selectable_fields).toEqual(expect.arrayContaining(["id", "scheduled_at", "status"]));
+        expect(resource.kept_out_fields).not.toEqual(expect.arrayContaining(["id"]));
+      }
+      expect((await loadBoundaryReviewContext(root)).candidate).toEqual(before.candidate);
+      // Keep the final consistency check even for callers outside model chat.
+      await expect(prepareBoundaryReviewMutationBatch(root, [
+        { ...requests[0]!, selectable_fields: ["status"] }, requests[1]!,
+      ], async () => inspection)).rejects.toThrow("model-withheld decision");
+      expect((await loadBoundaryReviewContext(root)).candidate).toEqual(before.candidate);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 
   it("preserves one boundary-wide depth decision across every resource in an atomic batch", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-cli-batch-limits-"));

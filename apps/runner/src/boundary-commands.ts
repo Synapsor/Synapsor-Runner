@@ -6615,13 +6615,16 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     && actionDrafts.length === 0
     && (actionIntents.length === 0 || (semanticActionModelDraft && semanticActionCatalog)),
   );
+  let failedReadRevisionInstruction: string | undefined;
   const reviseReadWithModel = canReviseReadWithModel
     ? async (): Promise<boolean> => {
         const chat = input.authoringChat!;
         const modelSession = modelAssistSession!;
         const narrator = input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep;
         const revisionQuestion = [
-          "What should change in this Read Boundary?",
+          failedReadRevisionInstruction
+            ? "Your previous revision request is retained. Say retry to use it again, or describe what should change."
+            : "What should change in this Read Boundary?",
           "You can revise field visibility, operations, labels, reviewed relationships, privacy or limits in ordinary language.",
           "The existing job and trusted scope stay unchanged; dependent Actions will be revalidated before saving.",
         ].join(" ");
@@ -6680,7 +6683,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           return answer;
         };
 
-        const instruction = await readModelAnswer(revisionQuestion);
+        const answer = await readModelAnswer(revisionQuestion);
+        const instruction = answer?.trim().toLowerCase() === "retry" && failedReadRevisionInstruction
+          ? failedReadRevisionInstruction
+          : answer;
         if (instruction === undefined || !instruction.trim()) {
           chat.checkpoint("Read revision paused", [
             "The exact disabled Read and Action drafts are unchanged.",
@@ -6691,6 +6697,35 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         await persistAuthoringResume("authority_review");
 
         try {
+          const previousGenerationLock = context.lock;
+          const validateCandidate = (candidate: ExplorationBoundaryDraft, nextGenerationLock: GenerationLock) => {
+            if (!semanticActionModelDraft || !semanticActionCatalog || !actionInspection) return;
+            const entries = semanticActionDrafts.length ? semanticActionDrafts : [{
+              catalog: semanticActionCatalog, result: semanticActionModelResult!,
+            }];
+            for (const entry of entries) {
+              const retainedCatalog = rebindActionCatalogForReadPolicyRevision({
+                catalog: entry.catalog.catalog,
+                previousLock: previousGenerationLock,
+                nextLock: nextGenerationLock,
+                nextBoundary: candidate,
+              });
+              const prospectiveCatalog = buildActionRuleAuthoringCatalog({
+                boundary: candidate,
+                inspection: actionInspection,
+                retainedCatalog,
+              });
+              compileActionRuleModelDraft({
+                draft: entry.result.compiled.draft,
+                builtCatalog: prospectiveCatalog,
+                readBoundary: candidate,
+                readBoundaryDigest: explorationBoundaryCandidateDigest(candidate),
+              });
+            }
+          };
+          let validatedPreview: { revision: string; preview: BoundaryReviewMutationBatchPreview } | undefined;
+          const revisionKey = (revision: Pick<ModelReadBoundaryRevisionResult, "changes" | "policy_changes">) =>
+            canonicalJsonDigest({ changes: revision.changes, policy_changes: revision.policy_changes ?? [] });
           const revision = await runWithProgress(
             `${boundaryModelLabel(modelSession)} is drafting the exact field-exposure revision`,
             () => (input.modelReadBoundaryRevisionGenerator ?? generateModelReadBoundaryRevision)({
@@ -6705,6 +6740,17 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
               ...(modelSession.dependencies ? { dependencies: modelSession.dependencies } : {}),
               ...(modelSession.conversation ? { conversation: modelSession.conversation } : {}),
               egressAcknowledged: true,
+              validateRevision: async (revision) => {
+                validatedPreview = undefined;
+                const preview = await prepareModelReadBoundaryExposureRevision({
+                  projectRoot: input.projectRoot,
+                  schemaInspector: input.schemaInspector,
+                  context,
+                  revision,
+                  validateCandidate,
+                });
+                validatedPreview = { revision: revisionKey(revision), preview };
+              },
               clarificationHandler: async (request) => {
                 await chat.streamModel([request.question]);
                 const answer = await readModelAnswer(request.question);
@@ -6740,44 +6786,13 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           }
 
           const previousDigest = committed.candidate_digest;
-          const previousGenerationLock = context.lock;
           const revised = await applyModelReadBoundaryExposureRevision({
             projectRoot: input.projectRoot,
             schemaInspector: input.schemaInspector,
             context,
             revision,
-            instruction: instruction.trim(),
-            ...(semanticActionModelDraft && semanticActionCatalog && actionInspection
-              ? {
-                  validateCandidate: (
-                    candidate: ExplorationBoundaryDraft,
-                    nextGenerationLock: GenerationLock,
-                  ) => {
-                    const entries = semanticActionDrafts.length ? semanticActionDrafts : [{
-                      catalog: semanticActionCatalog!, result: semanticActionModelResult!,
-                    }];
-                    for (const entry of entries) {
-                    const retainedCatalog = rebindActionCatalogForReadPolicyRevision({
-                      catalog: entry.catalog.catalog,
-                      previousLock: previousGenerationLock,
-                      nextLock: nextGenerationLock,
-                      nextBoundary: candidate,
-                    });
-                    const prospectiveCatalog = buildActionRuleAuthoringCatalog({
-                      boundary: candidate,
-                      inspection: actionInspection!,
-                      retainedCatalog,
-                    });
-                    compileActionRuleModelDraft({
-                      draft: entry.result.compiled.draft,
-                      builtCatalog: prospectiveCatalog,
-                      readBoundary: candidate,
-                      readBoundaryDigest: explorationBoundaryCandidateDigest(candidate),
-                    });
-                    }
-                  },
-                }
-              : {}),
+            validateCandidate,
+            ...(validatedPreview?.revision === revisionKey(revision) ? { preview: validatedPreview.preview } : {}),
           });
           context = revised.context;
           mappingBoundary = revised.context.candidate;
@@ -6837,17 +6852,21 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             `${revision.changes.length} field exposure change${revision.changes.length === 1 ? "" : "s"} · Read authority unchanged`,
             `${semanticActionModelDraft ? "Action dependency rebuilt · " : ""}source unchanged · /details shows the exact diff`,
           ]);
+          failedReadRevisionInstruction = undefined;
           return true;
         } catch (error) {
+          failedReadRevisionInstruction = instruction.trim();
           const message = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
           chat.rememberDetails("READ BOUNDARY REVISION NOT SAVED", [
             message,
             "The exact disabled Read and Action drafts are unchanged.",
             "No authority, source query, or source write occurred.",
+            `Retained revision request: ${instruction.trim()}`,
           ]);
           await chat.streamCheckpoint("Read revision not saved", [
             message,
             "The prior disabled drafts are unchanged · /details shows the exact refusal",
+            "Choose Revise this Read Boundary again and say retry; your request is retained. You can also change the request or use the manual field editor.",
           ], "warning");
           return false;
         }
@@ -7782,27 +7801,20 @@ function rebindActionCatalogForReadPolicyRevision(input: {
   };
 }
 
-async function applyModelReadBoundaryExposureRevision(input: {
+type ModelReadBoundaryExposureRevisionInput = {
   projectRoot: string;
   schemaInspector: typeof inspectDatabase;
   context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>;
-  revision: ModelReadBoundaryRevisionResult;
-  instruction: string;
+  revision: Pick<ModelReadBoundaryRevisionResult, "changes" | "policy_changes">;
   validateCandidate?: (
     candidate: ExplorationBoundaryDraft,
     generationLock: GenerationLock,
   ) => void;
-}): Promise<{
-  context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>;
-  workload: ReadWorkloadView;
-  committed: {
-    candidate_digest: `sha256:${string}`;
-    review_revision: number;
-    review: ReadWorkloadReview;
-    authority_activated: false;
-    source_database_changed: false;
-  };
-}> {
+};
+
+export async function prepareModelReadBoundaryExposureRevision(
+  input: ModelReadBoundaryExposureRevisionInput,
+): Promise<BoundaryReviewMutationBatchPreview> {
   const byResource = new Map<string, ModelReadBoundaryRevisionResult["changes"]>();
   const catalog = readBoundaryRevisionCatalog(input.context.candidate);
   const settings = new Map((input.revision.policy_changes ?? []).map((change) => {
@@ -7832,6 +7844,23 @@ async function applyModelReadBoundaryExposureRevision(input: {
     input.context.bundle.mutation_bindings,
   );
   input.validateCandidate?.(preview.candidate, preview.build.lock);
+  return preview;
+}
+
+async function applyModelReadBoundaryExposureRevision(input: ModelReadBoundaryExposureRevisionInput & {
+  preview?: BoundaryReviewMutationBatchPreview;
+}): Promise<{
+  context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>;
+  workload: ReadWorkloadView;
+  committed: {
+    candidate_digest: `sha256:${string}`;
+    review_revision: number;
+    review: ReadWorkloadReview;
+    authority_activated: false;
+    source_database_changed: false;
+  };
+}> {
+  const preview = input.preview ?? await prepareModelReadBoundaryExposureRevision(input);
   const mutation = await commitBoundaryReviewMutationBatch(input.projectRoot, preview);
   const context = await loadBoundaryReviewContext(input.projectRoot);
   const workload = await recordExactReadAuthorityAsReusableWorkload({

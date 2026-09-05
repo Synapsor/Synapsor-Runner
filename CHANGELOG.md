@@ -2,6 +2,17 @@
 
 ## 1.8.0 (unreleased)
 
+### Privacy Revision Recovery
+
+- Validates the complete Read candidate and dependent Actions inside the model
+  revision loop. Conflicting Runner-only and selectable-field decisions receive
+  one targeted correction instead of failing after model validation has ended.
+  Correction cannot silently drop a submitted Runner-only decision.
+- Preserves final exposure checks, reports every table's exact before/after
+  diff, and retains failed revision wording for an explicit retry in the same
+  review. No rejected revision changes saved drafts, active authority or source
+  data; business rules, approval limits and execution intent stay separate.
+
 ### Same-Job Action Revisions
 
 - Keeps eligibility, automatic approval, human fallback and refusal in one

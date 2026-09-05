@@ -1168,7 +1168,6 @@ export async function prepareBoundaryReviewMutationBatch(
     boundaryWideSettings,
   );
   let candidate = state.candidate;
-  const differences: BoundaryReviewSemanticDiff[] = [];
   for (const request of requests) {
     // Boundary-wide settings are carried through every resource mutation in
     // the atomic batch. Otherwise a later resource rebuild can restore the
@@ -1181,15 +1180,19 @@ export async function prepareBoundaryReviewMutationBatch(
       request: effectiveRequest,
     });
     assertRequestedExposureState(request, next);
-    differences.push(semanticDiff(
-      request.resource_id,
-      candidate,
-      next,
-      managedDecisionsForRequest(request).length > 0,
-    ));
     candidate = next;
   }
   const reviewed = reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
+  // Every request must survive later resource rebuilds and final normalization.
+  // The generated baseline already includes the whole batch, so intermediate
+  // candidates cannot serve as the "before" side of each resource's diff.
+  for (const request of requests) assertRequestedExposureState(request, reviewed.candidate);
+  const differences = requests.map((request) => semanticDiff(
+    request.resource_id,
+    state.candidate,
+    reviewed.candidate,
+    managedDecisionsForRequest(request).length > 0,
+  ));
   const core = {
     schema_version: "synapsor.boundary-review-mutation-batch-decision.v1",
     bindings,

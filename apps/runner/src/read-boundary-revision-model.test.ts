@@ -11,6 +11,82 @@ import {
 } from "./read-boundary-revision-model.js";
 
 describe("model-assisted Read Boundary field exposure revisions", () => {
+  it("corrects a Runner-only decision that also removes the field from selectable_fields", async () => {
+    const original = boundary();
+    const before = structuredClone(original);
+    const requests: string[] = [];
+    const validateRevision = vi.fn(async () => undefined);
+    const result = await generateModelReadBoundaryRevision({
+      instruction: "Keep internal database IDs private but available to Runner; retain customer references.",
+      provider: "openai", model: "gpt-test", apiKey: "test-only", boundary: original, egressAcknowledged: true,
+      validateRevision,
+      dependencies: { requestJson: async (request) => {
+        requests.push(JSON.stringify(request));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: "privacy",
+          name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{
+            resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }],
+            ...(requests.length === 1 ? { settings: { selectable_fields: ["status"] } } : {}),
+          }] }),
+        }] } };
+      } },
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContain("public.orders.id is marked runner_only, but settings.selectable_fields removes Runner's access");
+    expect(validateRevision).toHaveBeenCalledOnce();
+    expect(result.correction_used).toBe(true);
+    expect(result.changes).toMatchObject([{ field: "id", after: "runner_only" }]);
+    expect(result.policy_changes).toBeUndefined();
+    expect(original).toEqual(before);
+  });
+
+  it.each([true, false])("validates the complete candidate before acceptance (correction succeeds: %s)", async (recovers) => {
+    const requests: string[] = [];
+    const validateRevision = vi.fn(async () => {
+      if (!recovers || validateRevision.mock.calls.length === 1) {
+        throw new Error("Reviewed model-withheld decision for public.orders.id was not reflected in the disabled candidate.");
+      }
+    });
+    const result = generateModelReadBoundaryRevision({
+      instruction: "Keep internal IDs private without losing Runner verification fields.",
+      provider: "openai", model: "gpt-test", apiKey: "test-only", boundary: boundary(), egressAcknowledged: true,
+      validateRevision,
+      dependencies: { requestJson: async (request) => {
+        requests.push(JSON.stringify(request));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: "privacy",
+          name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{
+            resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }],
+          }] }),
+        }] } };
+      } },
+    });
+    if (recovers) await expect(result).resolves.toMatchObject({ correction_used: true, authority_granted: false });
+    else await expect(result).rejects.toThrow("Reviewed model-withheld decision for public.orders.id");
+    expect(requests).toHaveLength(2);
+    expect(validateRevision).toHaveBeenCalledTimes(2);
+    expect(requests[1]).toContain("Reviewed model-withheld decision for public.orders.id");
+  });
+
+  it("refuses a correction that drops the failed private-field decision", async () => {
+    let attempt = 0;
+    const validateRevision = vi.fn(async () => undefined);
+    await expect(generateModelReadBoundaryRevision({
+      instruction: "Keep IDs and versions private and available to Runner.",
+      provider: "openai", model: "gpt-test", apiKey: "test-only", boundary: boundary(), egressAcknowledged: true,
+      validateRevision,
+      dependencies: { requestJson: async () => {
+        attempt += 1;
+        return { status: 200, body: { output: [{ type: "function_call", call_id: "privacy",
+          name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{ resource: "public.orders",
+            field_exposure: (attempt === 1 ? ["id", "version"] : ["version"]).map((field) => ({ field, exposure: "runner_only" })),
+            ...(attempt === 1 ? { settings: { selectable_fields: ["status", "version"] } } : {}),
+          }] }),
+        }] } };
+      } },
+    })).rejects.toThrow("correction dropped the Runner-only decision for public.orders.id");
+    expect(attempt).toBe(2);
+    expect(validateRevision).not.toHaveBeenCalled();
+  });
+
   it("retains the exact 36-field privacy diff without hiding business references or discarding private facts", async () => {
     const reviewed = boundary();
     const names = ["accounts", "memberships", "subscribers", "subscriptions", "lines", "usage", "invoices", "payments", "preferences", "cases", "notes", "offers"];
