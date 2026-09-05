@@ -9,6 +9,55 @@ import {
 const lock = `sha256:${"a".repeat(64)}` as const;
 
 describe("Action Rule authoring catalog", () => {
+  it("retains every component of an inspected composite key without changing Read exposure", () => {
+    const source = inspection();
+    const fk = source.tables[1]!.foreign_keys[0]!;
+    fk.columns = ["tenant_id", "account_id"];
+    fk.referenced_columns = ["tenant_id", "account_id"];
+    const read = boundary();
+    const original = structuredClone(read);
+    const result = buildActionRuleAuthoringCatalog({ boundary: read, inspection: source });
+    expect(result.catalog.relationships[0]).toEqual({ name: "refund_account_fk",
+      from_resource: "support.refund_requests", to_resource: "support.accounts",
+      field_pairs: [{ local_field: "tenant_id", target_field: "tenant_id" }, { local_field: "account_id", target_field: "account_id" }],
+      cardinality: "many_to_one", nullable: false, target_unique: true });
+    expect(read).toEqual(original);
+    fk.referenced_columns.reverse();
+    const reordered = buildActionRuleAuthoringCatalog({ boundary: read, inspection: source });
+    expect(reordered.authoring.digest).not.toBe(result.authoring.digest);
+  });
+
+  it.each(["nonunique", "partial", "expression", "unusable", "unverified"])("refuses %s target proof with an actionable capability diagnostic", (kind) => {
+    const source = inspection();
+    const target = source.tables[0]!;
+    target.primary_key = [];
+    target.unique_constraints = [];
+    target.indexes = [{ name: "not_a_proof", unique: kind !== "nonunique", columns: ["account_id"],
+      catalog_key_columns: kind === "expression" ? ["account_id", ""] : ["account_id"],
+      catalog_usable: kind !== "unusable", catalog_partial: kind === "partial" }];
+    if (kind === "unverified") delete target.indexes[0]!.catalog_usable;
+    const result = buildActionRuleAuthoringCatalog({ boundary: boundary(), inspection: source });
+    expect(result.catalog.relationships).toEqual([]);
+    expect(result.authoring.diagnostics).toContainEqual(expect.objectContaining({
+      relationship: "refund_account_fk", target_resource: "support.accounts", code: "ACTION_RULE_RELATIONSHIP_UNBOUNDED" }));
+  });
+
+  it("rejects incomplete or duplicated composite metadata instead of dropping a key", () => {
+    const source = inspection();
+    source.tables[1]!.foreign_keys[0]!.columns.push("tenant_id");
+    const result = buildActionRuleAuthoringCatalog({ boundary: boundary(), inspection: source });
+    expect(result.catalog.relationships).toHaveLength(0);
+    expect(result.authoring.diagnostics).toContainEqual(expect.objectContaining({ code: "ACTION_RULE_RELATIONSHIP_KEY_UNSUPPORTED" }));
+  });
+
+  it.each(["unvalidated_foreign_key", "non_exact_collation"] as const)("reports %s as a capability limit, not a missing permission", (issue) => {
+    const source = inspection();
+    source.tables[1]!.foreign_keys[0]!.action_rule_issue = issue;
+    const result = buildActionRuleAuthoringCatalog({ boundary: boundary(), inspection: source });
+    expect(result.catalog.relationships).toHaveLength(0);
+    expect(result.authoring.diagnostics).toContainEqual(expect.objectContaining({ code: "ACTION_RULE_RELATIONSHIP_PROOF_UNSUPPORTED" }));
+  });
+
   it("separates model-visible, Runner-only, and guard fields without reading values", () => {
     const result = buildActionRuleAuthoringCatalog({
       boundary: boundary(),

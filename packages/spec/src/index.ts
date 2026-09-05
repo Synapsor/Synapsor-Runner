@@ -4,6 +4,8 @@ export { normalizeContract } from "./normalize.js";
 export { loadContract } from "./load.js";
 export { SynapsorSpecValidationError } from "./errors.js";
 export type {
+  RuleRelationshipFieldPairSpecV1,
+  RuleRelationshipFieldsSpecV1,
   AgentContextSpec,
   ActionRuleBooleanExpressionV1,
   ActionRuleScalarExpressionV1,

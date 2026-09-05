@@ -5575,6 +5575,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                     readBoundaryDigest: explorationBoundaryCandidateDigest(mappingBoundary),
                   };
                 },
+                onRelationshipReview: (lines) => input.authoringChat?.rememberDetails("ACTION RELATIONSHIP REVIEW", lines),
                 askClarification: async (question) => {
                   // This is the authoring model's own turn. Follow-up questions
                   // return to the same tool-enabled conversation, not a narrator.

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { ActionRuleError, actionRuleRelationshipPairs } from "@synapsor-runner/action-rules";
 import mysql from "mysql2/promise";
 import type {
   ActionRuleFactLoaderAdapterV1,
@@ -65,6 +66,9 @@ function validateActionRuleFactQuery(query: ActionRuleFactQueryV1): void {
   if (query.predicates.length < 1 || query.predicates.length > 16) throw new Error("ACTION_RULE_INVALID_PREDICATES");
   for (const predicate of query.predicates) {
     if (predicate.operation === "in" && predicate.values.length > 100) throw new Error("ACTION_RULE_INVALID_PREDICATES");
+    if (predicate.operation === "tuple_in" && (predicate.columns.length < 2 || predicate.columns.length > 16
+      || new Set(predicate.columns).size !== predicate.columns.length || predicate.tuples.length > 100
+      || predicate.tuples.some((tuple) => tuple.length !== predicate.columns.length || tuple.some((value) => value === null || value === undefined)))) throw new Error("ACTION_RULE_INVALID_PREDICATES");
   }
 }
 
@@ -72,6 +76,14 @@ export function buildMysqlActionRuleFactQuery(query: ActionRuleFactQueryV1): { s
   validateActionRuleFactQuery(query);
   const values: unknown[] = [];
   const where = query.predicates.map((predicate) => {
+    if (predicate.operation === "tuple_in") {
+      const columns = predicate.columns.map(quoteMysqlIdentifier);
+      if (!predicate.tuples.length) return "FALSE";
+      return `(${predicate.tuples.map((tuple) => `(${tuple.map((value, index) => {
+        values.push(value);
+        return `${columns[index]} = ?`;
+      }).join(" AND ")})`).join(" OR ")})`;
+    }
     const column = quoteMysqlIdentifier(predicate.column);
     if (predicate.operation === "eq") {
       values.push(predicate.value);
@@ -112,6 +124,38 @@ export function createMysqlActionRuleFactLoader(connection: MysqlApplyConnection
       const compiled = buildMysqlActionRuleFactQuery(query);
       const [rows] = await connection.query<Record<string, unknown>[]>(compiled.sql, compiled.values);
       return rows;
+    },
+    async assertRelationshipCompatible(binding, parent): Promise<void> {
+      if (!binding.relationship || binding.verification.source.kind !== "relationship") throw new Error("ACTION_RULE_LOAD_PLAN_INVALID");
+      const forward = binding.verification.source.direction === "forward";
+      const from = forward ? parent.resource : binding.resource;
+      const to = forward ? binding.resource : parent.resource;
+      const pairs = actionRuleRelationshipPairs(binding.relationship);
+      const [rows] = await connection.query<Record<string, unknown>[]>(
+        `SELECT COLUMN_NAME AS local_field, REFERENCED_COLUMN_NAME AS target_field
+         FROM information_schema.KEY_COLUMN_USAGE
+         WHERE CONSTRAINT_NAME = ? AND TABLE_SCHEMA = ? AND TABLE_NAME = ?
+           AND REFERENCED_TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME = ?
+         ORDER BY ORDINAL_POSITION LIMIT 17`,
+        [binding.relationship.name, from.schema, from.table, to.schema, to.table],
+      );
+      const [indexes] = await connection.query<Record<string, unknown>[]>(
+        `SELECT INDEX_NAME AS index_name, COLUMN_NAME AS column_name, SUB_PART AS prefix_length
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND NON_UNIQUE = 0
+         ORDER BY INDEX_NAME, SEQ_IN_INDEX LIMIT 4097`, [to.schema, to.table],
+      );
+      const unique = new Map<string, Record<string, unknown>[]>();
+      for (const row of indexes) {
+        const name = String(row.index_name);
+        unique.set(name, [...(unique.get(name) ?? []), row]);
+      }
+      const proven = indexes.length <= 4096 && [...unique.values()].some((key) => key.length === pairs.length
+        && new Set(key.map((row) => row.column_name)).size === key.length
+        && key.every((row) => row.prefix_length === null && pairs.some((pair) => pair.target_field === row.column_name)));
+      if (!proven || rows.length !== pairs.length || rows.some((row, index) => row.local_field !== pairs[index]!.local_field || row.target_field !== pairs[index]!.target_field)) {
+        throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The reviewed composite relationship or unconditional full-column unique target proof changed. Re-review the Action Boundary.");
+      }
     },
   };
 }

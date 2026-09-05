@@ -233,16 +233,21 @@ export type RuleVerificationScopeSpecV1 = ExtensionFields & (
   }
 );
 
+export type RuleRelationshipFieldPairSpecV1 = { local_field: string; target_field: string };
+
+// Preserve the legacy representation (and its digest); composite keys are ordered tuples.
+export type RuleRelationshipFieldsSpecV1 =
+  | { local_field: string; target_field: string; field_pairs?: never }
+  | { field_pairs: RuleRelationshipFieldPairSpecV1[]; local_field?: never; target_field?: never };
+
 export type RuleVerificationBindingSourceSpecV1 = ExtensionFields & (
   | { kind: "subject_ref" }
   | {
     kind: "relationship";
     from_binding: string;
     relationship: string;
-    local_field: string;
-    target_field: string;
     direction: "forward" | "inverse";
-  }
+  } & RuleRelationshipFieldsSpecV1
 );
 
 export type RuleVerificationResourceSpecV1 = ExtensionFields & {

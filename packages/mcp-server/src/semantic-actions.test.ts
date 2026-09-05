@@ -243,7 +243,7 @@ function createFixtureRuntime(options: {
           async load(query) {
             queries.push(query);
             const identityPredicate = query.predicates.find((predicate) =>
-              predicate.column === "preference_id" && predicate.operation === "eq");
+              predicate.operation === "eq" && predicate.column === "preference_id");
             const requestedId = identityPredicate?.operation === "eq" ? identityPredicate.value : undefined;
             return preferences.filter((preference) => preference.preference_id === requestedId).map((preference) => ({
               preference_id: preference.preference_id,

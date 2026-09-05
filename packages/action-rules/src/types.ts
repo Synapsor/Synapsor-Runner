@@ -5,6 +5,7 @@ import type {
   DerivedEffectEnvelopeSpecV1,
   JsonScalar,
   RuleVerificationBoundarySpecV1,
+  RuleRelationshipFieldsSpecV1,
 } from "@synapsor/spec";
 import type { ActionBoundarySharedLimitV1 } from "@synapsor-runner/protocol";
 
@@ -35,12 +36,10 @@ export type ActionRuleCatalogResourceV1 = {
   fields: ActionRuleCatalogFieldV1[];
 };
 
-export type ActionRuleCatalogRelationshipV1 = {
+export type ActionRuleCatalogRelationshipV1 = RuleRelationshipFieldsSpecV1 & {
   name: string;
   from_resource: string;
   to_resource: string;
-  local_field: string;
-  target_field: string;
   cardinality: "one_to_one" | "many_to_one" | "one_to_many";
   nullable: boolean;
   target_unique: boolean;

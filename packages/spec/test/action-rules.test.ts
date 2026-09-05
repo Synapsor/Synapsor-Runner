@@ -88,6 +88,26 @@ function ruleContract() {
 }
 
 describe("Action Rule contract authority", () => {
+  it("preserves composite field-pair order and rejects mixed, repeated, incomplete or injected joins", () => {
+    const contract = ruleContract() as any;
+    const parent = contract.verification_boundaries[0].resources[0];
+    const source = { kind: "relationship", from_binding: "preference", relationship: "reviewed_fk", direction: "forward",
+      field_pairs: [{ local_field: "tenant_id", target_field: "tenant_id" }, { local_field: "preference_id", target_field: "preference_id" }] };
+    contract.verification_boundaries[0].resources.push({ ...structuredClone(parent), binding: "related", source });
+    contract.verification_boundaries[0].lock_order.push("related");
+    expect(validateContract(contract)).toMatchObject({ ok: true });
+    expect(normalizeContract(contract).verification_boundaries?.[0]?.resources.find((resource) => resource.binding === "related")?.source).toEqual(source);
+    for (const bad of [
+      { ...source, local_field: "tenant_id", target_field: "tenant_id" },
+      { ...source, field_pairs: source.field_pairs.slice(0, 1) },
+      { ...source, field_pairs: [source.field_pairs[0], source.field_pairs[0]] },
+      { ...source, field_pairs: [{ local_field: "tenant_id OR true", target_field: "tenant_id" }, source.field_pairs[1]] },
+    ]) {
+      contract.verification_boundaries[0].resources[1].source = bad;
+      expect(validateContract(contract).errors.map((error) => error.code)).toContain("INVALID_VERIFICATION_RELATIONSHIP");
+    }
+  });
+
   it("accepts and preserves a typed reviewed rule without creating a capability per outcome", () => {
     const contract = ruleContract();
     expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });

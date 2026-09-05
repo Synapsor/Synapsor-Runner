@@ -89,7 +89,7 @@ function digest(value) {
   return canonicalJsonDigest(value);
 }
 
-function fixture(engine, schema) {
+function fixture(engine, schema, composite = false) {
   const source = "semantic_source";
   const resource = `${schema}.semantic_case_actions`;
   const text64 = { kind: "string", max_length: 64, comparison: "exact" };
@@ -206,6 +206,28 @@ function fixture(engine, schema) {
     approval_class: "support_cases.standard_schedule",
     ttl_seconds: 600,
   };
+  const subjectResource = composite ? `${schema}.semantic_case_offers` : resource;
+  if (composite) {
+    const fields = [
+      { name: "offer_id", type: text64, nullable: false },
+      { name: "tenant_id", type: text64, nullable: false },
+      { name: "principal_id", type: text64, nullable: false },
+      { name: "case_id", type: text64, nullable: true },
+      { name: "version", type: { kind: "integer" }, nullable: false },
+    ];
+    const field_pairs = [{ local_field: "tenant_id", target_field: "tenant_id" }, { local_field: "case_id", target_field: "case_id" }];
+    catalog.resources.push({ name: subjectResource, source, engine, schema, table: "semantic_case_offers",
+      primary_key: "offer_id", tenant_key: "tenant_id", principal_scope_key: "principal_id", version_field: "version", fields });
+    catalog.relationships.push({ name: "semantic_offer_case_fk", from_resource: subjectResource, to_resource: resource,
+      field_pairs, cardinality: "many_to_one", nullable: true, target_unique: true });
+    verificationBoundary.resources[0].source = { kind: "relationship", from_binding: "offer", relationship: "semantic_offer_case_fk", direction: "forward", field_pairs };
+    verificationBoundary.resources.unshift({ binding: "offer", resource: subjectResource, source: { kind: "subject_ref" },
+      primary_key: "offer_id", version_field: "version", fields,
+      scope: { mode: "columns", tenant_field: "tenant_id", principal_field: "principal_id" },
+      cardinality: "one", max_rows: 1, overflow: "unsupported", lock: "for_update" });
+    verificationBoundary.lock_order = ["offer", "case"];
+    rule.subjects = [{ binding: "offer", resource: subjectResource, input: "opaque_subject_ref" }];
+  }
   const compiled = compileActionRule({
     rule,
     verification_boundary: verificationBoundary,
@@ -260,14 +282,14 @@ function fixture(engine, schema) {
       activated_at: new Date().toISOString(),
     }],
   });
-  return { source, resource, compiled, approvalClasses, registry, rule };
+  return { source, resource, subjectResource, composite, compiled, approvalClasses, registry, rule };
 }
 
 function subject(fixtureValue, caseId) {
   return [{
-    binding: "case",
-    resource: fixtureValue.resource,
-    primary_key: { column: "case_id", value: caseId },
+    binding: fixtureValue.composite ? "offer" : "case",
+    resource: fixtureValue.subjectResource,
+    primary_key: { column: fixtureValue.composite ? "offer_id" : "case_id", value: caseId },
     subject_ref_digest: digest({ case_id: caseId, observation: "live-gate" }),
   }];
 }
@@ -388,6 +410,7 @@ async function execute(engine, handle, sql, values = []) {
 }
 
 async function prepareTable(engine, admin) {
+  await execute(engine, admin, "DROP TABLE IF EXISTS semantic_case_offers");
   if (engine === "postgres") {
     await execute(engine, admin, "DROP TABLE IF EXISTS public.semantic_case_actions");
     await execute(engine, admin, `CREATE TABLE public.semantic_case_actions (
@@ -397,7 +420,8 @@ async function prepareTable(engine, admin) {
       status text NOT NULL,
       risk text,
       approval_tier text NOT NULL,
-      version bigint NOT NULL
+      version bigint NOT NULL,
+      UNIQUE (tenant_id, case_id)
     )`);
     await execute(engine, admin, "GRANT SELECT, UPDATE ON public.semantic_case_actions TO synapsor_crud_ledger");
     await execute(engine, admin, `INSERT INTO public.semantic_case_actions
@@ -421,7 +445,8 @@ async function prepareTable(engine, admin) {
     status varchar(24) NOT NULL,
     risk varchar(24) NULL,
     approval_tier varchar(24) NOT NULL,
-    version bigint NOT NULL
+    version bigint NOT NULL,
+    UNIQUE (tenant_id, case_id)
   ) ENGINE=InnoDB`);
   await execute(engine, admin, "GRANT SELECT, UPDATE ON synapsor_fleet.semantic_case_actions TO 'synapsor_crud_ledger'@'%'");
   await execute(engine, admin, `INSERT INTO semantic_case_actions
@@ -449,12 +474,26 @@ async function setRisk(engine, admin, caseId, risk) {
   await execute(engine, admin, `UPDATE ${table} SET risk = ${parameters[0]} WHERE case_id = ${parameters[1]}`, [risk, caseId]);
 }
 
-async function verifyEngine(engine, urls) {
+async function verifyEngine(engine, urls, composite = false) {
   const schema = engine === "postgres" ? "public" : "synapsor_fleet";
   const handles = await createDatabaseHandles(engine, urls);
   try {
     await prepareTable(engine, handles.admin);
-    const fixtureValue = fixture(engine, schema);
+    if (composite) {
+      await execute(engine, handles.admin, "DROP TABLE IF EXISTS synapsor_writeback_receipts");
+      const type = engine === "postgres" ? "text" : "varchar(64)";
+      await execute(engine, handles.admin, `CREATE TABLE semantic_case_offers (
+        offer_id ${type} PRIMARY KEY, tenant_id ${type} NOT NULL, principal_id ${type} NOT NULL,
+        case_id ${type}, version bigint NOT NULL,
+        CONSTRAINT semantic_offer_case_fk FOREIGN KEY (tenant_id, case_id) REFERENCES semantic_case_actions(tenant_id, case_id)
+      )${engine === "mysql" ? " ENGINE=InnoDB" : ""}`);
+      await execute(engine, handles.admin, engine === "postgres"
+        ? "GRANT SELECT, UPDATE ON semantic_case_offers TO synapsor_crud_ledger"
+        : "GRANT SELECT, UPDATE ON synapsor_fleet.semantic_case_offers TO 'synapsor_crud_ledger'@'%'");
+      await execute(engine, handles.admin, "INSERT INTO semantic_case_offers SELECT case_id, tenant_id, principal_id, case_id, version FROM semantic_case_actions");
+      await execute(engine, handles.admin, "INSERT INTO semantic_case_offers VALUES ('offer_empty', 'acme', 'agent_1', NULL, 1)");
+    }
+    const fixtureValue = fixture(engine, schema, composite);
     const factLoader = engine === "postgres"
       ? createPostgresActionRuleFactLoader(handles.facts)
       : createMysqlActionRuleFactLoader(handles.facts);
@@ -511,6 +550,10 @@ async function verifyEngine(engine, urls) {
     }
 
     const checkedAt = new Date(Date.parse(verifiedAt) + 1_000).toISOString();
+    if (composite) {
+      const empty = await evaluateCase({ fixture: fixtureValue, factLoader, caseId: "offer_empty", proposalId: "empty_composite", verifiedAt });
+      assert(empty.result === "unknown", `${engine} null composite relationship must not resolve a target`, empty);
+    }
     const store = new MemoryIntentStore();
     const job = writebackJob(engine, fixtureValue, automatic, `proposal_${engine}_auto`);
     const verifier = createSemanticActionVerifier({ registry: fixtureValue.registry, clock: () => checkedAt });
@@ -578,7 +621,25 @@ async function verifyEngine(engine, urls) {
     catch { tamperRejected = true; }
     assert(tamperRejected, `${engine} accepted a patch that differed from the Runner-derived effect`);
 
-    process.stdout.write(`PASS ${engine}: live semantic evaluation, scope, approval, re-verification, apply, replay, and stale-authority refusal\n`);
+    if (composite) {
+      const selected = await evaluateCase({ fixture: fixtureValue, factLoader, caseId: "case_human", proposalId: "changed_link", verifiedAt });
+      assert(selected.result === "eligible", "Link-change fixture must start eligible", selected);
+      await execute(engine, handles.admin, "UPDATE semantic_case_offers SET case_id = 'case_deactivated' WHERE offer_id = 'case_human'");
+      const changed = await apply(writebackJob(engine, fixtureValue, selected, "changed_link"), runnerConfig(engine, urls.write, new MemoryIntentStore(), verifier));
+      assert(changed.status !== "applied", `${engine} applied a proposal after its selected link changed`, changed);
+      assert((await row(engine, handles.admin, "case_human")).status === "open", "Original linked row changed after refusal");
+      assert((await row(engine, handles.admin, "case_deactivated")).status === "open", "Replacement linked row changed after refusal");
+      await execute(engine, handles.admin, engine === "postgres"
+        ? "ALTER TABLE semantic_case_offers DROP CONSTRAINT semantic_offer_case_fk"
+        : "ALTER TABLE semantic_case_offers DROP FOREIGN KEY semantic_offer_case_fk");
+      let refused = false;
+      try {
+        const decision = await evaluateCase({ fixture: fixtureValue, factLoader, caseId: "case_deactivated", proposalId: "missing_fk", verifiedAt });
+        refused = decision.result !== "eligible";
+      } catch (error) { refused = error.code === "ACTION_RULE_AUTHORITY_STALE"; }
+      assert(refused, `${engine} accepted a removed composite schema proof`);
+    }
+    process.stdout.write(`PASS ${engine}${composite ? " composite related UPDATE" : " direct UPDATE"}: live semantic evaluation, scope, approval, re-verification, apply, replay, and stale-authority refusal\n`);
   } finally {
     await handles.facts.end();
     await handles.admin.end();
@@ -609,6 +670,8 @@ try {
   await waitForDatabases(composeEnv);
   await verifyEngine("postgres", urls.postgres);
   await verifyEngine("mysql", urls.mysql);
+  await verifyEngine("postgres", urls.postgres, true);
+  await verifyEngine("mysql", urls.mysql, true);
   process.stdout.write("PASS live PostgreSQL/MySQL semantic Action Rule gate\n");
 } finally {
   run("docker", [...composeArgs, "down", "-v", "--remove-orphans"], {

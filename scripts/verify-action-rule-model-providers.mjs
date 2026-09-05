@@ -299,7 +299,10 @@ function universityEnrollmentFixture() {
   ];
   const relationships = [{
     name: "eligibility_registration_fk", from_resource: "university.eligibility_reviews",
-    to_resource: "university.registration_cases", local_field: "registration_id", target_field: "registration_id",
+    to_resource: "university.registration_cases", field_pairs: [
+      { local_field: "institution_id", target_field: "institution_id" },
+      { local_field: "registration_id", target_field: "registration_id" },
+    ],
     cardinality: "many_to_one", nullable: false, target_unique: true,
   }];
   return fixture({
@@ -307,7 +310,7 @@ function universityEnrollmentFixture() {
     resources, relationships,
     intent: [
       "Draft a proposal-only outcome that promotes one authenticated student's active waitlist offer into enrolled status.",
-      "Use university.eligibility_reviews as the opaque subject and follow eligibility_registration_fk forward to exactly one university.registration_cases row.",
+      "Each selected eligibility review applies to its own registration at the same university; only that registration may change. Locate and use the existing reviewed link.",
       "Require case_kind waitlist_offer, current registration status waitlisted, waitlist_position 1, active unexpired offer, an available seat, satisfied prerequisites, no registration hold, not already enrolled, and current_term true.",
       "Derive only status enrolled on the related registration row. Require one university_registration_reviewer and human review; do not enable writeback or attempt a second row mutation.",
     ].join(" "),

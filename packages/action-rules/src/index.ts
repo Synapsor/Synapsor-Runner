@@ -65,3 +65,4 @@ export {
 } from "./conformance.js";
 export * from "./types.js";
 export { validateActionRuleInputs } from "./inputs.js";
+export { actionRuleRelationshipPairs } from "./relationships.js";

@@ -159,6 +159,31 @@ dependent Action revisions before changing the reviewed Read dependency.
 
 No model participates in runtime rule evaluation.
 
+### Existing relationships in model chat
+
+The model can discover declared links with `runner.inspect_action_relationships`
+and prepare one with `runner.review_action_relationship`. These are internal
+authoring tools, not additions to the four runtime MCP tools. They use only the
+already approved structural catalog, never source rows, SQL, or a schema edit.
+An ambiguous business relationship needs clarification; a missing or unsupported
+link returns its exact reason instead of asking the operator to invent a join.
+
+Composite foreign keys retain all ordered key pairs, including scope columns.
+For example, an offer's `(account_id, subscription_id)` selects its own
+subscription using both columns together. Forward traversal needs a proven
+unique target; inverse traversal is bounded and cannot become an arbitrary
+one-row update. Null components do not match. Join fields remain private to
+verification and do not become model-facing Read fields.
+
+`/details` shows the selected link, each equality, direction and disabled state.
+Reviewing a link does not activate either Boundary. Accepted link selections
+resume only against the same catalog and Read revision. At runtime PostgreSQL
+and MySQL use parameterized, tuple-correlated predicates and recheck the actual
+composite foreign key and unique-key proof before fact loading, including
+transaction-time reverification. Unsupported partial, expression or prefix keys
+cannot stand in for the complete target key. Existing single-column authority
+keeps its original representation and digest.
+
 The portable scalar language supports:
 
 - booleans and checked integers;

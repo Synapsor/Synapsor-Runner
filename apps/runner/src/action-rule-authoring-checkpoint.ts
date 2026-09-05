@@ -6,6 +6,7 @@ export type ActionRuleAuthoringCheckpoint = {
   context_digest: `sha256:${string}`;
   components: Partial<Record<"verification" | "effect" | "rule" | "approval", Record<string, unknown>>>;
   operator_messages?: string[];
+  reviewed_relationships?: string[];
   digest: `sha256:${string}`;
 };
 
@@ -21,7 +22,7 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const record = value as Record<string, unknown>;
   if (record.schema_version !== "synapsor.action-authoring-checkpoint.v1"
-    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "digest"].includes(key))
+    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "reviewed_relationships", "digest"].includes(key))
     || ![record.intent_digest, record.context_digest, record.digest].every((digest) => typeof digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(digest))
     || !record.components || typeof record.components !== "object" || Array.isArray(record.components)) throw fail();
   if (record.operator_messages !== undefined && (!Array.isArray(record.operator_messages)
@@ -31,6 +32,10 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
     if (!["verification", "effect", "rule", "approval"].includes(phase)
       || !component || typeof component !== "object" || Array.isArray(component)) throw fail();
   }
+  if (record.reviewed_relationships !== undefined && (!Array.isArray(record.reviewed_relationships)
+    || record.reviewed_relationships.length > 64
+    || new Set(record.reviewed_relationships).size !== record.reviewed_relationships.length
+    || record.reviewed_relationships.some((name) => typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)))) throw fail();
   if (Buffer.byteLength(JSON.stringify(record), "utf8") > 96 * 1024) throw fail();
   const { digest, ...core } = record;
   if (canonicalJsonDigest(core) !== digest) throw fail();

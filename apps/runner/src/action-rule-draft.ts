@@ -1,5 +1,6 @@
 import {
   ActionRuleError,
+  actionRuleRelationshipPairs,
   createActionRuleAuthority,
   type ActionRuleApprovalClassSourceV1,
   type ActionRuleAuthorityV1,
@@ -286,15 +287,10 @@ export function compileActionRuleModelDraft(input: {
       lock: "for_update",
     };
     if (resourceDraft.source.kind === "relationship" && relationship && parent) {
-      const parentRelationshipField = resourceDraft.source.direction === "forward"
-        ? relationship.local_field
-        : relationship.target_field;
-      addVerificationField(
-        parent.verification,
-        parent.catalog,
-        parent.authoring,
-        parentRelationshipField,
-      );
+      for (const pair of actionRuleRelationshipPairs(relationship)) {
+        addVerificationField(parent.verification, parent.catalog, parent.authoring,
+          resourceDraft.source.direction === "forward" ? pair.local_field : pair.target_field);
+      }
     }
     verificationResources.push(verification);
     bindings.set(resourceDraft.binding, {
@@ -509,8 +505,10 @@ function relationshipSource(
     kind: "relationship",
     from_binding: resource.source.kind === "relationship" ? resource.source.from_binding : "",
     relationship: relationship.name,
-    local_field: relationship.local_field,
-    target_field: relationship.target_field,
+    ...(relationship.field_pairs ? { field_pairs: relationship.field_pairs } : {
+      local_field: relationship.local_field,
+      target_field: relationship.target_field,
+    }),
     direction,
   };
 }
@@ -538,9 +536,9 @@ function requiredVerificationFields(input: {
   if (input.resource.tenant_key) fields.add(input.resource.tenant_key);
   if (input.resource.principal_scope_key) fields.add(input.resource.principal_scope_key);
   if (input.source.kind === "relationship" && input.relationship) {
-    fields.add(input.source.direction === "forward"
-      ? input.relationship.target_field
-      : input.relationship.local_field);
+    for (const pair of actionRuleRelationshipPairs(input.relationship)) {
+      fields.add(input.source.direction === "forward" ? pair.target_field : pair.local_field);
+    }
   }
   return [...fields].sort();
 }

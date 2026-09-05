@@ -1,6 +1,7 @@
 import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/protocol";
 import type { ActionRuleScalarTypeSpecV1, JsonScalar } from "@synapsor/spec";
 import { ActionRuleError, type ActionRuleErrorCode } from "./errors.js";
+import { actionRuleRelationshipPairs } from "./relationships.js";
 import type {
   ActionRuleFactRowV1,
   ActionRuleFactSetV1,
@@ -17,7 +18,8 @@ export type ActionRuleSubjectIdentityV1 = {
 
 export type ActionRuleFactPredicateV1 =
   | { operation: "eq"; column: string; value: JsonScalar }
-  | { operation: "in"; column: string; values: JsonScalar[] };
+  | { operation: "in"; column: string; values: JsonScalar[] }
+  | { operation: "tuple_in"; columns: string[]; tuples: JsonScalar[][] };
 
 export type ActionRuleFactQueryV1 = {
   binding: string;
@@ -35,6 +37,7 @@ export type ActionRuleFactQueryV1 = {
 export type ActionRuleFactLoaderAdapterV1 = {
   engine: "postgres" | "mysql";
   assertResourceCompatible?(binding: CompiledRuleBindingV1): Promise<void>;
+  assertRelationshipCompatible?(binding: CompiledRuleBindingV1, parent: CompiledRuleBindingV1): Promise<void>;
   load(query: ActionRuleFactQueryV1): Promise<Record<string, unknown>[]>;
 };
 
@@ -135,12 +138,21 @@ function relationshipPredicate(
   }
   const parentRows = loaded[binding.verification.source.from_binding]?.rows;
   if (parentRows === undefined) return fail("ACTION_RULE_LOAD_PLAN_INVALID", `Parent facts for ${binding.binding} are unavailable.`);
-  const parentColumn = binding.verification.source.direction === "forward"
-    ? binding.relationship.local_field
-    : binding.relationship.target_field;
-  const childColumn = binding.verification.source.direction === "forward"
-    ? binding.relationship.target_field
-    : binding.relationship.local_field;
+  const forward = binding.verification.source.direction === "forward";
+  const pairs = actionRuleRelationshipPairs(binding.relationship);
+  if (pairs.length > 1) {
+    // Keep each parent's tuple intact; independent IN lists would permit cross-pair matches.
+    const tuples = new Map<string, JsonScalar[]>();
+    for (const row of parentRows) {
+      const tuple = pairs.map((pair) => row[forward ? pair.local_field : pair.target_field]);
+      if (tuple.some((value) => value === undefined || value === null)) continue;
+      tuples.set(canonicalJsonDigest(tuple), tuple as JsonScalar[]);
+    }
+    return { operation: "tuple_in", columns: pairs.map((pair) => forward ? pair.target_field : pair.local_field),
+      tuples: [...tuples].sort(([left], [right]) => left.localeCompare(right)).map(([, tuple]) => tuple) };
+  }
+  const parentColumn = forward ? pairs[0]!.local_field : pairs[0]!.target_field;
+  const childColumn = forward ? pairs[0]!.target_field : pairs[0]!.local_field;
   const values = uniqueValues(parentRows
     .map((row) => row[parentColumn])
     .filter((value): value is JsonScalar => value !== undefined && value !== null));
@@ -223,6 +235,11 @@ export async function loadActionRuleFacts(input: LoadActionRuleFactsInputV1): Pr
     if (binding === undefined) fail("ACTION_RULE_LOAD_PLAN_INVALID", `Compiled lock binding ${bindingName} is unavailable.`);
     if (binding.resource.engine !== input.adapter.engine) fail("ACTION_RULE_ENGINE_MISMATCH", `Verification resource ${binding.resource.name} uses another database engine.`);
     await input.adapter.assertResourceCompatible?.(binding);
+    if (binding.verification.source.kind === "relationship" && binding.relationship?.field_pairs) {
+      const parent = input.compiled.bindings.find((candidate) => candidate.binding === (binding.verification.source.kind === "relationship" ? binding.verification.source.from_binding : ""));
+      if (!parent) return fail("ACTION_RULE_LOAD_PLAN_INVALID", "A composite relationship requires its reviewed parent binding.");
+      await input.adapter.assertRelationshipCompatible?.(binding, parent);
+    }
     const sourcePredicate = binding.verification.source.kind === "subject_ref"
       ? (() => {
           const subject = subjectByBinding.get(binding.binding);
@@ -244,7 +261,8 @@ export async function loadActionRuleFacts(input: LoadActionRuleFactsInputV1): Pr
       lock: input.mode === "transaction_reverify" ? "for_update" : "none",
     };
     queries.push(query);
-    const emptyRelationship = sourcePredicate.operation === "in" && sourcePredicate.values.length === 0;
+    const emptyRelationship = (sourcePredicate.operation === "in" && sourcePredicate.values.length === 0)
+      || (sourcePredicate.operation === "tuple_in" && sourcePredicate.tuples.length === 0);
     bindings[binding.binding] = {
       rows: emptyRelationship ? [] : normalizedRows(binding, await input.adapter.load(query)),
     };

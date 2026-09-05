@@ -64,6 +64,8 @@ export type ActionRuleAuthoringCatalogV1 = {
     code: string;
     resource?: string;
     field?: string;
+    relationship?: string;
+    target_resource?: string;
     message: string;
   }>;
   digest: `sha256:${string}`;
@@ -77,7 +79,7 @@ export type BuiltActionRuleAuthoringCatalogV1 = {
 /**
  * Converts reviewed Boundary and live schema metadata into the closed catalog
  * accepted by the Action Rule compiler. It reads no rows and never guesses a
- * currency, an unbounded text type, a composite relationship, or a scope path.
+ * currency, an unbounded text type, a relationship, or a scope path.
  */
 export function buildActionRuleAuthoringCatalog(input: {
   boundary: ExplorationBoundaryDraft;
@@ -319,47 +321,60 @@ function directRelationships(
   return table.foreign_keys.flatMap((foreignKey) => {
     const to = `${foreignKey.referenced_schema}.${foreignKey.referenced_table}`;
     if (!resourceNames.has(to)) return [];
-    if (foreignKey.columns.length !== 1 || foreignKey.referenced_columns.length !== 1) {
+    const reject = (code: string, reason: string): [] => {
       diagnostics.push({
-        code: "ACTION_RULE_COMPOSITE_RELATIONSHIP_UNSUPPORTED",
-        resource: from,
-        message: `Relationship ${foreignKey.name} uses a composite key and is not available to Action Rules.`,
+        code, resource: from, target_resource: to, relationship: foreignKey.name,
+        message: `Relationship ${foreignKey.name}: ${reason}`,
       });
       return [];
+    };
+    if (foreignKey.action_rule_issue) {
+      return reject("ACTION_RULE_RELATIONSHIP_PROOF_UNSUPPORTED", foreignKey.action_rule_issue === "non_exact_collation"
+        ? "nondeterministic collation cannot prove Runner's exact key equality. This is a database comparison limitation, not an operator permission."
+        : "the database has not validated this foreign key. Operator review cannot establish its schema proof.");
+    }
+    if (foreignKey.columns.length < 1 || foreignKey.columns.length > 16
+      || foreignKey.columns.length !== foreignKey.referenced_columns.length
+      || new Set(foreignKey.columns).size !== foreignKey.columns.length
+      || new Set(foreignKey.referenced_columns).size !== foreignKey.referenced_columns.length) {
+      return reject("ACTION_RULE_RELATIONSHIP_KEY_UNSUPPORTED", "requires 1 through 16 complete, non-repeated key pairs. Operator approval cannot repair incomplete schema metadata.");
     }
     const target = tables.get(to);
-    const targetColumn = foreignKey.referenced_columns[0]!;
-    const targetUnique = target !== undefined && uniqueColumn(target, targetColumn);
+    const targetUnique = target !== undefined && uniqueKey(target, foreignKey.referenced_columns);
     if (!targetUnique) {
-      diagnostics.push({
-        code: "ACTION_RULE_RELATIONSHIP_UNBOUNDED",
-        resource: from,
-        message: `Relationship ${foreignKey.name} does not prove one target row.`,
-      });
-      return [];
+      return reject("ACTION_RULE_RELATIONSHIP_UNBOUNDED", "the complete referenced key needs a proven unconditional primary/unique key. Partial, expression, unusable or unverified indexes cannot prove one target row.");
     }
-    const localField = foreignKey.columns[0]!;
-    const localColumn = table.columns.find((column) => column.name === localField);
-    if (!localColumn) return [];
+    const pairs = foreignKey.columns.map((local_field, index) => ({ local_field, target_field: foreignKey.referenced_columns[index]! }));
+    const localColumns = pairs.map((pair) => table.columns.find((column) => column.name === pair.local_field));
+    const targetColumns = pairs.map((pair) => target!.columns.find((column) => column.name === pair.target_field));
+    if (localColumns.some((column, index) => !column || !targetColumns[index]
+      || !actionRuleTypeForColumn(column) || actionRuleTypeForColumn(column)?.kind !== actionRuleTypeForColumn(targetColumns[index]!)?.kind)) {
+      return reject("ACTION_RULE_RELATIONSHIP_TYPE_UNSUPPORTED", "every key component needs a compatible portable scalar type; no cast or guessed comparison is permitted.");
+    }
     return [{
       name: foreignKey.name,
       from_resource: from,
       to_resource: to,
-      local_field: localField,
-      target_field: targetColumn,
+      ...(pairs.length === 1 ? pairs[0]! : { field_pairs: pairs }),
       cardinality: "many_to_one",
-      nullable: localColumn.nullable,
+      nullable: localColumns.some((column) => column!.nullable),
       target_unique: true,
     }];
   });
 }
 
-function uniqueColumn(table: TableInfo, column: string): boolean {
-  return (table.primary_key.length === 1 && table.primary_key[0] === column)
+function uniqueKey(table: TableInfo, columns: string[]): boolean {
+  const sameKey = (key: string[]): boolean => key.length === columns.length
+    && new Set(key).size === key.length && key.every((field) => columns.includes(field));
+  const usable = (name: string): boolean => !table.indexes.some((index) => index.name === name
+    && (index.catalog_usable === false || index.catalog_partial === true || index.catalog_full_columns === false));
+  return (sameKey(table.primary_key) && usable("PRIMARY"))
     || table.unique_constraints.some((constraint) =>
-      constraint.columns.length === 1 && constraint.columns[0] === column)
+      sameKey(constraint.columns) && usable(constraint.name))
     || table.indexes.some((index) =>
-      index.unique === true && index.columns?.length === 1 && index.columns[0] === column);
+      index.unique === true && index.catalog_usable === true && index.catalog_partial === false
+      && index.catalog_full_columns !== false && index.catalog_key_columns !== undefined && index.catalog_key_columns.every(Boolean)
+      && sameKey(index.catalog_key_columns));
 }
 
 function supportsProposalIdDeduplication(

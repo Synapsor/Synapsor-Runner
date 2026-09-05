@@ -9,6 +9,7 @@ import type {
   RuleVerificationResourceSpecV1,
 } from "@synapsor/spec";
 import { ActionRuleError } from "./errors.js";
+import { actionRuleRelationshipPairs } from "./relationships.js";
 import {
   actionRuleDigest,
   effectEnvelopeDigest,
@@ -165,7 +166,7 @@ function resolveRelationship(
   if (parent === undefined) fail("ACTION_RULE_INVALID", `Binding ${verification.binding} references unknown parent ${verification.source.from_binding}.`, `verification_boundary.resources.${verification.binding}.source.from_binding`);
   const relationship = relationships.get(verification.source.relationship);
   if (relationship === undefined) fail("ACTION_RULE_INVALID", `Relationship ${verification.source.relationship} is not present in the inspected catalog.`, `verification_boundary.resources.${verification.binding}.source.relationship`);
-  if (verification.source.local_field !== relationship.local_field || verification.source.target_field !== relationship.target_field) {
+  if (canonicalJsonDigest(actionRuleRelationshipPairs(verification.source)) !== canonicalJsonDigest(actionRuleRelationshipPairs(relationship))) {
     fail("ACTION_RULE_INVALID", `Relationship ${relationship.name} columns do not match the inspected catalog.`, `verification_boundary.resources.${verification.binding}.source`);
   }
   const forward = verification.source.direction === "forward";
@@ -574,12 +575,14 @@ export function compileActionRule(input: CompileActionRuleInput): CompiledAction
     if (binding.resource.version_field !== undefined) requireVerificationField(binding, binding.resource.version_field, "dependency freshness");
     if (binding.relationship !== undefined && binding.verification.source.kind === "relationship") {
       const parent = bindings.get(binding.verification.source.from_binding)!;
-      if (binding.verification.source.direction === "forward") {
-        requireVerificationField(parent, binding.relationship.local_field, "relationship verification");
-        requireVerificationField(binding, binding.relationship.target_field, "relationship verification");
-      } else {
-        requireVerificationField(parent, binding.relationship.target_field, "relationship verification");
-        requireVerificationField(binding, binding.relationship.local_field, "relationship verification");
+      for (const pair of actionRuleRelationshipPairs(binding.relationship)) {
+        const [parentField, childField] = binding.verification.source.direction === "forward"
+          ? [pair.local_field, pair.target_field] : [pair.target_field, pair.local_field];
+        requireVerificationField(parent, parentField, "relationship verification");
+        requireVerificationField(binding, childField, "relationship verification");
+        if (fieldMap(parent.resource).get(parentField)!.type.kind !== fieldMap(binding.resource).get(childField)!.type.kind) {
+          fail("ACTION_RULE_TYPE_MISMATCH", "Relationship key components require matching scalar kinds.", "relationship verification");
+        }
       }
     }
     if (binding.verification.cardinality === "many") {
@@ -627,9 +630,11 @@ export function compileActionRule(input: CompileActionRuleInput): CompiledAction
   const effectFieldTypes = assertEnvelope(envelope, rule, targetResource, bindings, context);
   for (const relationship of catalog.relationships) {
     if (relationship.from_resource !== targetResource.name) continue;
-    const expression = rule.effect.set[relationship.local_field];
-    if (expression && usesBusinessInput(expression, rule)) {
-      fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Relationship identity ${relationship.local_field} must come from a verified subject or fact, not a business input.`, `rule.effect.set.${relationship.local_field}`);
+    for (const pair of actionRuleRelationshipPairs(relationship)) {
+      const expression = rule.effect.set[pair.local_field];
+      if (expression && usesBusinessInput(expression, rule)) {
+        fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Relationship identity ${pair.local_field} must come from a verified subject or fact, not a business input.`, `rule.effect.set.${pair.local_field}`);
+      }
     }
   }
   const ruleDigest = actionRuleDigest(rule);

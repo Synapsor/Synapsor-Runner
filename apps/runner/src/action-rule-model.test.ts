@@ -10,6 +10,7 @@ import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import { generateFocusedModelActionRuleDraft as generateModelActionRuleDraft, generateModelActionRuleDraft as converseActionRuleDraft } from "./action-rule-model.js";
 import type { AskProviderDependencies } from "./model-ask.js";
 import type { ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
+import { inspectActionRelationships } from "./action-rule-relationship-review.js";
 
 const lock = `sha256:${"a".repeat(64)}` as const;
 const readDigest = `sha256:${"b".repeat(64)}` as const;
@@ -56,6 +57,62 @@ describe("conversational Action authoring tools", () => {
     body: { output: [{ type: "function_call", call_id: `call_${name}`, name: name.replaceAll(".", "__"), arguments: JSON.stringify(args) }] },
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
+
+  it("discovers and prepares an exact composite link in chat, retaining it across pause/resume", async () => {
+    const built = builtCatalog();
+    const link = { name: "account_parent_fk", from_resource: "billing.accounts", to_resource: "billing.accounts",
+      field_pairs: [{ local_field: "tenant_id", target_field: "tenant_id" }, { local_field: "account_id", target_field: "account_id" }],
+      cardinality: "many_to_one" as const, nullable: false, target_unique: true };
+    built.catalog.relationships = [link];
+    built.authoring.relationships = [link];
+    const args = { from_resource: "billing.accounts", to_resource: "billing.accounts" };
+    const steps = [call("runner.inspect_action_relationships", args),
+      call("runner.review_action_relationship", { ...args, relationship: link.name }),
+      call("runner.submit_verification_boundary_draft"), say("Should every request need human review?")];
+    const requests: string[] = [];
+    const details: string[][] = [];
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const input = { ...requestInput(vi.fn(async (request) => { requests.push(JSON.stringify(request.body)); return steps.shift()!; })), builtCatalog: built,
+      onCheckpoint: async (value: ActionRuleAuthoringCheckpoint) => { checkpoint = value; },
+      onRelationshipReview: (lines: string[]) => details.push(lines), askClarification: async () => undefined };
+    const readBefore = structuredClone(input.readBoundary);
+    await expect(converseActionRuleDraft(input)).rejects.toThrow("CANCELLED");
+    expect(checkpoint?.reviewed_relationships).toEqual([link.name]);
+    expect(checkpoint?.components.verification).toBeDefined();
+    expect(requests[1]).toContain("available_unreviewed");
+    expect(requests[2]).toContain("already_reviewed");
+    expect(details.flat().join("\n")).toContain("tenant_id = tenant_id");
+    expect(input.readBoundary).toEqual(readBefore);
+    const resumed = [call("runner.inspect_action_relationships", args), call("runner.submit_approval_policy_draft"),
+      call("runner.submit_action_rule_draft"), call("runner.submit_effect_envelope_draft"), call("runner.validate_action_draft", {}), say("Ready for review.")];
+    const requestJson = vi.fn(async (request) => { requests.push(JSON.stringify(request.body)); return resumed.shift()!; });
+    const result = await converseActionRuleDraft({ ...input, session: requestInput(requestJson).session, checkpoint });
+    expect(result.state).toBe("ready");
+    expect(result.authority_granted).toBe(false);
+    expect(requests.at(-1)).toContain("already_reviewed");
+    const changed = structuredClone(built);
+    changed.catalog.relationships[0]!.field_pairs!.reverse();
+    await expect(converseActionRuleDraft({ ...input, builtCatalog: changed, checkpoint })).rejects.toThrow("CHECKPOINT_STALE");
+  });
+
+  it("reports ambiguous, missing and unsupported relationships without guessing or granting access", () => {
+    const built = builtCatalog();
+    const link = { name: "billing_parent", from_resource: "billing.accounts", to_resource: "billing.accounts",
+      local_field: "account_id", target_field: "account_id", cardinality: "many_to_one" as const, nullable: false, target_unique: true };
+    const args = { from_resource: "billing.accounts", to_resource: "billing.accounts" };
+    const reviewed = new Set<string>();
+    const inspect = () => inspectActionRelationships({ built, args, reviewed, prepare: false });
+    expect(inspect().status).toBe("missing");
+    built.authoring.diagnostics.push({ code: "ACTION_RULE_RELATIONSHIP_UNBOUNDED", resource: link.from_resource, target_resource: link.to_resource, relationship: link.name, message: "No unconditional unique target key." });
+    expect(inspect().status).toBe("unsupported");
+    built.catalog.relationships = [link, { ...link, name: "different_business_link" }];
+    expect(inspect().status).toBe("ambiguous");
+    expect(reviewed.size).toBe(0);
+    const missing = inspectActionRelationships({ built, args: { ...args, relationship: "invented" }, reviewed, prepare: true });
+    expect(missing.prepared_disabled).toBe(false);
+    expect(reviewed.size).toBe(0);
+    expect(() => inspectActionRelationships({ built, args: { ...args, sql: "SELECT 1" }, reviewed, prepare: false })).toThrow("SELECTION_INVALID");
+  });
 
   it("lets the model choose component order and repair compiler feedback without a user interruption", async () => {
     const requests: string[] = [];

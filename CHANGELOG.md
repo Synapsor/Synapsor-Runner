@@ -2,6 +2,19 @@
 
 ## 1.8.0 (unreleased)
 
+### Composite Action Relationships
+
+- Supports complete ordered composite foreign keys in Action Rule verification,
+  related updates, and bounded inverse reads. PostgreSQL and MySQL preserve
+  tuple correlation and recheck the declared foreign key and unique target proof
+  during fact loading and transaction-time reverification. Null, mismatched,
+  stale, incomplete or unsupported keys cannot authorize a change.
+- Lets the drafting model inspect and prepare existing relationships through
+  internal authoring tools, with readable `/details` and digest-bound resume.
+  Operators clarify business meaning instead of supplying joins or changing the
+  schema. Join fields stay private; Read exposure, separate activation gates,
+  legacy single-column digests and the four runtime MCP tools are unchanged.
+
 ### Unified Read-to-Action Authoring
 
 - Adds `boundary assist`, `W Workloads` in the terminal boundary editor, and

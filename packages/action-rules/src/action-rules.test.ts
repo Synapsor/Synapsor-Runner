@@ -1132,6 +1132,83 @@ describe("portable Action Rule compiler and evaluator", () => {
     expect(evaluateActionRule({ compiled, facts: loaded.facts, proposal_id: "grant_loaded" }).result).toBe("eligible");
   });
 
+  it.each(["postgres", "mysql"] as const)("loads complete composite tuples and rechecks them for %s", async (engine) => {
+    const fixture = fieldServiceFixture();
+    for (const resource of fixture.catalog.resources) resource.engine = engine;
+    const old = fixture.catalog.relationships[0]!;
+    const { local_field: _local, target_field: _target, ...base } = old;
+    const field_pairs = [{ local_field: "account_id", target_field: "account_id" }, { local_field: "request_id", target_field: "request_id" }];
+    fixture.catalog.relationships[0] = { ...base, field_pairs };
+    fixture.boundary.resources[1]!.source = { kind: "relationship", from_binding: "appointment", relationship: old.name, direction: "forward", field_pairs };
+    const compiled = compileActionRule({ rule: fixture.rule, verification_boundary: fixture.boundary, effect_envelope: fixture.envelope, catalog: fixture.catalog });
+    const subjects = [
+      { binding: "offer", resource: "field_service.appointment_slot_offers", primary_key: { column: "offer_id", value: "offer_1" }, subject_ref_digest: `sha256:${"2".repeat(64)}` as const },
+      { binding: "appointment", resource: "field_service.appointments", primary_key: { column: "appointment_id", value: "appt_1" }, subject_ref_digest: `sha256:${"1".repeat(64)}` as const },
+    ];
+    const adapter = { engine, async load(query: ActionRuleFactQueryV1) { return structuredClone(fixture.facts.bindings[query.binding]!.rows); } };
+    const loaded = await loadActionRuleFacts({ compiled, subjects, trusted: fixture.facts.trusted, mode: "transaction_reverify", adapter });
+    expect(loaded.queries[1]!.predicates[0]).toEqual({ operation: "tuple_in", columns: ["account_id", "request_id"],
+      tuples: [[fixture.facts.trusted.tenant, "request_1"]] });
+    expect(loaded.queries.every((query) => query.lock === "for_update")).toBe(true);
+    expect(evaluateActionRule({ compiled, facts: loaded.facts, proposal_id: "composite_ok" }).result).toBe("eligible");
+    loaded.facts.bindings.appointment!.rows[0]!.request_id = "different_request";
+    expect(evaluateActionRule({ compiled, facts: loaded.facts, proposal_id: "stale_link" }).result).not.toBe("eligible");
+    loaded.facts.bindings.appointment!.rows[0]!.request_id = "request_1";
+    loaded.facts.bindings.request!.rows[0]!.account_id = "another_account";
+    expect(evaluateActionRule({ compiled, facts: loaded.facts, proposal_id: "foreign_account" }).result).not.toBe("eligible");
+
+    // Even a faulty adapter supplying multiple parents cannot create Cartesian predicates.
+    fixture.facts.bindings.appointment!.rows.push({ ...fixture.facts.bindings.appointment!.rows[0]!, account_id: "another_account", request_id: "request_2" });
+    const multiple = await loadActionRuleFacts({ compiled, subjects, trusted: fixture.facts.trusted, mode: "proposal_snapshot", adapter });
+    expect(multiple.queries[1]!.predicates[0]).toMatchObject({ operation: "tuple_in", tuples: expect.arrayContaining([
+      [fixture.facts.trusted.tenant, "request_1"], ["another_account", "request_2"],
+    ]) });
+    expect(evaluateActionRule({ compiled, facts: multiple.facts, proposal_id: "ambiguous_parent" }).result).not.toBe("eligible");
+  });
+
+  it("rejects mixed or incomplete relationship authority and preserves legacy digest material", () => {
+    const fixture = fieldServiceFixture();
+    expect(normalizeActionRuleCatalog(fixture.catalog).relationships).toEqual(fixture.catalog.relationships);
+    const pairs = [{ local_field: "account_id", target_field: "account_id" }, { local_field: "request_id", target_field: "request_id" }];
+    Object.assign(fixture.catalog.relationships[0]!, { field_pairs: pairs });
+    expect(() => normalizeActionRuleCatalog(fixture.catalog)).toThrow(/mixed representations/);
+    delete fixture.catalog.relationships[0]!.local_field;
+    delete fixture.catalog.relationships[0]!.target_field;
+    expect(() => compileActionRule({ rule: fixture.rule, verification_boundary: fixture.boundary, effect_envelope: fixture.envelope, catalog: fixture.catalog })).toThrow(/columns do not match/);
+    pairs[1]!.local_field = "account_id";
+    expect(() => normalizeActionRuleCatalog(fixture.catalog)).toThrow(/unique field pairs/);
+  });
+
+  it("enforces inverse composite links, inherited scope, null/no-match and many-row bounds", async () => {
+    const fixture = inventoryFixture();
+    const tenantField = { name: "tenant_id", type: accountId, nullable: false };
+    fixture.catalog.resources[1]!.fields.push(tenantField);
+    fixture.boundary.resources[1]!.fields.push(tenantField);
+    for (const row of fixture.facts.bindings.holds!.rows) row.tenant_id = "tenant_1";
+    const field_pairs = [{ local_field: "tenant_id", target_field: "tenant_id" }, { local_field: "order_id", target_field: "order_id" }];
+    fixture.catalog.relationships[0] = { name: "stock_holds_order_fk", from_resource: "inventory.stock_holds", to_resource: "inventory.orders", field_pairs,
+      cardinality: "many_to_one", nullable: false, target_unique: true };
+    fixture.boundary.resources[1]!.source = { kind: "relationship", from_binding: "order", relationship: "stock_holds_order_fk", direction: "inverse", field_pairs };
+    const compiled = compileActionRule({ rule: fixture.rule, verification_boundary: fixture.boundary, effect_envelope: fixture.envelope, catalog: fixture.catalog });
+    const loaded = await loadActionRuleFacts({ compiled, mode: "transaction_reverify", trusted: fixture.facts.trusted,
+      subjects: [{ binding: "order", resource: "inventory.orders", primary_key: { column: "order_id", value: "order_1" }, subject_ref_digest: `sha256:${"1".repeat(64)}` }],
+      adapter: { engine: "mysql", async load(query) { return fixture.facts.bindings[query.binding]!.rows; } } });
+    expect(loaded.queries[1]!.predicates[0]).toEqual({ operation: "tuple_in", columns: ["tenant_id", "order_id"], tuples: [["tenant_1", "order_1"]] });
+    expect(loaded.queries[1]!.limit).toBe(6);
+    expect(evaluateActionRule({ compiled, facts: loaded.facts, proposal_id: "inverse_ok" }).result).toBe("eligible");
+    const foreign = structuredClone(loaded.facts);
+    foreign.bindings.holds!.rows[0]!.tenant_id = "tenant_2";
+    expect(evaluateActionRule({ compiled, facts: foreign, proposal_id: "inverse_cross_tenant" }).result).not.toBe("eligible");
+    foreign.bindings.holds!.rows[0]!.tenant_id = null;
+    expect(evaluateActionRule({ compiled, facts: foreign, proposal_id: "inverse_null" }).result).not.toBe("eligible");
+    const empty = structuredClone(loaded.facts);
+    empty.bindings.holds!.rows = [];
+    expect(evaluateActionRule({ compiled, facts: empty, proposal_id: "inverse_empty" }).result).not.toBe("eligible");
+    const overflow = structuredClone(loaded.facts);
+    overflow.bindings.holds!.rows = Array.from({ length: 6 }, (_, index) => ({ ...loaded.facts.bindings.holds!.rows[0]!, hold_id: `hold_${index}` }));
+    expect(evaluateActionRule({ compiled, facts: overflow, proposal_id: "inverse_overflow" }).result).toBe("ineligible");
+  });
+
   it("normalizes safe database scalar representations and rejects lossy integers", () => {
     expect(normalizeActionRuleDatabaseValue("42", { kind: "integer", unit: "items" }, false)).toBe(42);
     expect(normalizeActionRuleDatabaseValue(1, { kind: "boolean" }, false)).toBe(true);

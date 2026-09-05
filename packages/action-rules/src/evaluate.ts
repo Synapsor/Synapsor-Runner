@@ -7,6 +7,7 @@ import type {
 } from "@synapsor/spec";
 import { ActionRuleError } from "./errors.js";
 import { validateActionRuleInputs } from "./inputs.js";
+import { actionRuleRelationshipPairs } from "./relationships.js";
 import {
   actionRuleDigest,
   effectEnvelopeDigest,
@@ -449,12 +450,11 @@ function validateScopeAndRelationships(compiled: CompiledActionRuleV1, facts: Ac
       const parent = byName.get(binding.verification.source.from_binding)!;
       const parentRows = facts.bindings[parent.binding]!.rows;
       const relationship = binding.relationship!;
-      const [parentField, childField] = binding.verification.source.direction === "forward"
-        ? [relationship.local_field, relationship.target_field]
-        : [relationship.target_field, relationship.local_field];
+      const pairs = actionRuleRelationshipPairs(relationship).map((pair) => binding.verification.source.kind === "relationship" && binding.verification.source.direction === "forward"
+        ? [pair.local_field, pair.target_field] as const : [pair.target_field, pair.local_field] as const);
       for (const row of rows) {
-        const childValue = row[childField];
-        if (childValue === null || childValue === undefined || !parentRows.some((parentRow) => parentRow[parentField] === childValue)) return `Verified ${binding.binding} row does not follow its reviewed relationship.`;
+        if (!parentRows.some((parentRow) => pairs.every(([parentField, childField]) =>
+          row[childField] !== null && row[childField] !== undefined && parentRow[parentField] === row[childField]))) return `Verified ${binding.binding} row does not follow its reviewed relationship.`;
       }
     }
   }

@@ -24,6 +24,22 @@ import { canonicalJsonDigest, canonicalJsonStringify, parseWritebackJob, parseWr
 import { ActionRuleError, createSemanticAdapterConformanceVector, type ActionRuleFactQueryV1 } from "@synapsor-runner/action-rules";
 
 describe("postgres Action Rule fact queries", () => {
+  it("keeps parent tuples correlated, parameterized and independently scoped", () => {
+    const query = createSemanticAdapterConformanceVector("postgres").fact_query;
+    query.predicates = [
+      { operation: "tuple_in", columns: ["account_id", "subscription_id"], tuples: [["a", "s1"], ["b", "s2"]] },
+      { operation: "eq", column: "principal_id", value: "customer' OR true" },
+    ];
+    const result = buildPostgresActionRuleFactQuery(query);
+    expect(result.sql).toContain('(("account_id" = $1 AND "subscription_id" = $2) OR ("account_id" = $3 AND "subscription_id" = $4))\n  AND "principal_id" = $5');
+    expect(result.values).toEqual(["a", "s1", "b", "s2", "customer' OR true", 2]);
+    expect(result.sql).not.toContain("OR true");
+    query.predicates = [{ operation: "tuple_in", columns: ["a", "b"], tuples: [[1]] }];
+    expect(() => buildPostgresActionRuleFactQuery(query)).toThrow("INVALID_PREDICATES");
+    query.predicates = [{ operation: "tuple_in", columns: ["a", "b"], tuples: [] }];
+    expect(buildPostgresActionRuleFactQuery(query).sql).toContain("WHERE FALSE");
+  });
+
   it("lowers every reviewed transaction isolation level exactly", () => {
     expect(postgresActionRuleIsolation("read_committed")).toBe("READ COMMITTED");
     expect(postgresActionRuleIsolation("repeatable_read")).toBe("REPEATABLE READ");

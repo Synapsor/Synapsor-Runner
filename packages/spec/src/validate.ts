@@ -155,7 +155,7 @@ const EXTERNAL_ACTION_KEYS = new Set(["id", "action", "handler", "idempotency_ke
 const VERIFICATION_BOUNDARY_KEYS = new Set(["schema_version", "name", "source", "context", "generation_lock_fingerprint", "resources", "lock_order", "transaction"]);
 const VERIFICATION_RESOURCE_KEYS = new Set(["binding", "resource", "source", "primary_key", "version_field", "fields", "scope", "cardinality", "max_rows", "overflow", "deterministic_order", "lock"]);
 const VERIFICATION_FIELD_KEYS = new Set(["name", "type", "nullable", "model_visible"]);
-const VERIFICATION_SOURCE_KEYS = new Set(["kind", "from_binding", "relationship", "local_field", "target_field", "direction"]);
+const VERIFICATION_SOURCE_KEYS = new Set(["kind", "from_binding", "relationship", "local_field", "target_field", "field_pairs", "direction"]);
 const VERIFICATION_SCOPE_KEYS = new Set(["mode", "tenant_field", "principal_field", "from_binding", "organization_id"]);
 const VERIFICATION_ORDER_KEYS = new Set(["field", "direction"]);
 const VERIFICATION_TRANSACTION_KEYS = new Set(["isolation", "timezone"]);
@@ -2399,12 +2399,30 @@ function validateVerificationBindingSource(value: unknown, path: string, errors:
   checkUnknownKeys(value, VERIFICATION_SOURCE_KEYS, path, errors);
   if (value.kind === "subject_ref") {
     checkVariantKeys(value, VERIFICATION_SOURCE_KEYS, new Set(["kind"]), path, errors);
-    for (const key of ["from_binding", "relationship", "local_field", "target_field", "direction"]) if (value[key] !== undefined) errors.push({ path: `${path}.${key}`, code: "SUBJECT_SOURCE_FIELD_FORBIDDEN", message: "subject_ref has no relationship fields." });
+    for (const key of ["from_binding", "relationship", "local_field", "target_field", "field_pairs", "direction"]) if (value[key] !== undefined) errors.push({ path: `${path}.${key}`, code: "SUBJECT_SOURCE_FIELD_FORBIDDEN", message: "subject_ref has no relationship fields." });
     return;
   }
   if (value.kind !== "relationship") { errors.push({ path: `${path}.kind`, code: "INVALID_VERIFICATION_SOURCE_KIND", message: "source kind must be subject_ref or relationship." }); return; }
   checkVariantKeys(value, VERIFICATION_SOURCE_KEYS, VERIFICATION_SOURCE_KEYS, path, errors);
-  for (const key of ["from_binding", "relationship", "local_field", "target_field"] as const) if (!isSafeIdentifier(value[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_VERIFICATION_RELATIONSHIP", message: `${key} must be a fixed identifier.` });
+  for (const key of ["from_binding", "relationship"] as const) if (!isSafeIdentifier(value[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_VERIFICATION_RELATIONSHIP", message: `${key} must be a fixed identifier.` });
+  if (value.field_pairs === undefined) {
+    for (const key of ["local_field", "target_field"] as const) if (!isSafeIdentifier(value[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_VERIFICATION_RELATIONSHIP", message: `${key} must be a fixed identifier.` });
+  } else {
+    const pairs = value.field_pairs;
+    const local = new Set<string>();
+    const target = new Set<string>();
+    if (value.local_field !== undefined || value.target_field !== undefined || !Array.isArray(pairs) || pairs.length < 2 || pairs.length > 16) {
+      errors.push({ path, code: "INVALID_VERIFICATION_RELATIONSHIP", message: "Composite relationships require 2 through 16 ordered field pairs and no singular fields." });
+    } else pairs.forEach((pair, index) => {
+      const pairPath = `${path}.field_pairs[${index}]`;
+      if (!isRecord(pair)) { errors.push({ path: pairPath, code: "INVALID_VERIFICATION_RELATIONSHIP", message: "Expected a fixed field pair." }); return; }
+      checkUnknownKeys(pair, new Set(["local_field", "target_field"]), pairPath, errors);
+      for (const [key, seen] of [["local_field", local], ["target_field", target]] as const) {
+        if (!isSafeIdentifier(pair[key]) || seen.has(String(pair[key]))) errors.push({ path: `${pairPath}.${key}`, code: "INVALID_VERIFICATION_RELATIONSHIP", message: "Relationship fields must be fixed, non-repeated identifiers." });
+        seen.add(String(pair[key]));
+      }
+    });
+  }
   if (value.direction !== "forward" && value.direction !== "inverse") errors.push({ path: `${path}.direction`, code: "INVALID_VERIFICATION_DIRECTION", message: "direction must be forward or inverse." });
 }
 

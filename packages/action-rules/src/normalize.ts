@@ -15,6 +15,7 @@ import type {
 } from "./types.js";
 import { ActionRuleError } from "./errors.js";
 import { validateActionRuleInputDefinitions } from "./inputs.js";
+import { actionRuleRelationshipPairs } from "./relationships.js";
 
 function canonicalClone<T>(value: T): T {
   return JSON.parse(canonicalJsonStringify(value)) as T;
@@ -271,6 +272,7 @@ export function normalizeActionRuleBooleanExpression(
 
 export function normalizeActionRuleCatalog(catalog: ActionRuleCatalogV1): ActionRuleCatalogV1 {
   const normalized = canonicalClone(catalog);
+  normalized.relationships.forEach(actionRuleRelationshipPairs);
   normalized.resources = normalized.resources
     .map((resource) => ({
       ...resource,
@@ -286,6 +288,9 @@ export function normalizeVerificationBoundary(
   boundary: RuleVerificationBoundarySpecV1,
 ): RuleVerificationBoundarySpecV1 {
   const normalized = canonicalClone(boundary);
+  for (const resource of normalized.resources) {
+    if (resource.source.kind === "relationship") actionRuleRelationshipPairs(resource.source);
+  }
   normalized.resources = normalized.resources
     .map((resource) => ({
       ...resource,

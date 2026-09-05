@@ -95,7 +95,7 @@ describe("model-authored Action Rule draft compilation", () => {
     expect(attempted.effect.target_binding).toBeUndefined();
   });
 
-  it("adds both reviewed relationship keys without asking the model to name join columns", () => {
+  it.each([false, true])("adds private relationship keys without asking the model to name join columns (composite=%s)", (composite) => {
     const attempted = draft();
     attempted.verification.resources.push({
       binding: "policy",
@@ -121,13 +121,27 @@ describe("model-authored Action Rule draft compilation", () => {
       ],
     };
 
+    const built = relatedBuiltCatalog();
+    if (composite) {
+      const { local_field: _local, target_field: _target, ...link } = built.catalog.relationships[0]!;
+      built.catalog.relationships[0] = { ...link, field_pairs: [
+        { local_field: "tenant_id", target_field: "tenant_id" }, { local_field: "policy_id", target_field: "policy_id" },
+      ] };
+    }
+    const read = boundary();
+    const originalRead = structuredClone(read);
     const result = compileActionRuleModelDraft({
       draft: attempted,
-      builtCatalog: relatedBuiltCatalog(),
-      readBoundary: boundary(),
+      builtCatalog: built,
+      readBoundary: read,
       readBoundaryDigest: readDigest,
       activatedAt: "2026-09-03T01:00:00.000Z",
     });
+    expect(read).toEqual(originalRead);
+    for (const resource of result.verification_boundary.resources) {
+      expect(resource.fields.find((field) => field.name === "tenant_id")?.model_visible).not.toBe(true);
+      expect(resource.fields.find((field) => field.name === "policy_id")?.model_visible).not.toBe(true);
+    }
 
     const account = result.verification_boundary.resources.find((resource) => resource.binding === "account")!;
     const policy = result.verification_boundary.resources.find((resource) => resource.binding === "policy")!;

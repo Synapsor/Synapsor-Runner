@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { ActionRuleError, actionRuleRelationshipPairs } from "@synapsor-runner/action-rules";
 import { Pool, types as pgTypes, type PoolClient, type PoolConfig } from "pg";
 import type {
   ActionRuleFactLoaderAdapterV1,
@@ -128,6 +129,9 @@ function validateActionRuleFactQuery(query: ActionRuleFactQueryV1, engine: "post
   if (query.predicates.length < 1 || query.predicates.length > 16) throw new Error("ACTION_RULE_INVALID_PREDICATES");
   for (const predicate of query.predicates) {
     if (predicate.operation === "in" && predicate.values.length > 100) throw new Error("ACTION_RULE_INVALID_PREDICATES");
+    if (predicate.operation === "tuple_in" && (predicate.columns.length < 2 || predicate.columns.length > 16
+      || new Set(predicate.columns).size !== predicate.columns.length || predicate.tuples.length > 100
+      || predicate.tuples.some((tuple) => tuple.length !== predicate.columns.length || tuple.some((value) => value === null || value === undefined)))) throw new Error("ACTION_RULE_INVALID_PREDICATES");
   }
 }
 
@@ -135,6 +139,14 @@ export function buildPostgresActionRuleFactQuery(query: ActionRuleFactQueryV1): 
   validateActionRuleFactQuery(query, "postgres");
   const values: unknown[] = [];
   const where = query.predicates.map((predicate) => {
+    if (predicate.operation === "tuple_in") {
+      const columns = predicate.columns.map(quotePostgresIdentifier);
+      if (!predicate.tuples.length) return "FALSE";
+      return `(${predicate.tuples.map((tuple) => `(${tuple.map((value, index) => {
+        values.push(value);
+        return `${columns[index]} = $${values.length}`;
+      }).join(" AND ")})`).join(" OR ")})`;
+    }
     const column = quotePostgresIdentifier(predicate.column);
     if (predicate.operation === "eq") {
       values.push(predicate.value);
@@ -185,6 +197,38 @@ export function createPostgresActionRuleFactLoader(
     async load(query: ActionRuleFactQueryV1): Promise<Record<string, unknown>[]> {
       const compiled = buildPostgresActionRuleFactQuery(query);
       return (await client.query(compiled.sql, compiled.values)).rows;
+    },
+    async assertRelationshipCompatible(binding, parent): Promise<void> {
+      if (!binding.relationship || binding.verification.source.kind !== "relationship") throw new Error("ACTION_RULE_LOAD_PLAN_INVALID");
+      const forward = binding.verification.source.direction === "forward";
+      const from = forward ? parent.resource : binding.resource;
+      const to = forward ? binding.resource : parent.resource;
+      const pairs = actionRuleRelationshipPairs(binding.relationship);
+      const result = await client.query(
+        `SELECT local_attr.attname AS local_field, target_attr.attname AS target_field,
+                (idx.indisunique AND idx.indisvalid AND idx.indisready AND idx.indimmediate
+                  AND idx.indexprs IS NULL AND idx.indpred IS NULL AND con.convalidated
+                  AND local_coll.collisdeterministic IS NOT FALSE AND target_coll.collisdeterministic IS NOT FALSE) AS usable
+         FROM pg_catalog.pg_constraint con
+         JOIN pg_catalog.pg_class src ON src.oid = con.conrelid
+         JOIN pg_catalog.pg_namespace src_ns ON src_ns.oid = src.relnamespace
+         JOIN pg_catalog.pg_class dst ON dst.oid = con.confrelid
+         JOIN pg_catalog.pg_namespace dst_ns ON dst_ns.oid = dst.relnamespace
+         JOIN pg_catalog.pg_index idx ON idx.indexrelid = con.conindid
+         JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS keys(local_num, target_num, position) ON TRUE
+         JOIN pg_catalog.pg_attribute local_attr ON local_attr.attrelid = src.oid AND local_attr.attnum = keys.local_num
+         JOIN pg_catalog.pg_attribute target_attr ON target_attr.attrelid = dst.oid AND target_attr.attnum = keys.target_num
+         LEFT JOIN pg_catalog.pg_collation local_coll ON local_coll.oid = local_attr.attcollation
+         LEFT JOIN pg_catalog.pg_collation target_coll ON target_coll.oid = target_attr.attcollation
+         WHERE con.contype = 'f' AND con.conname = $1 AND src_ns.nspname = $2 AND src.relname = $3
+           AND dst_ns.nspname = $4 AND dst.relname = $5
+         ORDER BY keys.position LIMIT 17`,
+        [binding.relationship.name, from.schema, from.table, to.schema, to.table],
+      );
+      if (result.rows.length !== pairs.length || result.rows.some((row, index) => row.usable !== true
+        || row.local_field !== pairs[index]!.local_field || row.target_field !== pairs[index]!.target_field)) {
+        throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The reviewed composite relationship, exact comparison or unconditional unique target proof changed. Re-review the Action Boundary.");
+      }
     },
   };
 }

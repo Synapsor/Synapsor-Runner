@@ -591,6 +591,7 @@ export type ForeignKeyInfo = {
   referenced_table: string;
   referenced_columns: string[];
   delete_rule: "NO ACTION" | "RESTRICT" | "CASCADE" | "SET NULL" | "SET DEFAULT" | string;
+  action_rule_issue?: "unvalidated_foreign_key" | "non_exact_collation";
 };
 
 export type ReferencingForeignKeyInfo = {
@@ -622,6 +623,8 @@ export type IndexInfo = {
   catalog_usable?: boolean;
   /** Partial indexes do not cover every row and cannot satisfy general scope probes. */
   catalog_partial?: boolean;
+  /** False for prefix or expression keys; they are not full-column relationship proof. */
+  catalog_full_columns?: boolean;
   /** Approximate distinct values for the leading key; advisory only and excluded from authority fingerprints. */
   catalog_distinct_estimate?: number;
 };
@@ -881,6 +884,7 @@ export function schemaFingerprintForInspection(inspection: SchemaInspection): `s
         columns: index.columns ?? [],
         unique: index.unique ?? false,
         definition: index.definition ?? null,
+        ...(index.catalog_full_columns === false ? { partial_key: true } : {}),
       })),
     })),
   });
@@ -1350,6 +1354,10 @@ async function inspectPostgres(
               con.conname AS constraint_name, source_attr.attname AS column_name,
               target_ns.nspname AS referenced_schema, target.relname AS referenced_table,
               target_attr.attname AS referenced_column, key_column.ordinal_position,
+              con.convalidated AS validated,
+              (NOT EXISTS (SELECT 1 FROM pg_catalog.pg_collation coll
+                WHERE coll.oid IN (source_attr.attcollation, target_attr.attcollation)
+                  AND NOT coll.collisdeterministic)) AS exact_equality,
               CASE con.confdeltype
                 WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT'
                 WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL'
@@ -1728,7 +1736,8 @@ async function inspectMysql(
     );
     const [indexRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS table_name, index_name AS name,
-              GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns,
+              GROUP_CONCAT(COALESCE(column_name, '') ORDER BY seq_in_index) AS columns,
+              MIN(CASE WHEN column_name IS NOT NULL AND sub_part IS NULL THEN 1 ELSE 0 END) AS full_columns,
               MAX(CASE WHEN seq_in_index = 1 THEN column_name END) AS catalog_leading_column,
               MAX(CASE WHEN seq_in_index = 1 THEN cardinality END) AS catalog_distinct_estimate,
               MIN(non_unique) AS non_unique
@@ -1838,6 +1847,7 @@ async function inspectMysql(
           : undefined,
         catalog_usable: true,
         catalog_partial: false,
+        ...(row.full_columns === undefined ? {} : { catalog_full_columns: Number(row.full_columns) === 1 }),
         ...(catalogDistinctEstimate(row.catalog_distinct_estimate) === undefined
           ? {}
           : { catalog_distinct_estimate: catalogDistinctEstimate(row.catalog_distinct_estimate) }),
@@ -1888,6 +1898,8 @@ type RawColumn = {
 };
 type RawKeyColumn = { schema: string; table_name: string; constraint_name: string; constraint_type: string; column_name: string; ordinal_position: number };
 type RawForeignKey = {
+  validated?: boolean;
+  exact_equality?: boolean;
   schema: string;
   table_name: string;
   constraint_name: string;
@@ -1909,6 +1921,7 @@ type RawIndex = {
   catalog_leading_column?: string;
   catalog_usable?: boolean;
   catalog_partial?: boolean;
+  catalog_full_columns?: boolean;
   catalog_distinct_estimate?: string | number | bigint | null;
 };
 type RawTrigger = { schema: string; table_name: string; name: string; timing: string; orientation: string; event: string };
@@ -2037,6 +2050,7 @@ function normalizeInspection(input: {
         catalog_leading_column: index.catalog_leading_column,
         catalog_usable: index.catalog_usable,
         catalog_partial: index.catalog_partial,
+        ...(index.catalog_full_columns === undefined ? {} : { catalog_full_columns: index.catalog_full_columns }),
         ...(catalogDistinctEstimate(index.catalog_distinct_estimate) === undefined
           ? {}
           : { catalog_distinct_estimate: catalogDistinctEstimate(index.catalog_distinct_estimate) }),
@@ -2411,6 +2425,8 @@ function normalizeForeignKeys(rows: RawForeignKey[]): ForeignKeyInfo[] {
       referenced_table: sorted[0]?.referenced_table ?? "",
       referenced_columns: sorted.map((item) => item.referenced_column),
       delete_rule: sorted[0]?.delete_rule ?? "NO ACTION",
+      ...(sorted.some((item) => item.validated === false) ? { action_rule_issue: "unvalidated_foreign_key" as const }
+        : sorted.some((item) => item.exact_equality === false) ? { action_rule_issue: "non_exact_collation" as const } : {}),
     };
   });
 }
