@@ -2086,6 +2086,53 @@ describe("Synapsor Analytics shell", () => {
     pipedIo.close();
   });
 
+  it.each(["return", "escape"])("pages exact review details and restores input on %s, including after resize", async (exitKey) => {
+    const readable = new PassThrough() as PassThrough & {
+      isTTY: boolean; isRaw: boolean; setRawMode(value: boolean): void;
+    };
+    Object.assign(readable, { isTTY: true, isRaw: false });
+    readable.setRawMode = (value) => { readable.isRaw = value; };
+    const writable = new PassThrough() as PassThrough & { isTTY: boolean; columns: number; rows: number };
+    Object.assign(writable, { isTTY: true, columns: 76, rows: 12 });
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+    const listeners = readable.listeners("keypress");
+    const resizeListeners = writable.listeners("resize");
+    const originalRaw = readable.isRaw;
+    try {
+      const review = io.review!("Exact pending revision", [
+        ...Array.from({ length: 45 }, (_, index) => `Reviewed field ${index + 1}`),
+        "Fingerprint: exact-pending-revision",
+      ]);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stripAnsi(chunks.join(""))).toContain("Reviewed field 1");
+      expect(stripAnsi(chunks.join(""))).not.toContain("Reviewed field 20");
+      let offset = chunks.join("").length;
+      for (let page = 0; page < 20; page++) readable.emit("keypress", "", { name: "pagedown" });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stripAnsi(chunks.join("").slice(offset))).toContain("Fingerprint: exact-pending-revision");
+      for (let field = 1; field <= 45; field++) expect(stripAnsi(chunks.join(""))).toContain(`Reviewed field ${field}`);
+      offset = chunks.join("").length;
+      writable.columns = 46;
+      writable.rows = 16;
+      writable.emit("resize");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(terminalFrameRows(chunks.join("").slice(offset))).toBeLessThanOrEqual(16);
+      expect(stripAnsi(chunks.join("").slice(offset))).toContain("Enter/Esc");
+      readable.emit("keypress", "", { name: exitKey });
+      await review;
+      expect(readable.listeners("keypress")).toEqual(listeners);
+      expect(writable.listeners("resize")).toEqual(resizeListeners);
+      expect(readable.isRaw).toBe(originalRaw);
+      const answer = io.readConversation!("you> ");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      readable.write("yes\r");
+      await expect(answer).resolves.toBe("yes");
+    } finally { io.close(); }
+    expect(readable.isRaw).toBe(false);
+  });
+
   it("keeps an Ask picker inside a short terminal while selection moves", async () => {
     const readable = new PassThrough() as PassThrough & {
       isRaw: boolean;

@@ -5,7 +5,8 @@ import {
   rememberModelAuthoringTurn,
 } from "./model-authoring-conversation.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
-import type { AskProviderDependencies } from "./model-ask.js";
+import { AskError, type AskProviderDependencies } from "./model-ask.js";
+import { authoringExplanationFailure } from "./authoring-explanation-failure.js";
 
 describe("model-assisted Boundary authoring conversation", () => {
   it.each([
@@ -98,6 +99,46 @@ describe("model-assisted Boundary authoring conversation", () => {
       egressAcknowledged: true,
     })).resolves.toBeUndefined();
     expect(modelAuthoringHistory(conversation)).toEqual([]);
+  });
+
+  it.each([
+    ["ASK_PROVIDER_TIMEOUT", true],
+    ["ASK_PROVIDER_AUTHENTICATION_FAILED", false],
+    ["ASK_PROVIDER_RATE_LIMITED", true],
+    ["ASK_PROVIDER_RESPONSE_INVALID", true],
+    ["ASK_PROVIDER_STREAM_FAILED", true],
+  ])("preserves sanitized narration failure %s without changing history", async (code, retryable) => {
+    const conversation = createModelAuthoringConversation();
+    const onFailure = vi.fn();
+    const result = await narrateValidatedAuthoringStep({
+      session: { provider: "openai", model: "gpt-5.6-terra", apiKey: "memory-key", conversation,
+        dependencies: { requestJson: async () => { throw new AskError(String(code), "secret-token https://private-provider.example/"); } } },
+      operatorMessage: "Explain the pending authority.", validatedFacts: ["Read authority is disabled."],
+      egressAcknowledged: true, onFailure,
+    });
+    expect(result).toBeUndefined();
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ code, retryable }));
+    expect(JSON.stringify(onFailure.mock.calls)).not.toMatch(/secret-token|private-provider/);
+    expect(modelAuthoringHistory(conversation)).toEqual([]);
+  });
+
+  it("does not expose arbitrary provider errors as review diagnostics", () => {
+    expect(authoringExplanationFailure(new AskError("PRIVATE_URL_secret", "secret-token"))).toMatchObject({
+      code: "NARRATION_UNAVAILABLE", retryable: true,
+    });
+    expect(JSON.stringify(authoringExplanationFailure(new Error("secret-token")))).not.toContain("secret-token");
+  });
+
+  it("keeps local review available when the saved provider credential is missing", async () => {
+    const onFailure = vi.fn();
+    const requestJson = vi.fn();
+    await expect(narrateValidatedAuthoringStep({
+      session: { provider: "openai", model: "gpt-5.6-terra", conversation: createModelAuthoringConversation(), dependencies: { requestJson } },
+      env: {}, operatorMessage: "Explain this Read review.", validatedFacts: ["Read authority remains disabled."],
+      egressAcknowledged: true, onFailure,
+    })).resolves.toBeUndefined();
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ code: "ASK_KEY_REQUIRED", retryable: false }));
+    expect(requestJson).not.toHaveBeenCalled();
   });
 
   it("keeps a validated pre-job greeting short and question-led", async () => {

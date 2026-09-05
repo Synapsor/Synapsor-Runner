@@ -167,7 +167,7 @@ import {
   renderBoundaryMapTable,
   type BoundaryMapFieldRow,
 } from "./boundary-map-presentation.js";
-import { wrapStyledTerminalLine } from "./terminal-layout.js";
+import { terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
 import {
   importActionSuggestion,
   listActionSuggestions,
@@ -2903,6 +2903,7 @@ function modelSafeBoundaryJobStateFacts(state: BoundaryJobCurrentState): string[
 
 function modelSafePermissionFacts(lines: string[]): string[] {
   return lines
+    .map((line) => /^Excluded fields:/u.test(line) ? "Excluded fields stay unavailable; their names are in local operator details." : line)
     .map((line) => line
       .replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "")
       .replace(/sha256:[a-f0-9]+/giu, "[operator-only digest]")
@@ -2910,7 +2911,7 @@ function modelSafePermissionFacts(lines: string[]): string[] {
     .filter((line) => line.length > 0)
     .filter((line) => !/(?:fingerprint|\bdigest\b|proposal hash|credential|password|api[_ -]?key|endpoint|database url|\bsql\b)/iu.test(line))
     .filter((line) => !/\b(?:tenant|principal)(?:[_ -]?id)?\b/iu.test(line))
-    .slice(0, 10);
+    .slice(0, 20);
 }
 
 function boundaryAuthoringProviderDependencies(
@@ -3958,6 +3959,7 @@ type BoundaryAssistOutcome = {
 type ReadBoundaryReviewDisposition = "activated" | "finish" | "manual_editor";
 
 type ReadBoundaryReviewOptions = {
+  sequenceSummary?: () => string[];
   reviseWithModel?: () => Promise<boolean>;
   onDisposition?: (disposition: ReadBoundaryReviewDisposition) => void;
 };
@@ -4199,6 +4201,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           nextQuestion,
           egressAcknowledged: true,
           responseStyle: "permission",
+          onFailure: request.onFailure,
         }),
       );
     });
@@ -6810,6 +6813,21 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         : ["This read-only job has no Action Boundary draft. Declining keeps the reviewed Read draft disabled."]),
     ]);
     const reviewResult = await input.completeReadReview("activate", input.session, {
+      sequenceSummary: () => {
+        const automatic = semanticActionDrafts.filter((entry) => entry.result.compiled.effect_envelope.writeback.mode === "direct_sql");
+        const policy = semanticActionDrafts.filter((entry) => entry.result.compiled.approval_class.mode === "policy");
+        return [
+          `Next: Read review -> Action review${automatic.length ? " -> execution review" : ""}. Each grants only its own authority.`,
+          ...(semanticActionDrafts.length ? [
+            `Action intent: ${semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome).join(", ")}.`,
+            `Approval: ${policy.length} outcome(s) have deterministic approval with human fallback; approval is not execution.`,
+            automatic.length
+              ? "Automatic completion: requested in the draft, not enabled by this Read review. The later execution review must enable the exact policy and writer/worker; until then even approved requests do not change source rows."
+              : "Execution: proposal-only. No source changes will run automatically; source writes require a separately reviewed execution policy.",
+            ...(automatic.length ? ["Execution prerequisites: activate the linked Read and Action revisions, verify the writer role and source posture, configure the control store and trusted operator, then enable the supervised worker."] : []),
+          ] : [actionDrafts.length ? "Action drafts need their own approval and execution review; this gate grants reads only." : "This job has no prepared Action draft; Read activation cannot approve or execute changes."]),
+        ];
+      },
       ...(reviseReadWithModel ? { reviseWithModel: reviseReadWithModel } : {}),
       onDisposition: (disposition) => {
         reviewNavigation = disposition === "manual_editor" ? "manual_editor" : "boundary_list";
@@ -10060,7 +10078,10 @@ async function confirmAndActivateFocusedBoundary(input: {
     context.bundle,
     conversation ? false : process.stdout.isTTY === true && !("NO_COLOR" in process.env),
     true,
-    input.session.terminalColumns ?? process.stdout.columns ?? 100,
+    conversation
+      ? terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns)
+      : input.session.terminalColumns ?? process.stdout.columns ?? 100,
+    conversation,
   );
   if (input.session.presentationMode !== "conversation") {
     process.stdout.write(activationReview);
@@ -10082,14 +10103,12 @@ async function confirmAndActivateFocusedBoundary(input: {
     ...(authorityReplacementContext.length ? ["", ...authorityReplacementContext] : []),
     ...(activationReviewNotice ? activationReviewNotice.trimEnd().split("\n") : []),
   ];
-  const compactReviewContext = [
-    ...formatBoundaryChatReviewSummary(context.bundle),
-    ...(activationReviewNotice ? ["", ...activationReviewNotice.trimEnd().split("\n")] : []),
-  ];
   const conversationReviewContext = [
-    ...compactReviewContext.filter((line) => /^(?:Boundary:|Schema:|Trusted scope:|Reviewed:|Privacy:|Agent access:)/u.test(line)),
+    ...formatReadActivationBusinessSummary(context.bundle),
     ...authorityReplacementContext,
-    "Type /details at the next you> prompt, or choose the details row, for every field, path, limit, and fingerprint.",
+    ...(input.reviewOptions?.sequenceSummary?.() ?? ["Sequence: this decision grants Read access only. Action approval and source execution require separate reviews."]),
+    ...(activationReviewNotice ? activationReviewNotice.trimEnd().split("\n") : []),
+    "View exact Read Boundary details opens the complete local revision. Enter/Esc returns to this same permission.",
   ];
   if (conversation) {
     input.session.rememberDetails?.("Exact Read Boundary review", activationContext);
@@ -10191,8 +10210,8 @@ async function confirmAndActivateFocusedBoundary(input: {
           {
             value: "finish",
             label: replacingActive
-              ? "Keep current active Read Boundary and finish  [recommended]"
-              : "Keep Read Boundary disabled and finish  [recommended]",
+              ? "Keep current active Read Boundary and finish"
+              : "Keep Read Boundary disabled and finish",
             detail: replacingActive
               ? "The active revision stays live; save this replacement candidate and return to the Boundary list."
               : "Grant no Read authority; save this reviewed draft and return to the Boundary list.",
@@ -10206,11 +10225,17 @@ async function confirmAndActivateFocusedBoundary(input: {
         {
           initialValue: "finish",
           context: conversationReviewContext,
+          exactDetails: { title: "Exact Read Boundary review", lines: activationContext },
         },
       );
       if (choice === "details") {
-        if (input.session.showRememberedDetails) input.session.showRememberedDetails();
-        else input.session.present?.("EXACT READ BOUNDARY DETAILS", activationContext, "normal");
+        if (input.session.showReviewDetails) await input.session.showReviewDetails("Exact Read Boundary review", activationContext);
+        else {
+          input.session.rememberDetails?.("Exact Read Boundary review", activationContext);
+          if (input.session.showRememberedDetails) input.session.showRememberedDetails();
+          else if (input.session.present) input.session.present("EXACT READ BOUNDARY DETAILS", activationContext, "normal");
+          else process.stdout.write(`${activationContext.join("\n")}\n`);
+        }
         continue;
       }
       if (choice === "revise_model" && input.reviewOptions?.reviseWithModel) {
@@ -10484,6 +10509,7 @@ export function formatFocusedBoundaryActivationReview(
   color = false,
   brandStyle = false,
   columns = 100,
+  includeCompleteRevision = false,
 ): string {
   const theme = terminalTheme(color, {
     brand: brandStyle,
@@ -10517,9 +10543,12 @@ export function formatFocusedBoundaryActivationReview(
     });
     const riskyModelFields = fieldRows.filter((row) =>
       row.access === "MODEL" && row.note?.startsWith("REVIEW:"));
-    const relationships = resource.relationships.map(
-      (relationship) => `${relationship.target_resource} (${relationship.cardinality.replaceAll("_", "-")})`,
-    );
+    const relationships = resource.relationships.map((relationship) => {
+      const path = { source_resource: resource.id, target_resource: relationship.target_resource,
+        links: relationship.proof?.links };
+      const columns = formatRelationshipJoinColumns(path);
+      return `${relationship.id}: ${formatRelationshipPath(path)}${columns ? ` via ${columns}` : ""}; ${relationship.cardinality.replaceAll("_", "-")}; unmatched rows ${relationship.unmatched_rows}`;
+    });
     const reviewedValues = Object.entries(resource.field_enums).map(
       ([field, values]) => `${field}: ${values.join(" | ")}`,
     );
@@ -10645,7 +10674,7 @@ export function formatFocusedBoundaryActivationReview(
     "",
     theme.title("REVIEW EXACT BOUNDARY"),
     `${theme.bold("Boundary:")} ${theme.scope(bundle.candidate.pack.name)}`,
-    theme.dim("This is the only human authority confirmation. Runner will recheck the schema and read-only role before activation."),
+    theme.dim("This confirmation grants Read authority only. Runner rechecks the schema and read-only role before activation; Action and execution reviews stay separate."),
     "",
     ...boundaryMapOperationLegend().map((line) => theme.dim(line)),
     "",
@@ -10656,6 +10685,7 @@ export function formatFocusedBoundaryActivationReview(
     "",
     `${theme.bold("Exact fingerprint:")} ${theme.scope(bundle.candidate_digest)}`,
     theme.success("Source database changed: no. The model cannot perform this confirmation."),
+    ...(includeCompleteRevision ? ["", theme.title("COMPLETE REVIEWED REVISION (JSON)"), ...JSON.stringify(bundle.candidate, null, 2).split("\n")] : []),
     "",
   ];
   return lines
@@ -10674,6 +10704,38 @@ function styleBoundaryReviewAsciiTable(
     if (index === 1) return theme.bold(line);
     return theme.value(line);
   });
+}
+
+export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle): string[] {
+  const resources = bundle.candidate.pack.resources;
+  const catalog = readBoundaryRevisionCatalog(bundle.candidate);
+  const excluded = [...new Set(resources.flatMap((resource) => resource.kept_out_fields))];
+  const visibleControls = catalog.resources.flatMap((resource) => resource.fields
+    .filter((field) => field.current_exposure === "model_and_runner" && readBoundaryFieldReviewNote(field.roles, "MODEL")?.startsWith("REVIEW:"))
+    .map((field) => `${resource.id}.${field.id}`));
+  const principalCount = resources.filter(hasReviewedPrincipalScope).length;
+  const sharedCount = resources.filter((resource) => resource.shared_reference_scope).length;
+  const readable = resources.map((resource) => {
+    const fields = resource.selectable_fields.filter((field) => !resource.kept_out_fields.includes(field)
+      && !(resource.model_withheld_fields ?? []).includes(field));
+    const name = resource.label ?? resource.id.split(".").at(-1)!.replaceAll("_", " ");
+    return `${name} (${fields.length ? summarizeAuthorityItems(fields, 3) : "reviewed analysis only"})`;
+  });
+  return [
+    `Boundary: ${bundle.candidate.pack.name} | pending Read activation`,
+    `Readable information: ${summarizeAuthorityItems(readable, 8)}.`,
+    bundle.candidate.organization_scope
+      ? "Isolation: whole-organization access, not customer-specific row filtering."
+      : `Isolation: trusted account scope is enforced${sharedCount ? ` except for ${sharedCount} explicitly shared reference table(s)` : " on every resource"}; the agent cannot choose another account.`,
+    principalCount === resources.length && resources.length
+      ? "Customer isolation: every resource also requires the authenticated principal through reviewed columns, paths or database RLS. Identity comes from the trusted session, not model arguments."
+      : `Scope concern: ${resources.length - principalCount} resource(s) do not have principal row filtering. Do not assume access is limited to one customer; inspect the scope details.`,
+    `Excluded fields: ${excluded.length ? summarizeAuthorityItems(excluded, 8) : "none; review whether sensitive fields need exclusion"}.`,
+    ...(visibleControls.length ? [`Review concern: model-facing internal identifiers or policy controls: ${summarizeAuthorityItems(visibleControls, 5)}. Revise before activation if these should be private.`] : []),
+    `Read relationships: ${resources.reduce((total, resource) => total + resource.relationships.length, 0)} customer-facing links. Private Action verification links are reviewed separately; zero Read links is not itself an error.`,
+    `Limits: small-group minimum ${[...new Set(resources.map((resource) => resource.minimum_cohort_size))].join(", ")}; ${bundle.candidate.budgets.max_queries_per_session} queries and ${bundle.candidate.budgets.max_extracted_cells_per_session} cells per trusted scope / 24h.`,
+    "This Read gate does not approve requests, enable execution, or change source rows.",
+  ];
 }
 
 export function formatBoundaryChatReviewSummary(

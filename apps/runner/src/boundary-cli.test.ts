@@ -31,6 +31,7 @@ import {
   formatBoundaryChatReviewSummary,
   formatCurrentBoundaryAuthoritySummary,
   formatFocusedBoundaryActivationReview,
+  formatReadActivationBusinessSummary,
   loadBoundaryReviewContext,
   promptBoundaryMappingModel,
 } from "./boundary-commands.js";
@@ -78,9 +79,10 @@ import {
   generateModelActionRuleDraft,
   type ModelActionRuleDraftResult,
 } from "./action-rule-model.js";
-import type {
-  BoundaryAuthoringChat,
-  BoundaryAuthoringPermissionGuide,
+import {
+  createBoundaryAuthoringChat,
+  type BoundaryAuthoringChat,
+  type BoundaryAuthoringPermissionGuide,
 } from "./boundary-authoring-chat.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { ACTION_SUGGESTION_VERSION, assessActionSuggestion } from "./action-design.js";
@@ -4916,6 +4918,7 @@ describe("boundary operator-plane CLI", () => {
           "Exact fingerprint: sha256:deadbeef",
           "Tenant ID: northstar-mobile",
           "Three reviewed resources; source unchanged",
+          "Excluded fields: secret_internal_note, password_hash.",
         ],
         choices: [
           { value: "activate", label: "Activate this exact Read Boundary" },
@@ -4931,7 +4934,7 @@ describe("boundary operator-plane CLI", () => {
         egressAcknowledged: true,
         responseStyle: "permission",
       });
-      expect(permissionNarration?.validatedFacts.join("\n")).not.toMatch(/deadbeef|northstar-mobile/iu);
+      expect(permissionNarration?.validatedFacts.join("\n")).not.toMatch(/deadbeef|northstar-mobile|secret_internal_note|password_hash/iu);
       expect(mappingChoices).toEqual([
         "model",
         "choose_model",
@@ -4975,7 +4978,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision", async () => {
+  it.each(["proposal_only", "supervised"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (writeback) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-semantic-action-"));
     const inspection = principalScopeInspection();
     const build = buildAutoBoundary({
@@ -5118,7 +5121,7 @@ describe("boundary operator-plane CLI", () => {
             request_kind: { kind: "literal", value: "inspection_followup", value_type: requestKindType },
             estimated_hours: { kind: "literal", value: 2, value_type: estimatedHoursType },
           },
-          writeback: "proposal_only",
+          writeback,
         },
         require: {
           kind: "compare",
@@ -5215,6 +5218,11 @@ describe("boundary operator-plane CLI", () => {
           return "retry";
         }
         if (title === "ACTIVATE READ BOUNDARY") {
+          const review = choiceOptions?.context?.join("\n") ?? "";
+          expect(review).toContain("Read review -> Action review");
+          expect(review).toContain("approval is not execution");
+          expect(review).toContain(writeback === "supervised" ? "Automatic completion: requested" : "Execution: proposal-only");
+          if (writeback === "supervised") expect(review).toContain("Execution prerequisites:");
           readReviewChoiceValues.push(options.map((option) => option.value));
           readActivationReviewCount += 1;
           return readActivationReviewCount === 1 ? "revise_model" : "finish";
@@ -6663,6 +6671,69 @@ describe("boundary operator-plane CLI", () => {
     }
   });
 
+  it("lets an operator inspect the complete Read revision during a provider outage and activate without leaving chat", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-exact-read-review-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({ inspection, project: {
+      root, package_manager: "npm", frameworks: ["node"], schema_inputs: [], database_env_names: ["DATABASE_URL"],
+    }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
+    const writes: string[] = [];
+    const reviews: string[] = [];
+    const choices = ["details", "__ask_boundary_model__", "details", "activate"];
+    const guide = vi.fn(async () => { throw new AskError("ASK_PROVIDER_TIMEOUT", "private-provider-body"); });
+    let digest: string;
+    let candidateBefore: string;
+    const chat = createBoundaryAuthoringChat({ color: false, io: {
+      columns: () => 76,
+      read: async () => "What may the customer read?",
+      choose: async (choice) => {
+        expect(choice.title).toBe("PERMISSION REQUIRED");
+        expect(choice.initialValue).toBe("finish");
+        expect(choice.options.find((option) => option.value === "finish")?.label).not.toContain("recommended");
+        return choices.shift();
+      },
+      review: async (_title, lines) => {
+        const current = await loadBoundaryReviewContext(root);
+        expect(current.bundle.candidate_digest).toBe(digest);
+        expect(JSON.stringify(current.candidate)).toBe(candidateBefore);
+        await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+        reviews.push(lines.join("\n"));
+      },
+      write: (value) => writes.push(value), onInterrupt: () => () => undefined, close: () => undefined,
+    } });
+    chat.setPermissionGuide!(guide);
+    let visits = 0;
+    chat.session.chooseResource = async () => visits++ === 0 ? { action: "confirm" } : undefined;
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const before = await loadBoundaryReviewContext(root);
+      digest = before.bundle.candidate_digest;
+      candidateBefore = JSON.stringify(before.candidate);
+      const summary = formatReadActivationBusinessSummary(before.bundle).join("\n");
+      expect(summary).toContain("service visits");
+      expect(summary).toContain("Scope concern:");
+      expect(summary).toContain("Excluded fields:");
+      expect(summary).toContain("zero Read links is not itself an error");
+      await expect(boundaryReviewCommandInternal(["--project-root", root, "--access"], async () => inspection,
+        chat.session)).resolves.toBe(0);
+      expect(reviews, writes.join("\n")).toHaveLength(2);
+      expect(guide).toHaveBeenCalledTimes(2);
+      for (const review of reviews) {
+        for (const fact of ["public.service_visits", "scheduled_at", "tenant_id", "Model + Runner", "Runner only", "Kept out", "Tenant scope", "Query volume", "COMPLETE REVIEWED REVISION (JSON)", digest]) {
+          expect(review.replace(/\s+/gu, "")).toContain(fact.replace(/\s+/gu, ""));
+        }
+        expect(review.split("\n").filter((line) => /^\s*[+|]/u.test(line)).every((line) => line.length <= 72)).toBe(true);
+      }
+      expect(reviews[1]).toContain("ASK_PROVIDER_TIMEOUT");
+      expect(writes.join("")).toContain("LOCAL REVIEW SUMMARY");
+      expect(writes.join("")).not.toContain("private-provider-body");
+      expect((await loadActivatedExplorationBoundaries(root))[0]?.activation.digest).toBe(digest);
+      expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(digest);
+      expect(choices).toEqual([]);
+    } finally { chat.close(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+
   it("keeps conversational activation output inside the authoring transcript", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-conversation-activation-"));
     const inspection = boundaryInspection();
@@ -6904,7 +6975,7 @@ describe("boundary operator-plane CLI", () => {
       });
       expect(replacementChoices[0]?.labels[0]).toContain("removes 1 table");
       expect(replacementChoices[0]?.labels).toContain(
-        "Keep current active Read Boundary and finish  [recommended]",
+        "Keep current active Read Boundary and finish",
       );
       expect(replacementChoices[0]?.context.join("\n")).toContain(
         `Removes active tables (1): ${removed.id}`,

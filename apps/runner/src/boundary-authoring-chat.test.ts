@@ -3,6 +3,7 @@ import {
   createBoundaryAuthoringChat,
 } from "./boundary-authoring-chat.js";
 import type { AnalyticsShellIo } from "./analytics-shell.js";
+import { AskError } from "./model-ask.js";
 
 function memoryIo(input: {
   reads?: Array<string | undefined>;
@@ -54,6 +55,35 @@ function memoryIo(input: {
 }
 
 describe("Boundary authoring chat", () => {
+  it("keeps exact authority details independent of summary and failed explanations", async () => {
+    const memory = memoryIo({ choices: ["details", "__ask_boundary_model__", "details", "__retry_boundary_explanation__", "activate"],
+      reads: ["What fields and customer scope are enabled?"] });
+    const reviews: string[] = [];
+    memory.io.review = async (_title, lines) => { reviews.push(lines.join("\n")); };
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const guide = vi.fn(async () => { throw new AskError("ASK_PROVIDER_TIMEOUT", "secret-token https://private.example/provider"); });
+    chat.setPermissionGuide!(guide);
+    const exact = ["MODEL: account_name", "RUNNER: version", "KEPT: private_note", "Scope: authenticated customer RLS", "Query limit: 1000", `Fingerprint: sha256:${"a".repeat(64)}`];
+    const options = { initialValue: "finish", context: ["Readable information: account summary.", "This Read gate cannot execute changes."],
+      exactDetails: { title: "Exact Read Boundary review", lines: exact } };
+    await expect(chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
+      { value: "activate", label: "Activate this exact Read Boundary" },
+      { value: "details", label: "View exact Read Boundary details" },
+      { value: "finish", label: "Keep Read Boundary disabled and finish" },
+    ], options)).resolves.toBe("activate");
+    expect(guide).toHaveBeenCalledTimes(3); // initial, explicit question, explicit retry; never details
+    expect(reviews).toHaveLength(2);
+    for (const review of reviews) for (const line of exact) expect(review).toContain(line);
+    expect(reviews[1]).toContain("ASK_PROVIDER_TIMEOUT");
+    expect(reviews[1]).toContain("Retry possible: yes");
+    expect(reviews.join("\n") + memory.writes.join("")).not.toMatch(/secret-token|private.example/);
+    expect(memory.writes.join("")).toContain("Readable information: account summary.");
+    expect(memory.writes.join("")).toContain("LOCAL REVIEW SUMMARY");
+    expect(options.exactDetails.lines).toEqual(exact);
+    expect(memory.choices.every((choice) => choice.initialValue === "finish")).toBe(true);
+    chat.close();
+  });
+
   it("renders actual text deltas before completion, formats split markup, and drains before input", async () => {
     let columns = 64;
     const memory = memoryIo({ reads: ["Why?"], columns: () => columns });

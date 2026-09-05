@@ -17,6 +17,7 @@ import {
 } from "./terminal-layout.js";
 import { renderTerminalSynapsorDslFrame } from "./terminal-syntax.js";
 import { createTerminalModelStream } from "./terminal-model-stream.js";
+import { authoringExplanationFailure, type AuthoringExplanationFailure } from "./authoring-explanation-failure.js";
 
 export type BoundaryAuthoringSpeaker = "runner" | "model";
 type BoundaryAuthoringTone = "normal" | "success" | "warning" | "danger";
@@ -27,6 +28,7 @@ export type BoundaryAuthoringPermissionGuideInput = {
   context: string[];
   choices: Array<Pick<BoundaryPromptChoice, "value" | "label" | "detail">>;
   operatorQuestion?: string;
+  onFailure?: (failure: AuthoringExplanationFailure) => void;
 };
 
 export type BoundaryAuthoringPermissionGuide = (
@@ -61,6 +63,7 @@ type ChoiceInput = {
   message: string;
   options: BoundaryPromptChoice[];
   initialValue?: string;
+  exactDetails?: { title: string; lines: string[] };
 };
 
 const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 32;
@@ -574,6 +577,24 @@ export function createBoundaryAuthoringChat(input: {
       lines: facts,
     };
   };
+  const renderedDetails = (record: { title: string; lines: string[] }) => {
+    const detailLines = record.lines.map((line) => {
+      const safe = transcriptText(line);
+      if (!safe.trim()) return "";
+      if (/^\s*\|/u.test(safe)) return safe
+        .replace(/\bModel \+ Runner\b/gu, (value) => theme.visible(value))
+        .replace(/\bRunner only\b/gu, (value) => theme.runnerOnly(value))
+        .replace(/\bKept out\b/gu, (value) => theme.keptOut(value));
+      if (/^REVIEW BEFORE ACTIVATION:/u.test(safe)) return theme.warning(safe);
+      if (/^[A-Z][A-Z0-9 /+_-]{2,}:?$/u.test(safe.trim())) return theme.title(safe.trim().replace(/:$/u, ""));
+      const fact = safe.match(/^([^:]{1,40}):\s+(.+)$/u);
+      if (fact && !/^\s*["{\[|]/u.test(safe)) return `${theme.dim(`${fact[1]!.trim()}:`)} ${theme.value(fact[2]!.trim())}`;
+      return safe;
+    });
+    return [theme.scope(record.title), ...detailLines, "",
+      theme.dim("No model request, authority change, source query, or source write occurred.")]
+      .flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
+  };
   const showDetails = () => {
     lastTranscriptTurn = "checkpoint";
     if (!latestDetails) {
@@ -582,30 +603,21 @@ export function createBoundaryAuthoringChat(input: {
       ], "warning");
       return;
     }
-    const detailLines = latestDetails.lines.map((line) => {
-      const safe = transcriptText(line);
-      if (!safe.trim()) return "";
-      if (/^[A-Z][A-Z0-9 /+_-]{2,}:?$/u.test(safe.trim())) {
-        return theme.title(safe.trim().replace(/:$/u, ""));
-      }
-      if (/^[+|`-]/u.test(safe.trimStart())) return safe;
-      const fact = safe.match(/^([^:]{1,40}):\s+(.+)$/u);
-      if (fact) return `${theme.dim(`${fact[1]!.trim()}:`)} ${theme.value(fact[2]!.trim())}`;
-      if (/^[-*]\s+/u.test(safe.trimStart())) {
-        return `  ${theme.key("-")} ${safe.trimStart().replace(/^[-*]\s+/u, "")}`;
-      }
-      return `  ${safe}`;
-    });
     const rendered = [
       "",
       theme.title("RUNNER DETAILS"),
-      theme.scope(latestDetails.title),
-      ...detailLines,
-      "",
-      theme.dim("No model request, authority change, source query, or source write occurred."),
+      ...renderedDetails(latestDetails),
       "",
     ].flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
     writeTranscript(rendered.join("\n"));
+  };
+  const showReviewDetails = async (title: string, lines: string[]) => {
+    finishLiveResponse();
+    await livePending;
+    rememberDetails(title, lines);
+    lastTranscriptTurn = "checkpoint";
+    if (io.review && latestDetails) await io.review("EXACT REVIEW - READ ONLY", renderedDetails(latestDetails));
+    else showDetails();
   };
   const showDiff = () => {
     lastTranscriptTurn = "checkpoint";
@@ -869,31 +881,53 @@ export function createBoundaryAuthoringChat(input: {
       })),
     } satisfies BoundaryAuthoringPermissionGuideInput;
     let explanationShown = false;
+    let failure: AuthoringExplanationFailure | undefined;
+    let lastQuestion: string | undefined;
+    const exact = choice.exactDetails ? structuredClone(choice.exactDetails) : latestDetails ? structuredClone(latestDetails) : undefined;
+    const retainExact = () => {
+      if (exact) rememberDetails(exact.title, [...exact.lines, ...(failure ? ["", "EXPLANATION DIAGNOSTICS",
+        `Category: ${failure.category}`, `Code: ${failure.code}`, `Retry possible: ${failure.retryable ? "yes" : "after correcting the reported issue"}`,
+        failure.guidance, "Pending authority revision unchanged."] : [])]);
+    };
+    retainExact();
     const hasExactDetailsChoice = choice.options.some((option) =>
       /\b(?:details|inspect exact|view exact)\b/iu.test(`${option.label} ${option.detail ?? ""}`));
 
     const explain = async (operatorQuestion?: string): Promise<void> => {
       if (!permissionGuide) return;
-      const answer = await permissionGuide({
-        ...request,
-        ...(operatorQuestion ? { operatorQuestion } : {}),
-      });
+      lastQuestion = operatorQuestion;
+      failure = undefined;
+      let answer: string | undefined;
+      try {
+        answer = await permissionGuide({
+          ...request,
+          ...(operatorQuestion ? { operatorQuestion } : {}),
+          onFailure: (diagnostic) => { failure = diagnostic; },
+        });
+      } catch (error) { failure = authoringExplanationFailure(error); }
       if (answer?.trim()) {
         await streamModel(answer.trim().split(/\r?\n/u));
         explanationShown = true;
         return;
       }
+      failure ??= authoringExplanationFailure();
+      retainExact();
       // The automatic narration is optional. Its failure must not look like a
       // failed authority operation or obscure the exact Runner confirmation.
       // Surface the outage only after the operator explicitly asks the model.
       if (operatorQuestion) {
         checkpoint("Model explanation unavailable", [
-          "The exact Runner permission is unchanged. Use /details, decide now, or try again later.",
+          `${failure.category}. ${failure.guidance}`,
+          "The pending revision is unchanged. Exact details work without the model; diagnostics are included there.",
         ], "warning");
+        retainExact();
+        if (choice.exactDetails) checkpoint("LOCAL REVIEW SUMMARY", request.context, "normal");
       }
     };
 
     await explain();
+    if (choice.exactDetails) checkpoint("READ REVIEW SUMMARY", request.context, "normal");
+    retainExact();
     if (verifiedCheckpointTitle && request.context.length) {
       checkpoint(verifiedCheckpointTitle, request.context, "normal");
     }
@@ -902,6 +936,8 @@ export function createBoundaryAuthoringChat(input: {
         ...choice,
         options: [
           ...choice.options.slice(0, 1),
+          ...(failure?.retryable ? [{ value: "__retry_boundary_explanation__", label: "Retry model explanation",
+            detail: "Retry only the explanation; keep the same pending authority revision." }] : []),
           ...(permissionGuide
             ? [{
                 value: askModelChoiceValue,
@@ -919,8 +955,15 @@ export function createBoundaryAuthoringChat(input: {
           ...choice.options.slice(1),
         ],
       });
+      if (selected === "__retry_boundary_explanation__") { await explain(lastQuestion); continue; }
+      if (selected === "details" && choice.exactDetails) {
+        retainExact();
+        await showReviewDetails(latestDetails!.title, latestDetails!.lines);
+        continue;
+      }
       if (selected === viewRunnerDetailsChoiceValue) {
-        showDetails();
+        retainExact();
+        if (latestDetails) await showReviewDetails(latestDetails.title, latestDetails.lines);
         continue;
       }
       if (selected !== askModelChoiceValue) return selected;
@@ -990,10 +1033,12 @@ export function createBoundaryAuthoringChat(input: {
   };
 
   const session: BoundaryReviewInteractiveSession = {
+    get terminalColumns() { return io.columns(); },
     presentationMode: "conversation",
     present: runner,
     rememberDetails,
     showRememberedDetails: showDetails,
+    showReviewDetails,
     chooseResource: async () => undefined,
     editFieldTiers: async () => undefined,
     promptText: async (prompt, options) => {
@@ -1012,9 +1057,10 @@ export function createBoundaryAuthoringChat(input: {
       return read(prompt.replace(/:\s*$/u, ""), speaker);
     },
     chooseOption: async (title, choices, options) => {
-      const permission = /^(?:ACTIVATE|APPROVE|APPLY|GRANT)\b/iu.test(title.trim());
+      const permission = Boolean(options?.exactDetails) || /^(?:ACTIVATE|APPROVE|APPLY|GRANT)\b/iu.test(title.trim());
       if (permission) {
-        rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options?.context), title]);
+        if (options?.exactDetails) rememberDetails(options.exactDetails.title, options.exactDetails.lines);
+        else rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options?.context), title]);
       } else if (options?.context?.length) {
         const hasModelContext = options.context.some((line) =>
           /^(?:Model rationale|Model question|Model suggestion):/iu.test(line.trim()));
@@ -1028,6 +1074,7 @@ export function createBoundaryAuthoringChat(input: {
           : "Choose one path. The highlighted choice is not applied until you press Enter.",
         options: choices,
         ...(options?.initialValue ? { initialValue: options.initialValue } : {}),
+        ...(options?.exactDetails ? { exactDetails: options.exactDetails } : {}),
       } satisfies ChoiceInput;
       return permission
         ? choosePermission(choice, options?.context)

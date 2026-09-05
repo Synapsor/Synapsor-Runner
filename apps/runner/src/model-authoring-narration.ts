@@ -1,4 +1,5 @@
 import {
+  AskError,
   askToolSurfaceDigest,
   resolveAskProviderConfiguration,
   runAskProviderTurn,
@@ -11,6 +12,7 @@ import {
   rememberModelAuthoringTurn,
   type ModelAuthoringConversation,
 } from "./model-authoring-conversation.js";
+import { authoringExplanationFailure, type AuthoringExplanationFailure } from "./authoring-explanation-failure.js";
 
 export type ModelAuthoringNarrationSession = {
   provider: AskProvider;
@@ -31,8 +33,13 @@ export async function narrateValidatedAuthoringStep(input: {
   egressAcknowledged: boolean;
   signal?: AbortSignal;
   responseStyle?: "validated_result" | "permission" | "opening";
+  onFailure?: (failure: AuthoringExplanationFailure) => void;
 }): Promise<string | undefined> {
-  if (!input.session.conversation) return undefined;
+  const unavailable = (code: string) => {
+    input.onFailure?.(authoringExplanationFailure(new AskError(code, "Explanation unavailable.")));
+    return undefined;
+  };
+  if (!input.session.conversation) return unavailable("NARRATION_CONTEXT_MISSING");
   const tools: [] = [];
   const authorityDigest = askToolSurfaceDigest(tools);
   const defaultKeyEnv = input.session.provider === "openai"
@@ -40,20 +47,6 @@ export async function narrateValidatedAuthoringStep(input: {
     : input.session.provider === "anthropic"
       ? "ANTHROPIC_API_KEY"
       : undefined;
-  const configuration = resolveAskProviderConfiguration({
-    provider: input.session.provider,
-    model: input.session.model,
-    ...(input.session.baseUrl ? { base_url: input.session.baseUrl } : {}),
-    ...(input.session.apiKey
-      ? { api_key: input.session.apiKey }
-      : input.session.apiKeyEnv ?? defaultKeyEnv
-        ? { api_key_env: input.session.apiKeyEnv ?? defaultKeyEnv }
-        : {}),
-    authority_digest: authorityDigest,
-    egress_acknowledged: input.egressAcknowledged,
-    request_timeout_seconds: 120,
-    max_output_tokens: 800,
-  }, input.env ?? process.env, new Date());
   const gateway: AskToolGateway = {
     mode: "authoring",
     listTools: () => tools,
@@ -94,6 +87,20 @@ export async function narrateValidatedAuthoringStep(input: {
       : []),
   ].join("\n");
   try {
+    const configuration = resolveAskProviderConfiguration({
+      provider: input.session.provider,
+      model: input.session.model,
+      ...(input.session.baseUrl ? { base_url: input.session.baseUrl } : {}),
+      ...(input.session.apiKey
+        ? { api_key: input.session.apiKey }
+        : input.session.apiKeyEnv ?? defaultKeyEnv
+          ? { api_key_env: input.session.apiKeyEnv ?? defaultKeyEnv }
+          : {}),
+      authority_digest: authorityDigest,
+      egress_acknowledged: input.egressAcknowledged,
+      request_timeout_seconds: 120,
+      max_output_tokens: 800,
+    }, input.env ?? process.env, new Date());
     const result = await runAskProviderTurn({
       configuration,
       question,
@@ -114,19 +121,20 @@ export async function narrateValidatedAuthoringStep(input: {
       skipRunnerQuestionContext: true,
       allowToolFreeAuthoringResponse: true,
     });
-    if (result.answer_source !== "model" || !result.answer.trim()) return undefined;
+    if (result.answer_source !== "model" || !result.answer.trim()) return unavailable("NARRATION_EMPTY");
     const answer = result.answer.trim();
-    if (opening && !openingNarrationIsSafe(answer, input.nextQuestion)) return undefined;
-    if (narrationContradictsValidatedRecord(answer, input.validatedFacts)) return undefined;
+    if (opening && !openingNarrationIsSafe(answer, input.nextQuestion)) return unavailable("NARRATION_VALIDATION_REJECTED");
+    if (narrationContradictsValidatedRecord(answer, input.validatedFacts)) return unavailable("NARRATION_VALIDATION_REJECTED");
     rememberModelAuthoringTurn(
       input.session.conversation,
       input.operatorMessage,
       answer,
     );
     return answer;
-  } catch {
+  } catch (error) {
     // Narration is presentation only. A provider failure must not discard an
     // already validated disabled draft or change authority state.
+    input.onFailure?.(authoringExplanationFailure(error));
     return undefined;
   } finally {
     await gateway.close().catch(() => undefined);

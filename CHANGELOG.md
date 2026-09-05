@@ -2,6 +2,19 @@
 
 ## 1.8.0 (unreleased)
 
+### Read Activation Review
+
+- Opens the complete local Read revision directly from the activation gate,
+  with paginated fields, exposure tiers, scope paths, relationships, limits and
+  fingerprint. Returning preserves the exact pending revision; viewing details
+  makes no model request and grants no authority.
+- Adds a business-readable coverage, isolation, exclusion and concern summary,
+  plus separate Read, Action and execution steps. Approval-only and supervised
+  execution intent remain distinct. Leaving disabled stays the conservative
+  selection without being labeled a product recommendation.
+- Keeps review usable when model explanations fail, with sanitized failure
+  categories, retry guidance and deterministic local details.
+
 ### Composite Action Relationships
 
 - Supports complete ordered composite foreign keys in Action Rule verification,

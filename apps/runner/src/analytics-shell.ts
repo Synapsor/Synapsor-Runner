@@ -64,6 +64,7 @@ import type { ResolvedRelativeTimeWindow } from "./relative-time-window.js";
 import {
   createInPlaceTerminalRenderer,
   fitTerminalFrameToRows,
+  withRawTerminalScreen,
 } from "./terminal-prompt.js";
 
 export { renderTerminalJson, renderTerminalSql } from "./terminal-syntax.js";
@@ -598,6 +599,7 @@ export type ShellAnalysisRecord = {
 };
 
 export type AnalyticsShellIo = {
+  review?(title: string, lines: string[]): Promise<void>;
   read(prompt: string): Promise<string | undefined>;
   readWithEscape?(prompt: string): Promise<string | undefined>;
   readConversation?(prompt: string): Promise<string | undefined>;
@@ -1585,6 +1587,31 @@ export function createTerminalAnalyticsShellIo(input: {
     });
   };
   return {
+    review: async (title, lines) => {
+      if (!terminal || !(writable as NodeJS.WriteStream).isTTY) {
+        writable.write([title, ...lines, ""].join("\n"));
+        return;
+      }
+      if (questionActive) throw new Error("Close the active input before opening a review.");
+      clearStatus();
+      const listeners = readable.listeners("keypress");
+      readable.removeAllListeners("keypress");
+      try {
+        await withRawTerminalScreen(readable as NodeJS.ReadStream, writable as NodeJS.WriteStream, async (nextKey, render) => {
+          const paint = () => render([title, "", ...lines, "", "PgUp/PgDn Scroll   Enter/Esc Return to pending review"]);
+          writable.on("resize", paint);
+          try {
+            paint();
+            while (true) {
+              const key = await nextKey();
+              if (["return", "enter", "escape"].includes(key.name ?? "") || (key.ctrl && key.name === "c")) return;
+            }
+          } finally { writable.off("resize", paint); }
+        });
+      } finally {
+        for (const listener of listeners) readable.on("keypress", listener as (...args: unknown[]) => void);
+      }
+    },
     read: (prompt) => readQuestion(prompt, false),
     readWithEscape: (prompt) => readQuestion(prompt, true),
     readConversation,
