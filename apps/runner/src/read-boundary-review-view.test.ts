@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
-import { loadReadReviewDiff, saveReadReviewDiff, readRevisionDiff, readBoundaryReviewSections } from "./read-boundary-review-view.js";
+import { loadReadReviewDiff, saveReadReviewDiff, readRevisionDiff, readBoundaryReviewSections, findReviewSection, reviewSectionLines } from "./read-boundary-review-view.js";
 import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { formatReadActivationDecisionSummary } from "./boundary-commands.js";
@@ -30,10 +30,10 @@ describe("progressive Read authority review", () => {
     const before = fixture(), after = structuredClone(before);
     before.pack.resources[0]!.kept_out_fields.push("course_number");
     const diff = readRevisionDiff(before, after);
-    const change = diff.children!.find((item) => item.id.endsWith(".course_number"))!;
-    expect(change.title).toContain("KEPT OUT -> MODEL RAW");
+    const change = findReviewSection([diff], "university.r17.course_number")!;
+    expect(change.title).toContain("agent can see values");
     expect(change.lines.join("\n")).toContain("raw values may now be returned to the model");
-    expect(change.lines.join("\n")).not.toContain("private use");
+    expect(diff.changeCounts).toMatchObject({ rawAdded: 1, selectionAdded: 1 });
   });
 
   it("removes derived inference through reviewed links without removing the private link", () => {
@@ -55,8 +55,8 @@ describe("progressive Read authority review", () => {
     expect(after.pack.resources[1]!.derived_measures).toEqual([]);
     expect(after.pack.resources[1]!.numeric_bands).toEqual([]);
     const diff = readRevisionDiff(before, after);
-    expect(diff.lines[0]).toContain("1 changed resource-qualified fields");
-    expect(diff.children!.map((section) => section.id)).toContain("university.enrollments:derived_measures");
+    expect(diff.changeCounts!.fields).toBe(1);
+    expect(findReviewSection([diff], "university.enrollments:derived_measures")).toBeDefined();
   });
 
   it("accounts for operations, no-return classifications and new private access without conflating counts", async () => {
@@ -72,9 +72,9 @@ describe("progressive Read authority review", () => {
     expect(resource.selectable_fields).toContain("c7");
     expect(resource.selectable_fields).toContain("course_number");
     const diff = readRevisionDiff(original, after, [{ resource: resource.id, field: "id", rationale: "Opaque reference identity." }]);
-    expect(diff.lines[0]).toContain("2 changed resource-qualified fields");
-    expect(diff.children!.find((child) => child.id.endsWith(".id"))!.lines.join("\n")).toContain("NEW ACCESS");
-    expect(diff.children!.find((child) => child.id.endsWith(".c7"))!.lines.join("\n")).toContain("Model analysis after: none");
+    expect(diff.changeCounts).toMatchObject({ fields: 2, rawRemoved: 0, rawAdded: 0, selectionAdded: 1 });
+    expect(findReviewSection([diff], "university.r17.id")!.lines.join("\n")).toContain("NEW ACCESS");
+    expect(findReviewSection([diff], "university.r17.c7")!.lines.join("\n")).toContain("Model analysis after: none");
     const sections = readBoundaryReviewSections({ boundary: after, digest: "new", changes: diff });
     expect(sections[0]!.children![0]!.children!.find((child) => child.id === "created_at")!.title).toContain("NO RAW RETURN");
     expect(sections[0]!.children![0]!.children!.find((child) => child.id === "c7")!.lines.join("\n")).toContain("Private eligibility score");
@@ -86,6 +86,19 @@ describe("progressive Read authority review", () => {
       expect(await loadReadReviewDiff(root + "/missing", "new")).toBeUndefined();
     } finally { await fs.rm(root, { recursive: true, force: true }); }
     expect(before.pack.resources[0]!.derived_measures).toHaveLength(1);
+  });
+
+  it("separates representation-only changes from unselected field access expansions", () => {
+    const before = fixture(), after = structuredClone(before);
+    after.pack.resources[0]!.model_withheld_fields!.push("created_at");
+    let diff = readRevisionDiff(before, after);
+    expect(diff.changeCounts).toMatchObject({ fields: 1, permissions: 0, representation: 1, selectionAdded: 0 });
+    expect(findReviewSection([diff], "university.r17.created_at")!.title).toContain("classification only; access unchanged");
+    after.pack.resources[0]!.selectable_fields.push("created_at");
+    diff = readRevisionDiff(before, after);
+    expect(diff.changeCounts).toMatchObject({ rawAdded: 0, rawRemoved: 0, permissions: 1, selectionAdded: 1, representation: 0 });
+    expect(reviewSectionLines(diff).join("\n")).toContain("Runner row selection: not allowed -> allowed");
+    expect(reviewSectionLines(diff).join("\n")).not.toContain("Conflict/version guard remains");
   });
 
   it.each([52, 80, 100, 160, 240])("formats the decision without overflowing %i columns", (width) => {

@@ -3,6 +3,9 @@
 import assert from "node:assert/strict";
 import { generateModelActionRuleDraft } from "../apps/runner/dist/action-rule-model.js";
 import { secureAskJsonRequest } from "../apps/runner/dist/model-ask.js";
+import { createModelAuthoringConversation } from "../apps/runner/dist/model-authoring-conversation.js";
+import { newPolicySourceSession, policyTextSnapshot, authoringDestination } from "../apps/runner/dist/authoring-policy-source.js";
+import { reviewPolicyCoverage } from "../apps/runner/dist/authoring-policy-coverage.js";
 
 const LOCK = `sha256:${"a".repeat(64)}`;
 const READ_DIGEST = `sha256:${"b".repeat(64)}`;
@@ -32,8 +35,18 @@ if (!fixtures.length) {
 
 for (const fixture of fixtures) {
   const clarifications = [];
+  const conversation = createModelAuthoringConversation();
+  const session = { provider, model, ...(baseUrl ? { baseUrl } : {}), conversation };
+  const policyText = argumentsMap["policy-text"] === "true";
+  if (policyText) {
+    const source = policyTextSnapshot(Buffer.from(fixture.intent), `${fixture.id}.txt`);
+    conversation.policySources = newPolicySourceSession();
+    conversation.policySources.snapshots.push(source); conversation.policySources.active = 1;
+    conversation.policySources.approvals.push({ digest: source.digest, destination: authoringDestination(session) });
+  }
   const result = await generateModelActionRuleDraft({
     session: {
+      ...session,
       provider,
       model,
       ...(baseUrl ? { baseUrl } : {}),
@@ -41,7 +54,7 @@ for (const fixture of fixtures) {
         ? { dependencies: { requestJson: debugProviderRequest } }
         : {}),
     },
-    intent: fixture.intent,
+    intent: policyText ? "Prepare the requested action from the attached business rules. Ask for unresolved meanings; do not invent a rule or activate anything." : fixture.intent,
     builtCatalog: fixture.builtCatalog,
     readBoundary: fixture.readBoundary,
     readBoundaryDigest: READ_DIGEST,
@@ -50,6 +63,7 @@ for (const fixture of fixtures) {
       clarifications.push(question);
       if (clarifications.length > 4) throw new Error(`${fixture.id}: repeated clarification did not resolve the job; stopping qualification.`);
       process.stderr.write(`CLARIFICATION ${fixture.id} ${clarifications.length}: ${question}\n`);
+      if (conversation.policySources) (conversation.policySources.operator_messages ??= []).push(fixture.clarification);
       return fixture.clarification;
     },
   });
@@ -72,11 +86,33 @@ for (const fixture of fixtures) {
     `missing ${fixture.id} ${expectedLimit.scope} ${expectedLimit.kind} approval limit: ${JSON.stringify(result.compiled.approval_class.shared_limits)}`);
   }
   assert.equal(clarifications.length <= 4, true);
+  if (policyText) {
+    const report = await reviewPolicyCoverage({ session, source: conversation.policySources.snapshots[0],
+      draft: { read: fixture.readBoundary, actions: [result.compiled.draft] } });
+    assert.ok(report.passages.length, "Policy source must have passage traceability.");
+    process.stdout.write(`POLICY COVERAGE ${fixture.id}: ${report.passages.map((entry) => entry.disposition).join(", ")} (model assessment, not semantic proof)\n`);
+    for (const entry of report.passages.filter((entry) => ["needs_decision", "conflict", "unsupported"].includes(entry.disposition))) {
+      process.stdout.write(`COVERAGE CONCERN lines ${entry.start}-${entry.end}: ${entry.interpretation}\n`);
+    }
+  }
   if (fixture.id === "customer-support") {
     assert.equal(result.compiled.rule.inputs.length, 1);
     assert.equal(result.compiled.rule.inputs[0].minimum, 1);
     assert.equal(result.compiled.rule.inputs[0].maximum, 2500);
     assert.match(JSON.stringify(result.compiled.rule.effect.set.amount), /"input"/u);
+    if (policyText) {
+      const source = policyTextSnapshot(Buffer.from(fixture.intent.replace("2500", "1500")), "customer-support.txt", 2);
+      conversation.policySources.snapshots.push(source); conversation.policySources.active = 2;
+      conversation.policySources.approvals.push({ digest: source.digest, destination: authoringDestination(session) });
+      const revised = await generateModelActionRuleDraft({ session, intent: "Apply the replacement source to this same refund action: reduce only the requested amount maximum to 1500. Preserve the outcome, eligibility, all approval limits and no-writeback posture.",
+        existingDraft: result.compiled.draft, builtCatalog: fixture.builtCatalog, readBoundary: fixture.readBoundary, readBoundaryDigest: READ_DIGEST,
+        egressAcknowledged: true, askClarification: async (question) => { throw new Error(`Unexpected revision clarification: ${question}`); } });
+      assert.equal(revised.compiled.rule.outcome, result.compiled.rule.outcome);
+      assert.equal(revised.compiled.rule.inputs[0].maximum, 1500);
+      assert.deepEqual(revised.compiled.draft.approval, result.compiled.draft.approval);
+      assert.equal(revised.compiled.loaded.registry.rules.length, 1);
+      process.stdout.write("POLICY REPLACEMENT PASS: same refund outcome, lower bound, eligibility/approval/writeback retained.\n");
+    }
   }
   if (fixture.id === "coded-preferences") {
     assert.ok(clarifications.length >= 1, "Coded business meanings require operator clarification.");
@@ -163,7 +199,7 @@ function fieldServiceFixture() {
       "Use the appointment and offered slot as opaque subjects. Verify that dispatch has not started, the related service request has no automatic-change hold, and service type and location match.",
       "Derive slot_id, scheduled_start_at, and scheduled_end_at from the offered slot. Every eligible proposal requires one field_service_reviewer; do not auto-approve or enable writeback.",
     ].join(" "),
-    clarification: "Use the appointment and offer as opaque subjects, appointments_request_fk for the service request, and require human review by one field_service_reviewer.",
+    clarification: "The offer is not pre-assigned to an appointment; matching service type and location establishes applicability. Use the appointment and offer as separate opaque subjects, appointments_request_fk for the service request, and require human review by one field_service_reviewer.",
     expected: { operation: "update", target: "field_service.appointments" },
   });
 }
@@ -198,7 +234,7 @@ function customerSupportFixture() {
       "Require one support_reviewer. Automatically approve only eligible duplicate-charge requests, otherwise keep the eligible proposal for human review.",
       "Limit automatic approvals to 100 for this exact action in a rolling 24-hour window and one per trusted tenant plus principal in a rolling 15-day window. Do not enable writeback.",
     ].join(" "),
-    clarification: "Use the opaque support.charges subject, derive charge_id and refundable_amount, use duplicate_charge, and retain the exact rolling action-wide and tenant-plus-principal automatic-approval limits stated in the job.",
+    clarification: "Yes, every valid duplicate-charge request automatically approves unless either rolling limit is reached; limit overruns go to one support_reviewer. There is no additional routine criterion. Use the opaque support.charges subject, derive charge_id and refundable_amount, use duplicate_charge, and retain the exact stated limits.",
     expected: {
       operation: "insert",
       target: "support.refund_requests",

@@ -4,7 +4,10 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { readBoundaryRevisionCatalog, reviewedModelAnalysisOperations } from "./read-boundary-revision-model.js";
 
-export type ReviewSection = { id: string; title: string; lines: string[]; children?: ReviewSection[] };
+export type ReviewSection = { id: string; title: string; lines: string[]; children?: ReviewSection[]; changeCounts?: ReadChangeCounts };
+type ReadChangeCounts = { fields: number; permissions: number; rawRemoved: number; analysisRemoved: number;
+  rawAdded: number; analysisAdded: number; selectionAdded: number; selectionRemoved: number;
+  exclusions: number; representation: number; other: number };
 type Resource = ExplorationBoundaryDraft["pack"]["resources"][number];
 
 const diffPath = (root: string) => path.join(root, ".synapsor", "boundary-authoring", "read-review-diff.json");
@@ -13,7 +16,7 @@ export async function saveReadReviewDiff(root: string, digest: string, section: 
   const destination = diffPath(root), temporary = `${destination}.${randomUUID()}.tmp`;
   await fs.mkdir(path.dirname(destination), { recursive: true });
   try {
-    await fs.writeFile(temporary, JSON.stringify({ digest, section }), { mode: 0o600 });
+    await fs.writeFile(temporary, JSON.stringify({ format_version: 2, digest, section }), { mode: 0o600 });
     await fs.rename(temporary, destination);
   } finally { await fs.unlink(temporary).catch(() => undefined); }
 }
@@ -22,7 +25,8 @@ export async function loadReadReviewDiff(root: string, digest: string): Promise<
   try {
     if ((await fs.stat(diffPath(root))).size > 2 * 1024 * 1024) return undefined;
     const value: unknown = JSON.parse(await fs.readFile(diffPath(root), "utf8"));
-    if (!value || typeof value !== "object" || !("digest" in value) || value.digest !== digest || !("section" in value)) return undefined;
+    if (!value || typeof value !== "object" || !("format_version" in value) || value.format_version !== 2
+      || !("digest" in value) || value.digest !== digest || !("section" in value)) return undefined;
     const valid = (node: unknown, depth: number): node is ReviewSection => Boolean(node && typeof node === "object"
       && "id" in node && typeof node.id === "string" && "title" in node && typeof node.title === "string"
       && "lines" in node && Array.isArray(node.lines) && node.lines.every((line) => typeof line === "string")
@@ -37,51 +41,108 @@ export function fieldAccess(resource: Resource, field: string): string {
   return resource.selectable_fields.includes(field) ? "MODEL RAW" : "NO RAW RETURN";
 }
 
+export function fieldPermissions(resource: Resource, field: string) {
+  const excluded = resource.kept_out_fields.includes(field);
+  const selection = !excluded && resource.selectable_fields.includes(field);
+  return { raw: selection && !resource.model_withheld_fields?.includes(field), selection, excluded,
+    withheld: resource.model_withheld_fields?.includes(field) ?? false,
+    analysis: reviewedModelAnalysisOperations(resource, field) };
+}
+
+export function findReviewSection(sections: ReviewSection[], id: string): ReviewSection | undefined {
+  for (const section of sections) {
+    if (section.id === id) return section;
+    const child = findReviewSection(section.children ?? [], id);
+    if (child) return child;
+  }
+  return undefined;
+}
+
+export function reviewSectionLines(section: ReviewSection): string[] {
+  return [section.title, ...section.lines, ...(section.children ?? []).flatMap(reviewSectionLines)];
+}
+
 export function readRevisionDiff(
   before: ExplorationBoundaryDraft, after: ExplorationBoundaryDraft,
   reasons: Array<{ resource: string; field: string; rationale?: string }> = [],
 ): ReviewSection {
-  const children: ReviewSection[] = [];
-  let permissionChanges = 0, changedFields = 0;
+  const groups: Record<string, ReviewSection[]> = { reductions: [], expansions: [], private: [], exclusions: [], representation: [], other: [] };
+  const counts: ReadChangeCounts = { fields: 0, permissions: 0, rawRemoved: 0, analysisRemoved: 0,
+    rawAdded: 0, analysisAdded: 0, selectionAdded: 0, selectionRemoved: 0, exclusions: 0, representation: 0, other: 0 };
   for (const resource of after.pack.resources) {
     const previous = before.pack.resources.find((item) => item.id === resource.id);
     if (!previous) continue;
     for (const field of Object.keys(resource.field_types).sort()) {
       const oldAccess = fieldAccess(previous, field), newAccess = fieldAccess(resource, field);
-      const oldOps = reviewedModelAnalysisOperations(previous, field), newOps = reviewedModelAnalysisOperations(resource, field);
+      const old = fieldPermissions(previous, field), next = fieldPermissions(resource, field);
+      const oldOps = old.analysis, newOps = next.analysis;
       const removed = oldOps.filter((op) => !newOps.includes(op));
       const added = newOps.filter((op) => !oldOps.includes(op));
-      if (oldAccess === newAccess && !removed.length && !added.length) continue;
-      changedFields += 1;
-      permissionChanges += Number(oldAccess !== newAccess) + removed.length + added.length;
-      children.push({ id: `${resource.id}.${field}`, title: `${resource.id}.${field}: ${oldAccess} -> ${newAccess}`,
+      const rawChanged = old.raw !== next.raw, selectionChanged = old.selection !== next.selection;
+      const excludedChanged = old.excluded !== next.excluded;
+      const permissions = Number(rawChanged) + Number(selectionChanged) + Number(excludedChanged) + removed.length + added.length;
+      if (!permissions && old.withheld === next.withheld) continue;
+      counts.fields += 1;
+      counts.permissions += permissions;
+      counts.rawRemoved += Number(old.raw && !next.raw);
+      counts.rawAdded += Number(!old.raw && next.raw);
+      counts.analysisRemoved += removed.length;
+      counts.analysisAdded += added.length;
+      counts.selectionAdded += Number(!old.selection && next.selection);
+      counts.selectionRemoved += Number(old.selection && !next.selection);
+      counts.exclusions += Number(excludedChanged);
+      counts.representation += Number(!permissions);
+      const labels = [
+        ...(rawChanged ? [next.raw ? "agent can see values" : "values hidden from agent"] : []),
+        ...(removed.length ? [`${removed.length} analysis permissions removed`] : []),
+        ...(added.length ? [`${added.length} analysis permissions added`] : []),
+        ...(selectionChanged ? [next.selection ? "new Runner row selection" : "Runner row selection removed"] : []),
+        ...(excludedChanged ? [next.excluded ? "field excluded" : "exclusion removed"] : []),
+        ...(!permissions ? ["classification only; access unchanged"] : []),
+      ];
+      const group = next.raw && !old.raw || added.length ? "expansions"
+        : old.raw && !next.raw || removed.length ? "reductions" : selectionChanged ? "private"
+          : excludedChanged ? "exclusions" : "representation";
+      groups[group]!.push({ id: `${resource.id}.${field}`, title: `${resource.id}.${field}: ${labels.join("; ")}`,
         lines: [
-          `Raw access: ${oldAccess} -> ${newAccess}`,
+          `Change: ${labels.join("; ")}.`,
+          `Agent receives actual values: ${old.raw ? "yes" : "no"} -> ${next.raw ? "yes" : "no"}`,
           `Model analysis before: ${oldOps.join(", ") || "none"}`,
           `Model analysis after: ${newOps.join(", ") || "none"}`,
-          ...(oldAccess === "KEPT OUT" && newAccess !== "KEPT OUT" ? [
-            newAccess === "RUNNER ONLY"
-              ? "NEW ACCESS: previously excluded; now available for reviewed private use. This is not merely hiding a value."
-              : newAccess === "MODEL RAW"
-                ? "NEW ACCESS: previously excluded; reviewed raw values may now be returned to the model."
-                : "NEW ACCESS: previously excluded; the model analysis grants listed above are now available, without raw return.",
-          ] : []),
-          `Reason: ${reasons.find((reason) => reason.resource === resource.id && reason.field === field)?.rationale ?? "Requested reviewed privacy/operation change."}`,
+          `Runner row selection: ${old.selection ? "allowed" : "not allowed"} -> ${next.selection ? "allowed" : "not allowed"}`,
+          `Kept out: ${old.excluded ? "yes" : "no"} -> ${next.excluded ? "yes" : "no"}`,
+          `Raw-withholding marker: ${old.withheld ? "yes" : "no"} -> ${next.withheld ? "yes" : "no"}`,
+          `Display classification: ${oldAccess} -> ${newAccess} (not itself a permission)`,
+          ...(!old.selection && next.selection ? ["NEW ACCESS: Runner can now select this field through Read queries; this is an access expansion, not a privacy reduction."] : []),
+          ...(!old.raw && next.raw ? ["NEW ACCESS: raw values may now be returned to the model."] : []),
+          "Private reference/conflict verification is controlled separately by the Action Boundary; row-selection changes do not prove a new verification requirement.",
+          ...(field === resource.primary_key ? ["Reviewed row identity: used privately for opaque references when required by an Action; no model-supplied identity."] : []),
+          `Model-proposed rationale (not proof of a runtime role): ${reasons.find((reason) => reason.resource === resource.id && reason.field === field)?.rationale ?? "Requested privacy/operation change."}`,
         ] });
     }
     for (const key of ["derived_measures", "numeric_bands", "auto_bands", "relationships"] as const) {
       if (JSON.stringify(previous[key] ?? []) !== JSON.stringify(resource[key] ?? [])) {
-        children.push({ id: `${resource.id}:${key}`, title: `${resource.id}: ${key} changed`, lines: [
+        counts.other += 1;
+        groups.other!.push({ id: `${resource.id}:${key}`, title: `${resource.id}: ${key} changed`, lines: [
           "Before:", ...JSON.stringify(previous[key] ?? [], null, 2).split("\n"),
           "After:", ...JSON.stringify(resource[key] ?? [], null, 2).split("\n"),
         ] });
       }
     }
   }
-  return { id: "changes", title: "Changes only", lines: [
-    `${changedFields} changed resource-qualified fields; ${permissionChanges} individual raw/analysis permission changes.`,
-    "Counts are per resource + field, not deduplicated column names. Additional derived grants are listed separately.",
-  ], children };
+  const titles: Record<string, string> = { reductions: "Less information available to the agent", expansions: "More information available to the agent",
+    private: "Runner row-selection changes", exclusions: "Field exclusions", representation: "Classification only (access unchanged)", other: "Other query/relationship changes" };
+  return { id: "changes", title: "Changes only", changeCounts: counts, lines: [
+    `Agent visibility: ${counts.rawRemoved} fields hidden; ${counts.rawAdded} fields newly visible.`,
+    `Agent analysis: ${counts.analysisRemoved} filter/sort/group/measure permissions removed; ${counts.analysisAdded} added.`,
+    `Runner row selection: ${counts.selectionAdded} newly allowed; ${counts.selectionRemoved} removed. Private Action verification is reviewed separately.`,
+    `Other changes: ${counts.exclusions} exclusions changed; ${counts.representation} classification-only fields; ${counts.other} query/relationship settings (open Other query/relationship changes when nonzero).`,
+    `Total: ${counts.fields} fields changed across tables; ${counts.permissions} individual access/exclusion changes. Classification-only changes are not access reductions.`,
+    "The original warning counts exposed internal/control candidates. This comparison counts actual changes, including any extra internal access; the totals need not match.",
+    "Saving updates a disabled draft only. Current active access, business rules and execution permissions do not change at this step.",
+  ], children: Object.entries(groups).filter(([, entries]) => entries.length).map(([id, entries]) => ({
+    id, title: `${titles[id]} (${entries.length})`, lines: [`${entries.length} changed field/settings entries. Select one to compare its exact permissions.`], children: entries,
+  })) };
 }
 
 export function readBoundaryReviewSections(input: {
@@ -100,15 +161,18 @@ export function readBoundaryReviewSections(input: {
         ...fields.map((field): ReviewSection => {
           const ops = reviewedModelAnalysisOperations(resource, field.id);
           const access = fieldAccess(resource, field.id);
-          const change = input.changes?.children?.find((item) => item.id === `${resource.id}.${field.id}`);
+          const change = findReviewSection(input.changes?.children ?? [], `${resource.id}.${field.id}`);
           return { id: field.id, title: `${field.id} | ${access}${ops.length ? ` | ${ops.length} analysis grants` : ""}`, lines: [
             ...(field.label ? [`Label: ${field.label}`] : []), ...(field.description ? [`Description: ${field.description}`] : []),
             `Database type: ${field.type}`, `Raw access: ${access}`,
+            `Runner row selection: ${fieldPermissions(resource, field.id).selection ? "allowed" : "not allowed"}`,
             `Model-invocable analysis: ${ops.join(", ") || "none"}`,
             ...(access === "RUNNER ONLY" ? [
-              "Return value: Runner retains raw values locally; model output withholds/tokenizes them. This is not permission for raw model return.",
+              fieldPermissions(resource, field.id).selection
+                ? "Return value: Runner can select values locally; model output withholds/tokenizes them. No raw model return."
+                : "No Read row-selection grant. A withholding marker alone does not allow Runner to select this field.",
               ops.length ? "PRIVACY REVIEW: these analysis grants can reveal information despite raw withholding. Review privacy to remove them, or intentionally retain analysis."
-                : "No field filters, sorting, grouping or aggregate inference grants. Raw cell tokens do not reveal value equality. Private verification and opaque references remain available.",
+                : "No field filters, sorting, grouping or aggregate inference grants. Private verification and opaque references require their separately reviewed Action dependencies.",
             ] : []),
             ...(access === "NO RAW RETURN" ? ["Model + Runner classification alone does not grant retrieval. Only the operations listed above are available."] : []),
             `Structural roles/hints: ${field.roles.join(", ") || "none proven; review business meaning if ambiguous"}`,
@@ -116,7 +180,7 @@ export function readBoundaryReviewSections(input: {
               ? ["Naming hints are not proof that a business field is private or used as a conflict guard. Review metadata and Action dependencies."] : []),
             `Reviewed value allowlist: ${JSON.stringify(resource.field_enums[field.id] ?? [])}`,
             `Numeric aggregate functions: ${JSON.stringify(resource.aggregate_measure_functions?.[field.id] ?? [])}`,
-            ...(change?.lines.filter((line) => line.startsWith("Reason:")).map((line) => line.replace(/^Reason:/u, "Revision rationale:")) ?? []),
+            ...(change?.lines.filter((line) => line.startsWith("Model-proposed rationale")) ?? []),
           ] };
         }),
         { id: "resource_settings", title: "Resource settings and Read relationships", lines: JSON.stringify({

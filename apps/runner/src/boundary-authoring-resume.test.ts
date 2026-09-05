@@ -31,6 +31,7 @@ describe("Boundary authoring resume state", () => {
           question: "What is the largest refund the agent may propose?",
           answer: "Twenty-five dollars.",
         }],
+        policySourceSession: "d2c11000-aaa1-4bbb-8ccc-111111111111",
         readIntent: "Let the authenticated customer inspect only their own tickets and charges.",
         read: {
           analysis_id: "read_analysis_1",
@@ -54,6 +55,7 @@ describe("Boundary authoring resume state", () => {
       expect(raw).not.toContain("tenant_id");
       expect(raw).not.toContain("principal_id");
       expect(raw).not.toContain("DATABASE_URL");
+      expect(state.policy_source_session).toBe("d2c11000-aaa1-4bbb-8ccc-111111111111");
       expect(state.read_intent).toBe(
         "Let the authenticated customer inspect only their own tickets and charges.",
       );

@@ -1,10 +1,12 @@
 import type { AskHistoryTurn } from "./model-ask.js";
+import { policySourceHistory, type PolicySourceSession, type AuthoringDestination } from "./authoring-policy-source.js";
 
 const MAX_AUTHORING_HISTORY_TURNS = 16;
 const MAX_AUTHORING_HISTORY_CHARS = 32_768;
 
 export type ModelAuthoringConversation = {
   turns: AskHistoryTurn[];
+  policySources?: PolicySourceSession;
 };
 
 export function createModelAuthoringConversation(
@@ -19,8 +21,9 @@ export function createModelAuthoringConversation(
 
 export function modelAuthoringHistory(
   conversation: ModelAuthoringConversation | undefined,
+  destination?: AuthoringDestination,
 ): AskHistoryTurn[] {
-  return conversation?.turns.map((turn) => ({ ...turn })) ?? [];
+  return [...policySourceHistory(conversation?.policySources, destination), ...(conversation?.turns.map((turn) => ({ ...turn })) ?? [])];
 }
 
 export function rememberModelAuthoringTurn(

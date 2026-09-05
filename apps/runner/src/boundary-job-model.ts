@@ -210,7 +210,7 @@ export async function planModelBoundaryJob(input: {
   const run = (nextQuestion: string) => runAskProviderTurn({
     configuration,
     question: nextQuestion,
-    history: modelAuthoringHistory(input.session.conversation),
+    history: modelAuthoringHistory(input.session.conversation, input.session),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,

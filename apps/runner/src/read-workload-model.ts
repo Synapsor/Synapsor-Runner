@@ -450,7 +450,7 @@ export async function generateModelReadWorkload(input: {
       return await runAskProviderTurn({
         configuration,
         question,
-        history: modelAuthoringHistory(input.conversation),
+    history: modelAuthoringHistory(input.conversation, input),
         gateway: diagnosedGateway,
         tools,
         signal: input.signal ?? new AbortController().signal,

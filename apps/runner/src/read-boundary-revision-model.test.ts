@@ -11,6 +11,41 @@ import {
 } from "./read-boundary-revision-model.js";
 
 describe("model-assisted Read Boundary field exposure revisions", () => {
+  it("omits already private unselected identifiers instead of adding private selection grants", async () => {
+    const draft = boundary();
+    const resource = draft.pack.resources[0]!;
+    resource.selectable_fields = resource.selectable_fields.filter((field) => field !== "id");
+    const before = structuredClone(draft);
+    const result = await generateModelReadBoundaryRevision({
+      instruction: "Keep internal IDs private and retain useful customer references.",
+      provider: "openai", model: "gpt-test", apiKey: "test-only", boundary: draft, egressAcknowledged: true,
+      dependencies: { requestJson: async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "privacy",
+        name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{ resource: "public.orders",
+          field_exposure: [{ field: "id", exposure: "runner_only" }],
+        }] }),
+      }] } }) },
+    });
+    expect(result.changes).toEqual([]);
+    expect(draft).toEqual(before);
+    expect(result.authority_granted).toBe(false);
+  });
+
+  it("retains an explicit private decision when accompanying settings newly allow row selection", async () => {
+    const draft = boundary();
+    const selected = [...draft.pack.resources[0]!.selectable_fields];
+    draft.pack.resources[0]!.selectable_fields = selected.filter((field) => field !== "id");
+    const result = await generateModelReadBoundaryRevision({
+      instruction: "Allow private selection of the ID for this Read draft, never send it to the agent.",
+      provider: "openai", model: "gpt-test", apiKey: "test-only", boundary: draft, egressAcknowledged: true,
+      dependencies: { requestJson: async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "privacy",
+        name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{ resource: "public.orders",
+          field_exposure: [{ field: "id", exposure: "runner_only" }], settings: { selectable_fields: selected },
+        }] }),
+      }] } }) },
+    });
+    expect(result.changes).toMatchObject([{ field: "id", after: "runner_only", model_operations: "none" }]);
+    expect(result.policy_changes?.[0]?.settings.selectable_fields).toContain("id");
+  });
   it("does not classify business policy names as private controls and reports actual return authority", () => {
     const draft = boundary();
     const resource = draft.pack.resources[0]!;

@@ -86,8 +86,8 @@ describe("Scoped Explore", () => {
     const field = readBoundaryRevisionCatalog(candidate).resources.find((item) => item.id === resource.id)!.fields.find((item) => item.id === "region")!;
     expect(field).toMatchObject({ current_exposure: "runner_only", raw_return: false, model_operations: [] });
     const diff = readRevisionDiff(before, candidate);
-    expect(diff.lines[0]).toContain("1 changed resource-qualified fields");
-    expect(diff.children![0]!.lines.join("\n")).toContain("Model analysis after: none");
+    expect(diff.lines.join("\n")).toContain("0 fields hidden; 0 fields newly visible");
+    expect(JSON.stringify(diff.children)).toContain("Model analysis after: none");
     const sections = readBoundaryReviewSections({ boundary: candidate, digest: "test-digest", changes: diff });
     expect(sections.map((item) => item.id)).toEqual(["resources", "changes", "scope", "dependencies", "json"]);
     expect(sections[0]!.lines.join("\n")).not.toContain('"activation"');

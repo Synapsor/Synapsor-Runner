@@ -2,6 +2,24 @@
 
 ## 1.8.0 (unreleased)
 
+### Rules Text And Clearer Reviews
+
+- Adds explicit `.txt` attachment/paste, complete local preview, version-bound
+  model egress, source provenance and coverage review to the existing authoring
+  conversation. Source text remains untrusted, protected locally and excluded
+  from runtime requests. Existing outcomes are revised, not duplicated.
+- Privacy diffs distinguish values hidden from the agent, removed analytical
+  operations, new private row selection, exclusions and classification-only
+  changes. Already inaccessible fields no longer gain private Read selection
+  merely to retain independently reviewed Action verification.
+- Privacy-save summaries, decline acknowledgements and pager return labels
+  identify the actual pending decision. Optional narration correctly accepts
+  negated authority claims and unchanged-source descriptions.
+- Withdrawing an unfinished Action now continues to Read review and resumes
+  the saved read-only agenda without recreating an Action from the original
+  job. Existing typed input bounds can be revised on the same outcome while
+  preserving its unrelated rule and approval settings.
+
 ### Navigable Authority Review
 
 - Raw-only withheld fields now use unlinkable cell tokens, so equality of

@@ -13,6 +13,7 @@ import type { ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-chec
 import { inspectActionRelationships } from "./action-rule-relationship-review.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { evaluateActionRule, evaluateActionRuleApprovalPredicate } from "@synapsor-runner/action-rules";
+import { ActionAuthoringReadOnlyRequest } from "./action-rule-model.js";
 
 const lock = `sha256:${"a".repeat(64)}` as const;
 const readDigest = `sha256:${"b".repeat(64)}` as const;
@@ -65,6 +66,20 @@ describe("conversational Action authoring tools", () => {
     body: { output: [{ type: "function_call", call_id: `call_${name}`, name: name.replaceAll(".", "__"), arguments: JSON.stringify(args) }] },
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
+
+  it("allows an explicit read-only pivot but rejects an invented cancellation message", async () => {
+    const answer = "Drop the pending action; keep the read-only draft.";
+    const steps = [call("runner.finish_without_new_actions", { operator_message: answer, reason: "Read-only requested" }),
+      say("Would you like to continue with reads only?"),
+      call("runner.finish_without_new_actions", { operator_message: answer, reason: "Read-only requested" }),
+      say("Continuing with the Read draft; no saved Action was deleted.")];
+    const requests: string[] = [];
+    await expect(converseActionRuleDraft({ ...requestInput(async (request) => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), askClarification: async () => answer })).rejects.toBeInstanceOf(ActionAuthoringReadOnlyRequest);
+    expect(requests.join("\n")).toContain("Quote an actual operator message");
+    expect(steps).toEqual([]);
+  });
 
   it.each([false, true])("repairs approval-only execution without another business question (resumed: %s)", async (resume) => {
     let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
@@ -214,6 +229,24 @@ describe("conversational Action authoring tools", () => {
     expect(result.compiled.draft.effect).toEqual(existing.compiled.draft.effect);
     expect(result.compiled.approval_class.required_approvals).toBe(2);
     expect(requestJson).toHaveBeenCalledTimes(3);
+  });
+
+  it("applies an explicitly revised input bound without losing other rule or approval settings", async () => {
+    const baseline = policyModelDraft();
+    baseline.inputs = [{ name: "requested_days", description: "Requested pause duration", type: { kind: "integer" }, minimum: 1, maximum: 25 }];
+    const before = structuredClone(baseline);
+    const inputs = [{ ...baseline.inputs[0]!, maximum: 15 }];
+    const steps = [call("runner.submit_action_rule_draft", { ...rulePayload(baseline.require), inputs, changed_fields: ["inputs"] }),
+      call("runner.validate_action_draft", {}), say("The proposed duration is now bounded to 1 through 15 days.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async () => steps.shift()!), existingDraft: baseline,
+      intent: "Lower only the maximum requested days to 15. Keep all other rules and limits." });
+    expect(result.compiled.rule.inputs).toEqual(inputs);
+    expect(result.compiled.draft).toMatchObject({ inputs, outcome: baseline.outcome, approval: baseline.approval,
+      require: baseline.require, effect: baseline.effect, review: baseline.review });
+    expect(result.revision?.changed_phases).toEqual(["rule"]);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(baseline).toEqual(before);
   });
 
   it.each([false, true])("reopens a same-job draft after mistaken second-action creation (resume: %s)", async (resume) => {

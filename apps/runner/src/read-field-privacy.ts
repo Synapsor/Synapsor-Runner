@@ -27,7 +27,7 @@ export function restrictPrivateFieldAnalysis(
   if (!resource) throw new Error(`Private field resource ${resourceId} is unavailable.`);
   const privateFields = new Set(fields);
   for (const field of fields) {
-    if (!resource.model_withheld_fields?.includes(field) || !resource.selectable_fields.includes(field)) {
+    if (!resource.model_withheld_fields?.includes(field) || resource.kept_out_fields.includes(field)) {
       throw new Error(`Reviewed model-withheld decision for ${resourceId}.${field} was not reflected in the disabled candidate. Runner-only access is required before restricting model analysis.`);
     }
   }

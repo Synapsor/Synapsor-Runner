@@ -164,6 +164,8 @@ export function reviewedBoundaryOperationRepairFields(
 export type BoundaryResourceReviewRequest = {
   /** Remove model inference grants, retaining separately reviewed private access. */
   private_model_fields?: string[];
+  /** Withhold without adding a previously unselected field to row selection. */
+  preserve_unselected_fields?: string[];
   resource_id: string;
   metadata?: {
     label?: string | null;
@@ -2092,6 +2094,8 @@ function preserveBoundaryResourcePolicy(
     previous.selectable_fields,
     visibilityChanges,
   );
+  if (editedResource) generated.selectable_fields = generated.selectable_fields
+    .filter((field) => !request.preserve_unselected_fields?.includes(field));
   generated.sortable_fields = preserveReviewedList(
     generated.sortable_fields,
     previous.sortable_fields,
@@ -2626,6 +2630,11 @@ function assertBindingsEqual(
 
 function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest): void {
   if (!request.resource_id.trim()) throw new Error("Boundary resource review requires a resource ID.");
+  if (request.preserve_unselected_fields !== undefined && (!Array.isArray(request.preserve_unselected_fields)
+    || request.preserve_unselected_fields.some((field) => typeof field !== "string"
+      || !request.withhold_from_model_fields?.includes(field)))) {
+    throw new Error("Preserving unselected fields requires matching model-withheld decisions.");
+  }
   if (request.private_model_fields !== undefined && (!Array.isArray(request.private_model_fields)
     || request.private_model_fields.some((field) => typeof field !== "string"
       || !request.withhold_from_model_fields?.includes(field)))) {
@@ -2804,6 +2813,7 @@ function validateBoundaryRequestAgainstResource(
     ...(request.allow_reviewed_fields ?? []),
     ...(request.selectable_fields ?? []),
     ...(request.private_model_fields ?? []),
+    ...(request.preserve_unselected_fields ?? []),
     ...(request.filterable_fields ?? []),
     ...(request.sortable_fields ?? []),
     ...(request.groupable_fields ?? []),
@@ -2941,7 +2951,8 @@ function assertRequestedExposureState(
   }
   for (const field of request.withhold_from_model_fields ?? []) {
     if (!resource.model_withheld_fields?.includes(field)
-      || !resource.selectable_fields.includes(field)
+      || (request.preserve_unselected_fields?.includes(field)
+        ? resource.selectable_fields.includes(field) : !resource.selectable_fields.includes(field))
       || resource.kept_out_fields.includes(field)) {
       throw new Error(
         `Reviewed model-withheld decision for ${request.resource_id}.${field} was not reflected in the disabled candidate.`,
@@ -3064,6 +3075,7 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
     keep_out_fields: [...(request.keep_out_fields ?? [])].sort(),
     withhold_from_model_fields: [...(request.withhold_from_model_fields ?? [])].sort(),
     ...(request.private_model_fields !== undefined ? { private_model_fields: [...request.private_model_fields].sort() } : {}),
+    ...(request.preserve_unselected_fields !== undefined ? { preserve_unselected_fields: [...request.preserve_unselected_fields].sort() } : {}),
     allow_reviewed_fields: [...(request.allow_reviewed_fields ?? [])].sort(),
     selectable_fields: sortedOrNull(request.selectable_fields),
     filterable_fields: sortedOrNull(request.filterable_fields),

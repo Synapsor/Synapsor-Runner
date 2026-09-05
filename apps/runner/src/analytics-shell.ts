@@ -104,6 +104,7 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
 };
 
 export type SlashCommandSuggestion = {
+  argumentHint?: string;
   label: string;
   description: string;
   completion?: string;
@@ -541,6 +542,8 @@ function customSlashMenuSuggestions(
 ): SlashCommandSuggestion[] {
   if (!line.startsWith("/")) return [];
   const normalized = line.toLowerCase();
+  const argumentCommand = commands.find((entry) => entry.argumentHint && normalized.startsWith(`${entry.completion ?? entry.label} `));
+  if (argumentCommand) return [{ label: line, description: argumentCommand.argumentHint! }];
   return commands.filter((entry) => entry.label.toLowerCase().startsWith(normalized));
 }
 
@@ -599,10 +602,10 @@ export type ShellAnalysisRecord = {
 };
 
 export type AnalyticsShellIo = {
-  review?(title: string, lines: string[]): Promise<void>;
+  review?(title: string, lines: string[], returnTo?: string): Promise<void>;
   read(prompt: string): Promise<string | undefined>;
   readWithEscape?(prompt: string): Promise<string | undefined>;
-  readConversation?(prompt: string): Promise<string | undefined>;
+  readConversation?(prompt: string, options?: { literal?: boolean }): Promise<string | undefined>;
   choose?(input: {
     title: string;
     message: string;
@@ -979,7 +982,7 @@ export function renderConversationComposerFrame(input: {
   const prompt = input.prompt;
   const promptWidth = Math.min(contentWidth - 2, visibleTerminalLength(prompt));
   const answerWidth = Math.max(1, contentWidth - promptWidth - 1);
-  const characters = Array.from(safeTerminalText(input.value).replace(/[\r\n\t]+/gu, " "));
+  const characters = Array.from(safeTerminalText(input.value).replace(/[\r\n\t]/gu, " "));
   const cursor = Math.max(0, Math.min(characters.length, Math.trunc(input.cursor)));
   const segments = wrapConversationComposerValue(characters, answerWidth);
   const continuation = " ".repeat(promptWidth);
@@ -1405,7 +1408,7 @@ export function createTerminalAnalyticsShellIo(input: {
         return undefined;
       }
   };
-  const readConversation = async (prompt: string): Promise<string | undefined> => {
+  const readConversation = async (prompt: string, options?: { literal?: boolean }): Promise<string | undefined> => {
     const ttyInput = readable as Readable & {
       isRaw?: boolean;
       setRawMode?: (enabled: boolean) => void;
@@ -1434,11 +1437,11 @@ export function createTerminalAnalyticsShellIo(input: {
 
     const currentValue = () => value.join("");
     const replaceValue = (next: string) => {
-      value = Array.from(safeTerminalText(next).replace(/[\r\n\t]+/gu, " "));
+      value = Array.from(options?.literal ? next : safeTerminalText(next).replace(/[\r\n\t]+/gu, " "));
       cursor = value.length;
     };
     const insert = (text: string) => {
-      const safe = Array.from(safeTerminalText(text).replace(/[\r\n\t]+/gu, " "));
+      const safe = Array.from(options?.literal ? text : safeTerminalText(text).replace(/[\r\n\t]+/gu, " "));
       if (!safe.length) return;
       value.splice(cursor, 0, ...safe);
       cursor += safe.length;
@@ -1448,7 +1451,7 @@ export function createTerminalAnalyticsShellIo(input: {
       value: currentValue(),
       cursor,
       columns: ttyOutput.columns,
-      menu: slashCommands
+      menu: slashCommands && !options?.literal
         ? renderSlashCommandSuggestionMenu(
             currentValue(),
             menuSuggestions(currentValue()),
@@ -1482,7 +1485,7 @@ export function createTerminalAnalyticsShellIo(input: {
           menu: "",
         });
         ttyOutput.write(`${submitted.inputLines.join("\n")}\n`);
-        if (answer.trim()) {
+        if (answer.trim() && !options?.literal) {
           conversationHistory.push(answer);
           if (conversationHistory.length > 100) conversationHistory.shift();
         }
@@ -1517,7 +1520,7 @@ export function createTerminalAnalyticsShellIo(input: {
         return;
       }
       if (pasteActive && (key.name === "return" || key.name === "enter")) {
-        insert(" ");
+        insert(options?.literal ? "\n" : " ");
         return;
       }
       if (key.name === "return" || key.name === "enter") {
@@ -1562,6 +1565,8 @@ export function createTerminalAnalyticsShellIo(input: {
             ? ""
             : conversationHistory[historyIndex] ?? "");
         }
+      } else if (key.name === "tab" && options?.literal) {
+        insert("\t");
       } else if (key.name === "tab" && slashCommands) {
         const completion = menuSuggestions(currentValue())
           .flatMap((entry) => entry.completion ? [entry.completion] : [])[0];
@@ -1587,7 +1592,7 @@ export function createTerminalAnalyticsShellIo(input: {
     });
   };
   return {
-    review: async (title, lines) => {
+    review: async (title, lines, returnTo = "pending review") => {
       if (!terminal || !(writable as NodeJS.WriteStream).isTTY) {
         writable.write([title, ...lines, ""].join("\n"));
         return;
@@ -1598,7 +1603,7 @@ export function createTerminalAnalyticsShellIo(input: {
       readable.removeAllListeners("keypress");
       try {
         await withRawTerminalScreen(readable as NodeJS.ReadStream, writable as NodeJS.WriteStream, async (nextKey, render) => {
-          const paint = () => render([title, "", ...lines, "", "PgUp/PgDn Scroll   Enter/Esc Return to pending review"]);
+          const paint = () => render([title, "", ...lines, "", `PgUp/PgDn Scroll   Enter/Esc Return to ${safeTerminalText(returnTo)}`]);
           writable.on("resize", paint);
           try {
             paint();

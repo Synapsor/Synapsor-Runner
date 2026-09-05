@@ -253,7 +253,7 @@ export async function interpretActionBoundaryDecision(input: {
   const run = (question: string) => runAskProviderTurn({
     configuration,
     question,
-    history: modelAuthoringHistory(input.session.conversation),
+    history: modelAuthoringHistory(input.session.conversation, input.session),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,
@@ -392,7 +392,7 @@ export async function interpretActionBoundaryPolicy(input: {
   const run = (question: string) => runAskProviderTurn({
     configuration,
     question,
-    history: modelAuthoringHistory(input.session.conversation),
+    history: modelAuthoringHistory(input.session.conversation, input.session),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,
@@ -517,7 +517,7 @@ export async function interpretActionRehearsalArgs(input: {
   const run = (question: string) => runAskProviderTurn({
     configuration,
     question,
-    history: modelAuthoringHistory(input.session.conversation),
+    history: modelAuthoringHistory(input.session.conversation, input.session),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,

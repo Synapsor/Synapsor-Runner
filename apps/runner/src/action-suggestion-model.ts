@@ -161,7 +161,7 @@ export async function generateModelActionSuggestion(input: {
   const run = (question: string) => runAskProviderTurn({
     configuration,
     question,
-    history: modelAuthoringHistory(input.conversation),
+    history: modelAuthoringHistory(input.conversation, input),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,
@@ -343,7 +343,7 @@ export async function generateModelActionSuggestionSet(input: {
   const run = (question: string) => runAskProviderTurn({
     configuration,
     question,
-    history: modelAuthoringHistory(input.conversation),
+    history: modelAuthoringHistory(input.conversation, input),
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,

@@ -41,6 +41,9 @@ export type BoundaryAuthoringChat = {
   actionPrompter: ActionControlPrompter;
   setModel(label: string): void;
   setPermissionGuide?(guide: BoundaryAuthoringPermissionGuide | undefined): void;
+  setSourceCommandHandler?(handler: (command: string, argument: string) => Promise<boolean>): void;
+  setSourceAnswerRecorder?(recorder: (answer: string) => Promise<void>): void;
+  readLiteral?(prompt: string): Promise<string | undefined>;
   runner(title: string, lines?: string[], tone?: BoundaryAuthoringTone): void;
   model(lines: string[]): void;
   checkpoint(title: string, lines?: string[], tone?: BoundaryAuthoringTone): void;
@@ -64,12 +67,14 @@ type ChoiceInput = {
   message: string;
   options: BoundaryPromptChoice[];
   initialValue?: string;
-  exactDetails?: { title: string; lines: string[]; sections?: ReviewSection[] };
+  exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: ReviewSection[] };
 };
 
 const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 32;
 const DEFAULT_TRANSCRIPT_STREAM_VISIBLE_CHARS = 14;
 const AUTHORING_SLASH_SUGGESTIONS: SlashCommandSuggestion[] = [
+  { label: "/attach", completion: "/attach", description: "Attach or replace complete .txt rules; preview and approve model transfer", argumentHint: "Enter previews this exact .txt path before model transfer" },
+  { label: "/rules", completion: "/rules", description: "View, paste, replace or remove this job's rules snapshot" },
   {
     label: "/details",
     completion: "/details",
@@ -299,7 +304,7 @@ function compactRoutineCheckpoint(
     };
   }
   if (title === "NEXT AUTHORITY REVIEW - READ BOUNDARY") {
-    const actionDependency = lines.find((line) => /Action Boundary|rehearsed Action/iu.test(line));
+    const actionDependency = Number(contextValue(lines, "Dependent Action drafts:")) > 0;
     return {
       title: actionDependency
         ? "Action draft saved; Read dependency needs review"
@@ -624,13 +629,13 @@ export function createBoundaryAuthoringChat(input: {
     ].flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
     writeTranscript(rendered.join("\n"));
   };
-  const showReviewDetails = async (title: string, lines: string[]) => {
+  const showReviewDetails = async (title: string, lines: string[], returnTo?: string) => {
     finishLiveResponse();
     await livePending;
     rememberDetails(title, lines);
     lastTranscriptTurn = "checkpoint";
     // The pager owns wrapping so it can reflow both narrower and wider resizes.
-    if (io.review && latestDetails) await io.review("EXACT REVIEW - READ ONLY", renderedDetails(latestDetails, false));
+    if (io.review && latestDetails) await io.review("EXACT REVIEW - READ ONLY", renderedDetails(latestDetails, false), returnTo);
     else showDetails();
   };
   const browseReviewSections = async (title: string, sections: ReviewSection[]): Promise<void> => {
@@ -653,7 +658,7 @@ export function createBoundaryAuthoringChat(input: {
       initialValue = selected;
       if (section.children?.length) {
         await browseReviewSections(section.title, [{ id: "overview", title: "Overview", lines: section.lines }, ...section.children]);
-      } else await showReviewDetails(section.title, section.lines);
+      } else await showReviewDetails(section.title, section.lines, `${title} menu`);
     }
   };
   const showDiff = () => {
@@ -684,6 +689,8 @@ export function createBoundaryAuthoringChat(input: {
     const rendered = [
       "",
       theme.title("BOUNDARY AUTHORING COMMANDS"),
+      `${theme.key("/attach ./rules.txt")}  ${theme.dim("Preview complete text and approve its model destination")}`,
+      `${theme.key("/rules")}    ${theme.dim("View, paste, replace or remove retained rules")}`,
       `${theme.key("/details")}  ${theme.dim("Show the latest exact Runner validation or permission record")}`,
       `${theme.key("/diff")}     ${theme.dim("Show the latest concise reviewed change")}`,
       `${theme.key("/exact")}    ${theme.dim("Show the complete latest Runner record")}`,
@@ -795,20 +802,23 @@ export function createBoundaryAuthoringChat(input: {
     pendingConversationQuestion = { speaker, lines: [prompt] };
     return readAnswer();
   };
+  let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean>) | undefined;
+  let sourceAnswerRecorder: ((answer: string) => Promise<void>) | undefined;
   const readAnswer = async (defaultValue?: string) => {
     finishLiveResponse();
     await livePending;
     io.clearStatus?.();
-    const defaultHint = defaultValue ? `${theme.dim(`[${defaultValue}]`)} ` : "";
+    let sourceChanged = false;
     while (true) {
-      const prompt = `${theme.focus("you>")} ${defaultHint}`;
+      const prompt = `${theme.focus("you>")} ${defaultValue && !sourceChanged ? `${theme.dim(`[${defaultValue}]`)} ` : ""}`;
       const answer = io.readConversation
         ? await io.readConversation(prompt)
         : io.readWithEscape
           ? await io.readWithEscape(prompt)
           : await io.read(prompt);
       lastTranscriptTurn = "operator";
-      let command = answer?.trim().toLowerCase();
+      const trimmed = answer?.trim();
+      let command = trimmed?.startsWith("/") ? trimmed.split(/\s+/u)[0]!.toLowerCase() : trimmed?.toLowerCase();
       if (command?.startsWith("/") && !AUTHORING_SLASH_SUGGESTIONS.some((item) => item.completion === command)) {
         const matches = AUTHORING_SLASH_SUGGESTIONS.flatMap((item) =>
           item.completion?.startsWith(command!) ? [item.completion] : []);
@@ -826,6 +836,18 @@ export function createBoundaryAuthoringChat(input: {
           restorePendingQuestion();
           continue;
         }
+      }
+      if (command === "/attach" || command === "/rules") {
+        if (!sourceCommandHandler) checkpoint("Rules attachment unavailable here", ["Open model-guided Boundary setup; the pending decision is unchanged."], "warning");
+        else {
+          try {
+            const changed = await sourceCommandHandler(command, trimmed!.slice(trimmed!.split(/\s+/u)[0]!.length).trim());
+            sourceChanged ||= changed;
+            if (changed) checkpoint("Rules context changed", ["Describe how to use these rules for this same draft. Enter alone will not accept the old decision."], "normal");
+          } catch (error) { checkpoint("Rules not changed", [safeTerminalText(error instanceof Error ? error.message : String(error))], "warning"); }
+        }
+        restorePendingQuestion();
+        continue;
       }
       if (command === "/details") {
         showDetails();
@@ -856,6 +878,14 @@ export function createBoundaryAuthoringChat(input: {
         continue;
       }
       pendingConversationQuestion = undefined;
+      if (answer?.trim() && sourceAnswerRecorder) {
+        try { await sourceAnswerRecorder(answer); }
+        catch (error) { checkpoint("Answer not sent", [safeTerminalText(error instanceof Error ? error.message : String(error))], "warning"); continue; }
+      }
+      if (sourceChanged && answer !== undefined) {
+        if (!answer.trim()) { checkpoint("A decision is still needed", ["Describe how the changed rules should affect this draft, or press Esc to pause."], "normal"); continue; }
+        return `Use the updated attached-rules context for this same draft. Operator instruction: ${answer}`;
+      }
       return answer;
     }
   };
@@ -964,9 +994,9 @@ export function createBoundaryAuthoringChat(input: {
 
     await explain();
     if (failure && choice.exactDetails?.sections) {
-      checkpoint("Model explanation unavailable", ["Local review is ready below. Exact details include diagnostics; retry is optional."], "warning");
+      checkpoint("Showing Runner's verified review", ["Only the model explanation is unavailable. Retry or inspect diagnostics if needed; the draft is still available."], "normal");
     }
-    if (choice.exactDetails) checkpoint("READ REVIEW SUMMARY", request.context, "normal");
+    if (choice.exactDetails) checkpoint(choice.exactDetails.summaryTitle ?? "READ REVIEW SUMMARY", request.context, "normal");
     retainExact();
     if (verifiedCheckpointTitle && request.context.length) {
       checkpoint(verifiedCheckpointTitle, request.context, "normal");
@@ -1087,6 +1117,7 @@ export function createBoundaryAuthoringChat(input: {
     rememberDetails,
     showRememberedDetails: showDetails,
     showReviewDetails,
+    showReviewSections: browseReviewSections,
     chooseResource: async () => undefined,
     editFieldTiers: async () => undefined,
     promptText: async (prompt, options) => {
@@ -1231,6 +1262,12 @@ export function createBoundaryAuthoringChat(input: {
     },
     setPermissionGuide: (guide) => {
       permissionGuide = guide;
+    },
+    setSourceCommandHandler: (handler) => { sourceCommandHandler = handler; },
+    setSourceAnswerRecorder: (recorder) => { sourceAnswerRecorder = recorder; },
+    readLiteral: async (prompt) => {
+      finishLiveResponse(); await livePending; io.clearStatus?.();
+      return io.readConversation ? io.readConversation(prompt, { literal: true }) : io.read(prompt);
     },
     runner,
     model,

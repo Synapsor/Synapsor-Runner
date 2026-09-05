@@ -54,6 +54,7 @@ export type BoundaryAuthoringResumeState = {
     structural_metadata_egress_acknowledged: true;
   };
   conversation: AskHistoryTurn[];
+  policy_source_session?: string;
   /** Concise model-planned Read behavior retained before an analysis exists. */
   read_intent?: string;
   read?: BoundaryAuthoringResumeRead;
@@ -79,6 +80,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   provider: BoundaryAuthoringResumeState["model"]["provider"];
   model: string;
   conversation?: readonly AskHistoryTurn[];
+  policySourceSession?: string;
   readIntent?: string;
   read?: BoundaryAuthoringResumeRead;
   action?: BoundaryAuthoringResumeAction;
@@ -103,6 +105,7 @@ export function buildBoundaryAuthoringResumeState(input: {
       structural_metadata_egress_acknowledged: true as const,
     },
     conversation,
+    ...(input.policySourceSession ? { policy_source_session: normalizeSourceSession(input.policySourceSession) } : {}),
     ...(input.readIntent
       ? {
           read_intent: reviewedText(
@@ -215,6 +218,7 @@ export function assertBoundaryAuthoringResumeState(
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: saved conversation history exceeds its reviewed bounds.");
   }
   if (value.read !== undefined) normalizeRead(value.read as BoundaryAuthoringResumeRead);
+  if (value.policy_source_session !== undefined) normalizeSourceSession(value.policy_source_session);
   if (value.read_intent !== undefined) {
     if (typeof value.read_intent !== "string") {
       throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Read intent is invalid.");
@@ -228,6 +232,11 @@ export function assertBoundaryAuthoringResumeState(
   if (canonicalJsonDigest(unsigned) !== value.revision_digest) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: the saved authoring state does not match its digest.");
   }
+}
+
+function normalizeSourceSession(value: unknown): string {
+  if (typeof value !== "string" || !/^[a-f0-9-]{36}$/u.test(value)) throw new Error("Saved policy source session is invalid.");
+  return value;
 }
 
 function normalizeBinding(value: BoundaryAuthoringResumeBinding): BoundaryAuthoringResumeBinding {

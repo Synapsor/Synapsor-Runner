@@ -193,7 +193,7 @@ export type BoundaryPromptChoice = {
 };
 
 type BoundaryChoicePromptOptions = BoundaryPromptOptions & {
-  exactDetails?: { title: string; lines: string[]; sections?: import("./read-boundary-review-view.js").ReviewSection[] };
+  exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: import("./read-boundary-review-view.js").ReviewSection[] };
   initialValue?: string;
   requireExplicitSelection?: boolean;
 };
@@ -213,6 +213,7 @@ export type BoundaryReviewInteractiveSession = {
   /** Render the retained details without duplicating them as a new Runner turn. */
   showRememberedDetails?(): void;
   showReviewDetails?(title: string, lines: string[]): Promise<void>;
+  showReviewSections?(title: string, sections: import("./read-boundary-review-view.js").ReviewSection[]): Promise<void>;
   chooseResource(
     resources: BoundaryResourceReviewSummary[],
     overview?: BoundaryReviewOverview,

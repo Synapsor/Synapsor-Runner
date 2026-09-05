@@ -63,6 +63,53 @@ tools. Action authority stays disabled until separately reviewed. The client has
 stable tools: `app.describe_data`, `app.explore_data`,
 `app.describe_actions`, and `app.request_change`.
 
+## Business Rules From Text
+
+At any model-authoring `you>` prompt, use `/attach ./rules.txt`, or `/rules`
+to paste, preview, replace or remove rules. Conversation-only setup remains
+available. The file is context for the same draft, not executable policy.
+
+Runner reads only the explicitly selected regular UTF-8 `.txt` file. The
+initial limits are 32 KiB, 600 lines and eight retained versions per job.
+Oversize, invalid encoding, binary input and symlinks are refused without
+truncation. Mentioning a path does not read it. Paths, URLs and instructions
+inside a document cannot trigger additional file reads, network requests,
+source queries, activation or execution.
+
+The local preview shows the complete numbered text, filename, version, size,
+line count and exact provider/model destination. Choose **Use this complete
+text with the named model** to authorize that transfer alongside reviewed
+metadata, the existing draft and business conversation. Metadata-only consent
+does not authorize an attachment. Replacing its contents or changing the model
+requires new consent; ordinary refinements against the same approved snapshot
+do not. After a model change, `/rules` offers transfer review.
+
+Snapshots and source-related operator messages are stored under
+`.synapsor/boundary-authoring/policy-sources`, in owner-only files. Resume uses
+the saved bytes and digest, never silently rereads the original path. Sources
+are separate from the bounded conversation history, so long chats cannot
+silently truncate policy paragraphs. Retained source-related messages are
+bounded to 64 messages of at most 4,000 characters; a full buffer refuses the
+next message rather than dropping prior overrides. `/rules` removal deletes
+all retained versions for this job, not its existing business rules. It is not
+secure erasure or deletion of provider logs or earlier transcript excerpts.
+
+Before activation, source coverage links numbered passages to exact draft
+decisions. Missing decisions, conflicts and unsupported clauses are prominent;
+the model can revise the existing Read or Action draft and present a new diff.
+An Action revision preserves its outcome identity and unrelated rules; it is
+saved disabled and never overwrites active authority. Explicit operator
+overrides must quote recorded operator messages, not a document instruction.
+
+Coverage is a **model assessment, not proof of semantic completeness**.
+Runner verifies line references and draft pointers, not the truth of prose.
+Review the source excerpts and interpreted behavior; unresolved passages block
+this guided activation path. Provider failure preserves the draft and local
+source preview. Runtime requests never include the source text: the existing
+typed compiler, scope checks, private fact reload, approval policy and separate
+execution permissions remain authoritative. The four runtime tools do not
+change.
+
 ## The Core Distinction
 
 New model-guided jobs use the fixed semantic surface for both patterns.

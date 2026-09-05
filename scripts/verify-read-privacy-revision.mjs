@@ -38,6 +38,7 @@ try {
       field.current_exposure !== "kept_out" && !benefits.has(field.id)
       && (field.current_exposure === "runner_only" || field.roles.length)).map((field) => field.id),
   ]));
+  const correctionResource = original.pack.resources.find((resource) => expected[resource.table].some((field) => resource.selectable_fields.includes(field)));
   let preview;
   let compiled;
   let requestCount = 0;
@@ -70,7 +71,7 @@ try {
         name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: Object.entries(expected).map(([table, fields]) => ({
           resource: `telecom.${table}`, field_exposure: [...fields.map((field) => ({ field, exposure: "runner_only" })),
             ...original.pack.resources.find((item) => item.table === table).model_withheld_fields?.filter((field) => benefits.has(field)).map((field) => ({ field, exposure: "model_and_runner" })) ?? []],
-          ...(requestCount === 1 && table === original.pack.resources[0].table ? { settings: { selectable_fields: [] } } : {}),
+          ...(requestCount === 1 && table === correctionResource?.table ? { settings: { selectable_fields: [] } } : {}),
         })) }),
       }] } };
     } } } : {}),
@@ -80,18 +81,18 @@ try {
   for (const before of original.pack.resources) {
     const after = preview.candidate.pack.resources.find((resource) => resource.id === before.id);
     assert.ok(after);
-    assert.deepEqual([...after.selectable_fields].sort(), [...new Set([...before.selectable_fields, ...expected[before.table]])].sort());
+    assert.deepEqual([...after.selectable_fields].sort(), [...before.selectable_fields].sort(), "Privacy must not add unselected fields merely to preserve separately reviewed Action facts.");
     assert.deepEqual(after.kept_out_fields, before.kept_out_fields);
     assert.deepEqual(after.relationships, before.relationships);
     assert.equal(after.tenant_key, before.tenant_key);
     assert.equal(after.principal_key, before.principal_key);
     assert.deepEqual(after.rls_session, before.rls_session);
     for (const field of expected[before.table]) {
-      assert.ok(after.model_withheld_fields.includes(field), `${before.id}.${field} must remain private`);
+      assert.ok(!after.selectable_fields.includes(field) || after.model_withheld_fields.includes(field), `${before.id}.${field} must remain private`);
       assert.deepEqual(reviewedModelAnalysisOperations(after, field), [], `${before.id}.${field} must not permit model inference`);
     }
     for (const field of [...benefits, "invoice_number", "case_number", "payment_reference", "plan_name", "plan_display_name", "target_plan_display_name"]) {
-      if (before.selectable_fields.includes(field)) assert.ok(!after.model_withheld_fields.includes(field));
+      if (before.selectable_fields.includes(field)) assert.ok(!after.model_withheld_fields?.includes(field));
     }
   }
   assert.deepEqual(preview.candidate.budgets, original.budgets);

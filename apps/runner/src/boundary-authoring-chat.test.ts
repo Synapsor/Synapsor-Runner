@@ -368,6 +368,7 @@ describe("Boundary authoring chat", () => {
 
     await chat.streamRunner("NEXT AUTHORITY REVIEW - READ BOUNDARY", [
       "Read Boundary: reviewed_staging",
+      "Dependent Action drafts: 1",
       "The job draft is complete. Review the exact Read authority now; activation remains your decision.",
       "After Read activation, Runner opens each rehearsed Action Boundary revision for its own separate confirmation.",
     ]);
@@ -377,6 +378,19 @@ describe("Boundary authoring chat", () => {
     expect(compact).toContain("Action draft saved; Read dependency needs review");
     expect(compact).toContain("Read and Action activation remain separate decisions");
     expect(compact).not.toContain("The job draft is complete");
+  });
+
+  it("does not invent an Action dependency when a read-only job explicitly has none", async () => {
+    const memory = memoryIo();
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    await chat.streamRunner("NEXT AUTHORITY REVIEW - READ BOUNDARY", [
+      "Read Boundary: reviewed_staging", "Dependent Action drafts: 0",
+      "This read-only job has no Action Boundary draft. Declining keeps the reviewed Read draft disabled.",
+    ]);
+    const output = memory.writes.join("").replace(/\s+/gu, " ");
+    expect(output).toContain("Read draft ready for activation review");
+    expect(output).not.toMatch(/Action draft saved|rehearsed Action draft|Read dependency needs review/u);
+    chat.close();
   });
 
   it("presents model-interpreted business questions in chat and uses a spinner only during work", async () => {

@@ -10,6 +10,25 @@ import { authoringExplanationFailure } from "./authoring-explanation-failure.js"
 
 describe("model-assisted Boundary authoring conversation", () => {
   it.each([
+    ["Read authority is not active. Source data remains unchanged.", true],
+    ["If you activate later, Read authority will become active. Source data is unchanged.", true],
+    ["The draft is disabled; approval authority has not been granted.", true],
+    ["No Read authority is active and no source data changed.", true],
+    ["No source writes occurred and approval authority is active.", false],
+    ["Read authority is not active and the database has been updated.", false],
+    ["Read authority is active. Source data has not changed.", false],
+    ["No source writes occurred earlier. The database has been updated now.", false],
+  ])("validates actual state assertions without rejecting negations: %s", async (text, accepted) => {
+    const result = await narrateValidatedAuthoringStep({
+      session: { provider: "openai", model: "gpt-5.6-terra", apiKey: "test-key",
+        conversation: createModelAuthoringConversation(), dependencies: { requestJson: async () => ({ status: 200,
+          body: { output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }] } }) } },
+      operatorMessage: "Explain this pending decision.", egressAcknowledged: true,
+      validatedFacts: ["Read authority is disabled. No source data changed."],
+    });
+    expect(result).toBe(accepted ? text : undefined);
+  });
+  it.each([
     { provider: "openai" as const, model: "gpt-5.6-luna" },
     { provider: "anthropic" as const, model: "claude-test" },
     { provider: "openai_compatible" as const, model: "qwen-local", baseUrl: "http://127.0.0.1:11434/v1" },

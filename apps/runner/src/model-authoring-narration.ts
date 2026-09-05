@@ -82,6 +82,8 @@ export async function narrateValidatedAuthoringStep(input: {
     "Do not imply that previously validated work disappeared merely because the current record focuses on one authoring step.",
     "Do not claim that the operator supplied no decision or made no prior decision. Discuss only the exact pending gate; earlier confirmed draft decisions remain in the conversation history.",
     "Approval and proposal counts inside time windows are upper circuit-breaker ceilings. Describe them as 'at most' or 'up to'; never say authority begins 'after' that count.",
+    "Human fallback is only for valid requests that do not qualify for automatic approval, including limit overruns. Invalid requests remain refused. Automatic completion requires separately enabled execution and a running worker; never call approval completion.",
+    "Use ordinary words for business decisions. Explain filters/grouping as ways to infer hidden information and distinguish private row selection from model-visible values. Do not repeat the same safety paragraph or read out a field inventory.",
     "If the operator's rule cannot fit the current action target, say so once and name the recovery choices in the validated record; never ask them to map a missing concept onto an unrelated field.",
     ...(opening
       ? ["Do not invent or paraphrase an agent capability, resource, field, operation, scope, policy, count, limit, approval rule, or write posture before the operator describes the job."]
@@ -105,7 +107,7 @@ export async function narrateValidatedAuthoringStep(input: {
     const result = await runAskProviderTurn({
       configuration,
       question,
-      history: modelAuthoringHistory(input.session.conversation),
+      history: modelAuthoringHistory(input.session.conversation, input.session),
       gateway,
       tools,
       signal: input.signal ?? new AbortController().signal,
@@ -176,9 +178,14 @@ function narrationContradictsValidatedRecord(answer: string, facts: string[]): s
   if (principalNotConfigured && claimsPrincipalScope) return "Explanation claimed principal isolation absent from this revision.";
 
   const authorityOff = /(?:no authority|authority[^.]{0,60}(?:off|disabled|unchanged|not active)|approval and apply authority remain off)/u.test(record);
-  const claimsAuthorityOn = (/(?:(?:read|action|proposal|approval|apply) )?authority[^.]{0,40}(?:active|enabled|granted|approved)/u.test(normalizedAnswer)
-    || /(?:proposal|approval|apply|writeback)[^.]{0,30}(?:is|was|has been) (?:active|enabled|granted|approved)/u.test(normalizedAnswer))
-    && !/(?:no|not|never|without)[^.]{0,30}(?:authority|proposal|approval|apply|writeback)[^.]{0,30}(?:active|enabled|granted|approved)/u.test(normalizedAnswer);
+  // Match affirmative current-state assertions, not "not active", "unchanged",
+  // or conditional descriptions of a later operator confirmation.
+  const clauses = normalizedAnswer.split(/[.!?;]|\bbut\b/u);
+  const affirmative = (pattern: RegExp) => clauses.some((clause) => {
+    if (/\b(?:if|once|when|would|will|could)\b/u.test(clause)) return false;
+    return [...clause.matchAll(pattern)].some((match) => !/\b(?:no|not|never|without)\s+(?:(?:read|action|proposal|approval|apply)\s+)?$/u.test(clause.slice(0, match.index)));
+  });
+  const claimsAuthorityOn = affirmative(/\b(?:authority|proposal|approval|apply|writeback)\s+(?:(?:is|was|are|has been|have been|now|already)\s+)*(?:active|enabled|granted|approved)\b/gu);
   if (authorityOff && claimsAuthorityOn) return "Explanation claimed authority enabled while the record says disabled or unchanged.";
 
   const misstatesApprovalCeiling = /\bafter\s+\d+(?:\.\d+)?\s+(?:approvals?|proposals?)\b/u.test(normalizedAnswer)
@@ -186,7 +193,6 @@ function narrationContradictsValidatedRecord(answer: string, facts: string[]): s
   if (misstatesApprovalCeiling) return "Explanation treated an approval ceiling as a threshold to reach.";
 
   const sourceUnchanged = /(?:source (?:database|data|row|rows)[^.]{0,60}(?:unchanged|changed: no|did not change)|no source[^.]{0,50}(?:change|write))/u.test(record);
-  const claimsSourceChanged = /(?:source (?:database|data|row|rows)|database)[^.]{0,50}(?:changed|updated|written|mutated)/u.test(normalizedAnswer)
-    && !/(?:not|no|never|without)[^.]{0,24}(?:changed|updated|written|mutated)/u.test(normalizedAnswer);
+  const claimsSourceChanged = affirmative(/\b(?:source (?:database|data|row|rows)|database)\s+(?:(?:is|was|are|has been|have been|now|already)\s+)*(?:changed|updated|written|mutated)\b/gu);
   return sourceUnchanged && claimsSourceChanged ? "Explanation claimed a source change without a source-write receipt." : undefined;
 }

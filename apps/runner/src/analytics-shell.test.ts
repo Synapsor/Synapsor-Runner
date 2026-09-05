@@ -66,7 +66,7 @@ describe("Synapsor Analytics shell", () => {
     expect(frame.cursorColumn).toBeLessThan(48);
   });
 
-  it("accepts bracketed multiline paste as one conversation message", async () => {
+  it.each([false, true])("accepts bracketed multiline paste as one message (literal: %s)", async (literal) => {
     const readable = new PassThrough() as PassThrough & {
       isRaw: boolean;
       setRawMode(value: boolean): void;
@@ -89,7 +89,7 @@ describe("Synapsor Analytics shell", () => {
       ],
     });
 
-    const answer = io.readConversation!("you> ");
+    const answer = io.readConversation!("you> ", { literal });
     await new Promise<void>((resolve) => setImmediate(resolve));
     readable.emit("keypress", "", { name: "paste-start", sequence: "\u001b[200~" });
     const chunksBeforePaste = chunks.length;
@@ -104,7 +104,7 @@ describe("Synapsor Analytics shell", () => {
     readable.emit("keypress", "", { name: "return", sequence: "\r" });
 
     await expect(answer).resolves.toBe(
-      "Understand account history. Propose a reviewed plan change.",
+      literal ? "Understand account history.\nPropose a reviewed plan change." : "Understand account history. Propose a reviewed plan change.",
     );
     const rendered = stripAnsi(chunks.join(""));
     expect(rendered).not.toContain("\nPropose a reviewed plan change.");
@@ -1856,6 +1856,22 @@ describe("Synapsor Analytics shell", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     readable.write("\r");
     await expect(answer).resolves.toBe("/details");
+    io.close();
+  });
+
+  it("keeps attachment paths valid while typing without replacing their case or arguments", async () => {
+    const readable = new PassThrough(), writable = new PassThrough(), chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true, slashSuggestions: [
+      { label: "/attach", completion: "/attach", description: "Attach rules", argumentHint: "Enter previews this exact .txt path" },
+    ] });
+    const answer = io.read("you> ");
+    readable.write('/attach "Business Rules.txt"');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(chunks.join("")).not.toContain("No matching action");
+    expect(chunks.join("")).toContain("Enter previews");
+    readable.write("\r");
+    await expect(answer).resolves.toBe('/attach "Business Rules.txt"');
     io.close();
   });
 
