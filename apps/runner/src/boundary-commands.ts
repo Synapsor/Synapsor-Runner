@@ -1843,7 +1843,6 @@ async function interactiveBoundaryReviewLoop(input: {
       process.stdout.write(input.initialView === "access"
         ? [
             "Access editor closed. Reviewed authority is unchanged.",
-            "Returning to Ask.",
             "",
           ].join("\n")
         : [

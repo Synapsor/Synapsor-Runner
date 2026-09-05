@@ -8346,7 +8346,7 @@ describe("boundary operator-plane CLI", () => {
         "(path ID: service_visits_route_id_fkey)",
       );
       expect(output).toContain("Access editor closed. Reviewed authority is unchanged.");
-      expect(output).toContain("Returning to Ask.");
+      expect(output).not.toContain("Returning to Ask.");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
