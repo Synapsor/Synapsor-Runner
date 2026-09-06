@@ -207,6 +207,36 @@ function collectActionRuleFieldReferences(
   for (const item of Object.values(record)) collectActionRuleFieldReferences(item, references);
 }
 
+function assertNoCallerGuardComparison(draft: ActionRuleModelDraftV1, resources: RuleVerificationBoundarySpecV1["resources"]): void {
+  if (!draft.inputs?.length) return;
+  const guards = new Set(resources.flatMap((resource) => [resource.primary_key, resource.version_field,
+    ...(resource.scope.mode === "columns" ? [resource.scope.tenant_field, resource.scope.principal_field] : [])]
+    .filter(Boolean).map((field) => JSON.stringify([resource.binding, field]))));
+  const dependencies = (value: unknown, seen = new Set<string>()): { input: boolean; guard: boolean } => {
+    if (!value || typeof value !== "object") return { input: false, guard: false };
+    const node = value as Record<string, unknown>;
+    if (node.kind === "derived" && typeof node.name === "string" && !seen.has(node.name)) {
+      return dependencies(draft.derive[node.name], new Set([...seen, node.name]));
+    }
+    const children = Object.values(node).map((entry) => dependencies(entry, seen));
+    return { input: node.kind === "input" || children.some((entry) => entry.input),
+      guard: node.kind === "field" && guards.has(JSON.stringify([node.binding, node.field])) || children.some((entry) => entry.guard) };
+  };
+  const visit = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    const node = value as Record<string, unknown>;
+    if (node.kind === "compare") {
+      const left = dependencies(node.left), right = dependencies(node.right);
+      if (left.input && right.guard || right.input && left.guard) {
+        invalid("Caller business inputs must not supply or compare private row identity, trusted scope or conflict/version guards. Remove the caller guard input and its comparison; Runner binds opaque subjects, captures their observed version and checks current authoritative versions automatically. Preserve actual business eligibility conditions.");
+      }
+    }
+    for (const entry of Object.values(node)) visit(entry);
+  };
+  visit(draft.require);
+  visit(draft.approval.auto_approve_when);
+}
+
 /**
  * Treats every model field as untrusted. Database identity, scope, types,
  * relationship columns, lock order, transaction mode, deduplication, and
@@ -301,6 +331,7 @@ export function compileActionRuleModelDraft(input: {
     });
   }
   if (!verificationResources.length) invalid("An Action Rule requires at least one private verification binding.");
+  assertNoCallerGuardComparison(draft, verificationResources);
 
   const target = catalogByName.get(draft.effect.target_resource);
   const targetAuthoring = authoringByName.get(draft.effect.target_resource);

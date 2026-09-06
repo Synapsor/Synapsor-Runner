@@ -25,6 +25,20 @@ const statusType: ActionRuleScalarTypeSpecV1 = {
 };
 
 describe("model-authored Action Rule draft compilation", () => {
+  it.each([false, true])("refuses caller-supplied private conflict versions without relying on input names (derived=%s)", (derived) => {
+    const attempted = draft();
+    attempted.inputs = [{ name: "customer_choice", description: "A value.", type: { kind: "integer" }, minimum: 0, maximum: 100 }];
+    attempted.derive.observed = { kind: "field", binding: "account", field: "version" };
+    attempted.require = { kind: "all", expressions: [attempted.require, { kind: "compare", operator: "eq",
+      left: derived ? { kind: "derived", name: "observed" } : { kind: "field", binding: "account", field: "version" },
+      right: { kind: "input", name: "customer_choice" } }] };
+    expect(() => compileActionRuleModelDraft({ draft: attempted, builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest }))
+      .toThrow("Runner binds opaque subjects, captures their observed version");
+    attempted.require = draft().require;
+    attempted.inputs = [{ name: "state", description: "Requested state.", type: statusType }];
+    attempted.require = { kind: "compare", operator: "eq", left: { kind: "field", binding: "account", field: "status" }, right: { kind: "input", name: "state" } };
+    expect(() => compileActionRuleModelDraft({ draft: attempted, builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest })).not.toThrow();
+  });
   it("permits only uniquely proven related-row targets", () => {
     const built = relatedBuiltCatalog();
     const root = draft().verification.resources[0]!;

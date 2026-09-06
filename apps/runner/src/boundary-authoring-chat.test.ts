@@ -55,6 +55,26 @@ function memoryIo(input: {
 }
 
 describe("Boundary authoring chat", () => {
+  it("opens grouped changes directly without permission framing or unsolicited model narration", async () => {
+    const memory = memoryIo({ choices: ["details", "section:0", "back", "save"] });
+    const review = vi.fn(async () => undefined);
+    memory.io.review = review;
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const guide = vi.fn(async () => "Unused narration");
+    chat.setPermissionGuide!(guide);
+    expect(await chat.session.chooseOption!("SAVE DISABLED PRIVACY REVISION", [
+      { value: "save", label: "Save disabled revision" }, { value: "details", label: "View exact privacy changes" },
+      { value: "back", label: "Keep current draft" },
+    ], { initialValue: "back", reviewOnly: true, explainOnRequest: true, context: ["Two internal fields hidden. No new access."],
+      exactDetails: { title: "Privacy changes", lines: ["Full exact record"], sections: [
+        { id: "reductions", title: "Information hidden", lines: ["account.id: visible -> private"] },
+      ] } })).toBe("save");
+    expect(guide).not.toHaveBeenCalled();
+    expect(review).toHaveBeenCalledOnce();
+    expect(memory.choices.map((choice) => choice.title)).not.toContain("PERMISSION REQUIRED");
+    expect(memory.choices.some((choice) => choice.labels.includes("Information hidden"))).toBe(true);
+    chat.close();
+  });
   it("passes complete logical lines to the pager for narrow and wide reflow", async () => {
     const memory = memoryIo({ columns: 46 });
     const review = vi.fn(async (_title: string, _lines: string[]) => undefined);

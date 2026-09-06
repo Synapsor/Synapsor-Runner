@@ -308,7 +308,7 @@ type ManagedMcpStatusReport = {
   launch: { checked: boolean; ok: boolean; message: string };
 };
 
-async function managedMcpProjectStatusReport(input: {
+export async function managedMcpProjectStatusReport(input: {
   client: ManagedMcpProjectClient;
   projectRoot: string;
   entryKind: ManagedMcpProjectEntryKind;

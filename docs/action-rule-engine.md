@@ -101,8 +101,11 @@ An Action revision preserves its outcome identity and unrelated rules; it is
 saved disabled and never overwrites active authority. Explicit operator
 overrides must quote recorded operator messages, not a document instruction.
 
-The main review reports the source version and open business topics before
-activation. Compilation prepares a structured draft; policy coverage is a
+The main review prioritizes unresolved business requirements and makes their
+resolution the primary action. Activation is unavailable while they remain
+unresolved. Exact details and model questions stay in the same saved review;
+optional model narration does not repeat the deterministic decision summary.
+Compilation prepares a structured draft; policy coverage is a
 separate review. Topic details pair source passages with interpreted behavior,
 responsibility and the next step. Exact configuration evidence is available
 one level deeper, without losing the pending permission.
@@ -126,6 +129,43 @@ source preview. Runtime requests never include the source text: the existing
 typed compiler, scope checks, private fact reload, approval policy and separate
 execution permissions remain authoritative. The four runtime tools do not
 change.
+
+Guided privacy review only reduces disclosure: it cannot grant new private
+Read selection or remove exclusions. An attached requirement on an established
+structural role can be reconciled in the disabled candidate before review;
+unknown business meanings require clarification. Every repair passes candidate
+and dependent Action validation. Current Read scope and private Action
+verification do not themselves justify additional Read access. A requested
+general access expansion remains a separate, explicitly reviewed revision.
+
+For multiple outcomes, the review lists approval and execution posture for
+each and exposes every private dependency in exact details. Discovery lists
+activated business outcomes, not customer eligibility. Eligibility is checked
+by `app.request_change`; adding an outcome does not add a new MCP tool.
+Each catalog item supplies its own request shape, subject bindings and typed
+inputs. A client connected before the first Action activation can discover it
+later through the same four tools. Record identities and observed conflict
+versions are captured privately by Runner, never requested as customer inputs.
+
+Opt-in live qualification (requires `OPENAI_API_KEY` and Docker):
+
+```bash
+corepack pnpm build
+node scripts/verify-multi-action-client.mjs
+```
+
+This creates an isolated PostgreSQL database and one stdio client, drafts two
+independent behaviors from one document with Terra, then adds a third typed
+behavior. It checks actual Explore references and proposal requests, not only
+catalog names. It intentionally leaves execution off and deletes its owned
+database/project afterward; the worker/receipt gates test execution separately.
+
+Client handoff distinguishes a saved stdio configuration from a running
+client session. An optional authorized launch check verifies the protocol and
+tool catalog, then closes. It reads no source rows and runs no proposals or
+writes. Execution policy and worker health are separate; queue counts are not
+liveness evidence. Foreground worker startup requires additional operator
+permission and current writer configuration. It never creates a daemon.
 
 ## The Core Distinction
 

@@ -11,6 +11,38 @@ import {
 } from "./read-boundary-revision-model.js";
 
 describe("model-assisted Read Boundary field exposure revisions", () => {
+  it.each([true, false])("corrects private-access expansion during a narrow privacy review (recovers: %s)", async (recovers) => {
+    const draft = boundary(), before = structuredClone(draft);
+    const requests: string[] = [];
+    const validateRevision = vi.fn(async () => undefined);
+    const operation = generateModelReadBoundaryRevision({
+      instruction: "Keep internal identifiers private. Preserve exclusions and customer-facing information.",
+      privacyOnly: true, provider: "openai", model: "gpt-test", apiKey: "test-only", boundary: draft, egressAcknowledged: true,
+      validateRevision,
+      dependencies: { requestJson: async (request) => {
+        requests.push(JSON.stringify(request));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: "privacy",
+          name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{ resource: "public.orders",
+            field_exposure: ["id", ...(!recovers || requests.length === 1 ? ["tenant_id"] : [])]
+              .map((field) => ({ field, exposure: "runner_only" })),
+          }] }),
+        }] } };
+      } },
+    });
+    if (recovers) {
+      const result = await operation;
+      expect(result.changes).toMatchObject([{ field: "id", after: "runner_only" }]);
+      expect(result.changes).toHaveLength(1);
+      expect(result.correction_used).toBe(true);
+      expect(validateRevision).toHaveBeenCalledOnce();
+    } else {
+      await expect(operation).rejects.toThrow("Privacy-only review cannot grant new access to public.orders.tenant_id");
+      expect(validateRevision).not.toHaveBeenCalled();
+    }
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContain("Preserve existing exclusions and omit these grants");
+    expect(draft).toEqual(before);
+  });
   it("omits already private unselected identifiers instead of adding private selection grants", async () => {
     const draft = boundary();
     const resource = draft.pack.resources[0]!;

@@ -74,9 +74,10 @@ async function workerStatus(args: string[]): Promise<number> {
         .sort()[0] ?? null,
     };
     if (args.includes("--json")) {
-      process.stdout.write(`${JSON.stringify({ worker_control: control, summary, worker_queue: items }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ worker_control: control, worker_health: "unknown", summary, worker_queue: items }, null, 2)}\n`);
     } else {
       process.stdout.write(`Supervised execution: ${control.mode} (control revision ${control.revision})\n`);
+      process.stdout.write("Worker health: unknown. Queue state and lease counts do not prove that a worker process is running.\n");
       process.stdout.write(
         `Queue: ${summary.queue_depth} waiting · ${summary.active_leases} leased · ${summary.retry_wait} retrying · ${summary.dead_letters} dead letter · ${summary.reconciliation_required} reconciliation\n`,
       );

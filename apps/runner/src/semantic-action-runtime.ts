@@ -8,6 +8,7 @@ import {
   type ActivatedActionRuleV1,
 } from "@synapsor-runner/action-rules";
 import {
+  createInactiveSemanticActionRuntime,
   createSemanticActionRuntime,
   createSubjectReferenceService,
   resolveSemanticSupervisedWorkerEligibility,
@@ -79,9 +80,29 @@ export type ActionRuleRuntimeServiceInput = {
 export async function createOptionalReadActionRuleRuntimeServices(
   input: ActionRuleRuntimeServiceInput,
   onUnavailable?: (error: unknown) => void,
-): Promise<ActionRuleRuntimeServices | undefined> {
+): Promise<Omit<ActionRuleRuntimeServices, "authority"> | undefined> {
   try {
-    return await createOptionalActionRuleRuntimeServices(input);
+    const initial = await createOptionalActionRuleRuntimeServices(input);
+    if (initial) return initial;
+    const referenceContext = await actionReferenceContext(input, path.resolve(input.config.action_rules?.project_root ?? input.projectRoot));
+    const inactive = createInactiveSemanticActionRuntime();
+    // Keep the same client usable when its first Action is activated later.
+    // Reuse the normal authority loader and validators; absence grants nothing.
+    const current = () => createOptionalActionRuleRuntimeServices({ ...input, key: referenceContext.key });
+    return {
+      ...referenceContext,
+      semanticActions: { ...inactive, callTool: async (name, args) =>
+        ((await current())?.semanticActions ?? inactive).callTool(name, args) },
+      subjectReferences: {
+        observationRequirement: async (resource) => (await current())?.subjectReferences.observationRequirement(resource),
+        issue: async (request) => (await current())?.subjectReferences.issue(request) ?? [],
+        claim: async (request) => {
+          const services = await current();
+          if (!services) throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "No Action authority is active.");
+          return services.subjectReferences.claim(request);
+        },
+      },
+    };
   } catch (error) {
     onUnavailable?.(error);
     return undefined;
@@ -105,20 +126,7 @@ export async function createOptionalActionRuleRuntimeServices(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
-  const configuredKeyEnvironment = input.config.action_rules?.subject_reference_hmac_key_env;
-  const configuredKey = configuredKeyEnvironment
-    ? environmentValue(input.env ?? process.env, configuredKeyEnvironment)
-    : undefined;
-  if (configuredKeyEnvironment && !configuredKey) {
-    throw new Error(`ACTION_RULE_SUBJECT_KEY_MISSING: ${configuredKeyEnvironment} is required for the shared Action Rule runtime.`);
-  }
-  const key = input.key
-    ?? (configuredKey === undefined ? await loadExploreAuditKey(projectRoot) : Buffer.from(configuredKey, "utf8"));
-  if (key.byteLength < 32) throw new Error("ACTION_RULE_SUBJECT_KEY_INVALID: at least 32 bytes of Runner-owned key material are required.");
-  const deploymentScope = input.deployment_scope
-    ?? input.config.action_rules?.subject_reference_namespace
-    ?? projectRoot;
-  const workflowSessionId = input.workflow_session_id ?? localActionWorkflowId(projectRoot, key);
+  const { key, deployment_scope: deploymentScope, workflow_session_id: workflowSessionId } = await actionReferenceContext(input, projectRoot);
   const loadAuthority = authorityLoader;
   const registry = async () => (await loadAuthority()).registry;
   const subjectReferences = createSubjectReferenceService({
@@ -209,6 +217,16 @@ export async function createOptionalActionRuleRuntimeServices(
     deployment_scope: deploymentScope,
     workflow_session_id: workflowSessionId,
   };
+}
+
+async function actionReferenceContext(input: ActionRuleRuntimeServiceInput, projectRoot: string) {
+  const keyEnvironment = input.config.action_rules?.subject_reference_hmac_key_env;
+  const configuredKey = keyEnvironment ? environmentValue(input.env ?? process.env, keyEnvironment) : undefined;
+  if (keyEnvironment && !configuredKey) throw new Error(`ACTION_RULE_SUBJECT_KEY_MISSING: ${keyEnvironment} is required for the shared Action Rule runtime.`);
+  const key = input.key ?? (configuredKey === undefined ? await loadExploreAuditKey(projectRoot) : Buffer.from(configuredKey, "utf8"));
+  if (key.byteLength < 32) throw new Error("ACTION_RULE_SUBJECT_KEY_INVALID: at least 32 bytes of Runner-owned key material are required.");
+  return { key, deployment_scope: input.deployment_scope ?? input.config.action_rules?.subject_reference_namespace ?? projectRoot,
+    workflow_session_id: input.workflow_session_id ?? localActionWorkflowId(projectRoot, key) };
 }
 
 export function semanticContextCapability(activated: ActivatedActionRuleV1): RuntimeCapabilityConfig {

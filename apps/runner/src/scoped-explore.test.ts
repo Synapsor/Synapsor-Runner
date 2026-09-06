@@ -86,7 +86,10 @@ describe("Scoped Explore", () => {
     const field = readBoundaryRevisionCatalog(candidate).resources.find((item) => item.id === resource.id)!.fields.find((item) => item.id === "region")!;
     expect(field).toMatchObject({ current_exposure: "runner_only", raw_return: false, model_operations: [] });
     const diff = readRevisionDiff(before, candidate);
-    expect(diff.lines.join("\n")).toContain("0 fields hidden; 0 fields newly visible");
+    expect(diff.changeCounts).toMatchObject({ rawRemoved: 0, rawAdded: 0, selectionAdded: 0 });
+    expect(diff.changeCounts!.analysisRemoved).toBeGreaterThan(0);
+    expect(diff.lines.join("\n")).toContain("Fewer ways to query information: public.subscriptions.region");
+    expect(diff.lines.join("\n")).not.toContain("Hidden from the agent:");
     expect(JSON.stringify(diff.children)).toContain("Model analysis after: none");
     const sections = readBoundaryReviewSections({ boundary: candidate, digest: "test-digest", changes: diff });
     expect(sections.map((item) => item.id)).toEqual(["resources", "changes", "scope", "dependencies", "json"]);
@@ -117,6 +120,79 @@ describe("Scoped Explore", () => {
       expect(denied.structuredContent).toMatchObject({ error_code: "SEMANTIC_ACTION_UNAVAILABLE" });
       expect(dispatch).toHaveBeenLastCalledWith("app.request_change", args);
       expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual(names);
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
+  it("keeps fixed tools while Action authority grows for a long-lived client", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection, executor: fixedExecutor([]),
+    });
+    const activeOutcomes: string[] = [];
+    const inactive = createInactiveSemanticActionRuntime();
+    const server = createScopedExploreMcpServer(runtime, {
+      semanticActions: {
+        ...inactive,
+        callTool: async (name, args) => {
+          if (name === "app.describe_actions") {
+            return {
+              ok: true,
+              actions: activeOutcomes.map((outcome) => ({ outcome, availability: "active" })),
+              source_database_changed: false,
+            };
+          }
+          if (name === "app.request_change") {
+            const requested = String((args as { outcome?: unknown }).outcome ?? "");
+            if (!activeOutcomes.includes(requested)) throw Object.assign(
+              new Error("Outcome is not active."), { code: "SEMANTIC_ACTION_UNAVAILABLE" },
+            );
+            // Discovery does not establish eligibility. Request-time validation
+            // remains responsible for subject, context, and fact checks.
+            throw Object.assign(new Error("Subject is not eligible."), { code: "SUBJECT_REFERENCE_UNAVAILABLE" });
+          }
+          return inactive.callTool(name, args);
+        },
+      },
+    });
+    const client = new Client({ name: "fixed-four-action-refresh", version: "1" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const fixedTools = (await client.listTools()).tools.map((tool) => tool.name).sort();
+      expect(fixedTools).toEqual(["app.describe_actions", "app.describe_data", "app.explore_data", "app.request_change"]);
+
+      const inactiveCatalog = await client.callTool({ name: "app.describe_actions", arguments: {} });
+      expect(inactiveCatalog.structuredContent).toMatchObject({ actions: [] });
+
+      // Initial activation publishes two independent outcomes in one bundle;
+      // the connected client keeps its fixed four-tool surface.
+      activeOutcomes.push("membership.freeze", "membership.set_balance");
+      const firstActiveCatalog = await client.callTool({ name: "app.describe_actions", arguments: {} });
+      expect(firstActiveCatalog.structuredContent).toMatchObject({
+        actions: [{ outcome: "membership.freeze" }, { outcome: "membership.set_balance" }],
+      });
+
+      // Day two replaces the one active bundle with a revision containing a
+      // third outcome. The connected MCP client is not reconfigured or reconnected.
+      activeOutcomes.push("membership.change_plan");
+      const refreshedCatalog = await client.callTool({ name: "app.describe_actions", arguments: {} });
+      expect(refreshedCatalog.structuredContent).toMatchObject({
+        actions: [
+          { outcome: "membership.freeze" },
+          { outcome: "membership.set_balance" },
+          { outcome: "membership.change_plan" },
+        ],
+      });
+      expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual(fixedTools);
+
+      const request = await client.callTool({
+        name: "app.request_change",
+        arguments: { outcome: "membership.change_plan", subject_refs: { member: `obj_${"a".repeat(40)}` } },
+      });
+      expect(request.isError).toBe(true);
+      expect(request.structuredContent).toMatchObject({ source_database_changed: false });
     } finally { await client.close(); await server.close(); await runtime.close(); }
   });
 

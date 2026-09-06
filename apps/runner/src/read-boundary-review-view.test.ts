@@ -8,6 +8,8 @@ import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { formatReadActivationDecisionSummary } from "./boundary-commands.js";
 import { policyCoverageDraft } from "./authoring-policy-evidence.js";
+import { knownPolicyPrivacyReductions, policyReviewReadiness } from "./authoring-review-readiness.js";
+import { policyTextSnapshot, type PolicyCoverage } from "./authoring-policy-source.js";
 
 function fixture(): ExplorationBoundaryDraft {
   return { schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed", deployment_profile: "staging",
@@ -27,6 +29,52 @@ function fixture(): ExplorationBoundaryDraft {
 }
 
 describe("progressive Read authority review", () => {
+  it("keeps mandatory coverage distinct from optional role hints and refuses automatic guesses", () => {
+    const read = fixture();
+    read.pack.resources[0]!.selectable_fields.push("created_at");
+    const report: PolicyCoverage = { source_digest: `sha256:${"a".repeat(64)}`, draft_digest: `sha256:${"b".repeat(64)}`, passages: [{
+      start: 1, end: 1, disposition: "conflict", topic: "Internal-field privacy", interpretation: "IDs must be private.", draft_paths: ["/read"],
+      responsibility: "runner", issue_kind: "contradiction", field_checks: [
+        { resource: "university.r17", field: "id", expectation: "private" },
+        { resource: "university.r17", field: "org", expectation: "private" },
+        { resource: "university.r17", field: "created_at", expectation: "private" },
+      ],
+    }] };
+    const original = structuredClone(read);
+    expect(knownPolicyPrivacyReductions({ report, read, actions: [] }).map((change) => change.field)).toEqual(["id"]);
+    report.passages[0]!.issue_kind = "schema_meaning";
+    expect(knownPolicyPrivacyReductions({ report, read, actions: [] })).toEqual([]);
+    const source = policyTextSnapshot(Buffer.from("Keep internal fields private."), "Rules.txt");
+    const readiness = policyReviewReadiness(source, report);
+    expect(readiness).toMatchObject({ ready: false, privacy: true });
+    expect(readiness.summary.join("\n")).toContain("Activation is unavailable");
+    expect(policyReviewReadiness(source)).toMatchObject({ ready: false });
+    report.passages[0]!.disposition = "implemented";
+    expect(policyReviewReadiness(source, report)).toMatchObject({ ready: true });
+    expect(read).toEqual(original);
+  });
+
+  it("names reductions and explains overlapping private grants without a technical counting exercise", () => {
+    const before = fixture(), after = structuredClone(before);
+    after.pack.resources[0]!.model_withheld_fields!.push("id");
+    let diff = readRevisionDiff(before, after);
+    expect(diff.lines.join("\n")).toContain("Hidden from the agent: university.r17.id");
+    expect(diff.lines.join("\n")).toContain("No new information becomes readable");
+    expect(diff.lines.join("\n")).not.toMatch(/0 fields|individual access|Total:/u);
+    after.pack.resources[0]!.kept_out_fields = [];
+    after.pack.resources[0]!.model_withheld_fields!.push("org");
+    after.pack.resources[0]!.selectable_fields.push("org");
+    diff = readRevisionDiff(before, after);
+    expect(diff.lines.join("\n")).toContain("same newly readable fields, not 1 additional fields");
+    expect(findReviewSection([diff], "university.r17.org")!.lines[0]).toContain("necessity has not been established");
+  });
+  it("does not describe an analytical restriction as hiding visible values", () => {
+    const before = fixture(), after = structuredClone(before);
+    before.pack.resources[0]!.filterable_fields.course_number = ["eq"];
+    const diff = readRevisionDiff(before, after);
+    expect(diff.lines.join("\n")).toContain("Fewer ways to query information: university.r17.course_number");
+    expect(diff.lines.join("\n")).not.toContain("Hidden from the agent");
+  });
   it("gives coverage current confirmation and effective privacy evidence, not a stale checklist", () => {
     const read = fixture(), before = structuredClone(read);
     const result = policyCoverageDraft({ read, actions: [], decisions: [

@@ -44,6 +44,32 @@ const config: RuntimeConfig = {
 };
 
 describe("composed semantic Action runtime", () => {
+  it("discovers the first activated outcome without reconnecting the read-only client", async () => {
+    const store = new ProposalStore();
+    let authority: LoadedActiveActionRuleAuthorityV1 | undefined;
+    const factSessionFactory = vi.fn();
+    try {
+      const services = await createOptionalReadActionRuleRuntimeServices({ projectRoot, config, store, key, factSessionFactory,
+        authorityLoader: async () => {
+          if (!authority) throw Object.assign(new Error("No active authority"), { code: "ENOENT" });
+          return authority;
+        },
+      });
+      expect(services).toBeDefined();
+      const tools = services!.semanticActions.listTools();
+      expect(await services!.semanticActions.callTool("app.describe_actions", {})).toMatchObject({ actions: [] });
+      expect(await services!.subjectReferences.observationRequirement("billing.preferences")).toBeUndefined();
+      await expect(services!.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: "billing.pause_notifications",
+        subject_refs: { preference: `obj_${"a".repeat(40)}` } })).rejects.toMatchObject({ code: "SEMANTIC_ACTION_UNAVAILABLE" });
+      authority = authorityFixture("active");
+      expect(await services!.semanticActions.callTool("app.describe_actions", {})).toMatchObject({ actions: [{ outcome: "billing.pause_notifications" }] });
+      expect(await services!.subjectReferences.observationRequirement("billing.preferences")).toBeDefined();
+      expect(services!.semanticActions.listTools()).toEqual(tools);
+      authority = undefined;
+      expect(await services!.semanticActions.callTool("app.describe_actions", {})).toMatchObject({ actions: [] });
+      expect(factSessionFactory).not.toHaveBeenCalled();
+    } finally { store.close(); }
+  });
   it("redeems one shared Explore subject under the same identity and workflow", async () => {
     const store = new ProposalStore();
     const authority = authorityFixture("active");

@@ -194,6 +194,10 @@ export type BoundaryPromptChoice = {
 
 type BoundaryChoicePromptOptions = BoundaryPromptOptions & {
   exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: import("./read-boundary-review-view.js").ReviewSection[] };
+  /** A draft task, not an activation permission; retain questions and exact details. */
+  reviewOnly?: boolean;
+  /** The concise deterministic decision is already presented. Narrate only on request. */
+  explainOnRequest?: boolean;
   initialValue?: string;
   requireExplicitSelection?: boolean;
 };

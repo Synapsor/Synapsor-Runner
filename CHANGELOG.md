@@ -2,6 +2,26 @@
 
 ## 1.8.0 (unreleased)
 
+### Coherent Setup Readiness
+
+- Required attached-rule decisions lead the existing review and replace the
+  activation action until resolved. Exact details remain local; model
+  explanations are available on request without repeating the summary.
+- Privacy-only corrections preserve existing exclusions and cannot add Read
+  access. Proven restrictions are reconciled before review; ambiguous meanings
+  receive a focused question and dependency revalidation. Meaningful reductions
+  lead the diff, and grouped exact changes open directly.
+- Multi-action review lists each outcome's approval and execution posture.
+  Private dependency details include all prepared outcomes, not only the last.
+- Action discovery supplies each outcome's own subjects and business inputs.
+  An already connected Read client can discover its first subsequently
+  activated Action without changing the four-tool surface. Private conflict
+  versions remain Runner-owned, not new customer inputs.
+- Client setup offers an explicitly authorized MCP handshake/catalog check.
+  Configuration, a closed test connection and worker health are separate.
+  A reviewed worker starts in the foreground only after explicit permission;
+  missing writer configuration preserves the installed client configuration.
+
 ### Actionable Attached-Rules Review
 
 - Shows source version, unresolved topics and coverage readiness in the main

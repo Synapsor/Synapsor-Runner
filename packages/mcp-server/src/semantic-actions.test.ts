@@ -373,6 +373,10 @@ describe("fixed semantic Action MCP", () => {
     try {
       const catalog = await fixture.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, {});
       expect(catalog).toMatchObject({ actions: [{ inputs: [{ name: "notification_state", required: true, type: { kind: "string", enum: ["active", "paused"] } }] }] });
+      expect(catalog).toMatchObject({ actions: [{ request_shape: { outcome: "billing.pause_notifications",
+        subject_refs: { preference: "obj_<opaque reference>" }, inputs: { notification_state: expect.any(String) } },
+        eligibility: expect.stringContaining("not_checked") }] });
+      expect(fixture.queries).toHaveLength(0);
       const ref = await issueSubject(fixture);
       const request = { outcome: "billing.pause_notifications", subject_refs: { preference: ref } };
       for (const inputs of [undefined, {}, { notification_state: "anything" }, { notification_state: "paused", tenant_id: "attacker" }]) {

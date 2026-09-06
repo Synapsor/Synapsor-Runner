@@ -249,6 +249,26 @@ describe("conversational Action authoring tools", () => {
     expect(baseline).toEqual(before);
   });
 
+  it("repairs a caller-version mistake internally without asking the customer for a hidden value", async () => {
+    const faulty = { ...payloadFor("runner.submit_action_rule_draft"), inputs: [{ name: "expected_version", description: "Version.", type: { kind: "integer" }, minimum: 0, maximum: 100 }],
+      require: { kind: "all", expressions: [eligiblePredicate(), { kind: "compare", operator: "eq", left: { kind: "field", binding: "account", field: "version" }, right: { kind: "input", name: "expected_version" } }] } };
+    const requests: string[] = [];
+    const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+      call("runner.submit_action_rule_draft", faulty), call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}),
+      call("runner.submit_action_rule_draft", { ...payloadFor("runner.submit_action_rule_draft"), inputs: [] }),
+      call("runner.validate_action_draft", {}), say("The pause draft is ready; Runner checks stale records privately.")];
+    const askClarification = vi.fn();
+    const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), askClarification });
+    expect(requests.join("\n")).toContain("Remove the caller guard input and its comparison");
+    expect(result.compiled.rule.inputs).toEqual([]);
+    expect(result.compiled.rule.require).toEqual(eligiblePredicate());
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(result.authority_granted).toBe(false);
+    expect(steps).toEqual([]);
+  });
+
   it.each([false, true])("reopens a same-job draft after mistaken second-action creation (resume: %s)", async (resume) => {
     const existing = await generateModelActionRuleDraft(requestInput(phaseResponder([])));
     const baseline = existing.compiled.draft;

@@ -69,6 +69,8 @@ export function readRevisionDiff(
   const groups: Record<string, ReviewSection[]> = { reductions: [], expansions: [], private: [], exclusions: [], representation: [], other: [] };
   const counts: ReadChangeCounts = { fields: 0, permissions: 0, rawRemoved: 0, analysisRemoved: 0,
     rawAdded: 0, analysisAdded: 0, selectionAdded: 0, selectionRemoved: 0, exclusions: 0, representation: 0, other: 0 };
+  const hidden: string[] = [], analysisRestricted: string[] = [], privateAdded: string[] = [];
+  let exclusionsOpenedForSelection = 0;
   for (const resource of after.pack.resources) {
     const previous = before.pack.resources.find((item) => item.id === resource.id);
     if (!previous) continue;
@@ -92,6 +94,12 @@ export function readRevisionDiff(
       counts.selectionRemoved += Number(old.selection && !next.selection);
       counts.exclusions += Number(excludedChanged);
       counts.representation += Number(!permissions);
+      const meaning = resource.field_metadata?.[field]?.label;
+      const namedField = `${resource.id}.${field}${meaning ? ` (${meaning})` : ""}`;
+      if (old.raw && !next.raw) hidden.push(namedField);
+      else if (removed.length) analysisRestricted.push(namedField);
+      if (!old.selection && next.selection && !next.raw) privateAdded.push(namedField);
+      if (old.excluded && !next.excluded && !old.selection && next.selection) exclusionsOpenedForSelection++;
       const labels = [
         ...(rawChanged ? [next.raw ? "agent can see values" : "values hidden from agent"] : []),
         ...(removed.length ? [`${removed.length} analysis permissions removed`] : []),
@@ -105,6 +113,8 @@ export function readRevisionDiff(
           : excludedChanged ? "exclusions" : "representation";
       groups[group]!.push({ id: `${resource.id}.${field}`, title: `${resource.id}.${field}: ${labels.join("; ")}`,
         lines: [
+          ...(!old.selection && next.selection && !next.raw
+            ? ["The agent sees no additional values. Runner gains permission to read previously unavailable information; necessity has not been established by this diff."] : []),
           `Change: ${labels.join("; ")}.`,
           `Agent receives actual values: ${old.raw ? "yes" : "no"} -> ${next.raw ? "yes" : "no"}`,
           `Model analysis before: ${oldOps.join(", ") || "none"}`,
@@ -133,13 +143,18 @@ export function readRevisionDiff(
   const titles: Record<string, string> = { reductions: "Less information available to the agent", expansions: "More information available to the agent",
     private: "Runner row-selection changes", exclusions: "Field exclusions", representation: "Classification only (access unchanged)", other: "Other query/relationship changes" };
   return { id: "changes", title: "Changes only", changeCounts: counts, lines: [
-    `Agent visibility: ${counts.rawRemoved} fields hidden; ${counts.rawAdded} fields newly visible.`,
-    `Agent analysis: ${counts.analysisRemoved} filter/sort/group/measure permissions removed; ${counts.analysisAdded} added.`,
-    `Runner row selection: ${counts.selectionAdded} newly allowed; ${counts.selectionRemoved} removed. Private Action verification is reviewed separately.`,
-    `Other changes: ${counts.exclusions} exclusions changed; ${counts.representation} classification-only fields; ${counts.other} query/relationship settings (open Other query/relationship changes when nonzero).`,
-    `Total: ${counts.fields} fields changed across tables; ${counts.permissions} individual access/exclusion changes. Classification-only changes are not access reductions.`,
-    "The original warning counts exposed internal/control candidates. This comparison counts actual changes, including any extra internal access; the totals need not match.",
-    "Saving updates a disabled draft only. Current active access, business rules and execution permissions do not change at this step.",
+    ...(hidden.length ? [hidden.length <= 4 ? `Hidden from the agent: ${hidden.join(", ")}.`
+      : `Hidden from the agent: ${hidden.length} fields. Open Less information available to the agent for the complete list.`] : []),
+    ...(analysisRestricted.length ? [analysisRestricted.length <= 4 ? `Fewer ways to query information: ${analysisRestricted.join(", ")}. Exact changes list the removed analysis permissions.`
+      : `Analysis restricted for ${analysisRestricted.length} fields. Open Less information available to the agent for the complete list.`] : []),
+    ...(counts.rawAdded || counts.analysisAdded ? [`Additional agent access: ${counts.rawAdded} newly visible fields; ${counts.analysisAdded} new ways to query information. Review More information available to the agent.`] : []),
+    ...(privateAdded.length ? [`Additional private Read access: ${privateAdded.length} fields${privateAdded.length <= 3 ? ` (${privateAdded.join(", ")})` : "; open Runner row-selection changes"}. This requires a separate reason; scope filtering and Action verification alone do not require it.`] : []),
+    ...(exclusionsOpenedForSelection ? [`Existing exclusions removed for ${exclusionsOpenedForSelection} of these same newly readable fields, not ${exclusionsOpenedForSelection} additional fields.`] : []),
+    ...(!counts.selectionAdded && !counts.rawAdded && !counts.analysisAdded ? ["No new information becomes readable by Runner or the agent."] : []),
+    ...(counts.selectionRemoved ? [`Runner can no longer select ${counts.selectionRemoved} fields.`] : []),
+    ...(counts.other ? [`Related query settings changed: ${counts.other}; inspect Other query/relationship changes.`] : []),
+    ...(counts.representation && !counts.permissions ? ["Classification only; effective access is unchanged."] : []),
+    "Save changes only this disabled draft; active permissions are unchanged.",
   ], children: Object.entries(groups).filter(([, entries]) => entries.length).map(([id, entries]) => ({
     id, title: `${titles[id]} (${entries.length})`, lines: [`${entries.length} changed field/settings entries. Select one to compare its exact permissions.`], children: entries,
   })) };

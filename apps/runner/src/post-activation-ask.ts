@@ -1,7 +1,8 @@
 import readline from "node:readline";
 import process from "node:process";
+import path from "node:path";
 import type { ReadStream, WriteStream } from "node:tty";
-import { terminalTheme } from "./boundary-cli-picker.js";
+import { createBoundaryReviewInteractiveSession, terminalTheme } from "./boundary-cli-picker.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import {
   createInPlaceTerminalRenderer,
@@ -21,9 +22,11 @@ import {
 import { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
 import { guidedActionStatus } from "./guided-action.js";
 import { loadActiveActionRuleAuthority } from "./action-rule-authority.js";
-import { mcp } from "./mcp-project.js";
+import { mcp, managedMcpProjectStatusReport } from "./mcp-project.js";
+import { managedMcpProjectStatus } from "./managed-mcp-project.js";
 import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+import { readSemanticSupervisedExecutionState } from "./semantic-action-deployment.js";
 
 export { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
 
@@ -72,6 +75,11 @@ export type PostActivationAskDependencies = {
   chooseMcpClient?: () => Promise<ManagedMcpProjectClient | undefined>;
   hasActiveActions?: (projectRoot: string) => Promise<boolean>;
   runMcpInstall?: (args: string[]) => Promise<number>;
+  confirmLaunchCheck?: () => Promise<boolean | undefined>;
+  checkClientLaunch?: (projectRoot: string, client: ManagedMcpProjectClient) => Promise<{ ok: boolean; messages: string[] }>;
+  readExecutionState?: typeof readSemanticSupervisedExecutionState;
+  confirmWorkerStart?: (context: string[]) => Promise<boolean | undefined>;
+  runWorker?: (args: string[]) => Promise<number>;
   runAsk?: (
     args: string[],
     options?: { consentOnFirstQuestion?: boolean },
@@ -197,18 +205,72 @@ export async function runPostActivationAskHandoff(
       "--project-root", input.projectRoot,
       ...(includeActions ? ["--include-actions"] : []),
     ];
+    let clientConfigured = false;
     try {
       const code = await (dependencies.runMcpInstall ?? mcp)(installArgs);
       if (code !== 0) return code;
+      clientConfigured = true;
       const runtimeBindings = await reviewedRuntimeBindingNames(input.projectRoot).catch(() => []);
+      const approvedCheck = await (dependencies.confirmLaunchCheck ?? (async () => {
+        if (!process.stdin.isTTY || !stdout.isTTY) return false;
+        return createBoundaryReviewInteractiveSession().confirm("Verify this configured client connection now?", {
+          defaultValue: false, context: ["Launch the installed stdio command, check the MCP handshake and tool catalog, then close that test connection.",
+            "No model request, source row query, proposal or write will run. This does not start the client application or execution worker."],
+        });
+      }))();
+      let connection = "configured; launch not checked";
+      if (approvedCheck) {
+        try {
+          const checked = await (dependencies.checkClientLaunch ?? checkConfiguredClientLaunch)(input.projectRoot, selection.client);
+          connection = checked.ok ? "verified MCP handshake and tool catalog; test connection closed" : "configured; connection check failed";
+          if (!checked.ok) write(`${checked.messages.join("\n")}\n`);
+        } catch (error) {
+          connection = "configured; connection check failed";
+          write(`Connection check: ${safeErrorMessage(error)}\n`);
+        }
+      }
+      write(`Client connection: ${connection}.\n`);
       write(formatMcpClientHandoff(
         input.projectRoot,
         selection.client,
         includeActions,
         runtimeBindings,
       ));
+      if (includeActions) {
+        const execution = await (dependencies.readExecutionState ?? readSemanticSupervisedExecutionState)({ projectRoot: input.projectRoot });
+        write(`Execution policy: ${execution.enabled ? "enabled in configuration" : "off"}. Worker health: not checked; an empty queue does not prove a running worker.\n`);
+        if (execution.enabled && execution.policies.length) {
+          const missing = [...new Set(execution.policies.map((policy) => policy.write_url_env))].filter((name) => !env[name]?.trim());
+          if (missing.length) {
+            write(`Next: provide the reviewed writer environment ${missing.join(", ")} before starting the worker. Client configuration and boundaries are preserved.\n`);
+          } else {
+            const context = [
+              `Process approved requests for: ${execution.policies.map((policy) => policy.outcome).join(", ")}.`,
+              "This can write source rows for approved requests. The worker checks current authority, eligibility, writer posture and conflict guards before execution.",
+              "Run in this terminal until Ctrl-C. Open the MCP client in another terminal; setup will not create a background daemon.",
+            ];
+            const start = await (dependencies.confirmWorkerStart ?? (async (lines: string[]) => {
+              if (!process.stdin.isTTY || !stdout.isTTY) return false;
+              return createBoundaryReviewInteractiveSession().confirm("Start the reviewed execution worker here?", { defaultValue: false, context: lines });
+            }))(context);
+            if (start) {
+              write("Starting the reviewed worker in this terminal. Completion requires a successful execution receipt, not approval alone.\n");
+              const runWorker = dependencies.runWorker ?? (async (args: string[]) => (await import("./worker-runtime.js")).workerCommand(args));
+              const code = await runWorker(["run", "--supervised", "--yes", "--config", path.resolve(input.projectRoot, execution.config_path)]);
+              write("This worker has stopped. Client configuration and execution permissions remain saved; automatic processing needs a running worker.\n");
+              return code;
+            }
+            write(`Worker not started by setup. Next: ${cliCommandName()} worker run --supervised --yes --config ${shellToken(path.resolve(input.projectRoot, execution.config_path))}\n`);
+          }
+        }
+      }
       return 0;
     } catch (error) {
+      if (clientConfigured) {
+        stderr.write(`Client configuration is saved. Execution setup could not finish: ${safeErrorMessage(error)}\n`
+          + `No authority was changed by this check. Inspect execution configuration and retry ${cliCommandName()} worker run --supervised --yes; no client reinstall is needed.\n`);
+        return 1;
+      }
       if (safeErrorMessage(error) === "confirmation declined") {
         write([
           "MCP install cancelled. Your reviewed boundaries remain active.",
@@ -460,7 +522,7 @@ export function formatMcpClientHandoff(
       ? `cursor ${root}`
       : `code ${root}`;
   return [
-    "LOCAL STDIO MCP READY",
+    "LOCAL STDIO MCP CONFIGURED",
     `Client: ${managedMcpClientLabel(client)}`,
     "Synapsor entry: app.describe_data + app.explore_data + app.describe_actions + app.request_change",
     includeActions
@@ -484,6 +546,14 @@ export function formatMcpClientHandoff(
     "The agent may read and create proposals. It cannot activate boundaries, approve proposals, or apply source changes.",
     "",
   ].join("\n");
+}
+
+async function checkConfiguredClientLaunch(projectRoot: string, client: ManagedMcpProjectClient) {
+  const reports = [await managedMcpProjectStatusReport({ projectRoot, client, entryKind: "explore", checkLaunch: true, timeoutMs: 10_000 })];
+  if ((await managedMcpProjectStatus(client, projectRoot, "actions")).state === "installed") {
+    reports.push(await managedMcpProjectStatusReport({ projectRoot, client, entryKind: "actions", checkLaunch: true, timeoutMs: 10_000 }));
+  }
+  return { ok: reports.every((report) => report.ok && report.launch.checked), messages: reports.map((report) => report.launch.message) };
 }
 
 type ReviewedRuntimeBinding = {

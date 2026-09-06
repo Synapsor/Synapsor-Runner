@@ -68,6 +68,7 @@ type ChoiceInput = {
   options: BoundaryPromptChoice[];
   initialValue?: string;
   exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: ReviewSection[] };
+  explainOnRequest?: boolean;
 };
 
 const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 32;
@@ -998,7 +999,7 @@ export function createBoundaryAuthoringChat(input: {
       }
     };
 
-    await explain();
+    if (!choice.explainOnRequest) await explain();
     if (failure && choice.exactDetails?.sections) {
       checkpoint("Showing Runner's verified review", ["Only the model explanation is unavailable. Retry or inspect diagnostics if needed; the draft is still available."], "normal");
     }
@@ -1153,13 +1154,14 @@ export function createBoundaryAuthoringChat(input: {
         else rememberDetails(title, options.context);
       }
       const choice = {
-        title: permission ? "PERMISSION REQUIRED" : title,
-        message: permission
+        title: permission && !options?.reviewOnly ? "PERMISSION REQUIRED" : title,
+        message: permission && !options?.reviewOnly
           ? permissionQuestion(title)
           : "Choose one path. The highlighted choice is not applied until you press Enter.",
         options: choices,
         ...(options?.initialValue ? { initialValue: options.initialValue } : {}),
         ...(options?.exactDetails ? { exactDetails: options.exactDetails } : {}),
+        ...(options?.explainOnRequest ? { explainOnRequest: true } : {}),
       } satisfies ChoiceInput;
       return permission
         ? choosePermission(choice, options?.context)

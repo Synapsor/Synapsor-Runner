@@ -276,6 +276,13 @@ function describeActions(registry: RuntimeActionRuleRegistryV1, unavailable: str
         resource: subject.resource,
         reference: "opaque Explore subject reference",
       })),
+      request_shape: {
+        outcome: activated.compiled.outcome,
+        subject_refs: Object.fromEntries(activated.compiled.rule.subjects.map((subject) => [subject.binding, "obj_<opaque reference>"])),
+        ...(activated.compiled.rule.inputs?.length ? { inputs: Object.fromEntries(activated.compiled.rule.inputs.map((definition) =>
+          [definition.name, "<value matching this input's reviewed type and bounds>"])) } : {}),
+      },
+      eligibility: "not_checked; request_change validates this customer's references, inputs and current facts",
       proposal_effect: {
         operation: activated.compiled.effect_envelope.operation,
         resource: activated.compiled.effect_envelope.target_resource,
@@ -293,9 +300,11 @@ function describeActions(registry: RuntimeActionRuleRegistryV1, unavailable: str
     request_shape: {
       outcome: "<one listed outcome>",
       subject_refs: Object.fromEntries(
-        actions[0]?.compiled.rule.subjects.map((subject) => [subject.binding, "obj_<opaque reference>"]) ?? [],
+        actions.length === 1 ? actions[0]!.compiled.rule.subjects.map((subject) => [subject.binding, "obj_<opaque reference>"])
+          : [["<binding from the selected action's request_shape>", "obj_<opaque reference>"]],
       ),
     },
+    request_guidance: "Use the selected action's request_shape and reviewed inputs, not another outcome's subjects. Listed availability is not customer eligibility.",
     authority: {
       proposal_only: true,
       model_can_supply_patch: false,

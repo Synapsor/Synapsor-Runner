@@ -16,6 +16,48 @@ import {
 import { ProviderCredentialInputCancelledError } from "./secret-input.js";
 
 describe("post-activation Ask handoff", () => {
+  it.each(["decline", "pass", "fail", "exception"])("checks client launch only with permission and reports actual status (%s)", async (mode) => {
+    const writes: string[] = [];
+    const checkClientLaunch = vi.fn(async () => {
+      if (mode === "exception") throw new Error("Launch timed out");
+      return { ok: mode === "pass", messages: ["Command could not expose the reviewed tool catalog."] };
+    });
+    const code = await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", includeActions: false,
+      selection: { route: "mcp-client", client: "claude-code" } }, {
+      runMcpInstall: async () => 0, confirmLaunchCheck: async () => mode !== "decline", checkClientLaunch,
+      stdout: { write: (value) => { writes.push(String(value)); return true; } },
+    });
+    expect(code).toBe(0);
+    expect(checkClientLaunch).toHaveBeenCalledTimes(mode === "decline" ? 0 : 1);
+    expect(writes.join("")).toContain(mode === "pass" ? "verified MCP handshake and tool catalog; test connection closed"
+      : mode === "decline" ? "configured; launch not checked" : "configured; connection check failed");
+    expect(writes.join("")).toContain("LOCAL STDIO MCP CONFIGURED");
+    expect(writes.join("")).not.toContain("LOCAL STDIO MCP READY");
+  });
+
+  it.each(["missing_writer", "decline", "start", "worker_failure", "configuration_failure"])("keeps worker lifecycle explicit after client configuration (%s)", async (mode) => {
+    const writes: string[] = [];
+    const confirmWorkerStart = vi.fn(async () => mode === "start" || mode === "worker_failure");
+    const runWorker = vi.fn(async () => { if (mode === "worker_failure") throw new Error("Writer posture refused"); return 0; });
+    await expect(runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", includeActions: true,
+      selection: { route: "mcp-client", client: "claude-code" } }, {
+      env: mode === "missing_writer" ? {} : { WRITER_URL: "never-display-this" },
+      runMcpInstall: async () => 0, confirmLaunchCheck: async () => false, confirmWorkerStart, runWorker,
+      readExecutionState: async () => { if (mode === "configuration_failure") throw new Error("Execution configuration invalid"); return { enabled: true, config_path: "synapsor.actions.runner.json", policies: [
+        { outcome: "courses.enroll", write_url_env: "WRITER_URL", action_boundary_digest: `sha256:${"a".repeat(64)}`,
+          mode: "supervised_worker", concurrency: 1, queue_limit: 100, lease_seconds: 300, max_attempts: 5,
+          proposal_ttl_seconds: 3600, rate_limit: { executions: 10, window_seconds: 60 } },
+      ] }; },
+      stdout: { write: (value) => { writes.push(String(value)); return true; } },
+      stderr: { write: (value) => { writes.push(String(value)); return true; } },
+    })).resolves.toBe(mode.endsWith("failure") ? 1 : 0);
+    expect(runWorker).toHaveBeenCalledTimes(mode === "start" || mode === "worker_failure" ? 1 : 0);
+    expect(confirmWorkerStart).toHaveBeenCalledTimes(mode === "missing_writer" || mode === "configuration_failure" ? 0 : 1);
+    if (mode === "start") expect(runWorker).toHaveBeenCalledWith(["run", "--supervised", "--yes", "--config", "/tmp/not-created-project/synapsor.actions.runner.json"]);
+    expect(writes.join("")).toContain(mode.endsWith("failure") ? "Client configuration is saved. Execution setup could not finish" : mode === "missing_writer" ? "provide the reviewed writer environment WRITER_URL"
+      : mode === "start" ? "This worker has stopped" : "Worker not started by setup");
+    expect(writes.join("")).not.toContain("never-display-this");
+  });
   it("discovers either legacy or verified semantic Action authority for the MCP handoff", async () => {
     const noLegacy = vi.fn(async () => ({
       action_boundary: { active: undefined },

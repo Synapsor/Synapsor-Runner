@@ -13,7 +13,7 @@ import { actionRuleModelDraftFromAuthority, compileActionRuleModelDraft } from "
 import { policyCoverageDraft } from "../apps/runner/dist/authoring-policy-evidence.js";
 import { reviewPolicyCoverage, policyCoverageSummary, unresolvedPolicyPassages } from "../apps/runner/dist/authoring-policy-coverage.js";
 import { loadPolicySources, activePolicySource } from "../apps/runner/dist/authoring-policy-source.js";
-import { createModelAuthoringConversation } from "../apps/runner/dist/model-authoring-conversation.js";
+import { createModelAuthoringConversation, rememberModelAuthoringTurn } from "../apps/runner/dist/model-authoring-conversation.js";
 
 // Opt-in telecom reproduction. Previews only: no artifact save, activation,
 // source-row read, or write. Set SYNAPSOR_LIVE_PRIVACY_PROVIDER for a real model.
@@ -34,9 +34,11 @@ try {
     builtCatalog: initialCatalog, readBoundary: original, readBoundaryDigest: explorationBoundaryCandidateDigest(original),
   });
   let checkCoverage;
+  let coverageConversation;
   if (process.env.SYNAPSOR_LIVE_POLICY_COVERAGE === "1") {
     const resume = JSON.parse(await readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
     const conversation = createModelAuthoringConversation();
+    coverageConversation = conversation;
     conversation.policySources = await loadPolicySources(root, resume.policy_source_session);
     const source = activePolicySource(conversation.policySources);
     assert.ok(source, "An already consented rules snapshot is required; no file discovery or new egress is performed.");
@@ -50,7 +52,7 @@ try {
         owner: passage.responsibility, interpretation: passage.interpretation, next: passage.next_step }));
       assert.ok(!unresolvedPolicyPassages(report).some((passage) => passage.start <= 42 && passage.end >= 42 && passage.disposition === "conflict"), "The exact account-bound limit must not become a false tenant/account conflict.");
       if (label === "Before privacy revision") assert.ok(unresolvedPolicyPassages(report).some((passage) => passage.start <= 18 && passage.end >= 18),
-        "The source's private-ID requirement must not be marked implemented while subscription_id is exposed.");
+        "The saved source privacy concern must not be marked implemented before the field meanings and exposure are reviewed.");
       return report;
     };
     await checkCoverage(original, baseline, "Before privacy revision");
@@ -70,7 +72,8 @@ try {
   let requestCount = 0;
   const provider = process.env.SYNAPSOR_LIVE_PRIVACY_PROVIDER;
   const result = await generateModelReadBoundaryRevision({
-    instruction: "Keep internal database IDs, version fields and private approval controls private, with no model filters, sorting, grouping or aggregates on them. Keep Runner verification access. Leave already kept-out fields excluded. Keep useful customer-facing information and references visible. data_policy and target_data_policy describe customer plan data allowances, not approval controls: make these benefits visible for review if currently hidden. Preserve all other business fields, existing plan-change rules, approval limits and automatic-completion setup.",
+    instruction: "Keep internal database IDs, version fields and private approval controls private, with no model filters, sorting, grouping or aggregates on them. Preserve every existing Read selection grant and exclusion; add no access. Keep useful customer-facing information and references visible. data_policy and target_data_policy describe customer plan data allowances, not approval controls. For this isolated test, billing_preferences.updated_at and support_cases.updated_at are internal revision timestamps, not customer-facing event dates. Preserve other business fields, plan-change rules, approval limits and automatic-completion setup.",
+    privacyOnly: true,
     provider: provider ?? "openai", model: process.env.SYNAPSOR_LIVE_PRIVACY_MODEL ?? "gpt-5.6-terra",
     ...(!provider ? { apiKey: "test-only" } : {}),
     ...(process.env.SYNAPSOR_LIVE_PRIVACY_BASE_URL ? { baseUrl: process.env.SYNAPSOR_LIVE_PRIVACY_BASE_URL } : {}),
@@ -92,7 +95,7 @@ try {
     },
     ...(!provider ? { dependencies: { requestJson: async (request) => {
       requestCount += 1;
-      if (requestCount === 2) assert.match(JSON.stringify(request), /settings.selectable_fields removes Runner's access/);
+      if (requestCount === 2) assert.match(JSON.stringify(request), /Privacy-only review accepts field privacy reductions/);
       return { status: 200, body: { output: [{ type: "function_call", call_id: "privacy",
         name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: Object.entries(expected).map(([table, fields]) => ({
           resource: `telecom.${table}`, field_exposure: [...fields.map((field) => ({ field, exposure: "runner_only" })),
@@ -131,7 +134,13 @@ try {
   assert.equal(preview.candidate.activation, "disabled_unreviewed");
   assert.equal(result.authority_granted, false);
   assert.deepEqual(context.candidate, original);
-  if (checkCoverage) await checkCoverage(preview.candidate, compiled, "After validated privacy revision");
+  if (checkCoverage) {
+    rememberModelAuthoringTurn(coverageConversation, "Are the two updated_at fields internal revision timestamps?",
+      "For this isolated test, billing_preferences.updated_at and support_cases.updated_at are internal revision timestamps, not customer-facing event dates. Keep them private from the model with no analysis; retain existing Runner access and exclusions.");
+    const report = await checkCoverage(preview.candidate, compiled, "After validated privacy revision");
+    assert.ok(!unresolvedPolicyPassages(report).some((passage) => passage.start <= 18 && passage.end >= 18),
+      "The clarified two-field privacy restriction must be reconciled against the exact revised candidate, without inventing private-access removal.");
+  }
   if (!provider) { assert.equal(requestCount, 2); assert.equal(result.correction_used, true); }
   console.log(`PASS ${provider ?? "injected correction"}: ${result.changes.length} validated field/operation changes; business benefits/references, private verification, rules, limits and supervised execution preserved.`);
 } finally {

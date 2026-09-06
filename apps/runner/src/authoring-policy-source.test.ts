@@ -285,6 +285,8 @@ describe("complete operator-selected policy text", () => {
       source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } });
     expect(requestJson).toHaveBeenCalledTimes(2);
     expect(requests[1]).toContain("Mechanical evidence mismatch");
+    expect(requests[1]).toContain("private_read_selection is Runner's private access, not agent visibility or model analysis");
+    expect(requests[1]).toContain("Do not require those later stages to have run before allowing the operator to reach them");
     expect(report.passages[0]!.evidence_checks![0]!.equals).toBe("account_id");
     expect(report.passages[1]!.disposition).toBe("conflict");
     expect(JSON.stringify(draft)).toBe(before);

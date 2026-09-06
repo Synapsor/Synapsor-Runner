@@ -4980,13 +4980,17 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised", "repair_on_resume", "privacy_retry", "guided_privacy", "decline_privacy", "policy_text", "read_only_pivot"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
-    const policyText = posture === "policy_text";
+  it.each(["proposal_only", "supervised", "repair_on_resume", "privacy_retry", "guided_privacy", "decline_privacy", "policy_text", "clarified_privacy", "application_clarification", "read_only_pivot"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+    const clarifiedPrivacy = posture === "clarified_privacy";
+    const applicationClarification = posture === "application_clarification";
+    const policyText = posture === "policy_text" || clarifiedPrivacy || applicationClarification;
     const writeback = posture === "supervised" || posture === "privacy_retry" ? "supervised" : "proposal_only";
     const guidedPrivacy = posture === "guided_privacy" || posture === "decline_privacy";
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-semantic-action-"));
     let sourceHandler: ((command: string, argument: string) => Promise<boolean>) | undefined;
-    const sourceText = "A scheduled visit may receive one two-hour follow-up.\nRequire two maintenance reviewers. Do not execute changes.";
+    const sourceText = applicationClarification ? "The application captures the customer's selected visit.\nRequire one maintenance reviewer. Do not execute changes."
+      : clarifiedPrivacy ? "Hide internal visit status from the customer; retain eligibility verification.\nRequire one maintenance reviewer. Do not execute changes."
+      : "A scheduled visit may receive one two-hour follow-up.\nRequire two maintenance reviewers. Do not execute changes.";
     if (policyText) await fs.writeFile(path.join(root, "Rules.txt"), sourceText);
     const sourceReviews: string[][] = [];
     let rulesMenuVisits = 0;
@@ -5199,7 +5203,8 @@ describe("boundary operator-plane CLI", () => {
         dependencies: { requestJson: async (request) => {
           attempt += 1;
           expect(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8")).toBe(before);
-          if (attempt === 2) expect(JSON.stringify(request)).toContain("settings.selectable_fields removes Runner's access");
+          if (attempt === 2) expect(JSON.stringify(request)).toContain(input.privacyOnly
+            ? "Privacy-only review accepts field privacy reductions" : "settings.selectable_fields removes Runner's access");
           return { status: 200, body: { output: [{
             type: "function_call", call_id: "privacy", name: "runner__submit_read_boundary_revision",
             arguments: JSON.stringify({ resource_changes: [{ resource: resource.id,
@@ -5253,17 +5258,25 @@ describe("boundary operator-plane CLI", () => {
             expect(choiceOptions?.context?.join("\n")).toContain("approval");
             return "save";
           }
+          if (title === "FINISH BOUNDARY REVIEW") {
+            expect(options.some((option) => option.value === "activate")).toBe(false);
+            expect(choiceOptions?.initialValue).toBe("resolve");
+            expect(choiceOptions?.reviewOnly).toBe(true);
+            expect(choiceOptions?.context?.join("\n"), JSON.stringify(vi.mocked(semanticChat.rememberDetails).mock.calls)).toContain("Activation is unavailable");
+            return "resolve";
+          }
           if (title === "ACTIVATE READ BOUNDARY") {
             expect(options.some((option) => option.value === "rules")).toBe(true);
             expect(choiceOptions?.context?.join("\n")).toContain("Attached rules: Rules.txt v1;");
-            if (semanticActionAttempt < 3) expect(choiceOptions?.context?.join("\n")).toContain("1 open check(s)");
-            return readActivationReviewCount++ === 0 ? "rules" : "finish";
+            expect(semanticActionAttempt).toBe(clarifiedPrivacy || applicationClarification ? 2 : 3);
+            return "finish";
           }
         }
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         if (title === "SAVE DISABLED PRIVACY REVISION") {
-          expect(choiceOptions?.exactDetails?.sections?.[0]?.id).toBe("changes");
+          expect(choiceOptions?.exactDetails?.sections?.[0]?.id).toBe("reductions");
+          expect(choiceOptions?.explainOnRequest).toBe(true);
           expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(preRevisionReadDigest);
           return posture === "decline_privacy" ? "back" : "save";
         }
@@ -5275,6 +5288,7 @@ describe("boundary operator-plane CLI", () => {
         if (title === "ACTIVATE READ BOUNDARY") {
           const review = choiceOptions?.context?.join("\n") ?? "";
           expect(review).toContain("Read review -> Action review");
+          expect(review).toContain("Invalid requests are refused.");
           expect(review).toContain(posture === "repair_on_resume" ? "UNMET REQUEST:" : writeback === "supervised" ? "execution review PENDING" : "Execution: proposal-only");
           expect(review).not.toMatch(/\+\d+ more|small-group minimum|fields per|1000 queries/u);
           if (writeback === "supervised") expect(review).toContain("Once execution is enabled");
@@ -5304,7 +5318,9 @@ describe("boundary operator-plane CLI", () => {
     if (policyText) {
       semanticChat.setSourceCommandHandler = (handler) => { sourceHandler = handler; };
       semanticChat.readOperator = vi.fn().mockResolvedValueOnce("One reviewer currently; inspect the attached requirement before activation.")
-        .mockResolvedValueOnce("Use two maintenance reviewers as required by the attached rules. Keep this same outcome and all other rules.");
+        .mockResolvedValueOnce(applicationClarification ? "Our client captures and submits the customer's selected visit reference. Preserve the draft."
+          : clarifiedPrivacy ? "Yes, visit status is internal eligibility state; hide it from customers, retaining private verification."
+          : "Use two maintenance reviewers as required by the attached rules. Keep this same outcome and all other rules.");
     }
     semanticChat.streamModel = vi.fn(async () => undefined);
     try {
@@ -5322,6 +5338,26 @@ describe("boundary operator-plane CLI", () => {
             apiKey: "session-secret",
             ...(policyText ? { dependencies: { requestJson: async (request: Parameters<NonNullable<import("./model-ask.js").AskProviderDependencies["requestJson"]>>[0]) => {
               coverageRequests.push(JSON.stringify(request.body));
+              if (applicationClarification) return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
+                arguments: JSON.stringify({ passages: [{ start: 1, end: 2, disposition: coverageRequests.length === 1 ? "needs_decision" : "implemented",
+                  topic: "Customer selection", issue_kind: "missing_configuration", responsibility: "application",
+                  interpretation: "The client captures the customer's selection; Runner validates the selected scoped reference.", next_step: "Does your client capture the customer's selected visit before submitting its reference?",
+                  draft_paths: ["/actions/0/verification", "/actions/0/approval"],
+                }] }),
+              }] } };
+              const privateStatus = clarifiedPrivacy && (await loadBoundaryReviewContext(root)).candidate.pack.resources
+                .find((resource) => resource.id === "public.service_visits")?.model_withheld_fields?.includes("status");
+              if (clarifiedPrivacy) return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
+                arguments: JSON.stringify({ passages: [{ start: 1, end: 2,
+                  disposition: privateStatus ? "implemented" : "needs_decision",
+                  topic: "Internal visit status", issue_kind: coverageRequests.length === 1 ? "schema_meaning" : "contradiction",
+                  responsibility: coverageRequests.length === 1 ? "operator" : "runner",
+                  interpretation: coverageRequests.length === 1 ? "Is visit status internal eligibility state?" : "Keep internal status private and preserve verification.",
+                  next_step: "Is visit status internal eligibility state rather than customer-facing information?",
+                  field_checks: [{ resource: "public.service_visits", field: "status", expectation: "private" }],
+                  draft_paths: ["/read", "/actions/0/approval"],
+                }] }),
+              }] } };
               return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
                 arguments: JSON.stringify({ passages: [{ start: 1, end: 2,
                   disposition: semanticActionAttempt < 3 ? "needs_decision" : "implemented",
@@ -5384,6 +5420,35 @@ describe("boundary operator-plane CLI", () => {
       }
 
       if (policyText) {
+        if (applicationClarification) {
+          expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
+          expect(modelReadBoundaryRevisionGenerator).not.toHaveBeenCalled();
+          expect(semanticChat.readOperator).toHaveBeenCalledTimes(2);
+          expect(coverageRequests).toHaveLength(2);
+          expect(coverageRequests[1]).toContain("Our client captures and submits");
+          expect(rulesMenuVisits).toBe(0);
+          const saved = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+          expect(saved?.authority.rules).toHaveLength(1);
+          expect(saved?.authority.approval_classes[0]?.required_approvals).toBe(1);
+          await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+          return;
+        }
+        if (clarifiedPrivacy) {
+          expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
+          expect(modelReadBoundaryRevisionGenerator).not.toHaveBeenCalled();
+          expect(semanticChat.readOperator).toHaveBeenCalledTimes(2);
+          expect(coverageRequests).toHaveLength(4); // one bounded mechanical recheck, then repaired-candidate check
+          const context = await loadBoundaryReviewContext(root);
+          const visit = context.candidate.pack.resources.find((resource) => resource.id === "public.service_visits")!;
+          expect(visit.model_withheld_fields).toContain("status");
+          expect(visit.kept_out_fields).toContain("tenant_id");
+          const saved = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+          expect(saved?.authority.rules).toHaveLength(1);
+          expect(saved?.authority.approval_classes[0]?.required_approvals).toBe(1);
+          await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+          expect(rulesMenuVisits).toBe(0);
+          return;
+        }
         expect(modelActionRuleGenerator).toHaveBeenCalledTimes(3);
         expect(modelReadBoundaryRevisionGenerator).not.toHaveBeenCalled();
         expect(coverageRequests).toHaveLength(2);
@@ -6974,7 +7039,7 @@ describe("boundary operator-plane CLI", () => {
       await expect(boundaryReviewCommandInternal(["--project-root", root, "--access"], async () => inspection,
         chat.session)).resolves.toBe(0);
       expect(reviews, writes.join("\n")).toHaveLength(4);
-      expect(guide).toHaveBeenCalledTimes(2);
+      expect(guide).toHaveBeenCalledTimes(1); // Explicit question only; local review does not require narration.
       for (const fact of ["public.service_visits", "scheduled_at", "tenant_id", "trusted_context", "budgets", digest]) {
         expect(reviews.join("\n").replace(/\s+/gu, "")).toContain(fact.replace(/\s+/gu, ""));
       }
