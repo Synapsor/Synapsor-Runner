@@ -101,8 +101,25 @@ An Action revision preserves its outcome identity and unrelated rules; it is
 saved disabled and never overwrites active authority. Explicit operator
 overrides must quote recorded operator messages, not a document instruction.
 
+The main review reports the source version and open business topics before
+activation. Compilation prepares a structured draft; policy coverage is a
+separate review. Topic details pair source passages with interpreted behavior,
+responsibility and the next step. Exact configuration evidence is available
+one level deeper, without losing the pending permission.
+
+**Recheck existing controls with the model** reconciles coverage against the
+current confirmed Read decisions, effective field access, verified scope
+bindings and Runner's approval, replay and execution mechanisms. It changes
+the report, not the business rules. A tenant-scoped limit groups by the exact
+trusted tenant binding used in this deployment; Runner does not assume every
+database uses tenant to mean customer account. Missing business meanings still
+need clarification. Deployment and client responsibilities are identified
+separately from Boundary predicates and cannot be silently waived.
+
 Coverage is a **model assessment, not proof of semantic completeness**.
-Runner verifies line references and draft pointers, not the truth of prose.
+Runner verifies source links and field-privacy claims against current
+permissions and attaches the actual settings behind each selected reference.
+It does not prove the truth of arbitrary prose.
 Review the source excerpts and interpreted behavior; unresolved passages block
 this guided activation path. Provider failure preserves the draft and local
 source preview. Runtime requests never include the source text: the existing

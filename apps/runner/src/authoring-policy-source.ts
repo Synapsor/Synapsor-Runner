@@ -6,7 +6,14 @@ import type { AskHistoryTurn } from "./model-ask.js";
 
 export type PolicyPassage = { start: number; end: number;
   disposition: "implemented" | "needs_decision" | "conflict" | "unsupported" | "background" | "overridden";
-  interpretation: string; draft_paths: string[]; operator_override?: string };
+  interpretation: string; draft_paths: string[]; operator_override?: string;
+  topic?: string;
+  responsibility?: "operator" | "runner" | "deployment" | "application";
+  issue_kind?: "business_choice" | "schema_meaning" | "missing_configuration" | "unsupported_requirement" | "contradiction" | "coverage_link";
+  next_step?: string;
+  evidence_checks?: Array<{ path: string; equals: string | number | boolean | null }>;
+  field_checks?: Array<{ resource: string; field: string; expectation: "private" | "business_visible" }>;
+};
 export type PolicyCoverage = { source_digest: string; draft_digest: string; passages: PolicyPassage[] };
 
 export const POLICY_TEXT_MAX_BYTES = 32_768;
@@ -142,6 +149,16 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
       && typeof passage.interpretation === "string" && passage.interpretation.length <= 800
       && Array.isArray(passage.draft_paths) && passage.draft_paths.length <= 32
       && passage.draft_paths.every((pointer) => typeof pointer === "string" && pointer.startsWith("/") && pointer.length <= 500)
+      && (passage.topic === undefined || typeof passage.topic === "string" && passage.topic.length <= 90)
+      && (passage.next_step === undefined || typeof passage.next_step === "string" && passage.next_step.length <= 400)
+      && (passage.responsibility === undefined || ["operator", "runner", "deployment", "application"].includes(passage.responsibility))
+      && (passage.issue_kind === undefined || ["business_choice", "schema_meaning", "missing_configuration", "unsupported_requirement", "contradiction", "coverage_link"].includes(passage.issue_kind))
+      && (passage.evidence_checks === undefined || Array.isArray(passage.evidence_checks) && passage.evidence_checks.length <= 16
+        && passage.evidence_checks.every((check) => check && typeof check.path === "string" && check.path.startsWith("/runner_evidence/") && check.path.length <= 500
+          && (check.equals === null || ["string", "number", "boolean"].includes(typeof check.equals))))
+      && (passage.field_checks === undefined || Array.isArray(passage.field_checks) && passage.field_checks.length <= 160
+        && passage.field_checks.every((check) => check && typeof check.resource === "string" && check.resource.length <= 256
+          && typeof check.field === "string" && check.field.length <= 128 && ["private", "business_visible"].includes(check.expectation)))
       && (passage.operator_override === undefined || typeof passage.operator_override === "string" && passage.operator_override.length <= 4_000)));
 }
 

@@ -6,6 +6,7 @@ import { secureAskJsonRequest } from "../apps/runner/dist/model-ask.js";
 import { createModelAuthoringConversation } from "../apps/runner/dist/model-authoring-conversation.js";
 import { newPolicySourceSession, policyTextSnapshot, authoringDestination } from "../apps/runner/dist/authoring-policy-source.js";
 import { reviewPolicyCoverage } from "../apps/runner/dist/authoring-policy-coverage.js";
+import { policyCoverageDraft } from "../apps/runner/dist/authoring-policy-evidence.js";
 
 const LOCK = `sha256:${"a".repeat(64)}`;
 const READ_DIGEST = `sha256:${"b".repeat(64)}`;
@@ -87,12 +88,29 @@ for (const fixture of fixtures) {
   }
   assert.equal(clarifications.length <= 4, true);
   if (policyText) {
-    const report = await reviewPolicyCoverage({ session, source: conversation.policySources.snapshots[0],
-      draft: { read: fixture.readBoundary, actions: [result.compiled.draft] } });
+    const coverageDraft = policyCoverageDraft({ read: fixture.readBoundary, decisions: [], actions: [result.compiled] });
+    const checkJson = (value, pointer = "") => {
+      if (value === undefined) throw new Error(`Coverage fixture contains undefined at ${pointer}`);
+      if (value && typeof value === "object") for (const [key, entry] of Object.entries(value)) checkJson(entry, `${pointer}/${key}`);
+    };
+    checkJson(coverageDraft);
+    let report = await reviewPolicyCoverage({ session, source: conversation.policySources.snapshots[0],
+      draft: coverageDraft });
     assert.ok(report.passages.length, "Policy source must have passage traceability.");
     process.stdout.write(`POLICY COVERAGE ${fixture.id}: ${report.passages.map((entry) => entry.disposition).join(", ")} (model assessment, not semantic proof)\n`);
     for (const entry of report.passages.filter((entry) => ["needs_decision", "conflict", "unsupported"].includes(entry.disposition))) {
       process.stdout.write(`COVERAGE CONCERN lines ${entry.start}-${entry.end}: ${entry.interpretation}\n`);
+    }
+    if (fixture.id === "coded-preferences" && report.passages.some((entry) => ["needs_decision", "conflict", "unsupported"].includes(entry.disposition))) {
+      const before = JSON.stringify(coverageDraft);
+      const clarification = "Every records.r17 row represents an optional reminder preference, never a mandatory notice. This is the reviewed meaning of this table, not permission to disable mandatory notices. b9 remains a hard hold: true refuses the change. Preserve the same outcome, eligibility, human review and proposal-only mode.";
+      conversation.policySources.operator_messages.push(clarification);
+      process.stdout.write(`COVERAGE CLARIFICATION ${fixture.id}: ${clarification}\n`);
+      report = await reviewPolicyCoverage({ session, source: conversation.policySources.snapshots[0], draft: coverageDraft, previousReport: report });
+      assert.equal(JSON.stringify(coverageDraft), before, "Meaning clarification must not mutate the existing draft.");
+      const remaining = report.passages.filter((entry) => ["needs_decision", "conflict", "unsupported"].includes(entry.disposition));
+      assert.deepEqual(remaining, [], "Coded reminder coverage must resolve only after explicit business meaning is supplied.");
+      process.stdout.write("CODED COVERAGE RECHECK PASS: explicit optional-reminder meaning; same draft, no changed permissions.\n");
     }
   }
   if (fixture.id === "customer-support") {
@@ -377,7 +395,7 @@ function fixture(input) {
         diagnostics: [], digest: AUTHORING_DIGEST,
       },
     },
-    readBoundary: readBoundary(input.readName, source, catalogResources, input.relationships),
+    readBoundary: readBoundary(input.readName, source, catalogResources, input.relationships, authoringResources),
   };
 }
 
@@ -411,7 +429,7 @@ function resource(input) {
   };
 }
 
-function readBoundary(name, source, resources, relationships) {
+function readBoundary(name, source, resources, relationships, authoringResources) {
   return {
     schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed", deployment_profile: "production",
     source, compiler_version: "provider-qualification", spec_version: "provider-qualification",
@@ -421,13 +439,20 @@ function readBoundary(name, source, resources, relationships) {
       name,
       resources: resources.map((item) => ({
         id: item.name, schema: item.schema, table: item.table, primary_key: item.primary_key,
-        tenant_key: item.tenant_key, principal_key: item.principal_scope_key, field_types: {}, field_enums: {},
+        tenant_key: item.tenant_key, principal_key: item.principal_scope_key,
+        field_types: Object.fromEntries(item.fields.map((field) => [field.name, field.type.kind === "string" ? "text" : field.type.kind])),
+        field_enums: Object.fromEntries(item.fields.filter((field) => field.type.enum).map((field) => [field.name, field.type.enum])),
         selectable_fields: item.fields.map((candidate) => candidate.name)
-          .filter((candidate) => ![item.primary_key, item.tenant_key, item.principal_scope_key, item.version_field].includes(candidate)),
+          .filter((candidate) => authoringResources.find((resource) => resource.name === item.name).fields.find((field) => field.name === candidate).role === "model_visible"),
         filterable_fields: {}, sortable_fields: [], groupable_fields: [], aggregate_measures: [], count_distinct_fields: [],
         time_bucket_fields: {}, kept_out_fields: item.fields.map((candidate) => candidate.name)
           .filter((candidate) => [item.tenant_key, item.principal_scope_key, item.version_field].includes(candidate)),
-        relationships: relationships.filter((relationship) => relationship.from_resource === item.name).map((relationship) => relationship.name),
+        relationships: relationships.filter((relationship) => relationship.from_resource === item.name).map((relationship) => {
+          const pairs = relationship.field_pairs ?? [{ local_field: relationship.local_field, target_field: relationship.target_field }];
+          return { id: relationship.name, target_resource: relationship.to_resource,
+            local_columns: pairs.map((pair) => pair.local_field), target_columns: pairs.map((pair) => pair.target_field),
+            cardinality: relationship.cardinality, counted_entity: item.table, max_fan_out: 1 };
+        }),
         minimum_cohort_size: 5, suppression_aware_totals: true,
       })),
     },

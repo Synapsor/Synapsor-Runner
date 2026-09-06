@@ -7,6 +7,7 @@ import { loadReadReviewDiff, saveReadReviewDiff, readRevisionDiff, readBoundaryR
 import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { formatReadActivationDecisionSummary } from "./boundary-commands.js";
+import { policyCoverageDraft } from "./authoring-policy-evidence.js";
 
 function fixture(): ExplorationBoundaryDraft {
   return { schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed", deployment_profile: "staging",
@@ -26,6 +27,24 @@ function fixture(): ExplorationBoundaryDraft {
 }
 
 describe("progressive Read authority review", () => {
+  it("gives coverage current confirmation and effective privacy evidence, not a stale checklist", () => {
+    const read = fixture(), before = structuredClone(read);
+    const result = policyCoverageDraft({ read, actions: [], decisions: [
+      { decision: "Reviewed customer scope", confirmed: true }, { decision: "Resolve coded score meaning", confirmed: false },
+    ] });
+    expect(result.runner_evidence.read_review).toMatchObject({ confirmed: ["Reviewed customer scope"], pending: ["Resolve coded score meaning"], activation: "separate_operator_review" });
+    const resource = result.runner_evidence.read_access["university.r17"]!;
+    expect(resource.trusted_tenant_field).toBe("org");
+    const fields = resource.fields;
+    expect(fields.c7).toMatchObject({ actual_values_returned: false, private_read_selection: true });
+    expect(fields.c7!.model_analysis.length).toBeGreaterThan(0); // Withholding values is not full privacy.
+    expect(fields.course_number).toMatchObject({ actual_values_returned: true, kept_out: false });
+    expect(fields.org).toMatchObject({ actual_values_returned: false, kept_out: true });
+    expect(fields.created_at).toMatchObject({ actual_values_returned: false, private_read_selection: false });
+    expect(read).toEqual(before);
+    expect(() => canonicalJsonDigest(result)).not.toThrow();
+    expect(result.runner_evidence.runtime_contract.request_identity).toContain("not a client-supplied request ID");
+  });
   it("distinguishes new model-visible access from new private use", () => {
     const before = fixture(), after = structuredClone(before);
     before.pack.resources[0]!.kept_out_fields.push("course_number");

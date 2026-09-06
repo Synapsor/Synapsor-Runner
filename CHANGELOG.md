@@ -2,6 +2,19 @@
 
 ## 1.8.0 (unreleased)
 
+### Actionable Attached-Rules Review
+
+- Shows source version, unresolved topics and coverage readiness in the main
+  activation review. Short business-topic navigation pairs complete source
+  passages with interpretation, responsibility and next steps; technical
+  configuration evidence stays available on demand.
+- Rechecks mechanical coverage objections against confirmed Read decisions,
+  effective field access and compiled scope/execution settings without editing
+  correct business rules. Exact evidence mismatches receive bounded correction;
+  unresolved requirements still block guided activation.
+- First-job attachment wording no longer assumes an existing draft. Replacing
+  rules during review still prevents Enter from accepting a stale decision.
+
 ### Conversation Input Redraw
 
 - Slash suggestions now clear in place when input is erased, submitted or

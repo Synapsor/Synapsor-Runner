@@ -5255,6 +5255,8 @@ describe("boundary operator-plane CLI", () => {
           }
           if (title === "ACTIVATE READ BOUNDARY") {
             expect(options.some((option) => option.value === "rules")).toBe(true);
+            expect(choiceOptions?.context?.join("\n")).toContain("Attached rules: Rules.txt v1;");
+            if (semanticActionAttempt < 3) expect(choiceOptions?.context?.join("\n")).toContain("1 open check(s)");
             return readActivationReviewCount++ === 0 ? "rules" : "finish";
           }
         }
@@ -5386,6 +5388,7 @@ describe("boundary operator-plane CLI", () => {
         expect(modelReadBoundaryRevisionGenerator).not.toHaveBeenCalled();
         expect(coverageRequests).toHaveLength(2);
         expect(coverageRequests.every((request) => request.includes("Require two maintenance reviewers"))).toBe(true);
+        expect(coverageRequests.every((request) => request.includes("runner_evidence") && request.includes("read_review") && request.includes("scoped_bindings"))).toBe(true);
         expect(sourceReviews.flat().join("\n")).toContain("2 | Require two maintenance reviewers");
         const saved = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
         expect(saved?.authority.rules).toHaveLength(1);

@@ -32,6 +32,7 @@
     "test:guided-actions-live": "corepack pnpm build && node scripts/verify-guided-action-control-plane.mjs",
     "test:action-rules-live": "corepack pnpm build && node scripts/verify-semantic-action-rule-engines.mjs",
     "test:action-rule-models-live": "corepack pnpm build && node scripts/verify-action-rule-model-providers.mjs",
+    "test:policy-coverage-runtime": "corepack pnpm build && node scripts/verify-policy-coverage-runtime.mjs",
     "test:bounded-set": "corepack pnpm build && node scripts/verify-bounded-set-writeback.mjs",
     "test:reversible": "corepack pnpm build:runner-package && node scripts/verify-reversible-writeback.mjs",
     "test:contract-lsp": "vitest run apps/runner/src/language-server.test.ts",

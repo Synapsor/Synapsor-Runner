@@ -8,6 +8,7 @@ import { activePolicySource, authoringDestination, policyTextLines, policyTextSn
 export function installPolicySourceCommands(input: {
   root: string; chat: BoundaryAuthoringChat; conversation: ModelAuthoringConversation;
   destination: () => AuthoringDestination; onChange: () => Promise<void>;
+  hasDraft?: () => boolean;
 }): { reviewTransfer(destination: AuthoringDestination): Promise<boolean> } {
   const { chat, conversation } = input;
   const choose = chat.session.chooseOption?.bind(chat.session);
@@ -70,7 +71,7 @@ export function installPolicySourceCommands(input: {
         { value: "attach", label: source ? "Replace with another .txt file" : "Attach a .txt file" },
         { value: "paste", label: "Paste rules as a complete text snapshot" },
         ...(session.snapshots.length ? [{ value: "remove", label: "Remove all retained text versions" }] : []),
-        { value: "back", label: "Return to the same draft" },
+        { value: "back", label: input.hasDraft?.() ? "Return to the same draft" : "Return to the conversation" },
       ], { initialValue: "back" }) ?? "back";
       if (action === "view" && source) { await show(source); return false; }
       if (action === "coverage" && session.coverage) {
@@ -113,7 +114,7 @@ export function installPolicySourceCommands(input: {
       source = await readPolicyTextFile(unquoted, input.root, version);
     }
     return replace(source);
-  });
+  }, input.hasDraft);
   return { reviewTransfer: async (target) => {
     const sources = conversation.policySources, source = activePolicySource(sources);
     if (!source || sources?.approvals.some((entry) => entry.digest === source.digest && entry.destination === authoringDestination(target))) return true;

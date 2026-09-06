@@ -6,7 +6,7 @@ import { activePolicySource, authoringDestination, newPolicySourceSession, polic
   readPolicyTextFile, savePolicySources, loadPolicySources, removePolicySources, POLICY_TEXT_MAX_BYTES } from "./authoring-policy-source.js";
 import { createModelAuthoringConversation, modelAuthoringHistory, rememberModelAuthoringTurn } from "./model-authoring-conversation.js";
 import { installPolicySourceCommands } from "./authoring-policy-source-ui.js";
-import { parsePolicyCoverage, policyCoverageSection, reviewPolicyCoverage } from "./authoring-policy-coverage.js";
+import { parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, reviewPolicyCoverage } from "./authoring-policy-coverage.js";
 import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { AnalyticsShellIo } from "./analytics-shell.js";
@@ -183,5 +183,149 @@ describe("complete operator-selected policy text", () => {
     expect(output.join("\n").replace(/\s+/gu, " ")).toContain("Enter alone will not accept");
     expect(conversation.policySources.operator_messages).toEqual(["Use these rules for enrollment"]);
     chat.close();
+  });
+
+  it.each([false, true])("uses first-job wording for attachment paths (bare command: %s)", async (bare) => {
+    const root = await directory(); await fs.writeFile(path.join(root, "Business Rules.txt"), "Only bounded enrollment.");
+    const reads = bare ? ["/attach", '"Business Rules.txt"', "", "Help students enroll using these rules."]
+      : ['/attach "Business Rules.txt"', "", "Help students enroll using these rules."];
+    const output: string[] = [];
+    const chat = createBoundaryAuthoringChat({ color: false, io: { read: async () => reads.shift(), readConversation: async () => reads.shift(),
+      write: (text) => output.push(text), choose: async () => "send", columns: () => 60, onInterrupt: () => () => undefined, close() {}, isTerminal: () => false } });
+    const conversation = createModelAuthoringConversation(); conversation.policySources = newPolicySourceSession();
+    installPolicySourceCommands({ root, chat, conversation, destination: () => destination, onChange: async () => undefined, hasDraft: () => false });
+    expect(await chat.readOperator!()).toBe("Help students enroll using these rules.");
+    const text = output.join(" ").replace(/\s+/gu, " ");
+    expect(text).toContain("What should the agent do using these rules?");
+    expect(text).not.toMatch(/same draft|old decision/u);
+    chat.close();
+  });
+
+  it.each([false, true])("returns from full attachment preview to the same permission and cancels without egress (bare: %s)", async (bare) => {
+    const root = await directory(); await fs.writeFile(path.join(root, "Business Rules.txt"), "Only bounded enrollment.\nNever bypass eligibility.");
+    const reads = bare ? ["/attach", '"Business Rules.txt"', "Help students enroll."]
+      : ['/attach "Business Rules.txt"', "Help students enroll."];
+    const choices = ["view", "cancel"], titles: string[] = [], previews: string[][] = [];
+    const chat = createBoundaryAuthoringChat({ color: false, io: { read: async () => reads.shift(), readConversation: async () => reads.shift(),
+      write() {}, choose: async (choice) => { titles.push(choice.title); return choices.shift(); },
+      review: async (_title, lines) => { previews.push(lines); }, columns: () => 60, onInterrupt: () => () => undefined, close() {}, isTerminal: () => false } });
+    const conversation = createModelAuthoringConversation(); conversation.policySources = newPolicySourceSession();
+    const before = structuredClone(conversation.policySources), onChange = vi.fn();
+    installPolicySourceCommands({ root, chat, conversation, destination: () => destination, onChange, hasDraft: () => false });
+    expect(await chat.readOperator!()).toBe("Help students enroll.");
+    expect(titles).toEqual(["SEND ATTACHED RULES", "SEND ATTACHED RULES"]);
+    expect(previews[0]!.join("\n")).toContain("2 | Never bypass eligibility.");
+    expect(conversation.policySources).toEqual(before);
+    expect(onChange).not.toHaveBeenCalled();
+    chat.close();
+  });
+
+  it("groups business topics with source, interpretation, ownership and exact evidence behind details", () => {
+    const source = snapshot("Three automatic approvals per account.\nAcross all people in that account.\nKeep internal controls private.");
+    const draft = { runner_evidence: { tenant_field: "account_id", control_visible: true } };
+    const base = { disposition: "needs_decision", interpretation: "Reconcile the existing account binding.", draft_paths: ["/runner_evidence/tenant_field"],
+      topic: "Three approvals per account", responsibility: "runner", issue_kind: "coverage_link", next_step: "Recheck existing controls." };
+    const report = parsePolicyCoverage({ passages: [{ ...base, start: 1, end: 1 }, { ...base, start: 2, end: 2 },
+      { start: 3, end: 3, disposition: "conflict", interpretation: "A private control is still visible.", draft_paths: ["/runner_evidence/control_visible"],
+        topic: "Private controls", responsibility: "operator", next_step: "Revise Read privacy with the model." },
+    ] }, source, draft, "");
+    const section = policyCoverageSection(source, report, draft);
+    expect(section.children).toHaveLength(2);
+    expect(section.children![0]!.title).toBe("Three approvals per account | Check existing controls");
+    expect(section.children![0]!.lines).toContain("2 | Across all people in that account.");
+    expect(section.children![0]!.lines.join("\n")).not.toContain("/runner_evidence");
+    expect(section.children![0]!.lines.join("\n")).toContain("Check type: Check the link to existing controls");
+    expect(section.children![0]!.children![0]!.children![0]!.lines).toContain('"account_id"');
+    expect(policyCoverageSummary(source, report).join("\n")).toContain("3 open check(s) across 2 business topic(s)");
+    expect(policyCoverageSummary(source, report).join("\n")).toContain("Structured draft prepared; policy coverage needs review");
+    const unsupported = policyCoverageSection(source, { ...report, passages: [{ ...report.passages[0]!, disposition: "unsupported", responsibility: "runner" }] });
+    expect(unsupported.children![0]!.title).toContain("Not supported");
+  });
+
+  it.each([true, false])("refuses false implemented privacy claims for visible values or analysis (values visible: %s)", (visible) => {
+    const source = snapshot("Keep internal IDs private; retain the course number.");
+    const draft = { runner_evidence: { read_access: { "university.r17": { fields: {
+      c7: { actual_values_returned: visible, model_analysis: visible ? [] : ["filter:eq"] },
+      course_number: { actual_values_returned: true, model_analysis: [] },
+    } } } } };
+    const passage = { start: 1, end: 1, disposition: "implemented", interpretation: "Internal ID private, business reference visible.",
+      draft_paths: ["/runner_evidence/read_access/university.r17"], field_checks: [
+        { resource: "university.r17", field: "c7", expectation: "private" },
+        { resource: "university.r17", field: "course_number", expectation: "business_visible" },
+      ] };
+    expect(() => parsePolicyCoverage({ passages: [passage] }, source, draft, "")).toThrow("Field coverage mismatch: university.r17.c7");
+    const report = parsePolicyCoverage({ passages: [{ ...passage, disposition: "conflict" }] }, source, draft, "");
+    expect(report.passages[0]!.field_checks).toEqual(passage.field_checks);
+    draft.runner_evidence.read_access["university.r17"].fields.c7 = { actual_values_returned: false, model_analysis: [] };
+    expect(parsePolicyCoverage({ passages: [passage] }, source, draft, "").passages[0]!.disposition).toBe("implemented");
+  });
+
+  it("canonicalizes exact evidence-section shorthand without guessing a missing field or position", () => {
+    const source = snapshot("Receipts record successful execution.");
+    const draft = { runner_evidence: { runtime_contract: { receipts: "Requires applied receipt." } } };
+    const entry = { start: 1, end: 1, disposition: "implemented", interpretation: "Runner records applied receipts.", draft_paths: ["/runtime_contract/receipts"] };
+    expect(parsePolicyCoverage({ passages: [entry] }, source, draft, "").passages[0]!.draft_paths).toEqual(["/runner_evidence/runtime_contract/receipts"]);
+    expect(() => parsePolicyCoverage({ passages: [{ ...entry, draft_paths: ["/runtime_contract/unknown"] }] }, source, draft, "")).toThrow("Draft pointer");
+  });
+
+  it("corrects false mechanical claims without editing rules and keeps genuine privacy concerns blocking", async () => {
+    const conversation = createModelAuthoringConversation(); conversation.policySources = approved("Three approvals per account.\nPrivate controls stay hidden.");
+    const draft = { runner_evidence: { tenant_field: "account_id", control_visible: true } }, before = JSON.stringify(draft);
+    const requests: string[] = [];
+    const requestJson = vi.fn(async (request: { body: unknown }) => {
+      requests.push(JSON.stringify(request.body));
+      return { status: 200, body: { output: [{ type: "function_call", name: "runner__review_policy_coverage", call_id: "coverage", arguments: JSON.stringify({ passages: [
+        { start: 1, end: 1, disposition: "implemented", interpretation: "Account scope uses the reviewed field.", topic: "Three approvals per account",
+          responsibility: "runner", draft_paths: ["/runner_evidence/tenant_field"], evidence_checks: [{ path: "/runner_evidence/tenant_field", equals: requests.length === 1 ? "tenant_id" : "account_id" }] },
+        { start: 2, end: 2, disposition: "conflict", interpretation: "The private control is still visible.", topic: "Private controls", responsibility: "operator",
+          draft_paths: ["/runner_evidence/control_visible"], next_step: "Revise Read privacy." },
+      ] }) }] } };
+    });
+    const report = await reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
+      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(requests[1]).toContain("Mechanical evidence mismatch");
+    expect(report.passages[0]!.evidence_checks![0]!.equals).toBe("account_id");
+    expect(report.passages[1]!.disposition).toBe("conflict");
+    expect(JSON.stringify(draft)).toBe(before);
+  });
+
+  it("corrects one prose-only coverage response without changing the draft", async () => {
+    const conversation = createModelAuthoringConversation(); conversation.policySources = approved("Three approvals per account.");
+    const draft = { limit: 3 }, requests: string[] = [];
+    const requestJson = vi.fn(async (request: { body: unknown }) => {
+      requests.push(JSON.stringify(request.body));
+      return { status: 200, body: { output: requests.length === 1
+        ? [{ type: "message", content: [{ type: "output_text", text: "The rule is prepared." }] }]
+        : [{ type: "function_call", name: "runner__review_policy_coverage", call_id: "coverage", arguments: JSON.stringify({ passages: [
+          { start: 1, end: 1, disposition: "implemented", interpretation: "Three approvals per account.", draft_paths: ["/limit"] },
+        ] }) }] } };
+    });
+    const report = await reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
+      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContain("prose alone cannot record a review");
+    expect(report.passages[0]!.disposition).toBe("implemented");
+    expect(draft).toEqual({ limit: 3 });
+  });
+
+  it.each([true, false])("bounds mechanical coverage rechecks without reusing stale success (second tool: %s)", async (submitted) => {
+    const conversation = createModelAuthoringConversation(); conversation.policySources = approved("Three approvals per account.");
+    const draft = { runner_evidence: { tenant_field: "account_id" } };
+    let calls = 0;
+    const requestJson = vi.fn(async () => {
+      calls++;
+      return { status: 200, body: { output: calls > 1 && !submitted ? [{ type: "message", content: [{ type: "output_text", text: "No tool result." }] }] : [
+        { type: "function_call", name: "runner__review_policy_coverage", call_id: "coverage", arguments: JSON.stringify({ passages: [
+          { start: 1, end: 1, disposition: calls === 1 ? "needs_decision" : "implemented", interpretation: "Uses the configured account binding.",
+            topic: "Account approval limit", responsibility: "runner", issue_kind: "coverage_link", draft_paths: ["/runner_evidence/tenant_field"] },
+        ] }) },
+      ] } };
+    });
+    const result = reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
+      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } });
+    if (submitted) expect((await result).passages[0]!.disposition).toBe("implemented");
+    else await expect(result).rejects.toThrow("provider did not submit");
+    expect(requestJson).toHaveBeenCalledTimes(2);
   });
 });

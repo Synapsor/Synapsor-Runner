@@ -41,7 +41,7 @@ export type BoundaryAuthoringChat = {
   actionPrompter: ActionControlPrompter;
   setModel(label: string): void;
   setPermissionGuide?(guide: BoundaryAuthoringPermissionGuide | undefined): void;
-  setSourceCommandHandler?(handler: (command: string, argument: string) => Promise<boolean>): void;
+  setSourceCommandHandler?(handler: (command: string, argument: string) => Promise<boolean>, hasDraft?: () => boolean): void;
   setSourceAnswerRecorder?(recorder: (answer: string) => Promise<void>): void;
   readLiteral?(prompt: string): Promise<string | undefined>;
   runner(title: string, lines?: string[], tone?: BoundaryAuthoringTone): void;
@@ -73,7 +73,7 @@ type ChoiceInput = {
 const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 32;
 const DEFAULT_TRANSCRIPT_STREAM_VISIBLE_CHARS = 14;
 const AUTHORING_SLASH_SUGGESTIONS: SlashCommandSuggestion[] = [
-  { label: "/attach", completion: "/attach", description: "Attach or replace complete .txt rules; preview and approve model transfer", argumentHint: "Enter previews this exact .txt path before model transfer" },
+  { label: "/attach", completion: "/attach", description: "Attach or replace complete .txt rules; preview and approve model transfer", argumentHint: "Enter opens transfer review; preview the text there before allowing it" },
   { label: "/rules", completion: "/rules", description: "View, paste, replace or remove this job's rules snapshot" },
   {
     label: "/details",
@@ -803,6 +803,7 @@ export function createBoundaryAuthoringChat(input: {
     return readAnswer();
   };
   let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean>) | undefined;
+  let sourceHasDraft: (() => boolean) | undefined;
   let sourceAnswerRecorder: ((answer: string) => Promise<void>) | undefined;
   const readAnswer = async (defaultValue?: string) => {
     finishLiveResponse();
@@ -843,7 +844,9 @@ export function createBoundaryAuthoringChat(input: {
           try {
             const changed = await sourceCommandHandler(command, trimmed!.slice(trimmed!.split(/\s+/u)[0]!.length).trim());
             sourceChanged ||= changed;
-            if (changed) checkpoint("Rules context changed", ["Describe how to use these rules for this same draft. Enter alone will not accept the old decision."], "normal");
+            if (changed) checkpoint("Rules context changed", [sourceHasDraft?.() || defaultValue
+              ? "Describe how to use these rules for this same draft. Enter alone will not accept the old decision."
+              : "What should the agent do using these rules? No Boundary has been drafted yet."], "normal");
           } catch (error) { checkpoint("Rules not changed", [safeTerminalText(error instanceof Error ? error.message : String(error))], "warning"); }
         }
         restorePendingQuestion();
@@ -883,8 +886,11 @@ export function createBoundaryAuthoringChat(input: {
         catch (error) { checkpoint("Answer not sent", [safeTerminalText(error instanceof Error ? error.message : String(error))], "warning"); continue; }
       }
       if (sourceChanged && answer !== undefined) {
-        if (!answer.trim()) { checkpoint("A decision is still needed", ["Describe how the changed rules should affect this draft, or press Esc to pause."], "normal"); continue; }
-        return `Use the updated attached-rules context for this same draft. Operator instruction: ${answer}`;
+        const revising = sourceHasDraft?.() || defaultValue;
+        if (!answer.trim()) { checkpoint("A decision is still needed", [revising
+          ? "Describe how the changed rules should affect this draft, or press Esc to pause."
+          : "Describe the agent's job using these rules, or press Esc to pause."], "normal"); continue; }
+        return revising ? `Use the updated attached-rules context for this same draft. Operator instruction: ${answer}` : answer;
       }
       return answer;
     }
@@ -1263,7 +1269,7 @@ export function createBoundaryAuthoringChat(input: {
     setPermissionGuide: (guide) => {
       permissionGuide = guide;
     },
-    setSourceCommandHandler: (handler) => { sourceCommandHandler = handler; },
+    setSourceCommandHandler: (handler, hasDraft) => { sourceCommandHandler = handler; sourceHasDraft = hasDraft; },
     setSourceAnswerRecorder: (recorder) => { sourceAnswerRecorder = recorder; },
     readLiteral: async (prompt) => {
       finishLiveResponse(); await livePending; io.clearStatus?.();
