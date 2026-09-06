@@ -2,6 +2,7 @@ import { PassThrough } from "node:stream";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Terminal } from "@xterm/headless";
 import { describe, expect, it, vi } from "vitest";
 import {
   createTerminalAnalyticsShellIo,
@@ -32,6 +33,92 @@ import type { BoundaryCatalogModel } from "./boundary-catalog.js";
 const digest = `sha256:${"a".repeat(64)}` as const;
 
 describe("Synapsor Analytics shell", () => {
+  it.each([[120, 30], [60, 12], [40, 6]])("erases transient conversation suggestions without cursor drift at %sx%s", async (columns, rows) => {
+    const terminal = new Terminal({ cols: columns, rows, scrollback: 1000, convertEol: true, allowProposedApi: true });
+    const readable = new PassThrough() as PassThrough & { isRaw: boolean; setRawMode(value: boolean): void };
+    readable.isRaw = false;
+    readable.setRawMode = (value) => { readable.isRaw = value; };
+    const writable = new PassThrough() as PassThrough & { columns: number; rows: number };
+    Object.assign(writable, { columns, rows });
+    writable.on("data", (chunk) => terminal.write(String(chunk)));
+    const flush = () => new Promise<void>((resolve) => terminal.write("", resolve));
+    const screen = () => Array.from({ length: terminal.buffer.active.length }, (_, index) =>
+      terminal.buffer.active.getLine(index)?.translateToString(true) ?? "").join("\n");
+    const suggestions = ["attach", "rules", "details", "diff", "exact", "help"].map((name) => ({
+      label: `/${name}`, completion: `/${name}`, description: `Show ${name} commands for this reviewed job`,
+    }));
+    // Start at the bottom, where printing a growing menu actually scrolls the terminal.
+    writable.write(Array.from({ length: rows }, (_, index) => `Prior conversation ${index}\r\n`).join(""));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true, slashSuggestions: suggestions });
+    let answer = io.readConversation!("you> ");
+    try {
+      for (const command of ["/attach", "/details", "/rules", "/help", "/attach"]) {
+        for (const character of command) {
+          readable.write(character);
+          await flush();
+        }
+        expect(screen()).toContain(command);
+        for (let remaining = command.length - 1; remaining >= 0; remaining--) {
+          readable.write("\u007f");
+          await flush();
+          expect(screen().match(/Show attach commands/gu)?.length ?? 0).toBeLessThanOrEqual(1);
+        }
+        expect(screen()).not.toContain("Show attach commands");
+        expect(screen()).not.toContain("Keep typing");
+        expect(screen()).not.toContain("Type more");
+        expect(screen()).not.toMatch(/Show (attach|rules|details|diff|exact|help)/u);
+        expect(screen()).toContain(`Prior conversation ${rows - 1}`);
+        const buffer = terminal.buffer.active;
+        expect(buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true).trimEnd()).toBe("  you>");
+        expect(buffer.cursorX).toBe(7);
+      }
+      readable.write("/details");
+      await flush();
+      readable.write("\u0015"); // Ctrl-U also dismisses the entire menu.
+      await flush();
+      expect(screen()).not.toContain("Show details commands");
+      readable.write("/rules\t\r");
+      await expect(answer).resolves.toBe("/rules");
+      await flush();
+      expect(screen()).not.toContain("Keep typing");
+      expect(screen().match(/you> \/rules/gu)).toHaveLength(1);
+      answer = io.readConversation!("you> ");
+      const message = "Describe customer access and keep private verification fields hidden. ".repeat(15);
+      readable.write(`\u001b[200~${message}\u001b[201~`);
+      await flush();
+      // A pasted message taller than the screen stays editable without leaving
+      // earlier input fragments or menus behind when cleared.
+      readable.write("\u0001\u0005\u0015"); // Home, End, Ctrl-U.
+      await flush();
+      expect(screen()).not.toContain("Describe customer");
+      expect(screen()).toContain(`Prior conversation ${rows - 1}`);
+      readable.write("/attach");
+      readable.emit("keypress", "", { name: "escape" });
+      await expect(answer).resolves.toBeUndefined();
+      await flush();
+      expect(screen()).not.toContain("Show attach commands");
+      expect(screen()).not.toContain("Keep typing");
+    } finally {
+      readable.emit("keypress", "", { name: "escape" });
+      await answer;
+      io.close();
+      await flush();
+      terminal.dispose();
+    }
+  });
+
+  it("windows a tall conversation around the cursor without truncating the submitted input", () => {
+    const value = "Review each customer's account history before proposing a bounded change. ".repeat(10);
+    for (const cursor of [0, Math.floor(value.length / 2), value.length]) {
+      const complete = renderConversationComposerFrame({ prompt: "you> ", value, cursor, columns: 40 });
+      const windowed = renderConversationComposerFrame({ prompt: "you> ", value, cursor, columns: 40, rows: 6 });
+      expect(windowed.inputLines).toEqual(complete.inputLines);
+      expect(windowed.lines).toHaveLength(5);
+      expect(windowed.lines[windowed.cursorRow]).toBe(complete.lines[complete.cursorRow]);
+      expect(windowed.cursorColumn).toBe(complete.cursorColumn);
+    }
+  });
+
   it("uses the available width for conversation input while preserving prompt alignment", () => {
     const value = "Help an authenticated telecom customer understand their own account, subscription, service line, recent usage, invoices, payments, preferences, and support cases without exposing another customer's data.";
     const frame = renderConversationComposerFrame({

@@ -2,6 +2,13 @@
 
 ## 1.8.0 (unreleased)
 
+### Conversation Input Redraw
+
+- Slash suggestions now clear in place when input is erased, submitted or
+  canceled. The composer tracks its actual cursor above the popup and keeps
+  long input and suggestions inside short terminals without duplicating menus
+  in scrollback or erasing earlier conversation.
+
 ### Rules Text And Clearer Reviews
 
 - Adds explicit `.txt` attachment/paste, complete local preview, version-bound

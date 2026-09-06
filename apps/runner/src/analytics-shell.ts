@@ -976,6 +976,7 @@ export function renderConversationComposerFrame(input: {
   value: string;
   cursor: number;
   columns?: number;
+  rows?: number;
   menu?: string;
 }): ConversationComposerFrame {
   const contentWidth = terminalContentWidth(input.columns);
@@ -1012,10 +1013,22 @@ export function renderConversationComposerFrame(input: {
     Array.from(cursorSegment.text).length,
     cursor - cursorSegment.start,
   ));
+  // Keep the active input and popup in the viewport. Painting more rows than
+  // the terminal owns would strand earlier suggestions in immutable scrollback.
+  const rowBudget = typeof input.rows === "number" && Number.isFinite(input.rows)
+    ? Math.max(1, Math.floor(input.rows) - 1)
+    : inputLines.length + menuLines.length;
+  const firstInputRow = Math.max(0, cursorRow - rowBudget + 1);
+  const visibleInput = inputLines.slice(firstInputRow, firstInputRow + rowBudget);
+  const menuBudget = Math.max(0, rowBudget - visibleInput.length);
+  const visibleMenu = menuLines.slice(0, menuBudget);
+  if (menuLines.length > menuBudget && menuBudget > 0) {
+    visibleMenu[menuBudget - 1] = padTerminalLine("Type more; Tab completes");
+  }
   return {
-    lines: [...inputLines, ...menuLines],
+    lines: [...visibleInput, ...visibleMenu],
     inputLines,
-    cursorRow,
+    cursorRow: cursorRow - firstInputRow,
     cursorColumn: 2 + promptWidth + cursorOffset,
   };
 }
@@ -1427,7 +1440,7 @@ export function createTerminalAnalyticsShellIo(input: {
     readlineCore.emitKeypressEvents(readable as NodeJS.ReadStream);
     const wasRaw = ttyInput.isRaw === true;
     const wasFlowing = readable.readableFlowing === true;
-    const renderer = createInPlaceTerminalRenderer(ttyOutput);
+    const renderer = createInPlaceTerminalRenderer(ttyOutput, { maxRows: () => ttyOutput.rows });
     let value: string[] = [];
     let cursor = 0;
     let pasteActive = false;
@@ -1451,6 +1464,7 @@ export function createTerminalAnalyticsShellIo(input: {
       value: currentValue(),
       cursor,
       columns: ttyOutput.columns,
+      rows: ttyOutput.rows,
       menu: slashCommands && !options?.literal
         ? renderSlashCommandSuggestionMenu(
             currentValue(),
@@ -1461,11 +1475,7 @@ export function createTerminalAnalyticsShellIo(input: {
     });
     const render = () => {
       const rendered = frame();
-      renderer.render(rendered.lines);
-      const rowsBack = rendered.lines.length - 1 - rendered.cursorRow;
-      readlineCore.cursorTo(ttyOutput, 0);
-      if (rowsBack > 0) readlineCore.moveCursor(ttyOutput, 0, -rowsBack);
-      readlineCore.cursorTo(ttyOutput, rendered.cursorColumn);
+      renderer.render(rendered.lines, { row: rendered.cursorRow, column: rendered.cursorColumn });
     };
     const finish = (answer: string | undefined) => {
       if (settled) return;

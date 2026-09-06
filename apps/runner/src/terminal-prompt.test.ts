@@ -87,6 +87,26 @@ describe("in-place terminal rendering", () => {
     );
   });
 
+  it("tracks the input cursor above a shrinking popup through repaint and clear", () => {
+    const output = new PassThrough() as WriteStream & PassThrough;
+    const chunks: string[] = [];
+    output.on("data", (chunk) => chunks.push(String(chunk)));
+    const renderer = createInPlaceTerminalRenderer(output);
+    renderer.render(["you> /", "attach", "details", "help"], { row: 0, column: 6 });
+    expect(chunks.join("")).toMatch(/\u001b\[3F\u001b\[7G$/u);
+    chunks.length = 0;
+    renderer.render(["you> /a", "attach"], { row: 0, column: 7 });
+    expect(chunks.join("")).toBe(
+      "\r\u001b[2Kyou> /a\r\n\u001b[2Kattach\r\n\u001b[2K\r\n\u001b[2K\u001b[3F\u001b[8G",
+    );
+    chunks.length = 0;
+    renderer.render(["you> first line", "     second line"], { row: 1, column: 9 });
+    expect(chunks.join("")).toMatch(/\u001b\[2F\u001b\[10G$/u);
+    chunks.length = 0;
+    renderer.clear();
+    expect(chunks.join("")).toBe("\u001b[1F\u001b[0J");
+  });
+
   it("keeps an oversized frame inside the terminal while retaining focus and controls", () => {
     const lines = [
       "TITLE",

@@ -129,6 +129,7 @@
     "@synapsor/spec": "workspace:*",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.20.0",
+    "@xterm/headless": "6.0.0",
     "esbuild": "0.28.1",
     "mermaid": "11.16.1",
     "pg": "^8.22.0",

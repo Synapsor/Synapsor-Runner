@@ -19,7 +19,7 @@ export type TerminalKeypress = {
 type PromptKey = TerminalKeypress;
 
 export type InPlaceTerminalRenderer = {
-  render(lines: string[]): void;
+  render(lines: string[], cursor?: { row: number; column: number }): void;
   clear(): void;
 };
 
@@ -123,21 +123,23 @@ export function createInPlaceTerminalRenderer(
   options: InPlaceTerminalRendererOptions = {},
 ): InPlaceTerminalRenderer {
   let renderedLines = 0;
+  let cursorRow = 0;
 
   const moveToFrameStart = () => {
-    if (renderedLines > 1) {
-      output.write(`\u001b[${renderedLines - 1}F`);
+    if (cursorRow > 0) {
+      output.write(`\u001b[${cursorRow}F`);
     } else {
       output.write("\r");
     }
   };
 
   return {
-    render(lines) {
+    render(lines, cursor) {
       const maxRows = options.maxRows?.();
       if (maxRows !== undefined && renderedLines > Math.max(1, Math.floor(maxRows))) {
         output.write("\u001b[2J\u001b[H");
         renderedLines = 0;
+        cursorRow = 0;
       }
       const visibleLines = fitTerminalFrameToRows(
         lines,
@@ -154,12 +156,23 @@ export function createInPlaceTerminalRenderer(
         if (index < targetLines - 1) output.write("\r\n");
       }
       renderedLines = targetLines;
+      cursorRow = targetLines - 1;
+      if (cursor) {
+        // The input may sit above a popup. Own its cursor position as well as
+        // the painted rows, including blank rows cleared from a larger frame.
+        const nextRow = Math.max(0, Math.min(visibleLines.length - 1, cursor.row));
+        const rowsBack = cursorRow - nextRow;
+        if (rowsBack > 0) output.write(`\u001b[${rowsBack}F`);
+        output.write(`\u001b[${Math.max(0, Math.trunc(cursor.column)) + 1}G`);
+        cursorRow = nextRow;
+      }
     },
     clear() {
       if (!renderedLines) return;
       moveToFrameStart();
       output.write("\u001b[0J");
       renderedLines = 0;
+      cursorRow = 0;
     },
   };
 }
