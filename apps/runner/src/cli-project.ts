@@ -17,6 +17,7 @@ import { envValue, firstDatabaseUrlPositional, isDatabaseUrl, optionalArg } from
 import { TrustedOperatorDecisionOverride } from "./operator-authority.js";
 import { resolveOperatorIdentity, type OperatorIdentityConfig } from "./operator-identity.js";
 import { type SynapsorProjectResolution } from "./project-resolution.js";
+import { readOperatorExecutionConfig } from "./control-policy-execution.js";
 
 export const activeProjectResolutionState: { current: SynapsorProjectResolution | undefined } = { current: undefined };
 
@@ -82,6 +83,12 @@ export function resolvedLocalStorePath(
   fallback = "./.synapsor/local.db",
 ): string {
   return optionalResolvedLocalStorePath(args) ?? configuredPath ?? fallback;
+}
+
+export function resolvedRuntimeStorePath(args: string[], configPath: string, configuredPath?: string): string {
+  const configured = configuredPath === ":memory:" ? configuredPath
+    : path.resolve(path.dirname(path.resolve(configPath)), configuredPath ?? ".synapsor/local.db");
+  return resolvedLocalStorePath(args, configured);
 }
 
 
@@ -201,9 +208,19 @@ export function missingLocalStoreError(storePath: string): Error {
 }
 
 
-export async function readRuntimeConfig(configPath: string): Promise<RuntimeConfig> {
+export async function readRuntimeConfig(
+  configPath: string,
+  options: { env?: NodeJS.ProcessEnv; storePath?: string } = {},
+): Promise<RuntimeConfig> {
   const parsed = await readJsonFileWithLocation<RuntimeConfig>(configPath, "Runner config");
-  const resolved = resolveRuntimeConfig(parsed, path.dirname(path.resolve(configPath)));
+  const directory = path.dirname(path.resolve(configPath));
+  const normalized = resolveRuntimeConfig(parsed, directory);
+  const resolved = (await readOperatorExecutionConfig({
+    projectRoot: normalized.action_rules?.project_root ?? normalized.production_explore?.project_root ?? directory,
+    config: normalized,
+    env: options.env,
+    storePath: options.storePath ?? path.resolve(directory, normalized.storage?.sqlite_path ?? ".synapsor/local.db"),
+  })).config;
   const validation = validateRunnerCapabilityConfig(resolved);
   if (!validation.ok) {
     const first = validation.errors[0]!;

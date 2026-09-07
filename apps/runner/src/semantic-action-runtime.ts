@@ -45,6 +45,7 @@ import {
 } from "./action-rule-authority.js";
 import { loadExploreAuditKey } from "./scoped-explore.js";
 import { borrowRuntimeControlPolicies } from "./control-policy-store.js";
+import { readOperatorExecutionConfig } from "./control-policy-execution.js";
 
 type SemanticFactSession = {
   fact_loader: ActionRuleFactLoaderAdapterV1;
@@ -185,14 +186,17 @@ export async function createOptionalActionRuleRuntimeServices(
       if (proposal.state !== "approved" && proposal.state !== "pending_worker") {
         return { execution: "human_review", source_database_changed: false };
       }
-      const eligibility = resolveSemanticSupervisedWorkerEligibility(input.config, activated, { phase: "queue" });
-      if (!eligibility.eligible || !eligibility.policy || !eligibility.action_boundary_digest) {
-        return { execution: "not_enabled", source_database_changed: false };
-      }
-      if (!input.store.enqueueWorkerProposal) {
-        return { execution: "held", source_database_changed: false };
-      }
       try {
+        const currentConfig = policyStore ? (await readOperatorExecutionConfig({
+          projectRoot, config: input.config, policyStore,
+        })).config : input.config;
+        const eligibility = resolveSemanticSupervisedWorkerEligibility(currentConfig, activated, { phase: "queue" });
+        if (!eligibility.eligible || !eligibility.policy || !eligibility.action_boundary_digest) {
+          return { execution: "not_enabled", source_database_changed: false };
+        }
+        if (!input.store.enqueueWorkerProposal) {
+          return { execution: "held", source_database_changed: false };
+        }
         await input.store.enqueueWorkerProposal({
           proposal_id: proposal.proposal_id,
           execution_mode: "supervised_worker",

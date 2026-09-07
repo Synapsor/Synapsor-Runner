@@ -25,6 +25,7 @@ import { assertNoActiveStoreLease, storeLeasePath } from "./store-lease.js";
 import { renderTerminalSql, terminalSyntaxColorEnabled } from "./terminal-syntax.js";
 import { withPreservedCleanup } from "./resource-lifecycle.js";
 import { hashReceipt } from "./writeback-domain.js";
+import { openProjectControlPolicies, borrowRuntimeControlPolicies, type BoundProjectPolicyStore } from "./control-policy-store.js";
 
 
 export async function storeStats(args: string[]): Promise<number> {
@@ -422,6 +423,55 @@ type SharedPostgresLedgerConnectedClient = SharedPostgresLedgerClient & {
   release(): void;
 };
 
+type GovernedBridge = { repository_id: string; deployment_id: string; project_id: string; writable: boolean };
+// A command-line flag is not evidence that this SQLite file came from the
+// selected PostgreSQL store. Only a live, bounded bridge callback registers it.
+const governedBridges = new Map<string, GovernedBridge>();
+
+function policyProjectRoot(config: RuntimeConfig | undefined, configPath: string): string {
+  return path.resolve(config?.action_rules?.project_root ?? config?.production_explore?.project_root ?? path.dirname(configPath));
+}
+
+export async function assertGovernedLocalRuntimeStore(input: {
+  args: string[]; config?: RuntimeConfig; configPath: string; storePath: string;
+  store?: ProposalStore; readOnly?: boolean;
+}): Promise<void> {
+  const projectRoot = policyProjectRoot(input.config, input.configPath);
+  const binding = await openProjectControlPolicies({ projectRoot, config: input.config ?? {} as RuntimeConfig, storePath: input.storePath });
+  if (!binding) return;
+  try {
+    if (input.config?.storage?.shared_postgres?.mode === "runtime_store") {
+      const bridge = governedBridges.get(path.resolve(input.storePath));
+      if (!input.args.includes(runtimeStoreBridgeFlag) || !bridge
+        || bridge.repository_id !== binding.repository_id || bridge.deployment_id !== binding.deployment_id
+        || bridge.project_id !== binding.project_id || (!input.readOnly && !bridge.writable)) {
+        throw Object.assign(new Error("POLICY_RUNTIME_BRIDGE_REQUIRED: the local ledger is not a live bridge of this project's configured control store."),
+          { code: "POLICY_RUNTIME_BRIDGE_REQUIRED" });
+      }
+    } else if (input.store) {
+      await borrowRuntimeControlPolicies(projectRoot, input.store);
+    }
+  } finally { await binding.close(); }
+}
+
+async function governedBridgeBinding(args: string[], config: RuntimeConfig, mirror: SharedPostgresLedgerMirror): Promise<BoundProjectPolicyStore | undefined> {
+  // Validate the actual bridge target, including explicit overrides, before
+  // restoring any ledger data. A migrated deployment cannot switch stores here.
+  return openProjectControlPolicies({ projectRoot: policyProjectRoot(config, runnerConfigPath(args)),
+    config: { ...config, storage: { ...config.storage, shared_postgres: {
+      ...config.storage?.shared_postgres, mode: "runtime_store", url_env: mirror.urlEnv, schema: mirror.schema,
+    } } }, storePath: resolvedLocalStorePath(args, config.storage?.sqlite_path) });
+}
+
+async function withGovernedBridge<T>(binding: BoundProjectPolicyStore | undefined, storePath: string, writable: boolean,
+  callback: (storePath: string) => Promise<T>): Promise<T> {
+  const key = path.resolve(storePath);
+  if (binding) governedBridges.set(key, { repository_id: binding.repository_id,
+    deployment_id: binding.deployment_id, project_id: binding.project_id, writable });
+  try { return await callback(storePath); }
+  finally { governedBridges.delete(key); }
+}
+
 
 export function assertNoRuntimeStoreForLocalMutation(config: RuntimeConfig | undefined, command: string, args: string[] = []): void {
   if (config?.storage?.shared_postgres?.mode !== "runtime_store") return;
@@ -470,7 +520,9 @@ export async function withSharedPostgresRuntimeStoreBridge<T>(
   callback: (storePath: string) => Promise<T>,
 ): Promise<T> {
   const mirror = sharedPostgresLedgerMirrorOptions(args, config);
-  const tempDir = await runtimeStoreTemporaryDirectory("synapsor-runtime-store-bridge-");
+  const binding = await governedBridgeBinding(args, config, mirror);
+  const tempDir = await runtimeStoreTemporaryDirectory("synapsor-runtime-store-bridge-")
+    .catch(async (error) => { await binding?.close(); throw error; });
   const storePath = path.join(tempDir, "local.db");
   try {
     return await withSharedPostgresLedgerMirrorLock(mirror, command, async () => {
@@ -487,7 +539,7 @@ export async function withSharedPostgresRuntimeStoreBridge<T>(
       let result: T | undefined;
       let originalError: unknown;
       try {
-        result = await callback(storePath);
+        result = await withGovernedBridge(binding, storePath, true, callback);
       } catch (error) {
         originalError = error;
       }
@@ -517,7 +569,7 @@ export async function withSharedPostgresRuntimeStoreBridge<T>(
       return result as T;
     });
   } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
+    try { await fs.rm(tempDir, { recursive: true, force: true }); } finally { await binding?.close(); }
   }
 }
 
@@ -529,7 +581,9 @@ export async function withSharedPostgresRuntimeStoreReadBridge<T>(
   callback: (storePath: string) => Promise<T>,
 ): Promise<T> {
   const mirror = sharedPostgresLedgerMirrorOptions(args, config);
-  const tempDir = await runtimeStoreTemporaryDirectory("synapsor-runtime-store-read-");
+  const binding = await governedBridgeBinding(args, config, mirror);
+  const tempDir = await runtimeStoreTemporaryDirectory("synapsor-runtime-store-read-")
+    .catch(async (error) => { await binding?.close(); throw error; });
   const storePath = path.join(tempDir, "local.db");
   try {
     let snapshot: Awaited<ReturnType<typeof fetchSharedPostgresRuntimeReadSnapshot>>;
@@ -568,9 +622,9 @@ export async function withSharedPostgresRuntimeStoreReadBridge<T>(
         source_database_changed: false,
       });
     }
-    return await callback(storePath);
+    return await withGovernedBridge(binding, storePath, false, callback);
   } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
+    try { await fs.rm(tempDir, { recursive: true, force: true }); } finally { await binding?.close(); }
   }
 }
 

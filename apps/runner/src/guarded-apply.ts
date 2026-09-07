@@ -15,9 +15,9 @@ import process from "node:process";
 import { requiredAttentionSinksHealthy } from "./attention-domain.js";
 import { operationalLog } from "./cli-logging.js";
 import { optionalArg } from "./cli-options.js";
-import { envWithDemoDefaults, operatorIdentityForDecision, readRuntimeConfig, redactConfig, requireLocalProposal, resolveProposalId, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
+import { envWithDemoDefaults, operatorIdentityForDecision, readRuntimeConfig, redactConfig, requireLocalProposal, resolveProposalId, resolvedRuntimeStorePath, runnerConfigPath } from "./cli-project.js";
 import { TrustedOperatorInvocation, trustedCliContext } from "./operator-authority.js";
-import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge, withoutSharedPostgresLedgerMirror } from "./store-shared.js";
+import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge, withoutSharedPostgresLedgerMirror } from "./store-shared.js";
 import { assertSemanticSupervisedWriterPosture, assertSupervisedPolicyApprovalCurrent, assertSupervisedWriterPosture, supervisedWorkerEligibilityCode, workerControlAllowsPolicy, workerPolicyError } from "./worker-policy.js";
 import { applyCommandHandlerProposal, applyHttpHandlerProposal, applySqlJob, executorConfig, findProposalCapability, formatApplyResult, formatHandlerApplyResult, loadSemanticProposalAuthority, loadSemanticRuntimeAuthority, logProposalWritebackOutcome, proposalExecutorName, semanticApprovalCapability, verifyStoredApprovalAuthority } from "./writeback-execution.js";
 
@@ -29,12 +29,14 @@ export async function authorizeConfiguredJobApply(
   storePath: string | undefined,
 ): Promise<void> {
   const config = await readRuntimeConfig(configPath);
+  if (storePath) await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath });
   if (!config.operator_identity) return;
   if (!storePath) {
     throw new Error("operator_identity requires --store for apply so the signed authorization can be bound to the proposal ledger");
   }
   const store = new ProposalStore(storePath);
   try {
+    await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, store });
     const proposal = requireLocalProposal(store, job.proposal_id);
     const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "apply" });
     store.recordOperatorAuthorization(job.proposal_id, identity, config.operator_identity.provider !== "dev_env");
@@ -89,13 +91,13 @@ export async function applyProposal(
   invocation: TrustedOperatorInvocation = {},
 ): Promise<number> {
   const configPath = runnerConfigPath(args);
-  const storePath = resolvedLocalStorePath(args);
   const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
   const runnerId = optionalArg(args, "--runner") ?? process.env.SYNAPSOR_RUNNER_ID ?? "local_runner";
   const workerAttempt = Number(optionalArg(args, "--worker-attempt") ?? "1");
   const workerExecutionMode = optionalArg(args, "--worker-execution-mode");
   const workerLeaseId = optionalArg(args, "--worker-lease-id");
   const config = await readRuntimeConfig(configPath);
+  const storePath = resolvedRuntimeStorePath(args, configPath, config.storage?.sqlite_path);
   assertLocalGovernanceMutationAllowed(config, "apply");
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(
@@ -106,6 +108,7 @@ export async function applyProposal(
     );
   }
   assertNoRuntimeStoreForLocalMutation(config, "apply", args);
+  await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath });
   if (sharedPostgresLedgerMirrorRequested(args, config)) {
     return withSharedPostgresLedgerMirror(
       args,
@@ -128,6 +131,7 @@ export async function applyProposal(
   }
   const store = new ProposalStore(storePath);
   try {
+    await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, store });
     const proposal = requireLocalProposal(store, resolvedProposalId);
     if (invocation.expectedProposalHash && proposal.proposal_hash !== invocation.expectedProposalHash) {
       throw new Error("PROPOSAL_CHANGED: reload the approved proposal before applying it.");

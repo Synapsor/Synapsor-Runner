@@ -365,7 +365,13 @@ describe("composed semantic Action runtime", () => {
     }
   });
 
-  it("queues an automatically approved outcome only under its exact supervised Action Boundary policy", async () => {
+  it.each([
+    { enabled: true, queue: true, expected: "queued" },
+    { enabled: false, queue: true, expected: "not_enabled" },
+    { enabled: false, queue: false, expected: "not_enabled" },
+    { enabled: true, queue: false, expected: "held" },
+    { enabled: undefined, queue: false, expected: "not_enabled" },
+  ])("uses legacy execution settings without a migration: $enabled/$queue -> $expected", async ({ enabled, queue, expected }) => {
     const store = new ProposalStore();
     const authority = authorityFixture("active", { automaticApproval: true, requiredApprovals: 2 });
     const activated = authority.registry.rules[0]!;
@@ -399,6 +405,9 @@ describe("composed semantic Action runtime", () => {
         }],
       },
     };
+    if (enabled === undefined) delete supervisedConfig.supervised_worker;
+    else supervisedConfig.supervised_worker!.enabled = enabled;
+    if (!queue) Object.defineProperty(store, "enqueueWorkerProposal", { value: undefined, configurable: true });
     const services = await createOptionalActionRuleRuntimeServices({
       projectRoot,
       config: supervisedConfig,
@@ -444,16 +453,16 @@ describe("composed semantic Action runtime", () => {
         subject_refs: { preference: subject!.ref },
       })).resolves.toMatchObject({
         proposal: { status: "approved" },
-        execution: "queued",
+        execution: expected,
         source_database_changed: false,
       });
-      expect(store.listWorkerQueue()).toEqual([
+      expect(store.listWorkerQueue()).toEqual(expected === "queued" ? [
         expect.objectContaining({
           execution_mode: "supervised_worker",
           contract_digest: activated.action_boundary_digest,
           status: "queued",
         }),
-      ]);
+      ] : []);
     } finally {
       store.close();
     }

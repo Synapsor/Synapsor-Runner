@@ -23,13 +23,14 @@ import { recordUnhealthySupervisionSinkAttention, requiredAttentionSinksHealthy,
 import { usage } from "./cli-help.js";
 import { operationalLog, safeOperationalErrorCode } from "./cli-logging.js";
 import { optionalArg, positional, positiveIntOption, runtimeStoreBridgeFlag, waitFor } from "./cli-options.js";
-import { confirmDangerousAction, openLocalStore, openLocalStoreAt, operatorIdentityForDecision, optionalRuntimeConfig, readRuntimeConfig, requireLocalProposal, resolveProposalIdFromStore, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
+import { confirmDangerousAction, openLocalStoreAt, operatorIdentityForDecision, optionalRuntimeConfig, readRuntimeConfig, requireLocalProposal, resolveProposalIdFromStore, resolvedRuntimeStorePath, runnerConfigPath } from "./cli-project.js";
 import { runnerProcessStartedAt } from "./cli-runtime.js";
 import { applyProposal } from "./guarded-apply.js";
 import { resolveOperatorIdentity, type OperatorIdentityConfig } from "./operator-identity.js";
-import { argsWithRuntimeStoreBridge, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge, withSharedPostgresRuntimeStoreReadBridge, withoutSharedPostgresLedgerMirror } from "./store-shared.js";
+import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge, withSharedPostgresRuntimeStoreReadBridge, withoutSharedPostgresLedgerMirror } from "./store-shared.js";
 import { assertSemanticSupervisedWriterPosture, assertSupervisedWriterPosture, currentSupervisedApprovalPolicy, workerControlAllowsPolicy, workerControlOperatorDecisionAction, workerPolicyError } from "./worker-policy.js";
 import { findProposalCapability, loadSemanticProposalAuthority, loadSemanticRuntimeAuthority } from "./writeback-execution.js";
+import { executionBindingDigest } from "./control-policy-execution.js";
 
 
 export async function workerCommand(args: string[]): Promise<number> {
@@ -55,8 +56,11 @@ async function workerStatus(args: string[]): Promise<number> {
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreReadBridge(args, config, "worker status", (bridgeStorePath) => workerStatus(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
-  const store = await openLocalStore(args);
+  const storePath = resolvedRuntimeStorePath(args, configPath, config?.storage?.sqlite_path);
+  await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, readOnly: true });
+  const store = await openLocalStoreAt(storePath);
   try {
+    await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath: store.path, store, readOnly: true });
     const status = optionalArg(args, "--status") as Parameters<ProposalStore["listWorkerQueue"]>[0];
     const items = store.listWorkerQueue(status);
     const control = store.workerControlState();
@@ -149,8 +153,11 @@ async function workerControlMutation(
     );
   }
   assertNoRuntimeStoreForLocalMutation(config, `worker ${action}`, args);
-  const store = await openLocalStoreAt(resolvedLocalStorePath(args, config.storage?.sqlite_path));
+  const storePath = resolvedRuntimeStorePath(args, configPath, config.storage?.sqlite_path);
+  await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath });
+  const store = await openLocalStoreAt(storePath);
   try {
+    await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, store });
     const controlTarget: WorkerControlTarget = { action, ...target };
     const current = store.workerControlState();
     const subject = workerControlDecisionSubject(current, controlTarget);
@@ -221,8 +228,11 @@ async function workerCancel(args: string[]): Promise<number> {
     );
   }
   assertNoRuntimeStoreForLocalMutation(config, "worker cancel", args);
-  const store = await openLocalStoreAt(resolvedLocalStorePath(args, config.storage?.sqlite_path));
+  const storePath = resolvedRuntimeStorePath(args, configPath, config.storage?.sqlite_path);
+  await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath });
+  const store = await openLocalStoreAt(storePath);
   try {
+    await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, store });
     const proposalId = resolveProposalIdFromStore(proposalReference, store);
     const proposal = requireLocalProposal(store, proposalId);
     const queue = store.getWorkerQueueItem(proposalId);
@@ -287,8 +297,11 @@ async function workerDeadLetterShow(args: string[]): Promise<number> {
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(args, config, `worker dead-letter show ${proposalId}`, (bridgeStorePath) => workerDeadLetterShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
-  const store = await openLocalStore(args);
+  const storePath = resolvedRuntimeStorePath(args, configPath, config?.storage?.sqlite_path);
+  await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, readOnly: true });
+  const store = await openLocalStoreAt(storePath);
   try {
+    await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath: store.path, store, readOnly: true });
     const item = store.getWorkerQueueItem(proposalId);
     if (!item) throw new Error(`worker queue item not found for ${proposalId}`);
     const proposal = requireLocalProposal(store, proposalId);
@@ -321,8 +334,11 @@ async function workerDeadLetterMutate(action: "requeue" | "discard", args: strin
     return withSharedPostgresRuntimeStoreBridge(args, config, `worker dead-letter ${action} ${proposalId}`, (bridgeStorePath) => workerDeadLetterMutate(action, argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
   assertNoRuntimeStoreForLocalMutation(config, `worker dead-letter ${action}`, args);
-  const store = await openLocalStore(args);
+  const storePath = resolvedRuntimeStorePath(args, configPath, config?.storage?.sqlite_path);
+  await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath });
+  const store = await openLocalStoreAt(storePath);
   try {
+    await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath: store.path, store });
     const proposal = requireLocalProposal(store, proposalId);
     await confirmDangerousAction(args, `${action === "requeue" ? "Requeue" : "Discard"} dead-letter item ${proposalId}?`);
     const identity = await operatorIdentityForDecision({
@@ -562,7 +578,8 @@ async function workerRun(args: string[]): Promise<number> {
     return withSharedPostgresRuntimeStoreBridge(args, config, "worker run", (bridgeStorePath) => workerRun(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
   assertNoRuntimeStoreForLocalMutation(config, "worker run", args);
-  const storePath = resolvedLocalStorePath(args, config.storage?.sqlite_path);
+  const storePath = resolvedRuntimeStorePath(args, configPath, config.storage?.sqlite_path);
+  await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath });
   if (sharedPostgresLedgerMirrorRequested(args, config)) {
     if (!args.includes("--once") && !args.includes("--drain")) {
       throw new Error("shared Postgres ledger mirror for worker run requires --once or --drain. Use storage.shared_postgres.mode=runtime_store for long-running shared worker loops.");
@@ -581,6 +598,7 @@ async function workerRun(args: string[]): Promise<number> {
   const tenant = optionalArg(args, "--tenant");
   const startupStore = new ProposalStore(storePath);
   try {
+    await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, store: startupStore });
     const environment = supervised ? config.supervised_worker?.profile ?? "unknown" : "unknown";
     startupStore.setRunnerState("attention_context", { environment });
     startupStore.recordAttentionEvent({
@@ -609,13 +627,27 @@ async function workerRun(args: string[]): Promise<number> {
   process.once("SIGTERM", stop);
   try {
     do {
+      // Refresh before both enqueue and claim. A changed source, identity or
+      // store binding requires a restart, not a hot switch of this worker.
+      const currentExecutionConfig = async () => {
+        const current = await readRuntimeConfig(configPath);
+        if (executionBindingDigest(current) !== executionBindingDigest(config)) {
+          throw workerPolicyError("WORKER_RUNTIME_BINDING_CHANGED", "Runtime bindings changed; restart the worker after review. No further proposal was claimed.");
+        }
+        return current;
+      };
+      const queueConfig = supervised ? await currentExecutionConfig() : config;
+      if (supervised && !queueConfig.supervised_worker?.enabled) return 0;
       const store = new ProposalStore(storePath);
       let item;
       let supervisedPolicy: RuntimeSupervisedWorkerPolicy | undefined;
       try {
+        await assertGovernedLocalRuntimeStore({ args, config: queueConfig, configPath, storePath, store });
         if (supervised) {
-          await enqueueApprovedForSupervisedWorker(store, config, configPath, { capability, tenant });
-          const claimed = await claimSupervisedWorkerItem(store, config, configPath, {
+          await enqueueApprovedForSupervisedWorker(store, queueConfig, configPath, { capability, tenant });
+          const claimConfig = await currentExecutionConfig();
+          if (!claimConfig.supervised_worker?.enabled) return 0;
+          const claimed = await claimSupervisedWorkerItem(store, claimConfig, configPath, {
             workerId,
             capability,
             tenant,

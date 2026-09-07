@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { assertValidRunnerCapabilityConfig } from "@synapsor-runner/config";
-import type { RuntimeConfig, RuntimeSupervisedWorkerConfig } from "@synapsor-runner/mcp-server";
+import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
 import type { ControlPolicyKey, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 import { MAX_ACTIVE_EXPLORATION_BOUNDARIES, assertStoredExplorationPolicy, explorationBoundaryCandidateDigest,
   type ActivatedExplorationBoundary, type ExplorationBoundaryDraft, type GenerationLock } from "./auto-boundary.js";
@@ -10,6 +9,9 @@ import { parseStoredActionRuleAuthority, type ActionRuleAuthorityActivationV1,
 import type { ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
 import { OPERATOR_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, OPERATOR_EXECUTION_POLICY_KEY,
   storedOperatorPolicyRecord } from "./control-policy-record.js";
+import { operatorExecutionDocument, parseOperatorExecutionPolicy,
+  type StoredOperatorExecutionPolicy } from "./control-policy-execution.js";
+export { encodeOperatorExecutionPolicy } from "./control-policy-execution.js";
 
 const VERSION = OPERATOR_POLICY_RECORD_VERSION;
 const name = z.string().min(1).max(256);
@@ -19,26 +21,15 @@ const readDocument = z.object({ schema_version: z.literal(VERSION), type: z.lite
   boundary: z.record(z.unknown()), generation_lock: z.record(z.unknown()) }).strict();
 const actionDocument = z.object({ schema_version: z.literal(VERSION), type: z.literal("action"),
   authority: z.record(z.unknown()) }).strict();
-const executionDocument = z.object({ schema_version: z.literal(VERSION), type: z.literal("execution"),
-  runtime_binding_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/u), policy: z.record(z.unknown()) }).strict();
-const document = z.discriminatedUnion("type", [readSelection, readDocument, actionDocument, executionDocument]);
+const document = z.discriminatedUnion("type", [readSelection, readDocument, actionDocument, operatorExecutionDocument]);
 const operator = { level: "operator" } as const;
 export const OPERATOR_READ_SELECTION = OPERATOR_READ_SELECTION_KEY;
 export const OPERATOR_EXECUTION_POLICY = OPERATOR_EXECUTION_POLICY_KEY;
 
 type ReadPolicy = { type: "read"; boundary: ExplorationBoundaryDraft | ActivatedExplorationBoundary; generation_lock: GenerationLock };
 type ActionPolicy = { type: "action"; authority: ActionRuleAuthorityDraftV1 | ActionRuleAuthorityActivationV1 };
-type ExecutionPolicy = { type: "execution"; runtime_binding_digest: string; policy: RuntimeSupervisedWorkerConfig };
-export type StoredOperatorAuthority = ReadPolicy | ActionPolicy | ExecutionPolicy | { type: "read_selection"; selected_name: string | null };
+export type StoredOperatorAuthority = ReadPolicy | ActionPolicy | StoredOperatorExecutionPolicy | { type: "read_selection"; selected_name: string | null };
 type ValidationContext = { runtimeConfig?: RuntimeConfig };
-
-/** Configuration bindings are checked, not copied into the policy store.
- * Secrets continue to resolve through the existing protected configuration. */
-export function encodeOperatorExecutionPolicy(config: RuntimeConfig): ControlPolicyRevision | undefined {
-  if (config.supervised_worker === undefined) return undefined;
-  return encodeOperatorAuthority({ type: "execution", policy: config.supervised_worker,
-    runtime_binding_digest: executionBindingDigest(config) }, { runtimeConfig: config });
-}
 
 /** Encodes exact validated authority. Actor/time, disabled state, generation
  * provenance and content identity survive independently of authority digests. */
@@ -116,13 +107,7 @@ function parseDocument(value: unknown, context: ValidationContext): StoredOperat
   const parsed = document.parse(value);
   if (parsed.type === "read_selection") return { type: parsed.type, selected_name: parsed.selected_name };
   if (parsed.type === "execution") {
-    if (!context.runtimeConfig) fail("POLICY_EXECUTION_CONTEXT_REQUIRED");
-    if (executionBindingDigest(context.runtimeConfig) !== parsed.runtime_binding_digest) fail("POLICY_EXECUTION_BINDING_CHANGED");
-    // Ignore the export's worker settings: validate the stored policy with the
-    // real source/identity/receipt/notification bindings and existing validator.
-    assertValidRunnerCapabilityConfig({ ...context.runtimeConfig, strict: true, supervised_worker: parsed.policy });
-    return { type: parsed.type, runtime_binding_digest: parsed.runtime_binding_digest,
-      policy: structuredClone(parsed.policy) as unknown as RuntimeSupervisedWorkerConfig };
+    return parseOperatorExecutionPolicy(parsed, context.runtimeConfig);
   }
   if (parsed.type === "action") {
     const authority = parseStoredActionRuleAuthority(parsed.authority);
@@ -147,11 +132,6 @@ function authorityDigest(policy: StoredOperatorAuthority): string {
   return policy.boundary.activation === "disabled_unreviewed"
     ? explorationBoundaryCandidateDigest(policy.boundary)
     : (policy.boundary as ActivatedExplorationBoundary).activation.digest;
-}
-
-function executionBindingDigest(config: RuntimeConfig): string {
-  const { supervised_worker: _exportedWorker, ...bindings } = config;
-  return canonicalJsonDigest(bindings);
 }
 
 function fail(code: string): never {

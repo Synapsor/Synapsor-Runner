@@ -5,11 +5,11 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { createProjectRuntimeStore } from "./control-policy-store.js";
+import { readRuntimeConfig } from "./cli-project.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import {
   createMcpRuntime,
   createSynapsorMcpServer,
-  loadRuntimeConfigFromFile,
   TrustedLocalToolPresentationChannel,
   type LocalToolPresentation,
   type McpRuntime,
@@ -269,17 +269,24 @@ function isMcpInputValidationRefusal(
 async function connectRuntimeSurface(input: {
   configPath: string;
   storePath: string;
+  projectRoot: string;
   env: NodeJS.ProcessEnv;
 }): Promise<ConnectedMcpSurface | undefined> {
-  const config = loadRuntimeConfigFromFile(input.configPath);
+  const config = await readRuntimeConfig(input.configPath, input);
   if ((config.capabilities?.length ?? 0) === 0) return undefined;
-  const runtime = createMcpRuntime(config, {
-    storePath: input.storePath,
-    env: input.env,
-  });
-  const localPresentation = new TrustedLocalToolPresentationChannel();
-  const server = createSynapsorMcpServer(runtime, { localPresentation });
-  return connectSurface("runtime", server, localPresentation, () => runtime.close());
+  const store = await createProjectRuntimeStore({ ...input, config });
+  let runtime: McpRuntime | undefined;
+  try {
+    runtime = createMcpRuntime(config, { store, env: input.env });
+    const localPresentation = new TrustedLocalToolPresentationChannel();
+    const server = createSynapsorMcpServer(runtime, { localPresentation });
+    return await connectSurface("runtime", server, localPresentation, async () => {
+      try { await runtime!.close(); } finally { await store.close(); }
+    });
+  } catch (error) {
+    try { await runtime?.close(); } finally { await store.close(); }
+    throw error;
+  }
 }
 
 async function connectAuthoringSurface(input: {
@@ -292,7 +299,7 @@ async function connectAuthoringSurface(input: {
   let subjectStore: ProposalRuntimeStore | undefined;
   try {
     const modelAuthorityMetadata = await readModelAuthorityMetadataMode(input.configPath);
-    const actionConfig = await optionalActionRuntimeConfig(input.projectRoot);
+    const actionConfig = await optionalActionRuntimeConfig(input);
     const selectedConfig = actionConfig ?? await authoringStoreConfig(input.configPath);
     subjectStore = await createProjectRuntimeStore({ projectRoot: input.projectRoot, config: selectedConfig ?? {} as RuntimeConfig,
       env: input.env, storePath: input.storePath });
@@ -381,7 +388,7 @@ async function connectSemanticActionSurface(input: {
   projectRoot: string;
   env: NodeJS.ProcessEnv;
 }): Promise<ConnectedMcpSurface | undefined> {
-  const config = await optionalActionRuntimeConfig(input.projectRoot);
+  const config = await optionalActionRuntimeConfig(input);
   if (!config) return undefined;
   const store = await createProjectRuntimeStore({ projectRoot: input.projectRoot, config,
     env: input.env, storePath: input.storePath });
@@ -421,20 +428,16 @@ async function connectSemanticActionSurface(input: {
 }
 
 async function optionalActionRuntimeConfig(
-  projectRoot: string,
-): Promise<ReturnType<typeof loadRuntimeConfigFromFile> | undefined> {
-  const configPath = path.join(path.resolve(projectRoot), "synapsor.actions.runner.json");
-  return optionalRuntimeConfig(configPath);
-}
-
-async function optionalRuntimeConfig(configPath: string): Promise<RuntimeConfig | undefined> {
+  input: { projectRoot: string; storePath: string; env: NodeJS.ProcessEnv },
+): Promise<RuntimeConfig | undefined> {
+  const configPath = path.join(path.resolve(input.projectRoot), "synapsor.actions.runner.json");
   try {
     await fs.access(configPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
-  return loadRuntimeConfigFromFile(configPath);
+  return readRuntimeConfig(configPath, input);
 }
 
 async function authoringStoreConfig(configPath: string): Promise<RuntimeConfig | undefined> {

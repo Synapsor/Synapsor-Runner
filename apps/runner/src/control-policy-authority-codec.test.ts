@@ -6,8 +6,10 @@ import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { createDefaultRuntimeStore, type RuntimeConfig } from "@synapsor-runner/mcp-server";
-import { ProposalStore } from "@synapsor-runner/proposal-store";
+import * as schemaInspector from "@synapsor-runner/schema-inspector";
+import { createDefaultRuntimeStore, resolveRuntimeConfig, subjectReferenceScopeFingerprints,
+  REQUEST_CHANGE_TOOL, type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import { migrateSharedPostgresRuntimeStore, ProposalStore } from "@synapsor-runner/proposal-store";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type { RuleVerificationBoundarySpecV1, DerivedEffectEnvelopeSpecV1, ActionRuleSpecV1 } from "@synapsor/spec";
 import { AUTO_BOUNDARY_OVERRIDES_VERSION, activateExplorationBoundary, buildAutoBoundary, deactivateExplorationBoundary,
@@ -21,6 +23,15 @@ import { OperatorAuthorityRepository } from "./control-policy-operator-repositor
 import { createOptionalActionRuleRuntimeServices, createOptionalReadActionRuleRuntimeServices } from "./semantic-action-runtime.js";
 import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 import { createScopedExploreRuntime } from "./scoped-explore.js";
+import { readOperatorExecutionConfig } from "./control-policy-execution.js";
+import { readRuntimeConfig } from "./cli-project.js";
+import * as cliProject from "./cli-project.js";
+import { workerCommand } from "./worker-runtime.js";
+import { applyProposal } from "./guarded-apply.js";
+import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, withSharedPostgresRuntimeStoreReadBridge } from "./store-shared.js";
+import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
+import { disableSemanticSupervisedExecution, enableSemanticSupervisedExecution,
+  previewSemanticSupervisedExecution, readSemanticSupervisedExecutionState, semanticExecutionConfirmation } from "./semantic-action-deployment.js";
 import { activateActionRuleAuthority, buildActionRuleAuthorityDraft, createActiveActionRuleAuthorityLoader,
   deactivateActionRuleAuthority, listActionRuleAuthorityDrafts, loadActiveActionRuleAuthority, readActionRuleAuthorityActivation,
   readActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, type ActionRuleAuthorityActivationV1 } from "./action-rule-authority.js";
@@ -169,6 +180,21 @@ describe("exact stored operator authority", () => {
     const noReceipts = executionConfig(); delete noReceipts.sources!.local_postgres!.receipts;
     expect(() => encodeOperatorExecutionPolicy(noReceipts)).toThrow();
   });
+
+  it("preserves legacy file-based execution enable and disable without implicitly migrating the project", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-legacy-execution-")); roots.push(projectRoot);
+    const config = executionConfig(); config.action_rules!.project_root = projectRoot;
+    const file = path.join(projectRoot, "synapsor.actions.runner.json");
+    for (const enabled of [true, false]) {
+      config.supervised_worker!.enabled = enabled;
+      await fs.writeFile(file, JSON.stringify(config));
+      expect((await readRuntimeConfig(file)).supervised_worker!.enabled).toBe(enabled);
+    }
+    await fs.writeFile(file, JSON.stringify({ ...config, supervised_worker: { enabled: "invalid" } }));
+    await expect(readRuntimeConfig(file)).rejects.toThrow("Invalid Runner config");
+    await expect(fs.stat(path.join(projectRoot, ".synapsor/control-policy/migration.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(path.join(projectRoot, ".synapsor/local.db"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
 });
 
 function executionConfig(): RuntimeConfig {
@@ -237,6 +263,261 @@ for (const backend of ["sqlite", "postgres"] as const) {
           actor: "reviewer", operation: "restore_exact_draft" });
         expect((await new OperatorAuthorityRepository(binding).current()).drafts[0]!.revision).toEqual(original.revisions[1]);
         expect(await binding.repository.history({ deployment_id: binding.deployment_id, key })).toHaveLength(3);
+      });
+    });
+
+    it("reads execution from the same repository, never from an edited export, and observes revocation", async () => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const draft = actionFixture(fixture());
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        await activateActionRuleAuthority({ projectRoot, name: draft.authority.name, expected_digest: draft.digest,
+          confirmation: `ACTIVATE ${draft.digest}`, actor: "operator" });
+        const config = executionConfig();
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        config.action_rules!.project_root = projectRoot;
+        config.supervised_worker!.outcomes![0]!.action_boundary_digest = draft.authority.action_boundary.digest;
+        const file = path.join(projectRoot, "synapsor.actions.runner.json");
+        await fs.writeFile(file, JSON.stringify(config));
+        // Even a valid, enabled export cannot create missing authority.
+        expect((await readRuntimeConfig(file)).supervised_worker).toBeUndefined();
+        const policy = decodeOperatorAuthority(encodeOperatorExecutionPolicy(config)!, { runtimeConfig: config });
+        const executor = new OperatorAuthorityRepository(binding, config);
+        const before = await executor.current();
+        await executor.commit({ expected_epoch: before.epoch, active: [{ key: OPERATOR_EXECUTION_POLICY, policy }],
+          actor: "operator", operation: "reviewed_execution" });
+        const forged = structuredClone(config);
+        forged.supervised_worker = { enabled: "invalid export", capabilities: "not authority" } as never;
+        await fs.writeFile(file, JSON.stringify(forged));
+        expect((await readRuntimeConfig(file)).supervised_worker).toEqual(config.supervised_worker);
+        if (backend === "sqlite") {
+          const wrongStore = path.join(projectRoot, "shadow.db");
+          for (const command of [
+            ["run", "--supervised", "--once", "--batch-quiet"], ["pause"], ["resume"], ["drain"],
+            ["disable", draft.authority.rules[0]!.rule.outcome, "--digest", draft.authority.action_boundary.digest],
+            ["revoke", draft.authority.rules[0]!.rule.outcome, "--digest", draft.authority.action_boundary.digest],
+            ["cancel", "latest"], ["dead-letter", "requeue", "missing"],
+          ]) {
+            await expect(workerCommand([...command, "--yes", "--config", file, "--store", wrongStore]))
+              .rejects.toMatchObject({ code: "POLICY_STORE_SELECTION_CHANGED" });
+          }
+          await expect(applyProposal(["--yes", "--config", file, "--store", wrongStore,
+            "--worker-execution-mode", "supervised_worker", "--worker-lease-id", "copied_lease"], "missing"))
+            .rejects.toMatchObject({ code: "POLICY_STORE_SELECTION_CHANGED" });
+          await expect(fs.stat(wrongStore)).rejects.toMatchObject({ code: "ENOENT" });
+          await fs.copyFile(path.join(projectRoot, "control.db"), wrongStore);
+          await expect(applyProposal(["--yes", "--config", file, "--store", wrongStore,
+            "--runtime-store-bridge", "--worker-execution-mode", "supervised_worker", "--worker-lease-id", "copied_lease"], "missing"))
+            .rejects.toMatchObject({ code: "POLICY_STORE_SELECTION_CHANGED" });
+        } else {
+          const forgedStore = path.join(projectRoot, "forged-bridge.db");
+          const args = ["--yes", "--config", file, "--store", forgedStore, "--runtime-store-bridge"];
+          await expect(workerCommand(["pause", ...args])).rejects.toMatchObject({ code: "POLICY_RUNTIME_BRIDGE_REQUIRED" });
+          await expect(applyProposal(args, "missing")).rejects.toMatchObject({ code: "POLICY_RUNTIME_BRIDGE_REQUIRED" });
+          await expect(workerCommand(["pause", "--yes", "--config", file, "--shared-ledger-schema", "other_store"]))
+            .rejects.toMatchObject({ code: "POLICY_STORE_SELECTION_CHANGED" });
+          await expect(fs.stat(forgedStore)).rejects.toMatchObject({ code: "ENOENT" });
+          // Inspection reads an existing ledger; it must not initialize one.
+          const pool = new Pool({ connectionString: process.env.SYNAPSOR_TEST_POSTGRES_URL });
+          try { await migrateSharedPostgresRuntimeStore(pool, config.storage!.shared_postgres!.schema!); }
+          finally { await pool.end(); }
+          let expiredPath = "";
+          const command = ["--config", file];
+          await withSharedPostgresRuntimeStoreReadBridge(command, config, "test read bridge", async (storePath) => {
+            expiredPath = storePath;
+            const input = { args: argsWithRuntimeStoreBridge(command, storePath), config, configPath: file, storePath };
+            await expect(assertGovernedLocalRuntimeStore({ ...input, readOnly: true })).resolves.toBeUndefined();
+            await expect(assertGovernedLocalRuntimeStore(input)).rejects.toMatchObject({ code: "POLICY_RUNTIME_BRIDGE_REQUIRED" });
+          });
+          await expect(assertGovernedLocalRuntimeStore({ args: argsWithRuntimeStoreBridge(command, expiredPath),
+            config, configPath: file, storePath: expiredPath, readOnly: true }))
+            .rejects.toMatchObject({ code: "POLICY_RUNTIME_BRIDGE_REQUIRED" });
+        }
+        const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+        try {
+          await expect(workerCommand(["status", "--config", file])).resolves.toBe(0);
+          await expect(workerCommand(["dead-letter", "show", "missing", "--config", file]))
+            .rejects.toThrow("worker queue item not found");
+        } finally { output.mockRestore(); }
+        const borrowed = await readOperatorExecutionConfig({ projectRoot, config: forged, policyStore: binding });
+        expect(borrowed.config.supervised_worker).toEqual(config.supervised_worker);
+        expect(borrowed.epoch).toBe(before.epoch + 1);
+        forged.sources!.local_postgres!.write_url_env = "UNREVIEWED_WRITER";
+        await expect(readOperatorExecutionConfig({ projectRoot, config: forged, policyStore: binding }))
+          .rejects.toMatchObject({ code: "POLICY_EXECUTION_BINDING_CHANGED" });
+        await executor.commit({ expected_epoch: borrowed.epoch!, active: [{ key: OPERATOR_EXECUTION_POLICY, policy: null }],
+          actor: "operator", operation: "revoke_execution" });
+        expect((await readRuntimeConfig(file)).supervised_worker).toBeUndefined();
+        expect((await readOperatorExecutionConfig({ projectRoot, config, policyStore: binding })).config.supervised_worker).toBeUndefined();
+        expect((await binding.repository.history({ deployment_id: binding.deployment_id, key: OPERATOR_EXECUTION_POLICY }))).toHaveLength(1);
+      });
+    });
+
+    it("opens fixed-tool Ask with stored execution despite an invalid worker export and checks the selected store", async () => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const source = fixture(); const draft = actionFixture(source);
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        await activateActionRuleAuthority({ projectRoot, name: draft.authority.name, expected_digest: draft.digest,
+          confirmation: `ACTIVATE ${draft.digest}`, actor: "operator" });
+        const config = executionConfig();
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        config.action_rules!.project_root = projectRoot;
+        config.supervised_worker!.outcomes![0]!.action_boundary_digest = draft.authority.action_boundary.digest;
+        const executor = new OperatorAuthorityRepository(binding, config);
+        await executor.commit({ expected_epoch: (await executor.current()).epoch,
+          active: [{ key: OPERATOR_EXECUTION_POLICY,
+            policy: decodeOperatorAuthority(encodeOperatorExecutionPolicy(config)!, { runtimeConfig: config }) }],
+          actor: "operator", operation: "reviewed_execution" });
+        const file = path.join(projectRoot, "synapsor.actions.runner.json");
+        await fs.writeFile(file, JSON.stringify({ ...config, supervised_worker: { enabled: "invalid export" } }));
+        await fs.writeFile(path.join(projectRoot, ".synapsor/explore-audit.key"), Buffer.alloc(32, 7).toString("base64url"), { mode: 0o600 });
+        const inspect = vi.spyOn(schemaInspector, "inspectDatabase").mockResolvedValue(source.inspection);
+        const env = { TEST_POLICY_URL: process.env.SYNAPSOR_TEST_POSTGRES_URL,
+          DATABASE_URL: "postgresql://fixture.invalid/not-used", SYNAPSOR_TENANT_ID: "tenant-a", SYNAPSOR_PRINCIPAL: "maya" };
+        try {
+          const input = { configPath: file, projectRoot, storePath: path.join(projectRoot, "control.db"), env };
+          const gateway = await createWorkbenchAskMcpGateway(input);
+          try {
+            expect((await gateway.listTools()).map((tool) => tool.name).sort())
+              .toEqual(["app.describe_actions", "app.describe_data", "app.explore_data", "app.request_change"]);
+            const described = await gateway.callTool("app.describe_actions", {});
+            expect(described.ok).toBe(true);
+            expect(JSON.stringify(described.value)).toContain("inventory.replenish");
+          } finally { await gateway.close(); }
+          if (backend === "sqlite") {
+            inspect.mockClear();
+            const wrongStore = path.join(projectRoot, "shadow-ask.db");
+            await expect(createWorkbenchAskMcpGateway({ ...input, storePath: wrongStore }))
+              .rejects.toMatchObject({ code: "POLICY_STORE_SELECTION_CHANGED" });
+            expect(inspect).not.toHaveBeenCalled();
+            await expect(fs.stat(wrongStore)).rejects.toMatchObject({ code: "ENOENT" });
+          }
+        } finally { inspect.mockRestore(); }
+      });
+    });
+
+    it("publishes execution only through exact writer review and preserves revocation across stale exports and reviews", async () => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const source = fixture(); const draft = actionFixture(source);
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        await activateActionRuleAuthority({ projectRoot, name: draft.authority.name, expected_digest: draft.digest,
+          confirmation: `ACTIVATE ${draft.digest}`, actor: "operator" });
+        const config = executionConfig(); delete config.supervised_worker;
+        config.action_rules!.project_root = "./";
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        const file = path.join(projectRoot, "synapsor.actions.runner.json");
+        await fs.writeFile(file, JSON.stringify(config));
+        const inspection = structuredClone(source.inspection);
+        inspection.current_user = "inventory_writer";
+        inspection.role_posture!.read_only = false;
+        inspection.role_posture!.writable_relations = ["inventory.items"];
+        inspection.tables[0]!.role_posture!.privileges.update = true;
+        const input = { projectRoot, outcome: "inventory.replenish", profile: "staging" as const, writeUrlEnv: "WRITER_URL",
+          env: { ...process.env, WRITER_URL: "postgresql://never-open-this-test-url" }, inspect: async () => inspection };
+        const preview = await previewSemanticSupervisedExecution(input);
+        expect(preview.policy_epoch).toBeDefined();
+        const enable = { ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
+          expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
+          confirmation: semanticExecutionConfirmation(preview) };
+        await expect(enableSemanticSupervisedExecution({ ...enable, confirmation: "yes" })).rejects.toThrow("EXECUTION_CONFIRMATION_REQUIRED");
+        expect(await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY)).toBeUndefined();
+        await enableSemanticSupervisedExecution(enable);
+        const active = await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY);
+        expect(active).toBeDefined();
+        const exported = JSON.parse(await fs.readFile(file, "utf8")) as RuntimeConfig;
+        expect(decodeOperatorAuthority(active!, { runtimeConfig: resolveRuntimeConfig(exported, projectRoot) }))
+          .toMatchObject({ type: "execution", policy: { enabled: true } });
+        exported.supervised_worker!.enabled = false;
+        await fs.writeFile(file, JSON.stringify(exported));
+        expect((await readSemanticSupervisedExecutionState({ projectRoot })).enabled).toBe(true);
+        await disableSemanticSupervisedExecution({ projectRoot, outcome: input.outcome,
+          expectedActionBoundaryDigest: draft.authority.action_boundary.digest });
+        exported.supervised_worker!.enabled = true;
+        await fs.writeFile(file, JSON.stringify(exported));
+        expect((await readRuntimeConfig(file)).supervised_worker!.enabled).toBe(false);
+        await expect(enableSemanticSupervisedExecution(enable)).rejects.toThrow("SEMANTIC_ACTION_CONFIG_CHANGED");
+        const newReview = await previewSemanticSupervisedExecution(input);
+        const beforeRace = await fs.readFile(file, "utf8");
+        await expect(enableSemanticSupervisedExecution({ ...enable,
+          expectedConfigDigest: newReview.current_config_digest,
+          inspect: async () => { await deactivateExplorationBoundary(projectRoot); return inspection; } }))
+          .rejects.toThrow("SEMANTIC_ACTION_CONFIG_CHANGED");
+        expect(await fs.readFile(file, "utf8")).toBe(beforeRace);
+        expect((await readSemanticSupervisedExecutionState({ projectRoot })).enabled).toBe(false);
+        expect(await binding.repository.history({ deployment_id: binding.deployment_id, key: OPERATOR_EXECUTION_POLICY })).toHaveLength(2);
+      });
+    });
+
+    it("refreshes execution in a long-running client between approved requests without claiming completion", async () => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const draft = actionFixture(fixture(), true);
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        await activateActionRuleAuthority({ projectRoot, name: draft.authority.name, expected_digest: draft.digest,
+          confirmation: `ACTIVATE ${draft.digest}`, actor: "operator" });
+        const config = executionConfig();
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        config.action_rules!.project_root = projectRoot;
+        config.supervised_worker!.outcomes![0]!.action_boundary_digest = draft.authority.action_boundary.digest;
+        const store = createDefaultRuntimeStore(config, process.env, path.join(projectRoot, "control.db"));
+        const key = Buffer.alloc(32, 71);
+        const env = { ...process.env, SYNAPSOR_TENANT_ID: "tenant_one", SYNAPSOR_PRINCIPAL: "principal_one" };
+        let id = "item_1";
+        try {
+          const runtime = await createOptionalActionRuleRuntimeServices({ projectRoot, config, store, key, env,
+            deployment_scope: "inventory_test", workflow_session_id: "execution_refresh",
+            factSessionFactory: async () => ({ fact_loader: { engine: "postgres",
+              load: async () => [{ id, tenant_id: "tenant_one", principal_id: "principal_one", quantity: 1, version: 1 }] },
+              close: async () => undefined }) });
+          const rule = runtime!.authority.registry.rules[0]!;
+          const scope = subjectReferenceScopeFingerprints({ key, deployment_scope: runtime!.deployment_scope,
+            source_id: rule.compiled.source, tenant: "tenant_one", principal: "principal_one" });
+          const request = async (nextId: string) => {
+            id = nextId;
+            const [subject] = await runtime!.subjectReferences.issue({ source_id: rule.compiled.source,
+              read_boundary_digest: rule.read_boundary_digest, generation_lock_fingerprint: rule.compiled.generation_lock_fingerprint,
+              ...scope, workflow_session_id: runtime!.workflow_session_id, resource: "inventory.items",
+              evidence_bundle_id: `evidence_${id}`, observations: [{ row_index: 0, primary_key_value: id, observed_version_value: 1 }] });
+            return runtime!.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: rule.compiled.outcome,
+              subject_refs: { item: subject!.ref } });
+          };
+          const enqueue = store.enqueueWorkerProposal;
+          store.enqueueWorkerProposal = undefined;
+          await expect(request("item_1")).resolves.toMatchObject({ proposal: { status: "approved" }, execution: "not_enabled", source_database_changed: false });
+          store.enqueueWorkerProposal = enqueue;
+          const policies = new OperatorAuthorityRepository(binding, config);
+          const policy = decodeOperatorAuthority(encodeOperatorExecutionPolicy(config)!, { runtimeConfig: config });
+          await policies.commit({ expected_epoch: (await policies.current()).epoch,
+            active: [{ key: OPERATOR_EXECUTION_POLICY, policy }], actor: "operator", operation: "enable_execution" });
+          await expect(request("item_2")).resolves.toMatchObject({ proposal: { status: "approved" }, execution: "queued", source_database_changed: false });
+          expect(await store.listWorkerQueue!()).toEqual([expect.objectContaining({ status: "queued", attempts: 0 })]);
+          const file = path.join(projectRoot, "synapsor.actions.runner.json");
+          await fs.writeFile(file, JSON.stringify(config));
+          const read = cliProject.readRuntimeConfig;
+          let reads = 0;
+          const reader = vi.spyOn(cliProject, "readRuntimeConfig").mockImplementation(async (...args) => {
+            reads++;
+            // PostgreSQL includes one outer read before entering its actual
+            // serialized ledger bridge. Revoke immediately before claim.
+            if (reads === (backend === "postgres" ? 4 : 3)) {
+              await policies.commit({ expected_epoch: (await policies.current()).epoch,
+                active: [{ key: OPERATOR_EXECUTION_POLICY, policy: null }], actor: "operator", operation: "revoke_execution" });
+            }
+            return read(...args);
+          });
+          const claim = vi.spyOn(ProposalStore.prototype, "claimWorkerItem");
+          try {
+            expect(await workerCommand(["run", "--supervised", "--once", "--yes", "--batch-quiet",
+              "--config", file, "--store", path.join(projectRoot, "control.db")])).toBe(0);
+            expect(reads).toBe(backend === "postgres" ? 4 : 3);
+            expect(claim).not.toHaveBeenCalled();
+          } finally { reader.mockRestore(); claim.mockRestore(); }
+          expect((await store.listWorkerQueue!()).every((item) => item.status === "queued" && item.attempts === 0)).toBe(true);
+          expect(await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY)).toBeUndefined();
+          store.enqueueWorkerProposal = undefined;
+          await expect(request("item_3")).resolves.toMatchObject({ proposal: { status: "approved" }, execution: "not_enabled", source_database_changed: false });
+          const proposals = await store.listProposals!();
+          expect(proposals).toHaveLength(3);
+          for (const proposal of proposals) expect(await store.receipts(proposal.proposal_id)).toEqual([]);
+        } finally { await store.close(); }
       });
     });
 
@@ -477,7 +758,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
   });
 }
 
-function actionFixture(source: ReturnType<typeof fixture>) {
+function actionFixture(source: ReturnType<typeof fixture>, automaticApproval = false) {
   const idType = { kind: "string", max_length: 64, comparison: "exact" } as const;
   const quantityType = { kind: "integer" } as const;
   const fingerprint = source.boundary.generation_lock_fingerprint;
@@ -509,6 +790,14 @@ function actionFixture(source: ReturnType<typeof fixture>) {
     effect: { operation: "update", target_resource: "inventory.items", target_binding: "item",
       set: { quantity: { kind: "literal", value: 5, value_type: quantityType } } }, approval_class: "inventory.review", ttl_seconds: 300 };
   return buildActionRuleAuthorityDraft({ name: "inventory_actions", action_boundary_name: "inventory_changes", catalog,
+    ...(automaticApproval ? { approval_classes: [{ name: "inventory.review", mode: "policy" as const,
+      required_role: "inventory_reviewer", required_approvals: 1,
+      rules: [{ outcome: rule.outcome, auto_approve_when: structuredClone(rule.require) }], shared_limits: [
+        { id: "inventory_action_limit", kind: "count" as const, scope: "capability" as const,
+          maximum: 10, window_seconds: 86_400, capability: rule.outcome },
+        { id: "inventory_customer_limit", kind: "count" as const, scope: "tenant_principal" as const,
+          maximum: 10, window_seconds: 86_400, capability: rule.outcome },
+      ] }] } : {}),
     rules: [{ read_boundary_name: source.boundary.pack.name, read_boundary_digest: source.boundary.activation.digest,
       verification_boundary: verification, effect_envelope: envelope, rule }], reviews: [{ outcome: rule.outcome,
       when: "Stock is below five.", then: "Set stock to five.", refused: ["Stock is already sufficient."],

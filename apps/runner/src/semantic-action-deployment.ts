@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   loadRuntimeConfigFromFile,
+  resolveRuntimeConfig,
   type RuntimeConfig,
   type RuntimeSupervisedWorkerOutcomePolicy,
 } from "@synapsor-runner/mcp-server";
@@ -14,6 +16,7 @@ import {
 import process from "node:process";
 import {
   activateActionRuleAuthority,
+  createActiveActionRuleAuthorityLoader,
   loadActiveActionRuleAuthority,
   type ActionRuleAuthorityActivationV1,
   type ActionRuleAuthorityDraftV1,
@@ -22,6 +25,10 @@ import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { bindSemanticReadScope } from "./semantic-action-read-scope.js";
 import { SemanticWriterPostureError } from "./semantic-execution-setup.js";
+import { encodeOperatorExecutionPolicy, readOperatorExecutionConfig } from "./control-policy-execution.js";
+import { OPERATOR_EXECUTION_POLICY_KEY } from "./control-policy-record.js";
+import { commitImmutableControlPolicies, openProjectControlPolicies,
+  type BoundProjectPolicyStore } from "./control-policy-store.js";
 
 export const SEMANTIC_ACTION_RUNTIME_CONFIG = "synapsor.actions.runner.json";
 
@@ -46,6 +53,7 @@ export type SemanticSupervisedExecutionPreview = {
   allowed_relations: string[];
   policy: RuntimeSupervisedWorkerOutcomePolicy;
   config: Record<string, unknown>;
+  policy_epoch?: number;
 };
 
 export type SemanticSupervisedExecutionState = {
@@ -181,7 +189,8 @@ export async function previewSemanticSupervisedExecution(input: {
       `SEMANTIC_ACTION_CONFIG_REQUIRED: activate proposal authority first so ${projectRelativePath(projectRoot, configPath)} can be reviewed for execution.`,
     );
   }
-  const currentConfig = await readJsonObject(configPath);
+  const currentReview = await executionConfigForReview(projectRoot, configPath, await readJsonObject(configPath), undefined, env);
+  const currentConfig = currentReview.config;
   const source = currentConfigSource(currentConfig, activated.compiled.source);
   const inspection = await (input.inspect ?? inspectDatabase)({
     engine: source.engine as "postgres" | "mysql",
@@ -219,7 +228,7 @@ export async function previewSemanticSupervisedExecution(input: {
     outcome: input.outcome,
     action_boundary_digest: active.authority.action_boundary.digest,
     config_path: projectRelativePath(projectRoot, configPath),
-    current_config_digest: canonicalJsonDigest(JSON.parse(currentText)),
+    current_config_digest: currentReview.digest,
     profile: input.profile,
     source: activated.compiled.source,
     target: `${activated.compiled.target_resource.schema}.${activated.compiled.target_resource.table}`,
@@ -230,6 +239,7 @@ export async function previewSemanticSupervisedExecution(input: {
     allowed_relations: assessment.allowed_relations,
     policy,
     config: nextConfig,
+    ...(currentReview.epoch === undefined ? {} : { policy_epoch: currentReview.epoch }),
   };
 }
 
@@ -262,10 +272,10 @@ export async function enableSemanticSupervisedExecution(input: {
   if (input.confirmation !== expectedConfirmation) {
     throw new Error(`SEMANTIC_ACTION_EXECUTION_CONFIRMATION_REQUIRED: enter ${expectedConfirmation}.`);
   }
-  await writePrivateTextAtomic(
-    path.resolve(input.configPath ?? path.join(path.resolve(input.projectRoot), SEMANTIC_ACTION_RUNTIME_CONFIG)),
-    `${JSON.stringify(preview.config, null, 2)}\n`,
-  );
+  await publishReviewedExecutionConfig({ projectRoot: path.resolve(input.projectRoot),
+    configPath: path.resolve(input.configPath ?? path.join(path.resolve(input.projectRoot), SEMANTIC_ACTION_RUNTIME_CONFIG)),
+    config: preview.config, expectedDigest: preview.current_config_digest, expectedEpoch: preview.policy_epoch,
+    expectedActionDigest: preview.action_boundary_digest, operation: "enable_reviewed_execution", env: input.env });
   return preview;
 }
 
@@ -288,7 +298,7 @@ export async function readSemanticSupervisedExecutionState(input: {
   if (text === undefined) {
     return { enabled: false, config_path: projectRelativePath(projectRoot, configPath), policies: [] };
   }
-  const config = await readJsonObject(configPath);
+  const { config } = await executionConfigForReview(projectRoot, configPath, await readJsonObject(configPath));
   const worker = isRecord(config.supervised_worker) ? config.supervised_worker : undefined;
   const policies = Array.isArray(worker?.outcomes)
     ? worker.outcomes.filter(isRecord).map((entry) => entry as RuntimeSupervisedWorkerOutcomePolicy)
@@ -311,11 +321,12 @@ export async function disableSemanticSupervisedExecution(input: {
     input.configPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG),
   );
   assertContainedProjectPath(projectRoot, configPath);
-  const active = await loadActiveActionRuleAuthority(projectRoot);
+  const active = await loadActiveActionRuleAuthority(projectRoot, { dependency_check: "report" });
   if (active.authority.action_boundary.digest !== input.expectedActionBoundaryDigest) {
     throw new Error("SEMANTIC_ACTION_AUTHORITY_CHANGED: the active Action Boundary changed; review execution again.");
   }
-  const config = await readJsonObject(configPath);
+  const review = await executionConfigForReview(projectRoot, configPath, await readJsonObject(configPath));
+  const config = review.config;
   const worker = isRecord(config.supervised_worker)
     ? structuredClone(config.supervised_worker)
     : undefined;
@@ -330,8 +341,87 @@ export async function disableSemanticSupervisedExecution(input: {
   worker.enabled = capabilities.length > 0 || outcomes.length > 0;
   config.supervised_worker = worker;
   await validateRuntimeConfig(config, configPath);
-  await writePrivateTextAtomic(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  await publishReviewedExecutionConfig({ projectRoot, configPath, config, expectedDigest: review.digest,
+    expectedEpoch: review.epoch, expectedActionDigest: input.expectedActionBoundaryDigest, operation: "disable_reviewed_execution" });
   return readSemanticSupervisedExecutionState({ projectRoot, configPath });
+}
+
+async function executionConfigForReview(projectRoot: string, configPath: string, raw: Record<string, unknown>,
+  policyStore?: BoundProjectPolicyStore, env?: NodeJS.ProcessEnv) {
+  const reviewed = await readOperatorExecutionConfig({ projectRoot,
+    config: resolveRuntimeConfig(raw as RuntimeConfig, path.dirname(configPath)), policyStore, env,
+    storePath: path.resolve(path.dirname(configPath), (raw as RuntimeConfig).storage?.sqlite_path ?? ".synapsor/local.db") });
+  if (reviewed.epoch === undefined) return { config: raw, digest: canonicalJsonDigest(raw) };
+  const config = structuredClone(raw);
+  delete config.supervised_worker;
+  if (reviewed.config.supervised_worker) config.supervised_worker = reviewed.config.supervised_worker;
+  return { config, epoch: reviewed.epoch, digest: canonicalJsonDigest({ config, policy_epoch: reviewed.epoch }) };
+}
+
+/** Internal persistence after exact operator confirmation. Store CAS also
+ * covers Read/Action revocation during writer inspection; exports grant nothing. */
+async function publishReviewedExecutionConfig(input: {
+  projectRoot: string; configPath: string; config: Record<string, unknown>;
+  expectedDigest: string; expectedEpoch?: number; expectedActionDigest: string;
+  operation: "enable_reviewed_execution" | "disable_reviewed_execution"; env?: NodeJS.ProcessEnv;
+}): Promise<void> {
+  const previous = await fs.readFile(input.configPath, "utf8");
+  const previousConfig = resolveRuntimeConfig(JSON.parse(previous) as RuntimeConfig, path.dirname(input.configPath));
+  const binding = await openProjectControlPolicies({ projectRoot: input.projectRoot, config: previousConfig, env: input.env,
+    storePath: path.resolve(path.dirname(input.configPath), previousConfig.storage?.sqlite_path ?? ".synapsor/local.db") });
+  const nextText = `${JSON.stringify(input.config, null, 2)}\n`;
+  if (!binding) {
+    if (input.expectedEpoch !== undefined) throw new Error("POLICY_REPOSITORY_MISSING: review execution again.");
+    await writePrivateTextAtomic(input.configPath, nextText);
+    return;
+  }
+  try {
+    const review = await executionConfigForReview(input.projectRoot, input.configPath, JSON.parse(previous), binding);
+    if (review.epoch !== input.expectedEpoch || review.digest !== input.expectedDigest) {
+      throw new Error("SEMANTIC_ACTION_CONFIG_CHANGED: reviewed policy or runtime bindings changed; review execution again.");
+    }
+    const active = await createActiveActionRuleAuthorityLoader(input.projectRoot, binding)({
+      dependency_check: input.operation === "disable_reviewed_execution" ? "report" : "all",
+    });
+    if (active.authority.action_boundary.digest !== input.expectedActionDigest) {
+      throw new Error("SEMANTIC_ACTION_AUTHORITY_CHANGED: review execution again.");
+    }
+    const config = resolveRuntimeConfig(input.config as RuntimeConfig, path.dirname(input.configPath));
+    if (canonicalJsonDigest(config.storage ?? null) !== canonicalJsonDigest(previousConfig.storage ?? null)) {
+      throw new Error("POLICY_STORE_MISMATCH: execution review cannot change the control store.");
+    }
+    const revision = encodeOperatorExecutionPolicy(config);
+    if (!revision) throw new Error("POLICY_EXECUTION_CONTEXT_REQUIRED: no reviewed execution configuration was prepared.");
+    if (config.supervised_worker?.enabled) {
+      for (const outcome of config.supervised_worker.outcomes ?? []) {
+        if (outcome.action_boundary_digest !== active.authority.action_boundary.digest
+          || !active.registry.rules.some((rule) => rule.compiled.outcome === outcome.outcome)) {
+          throw new Error("POLICY_EXECUTION_AUTHORITY_STALE: review every affected execution outcome again.");
+        }
+      }
+    }
+    // Publish new source bindings first: until the CAS, the old policy either
+    // remains exact or refuses the changed binding. A worker export is ignored.
+    await writePrivateTextAtomic(input.configPath, nextText);
+    try {
+      await commitImmutableControlPolicies(binding, { expected_epoch: review.epoch!, revisions: [revision],
+        active: [{ ...OPERATOR_EXECUTION_POLICY_KEY, revision_id: revision.revision_id }], drafts: [],
+        event: { event_id: randomUUID(), actor: "local_operator", occurred_at: new Date().toISOString(),
+          receipt: { operation: input.operation, action_boundary_digest: input.expectedActionDigest,
+            execution_revision: revision.revision_id, source_database_changed: false } } });
+    } catch (error) {
+      // A lost response may follow a committed transaction. Never claim a
+      // filesystem rollback undid that authority, or overwrite a newer export.
+      let current;
+      try { current = await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY_KEY); }
+      catch { throw new Error("POLICY_EXECUTION_COMMIT_UNCONFIRMED: execution publication could not be confirmed; inspect the control store before retrying."); }
+      if (current?.revision_id === revision.revision_id) return;
+      if (await readOptionalText(input.configPath) === nextText) await writePrivateTextAtomic(input.configPath, previous);
+      throw error;
+    }
+  } finally {
+    await binding.close();
+  }
 }
 
 export function semanticSupervisedExecutionConfig(input: {
