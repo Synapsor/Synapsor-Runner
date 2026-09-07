@@ -5,25 +5,13 @@ import type { ControlPolicyKey, ControlPolicyRepository, ControlPolicyRevision, 
   ControlPolicyReviewConfirmation, ControlPolicyScope, ControlPolicyReadGuard } from "@synapsor-runner/proposal-store";
 import { z } from "zod";
 import { compileOwnerPolicy } from "./owner-policy-compiler.js";
-import { assertBoundedOwnerPolicyInput, ownerPolicyDefinitionSchema, ownerPolicyParentSchema, type OwnerPolicyDefinition } from "./owner-policy-language.js";
-import { assertPolicyManagementRight, PolicyManagementError, policyManagerGrantSchema, policyOwnerScopeSchema,
+import { assertBoundedOwnerPolicyInput, type OwnerPolicyDefinition } from "./owner-policy-language.js";
+import { assertPolicyManagementRight, PolicyManagementError, policyOwnerScopeSchema,
   type PolicyManagementAuthenticator, type PolicyManagementIdentity, type PolicyManagementPermission } from "./policy-management-identity.js";
 
+import { policyManagementParentSchema, managedDelegationSchema as delegationSchema, delegationForOwner, type ManagedDelegation } from "./owner-policy-records.js";
+export { policyManagementParentSchema } from "./owner-policy-records.js";
 const name = z.string().regex(/^[A-Za-z_][A-Za-z0-9_.-]{0,127}$/u);
-const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
-export const policyManagementParentSchema = z.object({
-  schema_version: z.literal("synapsor.policy-management-parent.v1"),
-  managers: z.array(policyManagerGrantSchema).max(256),
-  delegation: ownerPolicyParentSchema,
-  agent_owners: z.array(z.object({ agent: name, scope: policyOwnerScopeSchema }).strict()).min(1).max(256),
-}).strict();
-const delegationSchema = z.object({
-  schema_version: z.literal("synapsor.managed-owner-policy.v1"),
-  parent_revision_id: z.string().min(1).max(256), parent_authority_digest: digest,
-  parent_name: name, definition: ownerPolicyDefinitionSchema,
-  compiled_digest: digest,
-}).strict();
-type ManagedDelegation = z.infer<typeof delegationSchema>;
 type Parent = { revision: ControlPolicyRevision; document: z.infer<typeof policyManagementParentSchema>; scope: ControlPolicyScope };
 
 /** A trusted provider API, not an MCP tool or raw control-store API. Instantiate
@@ -87,8 +75,7 @@ export function createPolicyManagementService(options: {
       operation, previous_definition: before ?? null, parent_requirements_preserved: true, source_database_changed: false };
   }
   function delegationForScope(parent: Parent) {
-    const owners = parent.document.agent_owners.filter((owner) => canonicalJsonDigest(owner.scope) === canonicalJsonDigest(parent.scope));
-    return { ...parent.document.delegation, agents: parent.document.delegation.agents.filter((agent) => owners.some((owner) => owner.agent === agent)) };
+    return delegationForOwner(parent.document, parent.scope);
   }
   async function compileExisting(revision: ControlPolicyRevision, parent: Parent) {
     const document = decode(revision, parent);

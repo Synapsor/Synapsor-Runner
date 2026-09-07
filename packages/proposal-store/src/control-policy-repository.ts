@@ -140,17 +140,18 @@ export class ControlPolicyRepository {
   }
 
   /** Reads a bounded, caller-authorized chain and its CAS epoch in one snapshot. */
-  async snapshot(deploymentId: string, keys: ControlPolicyKey[]): Promise<{
+  async snapshot(deploymentId: string, keys: ControlPolicyKey[], guard?: ControlPolicyReadGuard): Promise<{
     epoch: number; policies: { active?: ControlPolicyRevision; draft?: ControlPolicyRevision }[];
   }> {
     if (keys.length > 64) fail("POLICY_BATCH_TOO_LARGE");
+    const guards = this.readGuardStatements(deploymentId, guard);
     const rows = await this.connection.execute([{
       sql: `SELECT epoch FROM ${this.connection.table("deployments")} WHERE deployment_id = $1`,
       values: [identifier(deploymentId)], check: exactlyOne,
-    }, ...keys.flatMap((key) => [this.pointerStatement(deploymentId, key, "active"), this.pointerStatement(deploymentId, key, "drafts")])]);
+    }, ...guards, ...keys.flatMap((key) => [this.pointerStatement(deploymentId, key, "active"), this.pointerStatement(deploymentId, key, "drafts")])]);
     return { epoch: epoch(rows[0]![0]!.epoch), policies: keys.map((_, index) => ({
-      ...(rows[index * 2 + 1]![0] ? { active: decodeRevision(rows[index * 2 + 1]![0]!) } : {}),
-      ...(rows[index * 2 + 2]![0] ? { draft: decodeRevision(rows[index * 2 + 2]![0]!) } : {}),
+      ...(rows[index * 2 + 1 + guards.length]![0] ? { active: decodeRevision(rows[index * 2 + 1 + guards.length]![0]!) } : {}),
+      ...(rows[index * 2 + 2 + guards.length]![0] ? { draft: decodeRevision(rows[index * 2 + 2 + guards.length]![0]!) } : {}),
     })) };
   }
 
