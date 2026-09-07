@@ -3,7 +3,8 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
 import type { ControlPolicyKey, ControlPolicyPointer, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 import { decodeOperatorAuthority, encodeOperatorAuthority, validateOperatorPolicySnapshot,
-  OPERATOR_READ_SELECTION, OPERATOR_EXECUTION_POLICY, type StoredOperatorAuthority } from "./control-policy-authority-codec.js";
+  OPERATOR_READ_SELECTION, OPERATOR_READ_AUTHORING, OPERATOR_EXECUTION_POLICY, type StoredOperatorAuthority } from "./control-policy-authority-codec.js";
+import type { StoredReadAuthoring } from "./control-policy-read-authoring.js";
 import { commitImmutableControlPolicies, type BoundProjectPolicyStore, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
 
 export type OperatorAuthorityState = {
@@ -25,7 +26,8 @@ export class OperatorAuthorityRepository {
     // Other management documents have distinct validators and authority. They
     // cannot be interpreted as the selected Read pointer or changed here.
     const managed = (revision: ControlPolicyRevision) => revision.kind !== "management"
-      || keyDigest(revision) === keyDigest(OPERATOR_READ_SELECTION);
+      || keyDigest(revision) === keyDigest(OPERATOR_READ_SELECTION)
+      || keyDigest(revision) === keyDigest(OPERATOR_READ_AUTHORING);
     const active = snapshot.active.filter(managed);
     const drafts = snapshot.drafts.filter(managed);
     const records = asSnapshot(active, drafts);
@@ -33,6 +35,34 @@ export class OperatorAuthorityRepository {
     const decode = (revision: ControlPolicyRevision) => ({ revision,
       policy: decodeOperatorAuthority(revision, { runtimeConfig: this.runtimeConfig }) });
     return { epoch: snapshot.epoch, active: active.map(decode), drafts: drafts.map(decode) };
+  }
+
+  /** Replace the complete reviewed authoring set and its disabled candidates
+   * together. Selection here is editing context, never active Read authority. */
+  async commitReadAuthoring(input: {
+    expected_epoch: number; expected_revision_id: string | null;
+    authoring: StoredReadAuthoring; actor: string; operation: string;
+  }): Promise<Awaited<ReturnType<OperatorAuthorityRepository["commit"]>>> {
+    const frozen = structuredClone(input);
+    const before = await this.current();
+    const previous = before.active.find(({ policy }) => policy.type === "read_authoring");
+    if (before.epoch !== frozen.expected_epoch
+      || (previous?.revision.revision_id ?? null) !== frozen.expected_revision_id) fail("POLICY_REVISION_CONFLICT");
+    const desired: OperatorAuthorityChange[] = frozen.authoring.entries.map((entry) => ({
+      key: { scope: { level: "operator" }, kind: "read", name: entry.progress.candidate.pack.name },
+      policy: { type: "read", boundary: entry.progress.candidate, generation_lock: entry.candidate_lock },
+    }));
+    const retained = new Set(desired.map((change) => keyDigest(change.key)));
+    const previousDrafts = new Map(before.drafts.map((entry) => [keyDigest(entry.revision), entry.policy]));
+    const drafts = desired.filter((change) => canonicalJsonDigest(change.policy)
+      !== canonicalJsonDigest(previousDrafts.get(keyDigest(change.key)) ?? null));
+    for (const { revision } of before.drafts) {
+      if (revision.kind === "read" && !retained.has(keyDigest(revision))) {
+        drafts.push({ key: { scope: revision.scope, kind: revision.kind, name: revision.name }, policy: null });
+      }
+    }
+    return this.commit({ expected_epoch: frozen.expected_epoch, actor: frozen.actor, operation: frozen.operation,
+      drafts, active: [{ key: OPERATOR_READ_AUTHORING, policy: frozen.authoring }] });
   }
 
   /** Commits an exact reviewed set, never a best-effort merge after a race.
@@ -125,6 +155,7 @@ function assertNewActivationDependencies(active: ControlPolicyRevision[],
 function assertManagedKey(key: ControlPolicyKey): void {
   if (key.scope.level !== "operator" || !validLabel(key.name)
     || (!["read", "action"].includes(key.kind) && keyDigest(key) !== keyDigest(OPERATOR_READ_SELECTION)
+      && keyDigest(key) !== keyDigest(OPERATOR_READ_AUTHORING)
       && keyDigest(key) !== keyDigest(OPERATOR_EXECUTION_POLICY))) {
     fail("POLICY_AUTHORITY_IDENTITY_MISMATCH");
   }

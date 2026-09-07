@@ -16,7 +16,7 @@ import { AUTO_BOUNDARY_OVERRIDES_VERSION, activateExplorationBoundary, buildAuto
   explorationBoundaryCandidateDigest, loadActivatedExplorationBoundary, loadActivatedExplorationBoundaries,
   loadGenerationLockForActivatedBoundary, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
-import { decodeOperatorAuthority, encodeOperatorAuthority, encodeOperatorExecutionPolicy, OPERATOR_READ_SELECTION, OPERATOR_EXECUTION_POLICY,
+import { decodeOperatorAuthority, encodeOperatorAuthority, encodeOperatorExecutionPolicy, OPERATOR_READ_SELECTION, OPERATOR_READ_AUTHORING, OPERATOR_EXECUTION_POLICY,
   validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
 import { migrateProjectControlPolicies, openProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
 import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
@@ -24,6 +24,8 @@ import { createOptionalActionRuleRuntimeServices, createOptionalReadActionRuleRu
 import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 import { createScopedExploreRuntime } from "./scoped-explore.js";
 import { readOperatorExecutionConfig } from "./control-policy-execution.js";
+import type { StoredReadAuthoring } from "./control-policy-read-authoring.js";
+import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
 import { readRuntimeConfig } from "./cli-project.js";
 import * as cliProject from "./cli-project.js";
 import { workerCommand } from "./worker-runtime.js";
@@ -86,7 +88,48 @@ function snapshot(): ControlPolicyMigrationSnapshot {
     provenance: [{ path: ".synapsor/exploration-boundary.active.json", digest: canonicalJsonDigest(input.boundary) }] };
 }
 
+function readAuthoringFixture(): StoredReadAuthoring {
+  const entries = ["inventory", "university"].map((domain) => {
+    const source = fixture(domain);
+    source.candidate.pack.name = `${domain}_draft`;
+    return { draft: source.candidate, draft_lock: source.generation_lock, candidate_lock: source.generation_lock,
+      progress: createBoundaryReviewProgress({ draft: source.candidate, candidate: source.candidate,
+        confirmedDecisions: source.candidate.unresolved_decisions, actor: "reviewer", revision: 1 }) };
+  });
+  return { type: "read_authoring", selected_boundary_id: entries[0]!.progress.boundary_id, entries };
+}
+
 describe("exact stored operator authority", () => {
+  it("preserves exact authoring candidates, confirmations, stable identities and independent schema snapshots", () => {
+    const authoring = readAuthoringFixture(); const before = structuredClone(authoring);
+    const record = encodeOperatorAuthority(authoring);
+    expect(record).toMatchObject(OPERATOR_READ_AUTHORING);
+    expect(decodeOperatorAuthority(record)).toEqual(before);
+    expect(authoring).toEqual(before);
+  });
+
+  it.each(["baseline_digest", "candidate_digest", "confirmation", "duplicate_identity", "duplicate_name", "selection", "active_candidate", "lock", "legacy"])(
+    "refuses malformed authoring %s without repairing its reviewed state", (change) => {
+      const authoring = readAuthoringFixture();
+      const entry = authoring.entries[0]!;
+      if (change === "baseline_digest") entry.progress.draft_digest = canonicalJsonDigest("changed");
+      if (change === "candidate_digest") entry.progress.candidate_digest = canonicalJsonDigest("changed");
+      if (change === "confirmation") entry.progress.confirmations[0]!.input_digest = canonicalJsonDigest("changed");
+      if (change === "duplicate_identity") authoring.entries[1]!.progress.boundary_id = entry.progress.boundary_id;
+      if (change === "duplicate_name") {
+        const secondId = authoring.entries[1]!.progress.boundary_id;
+        authoring.entries[1] = structuredClone(entry);
+        authoring.entries[1]!.progress.boundary_id = secondId;
+      }
+      if (change === "selection") authoring.selected_boundary_id = `bnd_${"a".repeat(32)}`;
+      if (change === "active_candidate") entry.progress.candidate = fixture().boundary as never;
+      if (change === "lock") entry.candidate_lock = fixture("other_schema").generation_lock;
+      if (change === "legacy") (entry.progress as { schema_version: string }).schema_version = "synapsor.boundary-review-progress.v2";
+      const before = structuredClone(authoring);
+      expect(() => encodeOperatorAuthority(authoring)).toThrow();
+      expect(authoring).toEqual(before);
+    });
+
   it.each(["inventory", "university"])("roundtrips %s Read authority, draft and generation provenance without a new review", (domain) => {
     const source = fixture(domain); const before = structuredClone(source);
     for (const boundary of [source.boundary, source.candidate]) {
@@ -263,6 +306,83 @@ for (const backend of ["sqlite", "postgres"] as const) {
           actor: "reviewer", operation: "restore_exact_draft" });
         expect((await new OperatorAuthorityRepository(binding).current()).drafts[0]!.revision).toEqual(original.revisions[1]);
         expect(await binding.repository.history({ deployment_id: binding.deployment_id, key })).toHaveLength(3);
+      });
+    });
+
+    it("commits complete Read authoring and selection atomically without changing active authority", async () => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const action = actionFixture(fixture());
+        await writeActionRuleAuthorityDraft(projectRoot, action);
+        await activateActionRuleAuthority({ projectRoot, name: action.authority.name, expected_digest: action.digest,
+          confirmation: `ACTIVATE ${action.digest}`, actor: "operator" });
+        const config = executionConfig(); config.action_rules!.project_root = projectRoot;
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        config.supervised_worker!.outcomes![0]!.action_boundary_digest = action.authority.action_boundary.digest;
+        const policies = new OperatorAuthorityRepository(binding, config);
+        await policies.commit({ expected_epoch: (await policies.current()).epoch,
+          active: [{ key: OPERATOR_EXECUTION_POLICY, policy: decodeOperatorAuthority(encodeOperatorExecutionPolicy(config)!, { runtimeConfig: config }) }],
+          actor: "operator", operation: "reviewed_execution" });
+        const before = await policies.current(); const authoring = readAuthoringFixture();
+        await policies.commitReadAuthoring({ expected_epoch: before.epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "save_read_authoring" });
+        const stored = await new OperatorAuthorityRepository(binding, config).current();
+        expect(stored.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
+        expect(stored.drafts.filter(({ policy }) => policy.type === "action")).toEqual(before.drafts.filter(({ policy }) => policy.type === "action"));
+        expect(stored.drafts.filter(({ policy }) => policy.type === "read")).toHaveLength(2);
+        const record = stored.active.find(({ policy }) => policy.type === "read_authoring")!;
+        expect(record.policy).toEqual(authoring);
+        // A fresh epoch is insufficient when the original authoring revision
+        // changed; callers must retain the identity from their original read.
+        await expect(policies.commitReadAuthoring({ expected_epoch: stored.epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "stale_edit" })).rejects.toMatchObject({ code: "POLICY_REVISION_CONFLICT" });
+        const selected = structuredClone(authoring); selected.selected_boundary_id = selected.entries[1]!.progress.boundary_id;
+        const input = { expected_epoch: stored.epoch, expected_revision_id: record.revision.revision_id,
+          authoring: selected, actor: "operator", operation: "select_saved_draft" };
+        const raced = await Promise.allSettled([policies.commitReadAuthoring(input), policies.commitReadAuthoring(input)]);
+        expect(raced.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+        const changed = await policies.current();
+        expect(changed.active.find(({ policy }) => policy.type === "read_authoring")!.policy).toEqual(selected);
+        expect(changed.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
+        expect(changed.drafts).toEqual(stored.drafts);
+        // Generic writes must not desynchronize a candidate from its saved
+        // review decisions, even though both are disabled.
+        const drift = structuredClone(selected.entries[0]!.progress.candidate); drift.budgets.max_top_n = 7;
+        await expect(policies.commit({ expected_epoch: changed.epoch, actor: "operator", operation: "partial_draft_edit",
+          drafts: [{ key: { scope: { level: "operator" }, kind: "read", name: drift.pack.name },
+            policy: { type: "read", boundary: drift, generation_lock: selected.entries[0]!.candidate_lock } }] }))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_DRAFT_MISMATCH" });
+        expect(await policies.current()).toEqual(changed);
+        const edited = structuredClone(selected);
+        const first = edited.entries[0]!;
+        first.progress = createBoundaryReviewProgress({ draft: first.draft, candidate: drift,
+          previous: first.progress, confirmedDecisions: [], revision: first.progress.revision + 1, actor: "operator" });
+        await policies.commitReadAuthoring({ expected_epoch: changed.epoch,
+          expected_revision_id: changed.active.find(({ policy }) => policy.type === "read_authoring")!.revision.revision_id,
+          authoring: edited, actor: "operator", operation: "narrow_saved_draft" });
+        const updated = await policies.current();
+        expect(updated.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
+        expect(updated.drafts.find(({ revision }) => revision.name === drift.pack.name)!.policy)
+          .toMatchObject({ boundary: { budgets: { max_top_n: 7 } } });
+        expect(updated.drafts.find(({ revision }) => revision.name === selected.entries[1]!.progress.candidate.pack.name))
+          .toEqual(changed.drafts.find(({ revision }) => revision.name === selected.entries[1]!.progress.candidate.pack.name));
+        const removed = { ...edited, selected_boundary_id: first.progress.boundary_id, entries: [first] };
+        await policies.commitReadAuthoring({ expected_epoch: updated.epoch,
+          expected_revision_id: updated.active.find(({ policy }) => policy.type === "read_authoring")!.revision.revision_id,
+          authoring: removed, actor: "operator", operation: "remove_saved_draft" });
+        const final = await policies.current();
+        expect(final.drafts.filter(({ policy }) => policy.type === "read")).toHaveLength(1);
+        expect(final.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
+        await fs.writeFile(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), "not authoritative");
+        await fs.writeFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "not authoritative");
+        expect(await new OperatorAuthorityRepository(binding, config).current()).toEqual(final);
+        expect((await loadActivatedExplorationBoundary(projectRoot)).pack.name).toBe(fixture().boundary.pack.name);
+        await deactivateExplorationBoundary(projectRoot);
+        const revoked = await policies.current();
+        expect(revoked.active.find(({ policy }) => policy.type === "read_authoring"))
+          .toEqual(final.active.find(({ policy }) => policy.type === "read_authoring"));
+        expect(revoked.drafts).toEqual(final.drafts);
+        expect(revoked.active.filter(({ policy }) => policy.type === "action" || policy.type === "execution"))
+          .toEqual(final.active.filter(({ policy }) => policy.type === "action" || policy.type === "execution"));
       });
     });
 

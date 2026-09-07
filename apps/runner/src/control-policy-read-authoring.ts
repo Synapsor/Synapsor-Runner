@@ -1,0 +1,84 @@
+import { z } from "zod";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { assertStoredExplorationPolicy, explorationBoundaryCandidateDigest, generationLockSharedFactsDigest,
+  type ExplorationBoundaryDraft, type GenerationLock } from "./auto-boundary.js";
+import { normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
+import { BOUNDARY_REVIEW_PROGRESS_VERSION } from "./boundary-review-progress-types.js";
+import { OPERATOR_POLICY_RECORD_VERSION } from "./control-policy-record.js";
+
+const identity = z.string().regex(/^bnd_[a-f0-9]{32}$/u);
+const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
+const progressSchema = z.object({
+  schema_version: z.literal(BOUNDARY_REVIEW_PROGRESS_VERSION),
+  boundary_id: identity,
+  review_overrides: z.record(z.unknown()),
+  policy_migration: z.record(z.unknown()),
+  revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  draft_digest: digest,
+  candidate: z.record(z.unknown()),
+  candidate_digest: digest,
+  confirmed_decisions: z.array(z.string()).max(10_000),
+  confirmations: z.array(z.unknown()).max(10_000),
+  invalidated_decisions: z.array(z.unknown()).max(200),
+  updated_at: z.string().datetime({ offset: true }),
+}).strict();
+const entrySchema = z.object({
+  draft: z.record(z.unknown()), draft_lock: z.record(z.unknown()),
+  candidate_lock: z.record(z.unknown()), progress: progressSchema,
+}).strict();
+export const readAuthoringDocument = z.object({
+  schema_version: z.literal(OPERATOR_POLICY_RECORD_VERSION), type: z.literal("read_authoring"),
+  selected_boundary_id: identity.nullable(), entries: z.array(entrySchema).max(128),
+}).strict();
+
+export type PreparedReadEntry = {
+  draft: ExplorationBoundaryDraft; draft_lock: GenerationLock;
+  candidate_lock: GenerationLock; progress: BoundaryReviewProgress;
+};
+export type StoredReadAuthoring = {
+  type: "read_authoring"; selected_boundary_id: string | null; entries: PreparedReadEntry[];
+};
+
+/** Exact disabled state, not a legacy repair or a fresh schema review. Both
+ * locks are embedded so a changed/missing export cannot rebase saved work. */
+export function parseReadAuthoringDocument(input: unknown): StoredReadAuthoring {
+  const parsed = readAuthoringDocument.parse(input);
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  for (const entry of parsed.entries) {
+    const draft = entry.draft as unknown as ExplorationBoundaryDraft;
+    const candidate = entry.progress.candidate as unknown as ExplorationBoundaryDraft;
+    if (draft.activation !== "disabled_unreviewed" || candidate.activation !== "disabled_unreviewed") {
+      fail("POLICY_AUTHORING_MUST_BE_DISABLED");
+    }
+    const draftLock = entry.draft_lock as unknown as GenerationLock;
+    const candidateLock = entry.candidate_lock as unknown as GenerationLock;
+    assertStoredExplorationPolicy(draft, draftLock);
+    assertStoredExplorationPolicy(candidate, candidateLock);
+    if (generationLockSharedFactsDigest(draftLock) !== generationLockSharedFactsDigest(candidateLock)) {
+      fail("POLICY_AUTHORING_SCHEMA_MISMATCH");
+    }
+    if (entry.progress.draft_digest !== explorationBoundaryCandidateDigest(draft)
+      || entry.progress.candidate_digest !== explorationBoundaryCandidateDigest(candidate)) {
+      fail("POLICY_AUTHORING_REVISION_MISMATCH");
+    }
+    const normalized = normalizeStoredBoundaryReviewProgress(entry.progress, candidate);
+    if (canonicalJsonDigest(normalized) !== canonicalJsonDigest(entry.progress)
+      || new Set(normalized.confirmations.map((confirmation) => confirmation.id)).size !== normalized.confirmations.length
+      || new Set(normalized.confirmed_decisions).size !== normalized.confirmed_decisions.length) {
+      fail("POLICY_AUTHORING_NORMALIZATION_REQUIRED");
+    }
+    if (ids.has(normalized.boundary_id) || names.has(candidate.pack.name)) fail("POLICY_AUTHORING_DUPLICATE_BOUNDARY");
+    ids.add(normalized.boundary_id); names.add(candidate.pack.name);
+  }
+  if (parsed.entries.length === 0 ? parsed.selected_boundary_id !== null
+    : parsed.selected_boundary_id === null || !ids.has(parsed.selected_boundary_id)) {
+    fail("POLICY_AUTHORING_SELECTION_INVALID");
+  }
+  return { type: parsed.type, selected_boundary_id: parsed.selected_boundary_id,
+    entries: structuredClone(parsed.entries) as unknown as PreparedReadEntry[] };
+}
+
+function fail(code: string): never {
+  throw Object.assign(new Error(`${code}: saved Read authoring state requires exact review; no authority changed.`), { code });
+}
