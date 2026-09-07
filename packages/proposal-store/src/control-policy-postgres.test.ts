@@ -125,7 +125,11 @@ describePostgres("control policy PostgreSQL storage parity", () => {
   it("retains immutable history, refuses replayed review events and detects corrupt content", async () => {
     const policies = repository(); await policies.importDeployment(imported("immutable"));
     await expect(policies.commit({ deployment_id: "immutable", expected_epoch: 1, revisions: [revision("v1", operator, { credits: 99 })], active: [], event: event("overwrite") })).rejects.toThrow();
-    await expect(policies.commit({ deployment_id: "immutable", expected_epoch: 1, revisions: [revision("v2")], active: [], event: event("import") })).rejects.toThrow();
+    await expect(policies.commit({ deployment_id: "immutable", expected_epoch: 1, revisions: [revision("v2")], active: [], event: event("import") }))
+      .rejects.toMatchObject({ code: "POLICY_EVENT_ALREADY_RECORDED" });
+    expect(await policies.event("immutable", "import")).toEqual({ ...event("import"), epoch: 1 });
+    expect(await policies.event("no-such-deployment", "import")).toBeUndefined();
+    expect(await policies.event("immutable", "overwrite")).toBeUndefined();
     expect((await policies.deployment("immutable"))?.epoch).toBe(1);
     await policies.commit({ deployment_id: "immutable", expected_epoch: 1, revisions: [], active: [{ ...key(), revision_id: null }], event: event("revoke") });
     expect(await policies.active("immutable", key())).toBeUndefined();

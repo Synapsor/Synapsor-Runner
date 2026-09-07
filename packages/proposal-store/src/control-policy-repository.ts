@@ -136,6 +136,19 @@ export class ControlPolicyRepository {
     return input.expected_epoch + 1;
   }
 
+  /** Trusted management callers only. Receipts are not a model-facing audit
+   * feed; the service must authorize the exact deployment before this lookup. */
+  async event(deploymentId: string, eventId: string): Promise<(ControlPolicyEvent & { epoch: number }) | undefined> {
+    const rows = await this.connection.execute([{
+      sql: `SELECT epoch, event_id, actor, occurred_at, receipt_json FROM ${this.connection.table("events")}
+        WHERE deployment_id = $1 AND event_id = $2`,
+      values: [identifier(deploymentId), identifier(eventId)],
+    }]);
+    const row = rows[0]![0];
+    return row ? { epoch: epoch(row.epoch), event_id: identifier(row.event_id), actor: identifier(row.actor),
+      occurred_at: String(row.occurred_at), receipt: JSON.parse(String(row.receipt_json)) as unknown } : undefined;
+  }
+
   async revision(deploymentId: string, key: ControlPolicyKey, revisionId: string): Promise<ControlPolicyRevision | undefined> {
     const values = [identifier(deploymentId), scopeKey(key.scope), policyKind(key.kind), identifier(key.name), identifier(revisionId)];
     const rows = await this.connection.execute([{
@@ -302,8 +315,9 @@ export class ControlPolicyRepository {
     }
     statements.push({
       sql: `INSERT INTO ${this.connection.table("events")} (deployment_id, epoch, event_id, actor, occurred_at, receipt_json)
-        VALUES ($1, $2, $3, $4, $5, $6)`,
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (deployment_id, event_id) DO NOTHING RETURNING event_id`,
       values: [deploymentId, input.expected_epoch + 1, event.event_id, event.actor, event.occurred_at, receipt],
+      check: (rows) => { if (rows.length !== 1) fail("POLICY_EVENT_ALREADY_RECORDED"); },
     });
     return statements;
   }

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -9,7 +9,7 @@ import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import * as schemaInspector from "@synapsor-runner/schema-inspector";
 import { createDefaultRuntimeStore, resolveRuntimeConfig, subjectReferenceScopeFingerprints,
   REQUEST_CHANGE_TOOL, type RuntimeConfig } from "@synapsor-runner/mcp-server";
-import { migrateSharedPostgresRuntimeStore, ProposalStore } from "@synapsor-runner/proposal-store";
+import { ControlPolicyRepository, migrateSharedPostgresRuntimeStore, ProposalStore } from "@synapsor-runner/proposal-store";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type { RuleVerificationBoundarySpecV1, DerivedEffectEnvelopeSpecV1, ActionRuleSpecV1 } from "@synapsor/spec";
 import { AUTO_BOUNDARY_OVERRIDES_VERSION, activateExplorationBoundary, buildAutoBoundary, deactivateExplorationBoundary,
@@ -1611,6 +1611,112 @@ for (const backend of ["sqlite", "postgres"] as const) {
           .toEqual(original.active.filter(({ policy }) => policy.type !== "read_authoring"));
         await expect(boundaryActivateCommand(args, async () => fixture().inspection, { ...session, confirm: async () => true })).resolves.toBe(0);
         expect((await loadActivatedExplorationBoundary(projectRoot)).budgets.max_top_n).toBe(11);
+      });
+    });
+
+    it.each(["complete", "commit_failure", "lost_response", "unknown_commit", "wrong_store", "explicit_wrong_store", "nested_wrong_store", "concurrent", "expired_after_review"])(
+      "commits governed headless Read consent in the actual policy store: %s", async (mode) => {
+      await useRepository(async ({ policies, projectRoot, binding, config: storageConfig }) => {
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring: readAuthoringFixture(), actor: "operator", operation: "prepare" });
+        const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+        const privatePath = path.join(projectRoot, "operator.private.pem");
+        await fs.writeFile(path.join(projectRoot, "operator.pub.pem"), publicKey.export({ type: "spki", format: "pem" }).toString());
+        await fs.writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }).toString(), { mode: 0o600 });
+        const configPath = path.join(projectRoot, "synapsor.runner.json");
+        const config = { version: 1, mode: "read_only", capabilities: [], trusted_context: { provider: "environment" },
+          sources: { local_postgres: { engine: "postgres", read_url_env: "DATABASE_URL", read_only: true } },
+          generated_authority: { generation_lock_path: "./.synapsor/generation-lock.json", enforcement: "required" },
+          operator_identity: { provider: "signed_key", operators: { alice: { public_key_path: "./operator.pub.pem", roles: ["boundary_reviewer"] } } },
+          storage: mode === "wrong_store" ? { sqlite_path: "./shadow.db" } : storageConfig.storage ?? { sqlite_path: "./control.db" },
+        };
+        await fs.writeFile(configPath, JSON.stringify(config));
+        const selectedConfigPath = mode === "nested_wrong_store" ? path.join(projectRoot, "configs/alternate.json")
+          : mode === "explicit_wrong_store" ? path.join(projectRoot, "alternate.json") : configPath;
+        if (mode === "explicit_wrong_store") await fs.writeFile(selectedConfigPath, JSON.stringify({ ...config, storage: { sqlite_path: "./shadow.db" } }));
+        if (mode === "nested_wrong_store") {
+          await fs.mkdir(path.dirname(selectedConfigPath));
+          await fs.writeFile(selectedConfigPath, JSON.stringify({ ...config, storage: { sqlite_path: "../shadow.db" },
+            operator_identity: { provider: "signed_key", operators: { alice: { public_key_path: "../operator.pub.pem", roles: ["boundary_reviewer"] } } },
+          }));
+        }
+        const bundlePath = path.join(projectRoot, "review.json");
+        const refreshBundle = async () => {
+          const context = await loadBoundaryReviewContext(projectRoot);
+          await fs.writeFile(bundlePath, JSON.stringify(context.bundle));
+          return context;
+        };
+        const shown = await refreshBundle();
+        const args = ["--project-root", projectRoot, "--config", selectedConfigPath, "--review-bundle", bundlePath,
+          "--headless", "--confirm", `ACTIVATE ${shown.bundle.candidate_digest}`, "--identity", "alice",
+          "--identity-key", privatePath, "--required-role", "boundary_reviewer", "--reason", "Reviewed exact inventory Read scope",
+          "--nonce", "shared-headless-read-nonce-0001", "--expires-at", new Date(Date.now() + 300_000).toISOString(), "--json"];
+        const before = await policies.current();
+        let activationEvent: Parameters<ControlPolicyRepository["commit"]>[0]["event"] | undefined;
+        const commit = ControlPolicyRepository.prototype.commit;
+        const fault = vi.spyOn(ControlPolicyRepository.prototype, "commit").mockImplementation(async function (this: ControlPolicyRepository, input) {
+          if ((input.event.receipt as { operation?: string }).operation !== "activate_read") return commit.call(this, input);
+          activationEvent = structuredClone(input.event);
+          if (mode === "commit_failure") throw new Error("test publication refused before commit");
+          const result = await commit.call(this, input);
+          if (mode === "lost_response" || mode === "unknown_commit") throw new Error("test connection lost after commit");
+          return result;
+        });
+        const readEvent = ControlPolicyRepository.prototype.event;
+        const eventFault = vi.spyOn(ControlPolicyRepository.prototype, "event").mockImplementation(async function (this: ControlPolicyRepository, ...args) {
+          if (mode === "unknown_commit" && activationEvent) throw new Error("test receipt lookup unavailable");
+          return readEvent.apply(this, args);
+        });
+        const activate = autoBoundary.activateExplorationBoundary;
+        const expired = vi.spyOn(autoBoundary, "activateExplorationBoundary").mockImplementation(async (input) => activate({ ...input,
+          ...(mode === "expired_after_review" && input.verifiedDecision ? { verifiedDecision: { ...input.verifiedDecision,
+            expires_at: new Date(Date.now() - 1000).toISOString() } } : {}),
+        }));
+        const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+        try {
+          const run = () => boundaryActivateCommand(args, async () => fixture().inspection);
+          const running = mode === "concurrent" ? Promise.allSettled([run(), run()]) : run();
+          if (mode.endsWith("wrong_store")) {
+            await expect(running).rejects.toMatchObject({ code: "POLICY_STORE_SELECTION_CHANGED" });
+            expect(await policies.current()).toEqual(before);
+          } else if (mode === "commit_failure" || mode === "expired_after_review") {
+            if (mode === "commit_failure") await expect(running).rejects.toThrow("test publication refused before commit");
+            else await expect(running).rejects.toMatchObject({ code: "POLICY_ACTIVATION_DECISION_INVALID" });
+            if (activationEvent) expect(await binding.repository.event(binding.deployment_id, activationEvent.event_id)).toBeUndefined();
+            expect((await policies.current()).active.filter(({ policy }) => policy.type !== "read_authoring"))
+              .toEqual(before.active.filter(({ policy }) => policy.type !== "read_authoring"));
+          } else {
+            if (mode === "unknown_commit") await expect(running).rejects.toMatchObject({ code: "POLICY_ACTIVATION_COMMIT_UNCONFIRMED" });
+            else if (mode === "concurrent") {
+              const results = await running as PromiseSettledResult<number>[];
+              expect(results.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+              expect(results.filter((item) => item.status === "rejected")).toHaveLength(1);
+            } else await expect(running).resolves.toBe(0);
+            eventFault.mockRestore();
+            const recorded = await binding.repository.event(binding.deployment_id, activationEvent!.event_id);
+            expect(recorded).toMatchObject(activationEvent!);
+            expect(recorded!.receipt).toMatchObject({ operation: "activate_read", verified_decision: {
+              subject: "alice", provider: "signed_key", purpose: "activate_read", boundary_digest: shown.bundle.candidate_digest,
+              repository_id: binding.repository_id, deployment_id: binding.deployment_id, project_id: binding.project_id,
+            } });
+            expect((await loadActivatedExplorationBoundary(projectRoot)).activation.digest).toBe(shown.bundle.candidate_digest);
+          }
+          fault.mockRestore(); eventFault.mockRestore(); expired.mockRestore();
+          if (!mode.endsWith("wrong_store")) {
+            await refreshBundle();
+            const after = await policies.current();
+            // The next proof has a new issuance time and bundle, but its nonce
+            // still cannot authorize a second activation after success.
+            if (mode === "commit_failure" || mode === "expired_after_review") await expect(boundaryActivateCommand(args, async () => fixture().inspection)).resolves.toBe(0);
+            else {
+              await expect(boundaryActivateCommand(args, async () => fixture().inspection))
+                .rejects.toMatchObject({ code: "POLICY_EVENT_ALREADY_RECORDED" });
+              expect(await policies.current()).toEqual(after);
+            }
+          }
+          await expect(fs.stat(path.join(projectRoot, ".synapsor/local.db"))).rejects.toMatchObject({ code: "ENOENT" });
+          await expect(fs.stat(path.join(projectRoot, "shadow.db"))).rejects.toMatchObject({ code: "ENOENT" });
+        } finally { fault.mockRestore(); eventFault.mockRestore(); expired.mockRestore(); output.mockRestore(); }
       });
     });
 

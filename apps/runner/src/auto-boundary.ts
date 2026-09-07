@@ -36,6 +36,7 @@ import { formatDerivedScopePath } from "./derived-scope-display.js";
 import { exploreBoundaryVocabularyGaps } from "./explore-vocabulary.js";
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
 import type { ControlPolicyPointer, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
+import { assertGovernedReadActivationDecision, type GovernedReadActivationDecision } from "./control-policy-activation.js";
 import { openBoundProjectControlPolicies, assertProjectControlPolicyBinding, commitImmutableControlPolicies,
   type BoundProjectPolicyStore } from "./control-policy-store.js";
 import { OPERATOR_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, OPERATOR_READ_AUTHORING_KEY, assertOperatorPolicyRecord,
@@ -2104,6 +2105,7 @@ export async function activateExplorationBoundary(input: {
   reviewDraft?: ExplorationBoundaryDraft;
   generationLock?: GenerationLock;
   expectedAuthoring?: ReadAuthoringBindings;
+  verifiedDecision?: GovernedReadActivationDecision;
   expectedDigest: string;
   actor: string;
   confirmation: string;
@@ -2219,7 +2221,7 @@ export async function activateExplorationBoundary(input: {
     active,
     input.activeSetMode ?? "replace",
     lock,
-    { expected: input.expectedAuthoring, candidate: input.candidate },
+    { expected: input.expectedAuthoring, candidate: input.candidate, verifiedDecision: input.verifiedDecision },
   );
   return active;
 }
@@ -2438,12 +2440,28 @@ function invalidStoredRead(): Error {
 }
 
 async function commitStoredReadPolicies(binding: BoundProjectPolicyStore, current: StoredReadPolicySet,
-  incoming: ControlPolicyRevision[], active: ControlPolicyPointer[], actor: string, operation: string): Promise<void> {
+  incoming: ControlPolicyRevision[], active: ControlPolicyPointer[], actor: string, operation: string,
+  verifiedDecision?: GovernedReadActivationDecision): Promise<void> {
   const changes = active.map((pointer) => ({ name: pointer.name, kind: pointer.kind,
     before: current.records.find((record) => record.name === pointer.name && record.kind === pointer.kind)?.revision_id ?? null,
     after: pointer.revision_id }));
-  await commitImmutableControlPolicies(binding, { expected_epoch: current.epoch, revisions: incoming, active,
-    event: { event_id: crypto.randomUUID(), actor, occurred_at: new Date().toISOString(), receipt: { operation, changes, source_database_changed: false } } });
+  const event = { event_id: verifiedDecision?.event_id ?? crypto.randomUUID(), actor, occurred_at: new Date().toISOString(),
+    receipt: { operation, changes, source_database_changed: false, ...(verifiedDecision ? { verified_decision: verifiedDecision } : {}) } };
+  try {
+    await commitImmutableControlPolicies(binding, { expected_epoch: current.epoch, revisions: incoming, active, event });
+  } catch (error) {
+    if (!verifiedDecision || (error as { code?: string }).code === "POLICY_EVENT_ALREADY_RECORDED") throw error;
+    // A response can be lost after COMMIT. Only this exact transaction receipt
+    // proves success; finding the same active digest is insufficient.
+    let recorded;
+    try { recorded = await binding.repository.event(binding.deployment_id, event.event_id); }
+    catch {
+      throw Object.assign(new Error("Read activation could not be confirmed. Inspect the control-store review receipt before retrying; do not assume authority is unchanged."),
+        { code: "POLICY_ACTIVATION_COMMIT_UNCONFIRMED" });
+    }
+    if (recorded && canonicalJsonDigest(recorded) === canonicalJsonDigest({ ...event, epoch: current.epoch + 1 })) return;
+    throw error;
+  }
 }
 
 export async function loadActivatedExplorationBoundary(
@@ -2665,7 +2683,7 @@ async function writeActivatedExplorationBoundarySet(
   active: ActivatedExplorationBoundary,
   mode: "replace" | "add",
   lock: GenerationLock,
-  review: { expected?: ReadAuthoringBindings; candidate: ExplorationBoundaryDraft },
+  review: { expected?: ReadAuthoringBindings; candidate: ExplorationBoundaryDraft; verifiedDecision?: GovernedReadActivationDecision },
 ): Promise<void> {
   await withActiveExplorationBoundaryLock(projectRoot, async () => {
     await writeActivatedExplorationBoundarySetUnlocked(projectRoot, active, mode, lock, review);
@@ -2677,10 +2695,11 @@ async function writeActivatedExplorationBoundarySetUnlocked(
   active: ActivatedExplorationBoundary,
   mode: "replace" | "add",
   lock: GenerationLock,
-  review: { expected?: ReadAuthoringBindings; candidate: ExplorationBoundaryDraft },
+  review: { expected?: ReadAuthoringBindings; candidate: ExplorationBoundaryDraft; verifiedDecision?: GovernedReadActivationDecision },
 ): Promise<void> {
   const stored = await withStoredReadPolicies(projectRoot, undefined, async (binding, current) => {
     assertStoredReadActivationReview(binding, current, review, lock);
+    if (review.verifiedDecision) assertGovernedReadActivationDecision(review.verifiedDecision, binding, active.activation.actor, active.activation.digest);
     const boundaries = [...(mode === "add" ? current.boundaries.filter((boundary) => boundary.pack.name !== active.pack.name) : []), active];
     assertActiveReadSetBindings(boundaries);
     assertStoredExplorationPolicy(active, lock);
@@ -2691,11 +2710,11 @@ async function writeActivatedExplorationBoundarySetUnlocked(
       ...current.boundaries.filter((boundary) => !boundaries.some((next) => next.pack.name === boundary.pack.name))
         .map((boundary) => ({ ...storedReadKey(boundary.pack.name), revision_id: null })),
       storedPointer(revision), storedPointer(selection),
-    ], active.activation.actor, "activate_read");
+    ], active.activation.actor, "activate_read", review.verifiedDecision);
     return true;
   });
   if (stored) return;
-  if (review.expected) throw invalidStoredReadReview();
+  if (review.expected || review.verifiedDecision) throw invalidStoredReadReview();
   let boundaries: ActivatedExplorationBoundary[] = [];
   if (mode === "add") {
     try {

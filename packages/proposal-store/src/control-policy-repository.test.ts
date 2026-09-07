@@ -171,7 +171,10 @@ describe("control policy repository storage foundation", () => {
     await expect(policies.commit({ deployment_id: "deployment-one", expected_epoch: 1,
       revisions: [revision("v1", operator, { quantity: 100 })], active: [], event: event("overwrite") })).rejects.toThrow();
     await expect(policies.commit({ deployment_id: "deployment-one", expected_epoch: 1,
-      revisions: [revision("v2")], active: [], event: event("import") })).rejects.toThrow();
+      revisions: [revision("v2")], active: [], event: event("import") })).rejects.toMatchObject({ code: "POLICY_EVENT_ALREADY_RECORDED" });
+    expect(await policies.event("deployment-one", "import")).toEqual({ ...event("import"), epoch: 1 });
+    expect(await policies.event("another-deployment", "import")).toBeUndefined();
+    expect(await policies.event("deployment-one", "overwrite")).toBeUndefined();
     expect((await policies.deployment("deployment-one"))?.epoch).toBe(1);
     expect(await policies.revision("deployment-one", key(), "v2")).toBeUndefined();
     expect(await policies.active("deployment-one", key())).toEqual(revision("v1"));

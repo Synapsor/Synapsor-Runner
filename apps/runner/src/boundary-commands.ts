@@ -64,6 +64,9 @@ import {
   saveBoundaryReviewProgress,
 } from "./boundary-review-persistence.js";
 import { assertReadAuthoringBindings, readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { openProjectControlPolicies } from "./control-policy-store.js";
+import { assertGovernedReadActivationDecision, readActivationAlreadyConsumed, readActivationEventId,
+  type GovernedReadActivationDecision } from "./control-policy-activation.js";
 import { displayPath } from "./onboarding.js";
 import { sharedPostgresLedgerDoctorChecks } from "./doctor-domain.js";
 import {
@@ -13898,6 +13901,7 @@ export async function boundaryActivateCommand(
     decisionId: `sha256:${string}`;
     expiresAt: string;
   } | undefined;
+  let governedDecision: GovernedReadActivationDecision | undefined;
 
   if (headless) {
     if (process.stdin.isTTY && !confirmation) {
@@ -13986,29 +13990,39 @@ export async function boundaryActivateCommand(
       decision_id: decisionId,
     };
 
-    const storePath = resolvedProject?.store_path
-      ?? (config.storage?.sqlite_path ? path.resolve(config.storage.sqlite_path) : path.join(projectRoot, ".synapsor/local.db"));
-    await fs.mkdir(path.dirname(storePath), { recursive: true, mode: 0o700 });
-    const store = new ProposalStore(storePath);
-    const key = `boundary_activation_decision:${decisionId}`;
-    if (store.getRunnerState(key)) {
-      store.close();
-      throw new Error("Boundary activation decision was already consumed; create a fresh short-lived decision with a new nonce.");
+    const configuredStorePath = path.resolve(path.dirname(path.resolve(configPath)), config.storage?.sqlite_path ?? ".synapsor/local.db");
+    const storePath = optionalArg(args, "--config") ? configuredStorePath : resolvedProject?.store_path ?? configuredStorePath;
+    const policyStore = await openProjectControlPolicies({ projectRoot, config, storePath });
+    if (policyStore) {
+      try {
+        const decision = { purpose: "activate_read" as const,
+          repository_id: policyStore.repository_id, deployment_id: policyStore.deployment_id, project_id: policyStore.project_id,
+          nonce_digest: canonicalJsonDigest({ nonce }), decision_id: decisionId,
+          boundary_digest: context.bundle.candidate_digest, review_bundle_digest: context.bundle.bundle_digest,
+          subject: identity.subject, provider: identity.provider,
+          decision_hash: identity.decision_hash, integrity_hash: identity.integrity_hash,
+          issued_at: now.toISOString(), expires_at: expiresAt };
+        governedDecision = { ...decision, event_id: readActivationEventId(decision) };
+        assertGovernedReadActivationDecision(governedDecision, policyStore, actor, context.bundle.candidate_digest);
+        if (await policyStore.repository.event(policyStore.deployment_id, governedDecision.event_id)) throw readActivationAlreadyConsumed();
+      } finally { await policyStore.close(); }
+    } else {
+      if (expectedAuthoring) throw new Error("POLICY_REPOSITORY_MISSING: restore the reviewed repository before activation.");
+      await fs.mkdir(path.dirname(storePath), { recursive: true, mode: 0o700 });
+      const store = new ProposalStore(storePath);
+      const key = `boundary_activation_decision:${decisionId}`;
+      if (store.getRunnerState(key)) {
+        store.close();
+        throw readActivationAlreadyConsumed();
+      }
+      store.setRunnerState(key, {
+        status: "consumed_before_activation", decision_id: decisionId,
+        boundary_digest: context.bundle.candidate_digest, subject: identity.subject,
+        provider: identity.provider, decision_hash: identity.decision_hash, integrity_hash: identity.integrity_hash,
+        issued_at: now.toISOString(), expires_at: expiresAt, nonce_digest: canonicalJsonDigest({ nonce }), source_database_changed: false,
+      });
+      consumedDecision = { store, key, decisionId, expiresAt };
     }
-    store.setRunnerState(key, {
-      status: "consumed_before_activation",
-      decision_id: decisionId,
-      boundary_digest: context.bundle.candidate_digest,
-      subject: identity.subject,
-      provider: identity.provider,
-      decision_hash: identity.decision_hash,
-      integrity_hash: identity.integrity_hash,
-      issued_at: now.toISOString(),
-      expires_at: expiresAt,
-      nonce_digest: canonicalJsonDigest({ nonce }),
-      source_database_changed: false,
-    });
-    consumedDecision = { store, key, decisionId, expiresAt };
 
     const progress = createBoundaryReviewProgress({
       draft: context.draft,
@@ -14022,7 +14036,7 @@ export async function boundaryActivateCommand(
     try {
       expectedAuthoring = await saveBoundaryReviewProgress(projectRoot, progress, expectedAuthoring);
     } catch (error) {
-      store.setRunnerState(key, {
+      consumedDecision?.store.setRunnerState(consumedDecision.key, {
         status: "consumed_review_persistence_failed",
         decision_id: decisionId,
         boundary_digest: context.bundle.candidate_digest,
@@ -14031,7 +14045,7 @@ export async function boundaryActivateCommand(
         failed_at: new Date().toISOString(),
         source_database_changed: false,
       });
-      store.close();
+      consumedDecision?.store.close();
       consumedDecision = undefined;
       throw error;
     }
@@ -14099,6 +14113,7 @@ export async function boundaryActivateCommand(
       expectedAuthoring,
       actor: actor!,
       confirmation: expectedConfirmation,
+      verifiedDecision: governedDecision,
       confirmedDecisions: context.candidate.unresolved_decisions,
       currentInspection: activationInspection,
       activeSetMode: "add",
