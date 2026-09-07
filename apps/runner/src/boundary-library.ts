@@ -1133,7 +1133,7 @@ async function writeBoundaryLibrary(projectRoot: string, value: BoundaryLibraryF
       return { ...previous, candidate_lock: candidateLock, progress };
     });
     await saveProjectReadAuthoring({ projectRoot, expected: original.bindings,
-      authoring: { type: "read_authoring", entries, selected_boundary_id: value.boundaries[value.selected_name]!.boundary_id },
+      authoring: { ...original.authoring, entries, selected_boundary_id: value.boundaries[value.selected_name]!.boundary_id },
       actor: "local_operator", operation: "edit_read_library" });
     return;
   }

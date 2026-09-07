@@ -56,7 +56,7 @@ export async function saveProjectReadAuthoring(input: {
 export async function saveProjectReadProgress(input: {
   projectRoot: string; expected: ReadAuthoringBindings | undefined;
   progress: BoundaryReviewProgress;
-  replacement?: Pick<PreparedReadEntry, "draft" | "draft_lock" | "candidate_lock">;
+  replacement?: Pick<PreparedReadEntry, "draft" | "draft_lock" | "candidate_lock" | "catalog">;
 }): Promise<boolean> {
   const frozen = structuredClone(input);
   const current = await readProjectReadAuthoring(input.projectRoot);

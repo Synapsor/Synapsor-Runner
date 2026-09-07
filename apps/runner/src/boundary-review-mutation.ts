@@ -59,6 +59,7 @@ import {
 } from "./boundary-review-persistence.js";
 import { readProjectReadAuthoring, saveProjectReadProgress,
   type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
+import { readAuthoringCatalog } from "./control-policy-read-authoring.js";
 import {
   backupLegacyBoundaryReviewOverrides,
   boundaryReviewOverridesForCandidate,
@@ -1704,7 +1705,8 @@ async function commitPreparedBoundaryReviewMutation(input: {
   });
   if (current.authoring) {
     await saveProjectReadProgress({ projectRoot: input.projectRoot, expected: input.bindings.authoring, progress,
-      replacement: { draft: input.build.exploration_boundary, draft_lock: input.build.lock, candidate_lock: input.build.lock } });
+      replacement: { draft: input.build.exploration_boundary, draft_lock: input.build.lock, candidate_lock: input.build.lock,
+        catalog: readAuthoringCatalog(input.build) } });
     return { candidate_digest: progress.candidate_digest, review_revision: progress.revision, source_database_changed: false };
   }
   if (!input.previousProgress || input.previousProgress.policy_migration.status === "review_required") {
@@ -2539,6 +2541,9 @@ async function loadBoundaryReviewFiles(projectRoot: string): Promise<BoundaryRev
   assertInsideProject(resolvedRoot, boundaryRoot);
   const stored = await readProjectReadAuthoring(resolvedRoot);
   if (stored && !stored.selected) throw new Error("No saved Read boundary is selected for editing.");
+  if (stored && !stored.selected!.catalog) throw Object.assign(new Error(
+    "This saved review needs its metadata catalog refreshed. Rescan before editing; file exports cannot replace its exact catalog."),
+  { code: "POLICY_AUTHORING_CATALOG_MISSING" });
   const [draft, lock, review] = await Promise.all([
     stored?.selected?.draft ?? readJson<ExplorationBoundaryDraft>(
       path.join(boundaryRoot, "exploration-boundary.draft.json"),
@@ -2548,7 +2553,7 @@ async function loadBoundaryReviewFiles(projectRoot: string): Promise<BoundaryRev
       path.join(resolvedRoot, ".synapsor/generation-lock.json"),
       "generation lock",
     ),
-    readJson<BoundaryReviewFiles["review"]>(
+    stored?.selected?.catalog?.review ?? readJson<BoundaryReviewFiles["review"]>(
       path.join(resolvedRoot, ".synapsor/review-report.json"),
       "boundary review report",
     ),

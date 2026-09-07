@@ -24,7 +24,9 @@ import { createOptionalActionRuleRuntimeServices, createOptionalReadActionRuleRu
 import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 import { createScopedExploreRuntime } from "./scoped-explore.js";
 import { readOperatorExecutionConfig } from "./control-policy-execution.js";
-import type { StoredReadAuthoring } from "./control-policy-read-authoring.js";
+import { readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
+import { commitBoundaryRescan, prepareBoundaryRescan, readBoundaryRescanReport } from "./boundary-rescan.js";
+import { commitBoundaryResourceReviewMutation, inspectBoundaryResourceReview, prepareBoundaryResourceReviewMutation } from "./boundary-review-mutation.js";
 import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
 import { readBoundaryReviewProgress, saveBoundaryReviewProgress } from "./boundary-review-persistence.js";
 import { loadBoundaryReviewContext } from "./boundary-commands.js";
@@ -104,6 +106,15 @@ function readAuthoringFixture(): StoredReadAuthoring {
 }
 
 describe("exact stored operator authority", () => {
+  it("binds private authoring catalogs to exact inspected evidence without granting their fields", () => {
+    const authoring = readAuthoringFixture(); const source = fixture();
+    authoring.entries[0]!.catalog = readAuthoringCatalog(source.build);
+    expect(decodeOperatorAuthority(encodeOperatorAuthority(authoring))).toEqual(authoring);
+    authoring.entries[0]!.catalog!.review.resources[0]!.fields[0]!.name = "forged_field";
+    expect(() => encodeOperatorAuthority(authoring)).toThrow("POLICY_AUTHORING_CATALOG_MISMATCH");
+    authoring.entries[0]!.catalog = readAuthoringCatalog(fixture("wrong_domain").build);
+    expect(() => encodeOperatorAuthority(authoring)).toThrow("POLICY_AUTHORING_CATALOG_MISMATCH");
+  });
   it("preserves exact authoring candidates, confirmations, stable identities and independent schema snapshots", () => {
     const authoring = readAuthoringFixture(); const before = structuredClone(authoring);
     const record = encodeOperatorAuthority(authoring);
@@ -457,6 +468,84 @@ for (const backend of ["sqlite", "postgres"] as const) {
           .toEqual({ type: "read_authoring", selected_boundary_id: null, entries: [] });
         await expect(loadBoundaryReviewContext(projectRoot)).rejects.toThrow("No saved Read boundary");
         expect((await repository.current()).active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(original.active);
+      });
+    });
+
+    it("rescans stored reviews atomically, retains exact catalogs, and rejects stale publication", async () => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const source = fixture(); const action = actionFixture(source);
+        await writeActionRuleAuthorityDraft(projectRoot, action);
+        await activateActionRuleAuthority({ projectRoot, name: action.authority.name, expected_digest: action.digest,
+          confirmation: `ACTIVATE ${action.digest}`, actor: "operator" });
+        const config = executionConfig(); config.action_rules!.project_root = projectRoot;
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        config.supervised_worker!.outcomes![0]!.action_boundary_digest = action.authority.action_boundary.digest;
+        const policies = new OperatorAuthorityRepository(binding, config);
+        await policies.commit({ expected_epoch: (await policies.current()).epoch,
+          active: [{ key: OPERATOR_EXECUTION_POLICY, policy: decodeOperatorAuthority(encodeOperatorExecutionPolicy(config)!, { runtimeConfig: config }) }],
+          actor: "operator", operation: "reviewed_execution" });
+        const before = await policies.current();
+        const first = readAuthoringFixture().entries[0]!;
+        const second = structuredClone(first); second.progress = createBoundaryReviewProgress({ draft: second.draft,
+          candidate: { ...second.progress.candidate, pack: { ...second.progress.candidate.pack, name: "stock_audit" } },
+          confirmedDecisions: [], actor: "reviewer", revision: 1 });
+        const authoring: StoredReadAuthoring = { type: "read_authoring", selected_boundary_id: first.progress.boundary_id,
+          entries: [first, second, readAuthoringFixture().entries[1]!] };
+        await policies.commitReadAuthoring({ expected_epoch: before.epoch, expected_revision_id: null,
+          authoring, actor: "reviewer", operation: "prepare" });
+        for (const name of ["boundary-library.json", "boundary-review-progress.json", "generation-lock.json", "review-report.json", "boundary-rescan-report.json"]) {
+          await fs.writeFile(path.join(projectRoot, ".synapsor", name), "invalid legacy export");
+        }
+        await expect(inspectBoundaryResourceReview(projectRoot, "inventory.items"))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_CATALOG_MISSING" });
+        // Refreshing missing metadata does not create a new reviewed candidate.
+        const unchanged = await prepareBoundaryRescan({ projectRoot, inspection: source.inspection });
+        expect(unchanged.report.changed).toBe(false);
+        expect(unchanged.report.authoring_baseline_refreshed).toBe(true);
+        await commitBoundaryRescan(unchanged);
+        const refreshed = await policies.current();
+        const refreshedAuthoring = refreshed.active.find(({ policy }) => policy.type === "read_authoring")!.policy as StoredReadAuthoring;
+        expect(refreshedAuthoring.entries.map((entry) => entry.progress)).toEqual(authoring.entries.map((entry) => entry.progress));
+        expect(refreshedAuthoring.entries.map((entry) => entry.draft_lock)).toEqual(authoring.entries.map((entry) => entry.draft_lock));
+        expect((await inspectBoundaryResourceReview(projectRoot, "inventory.items")).fields.map((field) => field.name)).toContain("quantity");
+        const noOp = await prepareBoundaryRescan({ projectRoot, inspection: source.inspection });
+        expect(noOp.report).toMatchObject({ changed: false, authoring_baseline_refreshed: false });
+        await commitBoundaryRescan(noOp);
+        expect(await policies.current()).toEqual(refreshed);
+        const changed = structuredClone(source.inspection);
+        changed.tables[0]!.columns.push({ ...structuredClone(changed.tables[0]!.columns[3]!), name: "m014", ordinal_position: 9 });
+        const preview = await prepareBoundaryRescan({ projectRoot, inspection: changed });
+        const competing = await prepareBoundaryRescan({ projectRoot, inspection: changed });
+        expect(preview.report.boundaries).toHaveLength(2);
+        expect(preview.report.changed).toBe(true);
+        const unbound = structuredClone(preview); delete unbound.stored;
+        await expect(commitBoundaryRescan(unbound)).rejects.toThrow("missing its original saved-review binding");
+        expect(await policies.current()).toEqual(refreshed);
+        await commitBoundaryRescan(preview);
+        const saved = await policies.current();
+        expect((saved.active.find(({ policy }) => policy.type === "read_authoring")!.policy as StoredReadAuthoring)
+          .entries.find((entry) => entry.progress.candidate.pack.name === "university_draft"))
+          .toEqual(authoring.entries[2]);
+        expect(saved.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
+        expect(saved.drafts.filter(({ policy }) => policy.type === "action")).toEqual(before.drafts.filter(({ policy }) => policy.type === "action"));
+        const read = await inspectBoundaryResourceReview(projectRoot, "inventory.items");
+        expect(read.fields.map((field) => field.name)).toContain("m014");
+        expect(read.candidate!.selectable_fields).not.toContain("m014");
+        expect(await readBoundaryRescanReport(projectRoot)).toEqual(preview.report);
+        expect(await fs.readFile(path.join(projectRoot, ".synapsor/review-report.json"), "utf8")).toBe("invalid legacy export");
+        await expect(commitBoundaryRescan(competing)).rejects.toThrow("Boundary review changed");
+        expect(await policies.current()).toEqual(saved);
+        const edit = await prepareBoundaryResourceReviewMutation(projectRoot, { resource_id: "inventory.items",
+          withhold_from_model_fields: ["quantity"], actor: "reviewer", reason: "Keep the internal stock quantity private" }, async () => changed);
+        await commitBoundaryResourceReviewMutation(projectRoot, edit);
+        const edited = await inspectBoundaryResourceReview(projectRoot, "inventory.items");
+        expect(edited.candidate!.model_withheld_fields).toContain("quantity");
+        expect(edited.fields.map((field) => field.name)).toContain("m014");
+        expect((await policies.current()).active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
+        const final = await policies.current();
+        const unsafe = structuredClone(changed); unsafe.role_posture!.superuser = true;
+        await expect(prepareBoundaryRescan({ projectRoot, inspection: unsafe })).rejects.toMatchObject({ code: "DATABASE_ROLE_UNSAFE" });
+        expect(await policies.current()).toEqual(final);
       });
     });
 

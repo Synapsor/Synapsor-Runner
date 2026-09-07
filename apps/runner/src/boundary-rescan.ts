@@ -57,6 +57,8 @@ import {
 } from "./derived-scope-display.js";
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
 import { cliCommandName } from "./cli-command-meta.js";
+import { readProjectReadAuthoring, saveProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
+import { readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
 
 export { resolveConfiguredTrustedContextAuthority } from "./configured-trusted-context.js";
 
@@ -176,6 +178,7 @@ export type PreparedBoundaryRescan = {
   }>;
   report: BoundaryRescanReport;
   previewDigest: `sha256:${string}`;
+  stored?: { expected: ReadAuthoringBindings; authoring: StoredReadAuthoring };
 };
 
 export async function prepareBoundaryRescan(input: {
@@ -189,16 +192,18 @@ export async function prepareBoundaryRescan(input: {
   const boundaryRoot = path.resolve(projectRoot, input.boundaryRoot ?? "synapsor/generated");
   assertInsideProject(projectRoot, boundaryRoot);
   const baseStateDigest = await boundaryRescanBaseStateDigest(projectRoot, boundaryRoot);
+  const stored = await readProjectReadAuthoring(projectRoot);
+  if (stored && !stored.selected) throw new Error("No saved Read boundary is selected. Prepare a new draft before rescanning.");
   const [oldDraft, oldLock, hadSavedReviewState] = await Promise.all([
-    readJson<ExplorationBoundaryDraft>(
+    stored?.selected?.draft ?? readJson<ExplorationBoundaryDraft>(
       path.join(boundaryRoot, "exploration-boundary.draft.json"),
       "exploration boundary draft",
     ),
-    readJson<GenerationLock>(
+    stored?.selected?.draft_lock ?? readJson<GenerationLock>(
       path.join(projectRoot, ".synapsor/generation-lock.json"),
       "generation lock",
     ),
-    anyFileExists([
+    stored ? true : anyFileExists([
       path.join(projectRoot, ".synapsor/boundary-library.json"),
       path.join(projectRoot, ".synapsor/boundary-review-progress.json"),
     ]),
@@ -217,16 +222,17 @@ export async function prepareBoundaryRescan(input: {
   });
   const project = await detectProjectContext(projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
-  const currentProgress = await readBoundaryReviewProgress(projectRoot, oldDraft);
+  const currentProgress = stored?.selected?.progress ?? await readBoundaryReviewProgress(projectRoot, oldDraft);
   const currentCandidate = currentProgress?.candidate ?? oldDraft;
   const previousLibrary = await loadBoundaryLibraryForReconciliation({
     projectRoot,
     draft: oldDraft,
     currentCandidate,
     ...(currentProgress ? { currentProgress } : {}),
+    ...(stored ? { expectedAuthoring: stored.bindings } : {}),
   });
   const now = input.now ?? new Date().toISOString();
-  const savedPolicyBaseline = await optionalOldPolicyBaseline(projectRoot);
+  const savedPolicyBaseline = stored ? stored.selected?.catalog?.policy_baseline : await optionalOldPolicyBaseline(projectRoot);
   const oldPolicyBaseline = savedPolicyBaseline?.boundary ?? oldDraft;
   const selectedPrevious = previousLibrary.boundaries[previousLibrary.selected_name];
   if (!selectedPrevious) throw new Error("Schema rescan could not load the selected boundary.");
@@ -259,22 +265,33 @@ export async function prepareBoundaryRescan(input: {
       };
   const nextBoundaries: Record<string, BoundaryReviewProgress> = {};
   const builds = new Map<string, AutoBoundaryBuild>();
+  const nextStoredEntries: StoredReadAuthoring["entries"] = [];
   const entries: BoundaryRescanEntry[] = [];
 
   for (const [boundaryName, previous] of Object.entries(previousLibrary.boundaries)
     .sort(([left], [right]) => left.localeCompare(right))) {
+    const storedEntry = stored?.authoring.entries.find((entry) => entry.progress.boundary_id === previous.boundary_id);
+    const entryLock = storedEntry?.draft_lock ?? oldLock;
+    // The selected source's inspection cannot rebase a saved boundary from a
+    // different schema or connection. Keep that entry byte-for-byte intact.
+    if (storedEntry && (entryLock.engine !== oldLock.engine || entryLock.source_env !== oldLock.source_env
+      || entryLock.inspected_schema !== oldLock.inspected_schema)) {
+      nextBoundaries[boundaryName] = structuredClone(previous);
+      nextStoredEntries.push(structuredClone(storedEntry));
+      continue;
+    }
     const buildInput = buildInputForBoundary({
       inspection,
       project,
       evidence,
-      lock: oldLock,
+      lock: entryLock,
       candidate: previous.candidate,
       configuredTrustedContext,
     });
     const cleanBuild = buildAutoBoundary(buildInput);
     let previousOverrides = boundaryReviewOverridesForCandidate({
       progress: previous,
-      baseline: oldPolicyBaseline,
+      baseline: storedEntry?.catalog?.policy_baseline.boundary ?? storedEntry?.draft ?? oldPolicyBaseline,
       candidate: previous.candidate,
       actor: previous.confirmations.at(-1)?.actor ?? "boundary-rescan",
       now: previous.updated_at,
@@ -298,12 +315,14 @@ export async function prepareBoundaryRescan(input: {
         previousBoundary: previous.candidate,
       },
     );
-    const sharedFactsUnchanged = generationLockSharedFactsDigest(comparableOldLock)
+    const sharedFactsUnchanged = generationLockSharedFactsDigest(storedEntry ? entryLock : comparableOldLock)
       === generationLockSharedFactsDigest(cleanBuild.lock);
     if (sharedFactsUnchanged && pruned.removed.length === 0) {
       const progress = structuredClone(previous);
       builds.set(boundaryName, cleanBuild);
       nextBoundaries[boundaryName] = progress;
+      if (storedEntry) nextStoredEntries.push({ ...structuredClone(storedEntry),
+        catalog: storedEntry.catalog ?? readAuthoringCatalog(cleanBuild) });
       entries.push(rescanEntry({
         previous,
         progress,
@@ -368,6 +387,9 @@ export async function prepareBoundaryRescan(input: {
         previousInvalidations.has(invalidationKey(item)) || !safeIds.has(item.id));
     }
     nextBoundaries[boundaryName] = progress;
+    if (storedEntry) nextStoredEntries.push({ draft: build.exploration_boundary, draft_lock: build.lock,
+      candidate_lock: build.lock, progress,
+      catalog: readAuthoringCatalog(build) });
     entries.push(rescanEntry({
       previous,
       progress,
@@ -396,9 +418,10 @@ export async function prepareBoundaryRescan(input: {
     previousTrustedContext,
     configuredTrustedContext,
   });
-  report.authoring_baseline_refreshed = savedPolicyBaseline === undefined
-    || canonicalJsonDigest(savedPolicyBaseline)
-      !== canonicalJsonDigest(selectedBuild.policy_baseline);
+  report.authoring_baseline_refreshed = stored
+    ? nextStoredEntries.some((entry) => entry.catalog && !stored.authoring.entries.find(
+      (old) => old.progress.boundary_id === entry.progress.boundary_id)?.catalog)
+    : savedPolicyBaseline === undefined || canonicalJsonDigest(savedPolicyBaseline) !== canonicalJsonDigest(selectedBuild.policy_baseline);
   const { generated_at: _generatedAt, ...stableReport } = report;
   if (await boundaryRescanBaseStateDigest(projectRoot, boundaryRoot) !== baseStateDigest) {
     throw new Error(
@@ -420,6 +443,8 @@ export async function prepareBoundaryRescan(input: {
       lock: build.lock,
     })),
     report,
+    ...(stored ? { stored: { expected: stored.bindings, authoring: { ...stored.authoring,
+      entries: nextStoredEntries, rescan_report: structuredClone(report) } } } : {}),
     previewDigest: canonicalJsonDigest({
       schema_version: "synapsor.boundary-rescan-preview.v1",
       selected_boundary_id: selectedProgress.boundary_id,
@@ -438,12 +463,21 @@ export async function prepareBoundaryRescan(input: {
 }
 
 export async function commitBoundaryRescan(prepared: PreparedBoundaryRescan): Promise<void> {
+  prepared = structuredClone(prepared);
   if (!prepared.report.changed && !prepared.report.authoring_baseline_refreshed) return;
   if (await boundaryRescanBaseStateDigest(prepared.projectRoot, prepared.boundaryRoot)
     !== prepared.baseStateDigest) {
     throw new Error(
       "Boundary review changed after this rescan preview was prepared. Nothing was written; retry --rescan.",
     );
+  }
+  if (!prepared.stored && await readProjectReadAuthoring(prepared.projectRoot)) {
+    throw new Error("The governed rescan is missing its original saved-review binding. No files or authority changed; prepare a new preview.");
+  }
+  if (prepared.stored) {
+    await saveProjectReadAuthoring({ projectRoot: prepared.projectRoot, expected: prepared.stored.expected,
+      authoring: prepared.stored.authoring, actor: "local_operator", operation: "rescan_read_authoring" });
+    return;
   }
   if (!prepared.report.changed) {
     await persistAutoBoundaryPolicyBaseline(
@@ -485,6 +519,11 @@ export async function commitBoundaryRescan(prepared: PreparedBoundaryRescan): Pr
 export async function readBoundaryRescanReport(
   projectRoot: string,
 ): Promise<BoundaryRescanReport | undefined> {
+  const stored = await readProjectReadAuthoring(projectRoot);
+  if (stored) {
+    const report = stored.authoring.rescan_report;
+    return report?.schema_version === BOUNDARY_RESCAN_REPORT_VERSION ? structuredClone(report) as BoundaryRescanReport : undefined;
+  }
   try {
     const report = await readJson<BoundaryRescanReport>(
       path.join(path.resolve(projectRoot), ".synapsor", BOUNDARY_RESCAN_REPORT_FILE),
@@ -1380,6 +1419,8 @@ async function boundaryRescanBaseStateDigest(
   projectRoot: string,
   boundaryRoot: string,
 ): Promise<`sha256:${string}`> {
+  const stored = await readProjectReadAuthoring(projectRoot);
+  if (stored) return canonicalJsonDigest({ schema_version: "synapsor.boundary-rescan-base-state.v1", authoring: stored.bindings });
   const files = [
     path.join(boundaryRoot, "exploration-boundary.draft.json"),
     path.join(boundaryRoot, "review-overrides.json"),

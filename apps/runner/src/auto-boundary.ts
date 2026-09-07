@@ -1547,6 +1547,14 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
   };
 }
 
+export function generationReviewEvidenceDigest(
+  review: Pick<AutoBoundaryBuild["review"], "resources" | "structured_actions">,
+  project: AutoBoundaryEvidenceGraph["project"],
+): `sha256:${string}` {
+  return canonicalJsonDigest({ graph: generationEvidenceAuthority(review.resources),
+    structured_actions: review.structured_actions, project });
+}
+
 function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown[] {
   return resources.map(({
     approximate_row_count: _approximateRowCount,
@@ -2879,6 +2887,11 @@ export async function loadAutoBoundaryPolicyBaseline(
     path.join(projectRoot, ".synapsor", AUTO_BOUNDARY_POLICY_BASELINE_FILE),
     "utf8",
   )) as unknown;
+  return parseAutoBoundaryPolicyBaseline(value);
+}
+
+/** An operator catalog baseline may be empty; it is not activatable authority. */
+export function parseAutoBoundaryPolicyBaseline(value: unknown): AutoBoundaryBuild["policy_baseline"] {
   if (!isRecord(value)
     || value.schema_version !== AUTO_BOUNDARY_POLICY_BASELINE_VERSION
     || !isRecord(value.boundary)
