@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
@@ -35,6 +37,7 @@ import {
   previewSemanticSupervisedExecution,
   semanticExecutionConfirmation,
   semanticActionRuntimeConfig,
+  restoreReviewedSemanticReadScope,
 } from "./semantic-action-deployment.js";
 import { inspectMcpToolBoundary, toolsPreview } from "./mcp-runtime.js";
 import { mcp } from "./mcp-project.js";
@@ -226,6 +229,117 @@ describe("semantic Action Rule authority persistence", () => {
       else process.env.SYNAPSOR_PRINCIPAL = priorPrincipal;
     }
     expect(output.join("")).toContain("Model-facing tools: app.describe_data, app.explore_data");
+  });
+
+  it.each(["draft", "activate", "deactivate", "runtime", "scope_repair"])("coordinates native Action %s with the project authority writer", async (mode) => {
+    const root = await temporaryRoot();
+    const readBoundary = activeReadBoundary();
+    if (mode === "scope_repair") {
+      readBoundary.pack.resources.push({ id: "billing.preferences", tenant_key: "account_id", principal_key: "principal_id",
+        rls_session: { tenant_setting: "synapsor.tenant_id" } } as never);
+      readBoundary.activation.digest = canonicalJsonDigest({ ...readBoundary, activation: "reviewed" });
+    }
+    await writeActiveReadSet(root, readBoundary);
+    const source = authoritySource(readBoundary.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: readBoundary.pack.name, read_boundary_digest: readBoundary.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }],
+      reviews: [authorityReview()], now: "2026-09-02T20:00:00.000Z" });
+    if (mode !== "draft") await writeActionRuleAuthorityDraft(root, draft);
+    const activate = { projectRoot: root, name: draft.authority.name, expected_digest: draft.digest,
+      confirmation: `ACTIVATE ${draft.digest}`, actor: "billing reviewer" };
+    if (mode === "deactivate") await activateActionRuleAuthority(activate);
+    const actionConfigPath = path.join(root, "synapsor.actions.runner.json");
+    if (mode === "scope_repair") {
+      await activateSemanticActionRuntime({ projectRoot: root, draft, actor: "billing reviewer" });
+      const config = JSON.parse(await fs.readFile(actionConfigPath, "utf8"));
+      delete config.sources.local_postgres.database_scope;
+      await fs.writeFile(actionConfigPath, JSON.stringify(config));
+    }
+    const run = () => mode === "draft" ? writeActionRuleAuthorityDraft(root, draft)
+      : mode === "activate" ? activateActionRuleAuthority(activate)
+      : mode === "deactivate" ? deactivateActionRuleAuthority(root)
+      : mode === "runtime" ? activateSemanticActionRuntime({ projectRoot: root, draft, actor: "billing reviewer" })
+      : restoreReviewedSemanticReadScope(root);
+    let finished = false;
+    let pending!: Promise<unknown>;
+    await withProjectAuthorityMutation(root, async () => {
+      pending = run().then((value) => { finished = true; return value; });
+      await delay(150);
+      expect(finished).toBe(false);
+    });
+    await pending;
+    expect(finished).toBe(true);
+    if (mode === "draft") expect((await readActionRuleAuthorityDraft(root, draft.authority.name))?.digest).toBe(draft.digest);
+    if (mode === "activate" || mode === "runtime") expect((await readActionRuleAuthorityActivation(root))?.digest).toBe(draft.digest);
+    if (mode === "deactivate") expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+    if (mode === "scope_repair") expect(JSON.parse(await fs.readFile(actionConfigPath, "utf8")).sources.local_postgres.database_scope)
+      .toEqual({ mode: "postgres_rls", tenant_setting: "synapsor.tenant_id" });
+  });
+
+  it.each(["draft", "runtime_explicit"])("writes %s to the locked canonical project even if its input alias is retargeted", async (mode) => {
+    const root = await temporaryRoot(), other = await temporaryRoot(), linkRoot = await temporaryRoot();
+    const alias = path.join(linkRoot, "current");
+    await fs.symlink(root, alias, "dir");
+    const readBoundary = activeReadBoundary(), source = authoritySource(readBoundary.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: readBoundary.pack.name, read_boundary_digest: readBoundary.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }], reviews: [authorityReview()] });
+    if (mode === "runtime_explicit") {
+      await writeActiveReadSet(root, readBoundary);
+      await writeActionRuleAuthorityDraft(root, draft);
+    }
+    const lstat = fs.lstat.bind(fs);
+    let retargeted = false;
+    const spy = vi.spyOn(fs, "lstat").mockImplementation((async (...args: Parameters<typeof fs.lstat>) => {
+      if (!retargeted && args[0] === path.join(root, ".synapsor/exploration-boundaries.active.lock")) {
+        retargeted = true; await fs.unlink(alias); await fs.symlink(other, alias, "dir");
+      }
+      return lstat(...args);
+    }) as typeof fs.lstat);
+    try {
+      if (mode === "draft") await writeActionRuleAuthorityDraft(alias, draft);
+      else await activateSemanticActionRuntime({ projectRoot: alias, draft, actor: "billing reviewer",
+        baseConfigPath: path.join(alias, "synapsor.runner.json"), outputConfigPath: path.join(alias, "synapsor.actions.runner.json") });
+    } finally { spy.mockRestore(); }
+    expect(retargeted).toBe(true);
+    if (mode === "draft") expect((await readActionRuleAuthorityDraft(root, draft.authority.name))?.digest).toBe(draft.digest);
+    else {
+      expect((await readActionRuleAuthorityActivation(root))?.digest).toBe(draft.digest);
+      expect(await fs.stat(path.join(root, "synapsor.actions.runner.json"))).toBeDefined();
+      await expect(fs.stat(path.join(other, "synapsor.actions.runner.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    expect(await readActionRuleAuthorityDraft(other, draft.authority.name)).toBeUndefined();
+  });
+
+  it.each(["config", "revocation"])("rechecks legacy execution %s after inspection and before publication", async (mode) => {
+    const root = await temporaryRoot(), read = activeReadBoundary();
+    await writeActiveReadSet(root, read);
+    const source = authoritySource(read.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: read.pack.name, read_boundary_digest: read.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }], reviews: [authorityReview()] });
+    await writeActionRuleAuthorityDraft(root, draft);
+    await activateSemanticActionRuntime({ projectRoot: root, draft, actor: "billing reviewer" });
+    const file = path.join(root, "synapsor.actions.runner.json");
+    let preserved = await fs.readFile(file, "utf8");
+    const input = { projectRoot: root, outcome: source.rule.outcome, profile: "staging" as const,
+      writeUrlEnv: "BILLING_WRITER_URL", env: { BILLING_WRITER_URL: "postgresql://fixture.invalid/not-used" },
+      inspect: async () => writerInspection() };
+    const preview = await previewSemanticSupervisedExecution(input);
+    await expect(enableSemanticSupervisedExecution({ ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
+      expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
+      confirmation: semanticExecutionConfirmation(preview), inspect: async () => {
+        await withProjectAuthorityMutation(root, async (permit) => {
+          if (mode === "config") {
+            const changed = JSON.parse(preserved); changed.sources.local_postgres.write_url_env = "OTHER_WRITER";
+            preserved = JSON.stringify(changed); await fs.writeFile(file, preserved);
+          } else await deactivateActionRuleAuthority(root, permit);
+        });
+        return writerInspection();
+      },
+    })).rejects.toThrow(mode === "config" ? /SEMANTIC_ACTION_CONFIG_CHANGED/ : /No active semantic Action Rule authority/);
+    expect(await fs.readFile(file, "utf8")).toBe(preserved);
   });
 
   it("publishes a separate fixed-tool Action runtime without copying Read capabilities", async () => {

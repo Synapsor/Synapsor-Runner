@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import {
   loadRuntimeConfigFromFile,
   resolveRuntimeConfig,
@@ -84,6 +85,15 @@ export async function activateSemanticActionRuntime(input: {
   actor: string;
   now?: string;
 }): Promise<SemanticActionRuntimeActivation> {
+  return withProjectAuthorityMutation(input.projectRoot, (permit) => activateSemanticActionRuntimeUnlocked({ ...input,
+    projectRoot: permit.projectRoot,
+    ...(input.baseConfigPath === undefined ? {} : { baseConfigPath: projectPathAfterLock(input.baseConfigPath, input.projectRoot, permit.projectRoot) }),
+    ...(input.outputConfigPath === undefined ? {} : { outputConfigPath: projectPathAfterLock(input.outputConfigPath, input.projectRoot, permit.projectRoot) }),
+  }, permit));
+}
+
+async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof activateSemanticActionRuntime>[0],
+  permit: ProjectAuthorityMutationPermit): Promise<SemanticActionRuntimeActivation> {
   const projectRoot = path.resolve(input.projectRoot);
   const outputConfigPath = path.resolve(
     input.outputConfigPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG),
@@ -114,6 +124,7 @@ export async function activateSemanticActionRuntime(input: {
       expected_digest: input.draft.digest,
       confirmation: `ACTIVATE ${input.draft.digest}`,
       actor: input.actor,
+      mutationPermit: permit,
       ...(input.now ? { now: input.now } : {}),
     });
     return {
@@ -132,6 +143,10 @@ export async function activateSemanticActionRuntime(input: {
 
 /** Repair only omitted, already-authorized RLS wiring on a guided resume. */
 export async function restoreReviewedSemanticReadScope(projectRoot: string): Promise<boolean> {
+  return withProjectAuthorityMutation(projectRoot, (held) => restoreReviewedSemanticReadScopeUnlocked(held.projectRoot));
+}
+
+async function restoreReviewedSemanticReadScopeUnlocked(projectRoot: string): Promise<boolean> {
   const configPath = path.join(path.resolve(projectRoot), SEMANTIC_ACTION_RUNTIME_CONFIG);
   const previous = await readOptionalText(configPath);
   if (previous === undefined) return false;
@@ -365,6 +380,20 @@ async function publishReviewedExecutionConfig(input: {
   expectedDigest: string; expectedEpoch?: number; expectedActionDigest: string;
   operation: "enable_reviewed_execution" | "disable_reviewed_execution"; env?: NodeJS.ProcessEnv;
 }): Promise<void> {
+  return withProjectAuthorityMutation(input.projectRoot, (held) => publishReviewedExecutionConfigUnlocked({ ...input,
+    projectRoot: held.projectRoot,
+    configPath: projectPathAfterLock(input.configPath, input.projectRoot, held.projectRoot),
+  }));
+}
+
+function projectPathAfterLock(file: string, originalRoot: string, heldRoot: string): string {
+  const absolute = path.resolve(file);
+  const relative = path.relative(path.resolve(originalRoot), absolute);
+  return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+    ? path.resolve(heldRoot, relative) : absolute;
+}
+
+async function publishReviewedExecutionConfigUnlocked(input: Parameters<typeof publishReviewedExecutionConfig>[0]): Promise<void> {
   const previous = await fs.readFile(input.configPath, "utf8");
   const previousConfig = resolveRuntimeConfig(JSON.parse(previous) as RuntimeConfig, path.dirname(input.configPath));
   const binding = await openProjectControlPolicies({ projectRoot: input.projectRoot, config: previousConfig, env: input.env,
@@ -372,6 +401,15 @@ async function publishReviewedExecutionConfig(input: {
   const nextText = `${JSON.stringify(input.config, null, 2)}\n`;
   if (!binding) {
     if (input.expectedEpoch !== undefined) throw new Error("POLICY_REPOSITORY_MISSING: review execution again.");
+    if (canonicalJsonDigest(JSON.parse(previous)) !== input.expectedDigest) {
+      throw new Error("SEMANTIC_ACTION_CONFIG_CHANGED: the reviewed runtime config changed before publication; review execution again.");
+    }
+    const active = await loadActiveActionRuleAuthority(input.projectRoot, {
+      dependency_check: input.operation === "disable_reviewed_execution" ? "report" : "all",
+    });
+    if (active.authority.action_boundary.digest !== input.expectedActionDigest) {
+      throw new Error("SEMANTIC_ACTION_AUTHORITY_CHANGED: the reviewed Action Boundary changed before publication; review execution again.");
+    }
     await writePrivateTextAtomic(input.configPath, nextText);
     return;
   }

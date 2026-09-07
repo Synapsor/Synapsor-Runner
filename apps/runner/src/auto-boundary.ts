@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { Buffer } from "node:buffer";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { compileAgentDsl, formatAgentDsl } from "@synapsor/dsl";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -58,9 +59,6 @@ export const DEFAULT_GENERATED_DIR = "synapsor/generated";
 export const MAX_ACTIVE_EXPLORATION_BOUNDARIES = 8;
 const EXPLORATION_LOCK_SNAPSHOT_DIR = "exploration-locks";
 const ACTIVE_EXPLORATION_BOUNDARY_SET_FILE = "exploration-boundaries.active.json";
-const ACTIVE_EXPLORATION_BOUNDARY_LOCK_FILE = "exploration-boundaries.active.lock";
-const ACTIVE_EXPLORATION_BOUNDARY_LOCK_TIMEOUT_MS = 5_000;
-const ACTIVE_EXPLORATION_BOUNDARY_STALE_LOCK_MS = 30_000;
 const AUTO_BOUNDARY_POLICY_BASELINE_FILE = "auto-boundary-policy-baseline.json";
 const AUTO_BOUNDARY_POLICY_BASELINE_VERSION = "synapsor.auto-boundary-policy-baseline.v1";
 
@@ -2537,8 +2535,8 @@ export async function deactivateExplorationBoundary(
   name?: string,
 ): Promise<{ disabled: string[]; remaining: ActivatedExplorationBoundary[] }> {
   const projectRoot = path.resolve(projectRootInput);
-  return withActiveExplorationBoundaryLock(projectRoot, async () =>
-    deactivateExplorationBoundaryUnlocked(projectRoot, name));
+  return withActiveExplorationBoundaryLock(projectRoot, async (heldRoot) =>
+    deactivateExplorationBoundaryUnlocked(heldRoot, name));
 }
 
 async function deactivateExplorationBoundaryUnlocked(
@@ -2685,8 +2683,8 @@ async function writeActivatedExplorationBoundarySet(
   lock: GenerationLock,
   review: { expected?: ReadAuthoringBindings; candidate: ExplorationBoundaryDraft; verifiedDecision?: GovernedReadActivationDecision },
 ): Promise<void> {
-  await withActiveExplorationBoundaryLock(projectRoot, async () => {
-    await writeActivatedExplorationBoundarySetUnlocked(projectRoot, active, mode, lock, review);
+  await withActiveExplorationBoundaryLock(projectRoot, async (heldRoot) => {
+    await writeActivatedExplorationBoundarySetUnlocked(heldRoot, active, mode, lock, review);
   });
 }
 
@@ -2859,46 +2857,9 @@ async function writePrivateTextAtomic(filePath: string, contents: string): Promi
 
 async function withActiveExplorationBoundaryLock<T>(
   projectRoot: string,
-  operation: () => Promise<T>,
+  operation: (heldRoot: string) => Promise<T>,
 ): Promise<T> {
-  const stateRoot = path.join(projectRoot, ".synapsor");
-  const lockPath = path.join(stateRoot, ACTIVE_EXPLORATION_BOUNDARY_LOCK_FILE);
-  await fs.mkdir(stateRoot, { recursive: true, mode: 0o700 });
-  const deadline = Date.now() + ACTIVE_EXPLORATION_BOUNDARY_LOCK_TIMEOUT_MS;
-  let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
-  while (!handle) {
-    try {
-      const candidate = await fs.open(lockPath, "wx", 0o600);
-      try {
-        await candidate.writeFile(JSON.stringify({
-          pid: process.pid,
-          created_at: new Date().toISOString(),
-        }));
-        handle = candidate;
-      } catch (error) {
-        await candidate.close().catch(() => undefined);
-        await fs.rm(lockPath, { force: true }).catch(() => undefined);
-        throw error;
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const stat = await fs.stat(lockPath).catch(() => undefined);
-      if (stat && Date.now() - stat.mtimeMs > ACTIVE_EXPLORATION_BOUNDARY_STALE_LOCK_MS) {
-        await fs.rm(lockPath, { force: true }).catch(() => undefined);
-        continue;
-      }
-      if (Date.now() >= deadline) {
-        throw new Error("Another boundary activation is still updating the active authority. Retry the operation.");
-      }
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-  }
-  try {
-    return await operation();
-  } finally {
-    await handle.close().catch(() => undefined);
-    await fs.rm(lockPath, { force: true }).catch(() => undefined);
-  }
+  return withProjectAuthorityMutation(projectRoot, (held) => operation(held.projectRoot));
 }
 
 export async function loadGenerationLockForActivatedBoundary(

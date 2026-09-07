@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import type { ControlPolicyRevision, ControlPolicyScopeSnapshot } from "@synapsor-runner/proposal-store";
 import { openBoundProjectControlPolicies, assertProjectControlPolicyBinding, commitImmutableControlPolicies,
   type BoundProjectPolicyStore } from "./control-policy-store.js";
@@ -287,7 +288,12 @@ async function checkedStoredActionResult(projectRoot: string, binding: BoundProj
 export async function writeActionRuleAuthorityDraft(
   projectRootInput: string,
   draft: ActionRuleAuthorityDraftV1,
+  permit?: ProjectAuthorityMutationPermit,
 ): Promise<string> {
+  return withProjectAuthorityMutation(projectRootInput, (held) => writeActionRuleAuthorityDraftUnlocked(held.projectRoot, draft), { permit });
+}
+
+async function writeActionRuleAuthorityDraftUnlocked(projectRootInput: string, draft: ActionRuleAuthorityDraftV1): Promise<string> {
   const projectRoot = path.resolve(projectRootInput);
   parseDraft(draft);
   const target = draftPath(projectRoot, draft.authority.name);
@@ -368,7 +374,12 @@ export async function activateActionRuleAuthority(input: {
   confirmation: string;
   actor: string;
   now?: string;
+  mutationPermit?: ProjectAuthorityMutationPermit;
 }): Promise<ActionRuleAuthorityActivationV1> {
+  return withProjectAuthorityMutation(input.projectRoot, (held) => activateActionRuleAuthorityUnlocked({ ...input, projectRoot: held.projectRoot }), { permit: input.mutationPermit });
+}
+
+async function activateActionRuleAuthorityUnlocked(input: Parameters<typeof activateActionRuleAuthority>[0]): Promise<ActionRuleAuthorityActivationV1> {
   const projectRoot = path.resolve(input.projectRoot);
   const stored = await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
     const revision = current.drafts.find((entry) => entry.name === safeName(input.name));
@@ -551,7 +562,11 @@ async function checkLoadedReadDependencies(
   return { ...loaded, activation, ...(unavailable.length ? { unavailable_outcomes: unavailable } : {}) };
 }
 
-export async function deactivateActionRuleAuthority(projectRootInput: string): Promise<boolean> {
+export async function deactivateActionRuleAuthority(projectRootInput: string, permit?: ProjectAuthorityMutationPermit): Promise<boolean> {
+  return withProjectAuthorityMutation(projectRootInput, (held) => deactivateActionRuleAuthorityUnlocked(held.projectRoot), { permit });
+}
+
+async function deactivateActionRuleAuthorityUnlocked(projectRootInput: string): Promise<boolean> {
   const stored = await withStoredActionPolicies(projectRootInput, undefined, async (binding, current) => {
     const active = current.active[0];
     if (!active) return { deactivated: false };

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { z } from "zod";
 import { createDefaultRuntimeStore, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/protocol";
@@ -65,9 +66,19 @@ const MANIFEST_FILE = ".synapsor/control-policy/migration.json";
  * The immutable manifest is a recovery input, never an active policy fallback. */
 export async function migrateProjectControlPolicies(input: ProjectPolicyStoreSelection & {
   actor: string;
-  readLegacySnapshot(): Promise<ControlPolicyMigrationSnapshot>;
+  readLegacySnapshot(lockedProjectRoot: string): Promise<ControlPolicyMigrationSnapshot>;
   validateSnapshot(snapshot: ControlPolicyMigrationSnapshot): Promise<void>;
 }): Promise<{ binding: BoundProjectPolicyStore; status: "imported" | "already_imported" }> {
+  return withProjectAuthorityMutation(input.projectRoot, (held) => {
+    const relativeStore = path.relative(path.resolve(input.projectRoot), path.resolve(input.storePath));
+    const storePath = input.storePath !== ":memory:" && relativeStore !== ".." && !relativeStore.startsWith(`..${path.sep}`) && !path.isAbsolute(relativeStore)
+      ? path.resolve(held.projectRoot, relativeStore) : input.storePath;
+    return migrateProjectControlPoliciesUnlocked({ ...input, projectRoot: held.projectRoot, storePath });
+  });
+}
+
+async function migrateProjectControlPoliciesUnlocked(input: Parameters<typeof migrateProjectControlPolicies>[0]):
+Promise<{ binding: BoundProjectPolicyStore; status: "imported" | "already_imported" }> {
   const target = selectedTarget(input);
   let manifest = await readManifest(input.projectRoot);
   if (manifest) assertSameTarget(manifest, target);
@@ -77,7 +88,7 @@ export async function migrateProjectControlPolicies(input: ProjectPolicyStoreSel
   try {
     const repository = requireRepository(store);
     if (!manifest) {
-      const snapshot = validateSnapshotShape(await input.readLegacySnapshot());
+      const snapshot = validateSnapshotShape(await input.readLegacySnapshot(input.projectRoot));
       await input.validateSnapshot(structuredClone(snapshot));
       const repositoryId = await repository.initialize();
       const proposed: Manifest = {

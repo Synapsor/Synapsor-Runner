@@ -215,12 +215,37 @@ describe("governed policy-store binding and recovery", () => {
 
   it("chooses one complete binding during concurrent migration", async () => {
     const selection = await fixture();
-    const results = await Promise.all([migrateProjectControlPolicies(migration(selection)), migrateProjectControlPolicies(migration(selection))]);
+    const first = migration(selection), second = migration(selection);
+    const results = await Promise.all([migrateProjectControlPolicies(first), migrateProjectControlPolicies(second)]);
     results.forEach((result) => track(result.binding));
     expect(new Set(results.map((result) => result.binding.deployment_id)).size).toBe(1);
     expect(new Set(results.map((result) => result.binding.repository_id)).size).toBe(1);
     expect(results.map((result) => result.status).sort()).toEqual(["already_imported", "imported"]);
     expect((await results[0]!.binding.repository.deployment(results[0]!.binding.deployment_id))?.epoch).toBe(1);
+    // Only the winning migration reads legacy input. Its competitor must wait
+    // for the complete import, then use the same immutable binding.
+    expect(first.readLegacySnapshot.mock.calls.length + second.readLegacySnapshot.mock.calls.length).toBe(1);
+  });
+
+  it("binds migration files, local store and the snapshot reader to the locked canonical project", async () => {
+    const selection = await fixture(), other = await fixture(), links = await fixture();
+    const alias = path.join(links.projectRoot, "current");
+    await fs.symlink(selection.projectRoot, alias, "dir");
+    const original = fs.lstat.bind(fs);
+    let retargeted = false;
+    vi.spyOn(fs, "lstat").mockImplementation((async (...args: Parameters<typeof fs.lstat>) => {
+      if (!retargeted && args[0] === path.join(selection.projectRoot, ".synapsor/exploration-boundaries.active.lock")) {
+        retargeted = true; await fs.unlink(alias); await fs.symlink(other.projectRoot, alias, "dir");
+      }
+      return original(...args);
+    }) as typeof fs.lstat);
+    const input = { ...migration(selection), projectRoot: alias, storePath: path.join(alias, ".synapsor/control.db") };
+    track((await migrateProjectControlPolicies(input)).binding);
+    expect(input.readLegacySnapshot).toHaveBeenCalledWith(selection.projectRoot);
+    expect(await fs.stat(selection.storePath)).toBeDefined();
+    expect(await fs.stat(manifestPath(selection))).toBeDefined();
+    await expect(fs.stat(other.storePath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(manifestPath(other))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 
