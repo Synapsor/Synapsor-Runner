@@ -15,6 +15,7 @@ import {
   CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
   buildAutoBoundary,
   compareGenerationLock,
+  explorationBoundaryCandidateDigest,
   generationLockRemediation,
   generationLockRemediationCommand,
   loadActivatedExplorationBoundary,
@@ -23,6 +24,7 @@ import {
   seedConfiguredPrincipalBindingReview,
   writeAutoBoundaryArtifacts,
   type ExplorationBudgets,
+  type ExplorationBoundaryDraft,
   type ConfiguredTrustedContextAuthority,
   type GenerationLock
 } from "./auto-boundary.js";
@@ -96,6 +98,8 @@ import { listProtectedPlans } from "./scoped-explore.js";
 import { ui } from "./ui-command.js";
 import { padTerminalBlock } from "./terminal-layout.js";
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
+import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { openBoundProjectControlPolicies, openProjectControlPolicies } from "./control-policy-store.js";
 import {
   validateExploreTrustedScopeDefinition,
 } from "./explore-trusted-scope.js";
@@ -177,13 +181,14 @@ export async function start(
     }
   }
   if (args.length === 0) {
-    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    if (!interactive) {
       throw new Error("Guided start needs an interactive terminal. For automation, pass --from-env DATABASE_URL with an established selector such as --table or --answers.");
     }
     const project = await detectProjectContext(process.cwd());
     const guided = await readGuidedOnboardingState(project.root);
+    const authoring = await readProjectReadAuthoring(project.root);
     const databaseEnv = preferredDetectedDatabaseEnv(project.database_env_names, process.env);
-    const establishedManualProject = !guided && (
+    const establishedManualProject = !guided && !authoring && (
       await fileExists(path.join(project.root, "synapsor.runner.json"))
       || await fileExists(path.join(project.root, "synapsor.contract.json"))
     );
@@ -271,6 +276,7 @@ async function shouldEnterAutoBoundary(
   if (establishedRoutingFlags.some((flag) => args.includes(flag))) return false;
   if (args.includes("--no-open")) return true;
   if (!interactive) return false;
+  if (await readProjectReadAuthoring(process.cwd())) return true;
   if (await fileExists(path.resolve(".synapsor/guided-onboarding.json"))) return true;
   if ((args.includes("--rescan") || args.includes("--force"))
     && await fileExists(path.resolve("synapsor/generated/exploration-boundary.draft.json"))
@@ -399,6 +405,9 @@ async function startAutoBoundary(
       ? path.join(project.root, existingJourney.artifacts.boundary_root)
       : context.boundaryRoot;
     const activeBoundaryExists = await guidedActiveBoundaryExists(project.root);
+    const selectedBoundaryActive = context.bundle.mutation_bindings.authoring
+      ? await guidedActiveBoundaryExists(project.root, context.candidate)
+      : activeBoundaryExists;
     const savedJob = await readBoundaryAuthoringResumeState(project.root, boundaryAuthoringResumeBinding(context.bundle));
     const hasGuidedJob = savedJob.status !== "none";
     const savedReviewSummary = context.progress
@@ -422,7 +431,7 @@ async function startAutoBoundary(
         ? [
           hasGuidedJob
             ? "Continuing your saved guided job. Runner will validate its checkpoint before restoring it; manual editing remains available."
-            : activeBoundaryExists
+            : selectedBoundaryActive
             ? "Continuing to model or MCP-client selection in this terminal."
             : "Continuing from the saved disabled candidate. A new model conversation receives the current saved Read and Action state; the prior provider transcript is not retained.",
         ]
@@ -442,7 +451,7 @@ async function startAutoBoundary(
         schemaInspector,
         activationHandoff,
       );
-      if (activeBoundaryExists) {
+      if (selectedBoundaryActive) {
         return runPostActivationHandoff({
           projectRoot: project.root,
           ...terminalAskLimits,
@@ -485,14 +494,17 @@ async function startAutoBoundary(
       );
     }
     if (args.includes("--no-open")) return 0;
+    const configPath = path.join(project.root, existingJourney?.artifacts.runner_config ?? "synapsor.runner.json");
+    const storePath = await guidedWorkbenchStorePath(project.root, configPath,
+      path.join(project.root, existingJourney?.artifacts.local_store ?? ".synapsor/local.db"));
     return openWorkbench([
       "--open",
       "--boundary-root",
       boundaryRoot,
       "--config",
-      path.join(project.root, existingJourney?.artifacts.runner_config ?? "synapsor.runner.json"),
+      configPath,
       "--store",
-      path.join(project.root, existingJourney?.artifacts.local_store ?? ".synapsor/local.db"),
+      storePath,
       ...(existingJourney?.instant_onboarding ? ["--instant-onboarding"] : []),
       ...(existingJourney?.graduation_tip_suppressed ? ["--no-graduation-tip"] : []),
     ]);
@@ -519,6 +531,9 @@ async function startAutoBoundary(
     });
     await commitBoundaryRescan(prepared);
     const activeBoundaryExists = await guidedActiveBoundaryExists(project.root);
+    const selectedBoundaryActive = context.bundle.mutation_bindings.authoring
+      ? await guidedActiveBoundaryExists(project.root, prepared.selectedProgress.candidate)
+      : activeBoundaryExists;
     if (existingJourney) {
       await recordGuidedBoundaryRescan({
         projectRoot: project.root,
@@ -532,7 +547,7 @@ async function startAutoBoundary(
       ? `Schema recheck complete. ${prepared.report.changed ? "Saved drafts need revalidation; current authority was not replaced." : "Reviewed structure is unchanged."}\nContinuing your saved guided job. Use --verbose for the full rescan report.\n\n`
       : `${formatBoundaryRescanReport(prepared.report)}\n\n`);
     if (cliMode) {
-      if (!prepared.report.changed && activeBoundaryExists && (!hasGuidedJob
+      if (!prepared.report.changed && selectedBoundaryActive && (!hasGuidedJob
         || (savedJob.status === "ready" && savedJob.value.stage === "client_setup"
           && await clientHandoffMatchesActiveAuthority(project.root, savedJob.value)))) {
         return runPostActivationHandoff({
@@ -547,14 +562,17 @@ async function startAutoBoundary(
       );
     }
     if (args.includes("--no-open")) return 0;
+    const configPath = path.join(project.root, existingJourney?.artifacts.runner_config ?? "synapsor.runner.json");
+    const storePath = await guidedWorkbenchStorePath(project.root, configPath,
+      path.join(project.root, existingJourney?.artifacts.local_store ?? ".synapsor/local.db"));
     return openWorkbench([
       "--open",
       "--boundary-root",
       boundaryRoot,
       "--config",
-      path.join(project.root, existingJourney?.artifacts.runner_config ?? "synapsor.runner.json"),
+      configPath,
       "--store",
-      path.join(project.root, existingJourney?.artifacts.local_store ?? ".synapsor/local.db"),
+      storePath,
       ...(existingJourney?.instant_onboarding ? ["--instant-onboarding"] : []),
       ...(existingJourney?.graduation_tip_suppressed ? ["--no-graduation-tip"] : []),
     ]);
@@ -723,15 +741,45 @@ export async function reviewUnresolvedOrganizationScope(
   }
 }
 
-async function guidedActiveBoundaryExists(projectRoot: string): Promise<boolean> {
+async function guidedActiveBoundaryExists(projectRoot: string, candidate?: ExplorationBoundaryDraft): Promise<boolean> {
+  const binding = await openBoundProjectControlPolicies(projectRoot);
+  if (binding) {
+    try {
+      const active = await loadActivatedExplorationBoundaries(projectRoot, binding);
+      return candidate ? active.some((boundary) => boundary.pack.name === candidate.pack.name
+        && boundary.activation.digest === explorationBoundaryCandidateDigest(candidate)) : active.length > 0;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    } finally { await binding.close(); }
+  }
   return await fileExists(path.join(projectRoot, ".synapsor/exploration-boundaries.active.json"))
     || await fileExists(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"));
+}
+
+async function guidedWorkbenchStorePath(projectRoot: string, configPath: string, legacyStorePath: string): Promise<string> {
+  const binding = await openBoundProjectControlPolicies(projectRoot);
+  if (!binding) return legacyStorePath;
+  try {
+    if (!await fileExists(configPath)) throw new Error(
+      "The saved Boundary review is intact, but Workbench needs the reviewed runtime configuration. "
+      + "Restore that configuration or resume with start --cli; no new control store was created.",
+    );
+    const config = loadRuntimeConfigFromFile(configPath);
+    const configured = config.storage?.sqlite_path ?? legacyStorePath;
+    const storePath = configured === ":memory:" ? configured : path.resolve(path.dirname(configPath), configured);
+    const selected = await openProjectControlPolicies({ projectRoot, config, storePath });
+    if (!selected) throw new Error("The reviewed policy repository changed. Reopen setup; no new control store was created.");
+    await selected.close();
+    return storePath;
+  } finally { await binding.close(); }
 }
 
 
 async function loadManagedBoundaryProjectContext(
   projectRoot: string,
 ): Promise<Awaited<ReturnType<typeof loadBoundaryReviewContext>> | undefined> {
+  if (await readProjectReadAuthoring(projectRoot)) return loadBoundaryReviewContext(projectRoot);
   const draftPath = path.join(
     projectRoot,
     "synapsor/generated/exploration-boundary.draft.json",

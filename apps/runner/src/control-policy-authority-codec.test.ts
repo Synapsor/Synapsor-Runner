@@ -31,8 +31,10 @@ import { applyManagedBoundaryReviewDecision, createBoundaryReviewProgress } from
 import { readBoundaryReviewProgress, saveBoundaryReviewProgress, saveInstantBoundaryReviewBaseline,
   saveInstantBoundaryEditBaseline } from "./boundary-review-persistence.js";
 import { activateInstantCliBoundary } from "./instant-cli-boundary.js";
+import { start } from "./guided-start.js";
 import { readProjectReadAuthoring, saveProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
-import { boundaryActivateCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
+import { boundaryActivateCommand, boundaryAuthoringResumeBinding, loadBoundaryReviewContext } from "./boundary-commands.js";
+import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { startLocalUiServer } from "./local-ui.js";
 import { analyzeReadWorkloadSet, type ReadWorkloadSet } from "./read-workload-assist.js";
 import * as readWorkloads from "./read-workloads.js";
@@ -456,6 +458,120 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const final = await policies.current();
         expect(final.drafts.map(({ revision }) => revision.name)).toEqual(["university_draft"]);
         expect(final.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(initial.active);
+      });
+    });
+
+    it.each(["disabled", "unrelated_active", "selected_active", "selected_changed", "guided_active", "metadata", "stale_export", "no_selection", "no_authoring",
+      "workbench", "wrong_store", "no_config", "no_config_cli", "bare", "deferred"])("resumes governed startup without generated exports: %s", async (mode) => {
+      await useRepository(async ({ policies, projectRoot, config }) => {
+        const authoring = mode === "metadata" ? metadataAuthoringFixture(projectRoot).authoring : readAuthoringFixture();
+        if (["selected_active", "selected_changed", "guided_active"].includes(mode)) {
+          const source = fixture();
+          if (mode === "selected_changed") source.candidate.budgets.max_top_n = 11;
+          authoring.entries[0] = { draft: source.candidate, draft_lock: source.generation_lock,
+            candidate_lock: source.generation_lock, progress: createBoundaryReviewProgress({ draft: source.candidate,
+              candidate: source.candidate, confirmedDecisions: [], actor: "operator", revision: 1 }) };
+          authoring.selected_boundary_id = authoring.entries[0]!.progress.boundary_id;
+        }
+        if (mode === "no_selection") { authoring.entries = []; authoring.selected_boundary_id = null; }
+        if (mode !== "no_authoring") {
+          const current = await policies.current();
+          await policies.commitReadAuthoring({ expected_epoch: current.epoch, expected_revision_id: null,
+            authoring, actor: "operator", operation: "prepare_startup_review" });
+        }
+        if (mode === "disabled" || mode === "stale_export") await deactivateExplorationBoundary(projectRoot);
+        const configPath = path.join(projectRoot, "synapsor.runner.json");
+        if (!["no_config", "no_config_cli"].includes(mode)) await fs.writeFile(configPath, JSON.stringify({
+          ...config, version: 1, mode: "read_only", capabilities: [], trusted_context: { provider: "environment" },
+          sources: { local_postgres: { engine: "postgres", read_url_env: "DATABASE_URL", read_only: true } },
+          generated_authority: { generation_lock_path: "./.synapsor/generation-lock.json", enforcement: "required" },
+          storage: {
+          ...config.storage, sqlite_path: mode === "wrong_store" ? "./shadow.db" : "./control.db",
+          ...(mode === "wrong_store" ? { shared_postgres: undefined } : {}),
+        } }));
+        if (mode === "guided_active") {
+          const context = await loadBoundaryReviewContext(projectRoot);
+          await writeBoundaryAuthoringResumeState(projectRoot, buildBoundaryAuthoringResumeState({
+            binding: boundaryAuthoringResumeBinding(context.bundle), stage: "authority_review",
+            jobIntent: "Review inventory and propose a bounded replenishment.", provider: "openai", model: "gpt-5.6-terra",
+          }));
+        }
+        if (mode === "stale_export") {
+          await fs.mkdir(path.join(projectRoot, "synapsor/generated"), { recursive: true });
+          await fs.writeFile(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"), "obsolete export");
+          await fs.writeFile(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"), "obsolete active export");
+        }
+        const before = await policies.current();
+        const configBefore = ["no_config", "no_config_cli"].includes(mode) ? undefined : await fs.readFile(configPath, "utf8");
+        const cwd = process.cwd(); const previousUrl = process.env.DATABASE_URL;
+        const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+        const inspect = vi.fn(async () => { throw new Error("Resume must not inspect or regenerate the saved metadata."); });
+        const review = vi.fn(async () => 0), handoff = vi.fn(async () => 0), workbench = vi.fn(async () => 0);
+        process.chdir(projectRoot); process.env.DATABASE_URL = "postgresql://unused-test-host/never-connect";
+        try {
+          const args = mode === "bare" ? [] : ["--from-env", "DATABASE_URL",
+            ...(["workbench", "wrong_store", "no_config"].includes(mode) ? [] : [mode === "deferred" ? "--no-open" : "--cli"])];
+          const running = start(args, { interactive: true, schemaInspector: inspect,
+            runBoundaryReview: review, runPostActivationHandoff: handoff, openWorkbench: workbench });
+          if (mode === "no_authoring") await expect(running).rejects.toMatchObject({ code: "POLICY_READ_AUTHORING_MISSING" });
+          else if (mode === "no_selection") await expect(running).rejects.toThrow("No saved Read boundary is selected");
+          else if (mode === "wrong_store") await expect(running).rejects.toMatchObject({ code: "POLICY_STORE_SELECTION_CHANGED" });
+          else if (mode === "no_config") await expect(running).rejects.toThrow("Workbench needs the reviewed runtime configuration");
+          else await expect(running).resolves.toBe(0);
+          expect(inspect).not.toHaveBeenCalled();
+          expect(handoff).toHaveBeenCalledTimes(mode === "selected_active" ? 1 : 0);
+          expect(review).toHaveBeenCalledTimes(["disabled", "unrelated_active", "selected_changed", "guided_active", "metadata", "stale_export", "no_config_cli"].includes(mode) ? 1 : 0);
+          if (mode === "guided_active") expect(review).toHaveBeenCalledWith(
+            ["--project-root", projectRoot, "--access", "--job-first"], inspect, expect.any(Function));
+          expect(workbench).toHaveBeenCalledTimes(["workbench", "bare"].includes(mode) ? 1 : 0);
+          if (["workbench", "bare"].includes(mode)) expect(workbench).toHaveBeenCalledWith(expect.arrayContaining([
+            "--store", path.join(projectRoot, "control.db"),
+          ]));
+          if (mode === "disabled" || mode === "stale_export") expect(output.mock.calls.flat().join("")).toContain("Agent authority active: no");
+          expect(await policies.current()).toEqual(before);
+          if (configBefore !== undefined) expect(await fs.readFile(configPath, "utf8")).toBe(configBefore);
+          else await expect(fs.stat(configPath)).rejects.toMatchObject({ code: "ENOENT" });
+          await expect(fs.stat(path.join(projectRoot, ".synapsor/local.db"))).rejects.toMatchObject({ code: "ENOENT" });
+          await expect(fs.stat(path.join(projectRoot, "shadow.db"))).rejects.toMatchObject({ code: "ENOENT" });
+        } finally {
+          process.chdir(cwd); output.mockRestore();
+          if (previousUrl === undefined) delete process.env.DATABASE_URL;
+          else process.env.DATABASE_URL = previousUrl;
+        }
+      });
+    });
+
+    it.each([false, true])("resumes a stored rescan only when its exact selected Read is active: %s", async (selectedActive) => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const source = fixture(); const authoring = readAuthoringFixture();
+        const first = authoring.entries[0]!;
+        if (selectedActive) {
+          first.draft = source.candidate;
+          first.progress = createBoundaryReviewProgress({ draft: source.candidate, candidate: source.candidate,
+            confirmedDecisions: [], actor: "operator", revision: 1 });
+          authoring.selected_boundary_id = first.progress.boundary_id;
+        }
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare_rescan_resume" });
+        const before = await policies.current();
+        const cwd = process.cwd(); const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+        const inspect = vi.fn(async () => source.inspection);
+        const review = vi.fn(async () => 0), handoff = vi.fn(async () => 0);
+        process.chdir(projectRoot);
+        try {
+          await expect(start(["--from-env", "DATABASE_URL", "--cli", "--rescan"], {
+            interactive: true, schemaInspector: inspect, runBoundaryReview: review, runPostActivationHandoff: handoff,
+          })).resolves.toBe(0);
+          expect(inspect).toHaveBeenCalledOnce();
+          expect(handoff).toHaveBeenCalledTimes(selectedActive ? 1 : 0);
+          expect(review).toHaveBeenCalledTimes(selectedActive ? 0 : 1);
+          const after = await policies.current();
+          expect(after.active.filter(({ policy }) => policy.type !== "read_authoring"))
+            .toEqual(before.active.filter(({ policy }) => policy.type !== "read_authoring"));
+          expect((await readProjectReadAuthoring(projectRoot))!.authoring.entries.map((entry) => entry.progress))
+            .toEqual(authoring.entries.map((entry) => entry.progress));
+          await expect(fs.stat(path.join(projectRoot, ".synapsor/local.db"))).rejects.toMatchObject({ code: "ENOENT" });
+        } finally { process.chdir(cwd); output.mockRestore(); }
       });
     });
 
