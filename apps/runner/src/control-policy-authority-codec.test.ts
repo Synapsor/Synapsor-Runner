@@ -606,6 +606,92 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
+    it.each(["field_metadata", "minimum_cohort_all"])("binds Workbench %s to its original saved review and returns the exact committed successor", async (kind) => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture();
+        for (const [index, domain] of ["inventory", "university"].entries()) {
+          authoring.entries[index]!.catalog = readAuthoringCatalog(fixture(domain).build);
+          authoring.entries[index]!.progress.review_overrides = fixture(domain).build.overrides;
+        }
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare" });
+        const initial = await policies.current();
+        let changeDuringInspection: (() => Promise<void>) | undefined;
+        const inspect = vi.fn(async () => {
+          const change = changeDuringInspection; changeDuringInspection = undefined;
+          await change?.(); return fixture().inspection;
+        });
+        const server = await startLocalUiServer({ projectRoot, boundaryRoot: path.join(projectRoot, "synapsor/generated"),
+          configPath: path.join(projectRoot, "synapsor.runner.json"), storePath: path.join(projectRoot, "control.db"),
+          token: "metadata-review-token", csrfToken: "metadata-csrf", schemaInspector: inspect });
+        try {
+          const base = `http://${server.host}:${server.port}`;
+          const bootstrap = await fetch(server.url, { redirect: "manual" });
+          expect(bootstrap.status).toBe(303);
+          const headers = { cookie: bootstrap.headers.get("set-cookie")!.split(";", 1)[0]!,
+            "content-type": "application/json", "x-synapsor-csrf": "metadata-csrf" };
+          const get = async () => {
+            const response = await fetch(`${base}/api/boundary`, { headers });
+            const payload = await response.json(); expect(response.status, JSON.stringify(payload)).toBe(200); return payload;
+          };
+          const post = (body: unknown) => fetch(`${base}/api/boundary/regenerate`, { method: "POST", headers, body: JSON.stringify(body) });
+          const shown = await get();
+          const body = { kind, actor: "reviewer", reason: "Review stock information for this workspace.",
+            ...(kind === "field_metadata" ? { resource_id: "inventory.items", field: "quantity", label: "Available stock",
+              description: "Number of stocked units." } : { value: 3 }), authoring_binding: shown.authoring_binding };
+          const missing = await post({ ...body, authoring_binding: undefined });
+          expect(missing.status).toBe(409); expect(inspect).not.toHaveBeenCalled();
+          const forged = await post({ ...body, authoring_binding: { ...shown.authoring_binding, repository_id: "another-repository" } });
+          expect(forged.status).toBe(409); expect(inspect).not.toHaveBeenCalled();
+          expect(await policies.current()).toEqual(initial);
+          changeDuringInspection = async () => {
+            const current = (await readProjectReadAuthoring(projectRoot))!;
+            const selected = current.selected!;
+            const candidate = structuredClone(selected.progress.candidate); candidate.budgets.max_top_n = 8;
+            await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: selected.draft, candidate,
+              previous: selected.progress, confirmedDecisions: candidate.unresolved_decisions, revision: selected.progress.revision + 1 }), current.bindings);
+          };
+          const stale = await post(body);
+          expect(stale.status, JSON.stringify(await stale.json())).toBe(409);
+          const current = await get();
+          expect(current.candidate.budgets.max_top_n).toBe(8);
+          expect(current.candidate.pack.resources[0].field_metadata?.quantity?.label).not.toBe("Available stock");
+          expect(current.candidate.pack.resources[0].minimum_cohort_size).not.toBe(3);
+          const saved = await post({ ...body, authoring_binding: current.authoring_binding });
+          const result = await saved.json(); expect(saved.status, JSON.stringify(result)).toBe(200);
+          const after = await get();
+          expect(result.candidate).toEqual(after.candidate);
+          expect(result.candidate_digest).toBe(after.candidate_digest);
+          expect(result.authoring_binding).toEqual(after.authoring_binding);
+          expect(result.review_progress.revision).toBe(after.review_progress.revision);
+          expect(result.source_database_changed).toBe(false);
+          expect(result.candidate.budgets.max_top_n).toBe(8);
+          if (kind === "field_metadata") expect(result.candidate.pack.resources[0].field_metadata.quantity.label).toBe("Available stock");
+          else expect(result.candidate.pack.resources[0].minimum_cohort_size).toBe(3);
+          const replay = await post({ ...body, authoring_binding: current.authoring_binding });
+          expect(replay.status).toBe(409);
+          changeDuringInspection = async () => {
+            const current = (await readProjectReadAuthoring(projectRoot))!;
+            await switchSavedBoundary({ projectRoot, draft: current.selected!.draft,
+              currentCandidate: current.selected!.progress.candidate, currentProgress: current.selected!.progress,
+              expectedAuthoring: current.bindings, name: "university_draft" });
+          };
+          const switched = await post({ ...body, label: "Stock availability", value: 2, authoring_binding: result.authoring_binding });
+          const switchedBody = await switched.json();
+          expect(switched.status, JSON.stringify(switchedBody)).toBe(409);
+          expect(switchedBody.candidate).toBeUndefined();
+          const final = await policies.current();
+          expect(final.active.filter(({ policy }) => policy.type !== "read_authoring"))
+            .toEqual(initial.active.filter(({ policy }) => policy.type !== "read_authoring"));
+          const retained = (await readProjectReadAuthoring(projectRoot))!;
+          expect(retained.selected).toEqual(authoring.entries[1]);
+          expect(retained.authoring.entries[0]!.progress.candidate).toEqual(result.candidate);
+          await expect(fs.stat(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json")))
+            .rejects.toMatchObject({ code: "ENOENT" });
+        } finally { await server.close(); }
+      });
+    });
+
     it("binds saved Read activation to the exact original selection, candidate and repository epoch", async () => {
       await useRepository(async ({ policies, projectRoot }) => {
         const authoring = readAuthoringFixture();

@@ -2182,6 +2182,8 @@ async function handleRequest(input: {
       return;
     }
     const body = await readJsonBody(request);
+    const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    assertWorkbenchReviewBinding(body, savedReview.authoring);
     let preview: BoundaryReviewMutationPreview | BoundaryReviewMutationBatchPreview;
     let committed: Awaited<ReturnType<typeof commitBoundaryResourceReviewMutation>>
       | Awaited<ReturnType<typeof commitBoundaryReviewMutationBatch>>;
@@ -2204,6 +2206,7 @@ async function handleRequest(input: {
         requests,
         schemaInspector,
       );
+      assertWorkbenchReviewBinding({ authoring_binding: savedReview.authoring }, preview.bindings.authoring);
       committed = await commitBoundaryReviewMutationBatch(projectRoot, preview);
     } else {
       const normalizedDecision = normalizeSharedManagedBoundaryReviewDecision(body);
@@ -2213,6 +2216,7 @@ async function handleRequest(input: {
         mutationRequest,
         schemaInspector,
       );
+      assertWorkbenchReviewBinding({ authoring_binding: savedReview.authoring }, preview.bindings.authoring);
       committed = await commitBoundaryResourceReviewMutation(projectRoot, preview);
     }
     const build = preview.build;
@@ -2222,7 +2226,7 @@ async function handleRequest(input: {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
     });
-    const progress = await readSharedBoundaryReviewProgress(projectRoot, build.exploration_boundary);
+    const progress = committed.progress;
     const journey = activeBeforeReview
       ? await updateGuidedOnboardingState({
         projectRoot,
@@ -2290,6 +2294,7 @@ async function handleRequest(input: {
       candidate: progress?.candidate ?? build.exploration_boundary,
       candidate_digest: candidateDigest,
       decision_digest: preview.decision_digest,
+      ...(committed.authoring_binding ? { authoring_binding: committed.authoring_binding } : {}),
       semantic_diff: preview.semantic_diff,
       overrides: build.overrides,
       confirmed_decisions: progress?.confirmed_decisions ?? [],
