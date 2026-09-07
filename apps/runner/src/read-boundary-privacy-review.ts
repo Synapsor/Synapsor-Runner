@@ -37,7 +37,7 @@ export function readPrivacyReview(input: {
   const findings = readBoundaryRevisionCatalog(input.boundary).resources.flatMap((resource) => resource.fields.flatMap((field): Finding[] => {
     const passages = checked?.passages.filter((passage) => passage.field_checks?.some((check) => check.resource === resource.id && check.field === field.id)) ?? [];
     const pending = passages.filter((passage) => ["needs_decision", "conflict", "unsupported"].includes(passage.disposition));
-    const visible = passages.filter((passage) => passage.disposition === "implemented"
+    const visible = passages.filter((passage) => ["implemented", "overridden"].includes(passage.disposition)
       && passage.field_checks?.some((check) => check.resource === resource.id && check.field === field.id && check.expectation === "business_visible"));
     const rawHint = field.raw_return && field.roles.length > 0;
     const hiddenAnalysis = !field.raw_return && field.model_operations.length > 0;
@@ -76,7 +76,7 @@ export function readPrivacySummary(review: ReadPrivacyReview): string[] {
     : `${findings.length} fields; Inspect privacy findings lists each one directly`;
   return [
     ...(pending.length ? [`${pending.some((finding) => finding.status === "policy_decision") ? "Privacy decision" : "Privacy advisory"}: ${named(pending)}. Inspect privacy findings for the exact access and reason${pending.some((finding) => finding.status === "policy_decision") ? "." : "; a hint is not a policy violation."}`] : []),
-    ...(checked.length ? [`Confirmed meaning: ${named(checked)} remains customer-facing under the checked interpretation; access is unchanged.`] : []),
+    ...(checked.length ? [`Confirmed meaning: ${named(checked)} is customer-visible, as you requested. Access is unchanged.`] : []),
     ...(review.coverage === "unavailable" ? ["Privacy evidence: attached-rule verification is unavailable for this exact revision. Recorded meanings do not settle other requirements."] : []),
   ];
 }

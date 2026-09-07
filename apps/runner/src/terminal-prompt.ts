@@ -389,7 +389,9 @@ export async function readTerminalBooleanConfirmation(
   if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
     throw new Error("Interactive confirmation requires a real terminal.");
   }
-  const promptLines = padTerminalBlock(prompt).split("\n");
+  // withRawTerminalScreen wraps and pads each line; padding here would
+  // double-indent the prompt and break full-width exact-review tables.
+  const promptLines = prompt.split("\n");
   let notice = "";
   return withRawTerminalScreen(input, output, async (nextKey, render) => {
     while (true) {

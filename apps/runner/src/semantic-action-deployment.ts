@@ -21,6 +21,7 @@ import {
 import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { bindSemanticReadScope } from "./semantic-action-read-scope.js";
+import { SemanticWriterPostureError } from "./semantic-execution-setup.js";
 
 export const SEMANTIC_ACTION_RUNTIME_CONFIG = "synapsor.actions.runner.json";
 
@@ -211,16 +212,7 @@ export async function previewSemanticSupervisedExecution(input: {
     inspection,
   );
   if (!assessment.ok) {
-    throw new Error(
-      [
-        `SEMANTIC_ACTION_WRITER_POSTURE_INVALID: ${writeUrlEnv} is not the exact least-privilege writer for this outcome (${assessment.reasons.join(", ")}).`,
-        ...(assessment.relation_issues ?? []).slice(0, 12).map((issue) => `${JSON.stringify(issue.relation)}: ${issue.issue} ${issue.privileges.join(", ")} privilege(s).`),
-        ...((assessment.relation_issues?.length ?? 0) > 12 ? ["Additional role privileges also need review."] : []),
-        "Use a dedicated writer limited to the reviewed effect and private verification relations. Ask your database administrator to compare its grants with these issues; Runner does not change database grants.",
-        "PostgreSQL UPDATE can use exact column grants. Private row locks need UPDATE on the reviewed key column, not permission to change unrelated business fields. Do not broaden a shared role as a workaround.",
-        "The action and completion intent remain saved. Correct the writer configuration and resume execution review; no source changes have run.",
-      ].join("\n"),
-    );
+    throw new SemanticWriterPostureError(assessment, writeUrlEnv);
   }
   await validateRuntimeConfig(nextConfig, configPath);
   return {

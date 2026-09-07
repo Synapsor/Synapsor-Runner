@@ -4228,7 +4228,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       const positiveChoice = request.choices[0]?.label
         .replace(/\s+\[(?:recommended|ready[^\]]*|available)[^\]]*\]/giu, "")
         .trim();
-      const nextQuestion = positiveChoice && positiveChoice !== "Allow this exact step"
+      const isActionActivation = /\bactivat\w*\b/iu.test(request.prompt) && /\b(?:action|proposal)\b/iu.test(request.prompt);
+      const nextQuestion = isActionActivation
+        ? "Enable these change requests under the reviewed eligibility and approval rules? Database execution is a separate decision."
+        : positiveChoice && positiveChoice !== "Allow this exact step"
         ? `Would you like Runner to ${positiveChoice.charAt(0).toLowerCase()}${positiveChoice.slice(1)}?`
         : /\bactivate\b/iu.test(request.prompt)
           ? "Would you like Runner to activate this exact reviewed authority now?"
@@ -4252,6 +4255,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             `Pending gate: ${request.title}`,
             ...(/^Enable supervised source execution\b/iu.test(request.prompt)
               ? ["This is the separate execution-authorization gate itself. Allowing enables the reviewed execution policy; it does not start a worker. Do not describe another execution-authorization review as a later prerequisite. A running worker and successful receipt are still required for completion."] : []),
+            ...(isActionActivation
+              ? ["This Action activation enables reviewed change requests only, under their exact eligibility and automatic-versus-human approval rules. It does NOT enable database execution. Execution setup comes next when requested. Call this enabling change requests, not enabling a supervised operation. Automatic-approval limits do not limit human fallback."] : []),
             ...(request.choices.some((choice) => choice.value === "resolve")
               ? ["Activation is unavailable: unresolved policy requirements are mandatory, not recommendations. Explain the next business decision, never invite activation or claim these checks passed."] : []),
             ...safeContext,
@@ -7542,13 +7547,6 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         const automatic = semanticActionDrafts.filter((entry) => entry.result.compiled.effect_envelope.writeback.mode === "direct_sql");
         const missing = unmetExecutionEntries();
         return [
-          ...semanticActionDrafts.flatMap((entry, index) => {
-            const compiled = entry.result.compiled;
-            const automatic = compiled.approval_class.mode === "policy";
-            return [`Action ${index + 1}: ${compiled.rule.outcome.split(".").at(-1)!.replaceAll("_", " ")}. ${automatic ? "Eligible requests auto-approve; other valid requests need" : "Valid requests need"} ${compiled.approval_class.required_approvals} ${compiled.approval_class.required_role.replaceAll("_", " ")} approval(s). Invalid requests are refused.`,
-              ...(automatic ? [`Limits ${index + 1}: ${automaticApprovalBusinessSummary(compiled, context.candidate)}.`] : []),
-              ...(!automatic || compiled.effect_envelope.writeback.mode !== "direct_sql" ? [`Execution ${index + 1}: ${compiled.effect_envelope.writeback.mode === "direct_sql" ? "prepared for separate execution review; not enabled" : "proposal only; no source writes"}.`] : [])];
-          }),
           ...(missing.length
             ? ["UNMET REQUEST: automatic completion is not configured. This draft would only propose changes. Choose Prepare requested automatic execution to retain the rules and prepare a separate execution review."]
             : []),
@@ -7630,7 +7628,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       {
         context: [
           ...(revisionReview.length ? ["REVIEWED REPLACEMENT", ...revisionReview, ""] : []),
-          ...semanticActionDrafts.flatMap((entry) => semanticActionActivationReviewLines(entry.result.compiled)),
+          ...semanticActionDrafts.flatMap((entry) => [
+            ...semanticActionActivationReviewLines(entry.result.compiled),
+            ...(entry.result.compiled.approval_class.mode === "policy"
+              ? [`${automaticApprovalBusinessSummary(entry.result.compiled, context.candidate)}. Other valid requests go to ${entry.result.compiled.approval_class.required_role.replaceAll("_", " ")}. Invalid requests are refused.`] : []),
+          ]),
           "This gate activates proposal authority only. It does not approve, apply, or write source data.",
           "/details shows the exact immutable authority and digest.",
         ],
@@ -7837,7 +7839,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       : allPreparedActionsActive
         ? `ACTIVE - ${activatedPreparedActions} proposal action${activatedPreparedActions === 1 ? "" : "s"} reviewed in this job`
         : `DRAFT - ${preparedActionCount - activatedPreparedActions} action${preparedActionCount - activatedPreparedActions === 1 ? "" : "s"} not active`;
-    await input.authoringChat.streamCheckpoint(finalNotice.title, [
+    if (!proposalSetupComplete) await input.authoringChat.streamCheckpoint(finalNotice.title, [
       `Read ${readState} · Action ${actionState}`,
       `Approval ${deterministicPolicyActive
         ? "deterministic policy with human fallback"
@@ -11018,7 +11020,7 @@ async function confirmAndActivateFocusedBoundary(input: {
   if (conversation && input.session.chooseOption) {
     let decided = false;
     while (!decided) {
-      const choice = await input.session.chooseOption(
+      let choice = await input.session.chooseOption(
         readiness && !readiness.ready ? "FINISH BOUNDARY REVIEW" : replacingActive ? "REPLACE ACTIVE READ BOUNDARY" : "ACTIVATE READ BOUNDARY",
         [
           ...(readiness && !readiness.ready ? [{ value: "resolve", label: readiness.privacy ? "Resolve required privacy decision with the model" : "Resolve required decisions with the model",
@@ -11043,16 +11045,14 @@ async function confirmAndActivateFocusedBoundary(input: {
               }]
             : []),
           ...(input.reviewOptions?.reviseWithModel
-            ? [{ value: "privacy", label: "Change privacy with the model",
-                detail: "Prepare private internal IDs, conflict guards and approval controls; preserve business references and benefits. Review the exact change before activation." }, {
+            ? [{
                 value: "revise_model",
                 label: "Revise this Read Boundary with the current model",
                 detail: "Keep this job and its Action draft, describe only the visibility correction, then review the rebuilt disabled revisions.",
               }]
             : []),
-          ...(privacy.findings.length ? [{ value: "privacy_details", label: "Inspect privacy findings",
-            detail: "See each flagged field and recorded meaning directly; no model request or draft change." }] : []),
-          ...(input.reviewOptions?.reviewRules ? [{ value: "rules", label: "Review attached rules and unresolved decisions" }] : []),
+          ...(privacy.findings.some((finding) => finding.status !== "business_meaning_checked") ? [{ value: "privacy_details", label: "Inspect privacy findings",
+            detail: "See each unresolved field and exact evidence directly; no model request or draft change." }] : []),
           {
             value: "details",
             label: "View exact Read Boundary details",
@@ -11068,9 +11068,9 @@ async function confirmAndActivateFocusedBoundary(input: {
               : "Grant no Read authority; save this reviewed draft and return to the Boundary list.",
           },
           {
-            value: "manual_editor",
-            label: "Open the manual Boundary editor",
-            detail: "Keep authority unchanged and deliberately continue with table, field, relationship, privacy, and limit controls.",
+            value: "more_review",
+            label: "More review options",
+            detail: "Attached rules, privacy changes, and manual controls.",
           },
         ],
         {
@@ -11084,6 +11084,16 @@ async function confirmAndActivateFocusedBoundary(input: {
               changes: changesForReview, privateDependencies: input.reviewOptions?.privateDependencies?.(), privacy }) },
         },
       );
+      if (choice === "more_review") {
+        choice = await input.session.chooseOption("Review options", [
+          ...(input.reviewOptions?.reviseWithModel ? [{ value: "privacy", label: "Change privacy with the model" }] : []),
+          ...(input.reviewOptions?.reviewRules ? [{ value: "rules", label: "Review attached rules and unresolved decisions" }] : []),
+          ...(privacy.findings.length ? [{ value: "privacy_details", label: "Inspect privacy findings and confirmed meanings" }] : []),
+          { value: "manual_editor", label: "Open the manual Boundary editor" },
+          { value: "back", label: "Back to the pending review" },
+        ], { initialValue: "back", reviewOnly: true });
+        if (!choice || choice === "back") continue;
+      }
       if (choice === "resolve" && input.reviewOptions?.resolveRequirements) {
         await input.reviewOptions.resolveRequirements();
         return confirmAndActivateFocusedBoundary(input);
@@ -11597,8 +11607,6 @@ export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle
   const unscopedCount = resources.filter((resource) => !resource.shared_reference_scope && !hasReviewedPrincipalScope(resource)).length;
   const readable = resources.map((resource) => resource.label ?? resource.id.split(".").at(-1)!.replaceAll("_", " "));
   return [
-    ...readPrivacySummary(privacy ?? readPrivacyReview({ boundary: bundle.candidate, confirmedMeanings })),
-    `Readable information: ${readable.join(", ")}.`,
     bundle.candidate.organization_scope
       ? "Scope decision: whole-organization access, not one customer's information."
       : unscopedCount === 0 && resources.length > sharedCount
@@ -11606,6 +11614,8 @@ export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle
         : resources.length === sharedCount
           ? "Whose information: reviewed shared references, not customer-private records."
           : `Scope decision: account isolation is enforced, but ${unscopedCount} non-shared resource(s) lack individual customer filtering. Inspect exact scope before activation.`,
+    `Readable information: ${readable.length <= 4 ? readable.join(", ") : `${readable.slice(0, 3).join(", ")} and ${readable.length - 3} other reviewed record types. Exact details names all ${readable.length}`}.`,
+    ...readPrivacySummary(privacy ?? readPrivacyReview({ boundary: bundle.candidate, confirmedMeanings })),
     ...(sharedCount ? [`Shared references: ${sharedCount} reviewed resource(s) are intentionally common across accounts; inspect exact scope.`] : []),
     `Excluded: ${excluded.length} fields unavailable to Read. Exact details lists every field and restriction.`,
     "Grants: reads only. Approval and execution are separate decisions.",

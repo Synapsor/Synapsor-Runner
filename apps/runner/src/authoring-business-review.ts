@@ -15,7 +15,7 @@ export function automaticApprovalBusinessSummary(compiled: { approval_class: Pic
   for (const limit of limits) {
     const area = ({ boundary: "across this action bundle", capability: "for this outcome overall", tenant: `per ${scope}`,
       tenant_principal: `per signed-in user within the ${scope}`, tenant_object: `per selected record within the ${scope}` })[limit.scope];
-    const quantity = limit.kind === "count" ? `${limit.maximum} approvals` : `${limit.maximum} total ${limit.field ?? "reviewed value"}`;
+    const quantity = limit.kind === "count" ? `${limit.maximum} automatic approvals` : `${limit.maximum} total ${limit.field ?? "reviewed value"} for automatic approvals`;
     const items = windows.get(limit.window_seconds) ?? [];
     items.push(`${quantity} ${area}`); windows.set(limit.window_seconds, items);
   }

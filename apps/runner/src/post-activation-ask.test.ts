@@ -10,10 +10,13 @@ import {
   mcpClientPickerTransition,
   preferredRoute,
   runPostActivationAskHandoff,
+  savedSetupReceipt,
+  reviewPausedExecutionSetup,
   soleConfiguredHostedRoute,
   type PostActivationAskRoute,
 } from "./post-activation-ask.js";
 import { ProviderCredentialInputCancelledError } from "./secret-input.js";
+import * as managedLauncher from "./managed-mcp-project.js";
 
 describe("post-activation Ask handoff", () => {
   it.each(["success", "failure"])("continues execution setup without redrafting or losing client choices (%s)", async (result) => {
@@ -405,8 +408,50 @@ describe("post-activation Ask handoff", () => {
       },
     )).resolves.toBe(0);
     expect(runAsk).not.toHaveBeenCalled();
-    expect(output.join("" )).toContain("Model selection cancelled");
+    expect(output.join("" )).toContain("Setup saved");
     expect(output.join("" )).toContain("reviewed boundaries remain active");
+  });
+
+  it("prints a pinned-build execution resume receipt, not an Ask command or a completion claim", async () => {
+    const spy = vi.spyOn(managedLauncher, "resolveManagedMcpLauncher").mockResolvedValue({ command: "/usr/bin/node", args: ["/isolated build/dist/runner.mjs"] });
+    try {
+      const receipt = await savedSetupReceipt("/saved project", true, { version: 1, action_digest: `sha256:${"a".repeat(64)}`,
+        outcome: "telecom.offered_plan_change", paused_at: "2026-09-06T00:00:00.000Z",
+        problem: { code: "SEMANTIC_ACTION_WRITER_POSTURE_INVALID", summary: "Writer permissions do not match this action.", details: [] },
+      });
+      expect(receipt).toContain("not ready for automatic changes");
+      expect(receipt).toContain("Writer permissions do not match");
+      expect(receipt).toContain("'/isolated build/dist/runner.mjs' boundary review --access --job-first --project-root '/saved project'");
+      expect(receipt).toContain("does not verify a client connection, runtime identity, or worker");
+      expect(receipt).not.toMatch(/try ask|Start.*chat|Setup complete/u);
+    } finally { spy.mockRestore(); }
+  });
+
+  it("returns from saved blocker details to the same repair decision without a client-menu detour", async () => {
+    const chooseOption = vi.fn().mockResolvedValueOnce("details").mockResolvedValueOnce("details").mockResolvedValueOnce("recheck");
+    const showReviewDetails = vi.fn(async () => {});
+    const paused = { version: 1 as const, action_digest: `sha256:${"a".repeat(64)}`, outcome: "courses.enroll",
+      paused_at: "2026-09-06T00:00:00.000Z", problem: { code: "CHECK_FAILED", summary: "Repair the writer", details: ["Exact grant"] } };
+    expect(await reviewPausedExecutionSetup({ chooseOption, showReviewDetails } as never, paused)).toBe(true);
+    expect(showReviewDetails).toHaveBeenCalledTimes(2);
+    expect(chooseOption).toHaveBeenCalledTimes(3);
+    expect(chooseOption.mock.calls[0]).toEqual(chooseOption.mock.calls[2]);
+    expect(paused.problem.details).toEqual(["Exact grant"]);
+  });
+
+  it.each([80, 120])("wraps saved setup receipts inside both margins at %s columns", async (columns) => {
+    const output: string[] = [];
+    await runPostActivationAskHandoff({ projectRoot: "/a/very-long/saved/project-name/that-must-stay-on-the-same-build" }, {
+      chooseRoute: async () => "later", env: {},
+      stdout: { isTTY: true, columns, write: (value) => { output.push(String(value)); return true; } },
+      stderr: { write: vi.fn(() => true) },
+    });
+    const text = output.join("");
+    expect(text).toContain("Setup saved");
+    for (const line of text.split("\n").filter(Boolean)) {
+      expect(line.startsWith("  ")).toBe(true);
+      expect(line.length).toBeLessThanOrEqual(columns - 2);
+    }
   });
 
   it("returns from hidden credential entry to model selection", async () => {
@@ -476,13 +521,11 @@ describe("post-activation Ask handoff", () => {
       );
     }
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
-      .toContain("Client: Claude Code");
+      .toContain("Claude Code launches Runner");
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
-      .toContain("app.explore_data + app.describe_actions + app.request_change");
+      .toContain("four fixed tools");
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
-      .toContain("Do not start a separate server");
-    expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", true))
-      .toContain("cannot activate boundaries, approve proposals, or apply source changes");
+      .toContain("Do not start a separate MCP server");
     const scopedHandoff = formatMcpClientHandoff(
       "/tmp/reviewed-project",
       "claude-code",
@@ -494,8 +537,10 @@ describe("post-activation Ask handoff", () => {
     );
     expect(scopedHandoff).toContain("export SYNAPSOR_TENANT_ID='<tenant>'");
     expect(scopedHandoff).toContain("export SYNAPSOR_PRINCIPAL='<principal>'");
-    expect(scopedHandoff).toContain("required only for live scoped calls");
-    expect(scopedHandoff).toContain("app.describe_actions + app.request_change");
+    expect(scopedHandoff).toContain("Before live customer calls");
+    expect(scopedHandoff).toContain("four fixed tools");
+    expect(scopedHandoff.split("\n").length).toBeLessThanOrEqual(10);
+    expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", false)).toContain("change requests remain refused");
     expect(formatHttpMcpHandoff("/tmp/reviewed-project"))
       .toContain("mcp serve --transport streamable-http --production-explore");
     expect(formatHttpMcpHandoff("/tmp/reviewed-project"))

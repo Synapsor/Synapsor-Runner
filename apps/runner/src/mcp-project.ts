@@ -19,6 +19,7 @@ import { audit, fetchStdioMcpToolsCommand, mcpAuditToolNames } from "./mcp-audit
 import { isManagedAuthoringEntry } from "./mcp-project-domain.js";
 import { defaultBlockedToolSurface, inspectMcpToolBoundary, mcpConfig, mcpConfigure, mcpServe, mcpServeHttp, mcpServeStreamableHttp, mcpSmoke } from "./mcp-runtime.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+import { padTerminalLine, terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
 
 
 export async function mcp(args: string[]): Promise<number> {
@@ -56,6 +57,9 @@ type ManagedMcpInstallRuntime = {
 
 
 async function mcpProjectInstall(args: string[]): Promise<number> {
+  const writeReview = (text: string) => process.stdout.write(process.stdout.isTTY
+    ? text.split(/\r?\n/u).flatMap((line) => wrapStyledTerminalLine(line, terminalContentWidth(process.stdout.columns))
+      .map((wrapped) => padTerminalLine(wrapped))).join("\n") : text);
   const [clientValue, ...rest] = args;
   const client = parseManagedMcpProjectClient(clientValue);
   const definition = managedMcpProjectDefinition(client);
@@ -195,12 +199,12 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   if (!json && removeCompanion) process.stdout.write("The owned synapsor-actions entry will be merged into synapsor: four fixed tools, separate Read and Action authority. The client file will be backed up.\n");
   if (rest.includes("--dry-run") || (!removeCompanion && runtimes.every((runtime) => runtime.preview.action === "unchanged"))) {
     if (json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-    else process.stdout.write(includeActions
+    else writeReview(includeActions
       ? formatManagedMcpProjectSetPreview(report)
       : formatManagedMcpProjectPreview(report));
     return 0;
   }
-  if (!json) process.stdout.write(includeActions
+  if (!json) writeReview(includeActions
     ? formatManagedMcpProjectSetPreview(report)
     : formatManagedMcpProjectPreview(report));
   await confirmDangerousAction(
@@ -232,12 +236,12 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
           : {}),
     }, null, 2)}\n`);
   } else {
-    process.stdout.write(includeActions
+    writeReview(includeActions
       ? `${definition.displayName} project MCP entries installed: synapsor (Read) and synapsor-actions (proposals).\n`
       : `${definition.displayName} project MCP entry installed at ${path.relative(projectRoot, installed.previews[0]!.paths.destination)}.\n`);
     const backups = installed.backup ? [installed.backup] : [];
-    for (const backup of backups) process.stdout.write(`Backup: ${backup}\n`);
-    process.stdout.write(
+    for (const backup of backups) writeReview(`Backup: ${backup}\n`);
+    writeReview(
       `${definition.reloadInstruction}, then run \`synapsor-runner mcp status ${client} --project${includeActions ? " --include-actions" : ""}\` to verify the reviewed tool boundary.\n`,
     );
   }

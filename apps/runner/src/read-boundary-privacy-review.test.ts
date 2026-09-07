@@ -45,11 +45,11 @@ describe("exact-revision privacy explanation evidence", () => {
       { id: "customer", scope: "tenant" as const, kind: "count" as const, maximum: 3, window_seconds: 86400 },
       { id: "all", scope: "capability" as const, kind: "count" as const, maximum: 10, window_seconds: 86400 },
     ] } };
-    expect(automaticApprovalBusinessSummary(action, boundary)).toBe("Up to 10 approvals for this outcome overall and 3 approvals per trusted group in any rolling 24 hours");
+    expect(automaticApprovalBusinessSummary(action, boundary)).toBe("Up to 10 automatic approvals for this outcome overall and 3 automatic approvals per trusted group in any rolling 24 hours");
     const root = structuredClone(boundary.pack.resources[0]!);
     root.primary_key = "account_id"; root.id = "telecom.accounts"; root.table = "accounts"; root.label = "Customer accounts";
     boundary.pack.resources.push(root);
-    expect(automaticApprovalBusinessSummary(action, boundary)).toContain("3 approvals per customer account in any rolling 24 hours");
+    expect(automaticApprovalBusinessSummary(action, boundary)).toContain("3 automatic approvals per customer account in any rolling 24 hours");
     root.label = "Campus groups";
     expect(automaticApprovalBusinessSummary(action, boundary)).toContain("per campus group");
     root.primary_key = "other_id";
@@ -81,6 +81,18 @@ describe("exact-revision privacy explanation evidence", () => {
     expect(review.findings.find((finding) => finding.field === "updated_at")!.status).toBe("business_meaning_checked");
     expect(review.findings.find((finding) => finding.field === "version")!.status).toBe("advisory");
     expect(readPrivacySummary(review).join("\n")).toContain("Support cases / version");
+  });
+  it("honors the r3 operator override only when its exact quote, revision and returned field are validated", () => {
+    const input = fixture();
+    input.coverage.report.passages[0]!.disposition = "overridden";
+    input.coverage.report.passages[0]!.operator_override = input.session.operator_messages![0]!;
+    expect(readPrivacyReview(input).findings[0]!.status).toBe("business_meaning_checked");
+    expect(readPrivacySummary(readPrivacyReview(input)).join("\n")).toContain("as you requested");
+    input.coverage.report.passages[0]!.operator_override = "Invented operator approval";
+    expect(readPrivacyReview(input).findings[0]!.status).toBe("advisory");
+    input.coverage.report.passages[0]!.operator_override = input.session.operator_messages![0]!;
+    input.boundary.pack.resources[0]!.selectable_fields = ["case_number"];
+    expect(readPrivacyReview(input).findings.some((finding) => finding.field === "updated_at" && finding.status === "business_meaning_checked")).toBe(false);
   });
   it.each(["source", "read", "action", "missing", "invalid_claim"] as const)("does not reuse %s coverage as current interpretation evidence", (change) => {
     const input = fixture();

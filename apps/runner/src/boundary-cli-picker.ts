@@ -466,6 +466,18 @@ export function createBoundaryReviewInteractiveSession(
   });
   return {
     terminalColumns: output.columns,
+    showReviewDetails: (title, lines) => withRawKeys(input, output, async (nextKey, render) => {
+      const paint = () => render([theme.title(title), "", ...lines, "",
+        `${theme.key("PgUp/PgDn")} Scroll   ${theme.key("Enter/Esc")} Return to pending review`]);
+      output.on("resize", paint);
+      try {
+        paint();
+        while (true) {
+          const key = await nextKey();
+          if (["return", "enter", "escape"].includes(key.name ?? "") || (key.ctrl && key.name === "c")) return;
+        }
+      } finally { output.off("resize", paint); }
+    }),
     chooseResource: (resources, overview, options) =>
       chooseResource(resources, overview, options, input, output),
     editFieldTiers: (view, options) => editFieldTiers(view, options, input, output),

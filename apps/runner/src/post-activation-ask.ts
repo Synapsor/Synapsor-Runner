@@ -2,7 +2,7 @@ import readline from "node:readline";
 import process from "node:process";
 import path from "node:path";
 import type { ReadStream, WriteStream } from "node:tty";
-import { createBoundaryReviewInteractiveSession, terminalTheme } from "./boundary-cli-picker.js";
+import { createBoundaryReviewInteractiveSession, terminalTheme, type BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { reviewSemanticSupervisedExecution } from "./verified-action-review.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import {
@@ -11,7 +11,6 @@ import {
 } from "./terminal-prompt.js";
 import { ProviderCredentialInputCancelledError } from "./secret-input.js";
 import {
-  padTerminalBlock,
   padTerminalLine,
   terminalContentWidth,
   wrapStyledTerminalLine,
@@ -24,7 +23,8 @@ import { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
 import { guidedActionStatus } from "./guided-action.js";
 import { loadActiveActionRuleAuthority } from "./action-rule-authority.js";
 import { mcp, managedMcpProjectStatusReport } from "./mcp-project.js";
-import { managedMcpProjectStatus } from "./managed-mcp-project.js";
+import { managedMcpProjectStatus, resolveManagedMcpLauncher } from "./managed-mcp-project.js";
+import { readPausedExecutionSetup, type SavedExecutionSetup } from "./semantic-execution-setup.js";
 import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { readSemanticSupervisedExecutionState, restoreReviewedSemanticReadScope } from "./semantic-action-deployment.js";
@@ -199,16 +199,21 @@ export async function runPostActivationAskHandoff(
   const stdout = dependencies.stdout ?? process.stdout;
   const stderr = dependencies.stderr ?? process.stderr;
   const write = (value: string) => stdout.write(
-    stdout.isTTY === true ? padTerminalBlock(value) : value,
+    stdout.isTTY === true ? value.split(/\r?\n/u).flatMap((line) =>
+      wrapStyledTerminalLine(line, terminalContentWidth(stdout.columns)).map((wrapped) => padTerminalLine(wrapped))).join("\n") : value,
   );
   const theme = terminalTheme(stdout.isTTY === true && !("NO_COLOR" in env));
   let executionReviewPending = false;
+  let guidedClientSetup = false;
+  let paused: SavedExecutionSetup | undefined;
+  let responsibilities: string[] = [];
   try {
     const { loadBoundaryReviewContext, boundaryAuthoringResumeBinding } = await import("./boundary-commands.js");
     const context = await loadBoundaryReviewContext(input.projectRoot);
     const saved = await readBoundaryAuthoringResumeState(input.projectRoot, boundaryAuthoringResumeBinding(context.bundle));
     if (saved.status === "ready" && saved.value.stage === "client_setup") {
       const current = await clientHandoffMatchesActiveAuthority(input.projectRoot, saved.value);
+      guidedClientSetup = current;
       if (!current) write("The saved client setup predates the current authority. Review the changed boundaries before relying on the prior setup check.\n");
       if (current && saved.value.client_handoff?.action_digest) {
         const active = await loadActiveActionRuleAuthority(input.projectRoot);
@@ -217,12 +222,9 @@ export async function runPostActivationAskHandoff(
           && entry.effect_envelope.writeback.supervised_worker === "allowed"
           && !(execution.enabled && execution.policies.some((policy) => policy.outcome === entry.rule.outcome
             && policy.action_boundary_digest === active.authority.action_boundary.digest)));
-        if (executionReviewPending) write("Automatic completion is not enabled for all reviewed actions. Choose Execution setup to finish, or configure the client with execution still off.\n");
+        if (executionReviewPending) paused = await readPausedExecutionSetup(input.projectRoot, active.authority.action_boundary.digest);
       }
-      const responsibilities = await pendingClientResponsibilities(input.projectRoot, saved.value);
-      if (responsibilities.length) write(["Before customer use:", ...responsibilities.filter((_line, index) => index % 2 === 0),
-        "The connection check verifies transport and tools, not your client's behavior.", ""].flatMap((line) =>
-        wrapStyledTerminalLine(line, Math.max(24, (stdout.columns ?? 80) - 4))).join("\n"));
+      responsibilities = await pendingClientResponsibilities(input.projectRoot, saved.value);
     }
   } catch (error) {
     // Ordinary non-guided projects have no authoring checkpoint. Real read
@@ -232,21 +234,22 @@ export async function runPostActivationAskHandoff(
   const configuredSelection = input.autoStartConfiguredProvider && !executionReviewPending
     ? soleConfiguredHostedSelection(env)
     : undefined;
+  if (executionReviewPending && !input.selection) write("Read and change requests are active. Automatic updates are off; you can connect a client now or resume execution setup.\n");
   const selection = input.selection
     ?? configuredSelection
-    ?? await choosePostActivationAskSelection(dependencies, executionReviewPending ? "execution-setup" : undefined);
+    ?? await choosePostActivationAskSelection(dependencies, guidedClientSetup || executionReviewPending ? "mcp-client" : undefined);
   if (!selection) {
-    write([
-      "Model selection cancelled. Your reviewed boundaries remain active.",
-      `Resume: ${cliCommandName()} try ask --project-root ${shellToken(input.projectRoot)}`,
-      "",
-    ].join("\n"));
+    write(`${await savedSetupReceipt(input.projectRoot, executionReviewPending, paused)}\n`);
     return 0;
   }
   const route = selection.route;
 
   if (route === "execution-setup") {
     try {
+      if (paused && !dependencies.runExecutionReview) {
+        const session = createBoundaryReviewInteractiveSession();
+        if (!await reviewPausedExecutionSetup(session, paused)) return runPostActivationAskHandoff({ ...input, selection: undefined, autoStartConfiguredProvider: false }, dependencies);
+      }
       if (dependencies.runExecutionReview) await dependencies.runExecutionReview(input.projectRoot);
       else {
         const active = await loadActiveActionRuleAuthority(input.projectRoot);
@@ -284,13 +287,7 @@ export async function runPostActivationAskHandoff(
   }
 
   if (route === "later") {
-    write([
-      "Your reviewed boundaries remain active.",
-      `Start the terminal chat later: ${cliCommandName()} try ask ` +
-        `--project-root ${shellToken(input.projectRoot)} ` +
-        `--provider openai --model ${DEFAULT_TERMINAL_OPENAI_ASK_MODEL}`,
-      "",
-    ].join("\n"));
+    write(`${await savedSetupReceipt(input.projectRoot, executionReviewPending, paused)}\n`);
     return 0;
   }
 
@@ -302,6 +299,8 @@ export async function runPostActivationAskHandoff(
   }
 
   if (route === "mcp-client") {
+    if (responsibilities.length) write(["Client integration checks still pending:", ...responsibilities.filter((_line, index) => index % 2 === 0),
+      "These are assigned, not verified. The connection check tests transport and tools only.", ""].join("\n"));
     const includeActions = input.includeActions
       ?? await (dependencies.hasActiveActions ?? hasActiveActionRuntime)(input.projectRoot);
     const installArgs = [
@@ -347,7 +346,7 @@ export async function runPostActivationAskHandoff(
       ));
       if (includeActions) {
         const execution = await (dependencies.readExecutionState ?? readSemanticSupervisedExecutionState)({ projectRoot: input.projectRoot });
-        write(`Execution policy: ${execution.enabled ? "enabled in configuration" : "off"}. Worker health: not checked; an empty queue does not prove a running worker.\n`);
+        write(`Client mode: ${execution.enabled ? "execution configured; worker health not checked" : "proposal-only; automatic database updates are off"}. Completion requires a successful execution receipt.\n`);
         if (execution.enabled && execution.policies.length) {
           const missing = [...new Set(execution.policies.map((policy) => policy.write_url_env))].filter((name) => !env[name]?.trim());
           const missingIdentity = runtimeBindings.filter((binding) => !env[binding.environment]?.trim());
@@ -357,7 +356,7 @@ export async function runPostActivationAskHandoff(
             write("Worker not started: the reviewed identity requirements could not be loaded. Inspect the saved Read and Action authority and retry execution setup; client configuration is preserved.\n");
           } else if (missingIdentity.length) {
             write(`Worker not started: this local execution mode also requires trusted identity in ${missingIdentity.map((binding) => binding.environment).join(", ")}.\n`
-              + "Configure the reviewed test identity before local execution; do not take identity values from the model. Production identity must come from authenticated session wiring. Client configuration and boundaries are preserved.\n");
+              + "Use trusted test identities locally; production identity must come from the authenticated session, never the model.\n");
           } else {
             const context = [
               `Client connection: ${connection}.`,
@@ -643,15 +642,11 @@ export function formatMcpClientHandoff(
       : `code ${root}`;
   return [
     "LOCAL STDIO MCP CONFIGURED",
-    `Client: ${managedMcpClientLabel(client)}`,
-    "Fixed tools: app.describe_data + app.explore_data + app.describe_actions + app.request_change",
-    includeActions
-      ? "Active actions are available through this connection."
-      : "Read only: no Action is active; change requests remain refused.",
-    "Do not start a separate server: the client launches Runner.",
+    `${managedMcpClientLabel(client)} launches Runner with the four fixed tools. Do not start a separate MCP server.`,
+    ...(!includeActions ? ["Read only: no Action is active; change requests remain refused."] : []),
     ...(runtimeBindings.length
       ? [
-          "Trusted identity is required only for live scoped calls; set it before opening the client:",
+          "Before live customer calls, set trusted test identity and open the client:",
           ...runtimeBindings.map((binding) =>
             `  export ${binding.environment}='<${binding.role}>'`),
         ]
@@ -659,7 +654,6 @@ export function formatMcpClientHandoff(
     `  cd ${root}`,
     `  ${launch}`,
     `Connection diagnostics: ${cmd} mcp status ${client} --project${includeActions ? " --include-actions" : ""} --check-launch`,
-    "The agent cannot activate boundaries, approve proposals, or apply source changes.",
     "",
   ].join("\n");
 }
@@ -751,6 +745,33 @@ export function formatHttpMcpHandoff(projectRoot: string): string {
   ].join("\n");
 }
 
+export async function savedSetupReceipt(projectRoot: string, executionPending: boolean, paused?: SavedExecutionSetup): Promise<string> {
+  const launcher = await resolveManagedMcpLauncher();
+  const resume = launcher.command === "npx"
+    ? `Run the same build's start command again in ${shellToken(projectRoot)}${executionPending ? "; select Execution setup" : " to continue client setup"}.`
+    : [...[launcher.command, ...launcher.args].map(shellToken), "boundary review --access --job-first --project-root", shellToken(projectRoot)].join(" ");
+  return [
+    executionPending ? "Setup saved - not ready for automatic changes." : "Setup saved. Your reviewed boundaries remain active.",
+    ...(executionPending ? ["Read and reviewed change-request rules are active.",
+      paused ? `Automatic updates are off. Last check: ${paused.problem.summary}` : "Automatic updates are off: execution setup still needs review.",
+      "Next: review the saved writer requirements, repair the connection, then resume Execution setup."] : []),
+    "This exit does not verify a client connection, runtime identity, or worker. Existing configuration is preserved.",
+    `Resume saved setup: ${resume}`, "",
+  ].join("\n");
+}
+
+export async function reviewPausedExecutionSetup(session: BoundaryReviewInteractiveSession, paused: SavedExecutionSetup): Promise<boolean> {
+  for (;;) {
+    const selected = await session.chooseOption?.("Resume execution setup", [
+      { value: "recheck", label: "I repaired the connection; recheck it" },
+      { value: "details", label: "View saved blocker and administrator handoff" },
+      { value: "back", label: "Back to client setup" },
+    ], { initialValue: "details", context: [paused.problem.summary, `Last check: ${paused.paused_at}. Not rechecked since pausing.`] });
+    if (selected !== "details") return selected === "recheck";
+    await session.showReviewDetails?.("Saved writer requirements", paused.problem.details);
+  }
+}
+
 async function promptWithDefault(
   label: string,
   defaultValue: string,
@@ -774,10 +795,12 @@ async function chooseRouteInTerminal(
   if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
     throw new Error("The post-activation Ask choice requires a real terminal.");
   }
-  let selected = Math.max(
-    0,
-    routeOptions.findIndex((option) => option.id === defaultRoute),
-  );
+  let more = !["mcp-client", "execution-setup", "later"].includes(defaultRoute);
+  const options = () => [...routeOptions.filter((option) => more
+    ? !["mcp-client", "execution-setup", "later"].includes(option.id)
+    : ["mcp-client", "execution-setup", "later"].includes(option.id)),
+    { id: "more" as const, label: more ? "Back to client setup" : "More options", detail: more ? "" : "Terminal chat, production HTTP, rule editing and manual controls" }];
+  let selected = Math.max(0, options().findIndex((option) => option.id === defaultRoute));
   const wasRaw = input.isRaw;
   const wasFlowing = input.readableFlowing === true;
   const renderer = createInPlaceTerminalRenderer(output, {
@@ -800,11 +823,10 @@ async function chooseRouteInTerminal(
   const render = () => {
     const width = terminalContentWidth(output.columns);
     const lines = [
-      theme.title("USE YOUR REVIEWED BOUNDARIES"),
-      "Use this project or change its reviewed rules.",
-      theme.dim("Only reviewed tools are exposed. Activation, approval, and apply stay outside the agent."),
+      theme.title(more ? "MORE OPTIONS" : "CONNECT YOUR CLIENT"),
+      "Choose the next step for this saved project.",
       "",
-      ...routeOptions.map((option, index) => formatPostActivationRouteLine({
+      ...options().map((option, index) => formatPostActivationRouteLine({
         option,
         selected: index === selected,
         color: !("NO_COLOR" in process.env),
@@ -826,11 +848,13 @@ async function chooseRouteInTerminal(
       render();
       const key = await nextKey();
       if (key.name === "up") {
-        selected = (selected - 1 + routeOptions.length) % routeOptions.length;
+        selected = (selected - 1 + options().length) % options().length;
       } else if (key.name === "down") {
-        selected = (selected + 1) % routeOptions.length;
+        selected = (selected + 1) % options().length;
       } else if (key.name === "return" || key.name === "enter") {
-        return routeOptions[selected]!.id;
+        const value = options()[selected]!.id;
+        if (value === "more") { more = !more; selected = 0; }
+        else return value;
       } else if (key.name === "escape" || (key.ctrl && key.name === "c")) {
         return undefined;
       }

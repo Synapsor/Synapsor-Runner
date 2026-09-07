@@ -623,7 +623,10 @@ describe("semantic Action Rule authority persistence", () => {
       profile: "staging",
       env: { SYNAPSOR_DATABASE_WRITE_URL: "postgresql://secret-writer-url" },
       inspect: async () => inspection,
-    })).rejects.toThrow(/writer_unreviewed_relation_privilege/);
+    })).rejects.toMatchObject({ code: "SEMANTIC_ACTION_WRITER_POSTURE_INVALID", problem: {
+      details: expect.arrayContaining([expect.stringContaining("writer_unreviewed_relation_privilege"),
+        expect.stringContaining("billing.unrelated_secrets")]),
+    } });
     await expect(fs.readFile(actionConfigPath, "utf8")).resolves.toBe(before);
   });
 

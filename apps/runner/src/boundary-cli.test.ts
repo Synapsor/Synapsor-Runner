@@ -5374,7 +5374,7 @@ describe("boundary operator-plane CLI", () => {
             return "resolve";
           }
           if (title === "ACTIVATE READ BOUNDARY") {
-            expect(options.some((option) => option.value === "rules")).toBe(true);
+            expect(options.some((option) => option.value === "more_review")).toBe(true);
             expect(choiceOptions?.context?.join("\n")).toContain("Rules.txt v1");
             expect(semanticActionAttempt).toBe(clarifiedPrivacy || applicationClarification ? 2 : 3);
             return "finish";
@@ -5396,17 +5396,22 @@ describe("boundary operator-plane CLI", () => {
         if (title === "ACTIVATE READ BOUNDARY") {
           const review = choiceOptions?.context?.join("\n") ?? "";
           expect(review).toContain("Read review -> Action review");
-          expect(review).toContain("Invalid requests are refused.");
-          expect(review).toContain(posture === "repair_on_resume" || writeback === "supervised" ? "prepared for separate execution review; not enabled" : "Execution 1: proposal only; no source writes");
+          expect(review).toContain("Grants: reads only");
+          expect(review).not.toContain("Action 1:"); // Action rules have their own explicit next review.
+          if (posture === "repair_on_resume" || writeback === "supervised") expect(review).toContain("prepared, not enabled; worker required");
           expect(review).not.toMatch(/\+\d+ more|small-group minimum|fields per|1000 queries/u);
           if (writeback === "supervised") expect(review).toContain("-> execution review");
           readReviewChoiceValues.push(options.map((option) => option.value));
           readActivationReviewCount += 1;
           if (manualGuidedRetry) {
-            return readActivationReviewCount === 1 ? "privacy"
+            return readActivationReviewCount === 1 ? "more_review"
               : readActivationReviewCount === 2 ? "revise_model" : "finish";
           }
-          return readActivationReviewCount <= (posture === "privacy_retry" ? 2 : 1) ? guidedPrivacy ? "privacy" : "revise_model" : "finish";
+          return readActivationReviewCount <= (posture === "privacy_retry" ? 2 : 1) ? guidedPrivacy ? "more_review" : "revise_model" : "finish";
+        }
+        if (title === "Review options") {
+          expect(options.map((option) => option.value)).toContain("manual_editor");
+          return "privacy";
         }
         throw new Error(`Unexpected semantic Action choice: ${title}`);
       },
@@ -5718,11 +5723,10 @@ describe("boundary operator-plane CLI", () => {
       ]);
       expect(readReviewChoiceValues[0]).toEqual([
         "activate",
-        "privacy",
         "revise_model",
         "details",
         "finish",
-        "manual_editor",
+        "more_review",
       ]);
       expect(boundaryListStarts[0]).toBe(true);
       expect(modelAuthoringNarrator).not.toHaveBeenCalledWith(expect.objectContaining({
@@ -5825,7 +5829,7 @@ describe("boundary operator-plane CLI", () => {
           if (title === "START BOUNDARY DRAFTING") return "resume";
           if (title === "ACTIVATE READ BOUNDARY") {
             if (posture === "repair_on_resume") {
-              expect(options?.context?.join("\n")).toContain("prepared for separate execution review; not enabled");
+              expect(options?.context?.join("\n")).toContain("execution review (prepared, not enabled; worker required)");
               expect(choices.some((choice) => choice.value === "prepare_execution")).toBe(false);
               executionPrepared = true;
             }
@@ -6111,7 +6115,7 @@ describe("boundary operator-plane CLI", () => {
         expect(savedResume.action.completed_outcomes).toEqual(["maintenance.same_followup"]);
         expect(splitChats[1]!.streamCheckpoint).toHaveBeenCalledWith("One Action draft; policy clarification incorporated",
           expect.arrayContaining([expect.stringContaining("Human-review quorum:")]), "normal");
-        expect(splitContexts.join("\n")).toContain("prepared for separate execution review; not enabled");
+        expect(splitContexts.join("\n")).toContain("execution review (prepared, not enabled; worker required)");
         await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
       }
     } finally {

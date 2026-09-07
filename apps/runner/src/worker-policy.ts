@@ -134,6 +134,7 @@ export type SupervisedWriterPostureAssessment = {
   allowed_relations: string[];
   writable_relations: string[];
   relation_issues?: Array<{ relation: string; issue: "missing" | "unreviewed" | "excess"; privileges: string[] }>;
+  required_relations?: Array<{ relation: string; privileges: string[]; update_columns: string[]; lock_column?: string; rls_required: boolean }>;
 };
 
 
@@ -414,9 +415,12 @@ export function assessSemanticSupervisedWriterPosture(
     }
     for (const [privilege, fields] of columnGrants) {
       const expected = privilege === "update" ? new Set([...(updateColumns.get(relation) ?? []), ...(lockColumns.has(relation) ? [lockColumns.get(relation)!] : [])]) : undefined;
-      if (!reviewed || (privilege === "update" ? fields!.some((field) => !expected!.has(field)) : !reviewed.has(privilege as keyof RelationPrivilegeInfo))) {
+      const excessFields = !reviewed ? fields! : privilege === "update"
+        ? fields!.filter((field) => !expected!.has(field))
+        : reviewed.has(privilege as keyof RelationPrivilegeInfo) ? [] : fields!;
+      if (excessFields.length) {
         reasons.push("writer_excess_column_privilege");
-        relationIssues.push({ relation, issue: "excess", privileges: [`${privilege} (${fields!.join(", ")})`] });
+        relationIssues.push({ relation, issue: "excess", privileges: [`${privilege} (${excessFields.join(", ")})`] });
       }
     }
     if (posture.current_role_is_owner || posture.current_role_can_assume_owner) reasons.push("writer_owns_relation");
@@ -429,6 +433,10 @@ export function assessSemanticSupervisedWriterPosture(
     allowed_relations: [...allowed.keys()].sort(),
     writable_relations: [...(role?.writable_relations ?? [])].sort(),
     relation_issues: relationIssues,
+    required_relations: [...required].map(([relation, privileges]) => ({ relation, privileges: [...privileges],
+      update_columns: [...(updateColumns.get(relation) ?? [])].sort(),
+      ...(lockColumns.has(relation) ? { lock_column: lockColumns.get(relation)! } : {}), rls_required: rlsRequired.has(relation),
+    })),
   };
 }
 

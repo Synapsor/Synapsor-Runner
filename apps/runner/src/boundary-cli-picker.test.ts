@@ -17,6 +17,44 @@ import {
 } from "./boundary-review-mutation.js";
 
 describe("boundary review terminal picker", () => {
+  it.each([80, 120])("keeps full-width authority tables aligned in the execution confirmation at %s columns", async (columns) => {
+    const terminal = fakeTerminal(columns, 36);
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const border = "+" + "-".repeat(columns - 6) + "+";
+    const row = "| Writer role".padEnd(columns - 5) + "|";
+    const confirmation = session.confirmActivation!("Enable the reviewed execution?", { context: [border, row, border] });
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain(`  ${border}`);
+    expect(rendered).toContain(`  ${row}`);
+    await emitKey(terminal.input, { name: "n", sequence: "n" });
+    await expect(confirmation).resolves.toBe(false);
+  });
+
+  it.each([80, 120])("opens complete deterministic details from the ordinary session at %s columns", async (columns) => {
+    const terminal = fakeTerminal(columns, 12);
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const details = session.showReviewDetails!("Writer requirements", [
+      "MISSING ACCESS",
+      ...Array.from({ length: 20 }, (_, index) => `Exact reviewed item ${index + 1}`),
+      "EXACT ADMINISTRATOR HANDOFF", "UPDATE (plan, price, version)",
+    ]);
+    expect(stripAnsi(terminal.output.read()?.toString() ?? "")).toContain("MISSING ACCESS");
+    let pages = "";
+    for (let index = 0; index < 8; index += 1) {
+      await emitKey(terminal.input, { name: "pagedown", sequence: "\u001b[6~" });
+      pages += stripAnsi(terminal.output.read()?.toString() ?? "");
+    }
+    expect(pages).toContain("EXACT ADMINISTRATOR HANDOFF");
+    expect(pages).toContain("UPDATE (plan, price, version)");
+    await emitKey(terminal.input, { name: "escape", sequence: "\u001b" });
+    await expect(details).resolves.toBeUndefined();
+    expect(terminal.input.isRaw).toBe(false);
+    expect(terminal.output.listenerCount("resize")).toBe(0);
+    const next = session.chooseOption!("Resume setup", [{ value: "pause", label: "Keep execution off" }]);
+    await emitKey(terminal.input, { name: "return", sequence: "\r" });
+    await expect(next).resolves.toBe("pause");
+  });
+
   it("uses Escape as immediate back for text and confirmation prompts", async () => {
     const textTerminal = fakeTerminal();
     const textSession = createBoundaryReviewInteractiveSession(

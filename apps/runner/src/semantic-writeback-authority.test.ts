@@ -311,6 +311,13 @@ describe("semantic writeback authority orchestration", () => {
     const excessColumn = structuredClone(narrow);
     excessColumn.tables[1]!.role_posture!.column_privileges!.update!.push("auto_approval_eligible");
     expect(assessSemanticSupervisedWriterPosture(config, narrowPolicy, authority.registry, excessColumn).reasons).toContain("writer_excess_column_privilege");
+    const extraIssues = assessSemanticSupervisedWriterPosture(config, narrowPolicy, authority.registry, excessColumn).relation_issues!;
+    expect(extraIssues.filter((issue) => issue.issue === "excess").map((issue) => issue.privileges)).toContainEqual(["update (auto_approval_eligible)"]);
+    const extraTarget = structuredClone(narrow);
+    extraTarget.tables[0]!.role_posture!.column_privileges!.update!.push("unreviewed_note");
+    const targetAssessment = assessSemanticSupervisedWriterPosture(config, narrowPolicy, authority.registry, extraTarget);
+    expect(targetAssessment.relation_issues!.filter((issue) => issue.issue === "excess").map((issue) => issue.privileges)).toEqual([["update (unreviewed_note)"]]);
+    expect(targetAssessment.required_relations![0]!.update_columns).toContain("version");
     const broadLock = structuredClone(inspection);
     broadLock.tables[1]!.role_posture!.privileges.update = true;
     expect(assessSemanticSupervisedWriterPosture(config, policy, authority.registry, broadLock).reasons).toContain("writer_excess_relation_privilege");

@@ -13,7 +13,7 @@ import type {
 } from "./boundary-cli-picker.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
-import { redactCliErrorMessage } from "./cli-logging.js";
+import { clearPausedExecutionSetup, executionSetupProblem, savePausedExecutionSetup, type ExecutionSetupProblem } from "./semantic-execution-setup.js";
 import {
   activateSemanticActionRuntime,
   disableSemanticSupervisedExecution,
@@ -325,15 +325,16 @@ export async function reviewSemanticSupervisedExecution(input: {
   for (;;) {
     const result = await reviewSemanticSupervisedExecutionAttempt(input);
     if (result?.tone !== "danger" || !input.session.chooseOption) return result;
-    input.session.rememberDetails?.(result.title, result.lines);
+    const problem = result.problem ?? executionSetupProblem(new Error(result.lines.join("\n")));
+    input.session.rememberDetails?.("Writer requirements", problem.details);
     const recovery = await input.session.chooseOption("Execution needs a deployment fix", [
       { value: "retry", label: "Recheck the writer and continue setup", detail: "Correct the grants externally, or choose another configured credential. This does not execute a request." },
       { value: "details", label: "Inspect the exact writer requirements" },
       { value: "pause", label: "Save and pause execution setup", detail: "Read and proposal authority stay active; automatic completion stays off." },
-    ], { initialValue: "pause", context: result.lines });
+    ], { initialValue: "pause", context: [problem.summary, `Diagnostic: ${problem.code}. Inspect requirements for the exact administrator handoff.`] });
     if (recovery === "retry") continue;
     if (recovery === "details") {
-      await input.session.showReviewDetails?.(result.title, result.lines);
+      await input.session.showReviewDetails?.("Writer requirements", problem.details);
       // Inspection does not repeat the provider/role request or discard the pending failure.
       const next = await input.session.chooseOption("Continue execution setup", [
         { value: "retry", label: "Recheck the writer" },
@@ -341,24 +342,40 @@ export async function reviewSemanticSupervisedExecution(input: {
       ], { initialValue: "pause" });
       if (next === "retry") continue;
     }
-    return { ...result, footer: "Setup saved. Run the same start command to continue execution review; no need to recreate or reactivate the boundaries." };
+    await savePausedExecutionSetup(input.projectRoot, { action_digest: input.active.authority.action_boundary.digest,
+      outcome: input.outcome, problem });
+    return { tone: "success", title: "Execution setup paused.",
+      lines: ["Read and reviewed change requests remain available; automatic database updates are off."],
+      footer: "Resume execution setup with the same start command after repairing the write connection. Saved writer requirements remain available." };
   }
 }
 
-async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof reviewSemanticSupervisedExecution>[0]): Promise<BoundaryAccessNotice | undefined> {
-  const writeUrlAnswer = await input.session.promptText(
-    "Separate writer credential environment name [SYNAPSOR_DATABASE_WRITE_URL]",
+async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof reviewSemanticSupervisedExecution>[0]): Promise<(BoundaryAccessNotice & { problem?: ExecutionSetupProblem }) | undefined> {
+  const env = input.env ?? process.env;
+  let writeUrlEnv = "SYNAPSOR_DATABASE_WRITE_URL";
+  let configured = Boolean(env[writeUrlEnv]?.trim());
+  if (configured && input.session.chooseOption) {
+    const choice = await input.session.chooseOption("Check your write connection", [
+      { value: "check", label: "Check the configured write connection", detail: "Verify its permissions; do not enable execution or run a request." },
+      { value: "change", label: "Use another configured connection" },
+      { value: "pause", label: "Set up execution later" },
+    ], { initialValue: "check", context: [`Connection: ${writeUrlEnv} is set (value hidden). Execution authorization comes after verification.`] });
+    if (!choice || choice === "pause") return undefined;
+    configured = choice === "check";
+  } else configured = false;
+  if (!configured) {
+    const writeUrlAnswer = await input.session.promptText(
+    "Write connection variable (Enter uses SYNAPSOR_DATABASE_WRITE_URL)",
     {
       context: [
-        "SUPERVISED SOURCE EXECUTION - SEPARATE AUTHORITY",
-        `Outcome: ${input.outcome}`,
-        "Runner inspects this role live and stores only its environment-variable name and non-secret posture fingerprint.",
-        "The URL value is never displayed, written to config, or sent to a model.",
+        "Your read-only connection cannot execute changes. Configure a separate write connection, then enter its variable name here, not its URL.",
+        "This checks permissions only. Enabling execution and starting a worker are separate decisions.",
       ],
     },
   );
   if (writeUrlAnswer === undefined) return undefined;
-  const writeUrlEnv = writeUrlAnswer.trim() || "SYNAPSOR_DATABASE_WRITE_URL";
+    writeUrlEnv = writeUrlAnswer.trim() || writeUrlEnv;
+  }
   const profile = semanticExecutionProfile(input.active, input.activeReads);
   let preview: Awaited<ReturnType<typeof previewSemanticSupervisedExecution>>;
   try {
@@ -372,15 +389,8 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
       ...(input.inspectDatabaseFn ? { inspect: input.inspectDatabaseFn } : {}),
     });
   } catch (error) {
-    return {
-      tone: "danger",
-      title: "Supervised execution was not enabled.",
-      lines: [
-        redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
-        "Verified proposal authority and source data are unchanged.",
-      ],
-      footer: "Fix the separate writer environment or grants, then reopen this Action Boundary.",
-    };
+    const problem = executionSetupProblem(error);
+    return { tone: "danger", title: "Execution was not enabled.", lines: [problem.summary], problem };
   }
   const confirmed = await (input.session.confirmActivation ?? input.session.confirm)(
     `Enable supervised source execution for ${input.outcome}?`,
@@ -420,6 +430,9 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
       ...(input.env ? { env: input.env } : {}),
       ...(input.inspectDatabaseFn ? { inspect: input.inspectDatabaseFn } : {}),
     });
+    await clearPausedExecutionSetup(input.projectRoot, input.active.authority.action_boundary.digest, input.outcome).catch(() => {
+      input.session.rememberDetails?.("Execution setup diagnostics", ["Execution was enabled, but the previous diagnostic checkpoint could not be removed. It does not grant or revoke authority."]);
+    });
     return {
       tone: "success",
       title: "Supervised execution enabled for this outcome.",
@@ -431,14 +444,8 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
       ],
     };
   } catch (error) {
-    return {
-      tone: "danger",
-      title: "Supervised execution was not enabled.",
-      lines: [
-        redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
-        "The reviewed proposal authority remains active; source data is unchanged.",
-      ],
-    };
+    const problem = executionSetupProblem(error);
+    return { tone: "danger", title: "Execution was not enabled.", lines: [problem.summary], problem };
   }
 }
 
