@@ -32,6 +32,9 @@ import {
   type SubjectReferenceAuthorityContext,
 } from "./index.js";
 import { projectLocalResourceForModel } from "./local-resources.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { OwnerRuntimeError } from "./owner-runtime-identity.js";
+import type { SemanticActionRequestContext } from "./runtime-types.js";
 
 const lock = `sha256:${"a".repeat(64)}` as const;
 const readBoundary = `sha256:${"b".repeat(64)}` as const;
@@ -213,6 +216,8 @@ function createFixtureRuntime(options: {
   requiredApprovals?: number;
   preferences?: Array<{ preference_id: string; status: "active" | "paused"; version: number }>;
   onProposalReady?: NonNullable<Parameters<typeof createSemanticActionRuntime>[0]["onProposalReady"]>;
+  delegation?: SemanticActionRequestContext["delegation"];
+  delegationRequired?: boolean;
 } = {}) {
   const store = new ProposalStore();
   const { registry, activated } = semanticFixture({
@@ -236,11 +241,13 @@ function createFixtureRuntime(options: {
     store,
     registry,
     subjectReferences,
+    delegationRequired: options.delegationRequired,
     resolveCatalogAuthorization: () => ({ scope_key: "test:northstar:maya", revision: "deployment-only" }),
     ...(options.unavailableOutcomes ? { unavailableOutcomes: options.unavailableOutcomes } : {}),
     ...(options.onProposalReady ? { onProposalReady: options.onProposalReady } : {}),
     async resolveContext() {
       return {
+        delegation: options.delegation,
         trusted_context: {
           tenant_id: "acct_northstar",
           principal: "customer_maya",
@@ -323,6 +330,32 @@ const configuredReadCapability: NonNullable<RuntimeConfig["capabilities"]>[numbe
 };
 
 describe("fixed semantic Action MCP", () => {
+  it("requires configured delegation before claiming references or reading source facts", async () => {
+    const f = createFixtureRuntime({ delegationRequired: true });
+    try {
+      const ref = await issueSubject(f), claim = vi.spyOn(f.subjectReferences, "claim");
+      await expect(f.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: f.activated.compiled.outcome, subject_refs: { preference: ref } }))
+        .rejects.toThrow("Current delegated authority could not be verified");
+      expect(claim).not.toHaveBeenCalled(); expect(f.queries).toHaveLength(0);
+    } finally { f.store.close(); }
+  });
+  it("preserves delegated human review and rechecks current owner permission on idempotent proposal requests", async () => {
+    const checkExisting = vi.fn(async () => {}), onProposalReady = vi.fn(async () => ({ execution: "human_review" as const, source_database_changed: false }));
+    const checkProposal = vi.fn(async () => ({ approval: "human" as const, proof: { schema_version: "synapsor.delegation-proof.v1" as const,
+      binding_digest: canonicalJsonDigest("binding"), actor_digest: canonicalJsonDigest("actor"), policy_chain_digest: canonicalJsonDigest("chain"),
+      valid_until: "2026-09-02T20:06:00.000Z" } }));
+    const f = createFixtureRuntime({ delegationRequired: true, automaticApproval: true, delegation: { checkProposal, checkExisting }, onProposalReady });
+    try {
+      const ref = await issueSubject(f), args = { outcome: f.activated.compiled.outcome, subject_refs: { preference: ref } };
+      const result = await f.semanticActions.callTool(REQUEST_CHANGE_TOOL, args);
+      expect(result).toMatchObject({ authorization: { approval: "pending_human_review", execution: "human_review" } });
+      expect(checkProposal).toHaveBeenCalledTimes(1); expect(checkExisting).toHaveBeenCalledTimes(1);
+      checkExisting.mockRejectedValueOnce(new OwnerRuntimeError("DELEGATION_REVOKED"));
+      await expect(f.semanticActions.callTool(REQUEST_CHANGE_TOOL, args)).rejects.toThrow("Current delegated authority could not be verified");
+      expect(checkExisting).toHaveBeenCalledTimes(2); expect(checkProposal).toHaveBeenCalledTimes(1);
+      expect(onProposalReady).toHaveBeenCalledTimes(1); expect(f.queries).toHaveLength(1);
+    } finally { f.store.close(); }
+  });
   it.each(["authority", "scope", "availability"] as const)("does not disclose a catalog withdrawn during asynchronous %s loading", async (change) => {
     const fixture = semanticFixture();
     let revision = "before";

@@ -18,6 +18,15 @@ const reviewedName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/, "expe
 const qualifiedName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$/, "expected fixed qualified name");
 const timestamp = z.string().datetime({ offset: false });
 
+export const delegationProofV1Schema = z.object({
+  schema_version: z.literal("synapsor.delegation-proof.v1"),
+  binding_digest: sha256,
+  policy_chain_digest: sha256,
+  actor_digest: sha256,
+  valid_until: timestamp,
+}).strict();
+export type DelegationProofV1 = z.infer<typeof delegationProofV1Schema>;
+
 const columnValueSchema = z.object({ column: safeIdentifier, value: scalar }).strict();
 const principalScopeSchema = z.object({
   schema_version: z.literal("synapsor.principal-scope.v1"),
@@ -133,6 +142,7 @@ const eligibilityProofUnsignedSchema = z.object({
   approval_class: qualifiedName,
   approval_policy_digest: sha256,
   approval_path: z.enum(["automatic_eligible", "human_review"]),
+  delegation: delegationProofV1Schema.optional(),
   verified_at: timestamp,
   valid_until: timestamp,
   uses: z.literal(1),
@@ -144,6 +154,9 @@ export const eligibilityProofV1Schema = eligibilityProofUnsignedSchema.extend({
   const { proof_digest: _digest, ...unsigned } = proof;
   if (canonicalJsonDigest(unsigned) !== proof.proof_digest) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "eligibility proof digest mismatch", path: ["proof_digest"] });
   if (Date.parse(proof.valid_until) <= Date.parse(proof.verified_at)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "eligibility proof must expire after verification", path: ["valid_until"] });
+  if (proof.delegation && Date.parse(proof.valid_until) > Date.parse(proof.delegation.valid_until)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "eligibility proof must not outlive its delegation", path: ["delegation", "valid_until"] });
+  }
 });
 
 export const semanticAuthorityV1Schema = z.object({

@@ -3,8 +3,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { makeRunnerDeclarationsPortable } from "./make-runner-declarations-portable.mjs";
+import { execFileSync } from "node:child_process";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+execFileSync(process.execPath, [resolve(root, "scripts/generate-semantic-protocol-schemas.mjs"), "--check"], { stdio: "inherit" });
 const entryPoint = resolve(root, "apps/runner/src/cli.ts");
 const outfile = resolve(root, "apps/runner/dist/runner.mjs");
 const runtimeEntryPoint = resolve(root, "apps/runner/src/runtime.ts");

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import { Ajv } from "ajv";
 import {
   canonicalJsonDigest,
   eligibilityProofDigest,
@@ -190,6 +192,44 @@ function semanticFixture() {
 }
 
 describe("semantic Action protocol", () => {
+  it("ships complete structural schemas for semantic artifacts and optional delegation without losing authority on normalization", () => {
+    const ajv = new Ajv({ strict: false, allErrors: true });
+    ajv.addFormat("date-time", (value: string) => Number.isFinite(Date.parse(value)));
+    for (const name of ["delegation-proof.v1", "eligibility-proof.v1", "semantic-authority.v1", "change-set.v4", "writeback-job.v5", "execution-receipt.v5"]) {
+      ajv.addSchema(JSON.parse(fs.readFileSync(new URL(`../../../schemas/${name}.schema.json`, import.meta.url), "utf8")));
+    }
+    const validate = (name: string, value: unknown) => ajv.validate(`https://schemas.synapsor.ai/synapsor.${name}.schema.json`, value);
+    for (const delegated of [false, true]) {
+      const fixture = semanticFixture();
+      if (delegated) {
+        fixture.proof.delegation = { schema_version: "synapsor.delegation-proof.v1", actor_digest: canonicalJsonDigest("actor"),
+          policy_chain_digest: canonicalJsonDigest("chain"), binding_digest: canonicalJsonDigest("binding"), valid_until: fixture.proof.valid_until };
+        const { proof_digest: _old, ...unsigned } = fixture.proof;
+        fixture.proof.proof_digest = eligibilityProofDigest(unsigned);
+        const { integrity: _integrity, ...change } = fixture.changeSet;
+        fixture.changeSet.integrity.proposal_hash = canonicalJsonDigest(change);
+      }
+      const normalized = fixture.normalizedJob;
+      const wire = { schema_version: protocolVersions.writebackJobV5, writeback_job_id: normalized.job_id, proposal_id: normalized.proposal_id,
+        proposal_hash: normalized.proposal_hash, approval_id: normalized.approval_id, contract: normalized.contract,
+        runner_scope: { project_id: "project_1", source_id: normalized.source_id }, engine: normalized.engine, operation: normalized.operation,
+        target: normalized.target, allowed_columns: normalized.allowed_columns, patch: normalized.patch,
+        conflict_guard: normalized.conflict_guard, version_advance: normalized.version_advance, semantic_authority: normalized.semantic_authority,
+        idempotency_key: normalized.idempotency_key, lease: { lease_id: "lease", attempt: 1, expires_at: normalized.lease_expires_at } };
+      for (const [name, value] of [["writeback-job.v5", wire], ["eligibility-proof.v1", fixture.proof], ["semantic-authority.v1", fixture.semanticAuthority],
+        ["change-set.v4", fixture.changeSet], ["execution-receipt.v5", fixture.receipt]] as const) {
+        expect(validate(name, value), JSON.stringify(ajv.errors)).toBe(true);
+      }
+      const parsed = parseWritebackJob(wire);
+      if (parsed.protocol_version !== "5.0") throw new Error("Expected normalized semantic job");
+      expect(parsed.semantic_authority.proof.delegation).toEqual(fixture.proof.delegation);
+      const invalid = structuredClone(wire) as any;
+      invalid.semantic_authority.proof.delegation = { schema_version: "synapsor.delegation-proof.v1", binding_digest: "not-a-digest" };
+      expect(validate("writeback-job.v5", invalid)).toBe(false);
+      expect(() => parseWritebackJob(invalid)).toThrow();
+      expect(validate("writeback-job.v5", { ...wire, bypass_delegation: true })).toBe(false);
+    }
+  });
   it("parses one required v4 rule-derived ChangeSet and v5 normalized job", () => {
     const fixture = semanticFixture();
     expect(parseEligibilityProof(fixture.proof)).toEqual(fixture.proof);

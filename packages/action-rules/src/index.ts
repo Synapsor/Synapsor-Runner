@@ -59,6 +59,8 @@ export {
   type SemanticActionEligibilityDecisionV1,
   type SemanticActionEligibilityInputV1,
   type SemanticActionReverificationV1,
+  type SemanticProposalDelegationCheck,
+  type SemanticExecutionDelegationCheck,
 } from "./runtime.js";
 export {
   createSemanticAdapterConformanceVector,

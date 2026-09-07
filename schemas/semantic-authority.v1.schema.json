@@ -1,0 +1,441 @@
+{
+  "type": "object",
+  "properties": {
+    "proof": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "synapsor.eligibility-proof.v1"
+        },
+        "result": {
+          "type": "string",
+          "const": "eligible"
+        },
+        "action_boundary_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "action_boundary_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "verification_boundary_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "effect_envelope_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "action_rule_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+$"
+        },
+        "outcome": {
+          "$ref": "#/properties/proof/properties/action_rule_name"
+        },
+        "action_rule_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "compiled_plan_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "compiler_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "schema_lock_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "generation_lock_fingerprint": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "verification_transaction": {
+          "type": "object",
+          "properties": {
+            "isolation": {
+              "type": "string",
+              "enum": [
+                "read_committed",
+                "repeatable_read",
+                "serializable"
+              ]
+            },
+            "timezone": {
+              "type": "string",
+              "const": "UTC"
+            }
+          },
+          "required": [
+            "isolation",
+            "timezone"
+          ],
+          "additionalProperties": false
+        },
+        "trusted_context_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "subject_bindings_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "business_inputs_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "evidence_provenance_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "verified_facts_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "dependency_set_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "derived_effect_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "approval_class": {
+          "$ref": "#/properties/proof/properties/action_rule_name"
+        },
+        "approval_policy_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "approval_path": {
+          "type": "string",
+          "enum": [
+            "automatic_eligible",
+            "human_review"
+          ]
+        },
+        "delegation": {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "string",
+              "const": "synapsor.delegation-proof.v1"
+            },
+            "binding_digest": {
+              "$ref": "#/properties/proof/properties/action_boundary_digest"
+            },
+            "policy_chain_digest": {
+              "$ref": "#/properties/proof/properties/action_boundary_digest"
+            },
+            "actor_digest": {
+              "$ref": "#/properties/proof/properties/action_boundary_digest"
+            },
+            "valid_until": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "schema_version",
+            "binding_digest",
+            "policy_chain_digest",
+            "actor_digest",
+            "valid_until"
+          ],
+          "additionalProperties": false
+        },
+        "verified_at": {
+          "$ref": "#/properties/proof/properties/delegation/properties/valid_until"
+        },
+        "valid_until": {
+          "$ref": "#/properties/proof/properties/delegation/properties/valid_until"
+        },
+        "uses": {
+          "type": "number",
+          "const": 1
+        },
+        "proof_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        }
+      },
+      "required": [
+        "schema_version",
+        "result",
+        "action_boundary_name",
+        "action_boundary_digest",
+        "verification_boundary_digest",
+        "effect_envelope_digest",
+        "action_rule_name",
+        "outcome",
+        "action_rule_digest",
+        "compiled_plan_digest",
+        "compiler_version",
+        "schema_lock_digest",
+        "generation_lock_fingerprint",
+        "verification_transaction",
+        "trusted_context_digest",
+        "subject_bindings_digest",
+        "evidence_provenance_digest",
+        "verified_facts_digest",
+        "dependency_set_digest",
+        "derived_effect_digest",
+        "approval_class",
+        "approval_policy_digest",
+        "approval_path",
+        "verified_at",
+        "valid_until",
+        "uses",
+        "proof_digest"
+      ],
+      "additionalProperties": false
+    },
+    "business_inputs": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      }
+    },
+    "subject_bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "binding": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "resource": {
+            "$ref": "#/properties/proof/properties/action_rule_name"
+          },
+          "subject_ref_digest": {
+            "$ref": "#/properties/proof/properties/action_boundary_digest"
+          }
+        },
+        "required": [
+          "binding",
+          "resource",
+          "subject_ref_digest"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 8
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "binding": {
+            "$ref": "#/properties/subject_bindings/items/properties/binding"
+          },
+          "resource": {
+            "$ref": "#/properties/proof/properties/action_rule_name"
+          },
+          "primary_key": {
+            "type": "object",
+            "properties": {
+              "column": {
+                "$ref": "#/properties/subject_bindings/items/properties/binding"
+              },
+              "value": {
+                "$ref": "#/properties/business_inputs/additionalProperties"
+              }
+            },
+            "required": [
+              "column",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "version": {
+            "$ref": "#/properties/dependencies/items/properties/primary_key"
+          },
+          "row_digest": {
+            "$ref": "#/properties/proof/properties/action_boundary_digest"
+          }
+        },
+        "required": [
+          "binding",
+          "resource",
+          "primary_key",
+          "row_digest"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 100
+    },
+    "effect": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "single_row_update",
+            "single_row_insert"
+          ]
+        },
+        "source": {
+          "$ref": "#/properties/subject_bindings/items/properties/binding"
+        },
+        "resource": {
+          "$ref": "#/properties/proof/properties/action_rule_name"
+        },
+        "schema": {
+          "$ref": "#/properties/subject_bindings/items/properties/binding"
+        },
+        "table": {
+          "$ref": "#/properties/subject_bindings/items/properties/binding"
+        },
+        "primary_key": {
+          "type": "object",
+          "properties": {
+            "column": {
+              "$ref": "#/properties/subject_bindings/items/properties/binding"
+            },
+            "value": {
+              "$ref": "#/properties/business_inputs/additionalProperties"
+            }
+          },
+          "required": [
+            "column"
+          ],
+          "additionalProperties": false
+        },
+        "tenant_guard": {
+          "$ref": "#/properties/dependencies/items/properties/primary_key"
+        },
+        "organization_scope": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "const": "single_organization"
+            },
+            "organization_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "mode",
+            "organization_id"
+          ],
+          "additionalProperties": false
+        },
+        "principal_scope": {
+          "$ref": "#/properties/dependencies/items/properties/primary_key"
+        },
+        "expected_version": {
+          "$ref": "#/properties/dependencies/items/properties/primary_key"
+        },
+        "version_advance": {
+          "type": "object",
+          "properties": {
+            "column": {
+              "$ref": "#/properties/subject_bindings/items/properties/binding"
+            },
+            "strategy": {
+              "type": "string",
+              "const": "integer_increment"
+            }
+          },
+          "required": [
+            "column",
+            "strategy"
+          ],
+          "additionalProperties": false
+        },
+        "allowed_columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/properties/subject_bindings/items/properties/binding"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "set": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/properties/business_inputs/additionalProperties"
+          }
+        },
+        "deduplication": {
+          "type": "object",
+          "properties": {
+            "components": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "column": {
+                    "$ref": "#/properties/subject_bindings/items/properties/binding"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "proposal_id",
+                      "trusted_tenant",
+                      "derived",
+                      "fixed"
+                    ]
+                  },
+                  "value": {
+                    "$ref": "#/properties/business_inputs/additionalProperties"
+                  }
+                },
+                "required": [
+                  "column",
+                  "source",
+                  "value"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 8
+            }
+          },
+          "required": [
+            "components"
+          ],
+          "additionalProperties": false
+        },
+        "effect_digest": {
+          "$ref": "#/properties/proof/properties/action_boundary_digest"
+        }
+      },
+      "required": [
+        "operation",
+        "source",
+        "resource",
+        "schema",
+        "table",
+        "primary_key",
+        "allowed_columns",
+        "set",
+        "effect_digest"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "proof",
+    "subject_bindings",
+    "dependencies",
+    "effect"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.synapsor.ai/synapsor.semantic-authority.v1.schema.json",
+  "$comment": "Generated from executable protocol validators. Structural validation is necessary but not sufficient: Runner must also verify canonical digests, cross-field consistency, current authority, trusted scope and one-use execution admission."
+}

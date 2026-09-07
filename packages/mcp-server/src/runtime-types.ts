@@ -10,11 +10,13 @@ import type {
 import type {
   ActivatedActionRuleV1,
   ActionRuleFactLoaderAdapterV1,
+  SemanticProposalDelegationCheck,
 } from "@synapsor-runner/action-rules";
 import type {
   RuntimeActionBoundaryV1,
   FreshnessAuthorityV1,
   FreshnessProofV1,
+  SemanticAuthorityV1,
 } from "@synapsor-runner/protocol";
 import type {
   InspectOptions,
@@ -654,6 +656,10 @@ export type SemanticActionRequestContext = {
   trusted_context: TrustedContext;
   subject_authority: SubjectReferenceAuthorityContext;
   fact_loader: ActionRuleFactLoaderAdapterV1;
+  delegation?: {
+    checkProposal: SemanticProposalDelegationCheck;
+    checkExisting(proposal_id: string, authority: SemanticAuthorityV1): Promise<void>;
+  };
   close?(): void | Promise<void>;
 };
 

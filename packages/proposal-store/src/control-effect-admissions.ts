@@ -42,6 +42,23 @@ export function controlEffectAdmissionSchema(c: PolicyConnection): Statement[] {
 export class ControlEffectAdmissions {
   constructor(private readonly c: PolicyConnection, private readonly budgets: ControlHardBudgets) {}
 
+  /** Trusted executor reconciliation only. No nonce or new dispatch authority
+   * is returned, and completed/uncertain effects remain inspectable after the
+   * originating short-lived workload or parent permission expires. */
+  async inspect(input: Omit<EffectAdmissionTarget, "expected_epoch">): Promise<{
+    dispatch_id: string; state: EffectAdmissionState; receipt_digest?: string;
+  }> {
+    const target = normalize({ ...input, expected_epoch: 0 });
+    const rows = await this.c.execute([{
+      sql: `SELECT * FROM ${this.c.table("effect_admissions")}
+        WHERE deployment_id = $1 AND request_id = $2 AND actor_digest = $3 AND policy_chain_digest = $4 AND effect_digest = $5`,
+      values: targetValues(target), check: (rows) => { if (rows.length !== 1) fail("EFFECT_ADMISSION_INVALID"); },
+    }]);
+    const row = rows[0]![0]!, result = prepared(row);
+    return { dispatch_id: result.dispatch_id, state: result.state,
+      ...(row.receipt_digest == null ? {} : { receipt_digest: digest(row.receipt_digest) }) };
+  }
+
   async prepare(input: EffectAdmissionTarget & { expires_at_ms: number; budget_request_id?: string }): Promise<PreparedEffectAdmission> {
     const target = normalize(input), expires = epoch(input.expires_at_ms);
     const budget = input.budget_request_id === undefined ? null : identifier(input.budget_request_id);

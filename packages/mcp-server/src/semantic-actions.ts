@@ -35,6 +35,7 @@ import type {
 } from "./subject-references.js";
 import { semanticActionInputSchema } from "./semantic-action-schema.js";
 import { ScopedCatalogIndex, ScopedCatalogSession, type CatalogRequest } from "./scoped-catalog.js";
+import { OwnerRuntimeError } from "./owner-runtime-identity.js";
 
 export const DESCRIBE_ACTIONS_TOOL = "app.describe_actions";
 export const REQUEST_CHANGE_TOOL = "app.request_change";
@@ -83,6 +84,7 @@ export function createSemanticActionRuntime(input: {
   resolveContext: SemanticActionContextResolver;
   resolveCatalogAuthorization: (registry: RuntimeActionRuleRegistryV1) => CatalogAuthorization | Promise<CatalogAuthorization>;
   catalogSession?: ScopedCatalogSession;
+  delegationRequired?: boolean;
   unavailableOutcomes?: () => string[] | Promise<string[]>;
   onProposalReady?: (input: {
     proposal: StoredProposal;
@@ -156,6 +158,7 @@ export function createSemanticActionRuntime(input: {
         const resolvedContext = await input.resolveContext(expected);
         try {
           assertRuntimeContext(expected, resolvedContext);
+          if (input.delegationRequired && !resolvedContext.delegation) throw new OwnerRuntimeError("DELEGATION_PROOF_REQUIRED");
           const claimed = await input.subjectReferences.claim({
             ...resolvedContext.subject_authority,
             outcome: request.outcome,
@@ -167,6 +170,12 @@ export function createSemanticActionRuntime(input: {
           const existing = await input.store.getProposal(claimed.proposal_id);
           if (existing !== undefined) {
             assertExistingProposal(existing, claimed);
+            if (existing.change_set.schema_version === protocolVersions.changeSetV4) {
+              if (Boolean(existing.change_set.semantic_authority.proof.delegation) !== Boolean(resolvedContext.delegation)) {
+                throw new OwnerRuntimeError("DELEGATION_PROOF_REQUIRED");
+              }
+              await resolvedContext.delegation?.checkExisting(existing.proposal_id, existing.change_set.semantic_authority);
+            }
             await ensureSemanticEvidence(input.store, existing);
             const continuation = input.onProposalReady
               ? await input.onProposalReady({ proposal: existing, activated: expected })
@@ -186,6 +195,7 @@ export function createSemanticActionRuntime(input: {
             evidence_provenance_digest: claimed.evidence_provenance_digest,
             verified_at: verifiedAt,
             inputs: businessInputs,
+            check_delegation: resolvedContext.delegation?.checkProposal,
           });
           if (decision.result !== "eligible") {
             await recordSemanticRefusal(input.store, {
@@ -228,6 +238,7 @@ export function createSemanticActionRuntime(input: {
             throw error;
           }
           await ensureSemanticEvidence(input.store, proposal);
+          await resolvedContext.delegation?.checkExisting(proposal.proposal_id, decision.semantic_authority);
           if (decision.approval.path === "automatic_eligible") {
             const approvalDecision = await input.store.approveProposalByPolicy(proposal.proposal_id, {
               policy: decision.approval.authority.name,
@@ -252,6 +263,9 @@ export function createSemanticActionRuntime(input: {
         }
       } catch (error) {
         if (error instanceof McpRuntimeError) throw error;
+        if (error instanceof OwnerRuntimeError) {
+          throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "Current delegated authority could not be verified. No source change was executed. Refresh the authorized catalog before retrying.");
+        }
         if (error instanceof ActionRuleError) {
           throw new McpRuntimeError(
             error.code === "ACTION_RULE_NOT_ELIGIBLE"

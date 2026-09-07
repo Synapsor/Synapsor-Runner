@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "synapsor.delegation-proof.v1"
+    },
+    "binding_digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "policy_chain_digest": {
+      "$ref": "#/properties/binding_digest"
+    },
+    "actor_digest": {
+      "$ref": "#/properties/binding_digest"
+    },
+    "valid_until": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schema_version",
+    "binding_digest",
+    "policy_chain_digest",
+    "actor_digest",
+    "valid_until"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.synapsor.ai/synapsor.delegation-proof.v1.schema.json",
+  "$comment": "Generated from executable protocol validators. Structural validation is necessary but not sufficient: Runner must also verify canonical digests, cross-field consistency, current authority, trusted scope and one-use execution admission."
+}

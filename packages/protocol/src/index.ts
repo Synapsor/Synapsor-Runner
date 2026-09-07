@@ -9,6 +9,7 @@ import {
 } from "./canonical-json.js";
 export {
   changeSetV4Schema,
+  delegationProofV1Schema,
   eligibilityProofDigest,
   eligibilityProofV1Schema,
   executionReceiptV5Schema,
@@ -26,6 +27,7 @@ export {
   semanticVerificationResultSchema,
   writebackJobV5Schema,
   type ChangeSetV4,
+  type DelegationProofV1,
   type EligibilityProofV1,
   type ExecutionReceiptV5,
   type ExactDerivedEffectProtocolV1,

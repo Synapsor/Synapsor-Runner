@@ -1411,6 +1411,7 @@ function fieldServiceRuntimeAdapter(
 async function eligibleFieldServiceRuntime(options: {
   approvalClasses?: ActionRuleApprovalClassSourceV1[];
   withInput?: boolean;
+  delegationCheck?: import("./runtime.js").SemanticProposalDelegationCheck;
 } = {}) {
   const fixture = fieldServiceFixture();
   if (options.withInput) {
@@ -1466,6 +1467,7 @@ async function eligibleFieldServiceRuntime(options: {
     trusted_context_digest: `sha256:${"3".repeat(64)}`,
     evidence_provenance_digest: `sha256:${"4".repeat(64)}`,
     verified_at: "2026-09-02T20:00:00.000Z",
+    check_delegation: options.delegationCheck,
   });
   if (decision.result !== "eligible") throw new Error("Expected eligible field-service fixture.");
   const effect = decision.semantic_authority.effect;
@@ -1509,6 +1511,60 @@ async function eligibleFieldServiceRuntime(options: {
 }
 
 describe("semantic Action eligibility and transaction re-verification", () => {
+  it("binds delegated proof, narrows automatic approval, and limits its lifetime without changing the effect", async () => {
+    const baseline = await eligibleFieldServiceRuntime({ approvalClasses: [automaticReschedulePolicy()] });
+    const proof = { schema_version: "synapsor.delegation-proof.v1" as const, binding_digest: canonicalJsonDigest("binding"),
+      policy_chain_digest: canonicalJsonDigest("chain"), actor_digest: canonicalJsonDigest("workload"), valid_until: "2026-09-02T20:01:00.000Z" };
+    let checked = false;
+    const delegated = await eligibleFieldServiceRuntime({ approvalClasses: [automaticReschedulePolicy()], delegationCheck: async (input) => {
+      checked = true;
+      expect(input.evaluation.effect).toEqual(baseline.decision.evaluation.effect);
+      expect(input.facts.bindings.appointment!.rows).toHaveLength(1);
+      return { proof, approval: "human" };
+    } });
+    expect(checked).toBe(true);
+    expect(delegated.decision.approval.path).toBe("human_review");
+    expect(delegated.decision.semantic_authority.proof).toMatchObject({ delegation: proof, valid_until: proof.valid_until });
+    expect(delegated.decision.evaluation.effect).toEqual(baseline.decision.evaluation.effect);
+    expect(delegated.decision.semantic_authority.proof.proof_digest).not.toBe(baseline.decision.semantic_authority.proof.proof_digest);
+    let loaded = false;
+    const verifier = createSemanticActionVerifier({ registry: delegated.registry, clock: () => "2026-09-02T20:00:30.000Z" });
+    await expect(verifier({ job: delegated.job, factLoader: { engine: "postgres", async load() { loaded = true; return []; } } })).rejects.toThrow("required current delegation");
+    expect(loaded).toBe(false);
+  });
+
+  it("requires current delegated verification and rejects stripped proofs before source reads", async () => {
+    const proof = { schema_version: "synapsor.delegation-proof.v1" as const, binding_digest: canonicalJsonDigest("binding"),
+      policy_chain_digest: canonicalJsonDigest("chain"), actor_digest: canonicalJsonDigest("workload"), valid_until: "2026-09-02T20:05:00.000Z" };
+    const f = await eligibleFieldServiceRuntime({ delegationCheck: async () => ({ proof, approval: "inherit" }) });
+    let calls = 0;
+    const verifier = createSemanticActionVerifier({ registry: f.registry, clock: () => "2026-09-02T20:02:00.000Z", check_delegation: async ({ job, evaluation }) => {
+      calls++; expect(job.semantic_authority.proof.delegation).toEqual(proof);
+      expect(evaluation.effect.effect_digest).toBe(f.decision.evaluation.effect.effect_digest);
+    } });
+    await expect(verifier({ job: f.job, factLoader: fieldServiceRuntimeAdapter(f.fixture) })).resolves.toMatchObject({ status: "reverified" });
+    expect(calls).toBe(1);
+    const stripped = structuredClone(f.job); delete stripped.semantic_authority.proof.delegation;
+    let loaded = false;
+    await expect(verifier({ job: stripped, factLoader: { engine: "postgres", async load() { loaded = true; return []; } } })).rejects.toThrow("required current delegation");
+    expect(loaded).toBe(false); expect(calls).toBe(1);
+    const refused = createSemanticActionVerifier({ registry: f.registry, clock: () => "2026-09-02T20:02:00.000Z", check_delegation: async () => { throw new Error("current owner revoked"); } });
+    await expect(refused({ job: f.job, factLoader: fieldServiceRuntimeAdapter(f.fixture) })).rejects.toThrow("current owner revoked");
+  });
+
+  it("does not admit an effect when current source facts fail and does not upgrade human approval", async () => {
+    const proof = { schema_version: "synapsor.delegation-proof.v1" as const, binding_digest: canonicalJsonDigest("binding"),
+      policy_chain_digest: canonicalJsonDigest("chain"), actor_digest: canonicalJsonDigest("workload"), valid_until: "2026-09-02T20:05:00.000Z" };
+    const f = await eligibleFieldServiceRuntime({ delegationCheck: async () => ({ proof, approval: "inherit" }) });
+    expect(f.decision.approval.path).toBe("human_review");
+    let admitted = false;
+    const verifier = createSemanticActionVerifier({ registry: f.registry, clock: () => "2026-09-02T20:02:00.000Z", check_delegation: async () => { admitted = true; } });
+    await expect(verifier({ job: f.job, factLoader: { engine: "postgres", async load() { return []; } } })).rejects.toThrow();
+    expect(admitted).toBe(false);
+    await expect(eligibleFieldServiceRuntime({ delegationCheck: async () => ({ proof: { ...proof, valid_until: "2020-01-01T00:00:00.000Z" }, approval: "inherit" }) })).rejects.toThrow("delegation expired");
+    await expect(eligibleFieldServiceRuntime({ delegationCheck: async () => undefined as never })).rejects.toThrow("delegation could not be verified");
+  });
+
   it("binds reviewed business inputs into the proof and refuses tampering before fact loading", async () => {
     const { fixture, registry, decision, job } = await eligibleFieldServiceRuntime({ withInput: true });
     expect(decision.semantic_authority.business_inputs).toEqual({ requested_status: "scheduled" });

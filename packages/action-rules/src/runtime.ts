@@ -1,9 +1,11 @@
 import {
   canonicalJsonDigest,
   canonicalJsonStringify,
+  delegationProofV1Schema,
   eligibilityProofDigest,
   parseSemanticAuthority,
   semanticProtocolVersions,
+  type DelegationProofV1,
   type NormalizedWritebackJobV5,
   type SemanticAuthorityV1,
 } from "@synapsor-runner/protocol";
@@ -41,7 +43,18 @@ export type SemanticActionEligibilityInputV1 = {
   trusted_context_digest: `sha256:${string}`;
   evidence_provenance_digest: `sha256:${string}`;
   verified_at?: string;
+  check_delegation?: SemanticProposalDelegationCheck;
 };
+
+type EligibleRuleEvaluation = Extract<ActionRuleEvaluationV1, { result: "eligible" }>;
+export type SemanticProposalDelegationCheck = (input: {
+  activated: ActivatedActionRuleV1; evaluation: EligibleRuleEvaluation; facts: ActionRuleFactSetV1;
+  proposal_id: string; inputs: Record<string, unknown>; verified_at: string;
+}) => Promise<{ proof: DelegationProofV1; approval: "inherit" | "human" }>;
+export type SemanticExecutionDelegationCheck = (input: {
+  job: NormalizedWritebackJobV5; activated: ActivatedActionRuleV1; evaluation: EligibleRuleEvaluation;
+  facts: ActionRuleFactSetV1; inputs: Record<string, unknown>; checked_at: string;
+}) => Promise<void>;
 
 export type SemanticActionEligibilityDecisionV1 =
   | {
@@ -183,6 +196,16 @@ export async function evaluateSemanticActionEligibility(
   });
   if (evaluation.result !== "eligible") return { result: evaluation.result, activated, evaluation };
 
+  const delegation = await input.check_delegation?.({ activated, evaluation, facts: loaded.facts,
+    proposal_id: input.proposal_id, inputs, verified_at: verifiedAt });
+  if (input.check_delegation && (!delegation || !["inherit", "human"].includes(delegation.approval)
+      || !delegationProofV1Schema.safeParse(delegation.proof).success)) {
+    throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The current delegation could not be verified.");
+  }
+  if (delegation && Date.parse(delegation.proof.valid_until) <= Date.parse(verifiedAt)) {
+    throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The current delegation expired before proposal verification.");
+  }
+
   const approvalBinding = approval.rules.find((binding) => binding.outcome === input.outcome);
   if (approvalBinding === undefined) {
     throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The activated approval class does not bind this exact Action Rule.");
@@ -195,7 +218,7 @@ export async function evaluateSemanticActionEligibility(
       inputs,
     })
     : undefined;
-  const approvalPath = approval.mode === "policy" && approvalPredicate?.result === "match"
+  const approvalPath = approval.mode === "policy" && approvalPredicate?.result === "match" && delegation?.approval !== "human"
     ? "automatic_eligible" as const
     : "human_review" as const;
 
@@ -225,8 +248,10 @@ export async function evaluateSemanticActionEligibility(
     approval_class: activated.compiled.approval_class,
     approval_policy_digest: approval.digest,
     approval_path: approvalPath,
+    ...(delegation ? { delegation: delegation.proof } : {}),
     verified_at: verifiedAt,
-    valid_until: new Date(Date.parse(verifiedAt) + activated.compiled.ttl_seconds * 1_000).toISOString(),
+    valid_until: new Date(Math.min(Date.parse(verifiedAt) + activated.compiled.ttl_seconds * 1_000,
+      delegation ? Date.parse(delegation.proof.valid_until) : Infinity)).toISOString(),
     uses: 1 as const,
   };
   const semanticAuthority = parseSemanticAuthority({
@@ -296,11 +321,17 @@ function trustedFactsFromJob(job: NormalizedWritebackJobV5, checkedAt: string): 
 export function createSemanticActionVerifier(input: {
   registry: RuntimeActionRuleRegistryV1 | ((outcome: string) => RuntimeActionRuleRegistryV1 | Promise<RuntimeActionRuleRegistryV1>);
   clock?: () => string;
+  check_delegation?: SemanticExecutionDelegationCheck;
 }): (request: {
   job: NormalizedWritebackJobV5;
   factLoader: ActionRuleFactLoaderAdapterV1;
 }) => Promise<SemanticActionReverificationV1> {
   return async ({ job, factLoader }) => {
+    // Refuse before loading rows when the execution path cannot enforce the
+    // proof extension, or when a delegated deployment receives an unbound job.
+    if (Boolean(job.semantic_authority.proof.delegation) !== Boolean(input.check_delegation)) {
+      throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "This execution path cannot verify the required current delegation.");
+    }
     const checkedAt = canonicalTimestamp(input.clock?.(), "Transaction verification time");
     const registry = typeof input.registry === "function" ? await input.registry(job.semantic_authority.proof.outcome) : input.registry;
     const { activated, approval } = assertSemanticActionAuthorityCurrent(registry, job);
@@ -349,6 +380,7 @@ export function createSemanticActionVerifier(input: {
         "Current authoritative facts no longer prove the proposal's exact effect.",
       );
     }
+    await input.check_delegation?.({ job, activated, evaluation, facts: loaded.facts, inputs, checked_at: checkedAt });
     const proofDigest = validatedDigest(proof.proof_digest, "Eligibility proof digest");
     const actionRuleDigest = validatedDigest(proof.action_rule_digest, "Action Rule digest");
     const compiledPlanDigest = validatedDigest(proof.compiled_plan_digest, "Compiled plan digest");

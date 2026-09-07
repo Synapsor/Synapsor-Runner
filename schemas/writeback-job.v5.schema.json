@@ -1,0 +1,713 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "synapsor.writeback-job.v5"
+    },
+    "writeback_job_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "proposal_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "proposal_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "approval_id": {
+      "$ref": "#/properties/proposal_hash"
+    },
+    "contract": {
+      "type": "object",
+      "properties": {
+        "contract_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "contract_version_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "digest": {
+          "$ref": "#/properties/proposal_hash"
+        }
+      },
+      "required": [
+        "contract_id",
+        "contract_version_id",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "runner_scope": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "required": [
+        "project_id",
+        "source_id"
+      ],
+      "additionalProperties": false
+    },
+    "engine": {
+      "type": "string",
+      "enum": [
+        "postgres",
+        "mysql"
+      ]
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "single_row_update",
+        "single_row_insert"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "table": {
+          "$ref": "#/properties/target/properties/schema"
+        },
+        "primary_key": {
+          "type": "object",
+          "properties": {
+            "column": {
+              "$ref": "#/properties/target/properties/schema"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "column"
+          ],
+          "additionalProperties": false
+        },
+        "tenant_guard": {
+          "type": "object",
+          "properties": {
+            "column": {
+              "$ref": "#/properties/target/properties/schema"
+            },
+            "value": {
+              "$ref": "#/properties/target/properties/primary_key/properties/value"
+            }
+          },
+          "required": [
+            "column",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        "organization_scope": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "const": "single_organization"
+            },
+            "organization_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "mode",
+            "organization_id"
+          ],
+          "additionalProperties": false
+        },
+        "principal_scope": {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "string",
+              "const": "synapsor.principal-scope.v1"
+            },
+            "column": {
+              "$ref": "#/properties/target/properties/schema"
+            },
+            "binding": {
+              "$ref": "#/properties/target/properties/schema"
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "environment",
+                "http_claims",
+                "cloud_session",
+                "static_dev"
+              ]
+            },
+            "value_fingerprint": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "value": {
+              "$ref": "#/properties/target/properties/primary_key/properties/value"
+            }
+          },
+          "required": [
+            "schema_version",
+            "column",
+            "binding",
+            "provider",
+            "value_fingerprint"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema",
+        "table",
+        "primary_key"
+      ],
+      "additionalProperties": false
+    },
+    "allowed_columns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/properties/target/properties/schema"
+      },
+      "minItems": 1,
+      "maxItems": 64
+    },
+    "patch": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/properties/target/properties/primary_key/properties/value"
+      }
+    },
+    "conflict_guard": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "none"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "version_column"
+            },
+            "column": {
+              "$ref": "#/properties/target/properties/schema"
+            },
+            "expected_value": {
+              "$ref": "#/properties/target/properties/primary_key/properties/value"
+            }
+          },
+          "required": [
+            "kind",
+            "column",
+            "expected_value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "version_advance": {
+      "type": "object",
+      "properties": {
+        "column": {
+          "$ref": "#/properties/target/properties/schema"
+        },
+        "strategy": {
+          "type": "string",
+          "const": "integer_increment"
+        }
+      },
+      "required": [
+        "column",
+        "strategy"
+      ],
+      "additionalProperties": false
+    },
+    "deduplication": {
+      "type": "object",
+      "properties": {
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "column": {
+                "$ref": "#/properties/target/properties/schema"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "proposal_id",
+                  "trusted_tenant",
+                  "derived",
+                  "fixed"
+                ]
+              },
+              "value": {
+                "$ref": "#/properties/target/properties/primary_key/properties/value"
+              }
+            },
+            "required": [
+              "column",
+              "source",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 8
+        }
+      },
+      "required": [
+        "components"
+      ],
+      "additionalProperties": false
+    },
+    "semantic_authority": {
+      "type": "object",
+      "properties": {
+        "proof": {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "string",
+              "const": "synapsor.eligibility-proof.v1"
+            },
+            "result": {
+              "type": "string",
+              "const": "eligible"
+            },
+            "action_boundary_name": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$"
+            },
+            "action_boundary_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "verification_boundary_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "effect_envelope_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "action_rule_name": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+$"
+            },
+            "outcome": {
+              "$ref": "#/properties/semantic_authority/properties/proof/properties/action_rule_name"
+            },
+            "action_rule_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "compiled_plan_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "compiler_version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "schema_lock_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "generation_lock_fingerprint": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "verification_transaction": {
+              "type": "object",
+              "properties": {
+                "isolation": {
+                  "type": "string",
+                  "enum": [
+                    "read_committed",
+                    "repeatable_read",
+                    "serializable"
+                  ]
+                },
+                "timezone": {
+                  "type": "string",
+                  "const": "UTC"
+                }
+              },
+              "required": [
+                "isolation",
+                "timezone"
+              ],
+              "additionalProperties": false
+            },
+            "trusted_context_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "subject_bindings_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "business_inputs_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "evidence_provenance_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "verified_facts_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "dependency_set_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "derived_effect_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "approval_class": {
+              "$ref": "#/properties/semantic_authority/properties/proof/properties/action_rule_name"
+            },
+            "approval_policy_digest": {
+              "$ref": "#/properties/proposal_hash"
+            },
+            "approval_path": {
+              "type": "string",
+              "enum": [
+                "automatic_eligible",
+                "human_review"
+              ]
+            },
+            "delegation": {
+              "type": "object",
+              "properties": {
+                "schema_version": {
+                  "type": "string",
+                  "const": "synapsor.delegation-proof.v1"
+                },
+                "binding_digest": {
+                  "$ref": "#/properties/proposal_hash"
+                },
+                "policy_chain_digest": {
+                  "$ref": "#/properties/proposal_hash"
+                },
+                "actor_digest": {
+                  "$ref": "#/properties/proposal_hash"
+                },
+                "valid_until": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "schema_version",
+                "binding_digest",
+                "policy_chain_digest",
+                "actor_digest",
+                "valid_until"
+              ],
+              "additionalProperties": false
+            },
+            "verified_at": {
+              "$ref": "#/properties/semantic_authority/properties/proof/properties/delegation/properties/valid_until"
+            },
+            "valid_until": {
+              "$ref": "#/properties/semantic_authority/properties/proof/properties/delegation/properties/valid_until"
+            },
+            "uses": {
+              "type": "number",
+              "const": 1
+            },
+            "proof_digest": {
+              "$ref": "#/properties/proposal_hash"
+            }
+          },
+          "required": [
+            "schema_version",
+            "result",
+            "action_boundary_name",
+            "action_boundary_digest",
+            "verification_boundary_digest",
+            "effect_envelope_digest",
+            "action_rule_name",
+            "outcome",
+            "action_rule_digest",
+            "compiled_plan_digest",
+            "compiler_version",
+            "schema_lock_digest",
+            "generation_lock_fingerprint",
+            "verification_transaction",
+            "trusted_context_digest",
+            "subject_bindings_digest",
+            "evidence_provenance_digest",
+            "verified_facts_digest",
+            "dependency_set_digest",
+            "derived_effect_digest",
+            "approval_class",
+            "approval_policy_digest",
+            "approval_path",
+            "verified_at",
+            "valid_until",
+            "uses",
+            "proof_digest"
+          ],
+          "additionalProperties": false
+        },
+        "business_inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/properties/target/properties/primary_key/properties/value"
+          },
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        },
+        "subject_bindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "binding": {
+                "$ref": "#/properties/target/properties/schema"
+              },
+              "resource": {
+                "$ref": "#/properties/semantic_authority/properties/proof/properties/action_rule_name"
+              },
+              "subject_ref_digest": {
+                "$ref": "#/properties/proposal_hash"
+              }
+            },
+            "required": [
+              "binding",
+              "resource",
+              "subject_ref_digest"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 8
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "binding": {
+                "$ref": "#/properties/target/properties/schema"
+              },
+              "resource": {
+                "$ref": "#/properties/semantic_authority/properties/proof/properties/action_rule_name"
+              },
+              "primary_key": {
+                "$ref": "#/properties/target/properties/tenant_guard"
+              },
+              "version": {
+                "$ref": "#/properties/target/properties/tenant_guard"
+              },
+              "row_digest": {
+                "$ref": "#/properties/proposal_hash"
+              }
+            },
+            "required": [
+              "binding",
+              "resource",
+              "primary_key",
+              "row_digest"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 100
+        },
+        "effect": {
+          "type": "object",
+          "properties": {
+            "operation": {
+              "type": "string",
+              "enum": [
+                "single_row_update",
+                "single_row_insert"
+              ]
+            },
+            "source": {
+              "$ref": "#/properties/target/properties/schema"
+            },
+            "resource": {
+              "$ref": "#/properties/semantic_authority/properties/proof/properties/action_rule_name"
+            },
+            "schema": {
+              "$ref": "#/properties/target/properties/schema"
+            },
+            "table": {
+              "$ref": "#/properties/target/properties/schema"
+            },
+            "primary_key": {
+              "type": "object",
+              "properties": {
+                "column": {
+                  "$ref": "#/properties/target/properties/schema"
+                },
+                "value": {
+                  "$ref": "#/properties/target/properties/primary_key/properties/value"
+                }
+              },
+              "required": [
+                "column"
+              ],
+              "additionalProperties": false
+            },
+            "tenant_guard": {
+              "$ref": "#/properties/target/properties/tenant_guard"
+            },
+            "organization_scope": {
+              "$ref": "#/properties/target/properties/organization_scope"
+            },
+            "principal_scope": {
+              "$ref": "#/properties/target/properties/tenant_guard"
+            },
+            "expected_version": {
+              "$ref": "#/properties/target/properties/tenant_guard"
+            },
+            "version_advance": {
+              "$ref": "#/properties/version_advance"
+            },
+            "allowed_columns": {
+              "type": "array",
+              "items": {
+                "$ref": "#/properties/target/properties/schema"
+              },
+              "minItems": 1,
+              "maxItems": 64
+            },
+            "set": {
+              "$ref": "#/properties/patch"
+            },
+            "deduplication": {
+              "type": "object",
+              "properties": {
+                "components": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/properties/deduplication/properties/components/items"
+                  },
+                  "minItems": 1,
+                  "maxItems": 8
+                }
+              },
+              "required": [
+                "components"
+              ],
+              "additionalProperties": false
+            },
+            "effect_digest": {
+              "$ref": "#/properties/proposal_hash"
+            }
+          },
+          "required": [
+            "operation",
+            "source",
+            "resource",
+            "schema",
+            "table",
+            "primary_key",
+            "allowed_columns",
+            "set",
+            "effect_digest"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "proof",
+        "subject_bindings",
+        "dependencies",
+        "effect"
+      ],
+      "additionalProperties": false
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "lease": {
+      "type": "object",
+      "properties": {
+        "lease_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "expires_at": {
+          "$ref": "#/properties/semantic_authority/properties/proof/properties/delegation/properties/valid_until"
+        }
+      },
+      "required": [
+        "lease_id",
+        "attempt",
+        "expires_at"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "writeback_job_id",
+    "proposal_id",
+    "proposal_hash",
+    "approval_id",
+    "runner_scope",
+    "engine",
+    "operation",
+    "target",
+    "allowed_columns",
+    "patch",
+    "conflict_guard",
+    "semantic_authority",
+    "idempotency_key",
+    "lease"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.synapsor.ai/synapsor.writeback-job.v5.schema.json",
+  "$comment": "Generated from executable protocol validators. Structural validation is necessary but not sufficient: Runner must also verify canonical digests, cross-field consistency, current authority, trusted scope and one-use execution admission."
+}

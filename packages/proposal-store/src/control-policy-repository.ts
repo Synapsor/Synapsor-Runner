@@ -11,6 +11,7 @@ import { boundedJson, digest, epoch, exactlyOne, fail, identifier, policyKind, s
 import { ControlPolicyReviews, controlPolicyReviewSchema } from "./control-policy-reviews.js";
 import { ControlHardBudgets, controlHardBudgetSchema } from "./control-hard-budgets.js";
 import { ControlEffectAdmissions, controlEffectAdmissionSchema } from "./control-effect-admissions.js";
+import { ControlRuntimeProofs, controlRuntimeProofSchema } from "./control-runtime-proofs.js";
 export type { ControlPolicyScope, ControlPolicyKind, ControlPolicyKey, ControlPolicyRevision,
   ControlPolicyPointer, ControlPolicyScopeSnapshot, ControlPolicyEvent, ControlPolicyCommit, ControlPolicyReadGuard } from "./control-policy-types.js";
 
@@ -21,10 +22,12 @@ export class ControlPolicyRepository {
   readonly reviews: ControlPolicyReviews;
   readonly budgets: ControlHardBudgets;
   readonly effects: ControlEffectAdmissions;
+  readonly runtimeProofs: ControlRuntimeProofs;
   constructor(private readonly connection: PolicyConnection) {
     this.reviews = new ControlPolicyReviews(connection);
     this.budgets = new ControlHardBudgets(connection);
     this.effects = new ControlEffectAdmissions(connection, this.budgets);
+    this.runtimeProofs = new ControlRuntimeProofs(connection);
   }
 
   async initialize(): Promise<string> {
@@ -62,6 +65,7 @@ export class ControlPolicyRepository {
       ...controlPolicyReviewSchema(this.connection),
       ...controlHardBudgetSchema(this.connection),
       ...controlEffectAdmissionSchema(this.connection),
+      ...controlRuntimeProofSchema(this.connection),
       { sql: `INSERT INTO ${t("identity")} (singleton, repository_id) VALUES (1, $1) ON CONFLICT (singleton) DO NOTHING`, values: [randomUUID()] },
       { sql: `SELECT repository_id FROM ${t("identity")} WHERE singleton = 1`, check: exactlyOne },
     ], "migration");

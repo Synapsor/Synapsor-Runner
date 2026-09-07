@@ -1,0 +1,235 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "synapsor.execution-receipt.v5"
+    },
+    "writeback_job_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "proposal_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "proposal_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "approval_id": {
+      "$ref": "#/properties/proposal_hash"
+    },
+    "runner_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "single_row_update",
+        "single_row_insert"
+      ]
+    },
+    "receipt_authority": {
+      "type": "string",
+      "enum": [
+        "source_db",
+        "runner_ledger"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "applied",
+        "conflict",
+        "failed",
+        "canceled",
+        "already_applied",
+        "reconciliation_required"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "table": {
+          "$ref": "#/properties/target/properties/schema"
+        },
+        "identity": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "column": {
+                "$ref": "#/properties/target/properties/schema"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "column",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 8
+        }
+      },
+      "required": [
+        "source_id",
+        "schema",
+        "table",
+        "identity"
+      ],
+      "additionalProperties": false
+    },
+    "rows_affected": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "before_digest": {
+      "$ref": "#/properties/proposal_hash"
+    },
+    "after_digest": {
+      "$ref": "#/properties/proposal_hash"
+    },
+    "semantic_verification": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "reverified",
+            "previously_reverified",
+            "refused",
+            "not_run"
+          ]
+        },
+        "proof_digest": {
+          "$ref": "#/properties/proposal_hash"
+        },
+        "action_rule_digest": {
+          "$ref": "#/properties/proposal_hash"
+        },
+        "compiled_plan_digest": {
+          "$ref": "#/properties/proposal_hash"
+        },
+        "proposal_dependency_set_digest": {
+          "$ref": "#/properties/proposal_hash"
+        },
+        "dependency_set_digest": {
+          "$ref": "#/properties/proposal_hash"
+        },
+        "effect_digest": {
+          "$ref": "#/properties/proposal_hash"
+        },
+        "checked_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "status",
+        "proof_digest",
+        "action_rule_digest",
+        "compiled_plan_digest",
+        "proposal_dependency_set_digest",
+        "effect_digest"
+      ],
+      "additionalProperties": false
+    },
+    "source_database_mutated": {
+      "type": "boolean"
+    },
+    "safe_outcome_code": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "safe_error_code": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "executed_at": {
+      "$ref": "#/properties/semantic_verification/properties/checked_at"
+    },
+    "receipt_hash": {
+      "$ref": "#/properties/proposal_hash"
+    },
+    "reconciliation": {
+      "type": "object",
+      "properties": {
+        "intent_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "intent_id",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "writeback_job_id",
+    "proposal_id",
+    "proposal_hash",
+    "approval_id",
+    "runner_id",
+    "operation",
+    "receipt_authority",
+    "status",
+    "target",
+    "rows_affected",
+    "idempotency_key",
+    "semantic_verification",
+    "source_database_mutated",
+    "safe_outcome_code",
+    "executed_at",
+    "receipt_hash"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.synapsor.ai/synapsor.execution-receipt.v5.schema.json",
+  "$comment": "Generated from executable protocol validators. Structural validation is necessary but not sufficient: Runner must also verify canonical digests, cross-field consistency, current authority, trusted scope and one-use execution admission."
+}

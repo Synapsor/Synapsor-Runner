@@ -11,6 +11,7 @@ export type EffectiveOwnerPolicy = {
   epoch: number;
   digest: string;
   actor: OwnerRuntimeIdentity;
+  valid_until_ms: number;
   allowed_outcomes: string[];
   layers: Array<{ key: ControlPolicyKey; revision_id: string; policy: CompiledOwnerPolicy }>;
 };
@@ -83,7 +84,9 @@ export function createEffectiveOwnerPolicyResolver(options: {
     const allowed = parent.document.delegation.outcomes.map((entry) => entry.outcome)
       .filter((outcome) => layers.every((layer) => layer.policy.rules.some((rule) => rule.outcome === outcome))).sort();
     const digest = canonicalJsonDigest({ deployment_id: options.deployment_id, actor: actor.actor_digest, chain: expected, keys });
-    return { deployment_id: options.deployment_id, epoch: final.epoch, digest, actor, allowed_outcomes: allowed, layers };
+    const validUntil = Math.min(actor.expires_at_ms, parent.binding.expires_at ? Date.parse(parent.binding.expires_at) : Infinity);
+    if (validUntil <= Date.now()) throw new OwnerRuntimeError("DELEGATION_NOT_AVAILABLE");
+    return { deployment_id: options.deployment_id, epoch: final.epoch, digest, actor, valid_until_ms: validUntil, allowed_outcomes: allowed, layers };
   }
   return { resolve, async assertCurrent(credential: string, previous: Pick<EffectiveOwnerPolicy, "digest">) {
     const current = await resolve(credential);
@@ -96,7 +99,8 @@ export function evaluateEffectiveOwnerPolicy(input: { effective: EffectiveOwnerP
   facts: ActionRuleFactSetV1; inputs?: Record<string, unknown>; proposal_id: string }) {
   const actor = input.effective.actor;
   if (!input.effective.layers.length || !input.effective.allowed_outcomes.includes(input.compiled.outcome)
-      || actor.expires_at_ms <= Date.now() || input.facts.trusted.tenant !== actor.tenant_id || input.facts.trusted.principal !== actor.principal) {
+      || input.effective.valid_until_ms <= Date.now() || actor.expires_at_ms <= Date.now()
+      || input.facts.trusted.tenant !== actor.tenant_id || input.facts.trusted.principal !== actor.principal) {
     return { result: "refused" as const, code: "DELEGATION_NOT_AVAILABLE" };
   }
   let approval: "inherit" | "human" = "inherit";
