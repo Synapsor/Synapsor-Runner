@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { Buffer } from "node:buffer";
-import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { compileAgentDsl, formatAgentDsl } from "@synapsor/dsl";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -1641,7 +1641,16 @@ export async function writeAutoBoundaryArtifacts(input: {
     AutoBoundaryReviewOverrides
   >;
   additionalPrivateStateFiles?: Record<string, string>;
-}): Promise<AutoBoundaryWriteResult> {
+}, permit?: ProjectAuthorityMutationPermit): Promise<AutoBoundaryWriteResult> {
+  const frozen = structuredClone(input);
+  await fs.mkdir(frozen.projectRoot, { recursive: true });
+  const relativeOutput = path.relative(path.resolve(frozen.projectRoot), path.resolve(frozen.projectRoot, frozen.outputRoot ?? DEFAULT_GENERATED_DIR));
+  return withProjectAuthorityMutation(frozen.projectRoot, (held) => writeAutoBoundaryArtifactsUnlocked({
+    ...frozen, projectRoot: held.projectRoot, outputRoot: relativeOutput,
+  }), { permit });
+}
+
+async function writeAutoBoundaryArtifactsUnlocked(input: Parameters<typeof writeAutoBoundaryArtifacts>[0]): Promise<AutoBoundaryWriteResult> {
   const projectRoot = path.resolve(input.projectRoot);
   const governed = await openBoundProjectControlPolicies(projectRoot);
   if (governed) {
@@ -2946,7 +2955,18 @@ export function parseAutoBoundaryPolicyBaseline(value: unknown): AutoBoundaryBui
 export async function persistAutoBoundaryPolicyBaseline(
   projectRootInput: string,
   baseline: AutoBoundaryBuild["policy_baseline"],
+  permit?: ProjectAuthorityMutationPermit,
 ): Promise<void> {
+  const frozen = structuredClone(baseline);
+  return withProjectAuthorityMutation(projectRootInput, (held) => persistAutoBoundaryPolicyBaselineUnlocked(held.projectRoot, frozen), { permit });
+}
+
+async function persistAutoBoundaryPolicyBaselineUnlocked(projectRootInput: string, baseline: AutoBoundaryBuild["policy_baseline"]): Promise<void> {
+  const governed = await openBoundProjectControlPolicies(projectRootInput);
+  if (governed) {
+    await governed.close();
+    throw new Error("The governed Read baseline requires an exact repository revision. No file-based replacement was saved.");
+  }
   if (baseline.schema_version !== AUTO_BOUNDARY_POLICY_BASELINE_VERSION
     || baseline.boundary.activation !== "disabled_unreviewed") {
     throw new Error("Refusing to persist an invalid policy-neutral Auto Boundary baseline.");

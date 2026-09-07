@@ -1,6 +1,8 @@
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { openBoundProjectControlPolicies } from "./control-policy-store.js";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import {
@@ -95,12 +97,26 @@ export async function initializeGuidedProject(input: {
   now?: string;
   instantOnboarding?: boolean;
   suppressGraduationTip?: boolean;
-}): Promise<GuidedProjectResult> {
+}, permit?: ProjectAuthorityMutationPermit): Promise<GuidedProjectResult> {
+  const frozen = structuredClone(input);
+  await fs.mkdir(frozen.projectRoot, { recursive: true });
+  return withProjectAuthorityMutation(frozen.projectRoot, (held) => initializeGuidedProjectUnlocked({
+    ...frozen, projectRoot: held.projectRoot,
+  }), { permit });
+}
+
+async function initializeGuidedProjectUnlocked(input: Parameters<typeof initializeGuidedProject>[0]): Promise<GuidedProjectResult> {
   const projectRoot = path.resolve(input.projectRoot);
   const paths = guidedProjectPaths(projectRoot);
   const existingState = await readGuidedOnboardingState(projectRoot);
   if (existingState) {
     return resultFor(projectRoot, existingState, false);
+  }
+  const governed = await openBoundProjectControlPolicies(projectRoot);
+  if (governed) {
+    await governed.close();
+    throw Object.assign(new Error("This project already uses a control repository. Resume its saved review; initial setup cannot replace its runtime configuration."),
+      { code: "POLICY_AUTHORING_REPOSITORY_REQUIRED" });
   }
   if (input.force && !existingState) {
     throw new Error("Refusing to replace project files because this directory is not marked as a Synapsor guided-onboarding project.");

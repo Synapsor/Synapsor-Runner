@@ -4,6 +4,7 @@ import path from "node:path";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import { SignJWT } from "jose";
@@ -37,6 +38,7 @@ import { readBoundaryReviewProgress, saveBoundaryReviewProgress, saveInstantBoun
   saveInstantBoundaryEditBaseline } from "./boundary-review-persistence.js";
 import { activateInstantCliBoundary } from "./instant-cli-boundary.js";
 import { boundaryCommand, start } from "./guided-start.js";
+import { initializeGuidedProject } from "./guided-project.js";
 import { saveInitialGovernedBoundaryReview } from "./boundary-initial-review.js";
 import { readProjectReadAuthoring, saveProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { boundaryActivateCommand, boundaryAuthoringResumeBinding, boundaryReviewCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
@@ -50,6 +52,7 @@ import * as boundaryMutations from "./boundary-review-mutation.js";
 import * as guidedActions from "./guided-action.js";
 import * as delegationSetup from "./delegation-setup.js";
 import { createSavedBoundary, deleteSavedBoundary, discardOnlySavedBoundaryReview, renameSavedBoundary, switchSavedBoundary,
+  loadBoundaryLibraryForReconciliation, saveBoundaryLibraryAfterReconciliation,
   resolveSavedBoundaryReviewAuthority, synchronizeBoundaryLibrary } from "./boundary-library.js";
 import { readRuntimeConfig } from "./cli-project.js";
 import * as cliProject from "./cli-project.js";
@@ -66,6 +69,7 @@ import { activateActionRuleAuthority, buildActionRuleAuthorityDraft, createActiv
 import { recoverPolicyConfiguration } from "./control-policy-config-publication.js";
 import { reviewVerifiedActionAuthority } from "./verified-action-review.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
@@ -341,6 +345,258 @@ function executionConfig(): RuntimeConfig {
   };
 }
 
+describe("Read writer migration coordination", () => {
+  it.each(["accept", "edit"])("keeps a newer legacy review when queued Quick Start %s resumes", async (mode) => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-quick-start-review-race-")); roots.push(projectRoot);
+    const source = fixture(); await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
+    const candidate = structuredClone(source.candidate); candidate.budgets.max_rows = 2;
+    const latest = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate,
+      reviewOverrides: source.build.overrides, confirmedDecisions: [], actor: "second_operator", revision: 1 });
+    let pending!: Promise<unknown>, wasPending = false;
+    await withProjectAuthorityMutation(projectRoot, async (held) => {
+      let settled = false;
+      const save = mode === "accept" ? saveInstantBoundaryReviewBaseline : saveInstantBoundaryEditBaseline;
+      pending = save({ projectRoot, draft: source.build.exploration_boundary, candidate: source.candidate, actor: "operator" })
+        .then(() => ({ saved: true }), (error: unknown) => ({ error })).finally(() => { settled = true; });
+      await delay(80); wasPending = !settled;
+      await saveBoundaryReviewProgress(projectRoot, latest, undefined, held);
+    });
+    expect(await pending).toMatchObject({ error: { code: "POLICY_AUTHORING_REVIEW_CHANGED" } });
+    expect(wasPending).toBe(true);
+    expect(JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), "utf8"))).toEqual(latest);
+    const reopened = (await readBoundaryReviewProgress(projectRoot, source.build.exploration_boundary))!;
+    const save = mode === "accept" ? saveInstantBoundaryReviewBaseline : saveInstantBoundaryEditBaseline;
+    const resumed = await save({ projectRoot, draft: source.build.exploration_boundary, candidate: reopened.candidate,
+      expectedLegacyProgress: reopened, actor: "operator" });
+    expect(resumed.progress.revision).toBe(2);
+    expect(resumed.progress.boundary_id).toBe(latest.boundary_id);
+    expect(resumed.progress.candidate.budgets.max_rows).toBe(2);
+    await expect(loadActivatedExplorationBoundaries(projectRoot)).rejects.toHaveProperty("code", "ENOENT");
+  });
+
+  it.each(["confirmations", "policy provenance", "revision"])(
+    "refuses changed legacy %s even when the saved candidate is identical", async (change) => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-library-review-metadata-")); roots.push(projectRoot);
+    const source = fixture(); await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
+    const progress = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate: source.candidate,
+      reviewOverrides: source.build.overrides, confirmedDecisions: source.candidate.unresolved_decisions,
+      actor: "operator", revision: 1 });
+    await saveBoundaryReviewProgress(projectRoot, progress);
+    const context = { projectRoot, draft: source.build.exploration_boundary, currentCandidate: progress.candidate,
+      currentProgress: (await readBoundaryReviewProgress(projectRoot, source.build.exploration_boundary))! };
+    await synchronizeBoundaryLibrary(context);
+    const before = await fs.readFile(path.join(projectRoot, ".synapsor/boundary-library.json"), "utf8");
+    const latest = structuredClone(context.currentProgress);
+    if (change === "confirmations") {
+      expect(latest.confirmations.length).toBeGreaterThan(0);
+      latest.confirmations = []; latest.confirmed_decisions = [];
+    } else if (change === "policy provenance") latest.policy_migration.reason = "A second operator reviewed this exact policy.";
+    else latest.revision += 1;
+    await saveBoundaryReviewProgress(projectRoot, latest);
+    await expect(synchronizeBoundaryLibrary(context)).rejects.toHaveProperty("code", "BOUNDARY_LIBRARY_REVIEW_CHANGED");
+    expect(await fs.readFile(path.join(projectRoot, ".synapsor/boundary-library.json"), "utf8")).toBe(before);
+    expect(JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), "utf8"))).toEqual(latest);
+  });
+
+  it.each(["synchronize", "create", "switch", "rename", "delete", "discard"])(
+    "refuses stale legacy library %s without discarding a newer saved limit", async (writer) => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-library-review-race-")); roots.push(projectRoot);
+    const source = fixture(); await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
+    const progress = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate: source.candidate,
+      reviewOverrides: source.build.overrides, confirmedDecisions: [], actor: "operator", revision: 1 });
+    await saveBoundaryReviewProgress(projectRoot, progress);
+    const context = { projectRoot, draft: source.build.exploration_boundary, currentCandidate: progress.candidate,
+      currentProgress: (await readBoundaryReviewProgress(projectRoot, source.build.exploration_boundary))! };
+    await synchronizeBoundaryLibrary(context);
+    const beforeLibrary = await fs.readFile(path.join(projectRoot, ".synapsor/boundary-library.json"), "utf8");
+    const candidate = structuredClone(progress.candidate); candidate.budgets.max_rows = 2;
+    const latest = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate,
+      previous: progress, confirmedDecisions: [], actor: "second_operator", revision: 2 });
+    let pending!: Promise<unknown>, wasPending = false;
+    await withProjectAuthorityMutation(projectRoot, async (held) => {
+      let settled = false;
+      const edit = () => {
+        switch (writer) {
+          case "synchronize": return synchronizeBoundaryLibrary(context);
+          case "create": return createSavedBoundary({ ...context, name: "new_boundary", resourceId: "inventory.items", actor: "operator" });
+          case "switch": return switchSavedBoundary({ ...context, name: progress.candidate.pack.name });
+          case "rename": return renameSavedBoundary({ ...context, name: progress.candidate.pack.name, newName: "renamed", actor: "operator", reason: "Rename only." });
+          case "delete": return deleteSavedBoundary({ ...context, name: progress.candidate.pack.name });
+          default: return discardOnlySavedBoundaryReview({ ...context, name: progress.candidate.pack.name, boundaryRoot: path.join(projectRoot, "synapsor/generated") });
+        }
+      };
+      pending = edit().then(() => ({ saved: true }), (error: unknown) => ({ error })).finally(() => { settled = true; });
+      await delay(80); wasPending = !settled;
+      await saveBoundaryReviewProgress(projectRoot, latest, undefined, held);
+    });
+    expect(await pending).toMatchObject({ error: { code: "BOUNDARY_LIBRARY_REVIEW_CHANGED" } });
+    expect(wasPending).toBe(true);
+    expect(await fs.readFile(path.join(projectRoot, ".synapsor/boundary-library.json"), "utf8")).toBe(beforeLibrary);
+    expect(JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), "utf8"))).toEqual(latest);
+    const current = (await readBoundaryReviewProgress(projectRoot, context.draft))!;
+    await synchronizeBoundaryLibrary({ ...context, currentCandidate: current.candidate, currentProgress: current });
+    const renamed = await renameSavedBoundary({ ...context, currentCandidate: current.candidate, currentProgress: current,
+      name: candidate.pack.name, newName: "current_review", actor: "operator", reason: "Rename the current review." });
+    expect(renamed.candidate.budgets.max_rows).toBe(2);
+    await expect(loadActivatedExplorationBoundaries(projectRoot)).rejects.toHaveProperty("code", "ENOENT");
+  });
+
+  it.each(["generation", "progress", "baseline", "rescan", "discard", "initialize"])("keeps %s writes on the locked canonical root after alias retargeting", async (writer) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-read-alias-")); roots.push(root);
+    const projectRoot = path.join(root, "original"), otherRoot = path.join(root, "other"), alias = path.join(root, "alias");
+    await fs.mkdir(otherRoot); await fs.writeFile(path.join(otherRoot, "sentinel"), "untouched");
+    const source = fixture(); await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
+    const progress = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate: source.candidate,
+      confirmedDecisions: [], actor: "operator", revision: 1 });
+    await saveBoundaryReviewProgress(projectRoot, progress);
+    const context = { projectRoot, draft: source.build.exploration_boundary, currentCandidate: progress.candidate, currentProgress: progress };
+    await synchronizeBoundaryLibrary(context);
+    await fs.symlink(projectRoot, alias);
+    const inspection = structuredClone(source.inspection);
+    inspection.tables[0]!.columns.push({ ...inspection.tables[0]!.columns[3]!, name: "extra_quantity", ordinal_position: 5 });
+    const rescan = writer === "rescan" ? await prepareBoundaryRescan({ projectRoot: alias, inspection }) : undefined;
+    const realpath = fs.realpath.bind(fs);
+    let retargeted = false;
+    const redirect = vi.spyOn(fs, "realpath").mockImplementation(async (...args) => {
+      const resolved = await realpath(...args);
+      if (!retargeted && args[0] === alias) {
+        retargeted = true; await fs.unlink(alias); await fs.symlink(otherRoot, alias);
+      }
+      return resolved;
+    });
+    try {
+      if (writer === "generation") await writeAutoBoundaryArtifacts({ projectRoot: alias,
+        outputRoot: path.join(alias, "synapsor/generated"), build: source.build, force: true, preserveReviewProgress: true });
+      if (writer === "progress") await saveBoundaryReviewProgress(alias, { ...progress, revision: 2 });
+      if (writer === "baseline") await autoBoundary.persistAutoBoundaryPolicyBaseline(alias, source.build.policy_baseline);
+      if (writer === "rescan") await commitBoundaryRescan(rescan!);
+      if (writer === "initialize") await initializeGuidedProject({ projectRoot: alias, build: source.build, runnerVersion: "1.8.0" });
+      if (writer === "discard") await discardOnlySavedBoundaryReview({ ...context, projectRoot: alias,
+        name: progress.candidate.pack.name, boundaryRoot: path.join(alias, "synapsor/generated") });
+    } finally { redirect.mockRestore(); }
+    expect(retargeted).toBe(true);
+    expect(await fs.readdir(otherRoot)).toEqual(["sentinel"]);
+    expect(await fs.readFile(path.join(otherRoot, "sentinel"), "utf8")).toBe("untouched");
+    expect((await fs.stat(path.join(projectRoot, ".synapsor/authority-write-lock.sqlite"))).isFile()).toBe(true);
+    if (writer === "discard") await expect(fs.stat(path.join(projectRoot, "synapsor/generated"))).rejects.toHaveProperty("code", "ENOENT");
+    else expect((await fs.stat(path.join(projectRoot, "synapsor/generated"))).isDirectory()).toBe(true);
+    if (writer === "progress") expect(JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), "utf8")).revision).toBe(2);
+  });
+
+  it.each(["generation", "baseline", "progress", "synchronize", "create", "switch", "rename", "delete", "discard", "reconcile", "rescan", "initialize"])(
+    "refuses stale legacy %s after a concurrently frozen migration", async (writer) => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-read-writer-")); roots.push(projectRoot);
+    const source = fixture();
+    await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
+    const progress = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate: source.candidate,
+      confirmedDecisions: [], actor: "operator", revision: 1 });
+    await saveBoundaryReviewProgress(projectRoot, progress);
+    const context = { projectRoot, draft: source.build.exploration_boundary, currentCandidate: progress.candidate, currentProgress: progress };
+    await synchronizeBoundaryLibrary(context);
+    if (writer === "switch" || writer === "delete") {
+      const candidate = structuredClone(progress.candidate); candidate.pack.name = "second";
+      const second = createBoundaryReviewProgress({ draft: context.draft, candidate, confirmedDecisions: [], actor: "operator", revision: 1 });
+      await saveBoundaryLibraryAfterReconciliation({ projectRoot, state: { selected_name: progress.candidate.pack.name,
+        boundaries: { [progress.candidate.pack.name]: progress, second }, updated_at: progress.updated_at } });
+    }
+    const state = await loadBoundaryLibraryForReconciliation(context);
+    const inspection = structuredClone(source.inspection);
+    inspection.tables[0]!.columns.push({ ...inspection.tables[0]!.columns[3]!, name: "extra_quantity", ordinal_position: 5 });
+    const rescan = writer === "rescan" ? await prepareBoundaryRescan({ projectRoot, inspection }) : undefined;
+    if (rescan) expect(rescan.report.changed || rescan.report.authoring_baseline_refreshed).toBe(true);
+    const authoring: StoredReadAuthoring = { type: "read_authoring",
+      selected_boundary_id: state.boundaries[state.selected_name]!.boundary_id,
+      entries: Object.values(state.boundaries).map((saved) => ({ draft: source.build.exploration_boundary,
+        draft_lock: source.generation_lock, candidate_lock: source.generation_lock, progress: saved })) };
+    const draftRecords = authoring.entries.map((entry) => encodeOperatorAuthority({ type: "read",
+      boundary: entry.progress.candidate, generation_lock: entry.candidate_lock }));
+    const record = encodeOperatorAuthority(authoring), selection = encodeOperatorAuthority({ type: "read_selection", selected_name: null });
+    const pointer = ({ scope, kind, name, revision_id }: typeof record) => ({ scope, kind, name, revision_id });
+    const snapshot: ControlPolicyMigrationSnapshot = { revisions: [...draftRecords, record, selection],
+      drafts: draftRecords.map(pointer), active: [pointer(record), pointer(selection)], provenance: [] };
+    validateOperatorPolicySnapshot(snapshot);
+    const files = [".synapsor/boundary-library.json", ".synapsor/boundary-review-progress.json", ".synapsor/generation-lock.json",
+      ".synapsor/auto-boundary-policy-baseline.json", "synapsor/generated/exploration-boundary.draft.json"];
+    const before = await Promise.all(files.map((file) => fs.readFile(path.join(projectRoot, file), "utf8")));
+    let entered!: () => void, release!: () => void;
+    const frozen = new Promise<void>((resolve) => { entered = resolve; });
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const migration = migrateProjectControlPolicies({ projectRoot, config: {} as RuntimeConfig,
+      storePath: path.join(projectRoot, "control.db"), env: {}, actor: "operator",
+      readLegacySnapshot: async () => { entered(); await held; return snapshot; },
+      validateSnapshot: async (candidate) => { validateOperatorPolicySnapshot(candidate); } });
+    await frozen;
+    let settled = false;
+    const edit = (async () => {
+      switch (writer) {
+        case "generation": return writeAutoBoundaryArtifacts({ projectRoot, build: source.build, force: true });
+        case "baseline": return autoBoundary.persistAutoBoundaryPolicyBaseline(projectRoot, source.build.policy_baseline);
+        case "progress": return saveBoundaryReviewProgress(projectRoot, { ...progress, revision: 2 });
+        case "synchronize": return synchronizeBoundaryLibrary(context);
+        case "create": return createSavedBoundary({ ...context, name: "new_boundary", resourceId: "inventory.items", actor: "operator" });
+        case "switch": return switchSavedBoundary({ ...context, name: "second" });
+        case "rename": return renameSavedBoundary({ ...context, name: progress.candidate.pack.name, newName: "renamed", actor: "operator", reason: "Rename only" });
+        case "delete": return deleteSavedBoundary({ ...context, name: progress.candidate.pack.name });
+        case "discard": return discardOnlySavedBoundaryReview({ ...context, name: progress.candidate.pack.name, boundaryRoot: path.join(projectRoot, "synapsor/generated") });
+        case "reconcile": return saveBoundaryLibraryAfterReconciliation({ projectRoot, state });
+        case "rescan": return commitBoundaryRescan(rescan!);
+        case "initialize": return initializeGuidedProject({ projectRoot, build: source.build, runnerVersion: "1.8.0" });
+      }
+    })().then(() => ({ saved: true }), (error: unknown) => ({ error })).finally(() => { settled = true; });
+    let wasPending = false;
+    try { await delay(80); wasPending = !settled; }
+    finally { release(); }
+    const result = await migration;
+    try {
+      expect(wasPending).toBe(true);
+      expect(await edit).toHaveProperty("error");
+      expect(await Promise.all(files.map((file) => fs.readFile(path.join(projectRoot, file), "utf8")))).toEqual(before);
+      expect((await result.binding.repository.deployment(result.binding.deployment_id))!.epoch).toBe(1);
+      expect((await readProjectReadAuthoring(projectRoot))!.authoring).toEqual(authoring);
+      if (writer === "initialize") await expect(fs.stat(path.join(projectRoot, "synapsor.runner.json"))).rejects.toHaveProperty("code", "ENOENT");
+      await expect(loadActivatedExplorationBoundaries(projectRoot)).rejects.toHaveProperty("code", "ENOENT");
+    } finally { await result.binding.close(); await edit; }
+  });
+
+  it.each(["resource", "batch", "exact"])("rechecks the original legacy %s preview after waiting for a newer edit", async (kind) => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-read-preview-race-")); roots.push(projectRoot);
+    const source = fixture();
+    await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
+    const progress = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate: source.candidate,
+      reviewOverrides: source.build.overrides, confirmedDecisions: [], actor: "operator", revision: 1 });
+    await saveBoundaryReviewProgress(projectRoot, progress);
+    const request = { resource_id: "inventory.items", withhold_from_model_fields: ["version"], private_model_fields: ["version"],
+      actor: "operator", reason: "Keep conflict detection private." };
+    let commit: () => Promise<unknown>;
+    if (kind === "resource") {
+      const preview = await prepareBoundaryResourceReviewMutation(projectRoot, request, async () => source.inspection);
+      commit = () => commitBoundaryResourceReviewMutation(projectRoot, preview);
+    } else if (kind === "batch") {
+      const preview = await boundaryMutations.prepareBoundaryReviewMutationBatch(projectRoot, [request], async () => source.inspection);
+      commit = () => boundaryMutations.commitBoundaryReviewMutationBatch(projectRoot, preview);
+    } else {
+      const preview = await boundaryMutations.prepareExactBoundaryCandidateMutation(projectRoot, {
+        candidate: source.candidate, expected_generated_boundary_digest: explorationBoundaryCandidateDigest(source.build.exploration_boundary),
+        expected_candidate_digest: explorationBoundaryCandidateDigest(source.candidate), actor: "operator", reason: "Review exact candidate.",
+      }, async () => source.inspection);
+      commit = () => boundaryMutations.commitExactBoundaryCandidateMutation(projectRoot, preview);
+    }
+    let pending!: Promise<unknown>, wasPending = false;
+    const replacement = { ...progress, revision: 2, updated_at: "2026-09-07T12:00:00.000Z" };
+    await withProjectAuthorityMutation(projectRoot, async (held) => {
+      let settled = false;
+      pending = commit().then(() => ({ saved: true }), (error: unknown) => ({ error })).finally(() => { settled = true; });
+      await delay(80); wasPending = !settled;
+      await saveBoundaryReviewProgress(projectRoot, replacement, undefined, held);
+    });
+    expect(await pending).toHaveProperty("error");
+    expect(wasPending).toBe(true);
+    expect(JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), "utf8"))).toEqual(replacement);
+    expect(JSON.parse(await fs.readFile(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"), "utf8"))).toEqual(source.build.exploration_boundary);
+    await expect(loadActivatedExplorationBoundaries(projectRoot)).rejects.toHaveProperty("code", "ENOENT");
+  });
+});
+
 for (const backend of ["sqlite", "postgres"] as const) {
   const suite = backend === "postgres" && !process.env.SYNAPSOR_TEST_POSTGRES_URL ? describe.skip : describe;
   suite(`${backend} validated operator policy transactions`, () => {
@@ -373,6 +629,35 @@ for (const backend of ["sqlite", "postgres"] as const) {
         }
       }
     }
+
+    it("keeps the original Read review token while waiting for another authority writer", async () => {
+      await useRepository(async ({ policies, projectRoot, binding }) => {
+        const authoring = readAuthoringFixture();
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare_waiting_edit" });
+        const shown = (await readProjectReadAuthoring(projectRoot))!;
+        let entered!: () => void, release!: () => void;
+        const ready = new Promise<void>((resolve) => { entered = resolve; });
+        const hold = new Promise<void>((resolve) => { release = resolve; });
+        const writer = withProjectAuthorityMutation(projectRoot, async () => { entered(); await hold; });
+        await ready;
+        let settled = false;
+        const saving = saveProjectReadAuthoring({ projectRoot, authoring, expected: shown.bindings,
+          actor: "operator", operation: "save_original_review" }).then(() => ({ saved: true }), (error: unknown) => ({ error }))
+          .finally(() => { settled = true; });
+        let wasPending = false;
+        try {
+          await delay(80); wasPending = !settled;
+          await binding.repository.commit({ deployment_id: binding.deployment_id, expected_epoch: shown.bindings.epoch,
+            revisions: [], active: [], drafts: [], event: { event_id: randomUUID(), actor: "another_operator",
+              occurred_at: new Date().toISOString(), receipt: { operation: "concurrent_policy_review" } } });
+        } finally { release(); await writer; }
+        expect(wasPending).toBe(true);
+        expect(await saving).toMatchObject({ error: { code: "POLICY_AUTHORING_REVIEW_CHANGED" } });
+        expect((await readProjectReadAuthoring(projectRoot))!.authoring).toEqual(shown.authoring);
+        expect((await binding.repository.deployment(binding.deployment_id))!.epoch).toBe(shown.bindings.epoch + 1);
+      });
+    });
 
     it("retains partial coded metadata decisions and promotes only a fully valid disabled Read candidate", async () => {
       await useRepository(async ({ policies, projectRoot }) => {

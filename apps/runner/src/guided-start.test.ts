@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { buildAutoBoundary } from "./auto-boundary.js";
+import { buildAutoBoundary, writeAutoBoundaryArtifacts } from "./auto-boundary.js";
 import { boundaryDeleteCommand, loadBoundaryReviewContext, boundaryAuthoringResumeBinding } from "./boundary-commands.js";
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import {
@@ -12,7 +13,8 @@ import {
 import {
   saveInstantBoundaryEditBaseline,
 } from "./boundary-review-persistence.js";
-import { reviewUnresolvedOrganizationScope, start } from "./guided-start.js";
+import { boundaryCommand, reviewUnresolvedOrganizationScope, start } from "./guided-start.js";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import {
   activateInstantCliBoundary,
   type InstantCliBoundaryActivationResult,
@@ -24,6 +26,63 @@ describe("guided start surfaces", () => {
   afterEach(() => {
     process.chdir(suiteCwd);
     vi.restoreAllMocks();
+  });
+
+  it.each(["start", "boundary"])("keeps %s publication and rollback inside one writer operation", async (command) => {
+    for (const fail of [false, true]) {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-publication-"));
+      const generated = path.join(root, "synapsor/generated"), config = path.join(root, "synapsor.runner.json");
+      let reached!: () => void, release!: () => void;
+      const entered = new Promise<void>((resolve) => { reached = resolve; });
+      const resume = new Promise<void>((resolve) => { release = resolve; });
+      let competitorEntered = false, pendingAtRollback = false;
+      const copy = fs.copyFile.bind(fs), remove = fs.rm.bind(fs);
+      const copies = vi.spyOn(fs, "copyFile").mockImplementation(async (...args) => {
+        if (args[1] === path.join(root, ".synapsor/guided-onboarding.json")) {
+          reached(); await resume;
+          if (fail) throw new Error("injected initial configuration publication failure");
+        }
+        return copy(...args);
+      });
+      const removals = vi.spyOn(fs, "rm").mockImplementation(async (...args) => {
+        if (args[0] === generated) {
+          await delay(80);
+          pendingAtRollback = !competitorEntered;
+        }
+        return remove(...args);
+      });
+      vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      process.chdir(root);
+      const setup = (command === "start"
+        ? start(["--from-env", "DATABASE_URL", "--no-open"], { interactive: false, schemaInspector: async () => inspection() })
+        : boundaryCommand(["draft", "--project-root", root, "--from-env", "DATABASE_URL", "--json"], async () => inspection()))
+        .then(() => ({ saved: true }), (error: unknown) => ({ error }));
+      let competitor: Promise<void> | undefined;
+      try {
+        await entered;
+        competitor = withProjectAuthorityMutation(root, async () => {
+          competitorEntered = true;
+          if (fail) await expect(fs.stat(config)).rejects.toHaveProperty("code", "ENOENT");
+          else expect((await fs.stat(config)).isFile()).toBe(true);
+          await fs.mkdir(generated, { recursive: true });
+          await fs.writeFile(path.join(generated, "later-writer"), "preserved");
+        });
+        await delay(80);
+        const pendingAtPublication = !competitorEntered;
+        release();
+        const result = await setup;
+        await competitor;
+        expect(pendingAtPublication).toBe(true);
+        if (fail) { expect(result).toHaveProperty("error"); expect(pendingAtRollback).toBe(true); }
+        else expect(result).toEqual({ saved: true });
+        expect(await fs.readFile(path.join(generated, "later-writer"), "utf8")).toBe("preserved");
+        expect((await fs.stat(path.join(root, ".synapsor/authority-write-lock.sqlite"))).isFile()).toBe(true);
+      } finally {
+        release(); await setup; await competitor;
+        copies.mockRestore(); removals.mockRestore();
+        process.chdir(suiteCwd); await fs.rm(root, { recursive: true, force: true });
+      }
+    }
   });
 
   it.each([false, true])("reopens the saved guided job despite existing review progress or active Read (%s)", async (active) => {
@@ -1072,6 +1131,7 @@ describe("guided start surfaces", () => {
     process.chdir(projectRoot);
 
     try {
+      await writeAutoBoundaryArtifacts({ projectRoot, build: built });
       const result = await activateInstantCliBoundary({
         projectRoot,
         draft: built.exploration_boundary,

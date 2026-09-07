@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import path from "node:path";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   AUTO_BOUNDARY_VERSION,
@@ -27,6 +28,7 @@ import {
   type BoundaryReviewProgress,
 } from "./boundary-review-domain.js";
 import {
+  readBoundaryReviewProgress,
   saveBoundaryReviewProgress,
 } from "./boundary-review-persistence.js";
 import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
@@ -135,7 +137,12 @@ export async function resolveSavedBoundaryReviewAuthority(input: {
 
 export async function synchronizeBoundaryLibrary(
   input: BoundaryLibraryContext,
+  permit?: ProjectAuthorityMutationPermit,
 ): Promise<BoundaryLibrarySnapshot> {
+  return withLibraryMutation(input, synchronizeBoundaryLibraryUnlocked, permit);
+}
+
+async function synchronizeBoundaryLibraryUnlocked(input: BoundaryLibraryContext, permit: ProjectAuthorityMutationPermit): Promise<BoundaryLibrarySnapshot> {
   const library = await readOrCreateLibrary(input);
   const active = await readActiveBoundaryIdentities(input.projectRoot);
   if (library.stored) return snapshot(input.projectRoot, library, active);
@@ -151,9 +158,9 @@ export async function synchronizeBoundaryLibrary(
   }
   const selected = library.boundaries[library.selected_name];
   if (selected && selectedChanged) {
-    await saveBoundaryReviewProgress(input.projectRoot, selected);
+    await saveBoundaryReviewProgress(input.projectRoot, selected, undefined, permit);
   }
-  await writeBoundaryLibrary(input.projectRoot, library);
+  await writeBoundaryLibrary(input.projectRoot, library, permit);
   return snapshot(input.projectRoot, library, active);
 }
 
@@ -172,10 +179,9 @@ export async function saveBoundaryLibraryAfterReconciliation(input: {
   projectRoot: string;
   state: BoundaryLibraryReconciliationState;
 }): Promise<void> {
-  await writeBoundaryLibrary(
-    input.projectRoot,
-    boundaryLibraryFileAfterReconciliation(input.state),
-  );
+  const frozen = structuredClone(input);
+  await withProjectAuthorityMutation(frozen.projectRoot, (held) => writeBoundaryLibrary(
+    held.projectRoot, boundaryLibraryFileAfterReconciliation(frozen.state), held));
 }
 
 export function serializeBoundaryLibraryAfterReconciliation(
@@ -226,6 +232,10 @@ export async function createSavedBoundary(input: BoundaryLibraryContext & {
   resourceId: string;
   actor: string;
 }): Promise<BoundaryReviewProgress> {
+  return withLibraryMutation(input, createSavedBoundaryUnlocked);
+}
+
+async function createSavedBoundaryUnlocked(input: Parameters<typeof createSavedBoundary>[0], permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewProgress> {
   assertBoundaryName(input.name);
   const library = await readOrCreateLibrary(input);
   if (library.boundaries[input.name]) {
@@ -271,8 +281,8 @@ export async function createSavedBoundary(input: BoundaryLibraryContext & {
   library.boundaries[input.name] = progress;
   library.selected_name = input.name;
   library.updated_at = new Date().toISOString();
-  await writeBoundaryLibrary(input.projectRoot, library);
-  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress);
+  await writeBoundaryLibrary(input.projectRoot, library, permit);
+  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress, undefined, permit);
   return progress;
 }
 
@@ -325,6 +335,10 @@ function findCompatibleActiveBoundary(
 export async function switchSavedBoundary(input: BoundaryLibraryContext & {
   name: string;
 }): Promise<BoundaryReviewProgress> {
+  return withLibraryMutation(input, switchSavedBoundaryUnlocked);
+}
+
+async function switchSavedBoundaryUnlocked(input: Parameters<typeof switchSavedBoundary>[0], permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewProgress> {
   const library = await readOrCreateLibrary(input);
   const stored = library.boundaries[input.name];
   if (!stored) throw new Error(`Saved boundary ${input.name} was not found.`);
@@ -337,8 +351,8 @@ export async function switchSavedBoundary(input: BoundaryLibraryContext & {
   library.boundaries[input.name] = progress;
   library.selected_name = input.name;
   library.updated_at = new Date().toISOString();
-  await writeBoundaryLibrary(input.projectRoot, library);
-  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress);
+  await writeBoundaryLibrary(input.projectRoot, library, permit);
+  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress, undefined, permit);
   return progress;
 }
 
@@ -348,6 +362,10 @@ export async function renameSavedBoundary(input: BoundaryLibraryContext & {
   actor: string;
   reason: string;
 }): Promise<BoundaryReviewProgress> {
+  return withLibraryMutation(input, renameSavedBoundaryUnlocked);
+}
+
+async function renameSavedBoundaryUnlocked(input: Parameters<typeof renameSavedBoundary>[0], permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewProgress> {
   assertBoundaryName(input.name);
   assertBoundaryName(input.newName);
   const library = await readOrCreateLibrary(input);
@@ -384,14 +402,18 @@ export async function renameSavedBoundary(input: BoundaryLibraryContext & {
   if (!activeNames.has(input.name)) delete library.boundaries[input.name];
   library.selected_name = input.newName;
   library.updated_at = new Date().toISOString();
-  await writeBoundaryLibrary(input.projectRoot, library);
-  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress);
+  await writeBoundaryLibrary(input.projectRoot, library, permit);
+  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress, undefined, permit);
   return progress;
 }
 
 export async function deleteSavedBoundary(input: BoundaryLibraryContext & {
   name: string;
 }): Promise<{ selected_name: string; progress: BoundaryReviewProgress }> {
+  return withLibraryMutation(input, deleteSavedBoundaryUnlocked);
+}
+
+async function deleteSavedBoundaryUnlocked(input: Parameters<typeof deleteSavedBoundary>[0], permit: ProjectAuthorityMutationPermit): Promise<{ selected_name: string; progress: BoundaryReviewProgress }> {
   const library = await readOrCreateLibrary(input);
   if (!library.boundaries[input.name]) {
     throw new Error(`Saved boundary ${input.name} was not found.`);
@@ -423,8 +445,8 @@ export async function deleteSavedBoundary(input: BoundaryLibraryContext & {
   );
   library.boundaries[library.selected_name] = progress;
   library.updated_at = new Date().toISOString();
-  await writeBoundaryLibrary(input.projectRoot, library);
-  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress);
+  await writeBoundaryLibrary(input.projectRoot, library, permit);
+  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress, undefined, permit);
   return { selected_name: library.selected_name, progress };
 }
 
@@ -432,6 +454,13 @@ export async function discardOnlySavedBoundaryReview(input: BoundaryLibraryConte
   name: string;
   boundaryRoot: string;
 }): Promise<{ removed: string[] }> {
+  const relativeRoot = path.relative(path.resolve(input.projectRoot), path.resolve(input.boundaryRoot));
+  return withLibraryMutation(input, (locked, permit) => discardOnlySavedBoundaryReviewUnlocked({
+    ...locked, boundaryRoot: path.resolve(locked.projectRoot, relativeRoot),
+  }, permit));
+}
+
+async function discardOnlySavedBoundaryReviewUnlocked(input: Parameters<typeof discardOnlySavedBoundaryReview>[0], permit: ProjectAuthorityMutationPermit): Promise<{ removed: string[] }> {
   const projectRoot = path.resolve(input.projectRoot);
   const library = await readOrCreateLibrary(input);
   if (!library.boundaries[input.name]) {
@@ -453,7 +482,7 @@ export async function discardOnlySavedBoundaryReview(input: BoundaryLibraryConte
   if (library.stored) {
     await saveProjectReadAuthoring({ projectRoot, expected: library.stored.bindings,
       authoring: { type: "read_authoring", selected_boundary_id: null, entries: [] },
-      actor: "local_operator", operation: "discard_read_authoring" });
+      actor: "local_operator", operation: "discard_read_authoring" }, permit);
     // Legacy exports are not authority and may still support unrelated active
     // revisions. Discard only the selected disabled state, not shared artifacts.
     return { removed: [] };
@@ -532,6 +561,25 @@ async function readOrCreateLibrary(input: BoundaryLibraryContext): Promise<Bound
       updated_at: stored.selected.progress.updated_at, stored };
   }
   if (input.expectedAuthoring) throw new Error("The governed Read authoring repository changed.");
+  const persisted = await readBoundaryReviewProgress(input.projectRoot, input.draft);
+  if (persisted) {
+    const currentDigest = canonicalJsonDigest(input.currentProgress ?? null);
+    let matchesSavedReview = currentDigest === canonicalJsonDigest(persisted);
+    if (!matchesSavedReview) {
+      // Immediate callers hold the exact saved representation; reopening drops
+      // confirmations for resources outside the candidate. Accept either exact
+      // snapshot, never just a matching revision number or candidate digest.
+      const saved = JSON.parse(await fs.readFile(
+        path.join(input.projectRoot, ".synapsor/boundary-review-progress.json"), "utf8",
+      )) as unknown;
+      matchesSavedReview = currentDigest === canonicalJsonDigest(saved);
+    }
+    if (!matchesSavedReview
+      || explorationBoundaryCandidateDigest(input.currentCandidate) !== persisted.candidate_digest) {
+      throw Object.assign(new Error("This saved Boundary changed while it was being reviewed. Reopen its latest revision; no library change was saved."),
+        { code: "BOUNDARY_LIBRARY_REVIEW_CHANGED" });
+    }
+  }
   const current = input.currentProgress
     ? input.currentProgress
     : createBoundaryReviewProgress({
@@ -1126,7 +1174,13 @@ async function readActiveBoundaryProgress(
   });
 }
 
-async function writeBoundaryLibrary(projectRoot: string, value: BoundaryLibraryFile): Promise<void> {
+function withLibraryMutation<T extends BoundaryLibraryContext, R>(input: T,
+  operation: (locked: T, permit: ProjectAuthorityMutationPermit) => Promise<R>, permit?: ProjectAuthorityMutationPermit): Promise<R> {
+  const frozen = structuredClone(input);
+  return withProjectAuthorityMutation(frozen.projectRoot, (held) => operation({ ...frozen, projectRoot: held.projectRoot }, held), { permit });
+}
+
+async function writeBoundaryLibrary(projectRoot: string, value: BoundaryLibraryFile, permit: ProjectAuthorityMutationPermit): Promise<void> {
   if (value.stored) {
     const original = value.stored;
     const entries = Object.values(value.boundaries).map((progress) => {
@@ -1141,7 +1195,7 @@ async function writeBoundaryLibrary(projectRoot: string, value: BoundaryLibraryF
     });
     await saveProjectReadAuthoring({ projectRoot, expected: original.bindings,
       authoring: { ...original.authoring, entries, selected_boundary_id: value.boundaries[value.selected_name]!.boundary_id },
-      actor: "local_operator", operation: "edit_read_library" });
+      actor: "local_operator", operation: "edit_read_library" }, permit);
     return;
   }
   if (await readProjectReadAuthoring(projectRoot)) {

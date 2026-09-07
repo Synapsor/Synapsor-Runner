@@ -7134,6 +7134,42 @@ describe("boundary operator-plane CLI", () => {
     }
   });
 
+  it.each(["candidate", "confirmations"])("refuses a stale grouped sign-off after another session changes %s", async (change) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-signoff-race-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({ inspection,
+      project: { root, package_manager: "npm", frameworks: ["node"], schema_inputs: [], database_env_names: ["DATABASE_URL"] },
+      sourceEnv: "DATABASE_URL", inspectedSchema: "public", deploymentProfile: "production",
+      httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" } });
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const shown = await loadBoundaryReviewContext(root);
+      const first = createBoundaryReviewProgress({ draft: shown.draft, candidate: shown.candidate,
+        confirmedDecisions: [], actor: "first_operator", revision: 1 });
+      await saveBoundaryReviewProgress(root, first);
+      let latest: typeof first | undefined;
+      const session: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => ({ action: "confirm" }), editFieldTiers: async () => undefined,
+        promptText: async () => "first_operator",
+        confirm: async (prompt) => {
+          if (!latest) {
+            const candidate = structuredClone(first.candidate);
+            if (change === "candidate") candidate.budgets.max_rows = 2;
+            latest = createBoundaryReviewProgress({ draft: shown.draft, candidate, previous: first,
+              confirmedDecisions: [candidate.unresolved_decisions[0]!], actor: "second_operator", revision: 2 });
+            await saveBoundaryReviewProgress(root, latest);
+          }
+          return !prompt.startsWith("Activate ");
+        },
+      };
+      await expect(boundaryReviewCommandInternal(["--project-root", root], async () => inspection, session))
+        .rejects.toHaveProperty("code", "POLICY_AUTHORING_REVIEW_CHANGED");
+      expect(JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8"))).toEqual(latest);
+      await expect(loadActivatedExplorationBoundaries(root)).rejects.toHaveProperty("code", "ENOENT");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
   it("groups final review into one boundary sign-off and one sign-off per table", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-grouped-review-"));
     const inspection = boundaryInspection();

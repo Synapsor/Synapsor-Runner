@@ -28,6 +28,7 @@ import {
 
 } from "./boundary-review-domain.js";
 import {
+  readBoundaryReviewProgress,
   saveInstantBoundaryEditBaseline,
   saveInstantBoundaryReviewBaseline,
 } from "./boundary-review-persistence.js";
@@ -94,7 +95,8 @@ async function activateInstantCliBoundaryAttempt(
   if (stored && !stored.selected) {
     throw new Error("No saved Read boundary is selected. Prepare a disabled boundary before Quick Start.");
   }
-  const reviewDraft = stored?.selected?.progress.candidate ?? input.draft;
+  const legacyProgress = !stored ? await readBoundaryReviewProgress(input.projectRoot, input.draft) : undefined;
+  const reviewDraft = stored?.selected?.progress.candidate ?? legacyProgress?.candidate ?? input.draft;
   if (stored?.selected) input = { ...input, draft: stored.selected.draft, lock: stored.selected.candidate_lock };
   const env = input.env ?? process.env;
   const stdout = input.stdout ?? process.stdout;
@@ -270,6 +272,7 @@ async function activateInstantCliBoundaryAttempt(
         candidate,
         actor,
         expectedAuthoring: stored?.bindings,
+        expectedLegacyProgress: legacyProgress,
       });
       write([
         "Quick Start was not accepted. Nothing is active.",
@@ -318,6 +321,7 @@ async function activateInstantCliBoundaryAttempt(
     candidate,
     actor,
     expectedAuthoring: stored?.bindings,
+    expectedLegacyProgress: legacyProgress,
   });
   const active = await activateExplorationBoundary({
     projectRoot: input.projectRoot,

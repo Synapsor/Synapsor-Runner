@@ -7,6 +7,7 @@ import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import process from "node:process";
 import readline from "node:readline/promises";
 import runnerPackage from "../package.json" with { type: "json" };
@@ -661,32 +662,31 @@ async function startAutoBoundary(
     return openWorkbench(["--open", "--boundary-root", path.join(project.root, "synapsor/generated"),
       "--config", configPath, "--store", storePath]);
   }
-  let result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>> | undefined;
-  let guided: Awaited<ReturnType<typeof initializeGuidedProject>>;
-  try {
-    result = await writeAutoBoundaryArtifacts({
-      projectRoot: project.root,
-      build,
-      force: shouldRescan,
-    });
-    guided = await initializeGuidedProject({
-      projectRoot: project.root,
-      build,
-      runnerVersion: runnerPackage.version,
-      instantOnboarding: true,
-      suppressGraduationTip: args.includes("--no-graduation-tip"),
-    });
-    if (existingJourney) {
-      await resetGuidedOnboardingForBoundaryReview({
-        projectRoot: project.root,
-        schemaFingerprint: build.lock.schema_fingerprint,
-        rolePostureFingerprint: build.lock.role_posture_fingerprint,
-      });
+  await fs.mkdir(project.root, { recursive: true });
+  const { result, guided } = await withProjectAuthorityMutation(project.root, async (held) => {
+    let result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>> | undefined;
+    try {
+      result = await writeAutoBoundaryArtifacts({ projectRoot: held.projectRoot, build, force: shouldRescan }, held);
+      const guided = await initializeGuidedProject({
+        projectRoot: held.projectRoot,
+        build,
+        runnerVersion: runnerPackage.version,
+        instantOnboarding: true,
+        suppressGraduationTip: args.includes("--no-graduation-tip"),
+      }, held);
+      if (existingJourney) {
+        await resetGuidedOnboardingForBoundaryReview({
+          projectRoot: held.projectRoot,
+          schemaFingerprint: build.lock.schema_fingerprint,
+          rolePostureFingerprint: build.lock.role_posture_fingerprint,
+        });
+      }
+      return { result, guided };
+    } catch (error) {
+      if (!existingJourney && result) await rollbackFreshAutoBoundaryWrite(held.projectRoot, result);
+      throw error;
     }
-  } catch (error) {
-    if (!existingJourney && result) await rollbackFreshAutoBoundaryWrite(project.root, result);
-    throw error;
-  }
+  });
   writeGuidedOutput(formatGuidedBoundaryReady(
     build,
     result,
@@ -1226,35 +1226,27 @@ export async function boundaryCommand(
     if (shouldInitializeProject) {
       await preflightGuidedProjectInitialization(projectRoot);
     }
-    let result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>> | undefined;
-    let guided: Awaited<ReturnType<typeof initializeGuidedProject>> | undefined;
-    try {
-      result = await writeAutoBoundaryArtifacts({
-        projectRoot,
-        build,
-        force: rest.includes("--force"),
-      });
-      if (deploymentProfile !== "production" && (shouldInitializeProject || existingJourney)) {
-        guided = await initializeGuidedProject({
-          projectRoot,
-          build,
-          runnerVersion: runnerPackage.version,
-          instantOnboarding: true,
-        });
+    await fs.mkdir(projectRoot, { recursive: true });
+    const { result, guided } = await withProjectAuthorityMutation(projectRoot, async (held) => {
+      let result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>> | undefined;
+      let guided: Awaited<ReturnType<typeof initializeGuidedProject>> | undefined;
+      try {
+        result = await writeAutoBoundaryArtifacts({ projectRoot: held.projectRoot, build, force: rest.includes("--force") }, held);
+        if (deploymentProfile !== "production" && (shouldInitializeProject || existingJourney)) {
+          guided = await initializeGuidedProject({
+            projectRoot: held.projectRoot, build, runnerVersion: runnerPackage.version, instantOnboarding: true,
+          }, held);
+        }
+        if (deploymentProfile !== "production" && existingJourney) {
+          await resetGuidedOnboardingForBoundaryReview({ projectRoot: held.projectRoot,
+            schemaFingerprint: build.lock.schema_fingerprint, rolePostureFingerprint: build.lock.role_posture_fingerprint });
+        }
+        return { result, guided };
+      } catch (error) {
+        if (shouldInitializeProject && result) await rollbackFreshAutoBoundaryWrite(held.projectRoot, result);
+        throw error;
       }
-      if (deploymentProfile !== "production" && existingJourney) {
-        await resetGuidedOnboardingForBoundaryReview({
-          projectRoot,
-          schemaFingerprint: build.lock.schema_fingerprint,
-          rolePostureFingerprint: build.lock.role_posture_fingerprint,
-        });
-      }
-    } catch (error) {
-      if (shouldInitializeProject && result) {
-        await rollbackFreshAutoBoundaryWrite(projectRoot, result);
-      }
-      throw error;
-    }
+    });
     const displayedProjectRoot = displayPath(projectRoot);
     const reviewCommand = displayedProjectRoot === "."
       ? `${cliCommandName()} boundary review`

@@ -17,6 +17,7 @@ import {
   inspectDatabase
 } from "@synapsor-runner/schema-inspector";
 import crypto from "node:crypto";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { explicitActionExecutionIntent } from "./action-execution-intent.js";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -58,12 +59,13 @@ import {
 import {
   boundaryReviewDecisions,
   createBoundaryReviewProgress,
+  type BoundaryReviewProgress,
 } from "./boundary-review-domain.js";
 import {
   readBoundaryReviewProgress,
   saveBoundaryReviewProgress,
 } from "./boundary-review-persistence.js";
-import { assertReadAuthoringBindings, readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { assertReadAuthoringBindings, readProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 import { openProjectControlPolicies } from "./control-policy-store.js";
 import { assertGovernedReadActivationDecision, readActivationAlreadyConsumed, readActivationEventId,
   type GovernedReadActivationDecision } from "./control-policy-activation.js";
@@ -11270,7 +11272,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     reason: "Confirmed the complete exact boundary shown by the focused access editor.",
     revision: (context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress, context.bundle.mutation_bindings.authoring);
+  await saveBoundaryReviewSignoff(input.projectRoot, context, progress);
   const activationResult = await boundaryActivateCommand(
     [
       "--project-root", input.projectRoot,
@@ -11365,7 +11367,7 @@ async function saveReviewedDisabledBoundary(input: {
     reason: input.reason,
     revision: (input.context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress, input.context.bundle.mutation_bindings.authoring);
+  await saveBoundaryReviewSignoff(input.projectRoot, input.context, progress);
 }
 
 function readBoundaryFieldOperationFlags(
@@ -11980,7 +11982,7 @@ async function confirmBoundaryReviewInteractively(input: {
     reason: "Confirmed through the grouped CLI boundary review shown to this operator.",
     revision: (input.context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress, input.context.bundle.mutation_bindings.authoring);
+  await saveBoundaryReviewSignoff(input.projectRoot, input.context, progress);
   return {
     context: await loadBoundaryReviewContext(input.projectRoot),
     actor,
@@ -12051,7 +12053,7 @@ async function confirmBoundaryResourceInteractively(input: {
     reason: `Confirmed the grouped CLI review for ${input.resourceId}.`,
     revision: (context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress, context.bundle.mutation_bindings.authoring);
+  await saveBoundaryReviewSignoff(input.projectRoot, context, progress);
   const updated = await loadBoundaryReviewContext(input.projectRoot);
   const remaining = boundaryReviewOverview(updated.bundle);
   process.stdout.write([
@@ -14057,7 +14059,7 @@ export async function boundaryActivateCommand(
       now: now.toISOString(),
     });
     try {
-      expectedAuthoring = await saveBoundaryReviewProgress(projectRoot, progress, expectedAuthoring);
+      expectedAuthoring = await saveBoundaryReviewSignoff(projectRoot, context, progress);
     } catch (error) {
       consumedDecision?.store.setRunnerState(consumedDecision.key, {
         status: "consumed_review_persistence_failed",
@@ -14354,6 +14356,21 @@ function formatProductionActivationNextSteps(input: {
   ].join("\n");
 }
 
+
+async function saveBoundaryReviewSignoff(projectRoot: string,
+  context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>, progress: BoundaryReviewProgress,
+): Promise<ReadAuthoringBindings | undefined> {
+  const shown = structuredClone({ bindings: context.bundle.mutation_bindings, previous: context.progress ?? null, progress });
+  return withProjectAuthorityMutation(projectRoot, async (held) => {
+    const current = await loadBoundaryReviewContext(held.projectRoot);
+    if (canonicalJsonDigest(shown.bindings) !== canonicalJsonDigest(current.bundle.mutation_bindings)
+      || canonicalJsonDigest(shown.previous) !== canonicalJsonDigest(current.progress ?? null)) {
+      throw Object.assign(new Error("This Boundary changed while you were reviewing it. Reopen the current revision before signing off; your earlier review was not saved."),
+        { code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+    }
+    return saveBoundaryReviewProgress(held.projectRoot, shown.progress, shown.bindings.authoring, held);
+  });
+}
 
 export async function loadBoundaryReviewContext(projectRoot: string): Promise<{
   boundaryRoot: string;

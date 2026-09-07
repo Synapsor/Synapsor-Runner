@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import {
   inspectDatabase,
   type SchemaInspection,
@@ -466,6 +467,13 @@ export async function prepareBoundaryRescan(input: {
 export async function commitBoundaryRescan(prepared: PreparedBoundaryRescan): Promise<void> {
   prepared = structuredClone(prepared);
   if (!prepared.report.changed && !prepared.report.authoring_baseline_refreshed) return;
+  const relativeRoot = path.relative(path.resolve(prepared.projectRoot), path.resolve(prepared.boundaryRoot));
+  return withProjectAuthorityMutation(prepared.projectRoot, (held) => commitBoundaryRescanUnlocked({
+    ...prepared, projectRoot: held.projectRoot, boundaryRoot: path.resolve(held.projectRoot, relativeRoot),
+  }, held));
+}
+
+async function commitBoundaryRescanUnlocked(prepared: PreparedBoundaryRescan, permit: ProjectAuthorityMutationPermit): Promise<void> {
   if (await boundaryRescanBaseStateDigest(prepared.projectRoot, prepared.boundaryRoot)
     !== prepared.baseStateDigest) {
     throw new Error(
@@ -477,13 +485,14 @@ export async function commitBoundaryRescan(prepared: PreparedBoundaryRescan): Pr
   }
   if (prepared.stored) {
     await saveProjectReadAuthoring({ projectRoot: prepared.projectRoot, expected: prepared.stored.expected,
-      authoring: prepared.stored.authoring, actor: "local_operator", operation: "rescan_read_authoring" });
+      authoring: prepared.stored.authoring, actor: "local_operator", operation: "rescan_read_authoring" }, permit);
     return;
   }
   if (!prepared.report.changed) {
     await persistAutoBoundaryPolicyBaseline(
       prepared.projectRoot,
       prepared.selectedBuild.policy_baseline,
+      permit,
     );
     await writeBoundaryRescanReport(prepared.projectRoot, prepared.report);
     return;
@@ -514,7 +523,7 @@ export async function commitBoundaryRescan(prepared: PreparedBoundaryRescan): Pr
         : {}),
       [BOUNDARY_RESCAN_REPORT_FILE]: `${JSON.stringify(prepared.report, null, 2)}\n`,
     },
-  });
+  }, permit);
 }
 
 export async function readBoundaryRescanReport(

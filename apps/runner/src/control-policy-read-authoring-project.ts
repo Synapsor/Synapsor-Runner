@@ -4,6 +4,7 @@ import type { StoredReadAuthoring, PreparedReadEntry } from "./control-policy-re
 import type { BoundaryReviewProgress } from "./boundary-review-domain.js";
 import { OPERATOR_READ_AUTHORING_KEY, assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 import type { GovernedReadEditDecision } from "./control-policy-read-edit.js";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 export { assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 
 export type ProjectReadAuthoring = {
@@ -28,8 +29,15 @@ export async function saveProjectReadAuthoring(input: {
   projectRoot: string; expected: ReadAuthoringBindings;
   authoring: StoredReadAuthoring; actor: string; operation: string;
   verifiedDecision?: GovernedReadEditDecision;
-}): Promise<ReadAuthoringBindings> {
+}, permit?: ProjectAuthorityMutationPermit): Promise<ReadAuthoringBindings> {
   const frozen = structuredClone(input);
+  return withProjectAuthorityMutation(frozen.projectRoot, (held) => saveProjectReadAuthoringUnlocked({
+    ...frozen, projectRoot: held.projectRoot,
+  }), { permit });
+}
+
+async function saveProjectReadAuthoringUnlocked(input: Parameters<typeof saveProjectReadAuthoring>[0]): Promise<ReadAuthoringBindings> {
+  const frozen = input;
   const binding = await openBoundProjectControlPolicies(input.projectRoot);
   if (!binding) fail("POLICY_AUTHORING_STORE_CHANGED", "The governed Read review repository is unavailable.");
   try {
@@ -51,8 +59,16 @@ export async function saveProjectReadProgress(input: {
   replacement?: Pick<PreparedReadEntry, "draft" | "draft_lock" | "candidate_lock" | "catalog">;
   actor?: string;
   verifiedDecision?: GovernedReadEditDecision;
-}): Promise<false | ReadAuthoringBindings> {
+}, permit?: ProjectAuthorityMutationPermit): Promise<false | ReadAuthoringBindings> {
   const frozen = structuredClone(input);
+  return withProjectAuthorityMutation(frozen.projectRoot, (held) => saveProjectReadProgressUnlocked({
+    ...frozen, projectRoot: held.projectRoot,
+  }, held), { permit });
+}
+
+async function saveProjectReadProgressUnlocked(input: Parameters<typeof saveProjectReadProgress>[0],
+  permit: ProjectAuthorityMutationPermit): Promise<false | ReadAuthoringBindings> {
+  const frozen = input;
   const current = await readProjectReadAuthoring(input.projectRoot);
   if (!current) {
     if (input.expected || input.verifiedDecision) fail("POLICY_AUTHORING_STORE_CHANGED", "The governed Read review repository is unavailable.");
@@ -71,7 +87,7 @@ export async function saveProjectReadProgress(input: {
       ...(frozen.progress.candidate.pack.resources.length === 0 ? { stage: "metadata_only" as const } : {}) };
   });
   return saveProjectReadAuthoring({ projectRoot: input.projectRoot, expected: current.bindings,
-    authoring, actor: frozen.actor ?? "local_operator", operation: "edit_prepared_read", verifiedDecision: frozen.verifiedDecision });
+    authoring, actor: frozen.actor ?? "local_operator", operation: "edit_prepared_read", verifiedDecision: frozen.verifiedDecision }, permit);
 }
 
 function authoringState(binding: BoundProjectPolicyStore, state: OperatorAuthorityState): ProjectReadAuthoring {

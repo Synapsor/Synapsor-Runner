@@ -19,6 +19,7 @@ import {
   createBoundaryReviewProgress,
 } from "./boundary-review-domain.js";
 import {
+  readBoundaryReviewProgress,
   saveBoundaryReviewProgress,
 } from "./boundary-review-persistence.js";
 import {
@@ -40,6 +41,30 @@ import {
 import { compileExplorePlan, validateExplorePlan } from "./scoped-explore.js";
 
 describe("boundary rescan reconciliation", () => {
+  it("registers an exact freshly saved review even when reopening drops excluded-resource confirmations", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-library-normalization-"));
+    try {
+      const build = buildAutoBoundary({ inspection: normalizedCommerceInspection(),
+        project: { root, package_manager: "npm", frameworks: ["node"], schema_inputs: [], database_env_names: ["DATABASE_URL"] },
+        sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const progress = createBoundaryReviewProgress({ draft: build.exploration_boundary,
+        candidate: build.exploration_boundary, confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        actor: "operator", revision: 1 });
+      await saveBoundaryReviewProgress(root, progress);
+      const reopened = (await readBoundaryReviewProgress(root, build.exploration_boundary))!;
+      expect(reopened.confirmations.length).toBeLessThan(progress.confirmations.length);
+      expect(reopened.candidate_digest).toBe(progress.candidate_digest);
+      for (const current of [progress, reopened]) {
+        await synchronizeBoundaryLibrary({ projectRoot: root, draft: build.exploration_boundary,
+          currentCandidate: current.candidate, currentProgress: current });
+        expect((await readBoundaryReviewProgress(root, build.exploration_boundary))!.candidate_digest)
+          .toBe(progress.candidate_digest);
+      }
+      await expect(loadActivatedExplorationBoundaries(root)).rejects.toHaveProperty("code", "ENOENT");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
   it("refuses an elevated role before changing saved review or active authority", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-rescan-role-unsafe-"));
     try {

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { assertGovernedReadEditDecision, type GovernedReadEditDecision } from "./control-policy-read-edit.js";
 import { Buffer } from "node:buffer";
 import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
@@ -1473,6 +1474,13 @@ export async function commitBoundaryResourceReviewMutation(
 }> {
   preview = structuredClone(preview);
   verifiedDecision = verifiedDecision && structuredClone(verifiedDecision);
+  const relativeRoot = path.relative(path.resolve(projectRoot), path.resolve(preview.boundary_root));
+  return withProjectAuthorityMutation(projectRoot, (held) => commitBoundaryResourceReviewMutationUnlocked(held.projectRoot,
+    { ...preview, boundary_root: path.resolve(held.projectRoot, relativeRoot) }, verifiedDecision, held));
+}
+
+async function commitBoundaryResourceReviewMutationUnlocked(projectRoot: string, preview: BoundaryReviewMutationPreview,
+  verifiedDecision: GovernedReadEditDecision | undefined, permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewMutationCommit & { semantic_diff: BoundaryReviewSemanticDiff }> {
   assertVerifiedMutationPreview(preview, preview.request.actor, verifiedDecision);
   if (preview.partial_scope_resolution) {
     if (preview.candidate.pack.resources.length === 0) {
@@ -1481,7 +1489,7 @@ export async function commitBoundaryResourceReviewMutation(
       if (current.authoring) {
         const result = await commitPreparedBoundaryReviewMutation({ projectRoot, bindings: preview.bindings,
           build: preview.build, candidate: preview.candidate, boundaryRoot: preview.boundary_root,
-          previousProgress: preview.previous_progress, actor: preview.request.actor, reason: preview.request.reason, verifiedDecision });
+          previousProgress: preview.previous_progress, actor: preview.request.actor, reason: preview.request.reason, verifiedDecision }, permit);
         return { ...result, semantic_diff: preview.semantic_diff };
       }
       if (verifiedDecision) throw new Error("POLICY_AUTHORING_STORE_CHANGED: restore the governed review repository before editing.");
@@ -1492,7 +1500,7 @@ export async function commitBoundaryResourceReviewMutation(
         force: true,
         preserveReviewProgress: false,
         preserveActiveBoundary: true,
-      });
+      }, permit);
       return {
         candidate_digest: preview.candidate_digest,
         review_revision: 0,
@@ -1510,7 +1518,7 @@ export async function commitBoundaryResourceReviewMutation(
       actor: preview.request.actor,
       reason: preview.request.reason,
       verifiedDecision,
-    });
+    }, permit);
     return {
       ...result,
       semantic_diff: preview.semantic_diff,
@@ -1526,7 +1534,7 @@ export async function commitBoundaryResourceReviewMutation(
     actor: preview.request.actor,
     reason: preview.request.reason,
     verifiedDecision,
-  });
+  }, permit);
   return {
     ...result,
     semantic_diff: preview.semantic_diff,
@@ -1707,7 +1715,16 @@ async function commitPreparedBoundaryReviewMutation(input: {
   actor: string;
   reason: string;
   verifiedDecision?: GovernedReadEditDecision;
-}): Promise<BoundaryReviewMutationCommit> {
+}, permit?: ProjectAuthorityMutationPermit): Promise<BoundaryReviewMutationCommit> {
+  const frozen = structuredClone(input);
+  const relativeRoot = path.relative(path.resolve(frozen.projectRoot), path.resolve(frozen.boundaryRoot));
+  return withProjectAuthorityMutation(frozen.projectRoot, (held) => commitPreparedBoundaryReviewMutationUnlocked({
+    ...frozen, projectRoot: held.projectRoot, boundaryRoot: path.resolve(held.projectRoot, relativeRoot),
+  }, held), { permit });
+}
+
+async function commitPreparedBoundaryReviewMutationUnlocked(input: Parameters<typeof commitPreparedBoundaryReviewMutation>[0],
+  permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewMutationCommit> {
   const current = await loadBoundaryReviewFiles(input.projectRoot);
   assertBindingsEqual(input.bindings, reviewBindings(current));
 
@@ -1738,7 +1755,7 @@ async function commitPreparedBoundaryReviewMutation(input: {
     const binding = await saveProjectReadProgress({ projectRoot: input.projectRoot, expected: input.bindings.authoring, progress,
       actor: input.actor, verifiedDecision: input.verifiedDecision,
       replacement: { draft: input.build.exploration_boundary, draft_lock: input.build.lock, candidate_lock: input.build.lock,
-        catalog: readAuthoringCatalog(input.build) } });
+        catalog: readAuthoringCatalog(input.build) } }, permit);
     if (!binding) throw new Error("The saved review repository changed before the edit could be saved.");
     return { candidate_digest: progress.candidate_digest, review_revision: progress.revision, progress,
       authoring_binding: binding, source_database_changed: false };
@@ -1755,13 +1772,13 @@ async function commitPreparedBoundaryReviewMutation(input: {
     preserveReviewProgress: true,
     preserveActiveBoundary: true,
     reviewProgress: progress,
-  });
+  }, permit);
   await synchronizeBoundaryLibrary({
     projectRoot: input.projectRoot,
     draft: input.build.exploration_boundary,
     currentCandidate: input.candidate,
     currentProgress: progress,
-  });
+  }, permit);
   return {
     candidate_digest: progress.candidate_digest,
     review_revision: progress.revision,

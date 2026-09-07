@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { emptyReviewOverrides, explorationBoundaryCandidateDigest, generationLockSharedFactsDigest,
   loadGenerationLockSnapshot, reviewExplorationBoundaryCandidate, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { BOUNDARY_REVIEW_PROGRESS_VERSION, boundaryReviewDecisions, createBoundaryReviewProgress, legacyBoundaryReviewId,
@@ -126,13 +128,14 @@ export async function saveBoundaryReviewProgress(
   projectRoot: string,
   progress: BoundaryReviewProgress,
   expected?: ReadAuthoringBindings,
+  permit?: ProjectAuthorityMutationPermit,
 ): Promise<ReadAuthoringBindings | undefined> {
-  const saved = await saveProjectReadProgress({ projectRoot, progress, expected });
-  if (saved) return saved;
-  await writePrivateJsonAtomic(
-    path.join(path.resolve(projectRoot), ".synapsor/boundary-review-progress.json"),
-    progress,
-  );
+  const frozen = structuredClone({ progress, expected });
+  return withProjectAuthorityMutation(projectRoot, async (held) => {
+    const saved = await saveProjectReadProgress({ projectRoot: held.projectRoot, ...frozen }, held);
+    if (saved) return saved;
+    await writePrivateJsonAtomic(path.join(held.projectRoot, ".synapsor/boundary-review-progress.json"), frozen.progress);
+  }, { permit });
 }
 
 type InstantBoundaryBaselineInput = {
@@ -142,6 +145,7 @@ type InstantBoundaryBaselineInput = {
   actor: string;
   now?: string;
   expectedAuthoring?: ReadAuthoringBindings;
+  expectedLegacyProgress?: BoundaryReviewProgress;
 };
 
 export async function saveInstantBoundaryReviewBaseline(input: InstantBoundaryBaselineInput) {
@@ -155,7 +159,14 @@ export async function saveInstantBoundaryEditBaseline(input: InstantBoundaryBase
 async function saveInstantBoundaryBaseline(input: InstantBoundaryBaselineInput, accepted: boolean): Promise<{
   progress: BoundaryReviewProgress; authoring: ReadAuthoringBindings | undefined;
 }> {
-  input = structuredClone(input);
+  const frozen = structuredClone(input);
+  return withProjectAuthorityMutation(frozen.projectRoot, (held) => saveInstantBoundaryBaselineUnlocked({
+    ...frozen, projectRoot: held.projectRoot,
+  }, accepted, held));
+}
+
+async function saveInstantBoundaryBaselineUnlocked(input: InstantBoundaryBaselineInput, accepted: boolean,
+  permit: ProjectAuthorityMutationPermit): Promise<{ progress: BoundaryReviewProgress; authoring: ReadAuthoringBindings | undefined }> {
   const stored = await readProjectReadAuthoring(input.projectRoot);
   let previous: BoundaryReviewProgress | undefined;
   if (stored) {
@@ -166,6 +177,15 @@ async function saveInstantBoundaryBaseline(input: InstantBoundaryBaselineInput, 
     previous = stored.selected.progress;
   } else if (input.expectedAuthoring) {
     throw new Error("The reviewed policy repository is unavailable. No Quick Start authority changed.");
+  } else {
+    const lock = await readOptionalJson(path.join(input.projectRoot, ".synapsor/generation-lock.json"));
+    if (canonicalJsonDigest(lock) !== input.draft.generation_lock_fingerprint
+      || canonicalJsonDigest(await readBoundaryReviewProgress(input.projectRoot, input.draft) ?? null)
+        !== canonicalJsonDigest(input.expectedLegacyProgress ?? null)) {
+      throw Object.assign(new Error("The Boundary review changed after Quick Start opened. Resume the saved review; no Quick Start decision was saved."),
+        { code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+    }
+    previous = input.expectedLegacyProgress;
   }
   const candidate = reviewExplorationBoundaryCandidate(previous?.candidate ?? input.draft, input.candidate).candidate;
   const decisions = new Map(boundaryReviewDecisions(candidate).map((decision) => [decision.id, decision]));
@@ -183,7 +203,7 @@ async function saveInstantBoundaryBaseline(input: InstantBoundaryBaselineInput, 
     revision: (previous?.revision ?? 0) + 1,
     ...(input.now ? { now: input.now } : {}),
   });
-  const authoring = await saveBoundaryReviewProgress(input.projectRoot, progress, input.expectedAuthoring);
+  const authoring = await saveBoundaryReviewProgress(input.projectRoot, progress, input.expectedAuthoring, permit);
   return { progress, authoring };
 }
 
