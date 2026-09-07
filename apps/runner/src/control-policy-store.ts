@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { createDefaultRuntimeStore, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/protocol";
-import type { ControlPolicyRepository, ControlPolicyRevision, ControlPolicyPointer, ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
+import { createPostgresPool } from "@synapsor-runner/postgres";
+import { sqliteControlPolicyRepository, postgresControlPolicyRepository,
+  type ControlPolicyRepository, type ControlPolicyRevision, type ControlPolicyPointer, type ControlPolicyCommit,
+  type ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 
 const identifier = z.string().min(1).max(256).refine((value) => value.trim() === value && !/[\u0000-\u001f\u007f]/u.test(value));
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
@@ -121,8 +125,20 @@ export async function openProjectControlPolicies(input: ProjectPolicyStoreSelect
   if (!manifest) return undefined;
   const target = selectedTarget(input);
   assertSameTarget(manifest, target);
+  return openBoundRepository(manifest, input.env ?? process.env);
+}
+
+/** Existing project-authority access follows its governed locator. Runtime
+ * composition must separately bind its actual store before serving requests. */
+export async function openBoundProjectControlPolicies(projectRoot: string, env: NodeJS.ProcessEnv = process.env): Promise<BoundProjectPolicyStore | undefined> {
+  const manifest = await readManifest(projectRoot);
+  return manifest ? openBoundRepository(manifest, env) : undefined;
+}
+
+async function openBoundRepository(manifest: Manifest, env: NodeJS.ProcessEnv): Promise<BoundProjectPolicyStore> {
+  const target = manifest.target;
   await requireExistingLocalStore(target);
-  const store = createDefaultRuntimeStore(input.config, input.env ?? process.env, input.storePath);
+  const store = openExistingRepository(target, env);
   try {
     const repository = requireRepository(store);
     await assertRepositoryIdentity(repository, manifest);
@@ -136,6 +152,70 @@ export async function openProjectControlPolicies(input: ProjectPolicyStoreSelect
   }
 }
 
+/** A long-lived runtime uses its actual selected ledger connection. The caller
+ * owns that connection; closing this binding never closes the runtime store. */
+export async function bindRuntimeControlPolicies(input: ProjectPolicyStoreSelection & {
+  store: ProposalRuntimeStore;
+}): Promise<BoundProjectPolicyStore | undefined> {
+  const manifest = await readManifest(input.projectRoot);
+  if (!manifest) return undefined;
+  const target = selectedTarget(input);
+  assertSameTarget(manifest, target);
+  await requireExistingLocalStore(target);
+  const repository = requireRepository(input.store);
+  await assertRepositoryIdentity(repository, manifest);
+  const deployment = await repository.deployment(manifest.deployment_id);
+  if (!deployment) throw failure("POLICY_MIGRATION_PENDING", "Policy migration is unfinished. Resume the same migration; legacy exports cannot serve authority.");
+  assertDeployment(deployment, manifest);
+  return bound({ close: async () => undefined }, repository, manifest);
+}
+
+export async function assertProjectControlPolicyBinding(projectRoot: string, binding: BoundProjectPolicyStore): Promise<void> {
+  const manifest = await readManifest(projectRoot);
+  if (!manifest || binding.repository_id !== manifest.repository_id || binding.deployment_id !== manifest.deployment_id
+    || binding.project_id !== manifest.project_id) {
+    throw failure("POLICY_REPOSITORY_MISMATCH", "The policy connection does not match this project's governed repository.");
+  }
+  await requireExistingLocalStore(manifest.target);
+  await assertRepositoryIdentity(binding.repository, manifest);
+}
+
+/** Internal persistence after semantic validation and trusted review. Reusing
+ * an exact historical record moves a pointer; it never overwrites history. */
+export async function commitImmutableControlPolicies(binding: BoundProjectPolicyStore,
+  input: Omit<ControlPolicyCommit, "deployment_id">): Promise<number> {
+  const frozen = structuredClone(input);
+  if (frozen.revisions.length > 64) throw failure("POLICY_BATCH_TOO_LARGE", "The policy update exceeds the reviewed transaction limit.");
+  const revisions: ControlPolicyRevision[] = [];
+  const seen = new Set<string>();
+  for (const revision of frozen.revisions) {
+    if (seen.has(revision.revision_id)) throw failure("POLICY_DUPLICATE_REVISION", "The policy update contains duplicate revision identities.");
+    seen.add(revision.revision_id);
+    const existing = await binding.repository.revision(binding.deployment_id, revision, revision.revision_id);
+    if (!existing) revisions.push(revision);
+    else if (canonicalJsonDigest(existing) !== canonicalJsonDigest(revision)) {
+      throw failure("POLICY_CONTENT_MISMATCH", "The saved immutable revision differs from the reviewed policy. No authority changed.");
+    }
+  }
+  return binding.repository.commit({ ...frozen, deployment_id: binding.deployment_id, revisions });
+}
+
+function openExistingRepository(target: Manifest["target"], env: NodeJS.ProcessEnv): {
+  controlPolicies: ControlPolicyRepository; close(): Promise<void>;
+} {
+  if (target.kind === "postgres") {
+    const url = env[target.url_env]?.trim();
+    if (!url) throw failure("POSTGRES_RUNTIME_STORE_URL_MISSING", `${target.url_env} is required for this project's bound control store.`);
+    const pool = createPostgresPool(url);
+    return { controlPolicies: postgresControlPolicyRepository(pool, target.schema), close: () => pool.end() };
+  }
+  const db = new DatabaseSync(target.path);
+  try {
+    db.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000");
+    return { controlPolicies: sqliteControlPolicyRepository(db), close: async () => { db.close(); } };
+  } catch (error) { db.close(); throw error; }
+}
+
 function selectedTarget(input: ProjectPolicyStoreSelection): Manifest["target"] {
   const shared = input.config.storage?.shared_postgres;
   if (shared?.mode === "runtime_store") return targetSchema.parse({ kind: "postgres", url_env: shared.url_env, schema: shared.schema ?? "synapsor_runner" });
@@ -143,7 +223,7 @@ function selectedTarget(input: ProjectPolicyStoreSelection): Manifest["target"] 
   return { kind: "sqlite", path: path.resolve(input.storePath) };
 }
 
-function requireRepository(store: ProposalRuntimeStore): ControlPolicyRepository {
+function requireRepository(store: { controlPolicies?: ControlPolicyRepository }): ControlPolicyRepository {
   if (!store.controlPolicies) throw failure("POLICY_STORE_UNSUPPORTED", "The selected runtime store does not support authoritative policy storage.");
   return store.controlPolicies;
 }
@@ -176,7 +256,7 @@ function assertDeployment(deployment: { project_id: string; migration_digest: st
   }
 }
 
-function bound(store: ProposalRuntimeStore, repository: ControlPolicyRepository, manifest: Manifest): BoundProjectPolicyStore {
+function bound(store: { close(): void | Promise<void> }, repository: ControlPolicyRepository, manifest: Manifest): BoundProjectPolicyStore {
   let closed = false;
   return { repository, deployment_id: manifest.deployment_id, repository_id: manifest.repository_id,
     project_id: manifest.project_id, close: async () => { if (!closed) { closed = true; await store.close(); } } };
@@ -192,7 +272,17 @@ function validateSnapshotShape(value: unknown): ControlPolicyMigrationSnapshot {
 
 async function readManifest(projectRoot: string): Promise<Manifest | undefined> {
   const value = await readPrivateJson(path.join(path.resolve(projectRoot), MANIFEST_FILE), MAX_MANIFEST_BYTES);
-  if (value === undefined) return undefined;
+  if (value === undefined) {
+    const directory = path.dirname(path.join(path.resolve(projectRoot), MANIFEST_FILE));
+    const artifacts = await fs.readdir(directory).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    if (artifacts.some((file) => file.endsWith(".snapshot.json"))) {
+      throw failure("POLICY_MIGRATION_MANIFEST_MISSING", "Policy migration input exists but its binding is missing. Restore the migration record; older file authority cannot be used.");
+    }
+    return undefined;
+  }
   const parsed = manifestSchema.safeParse(value);
   if (!parsed.success) throw failure("POLICY_MIGRATION_RECORD_INVALID", "The policy migration record is invalid. Restore the original record; no older authority will be used.");
   return parsed.data;

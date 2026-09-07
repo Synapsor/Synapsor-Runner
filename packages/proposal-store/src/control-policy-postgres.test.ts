@@ -92,10 +92,18 @@ describePostgres("control policy PostgreSQL storage parity", () => {
     await policies.commit({ deployment_id: "drafts", expected_epoch: 1, revisions: [draft], active: [],
       drafts: [{ ...key(), revision_id: draft.revision_id }], event: event("save-disabled") });
     expect(await policies.snapshot("drafts", [key()])).toEqual({ epoch: 2, policies: [{ active: revision("v1"), draft }] });
+    expect(await policies.scopeSnapshot({ deployment_id: "drafts", scope: operator, kinds: ["read", "action"] }))
+      .toEqual({ epoch: 2, active: [revision("v1")], drafts: [draft] });
+    await expect(policies.scopeSnapshot({ deployment_id: "drafts", scope: operator, kinds: ["action"], limit: 1 }))
+      .rejects.toMatchObject({ code: "POLICY_SNAPSHOT_TOO_LARGE" });
+    await expect(policies.scopeSnapshot({ deployment_id: "drafts", scope: operator, kinds: ["action"], max_bytes: 1 }))
+      .rejects.toMatchObject({ code: "POLICY_SNAPSHOT_TOO_LARGE" });
     expect(await policies.listDrafts({ deployment_id: "drafts", scope: operator, kind: "action" })).toEqual([draft]);
     await policies.commit({ deployment_id: "drafts", expected_epoch: 2, revisions: [],
       active: [{ ...key(), revision_id: draft.revision_id }], drafts: [{ ...key(), revision_id: null }], event: event("activate-reviewed") });
     expect(await policies.draft("drafts", key())).toBeUndefined();
+    expect(await policies.scopeSnapshot({ deployment_id: "drafts", scope: operator, kinds: ["action"] }))
+      .toEqual({ epoch: 3, active: [draft], drafts: [] });
     expect(await policies.active("drafts", key())).toEqual(draft);
     expect(await policies.history({ deployment_id: "drafts", key: key(), limit: 1 })).toEqual([{ epoch: 2, revision: draft }]);
     expect(await policies.history({ deployment_id: "drafts", key: key(), before: { epoch: 2, revision_id: draft.revision_id } }))

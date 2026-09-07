@@ -1,6 +1,11 @@
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import type { ControlPolicyRevision, ControlPolicyScopeSnapshot } from "@synapsor-runner/proposal-store";
+import { openBoundProjectControlPolicies, assertProjectControlPolicyBinding, commitImmutableControlPolicies,
+  type BoundProjectPolicyStore } from "./control-policy-store.js";
+import { OPERATOR_POLICY_RECORD_VERSION, assertOperatorPolicyRecord, storedOperatorPolicyRecord } from "./control-policy-record.js";
 import {
   ACTION_RULE_AUTHORITY_VERSION,
   ACTION_AUTHORITY_LIMITS,
@@ -219,6 +224,66 @@ function replacementApprovalClassName(
   return `${namespace}.revision_${suffix}`;
 }
 
+async function withStoredActionPolicies<T>(projectRoot: string, supplied: BoundProjectPolicyStore | undefined,
+  operation: (binding: BoundProjectPolicyStore, state: ControlPolicyScopeSnapshot) => Promise<T>): Promise<T | undefined> {
+  const binding = supplied ?? await openBoundProjectControlPolicies(projectRoot);
+  if (!binding) return undefined;
+  try {
+    if (supplied) await assertProjectControlPolicyBinding(projectRoot, supplied);
+    const current = await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id,
+      scope: { level: "operator" }, kinds: ["action"] });
+    if (current.active.length > 1) throw invalidActivation();
+    return await operation(binding, current);
+  } finally { if (!supplied) await binding.close(); }
+}
+
+function actionKey(name: string) { return { scope: { level: "operator" as const }, kind: "action" as const, name: safeName(name) }; }
+function actionPointer(revision: ControlPolicyRevision) { return { ...actionKey(revision.name), revision_id: revision.revision_id }; }
+function storedActionRecord(authority: ExistingActionRuleAuthorityV1): ControlPolicyRevision {
+  return storedOperatorPolicyRecord(actionKey(authority.authority.name), authority.digest,
+    { schema_version: OPERATOR_POLICY_RECORD_VERSION, type: "action", authority });
+}
+function storedActionContent(revision: ControlPolicyRevision): unknown {
+  const content = revision.content as Record<string, unknown>;
+  if (!content || typeof content !== "object" || content.schema_version !== OPERATOR_POLICY_RECORD_VERSION
+    || content.type !== "action" || Object.keys(content).sort().join(",") !== "authority,schema_version,type") throw invalidActivation();
+  return content.authority;
+}
+function parseStoredActionDraft(revision: ControlPolicyRevision): ActionRuleAuthorityDraftV1 {
+  const content = storedActionContent(revision);
+  const draft = parseDraft(content);
+  if (canonicalJsonDigest(content) !== canonicalJsonDigest(draft)) throw invalidDraft();
+  assertOperatorPolicyRecord(revision, actionKey(draft.authority.name), draft.digest);
+  return draft;
+}
+function parseStoredActionActivation(revision: ControlPolicyRevision): ReturnType<typeof parseActivationSnapshot> {
+  const content = storedActionContent(revision);
+  const parsed = parseActivationSnapshot(content);
+  if (canonicalJsonDigest(content) !== canonicalJsonDigest(parsed.activation)) throw invalidActivation();
+  assertOperatorPolicyRecord(revision, actionKey(parsed.activation.authority.name), parsed.activation.digest);
+  return parsed;
+}
+function actionPolicyEvent(operation: "save_disabled_action" | "activate_action", actor: string,
+  current: ControlPolicyScopeSnapshot, revision: ControlPolicyRevision) {
+  const previous = operation === "save_disabled_action" ? current.drafts.find((entry) => entry.name === revision.name) : current.active[0];
+  return { event_id: randomUUID(), actor, occurred_at: new Date().toISOString(), receipt: { operation,
+    name: revision.name, before: previous?.revision_id ?? null, after: revision.revision_id, source_database_changed: false } };
+}
+
+async function checkedStoredActionResult(projectRoot: string, binding: BoundProjectPolicyStore, current: ControlPolicyScopeSnapshot,
+  loaded: LoadedActionRuleAuthorityV1, activation: ActionRuleAuthorityActivationV1, options: ActiveAuthorityLoadOptions): Promise<LoadedActiveActionRuleAuthorityV1> {
+  const reads = await loadActivatedExplorationBoundaries(projectRoot, binding).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  // Caller snapshots cannot replace current repository dependencies. The epoch
+  // check also detects a revocation during the asynchronous Read load.
+  const result = await checkLoadedReadDependencies(projectRoot, loaded, activation, { ...options, read_boundaries: reads });
+  const latest = await binding.repository.deployment(binding.deployment_id);
+  if (latest?.epoch !== current.epoch) throw authorityError("POLICY_REVISION_CONFLICT", "Action authority changed while loading its Read dependencies. Retry using the current revision.");
+  return result;
+}
+
 export async function writeActionRuleAuthorityDraft(
   projectRootInput: string,
   draft: ActionRuleAuthorityDraftV1,
@@ -226,6 +291,19 @@ export async function writeActionRuleAuthorityDraft(
   const projectRoot = path.resolve(projectRootInput);
   parseDraft(draft);
   const target = draftPath(projectRoot, draft.authority.name);
+  const stored = await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
+    const revision = storedActionRecord(parseDraft(draft));
+    await commitImmutableControlPolicies(binding, { expected_epoch: current.epoch, revisions: [revision], active: [],
+      drafts: [actionPointer(revision)], event: actionPolicyEvent("save_disabled_action", "local_operator", current, revision) });
+    return true;
+  });
+  if (stored) {
+    // This is a review export, never the authority source after migration.
+    await writePrivateJsonAtomic(target, draft).catch(() => {
+      throw authorityError("ACTION_RULE_EXPORT_FAILED", "The disabled Action revision is saved in the control store, but its optional file export could not be written. Authority is unchanged.");
+    });
+    return projectRelativePath(projectRoot, target);
+  }
   await writePrivateJsonAtomic(target, draft);
   return projectRelativePath(projectRoot, target);
 }
@@ -234,6 +312,11 @@ export async function readActionRuleAuthorityDraft(
   projectRootInput: string,
   name: string,
 ): Promise<ActionRuleAuthorityDraftV1 | undefined> {
+  safeName(name);
+  const stored = await withStoredActionPolicies(projectRootInput, undefined, async (_binding, current) => ({
+    draft: current.drafts.find((revision) => revision.name === name),
+  }));
+  if (stored) return stored.draft ? parseStoredActionDraft(stored.draft) : undefined;
   const parsed = await readOptionalJson(draftPath(path.resolve(projectRootInput), safeName(name)));
   return parsed === undefined ? undefined : parseDraft(parsed);
 }
@@ -242,6 +325,8 @@ export async function listActionRuleAuthorityDrafts(
   projectRootInput: string,
 ): Promise<ActionRuleAuthorityDraftV1[]> {
   const projectRoot = path.resolve(projectRootInput);
+  const stored = await withStoredActionPolicies(projectRoot, undefined, async (_binding, current) => current.drafts.map(parseStoredActionDraft));
+  if (stored) return stored;
   const root = path.join(stateRoot(projectRoot), "drafts");
   let entries: Dirent[];
   try {
@@ -263,6 +348,8 @@ export async function readActionRuleAuthorityActivation(
   projectRootInput: string,
 ): Promise<ActionRuleAuthorityActivationV1 | undefined> {
   const projectRoot = path.resolve(projectRootInput);
+  const stored = await withStoredActionPolicies(projectRoot, undefined, async (_binding, current) => ({ active: current.active[0] }));
+  if (stored) return stored.active ? parseStoredActionActivation(stored.active).activation : undefined;
   const parsed = await readOptionalJson(activePath(projectRoot));
   if (parsed === undefined) return undefined;
   const activation = parseActivation(parsed);
@@ -283,7 +370,39 @@ export async function activateActionRuleAuthority(input: {
   now?: string;
 }): Promise<ActionRuleAuthorityActivationV1> {
   const projectRoot = path.resolve(input.projectRoot);
+  const stored = await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
+    const revision = current.drafts.find((entry) => entry.name === safeName(input.name));
+    const draft = revision ? parseStoredActionDraft(revision) : undefined;
+    const activation = await reviewedActionActivation(input, draft, () => loadActivatedExplorationBoundaries(projectRoot, binding));
+    const active = storedActionRecord(activation);
+    await commitImmutableControlPolicies(binding, { expected_epoch: current.epoch, revisions: [active],
+      active: [...current.active.filter((entry) => entry.name !== active.name).map((entry) => ({ ...actionKey(entry.name), revision_id: null })), actionPointer(active)],
+      drafts: [{ ...actionKey(active.name), revision_id: null }], event: actionPolicyEvent("activate_action", activation.actor, current, active) });
+    return activation;
+  });
+  if (stored) return stored;
   const draft = await readActionRuleAuthorityDraft(projectRoot, input.name);
+  const activation = await reviewedActionActivation(input, draft, () => loadActivatedExplorationBoundaries(projectRoot));
+  const active = activePath(projectRoot);
+  const revision = revisionPath(projectRoot, activation.digest);
+  const previousActive = await readOptionalText(active);
+  const revisionAlreadyExisted = await exists(revision);
+  try {
+    await writePrivateJsonAtomic(revision, activation);
+    await writePrivateJsonAtomic(active, activation);
+    await fs.rm(draftPath(projectRoot, activation.authority.name), { force: true });
+  } catch (error) {
+    if (previousActive === undefined) await fs.rm(active, { force: true }).catch(() => undefined);
+    else await writePrivateTextAtomic(active, previousActive).catch(() => undefined);
+    if (!revisionAlreadyExisted) await fs.rm(revision, { force: true }).catch(() => undefined);
+    await writePrivateJsonAtomic(draftPath(projectRoot, activation.authority.name), draft).catch(() => undefined);
+    throw error;
+  }
+  return activation;
+}
+
+async function reviewedActionActivation(input: Parameters<typeof activateActionRuleAuthority>[0], draft: ActionRuleAuthorityDraftV1 | undefined,
+  readBoundaries: () => Promise<ActivatedExplorationBoundary[]>): Promise<ActionRuleAuthorityActivationV1> {
   if (!draft) throw authorityError("ACTION_RULE_DRAFT_REQUIRED", "No disabled Action Rule authority is ready to activate.");
   if (draft.digest !== input.expected_digest) {
     throw authorityError("ACTION_RULE_DRAFT_CHANGED", "The disabled Action Rule authority changed. Reload and review the exact current revision.");
@@ -292,9 +411,8 @@ export async function activateActionRuleAuthority(input: {
     throw authorityError("ACTION_RULE_CONFIRMATION_REQUIRED", `Enter ACTIVATE ${draft.digest} to publish this exact Action Rule authority.`);
   }
   const loaded = parseActionRuleAuthority(draft.authority, draft.digest);
-  const readBoundaries = await loadActivatedExplorationBoundaries(projectRoot);
-  assertReadDependenciesActive(loaded, readBoundaries);
-  const activation: ActionRuleAuthorityActivationV1 = {
+  assertReadDependenciesActive(loaded, await readBoundaries());
+  return {
     schema_version: ACTION_RULE_AUTHORITY_ACTIVATION_VERSION,
     state: "active",
     authority: loaded.authority,
@@ -303,22 +421,6 @@ export async function activateActionRuleAuthority(input: {
     actor: reviewedActor(input.actor),
     activated_at: canonicalTimestamp(input.now),
   };
-  const active = activePath(projectRoot);
-  const revision = revisionPath(projectRoot, activation.digest);
-  const previousActive = await readOptionalText(active);
-  const revisionAlreadyExisted = await exists(revision);
-  try {
-    await writePrivateJsonAtomic(revision, activation);
-    await writePrivateJsonAtomic(active, activation);
-    await fs.rm(draftPath(projectRoot, draft.authority.name), { force: true });
-  } catch (error) {
-    if (previousActive === undefined) await fs.rm(active, { force: true }).catch(() => undefined);
-    else await writePrivateTextAtomic(active, previousActive).catch(() => undefined);
-    if (!revisionAlreadyExisted) await fs.rm(revision, { force: true }).catch(() => undefined);
-    await writePrivateJsonAtomic(draftPath(projectRoot, draft.authority.name), draft).catch(() => undefined);
-    throw error;
-  }
-  return activation;
 }
 
 export async function loadActiveActionRuleAuthority(
@@ -330,6 +432,13 @@ export async function loadActiveActionRuleAuthority(
   } = {},
 ): Promise<LoadedActiveActionRuleAuthorityV1> {
   const projectRoot = path.resolve(projectRootInput);
+  const stored = await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
+    const revision = current.active[0];
+    if (!revision) throw Object.assign(new Error("No active semantic Action Rule authority is available."), { code: "ENOENT" });
+    const { loaded, activation } = parseStoredActionActivation(revision);
+    return checkedStoredActionResult(projectRoot, binding, current, loaded, activation, options);
+  });
+  if (stored) return stored;
   const activation = await readActionRuleAuthorityActivation(projectRoot);
   if (activation === undefined) {
     throw Object.assign(new Error("No active semantic Action Rule authority is available."), { code: "ENOENT" });
@@ -342,11 +451,29 @@ type ActiveAuthorityLoadOptions = NonNullable<Parameters<typeof loadActiveAction
 
 /** A runtime owns one compiled snapshot. Files are checked by content on every
  * use, not mtime, claimed digest, or TTL; Read revocation is never cached. */
-export function createActiveActionRuleAuthorityLoader(projectRootInput: string) {
+export function createActiveActionRuleAuthorityLoader(projectRootInput: string, policyStore?: BoundProjectPolicyStore) {
   const projectRoot = path.resolve(projectRootInput);
   let cached: { activeText: string; revisionText: string;
     loaded: LoadedActionRuleAuthorityV1; activation: ActionRuleAuthorityActivationV1 } | undefined;
   return async (options: ActiveAuthorityLoadOptions = {}): Promise<LoadedActiveActionRuleAuthorityV1> => {
+    const stored = await withStoredActionPolicies(projectRoot, policyStore, async (binding, current) => {
+      const revision = current.active[0];
+      if (!revision) {
+        cached = undefined;
+        throw Object.assign(new Error("No active semantic Action Rule authority is available."), { code: "ENOENT" });
+      }
+      const text = canonicalJsonStringify(revision);
+      let snapshot = cached;
+      if (!snapshot || snapshot.activeText !== text) {
+        const { activation, loaded } = parseStoredActionActivation(revision);
+        freezeAuthoritySnapshot(activation); freezeAuthoritySnapshot(loaded);
+        snapshot = { activeText: text, revisionText: text, activation, loaded };
+      }
+      const result = await checkedStoredActionResult(projectRoot, binding, current, snapshot.loaded, snapshot.activation, options);
+      cached = snapshot;
+      return result;
+    });
+    if (stored) return stored;
     const activeText = await readBoundedAuthorityText(activePath(projectRoot));
     if (activeText === undefined) {
       cached = undefined;
@@ -425,6 +552,17 @@ async function checkLoadedReadDependencies(
 }
 
 export async function deactivateActionRuleAuthority(projectRootInput: string): Promise<boolean> {
+  const stored = await withStoredActionPolicies(projectRootInput, undefined, async (binding, current) => {
+    const active = current.active[0];
+    if (!active) return { deactivated: false };
+    parseStoredActionActivation(active);
+    await commitImmutableControlPolicies(binding, { expected_epoch: current.epoch, revisions: [],
+      active: [{ ...actionKey(active.name), revision_id: null }],
+      event: { event_id: randomUUID(), actor: "local_operator", occurred_at: new Date().toISOString(),
+        receipt: { operation: "deactivate_action", before: active.revision_id, after: null, source_database_changed: false } } });
+    return { deactivated: true };
+  });
+  if (stored) return stored.deactivated;
   const target = activePath(path.resolve(projectRootInput));
   if (!await exists(target)) return false;
   await fs.rm(target, { force: true });

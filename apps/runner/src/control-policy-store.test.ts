@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { ControlPolicyRepository, ProposalStore } from "@synapsor-runner/proposal-store";
-import { migrateProjectControlPolicies, openProjectControlPolicies, type BoundProjectPolicyStore,
+import { migrateProjectControlPolicies, openProjectControlPolicies, bindRuntimeControlPolicies, type BoundProjectPolicyStore,
   type ControlPolicyMigrationSnapshot, type ProjectPolicyStoreSelection } from "./control-policy-store.js";
 
 const roots: string[] = [];
@@ -63,6 +63,31 @@ describe("governed policy-store binding and recovery", () => {
     const reopened = track((await openProjectControlPolicies(selection))!);
     expect(reopened.repository_id).toBe(binding.repository_id);
     expect(await reopened.repository.active(reopened.deployment_id, key)).toEqual(snapshot().revisions[0]);
+  });
+
+  it("opens current policies without rerunning ledger migrations and can borrow the actual runtime store", async () => {
+    const selection = await fixture(); const imported = track((await migrateProjectControlPolicies(migration(selection))).binding);
+    await imported.close();
+    const runtime = new ProposalStore(selection.storePath);
+    const migrate = vi.spyOn(ProposalStore.prototype, "migrate").mockImplementation(() => { throw new Error("must not rerun ledger migrations"); });
+    try {
+      const opened = track((await openProjectControlPolicies(selection))!);
+      const borrowed = track((await bindRuntimeControlPolicies({ ...selection, store: runtime }))!);
+      expect(borrowed.repository).toBe(runtime.controlPolicies);
+      expect(borrowed.repository_id).toBe(opened.repository_id);
+      await borrowed.close();
+      expect(await runtime.controlPolicies.active(borrowed.deployment_id, key)).toEqual(snapshot().revisions[0]);
+      expect(migrate).not.toHaveBeenCalled();
+    } finally { migrate.mockRestore(); runtime.close(); }
+  });
+
+  it("refuses a borrowed runtime connected to a different repository", async () => {
+    const selection = await fixture(); track((await migrateProjectControlPolicies(migration(selection))).binding);
+    const different = new ProposalStore(":memory:"); await different.controlPolicies.initialize();
+    try {
+      await expect(bindRuntimeControlPolicies({ ...selection, store: different })).rejects.toMatchObject({ code: "POLICY_REPOSITORY_MISMATCH" });
+      expect(await different.controlPolicies.identity()).toBeTruthy();
+    } finally { different.close(); }
   });
 
   it("resumes a frozen pending import rather than rereading changed legacy files", async () => {
@@ -139,6 +164,19 @@ describe("governed policy-store binding and recovery", () => {
     const replacement = new ProposalStore(selection.storePath);
     await replacement.controlPolicies.initialize(); replacement.close();
     await expect(openProjectControlPolicies(selection)).rejects.toMatchObject({ code: "POLICY_REPOSITORY_MISMATCH" });
+  });
+
+  it("never falls back to file authority if the migration binding disappears", async () => {
+    const selection = await fixture(); const input = migration(selection);
+    const binding = track((await migrateProjectControlPolicies(input)).binding); await binding.close();
+    const original = await fs.readFile(manifestPath(selection), "utf8");
+    await fs.rm(manifestPath(selection));
+    await expect(openProjectControlPolicies(selection)).rejects.toMatchObject({ code: "POLICY_MIGRATION_MANIFEST_MISSING" });
+    await expect(migrateProjectControlPolicies(input)).rejects.toMatchObject({ code: "POLICY_MIGRATION_MANIFEST_MISSING" });
+    expect(input.readLegacySnapshot).toHaveBeenCalledTimes(1);
+    await fs.writeFile(manifestPath(selection), original, { mode: 0o600 });
+    const restored = track((await openProjectControlPolicies(selection))!);
+    expect(await restored.repository.active(restored.deployment_id, key)).toEqual(snapshot().revisions[0]);
   });
 
   it("rejects unvalidated input before creating a binding or initializing policy tables", async () => {

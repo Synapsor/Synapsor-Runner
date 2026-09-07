@@ -35,6 +35,11 @@ import type {
 import { formatDerivedScopePath } from "./derived-scope-display.js";
 import { exploreBoundaryVocabularyGaps } from "./explore-vocabulary.js";
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
+import type { ControlPolicyPointer, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
+import { openBoundProjectControlPolicies, assertProjectControlPolicyBinding, commitImmutableControlPolicies,
+  type BoundProjectPolicyStore } from "./control-policy-store.js";
+import { OPERATOR_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, assertOperatorPolicyRecord,
+  storedOperatorPolicyRecord } from "./control-policy-record.js";
 
 export const AUTO_BOUNDARY_VERSION = "synapsor.auto-boundary.v1";
 export const GENERATION_LOCK_VERSION = "synapsor.generation-lock.v1";
@@ -2195,6 +2200,7 @@ export async function activateExplorationBoundary(input: {
     projectRoot,
     active,
     input.activeSetMode ?? "replace",
+    lock,
   );
   return active;
 }
@@ -2345,10 +2351,80 @@ function normalizeDependentAggregateAuthority(
   return normalized;
 }
 
+type StoredReadPolicySet = {
+  epoch: number; boundaries: ActivatedExplorationBoundary[]; selected_name: string | null;
+  locks: Map<string, GenerationLock>; records: ControlPolicyRevision[];
+};
+
+async function withStoredReadPolicies<T>(projectRoot: string, supplied: BoundProjectPolicyStore | undefined,
+  operation: (binding: BoundProjectPolicyStore, state: StoredReadPolicySet) => Promise<T>): Promise<T | undefined> {
+  const binding = supplied ?? await openBoundProjectControlPolicies(projectRoot);
+  if (!binding) return undefined;
+  try {
+    if (supplied) await assertProjectControlPolicyBinding(projectRoot, supplied);
+    const snapshot = await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id,
+      scope: { level: "operator" }, kinds: ["read", "management"] });
+    const boundaries: ActivatedExplorationBoundary[] = [];
+    const locks = new Map<string, GenerationLock>();
+    let selected: string | null | undefined;
+    for (const revision of snapshot.active) {
+      if (revision.kind === "management" && revision.name !== OPERATOR_READ_SELECTION_KEY.name) continue;
+      const content = revision.content as Record<string, unknown>;
+      if (!content || typeof content !== "object" || content.schema_version !== OPERATOR_POLICY_RECORD_VERSION) throw invalidStoredRead();
+      if (revision.kind === "read") {
+        if (content.type !== "read" || Object.keys(content).sort().join(",") !== "boundary,generation_lock,schema_version,type") throw invalidStoredRead();
+        const boundary = content.boundary as ActivatedExplorationBoundary;
+        const lock = content.generation_lock as GenerationLock;
+        validateActivatedExplorationBoundary(boundary);
+        assertStoredExplorationPolicy(boundary, lock);
+        assertOperatorPolicyRecord(revision, storedReadKey(boundary.pack.name), boundary.activation.digest);
+        boundaries.push(boundary); locks.set(boundary.pack.name, lock);
+      } else {
+        if (content.type !== "read_selection" || Object.keys(content).sort().join(",") !== "schema_version,selected_name,type"
+          || (content.selected_name !== null && typeof content.selected_name !== "string")) throw invalidStoredRead();
+        selected = content.selected_name;
+        assertOperatorPolicyRecord(revision, OPERATOR_READ_SELECTION_KEY, storedReadSelection(selected).authority_digest);
+      }
+    }
+    if (selected === undefined || (boundaries.length ? !boundaries.some((boundary) => boundary.pack.name === selected) : selected !== null)) throw invalidStoredRead();
+    if (boundaries.length) assertActiveReadSetBindings(boundaries);
+    return await operation(binding, { epoch: snapshot.epoch, boundaries, selected_name: selected, locks, records: snapshot.active });
+  } finally { if (!supplied) await binding.close(); }
+}
+
+function storedReadKey(name: string) { return { scope: { level: "operator" as const }, kind: "read" as const, name }; }
+function storedReadSelection(selected: string | null): ControlPolicyRevision {
+  const policy = { type: "read_selection", selected_name: selected };
+  return storedOperatorPolicyRecord(OPERATOR_READ_SELECTION_KEY, canonicalJsonDigest(policy), { schema_version: OPERATOR_POLICY_RECORD_VERSION, ...policy });
+}
+function storedPointer(revision: ControlPolicyRevision): ControlPolicyPointer {
+  return { scope: revision.scope, kind: revision.kind, name: revision.name, revision_id: revision.revision_id };
+}
+function invalidStoredRead(): Error {
+  return Object.assign(new Error("Stored Read authority is invalid. Restore the reviewed repository; file exports cannot replace it."), { code: "POLICY_READ_AUTHORITY_INVALID" });
+}
+
+async function commitStoredReadPolicies(binding: BoundProjectPolicyStore, current: StoredReadPolicySet,
+  incoming: ControlPolicyRevision[], active: ControlPolicyPointer[], actor: string, operation: string): Promise<void> {
+  const changes = active.map((pointer) => ({ name: pointer.name, kind: pointer.kind,
+    before: current.records.find((record) => record.name === pointer.name && record.kind === pointer.kind)?.revision_id ?? null,
+    after: pointer.revision_id }));
+  await commitImmutableControlPolicies(binding, { expected_epoch: current.epoch, revisions: incoming, active,
+    event: { event_id: crypto.randomUUID(), actor, occurred_at: new Date().toISOString(), receipt: { operation, changes, source_database_changed: false } } });
+}
+
 export async function loadActivatedExplorationBoundary(
   projectRoot: string,
-  selector?: { name?: string; digest?: `sha256:${string}` },
+  selector?: { name?: string; digest?: `sha256:${string}`; policyStore?: BoundProjectPolicyStore },
 ): Promise<ActivatedExplorationBoundary> {
+  const stored = await withStoredReadPolicies(projectRoot, selector?.policyStore, async (_binding, current) => current);
+  if (stored) {
+    const selected = stored.boundaries.find((boundary) => selector?.name || selector?.digest
+      ? (!selector.name || selector.name === boundary.pack.name) && (!selector.digest || selector.digest === boundary.activation.digest)
+      : boundary.pack.name === stored.selected_name);
+    if (!selected) throw Object.assign(new Error("Requested exploration boundary is not active."), { code: "ENOENT" });
+    return selected;
+  }
   if (selector?.name || selector?.digest) {
     const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
     const selected = boundaries.find((boundary) =>
@@ -2373,7 +2449,15 @@ export async function loadActivatedExplorationBoundary(
 
 export async function loadActivatedExplorationBoundaries(
   projectRoot: string,
+  policyStore?: BoundProjectPolicyStore,
 ): Promise<ActivatedExplorationBoundary[]> {
+  const stored = await withStoredReadPolicies(projectRoot, policyStore, async (_binding, current) => current);
+  if (stored) {
+    if (!stored.boundaries.length) throw Object.assign(new Error("No exploration boundary is active."), { code: "ENOENT" });
+    // Boundary-set callers use the final entry as the selected default.
+    return [...stored.boundaries.filter((boundary) => boundary.pack.name !== stored.selected_name),
+      stored.boundaries.find((boundary) => boundary.pack.name === stored.selected_name)!];
+  }
   const root = path.resolve(projectRoot);
   try {
     return (await readActivatedExplorationBoundarySet(root)).boundaries;
@@ -2410,6 +2494,20 @@ async function deactivateExplorationBoundaryUnlocked(
   projectRoot: string,
   name?: string,
 ): Promise<{ disabled: string[]; remaining: ActivatedExplorationBoundary[] }> {
+  const stored = await withStoredReadPolicies(projectRoot, undefined, async (binding, current) => {
+    const disabled = current.boundaries.filter((boundary) => !name || boundary.pack.name === name);
+    if (name && !disabled.length) throw new Error(`Boundary ${name} is not active.`);
+    if (!disabled.length) return { disabled: [], remaining: [] };
+    const remaining = current.boundaries.filter((boundary) => name && boundary.pack.name !== name);
+    const selected = remaining.at(-1)?.pack.name ?? null;
+    const selection = storedReadSelection(selected);
+    await commitStoredReadPolicies(binding, current, [selection], [
+      ...disabled.map((boundary) => ({ ...storedReadKey(boundary.pack.name), revision_id: null })),
+      storedPointer(selection),
+    ], "local_operator", "deactivate_read");
+    return { disabled: disabled.map((boundary) => boundary.pack.name), remaining };
+  });
+  if (stored) return stored;
   let active: ActivatedExplorationBoundary[];
   try {
     active = await loadActivatedExplorationBoundaries(projectRoot);
@@ -2533,9 +2631,10 @@ async function writeActivatedExplorationBoundarySet(
   projectRoot: string,
   active: ActivatedExplorationBoundary,
   mode: "replace" | "add",
+  lock: GenerationLock,
 ): Promise<void> {
   await withActiveExplorationBoundaryLock(projectRoot, async () => {
-    await writeActivatedExplorationBoundarySetUnlocked(projectRoot, active, mode);
+    await writeActivatedExplorationBoundarySetUnlocked(projectRoot, active, mode, lock);
   });
 }
 
@@ -2543,7 +2642,23 @@ async function writeActivatedExplorationBoundarySetUnlocked(
   projectRoot: string,
   active: ActivatedExplorationBoundary,
   mode: "replace" | "add",
+  lock: GenerationLock,
 ): Promise<void> {
+  const stored = await withStoredReadPolicies(projectRoot, undefined, async (binding, current) => {
+    const boundaries = [...(mode === "add" ? current.boundaries.filter((boundary) => boundary.pack.name !== active.pack.name) : []), active];
+    assertActiveReadSetBindings(boundaries);
+    assertStoredExplorationPolicy(active, lock);
+    const revision = storedOperatorPolicyRecord(storedReadKey(active.pack.name), active.activation.digest,
+      { schema_version: OPERATOR_POLICY_RECORD_VERSION, type: "read", boundary: active, generation_lock: lock });
+    const selection = storedReadSelection(active.pack.name);
+    await commitStoredReadPolicies(binding, current, [revision, selection], [
+      ...current.boundaries.filter((boundary) => !boundaries.some((next) => next.pack.name === boundary.pack.name))
+        .map((boundary) => ({ ...storedReadKey(boundary.pack.name), revision_id: null })),
+      storedPointer(revision), storedPointer(selection),
+    ], active.activation.actor, "activate_read");
+    return true;
+  });
+  if (stored) return;
   let boundaries: ActivatedExplorationBoundary[] = [];
   if (mode === "add") {
     try {
@@ -2556,6 +2671,26 @@ async function writeActivatedExplorationBoundarySetUnlocked(
     ...boundaries.filter((boundary) => boundary.pack.name !== active.pack.name),
     active,
   ];
+  assertActiveReadSetBindings(boundaries);
+  const set: ActiveExplorationBoundarySet = {
+    schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION,
+    selected_name: active.pack.name,
+    boundaries,
+    updated_at: new Date().toISOString(),
+  };
+  activatedExplorationBoundarySetDigest(boundaries);
+  const legacyPath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
+  const legacySnapshot = await captureOptionalPrivateFile(legacyPath);
+  await writePrivateJsonAtomic(legacyPath, active);
+  try {
+    await persistActivatedExplorationBoundarySet(projectRoot, set);
+  } catch (error) {
+    await restoreOptionalPrivateFile(legacyPath, legacySnapshot);
+    throw error;
+  }
+}
+
+function assertActiveReadSetBindings(boundaries: ActivatedExplorationBoundary[]): void {
   if (boundaries.length > MAX_ACTIVE_EXPLORATION_BOUNDARIES) {
     throw new Error(`Scoped Explore supports at most ${MAX_ACTIVE_EXPLORATION_BOUNDARIES} simultaneously active reviewed boundaries.`);
   }
@@ -2573,22 +2708,6 @@ async function writeActivatedExplorationBoundarySetUnlocked(
     canonicalJsonDigest(boundary.organization_scope ?? null)));
   if (organizationScopes.size !== 1) {
     throw new Error("Active Explore boundaries must use the same reviewed organization-scope posture.");
-  }
-  const set: ActiveExplorationBoundarySet = {
-    schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION,
-    selected_name: active.pack.name,
-    boundaries,
-    updated_at: new Date().toISOString(),
-  };
-  activatedExplorationBoundarySetDigest(boundaries);
-  const legacyPath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
-  const legacySnapshot = await captureOptionalPrivateFile(legacyPath);
-  await writePrivateJsonAtomic(legacyPath, active);
-  try {
-    await persistActivatedExplorationBoundarySet(projectRoot, set);
-  } catch (error) {
-    await restoreOptionalPrivateFile(legacyPath, legacySnapshot);
-    throw error;
   }
 }
 
@@ -2699,8 +2818,16 @@ async function withActiveExplorationBoundaryLock<T>(
 export async function loadGenerationLockForActivatedBoundary(
   projectRootInput: string,
   boundary: ActivatedExplorationBoundary,
+  policyStore?: BoundProjectPolicyStore,
 ): Promise<GenerationLock> {
   const projectRoot = path.resolve(projectRootInput);
+  const stored = await withStoredReadPolicies(projectRoot, policyStore, async (_binding, current) => {
+    const active = current.boundaries.find((entry) => entry.pack.name === boundary.pack.name && entry.activation.digest === boundary.activation.digest);
+    const lock = active && current.locks.get(active.pack.name);
+    if (!lock) throw Object.assign(new Error("The requested Read revision is no longer active in the control store."), { code: "POLICY_READ_AUTHORITY_STALE" });
+    return lock;
+  });
+  if (stored) return stored;
   const snapshotPath = generationLockSnapshotPath(
     projectRoot,
     boundary.generation_lock_fingerprint,

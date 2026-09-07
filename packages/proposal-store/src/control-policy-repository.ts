@@ -17,6 +17,11 @@ export type ControlPolicyRevision = ControlPolicyKey & {
   content_digest: string;
 };
 export type ControlPolicyPointer = ControlPolicyKey & { revision_id: string | null };
+export type ControlPolicyScopeSnapshot = {
+  epoch: number;
+  active: ControlPolicyRevision[];
+  drafts: ControlPolicyRevision[];
+};
 export type ControlPolicyEvent = {
   event_id: string;
   actor: string;
@@ -34,6 +39,7 @@ type Statement = { sql: string; values?: SQLInputValue[]; check?: (rows: Row[]) 
 type PolicyConnection = {
   table(name: string): string;
   collation: string;
+  byteLength(expression: string): string;
   execute(statements: Statement[], mode?: "read" | "write" | "migration"): Promise<Row[][]>;
 };
 
@@ -164,6 +170,45 @@ export class ControlPolicyRepository {
     })) };
   }
 
+  /** A complete, bounded scope view for trusted policy services. Overflow is a
+   * refusal, not a truncated authority set. Null pointers are revocations and
+   * are deliberately absent; immutable history remains separately available. */
+  async scopeSnapshot(input: {
+    deployment_id: string; scope: ControlPolicyScope; kinds: ControlPolicyKind[]; limit?: number; max_bytes?: number;
+  }): Promise<ControlPolicyScopeSnapshot> {
+    const limit = input.limit ?? 64;
+    const maximumBytes = input.max_bytes ?? 128 * 1024 * 1024;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 64) fail("POLICY_LIST_LIMIT_INVALID");
+    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1 || maximumBytes > 128 * 1024 * 1024) fail("POLICY_SNAPSHOT_BYTES_INVALID");
+    if (!input.kinds.length || input.kinds.length > 6 || new Set(input.kinds).size !== input.kinds.length) fail("POLICY_KIND_SELECTION_INVALID");
+    const values = [identifier(input.deployment_id), scopeKey(input.scope), ...input.kinds.map(policyKind), limit + 1];
+    const kinds = input.kinds.map((_, index) => `$${index + 3}`).join(", ");
+    const source = (state: "active" | "drafts") => `FROM ${this.connection.table(state)} a JOIN ${this.connection.table("revisions")} r
+        ON r.deployment_id = a.deployment_id AND r.scope_key = a.scope_key
+        AND r.kind = a.kind AND r.name = a.name AND r.revision_id = a.revision_id
+        WHERE a.deployment_id = $1 AND a.scope_key = $2 AND a.kind IN (${kinds})
+        ORDER BY a.kind COLLATE ${this.connection.collation}, a.name COLLATE ${this.connection.collation}
+        LIMIT $${values.length}`;
+    let count = 0; let bytes = 0;
+    const statements: Statement[] = [{
+      sql: `SELECT epoch FROM ${this.connection.table("deployments")} WHERE deployment_id = $1`,
+      values: [values[0]!], check: exactlyOne,
+    }, ...(["active", "drafts"] as const).map((state): Statement => ({
+      // Check sizes within this transaction before fetching or parsing bodies.
+      sql: `SELECT ${this.connection.byteLength("r.content_json")} AS bytes ${source(state)}`,
+      values,
+      check: (rows) => {
+        count += rows.length;
+        bytes += rows.reduce((sum, row) => sum + epoch(row.bytes), 0);
+        if (count > limit || bytes > maximumBytes) fail("POLICY_SNAPSHOT_TOO_LARGE");
+      },
+    })), ...(["active", "drafts"] as const).map((state): Statement => ({
+      sql: `SELECT r.* ${source(state)}`, values,
+    }))];
+    const rows = await this.connection.execute(statements);
+    return { epoch: epoch(rows[0]![0]!.epoch), active: rows[3]!.map(decodeRevision), drafts: rows[4]!.map(decodeRevision) };
+  }
+
   private pointerStatement(deploymentId: string, key: ControlPolicyKey, state: "active" | "drafts"): Statement {
     return {
       sql: `SELECT r.* FROM ${this.connection.table(state)} a JOIN ${this.connection.table("revisions")} r
@@ -269,6 +314,7 @@ export function sqliteControlPolicyRepository(db: DatabaseSync): ControlPolicyRe
   return new ControlPolicyRepository({
     table: (name) => `"control_policy_${name}"`,
     collation: "BINARY",
+    byteLength: (expression) => `length(CAST(${expression} AS BLOB))`,
     async execute(statements, mode = "read") {
       // No await inside this transaction: another synchronous connection must
       // not block this event loop while it owns the SQLite write lock.
@@ -296,6 +342,7 @@ export function postgresControlPolicyRepository(pool: PostgresRuntimePool, schem
   return new ControlPolicyRepository({
     table: (name) => `"${schema}"."control_policy_${name}"`,
     collation: '"C"',
+    byteLength: (expression) => `octet_length(${expression})`,
     async execute(statements, mode = "read") {
       const client = await pool.connect();
       try {

@@ -8,8 +8,10 @@ import { MAX_ACTIVE_EXPLORATION_BOUNDARIES, assertStoredExplorationPolicy, explo
 import { parseStoredActionRuleAuthority, type ActionRuleAuthorityActivationV1,
   type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import type { ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
+import { OPERATOR_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, OPERATOR_EXECUTION_POLICY_KEY,
+  storedOperatorPolicyRecord } from "./control-policy-record.js";
 
-const VERSION = "synapsor.stored-operator-authority/v1";
+const VERSION = OPERATOR_POLICY_RECORD_VERSION;
 const name = z.string().min(1).max(256);
 const readSelection = z.object({ schema_version: z.literal(VERSION), type: z.literal("read_selection"),
   selected_name: name.nullable() }).strict();
@@ -21,8 +23,8 @@ const executionDocument = z.object({ schema_version: z.literal(VERSION), type: z
   runtime_binding_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/u), policy: z.record(z.unknown()) }).strict();
 const document = z.discriminatedUnion("type", [readSelection, readDocument, actionDocument, executionDocument]);
 const operator = { level: "operator" } as const;
-export const OPERATOR_READ_SELECTION: ControlPolicyKey = { scope: operator, kind: "management", name: "read_selection" };
-export const OPERATOR_EXECUTION_POLICY: ControlPolicyKey = { scope: operator, kind: "execution", name: "supervised_worker" };
+export const OPERATOR_READ_SELECTION = OPERATOR_READ_SELECTION_KEY;
+export const OPERATOR_EXECUTION_POLICY = OPERATOR_EXECUTION_POLICY_KEY;
 
 type ReadPolicy = { type: "read"; boundary: ExplorationBoundaryDraft | ActivatedExplorationBoundary; generation_lock: GenerationLock };
 type ActionPolicy = { type: "action"; authority: ActionRuleAuthorityDraftV1 | ActionRuleAuthorityActivationV1 };
@@ -43,9 +45,7 @@ export function encodeOperatorExecutionPolicy(config: RuntimeConfig): ControlPol
 export function encodeOperatorAuthority(input: StoredOperatorAuthority, context: ValidationContext = {}): ControlPolicyRevision {
   const content = { schema_version: VERSION, ...structuredClone(input) };
   const parsed = parseDocument(content, context);
-  const contentDigest = canonicalJsonDigest(content);
-  return { ...keyFor(parsed), revision_id: `policy:${contentDigest.slice(7)}`,
-    authority_digest: authorityDigest(parsed), content_digest: contentDigest, content };
+  return storedOperatorPolicyRecord(keyFor(parsed), authorityDigest(parsed), content);
 }
 
 export function decodeOperatorAuthority(revision: ControlPolicyRevision, context: ValidationContext = {}): StoredOperatorAuthority {
@@ -67,6 +67,7 @@ export function validateOperatorPolicySnapshot(snapshot: ControlPolicyMigrationS
   }
   let selected: string | null | undefined;
   const reads = new Set<string>();
+  const readBindings = new Set<string>();
   let actions = 0;
   for (const [state, pointers] of [["active", snapshot.active], ["draft", snapshot.drafts]] as const) {
     const seen = new Set<string>();
@@ -94,12 +95,17 @@ export function validateOperatorPolicySnapshot(snapshot: ControlPolicyMigrationS
         const isActive = policy.type === "read" ? typeof policy.boundary.activation === "object" : policy.authority.state === "active";
         if (isActive !== (state === "active")) fail("POLICY_ACTIVATION_STATE_MISMATCH");
         if (state === "active") {
-          if (policy.type === "read") reads.add(policy.boundary.pack.name);
+          if (policy.type === "read") {
+            reads.add(policy.boundary.pack.name);
+            readBindings.add(canonicalJsonDigest({ source: policy.boundary.source, profile: policy.boundary.deployment_profile,
+              trusted_context: policy.boundary.trusted_context, organization_scope: policy.boundary.organization_scope ?? null }));
+          }
           else actions++;
         }
       }
     }
   }
+  if (readBindings.size > 1) fail("POLICY_ACTIVE_READ_BINDINGS_MISMATCH");
   if (reads.size > MAX_ACTIVE_EXPLORATION_BOUNDARIES || actions > 1 || selected === undefined
     || (reads.size === 0 ? selected !== null : selected === null || !reads.has(selected))) fail("POLICY_ACTIVE_SELECTION_INVALID");
   // A stale Action dependency remains stale. Migration must not rebind its

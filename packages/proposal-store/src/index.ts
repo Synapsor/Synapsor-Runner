@@ -119,6 +119,7 @@ export {
   type ControlPolicyKey,
   type ControlPolicyRevision,
   type ControlPolicyPointer,
+  type ControlPolicyScopeSnapshot,
   type ControlPolicyEvent,
   type ControlPolicyCommit,
 } from "./control-policy-repository.js";

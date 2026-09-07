@@ -33,6 +33,28 @@ function imported(revisions = [revision("v1")]) {
 }
 
 describe("control policy repository storage foundation", () => {
+  it("reads complete scope snapshots with revocations, drafts and no other owner's metadata", async () => {
+    const { policies } = store(); await policies.initialize();
+    await policies.importDeployment(imported([revision("acme", owner("acme")), revision("beta", owner("beta"))]));
+    const draft = revision("acme-draft", owner("acme"), { quantity: 9 });
+    await policies.commit({ deployment_id: "deployment-one", expected_epoch: 1, revisions: [draft], active: [],
+      drafts: [{ ...key(owner("acme")), revision_id: draft.revision_id }], event: event("draft") });
+    expect(await policies.scopeSnapshot({ deployment_id: "deployment-one", scope: owner("acme"), kinds: ["action"] }))
+      .toEqual({ epoch: 2, active: [revision("acme", owner("acme"))], drafts: [draft] });
+    await expect(policies.scopeSnapshot({ deployment_id: "deployment-one", scope: owner("acme"), kinds: ["action"], limit: 1 }))
+      .rejects.toMatchObject({ code: "POLICY_SNAPSHOT_TOO_LARGE" });
+    await expect(policies.scopeSnapshot({ deployment_id: "deployment-one", scope: owner("acme"), kinds: ["action"], max_bytes: 1 }))
+      .rejects.toMatchObject({ code: "POLICY_SNAPSHOT_TOO_LARGE" });
+    await policies.commit({ deployment_id: "deployment-one", expected_epoch: 2, revisions: [],
+      active: [{ ...key(owner("acme")), revision_id: null }], event: event("revoke") });
+    expect(await policies.scopeSnapshot({ deployment_id: "deployment-one", scope: owner("acme"), kinds: ["action"] }))
+      .toEqual({ epoch: 3, active: [], drafts: [draft] });
+    expect(await policies.scopeSnapshot({ deployment_id: "deployment-one", scope: operator, kinds: ["read", "action"] }))
+      .toEqual({ epoch: 3, active: [], drafts: [] });
+    await expect(policies.scopeSnapshot({ deployment_id: "deployment-one", scope: operator, kinds: ["action", "action"] }))
+      .rejects.toMatchObject({ code: "POLICY_KIND_SELECTION_INVALID" });
+  });
+
   it("keeps disabled revisions distinct from active authority in one exact snapshot", async () => {
     const { policies } = store(); await policies.initialize(); await policies.importDeployment(imported());
     const disabled = revision("draft-v2", operator, { quantity: { maximum: 8 } });
