@@ -395,6 +395,7 @@ type WorkbenchSessionState = {
   trustedContext: Record<string, string>;
   askAuthorityRefreshPending?: boolean;
   boundaryPreview?: {
+    authoring?: ReadAuthoringBindings;
     digest: `sha256:${string}`;
     revision: number;
     actor: string;
@@ -2548,10 +2549,9 @@ async function handleRequest(input: {
       throw new Error("Boundary activation requires expected_digest, actor, exact confirmation, and every reviewed decision.");
     }
     const preview = bootstrapState.boundaryPreview;
-    const draft = JSON.parse(
-      await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8"),
-    ) as ExplorationBoundaryDraft;
-    const progress = await readBoundaryReviewProgress(projectRoot, draft);
+    const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    assertWorkbenchReviewBinding(body, savedReview.authoring);
+    const { draft, progress } = savedReview;
     if (progress?.policy_migration.status === "review_required") {
       sendJson(response, 409, {
         ok: false,
@@ -2582,6 +2582,7 @@ async function handleRequest(input: {
       return;
     }
     const candidate = body.candidate as unknown as ExplorationBoundaryDraft;
+    assertWorkbenchReviewBinding({ authoring_binding: preview.authoring }, savedReview.authoring);
     const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
       projectRoot,
       draft,
@@ -2600,6 +2601,7 @@ async function handleRequest(input: {
       reviewDraft: reviewAuthority.reviewDraft,
       generationLock: reviewAuthority.generationLock,
       expectedDigest: body.expected_digest,
+      expectedAuthoring: preview.authoring,
       actor: body.actor,
       confirmation: body.confirmation,
       confirmedDecisions: body.confirmed_decisions,
@@ -2691,8 +2693,9 @@ async function handleRequest(input: {
     if (!actor || actor.length > 128 || /[\u0000-\u001f\u007f]/.test(actor)) {
       throw new Error("Enter who reviewed this access before creating the final fingerprint.");
     }
-    const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
-    const progress = await readBoundaryReviewProgress(projectRoot, draft);
+    const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    assertWorkbenchReviewBinding(body, savedReview.authoring);
+    const { draft, progress } = savedReview;
     const currentRevision = progress?.revision ?? 0;
     if (body.expected_revision !== currentRevision) {
       sendJson(response, 409, {
@@ -2747,7 +2750,10 @@ async function handleRequest(input: {
       inspection,
       candidate: reviewed.candidate,
     });
+    const currentReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    assertWorkbenchReviewBinding({ authoring_binding: savedReview.authoring }, currentReview.authoring);
     bootstrapState.boundaryPreview = {
+      ...(savedReview.authoring ? { authoring: savedReview.authoring } : {}),
       digest: reviewed.digest,
       revision: currentRevision,
       actor,
@@ -2757,6 +2763,7 @@ async function handleRequest(input: {
       ok: true,
       ...reviewed,
       review_revision: currentRevision,
+      ...(savedReview.authoring ? { authoring_binding: savedReview.authoring } : {}),
       source_database_changed: false,
     });
     return;

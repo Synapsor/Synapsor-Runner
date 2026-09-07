@@ -1,17 +1,9 @@
-import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { openBoundProjectControlPolicies, type BoundProjectPolicyStore } from "./control-policy-store.js";
 import { OperatorAuthorityRepository, type OperatorAuthorityState } from "./control-policy-operator-repository.js";
 import type { StoredReadAuthoring, PreparedReadEntry } from "./control-policy-read-authoring.js";
 import type { BoundaryReviewProgress } from "./boundary-review-domain.js";
-import { OPERATOR_READ_AUTHORING_KEY } from "./control-policy-record.js";
-
-export type ReadAuthoringBindings = {
-  repository_id: string;
-  deployment_id: string;
-  project_id: string;
-  epoch: number;
-  revision_id: string;
-};
+import { OPERATOR_READ_AUTHORING_KEY, assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
+export { assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 
 export type ProjectReadAuthoring = {
   bindings: ReadAuthoringBindings;
@@ -27,12 +19,6 @@ export async function readProjectReadAuthoring(projectRoot: string): Promise<Pro
   try {
     return authoringState(binding, await new OperatorAuthorityRepository(binding).currentReadState());
   } finally { await binding.close(); }
-}
-
-export function assertReadAuthoringBindings(expected: ReadAuthoringBindings | undefined, current: ReadAuthoringBindings): void {
-  if (!expected || canonicalJsonDigest(expected) !== canonicalJsonDigest(current)) {
-    fail("POLICY_AUTHORING_REVIEW_CHANGED", "The saved Read review changed. Reopen the current draft before applying this edit.");
-  }
 }
 
 /** A complete replacement is one transaction: disabled candidates, all saved

@@ -63,7 +63,7 @@ import {
   readBoundaryReviewProgress,
   saveBoundaryReviewProgress,
 } from "./boundary-review-persistence.js";
-import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { assertReadAuthoringBindings, readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { displayPath } from "./onboarding.js";
 import { sharedPostgresLedgerDoctorChecks } from "./doctor-domain.js";
 import {
@@ -13836,6 +13836,7 @@ export async function boundaryActivateCommand(
         throw error;
       })
     : [];
+  let expectedAuthoring = context.bundle.mutation_bindings.authoring;
   if (context.progress?.policy_migration.status === "review_required") {
     throw new Error([
       `Boundary ${context.candidate.pack.name} has legacy project-wide review settings that are not yet isolated to its immutable boundary identity.`,
@@ -13920,6 +13921,7 @@ export async function boundaryActivateCommand(
     const decisionEnvelope = {
       schema_version: "synapsor.boundary-activation-decision.v1",
       review_bundle_digest: context.bundle.bundle_digest,
+      ...(expectedAuthoring ? { authoring_binding: expectedAuthoring } : {}),
       boundary_digest: context.bundle.candidate_digest,
       confirmed_decision_ids: context.bundle.decisions.map((decision) => decision.id).sort(),
       schema_fingerprint: context.bundle.authority.schema_fingerprint,
@@ -14002,7 +14004,7 @@ export async function boundaryActivateCommand(
       now: now.toISOString(),
     });
     try {
-      await saveBoundaryReviewProgress(projectRoot, progress, context.bundle.mutation_bindings.authoring);
+      expectedAuthoring = await saveBoundaryReviewProgress(projectRoot, progress, expectedAuthoring);
     } catch (error) {
       store.setRunnerState(key, {
         status: "consumed_review_persistence_failed",
@@ -14078,6 +14080,7 @@ export async function boundaryActivateCommand(
       reviewDraft: reviewAuthority.reviewDraft,
       generationLock: reviewAuthority.generationLock,
       expectedDigest: context.bundle.candidate_digest,
+      expectedAuthoring,
       actor: actor!,
       confirmation: expectedConfirmation,
       confirmedDecisions: context.candidate.unresolved_decisions,
@@ -14680,6 +14683,11 @@ function assertCurrentBoundaryReviewBundle(
   if (suppliedDigest !== current.bundle_digest
     || supplied.candidate_digest !== current.candidate_digest) {
     throw new Error("Boundary review bundle is stale or belongs to a different candidate; export the current review again.");
+  }
+  if (current.mutation_bindings.authoring) {
+    assertReadAuthoringBindings(supplied.mutation_bindings?.authoring, current.mutation_bindings.authoring);
+  } else if (supplied.mutation_bindings?.authoring) {
+    throw new Error("The review repository changed. Export and review the current bundle before activation.");
   }
 }
 

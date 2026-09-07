@@ -38,8 +38,8 @@ import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js"
 import type { ControlPolicyPointer, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 import { openBoundProjectControlPolicies, assertProjectControlPolicyBinding, commitImmutableControlPolicies,
   type BoundProjectPolicyStore } from "./control-policy-store.js";
-import { OPERATOR_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, assertOperatorPolicyRecord,
-  storedOperatorPolicyRecord } from "./control-policy-record.js";
+import { OPERATOR_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, OPERATOR_READ_AUTHORING_KEY, assertOperatorPolicyRecord,
+  assertReadAuthoringBindings, type ReadAuthoringBindings, storedOperatorPolicyRecord } from "./control-policy-record.js";
 
 export const AUTO_BOUNDARY_VERSION = "synapsor.auto-boundary.v1";
 export const GENERATION_LOCK_VERSION = "synapsor.generation-lock.v1";
@@ -2103,6 +2103,7 @@ export async function activateExplorationBoundary(input: {
   candidate: ExplorationBoundaryDraft;
   reviewDraft?: ExplorationBoundaryDraft;
   generationLock?: GenerationLock;
+  expectedAuthoring?: ReadAuthoringBindings;
   expectedDigest: string;
   actor: string;
   confirmation: string;
@@ -2120,6 +2121,7 @@ export async function activateExplorationBoundary(input: {
       | "activate_for_no_model";
   };
 }): Promise<ActivatedExplorationBoundary> {
+  input = structuredClone(input);
   const projectRoot = path.resolve(input.projectRoot);
   const draftPath = path.join(projectRoot, DEFAULT_GENERATED_DIR, "exploration-boundary.draft.json");
   const lockPath = path.join(projectRoot, ".synapsor/generation-lock.json");
@@ -2217,6 +2219,7 @@ export async function activateExplorationBoundary(input: {
     active,
     input.activeSetMode ?? "replace",
     lock,
+    { expected: input.expectedAuthoring, candidate: input.candidate },
   );
   return active;
 }
@@ -2369,7 +2372,7 @@ function normalizeDependentAggregateAuthority(
 
 type StoredReadPolicySet = {
   epoch: number; boundaries: ActivatedExplorationBoundary[]; selected_name: string | null;
-  locks: Map<string, GenerationLock>; records: ControlPolicyRevision[];
+  locks: Map<string, GenerationLock>; records: ControlPolicyRevision[]; drafts: ControlPolicyRevision[];
 };
 
 async function withStoredReadPolicies<T>(projectRoot: string, supplied: BoundProjectPolicyStore | undefined,
@@ -2404,7 +2407,7 @@ async function withStoredReadPolicies<T>(projectRoot: string, supplied: BoundPro
     }
     if (selected === undefined || (boundaries.length ? !boundaries.some((boundary) => boundary.pack.name === selected) : selected !== null)) throw invalidStoredRead();
     if (boundaries.length) assertActiveReadSetBindings(boundaries);
-    return await operation(binding, { epoch: snapshot.epoch, boundaries, selected_name: selected, locks, records: snapshot.active });
+    return await operation(binding, { epoch: snapshot.epoch, boundaries, selected_name: selected, locks, records: snapshot.active, drafts: snapshot.drafts });
   } finally { if (!supplied) await binding.close(); }
 }
 
@@ -2648,9 +2651,10 @@ async function writeActivatedExplorationBoundarySet(
   active: ActivatedExplorationBoundary,
   mode: "replace" | "add",
   lock: GenerationLock,
+  review: { expected?: ReadAuthoringBindings; candidate: ExplorationBoundaryDraft },
 ): Promise<void> {
   await withActiveExplorationBoundaryLock(projectRoot, async () => {
-    await writeActivatedExplorationBoundarySetUnlocked(projectRoot, active, mode, lock);
+    await writeActivatedExplorationBoundarySetUnlocked(projectRoot, active, mode, lock, review);
   });
 }
 
@@ -2659,8 +2663,10 @@ async function writeActivatedExplorationBoundarySetUnlocked(
   active: ActivatedExplorationBoundary,
   mode: "replace" | "add",
   lock: GenerationLock,
+  review: { expected?: ReadAuthoringBindings; candidate: ExplorationBoundaryDraft },
 ): Promise<void> {
   const stored = await withStoredReadPolicies(projectRoot, undefined, async (binding, current) => {
+    assertStoredReadActivationReview(binding, current, review, lock);
     const boundaries = [...(mode === "add" ? current.boundaries.filter((boundary) => boundary.pack.name !== active.pack.name) : []), active];
     assertActiveReadSetBindings(boundaries);
     assertStoredExplorationPolicy(active, lock);
@@ -2675,6 +2681,7 @@ async function writeActivatedExplorationBoundarySetUnlocked(
     return true;
   });
   if (stored) return;
+  if (review.expected) throw invalidStoredReadReview();
   let boundaries: ActivatedExplorationBoundary[] = [];
   if (mode === "add") {
     try {
@@ -2704,6 +2711,36 @@ async function writeActivatedExplorationBoundarySetUnlocked(
     await restoreOptionalPrivateFile(legacyPath, legacySnapshot);
     throw error;
   }
+}
+
+function invalidStoredReadReview(): Error {
+  return Object.assign(new Error("The saved Read review changed or no longer matches this activation. Reopen and confirm its current revision."),
+    { code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+}
+
+function assertStoredReadActivationReview(binding: BoundProjectPolicyStore, current: StoredReadPolicySet,
+  review: { expected?: ReadAuthoringBindings; candidate: ExplorationBoundaryDraft }, lock: GenerationLock): void {
+  const record = current.records.find((item) => item.kind === OPERATOR_READ_AUTHORING_KEY.kind && item.name === OPERATOR_READ_AUTHORING_KEY.name);
+  // Older internal imports can have active authority without prepared authoring.
+  // Once authoring exists, every activation must carry its original review token.
+  if (!record) { if (review.expected) throw invalidStoredReadReview(); return; }
+  assertReadAuthoringBindings(review.expected, { repository_id: binding.repository_id, deployment_id: binding.deployment_id,
+    project_id: binding.project_id, epoch: current.epoch, revision_id: record.revision_id });
+  const content = record.content;
+  if (!isRecord(content) || content.schema_version !== OPERATOR_POLICY_RECORD_VERSION || content.type !== "read_authoring"
+    || !Array.isArray(content.entries)) throw invalidStoredReadReview();
+  const { schema_version: _version, ...policy } = content;
+  assertOperatorPolicyRecord(record, OPERATOR_READ_AUTHORING_KEY, canonicalJsonDigest(policy));
+  const selected = content.entries.filter((entry) => isRecord(entry) && isRecord(entry.progress)
+    && entry.progress.boundary_id === content.selected_boundary_id);
+  const entry = selected[0];
+  if (selected.length !== 1 || !isRecord(entry) || !isRecord(entry.progress)
+    || canonicalJsonDigest(entry.progress.candidate ?? null) !== canonicalJsonDigest(review.candidate)
+    || canonicalJsonDigest(entry.candidate_lock ?? null) !== canonicalJsonDigest(lock)) throw invalidStoredReadReview();
+  const draft = current.drafts.find((item) => item.kind === "read" && item.name === review.candidate.pack.name);
+  const expected = storedOperatorPolicyRecord(storedReadKey(review.candidate.pack.name), explorationBoundaryCandidateDigest(review.candidate),
+    { schema_version: OPERATOR_POLICY_RECORD_VERSION, type: "read", boundary: review.candidate, generation_lock: lock });
+  if (!draft || canonicalJsonDigest(draft) !== canonicalJsonDigest(expected)) throw invalidStoredReadReview();
 }
 
 function assertActiveReadSetBindings(boundaries: ActivatedExplorationBoundary[]): void {

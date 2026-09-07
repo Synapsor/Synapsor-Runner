@@ -29,7 +29,8 @@ import { commitBoundaryRescan, prepareBoundaryRescan, readBoundaryRescanReport }
 import { commitBoundaryResourceReviewMutation, inspectBoundaryResourceReview, prepareBoundaryResourceReviewMutation } from "./boundary-review-mutation.js";
 import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
 import { readBoundaryReviewProgress, saveBoundaryReviewProgress } from "./boundary-review-persistence.js";
-import { loadBoundaryReviewContext } from "./boundary-commands.js";
+import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { boundaryActivateCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
 import { startLocalUiServer } from "./local-ui.js";
 import { createSavedBoundary, deleteSavedBoundary, discardOnlySavedBoundaryReview, renameSavedBoundary, switchSavedBoundary,
   resolveSavedBoundaryReviewAuthority, synchronizeBoundaryLibrary } from "./boundary-library.js";
@@ -601,6 +602,157 @@ for (const backend of ["sqlite", "postgres"] as const) {
           const changed = await policies.current();
           expect(changed.active.filter(({ policy }) => policy.type !== "read_authoring"))
             .toEqual(original.active.filter(({ policy }) => policy.type !== "read_authoring"));
+        } finally { await server.close(); }
+      });
+    });
+
+    it("binds saved Read activation to the exact original selection, candidate and repository epoch", async () => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture();
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare" });
+        const shown = (await readProjectReadAuthoring(projectRoot))!;
+        const entry = shown.selected!;
+        const activation = (candidate = entry.progress.candidate) => ({ projectRoot, candidate,
+          reviewDraft: entry.draft, generationLock: entry.candidate_lock,
+          expectedDigest: explorationBoundaryCandidateDigest(candidate), actor: "reviewer",
+          confirmation: `ACTIVATE ${explorationBoundaryCandidateDigest(candidate)}`,
+          confirmedDecisions: candidate.unresolved_decisions, currentInspection: fixture().inspection });
+        const before = await policies.current();
+        await expect(activateExplorationBoundary(activation())).rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        const forged = structuredClone(entry.progress.candidate); forged.budgets.max_top_n = 7;
+        await expect(activateExplorationBoundary({ ...activation(forged), expectedAuthoring: shown.bindings }))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        expect(await policies.current()).toEqual(before);
+        const progress = createBoundaryReviewProgress({ draft: entry.draft, candidate: forged,
+          previous: entry.progress, confirmedDecisions: forged.unresolved_decisions, revision: entry.progress.revision + 1 });
+        const next = await saveBoundaryReviewProgress(projectRoot, progress, shown.bindings);
+        await expect(activateExplorationBoundary({ ...activation(), expectedAuthoring: shown.bindings }))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        const active = await activateExplorationBoundary({ ...activation(forged), expectedAuthoring: next });
+        expect(active.activation.digest).toBe(explorationBoundaryCandidateDigest(forged));
+        await expect(activateExplorationBoundary({ ...activation(forged), expectedAuthoring: next }))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        expect((await readProjectReadAuthoring(projectRoot))!.selected!.progress).toEqual(progress);
+      });
+    });
+
+    it("refuses stale CLI consent and keeps the revised draft available for a new confirmation", async () => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture();
+        for (const [index, domain] of ["inventory", "university"].entries()) {
+          authoring.entries[index]!.catalog = readAuthoringCatalog(fixture(domain).build);
+        }
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare" });
+        const original = await policies.current();
+        const args = ["--project-root", projectRoot, "--actor", "reviewer"];
+        const session = { presentationMode: "conversation" as const, chooseResource: async () => undefined,
+          editFieldTiers: async () => undefined, promptText: async () => "reviewer", present: () => undefined,
+          confirm: async () => {
+            const shown = (await readProjectReadAuthoring(projectRoot))!; const entry = shown.selected!;
+            const candidate = structuredClone(entry.progress.candidate); candidate.budgets.max_top_n = 11;
+            await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: entry.draft, candidate,
+              previous: entry.progress, confirmedDecisions: candidate.unresolved_decisions, revision: entry.progress.revision + 1 }), shown.bindings);
+            return true;
+          } };
+        await expect(boundaryActivateCommand(args, async () => fixture().inspection, session))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        expect((await policies.current()).active.filter(({ policy }) => policy.type !== "read_authoring"))
+          .toEqual(original.active.filter(({ policy }) => policy.type !== "read_authoring"));
+        await expect(boundaryActivateCommand(args, async () => fixture().inspection, { ...session, confirm: async () => true })).resolves.toBe(0);
+        expect((await loadActivatedExplorationBoundary(projectRoot)).budgets.max_top_n).toBe(11);
+      });
+    });
+
+    it("rejects an old headless bundle even when a later review has the same authority digest", async () => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture();
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare" });
+        const context = await loadBoundaryReviewContext(projectRoot);
+        const file = path.join(projectRoot, "review.json");
+        await fs.writeFile(file, JSON.stringify(context.bundle));
+        await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: context.draft, candidate: context.candidate,
+          previous: context.progress, confirmedDecisions: context.candidate.unresolved_decisions, revision: context.progress!.revision + 1,
+          actor: "different_reviewer" }), context.bundle.mutation_bindings.authoring);
+        const current = await loadBoundaryReviewContext(projectRoot);
+        expect(current.bundle.bundle_digest).toBe(context.bundle.bundle_digest);
+        const before = await policies.current();
+        const args = ["--project-root", projectRoot, "--review-bundle", file, "--headless",
+          "--confirm", `ACTIVATE ${context.bundle.candidate_digest}`];
+        await expect(boundaryActivateCommand(args, async () => fixture().inspection))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        await fs.writeFile(file, JSON.stringify({ ...current.bundle, mutation_bindings: undefined }));
+        await expect(boundaryActivateCommand(args, async () => fixture().inspection))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        expect(await policies.current()).toEqual(before);
+      });
+    });
+
+    it.each(["preview", "activate"])("refuses a Workbench %s changed during inspection and resumes the exact review", async (phase) => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture();
+        for (const [index, domain] of ["inventory", "university"].entries()) {
+          authoring.entries[index]!.catalog = readAuthoringCatalog(fixture(domain).build);
+        }
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare" });
+        const initial = await policies.current();
+        let changeDuringInspection: (() => Promise<void>) | undefined;
+        const inspect = vi.fn(async () => {
+          const change = changeDuringInspection; changeDuringInspection = undefined;
+          await change?.(); return fixture().inspection;
+        });
+        const server = await startLocalUiServer({ projectRoot, boundaryRoot: path.join(projectRoot, "synapsor/generated"),
+          configPath: path.join(projectRoot, "synapsor.runner.json"), storePath: path.join(projectRoot, "control.db"),
+          token: "activation-review-token", csrfToken: "activation-csrf", schemaInspector: inspect });
+        try {
+          const base = `http://${server.host}:${server.port}`;
+          const bootstrap = await fetch(server.url, { redirect: "manual" });
+          expect(bootstrap.status).toBe(303);
+          const headers = { cookie: bootstrap.headers.get("set-cookie")!.split(";", 1)[0]!,
+            "content-type": "application/json", "x-synapsor-csrf": "activation-csrf" };
+          const post = (route: string, body: unknown) => fetch(`${base}/api/boundary/${route}`, { method: "POST", headers, body: JSON.stringify(body) });
+          const get = async () => {
+            const response = await fetch(`${base}/api/boundary`, { headers });
+            const payload = await response.json(); expect(response.status, JSON.stringify(payload)).toBe(200); return payload;
+          };
+          const shown = await get();
+          const body = { candidate: shown.candidate, confirmed_decisions: shown.candidate.unresolved_decisions,
+            actor: "reviewer", expected_revision: shown.review_progress.revision,
+            expected_digest: shown.candidate_digest, confirmation: `ACTIVATE ${shown.candidate_digest}`,
+            authoring_binding: shown.authoring_binding };
+          const missing = await post("preview", { ...body, authoring_binding: undefined });
+          expect(missing.status).toBe(409); expect(inspect).not.toHaveBeenCalled();
+          const preview = await post("preview", body);
+          const previewBody = await preview.json(); expect(preview.status, JSON.stringify(previewBody)).toBe(200);
+          expect(await policies.current()).toEqual(initial);
+          changeDuringInspection = async () => {
+            const current = (await readProjectReadAuthoring(projectRoot))!;
+            const selected = current.selected!;
+            const candidate = structuredClone(selected.progress.candidate); candidate.budgets.max_top_n = 6;
+            await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: selected.draft, candidate,
+              previous: selected.progress, confirmedDecisions: candidate.unresolved_decisions, revision: selected.progress.revision + 1 }), current.bindings);
+          };
+          const stale = await post(phase, body);
+          expect(stale.status, JSON.stringify(await stale.json())).toBe(409);
+          const changed = await policies.current();
+          expect(changed.active.filter(({ policy }) => policy.type !== "read_authoring"))
+            .toEqual(initial.active.filter(({ policy }) => policy.type !== "read_authoring"));
+          const refreshed = await get();
+          const retry = { ...body, candidate: refreshed.candidate, confirmed_decisions: refreshed.candidate.unresolved_decisions,
+            expected_revision: refreshed.review_progress.revision, authoring_binding: refreshed.authoring_binding,
+            expected_digest: refreshed.candidate_digest, confirmation: `ACTIVATE ${refreshed.candidate_digest}` };
+          const oldPreview = await post("activate", retry);
+          expect(oldPreview.status).toBe(409);
+          const renewed = await post("preview", retry);
+          expect(renewed.status, JSON.stringify(await renewed.json())).toBe(200);
+          const activated = await post("activate", retry);
+          const result = await activated.json(); expect(activated.status, JSON.stringify(result)).toBe(200);
+          expect(result.active.activation.digest).toBe(refreshed.candidate_digest);
+          expect(result.source_database_changed).toBe(false);
+          expect((await readProjectReadAuthoring(projectRoot))!.selected!.progress.candidate).toEqual(refreshed.candidate);
         } finally { await server.close(); }
       });
     });

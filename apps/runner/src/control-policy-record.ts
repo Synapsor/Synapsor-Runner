@@ -6,6 +6,21 @@ export const OPERATOR_READ_SELECTION_KEY: ControlPolicyKey = { scope: { level: "
 export const OPERATOR_READ_AUTHORING_KEY: ControlPolicyKey = { scope: { level: "operator" }, kind: "management", name: "read_authoring" };
 export const OPERATOR_EXECUTION_POLICY_KEY: ControlPolicyKey = { scope: { level: "operator" }, kind: "execution", name: "supervised_worker" };
 
+export type ReadAuthoringBindings = {
+  repository_id: string;
+  deployment_id: string;
+  project_id: string;
+  epoch: number;
+  revision_id: string;
+};
+
+export function assertReadAuthoringBindings(expected: ReadAuthoringBindings | undefined, current: ReadAuthoringBindings): void {
+  if (!expected || canonicalJsonDigest(expected) !== canonicalJsonDigest(current)) {
+    throw Object.assign(new Error("The saved Read review changed. Reopen the current draft before applying this decision."),
+      { code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+  }
+}
+
 /** Envelope integrity only. Callers must still use the existing Read, Action
  * and execution validators; a valid hash is never sufficient authority. */
 export function storedOperatorPolicyRecord(key: ControlPolicyKey, authorityDigest: string, content: unknown): ControlPolicyRevision {

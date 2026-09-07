@@ -3,6 +3,37 @@ import { describe, expect, it } from "vitest";
 import { renderBoundaryWorkbench } from "./boundary-workbench.js";
 
 describe("Auto Boundary Workbench renderer", () => {
+  it("sends original review bindings for preview and activation and advances them only on successful saves", async () => {
+    const script = renderBoundaryWorkbench("test-csrf").match(/<script>([\s\S]*?)<\/script>/)![1]!;
+    const start = script.indexOf("const post=async");
+    const end = script.indexOf("const currentResource=", start);
+    expect(start).toBeGreaterThan(0); expect(end).toBeGreaterThan(start);
+    const initial = { repository_id: "repository", deployment_id: "deployment", project_id: "project", epoch: 3, revision_id: "original" };
+    const next = { ...initial, epoch: 4, revision_id: "saved" };
+    const sent: { url: string; body: Record<string, unknown> }[] = [];
+    let response: { ok: boolean; payload: Record<string, unknown> } = { ok: true, payload: { ok: true } };
+    const context = vm.createContext({ structuredClone, initial,
+      fetch: async (url: string, request: { body: string }) => { sent.push({ url, body: JSON.parse(request.body) }); return response; } });
+    const api = vm.runInContext(`let authoringBinding=structuredClone(initial); const csrf="test-csrf";
+      const readPayload=async r=>r.payload; const handleSessionFailure=()=>false;
+      ${script.slice(start, end)}
+      ({post, binding:()=>authoringBinding});`, context) as { post(url: string, body: unknown): Promise<unknown>; binding(): unknown };
+    for (const route of ["preview", "activate"]) {
+      await api.post(`/api/boundary/${route}`, { candidate: { name: "reviewed" } });
+      expect(sent.at(-1)!.body.authoring_binding).toEqual(initial);
+    }
+    response = { ok: false, payload: { ok: false, error: "Review changed", authoring_binding: next } };
+    await expect(api.post("/api/boundary/progress", {})).rejects.toThrow("Review changed");
+    expect(api.binding()).toEqual(initial);
+    response = { ok: true, payload: { ok: true, authoring_binding: next } };
+    await api.post("/api/boundary/progress", {});
+    expect(api.binding()).toEqual(next);
+    await api.post("/api/boundary/preview", {});
+    expect(sent.at(-1)!.body.authoring_binding).toEqual(next);
+    await api.post("/api/ask", { question: "Stock?" });
+    expect(sent.at(-1)!.body).toEqual({ question: "Stock?" });
+  });
+
   it("ships an executable code-editor playground with parameterized SQL as a primary path", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
