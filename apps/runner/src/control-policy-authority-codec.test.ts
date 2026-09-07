@@ -19,6 +19,7 @@ import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { decodeOperatorAuthority, encodeOperatorAuthority, encodeOperatorExecutionPolicy, OPERATOR_READ_SELECTION, OPERATOR_READ_AUTHORING, OPERATOR_EXECUTION_POLICY,
   validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
 import { migrateProjectControlPolicies, openProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
+import * as policyStoreAccess from "./control-policy-store.js";
 import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
 import { createOptionalActionRuleRuntimeServices, createOptionalReadActionRuleRuntimeServices } from "./semantic-action-runtime.js";
 import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
@@ -2216,6 +2217,151 @@ for (const backend of ["sqlite", "postgres"] as const) {
           expect(unavailable).not.toHaveBeenCalled();
           expect(await wrongStore.controlPolicies.identity()).toBeTruthy();
         } finally { wrongStore.close(); }
+      });
+    });
+
+    it.each(["read", "read_set", "read_inspection", "read_scope", "read_budget", "action", "action_loader", "lazy_action", "lazy_bind", "optional_init", "queue"])("requires an explicit runtime restart after repository cutover: %s", async (mode) => {
+      await useRepository(async ({ projectRoot, config: storageConfig }) => {
+        const source = fixture();
+        const draft = actionFixture(source, true);
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        await activateActionRuleAuthority({ projectRoot, name: draft.authority.name, expected_digest: draft.digest,
+          confirmation: `ACTIVATE ${draft.digest}`, actor: "operator" });
+        // Stage the exact imported repository before exposing its locator to a
+        // client that started with the same legacy file authority.
+        const locator = path.join(projectRoot, ".synapsor/control-policy");
+        const staged = path.join(projectRoot, ".synapsor/staged-control-policy");
+        await fs.rename(locator, staged);
+        let cutover = false;
+        const publish = async () => { if (!cutover) { await fs.rename(staged, locator); cutover = true; } };
+        await writeAutoBoundaryArtifacts({ projectRoot, build: source.build, force: true });
+        const readDigest = explorationBoundaryCandidateDigest(source.candidate);
+        await activateExplorationBoundary({ projectRoot, candidate: source.candidate, expectedDigest: readDigest,
+          actor: "operator", confirmation: `ACTIVATE ${readDigest}`, confirmedDecisions: source.candidate.unresolved_decisions,
+          currentInspection: source.inspection });
+        if (mode !== "lazy_action" && mode !== "lazy_bind") {
+          await writeActionRuleAuthorityDraft(projectRoot, draft);
+          await activateActionRuleAuthority({ projectRoot, name: draft.authority.name, expected_digest: draft.digest,
+            confirmation: `ACTIVATE ${draft.digest}`, actor: "operator" });
+        }
+        const config = executionConfig(); config.action_rules!.project_root = projectRoot;
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        config.supervised_worker!.outcomes![0]!.action_boundary_digest = draft.authority.action_boundary.digest;
+        const store = createDefaultRuntimeStore(config, process.env, path.join(projectRoot, "control.db"));
+        const key = Buffer.alloc(32, 73);
+        const createProposal = vi.spyOn(store, "createProposal");
+        const audit = vi.spyOn(store, "recordQueryAudit");
+        const env = { ...process.env, DATABASE_URL: "postgresql://unused/metadata_fixture",
+          SYNAPSOR_TENANT_ID: "tenant_one", SYNAPSOR_PRINCIPAL: "principal_one" };
+        const inspect = vi.fn(async () => source.inspection);
+        const execute = vi.fn(async () => []);
+        const scope = { tenant: "tenant_one", principal: "principal_one", tenant_source: "environment" as const,
+          tenant_binding: "SYNAPSOR_TENANT_ID", principal_source: "environment" as const, principal_binding: "SYNAPSOR_PRINCIPAL" };
+        const resolveScope = vi.fn(async () => scope);
+        const claim = store.claimExploreBudgetReservation!.bind(store);
+        const claimSpy = vi.fn(claim);
+        store.claimExploreBudgetReservation = claimSpy;
+        const facts = vi.fn(async () => ({ fact_loader: { engine: "postgres" as const,
+          load: async () => [{ id: "item_1", tenant_id: "tenant_one", principal_id: "principal_one", quantity: 1, version: 1 }] },
+          close: async () => undefined }));
+        let read: Awaited<ReturnType<typeof createScopedExploreRuntime>> | Awaited<ReturnType<typeof createScopedExploreBoundarySetRuntime>> | undefined;
+        try {
+          if (mode.startsWith("read")) {
+            const factory = mode === "read_set" ? createScopedExploreBoundarySetRuntime : createScopedExploreRuntime;
+            read = await factory({ projectRoot, store, transport: "stdio", env, inspectDatabaseFn: inspect,
+              executor: { execute, executeBatch: execute, close: async () => undefined },
+              resolveTrustedScopeFn: resolveScope });
+            await read.describe(); inspect.mockClear();
+            if (mode === "read_inspection") {
+              inspect.mockImplementationOnce(async () => { await publish(); return source.inspection; });
+              await expect(read.explore({ kind: "rows", resource: "inventory.items", select: ["quantity"], limit: 1 }))
+                .rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+              expect(audit).not.toHaveBeenCalled();
+              inspect.mockClear();
+            }
+            if (mode === "read_scope") {
+              resolveScope.mockImplementationOnce(async () => { await publish(); return scope; });
+              await expect(read.validate({ kind: "rows", resource: "inventory.items", select: ["quantity"], limit: 1 }))
+                .rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+              expect(claimSpy).not.toHaveBeenCalled(); expect(audit).not.toHaveBeenCalled();
+              inspect.mockClear();
+            }
+            if (mode === "read_budget") {
+              claimSpy.mockImplementation(async (request) => { const result = await claim(request); await publish(); return result; });
+              await expect(read.explore({ kind: "rows", resource: "inventory.items", select: ["quantity"], limit: 1 }))
+                .rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+              expect(claimSpy).toHaveBeenCalledOnce(); expect(audit).not.toHaveBeenCalled();
+              inspect.mockClear();
+            }
+            await publish();
+            await expect(read.describe()).rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+            await expect(read.validate({})).rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+            await expect(read.explore({})).rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+            expect(inspect).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();
+          } else {
+            const factory = mode.startsWith("lazy") || mode === "optional_init" ? createOptionalReadActionRuleRuntimeServices : createOptionalActionRuleRuntimeServices;
+            const borrow = policyStoreAccess.borrowRuntimeControlPolicies;
+            let borrowCalls = 0;
+            let loaderBlocked = false;
+            const suppliedAuthority = mode === "action_loader" ? await loadActiveActionRuleAuthority(projectRoot) : undefined;
+            const loader = suppliedAuthority ? async () => { if (loaderBlocked) await publish(); return suppliedAuthority; } : undefined;
+            const borrowSpy = mode === "optional_init" ? vi.spyOn(policyStoreAccess, "borrowRuntimeControlPolicies").mockImplementation(async (...args) => {
+              const result = await borrow(...args);
+              if (++borrowCalls === 2) await publish();
+              return result;
+            }) : undefined;
+            let runtime;
+            try {
+              const creating = factory({ projectRoot, config, store, key, env, factSessionFactory: facts, authorityLoader: loader });
+              if (mode === "optional_init") {
+                await expect(creating).rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+                expect(facts).not.toHaveBeenCalled(); expect(createProposal).not.toHaveBeenCalled();
+                return;
+              }
+              runtime = await creating;
+            } finally { borrowSpy?.mockRestore(); }
+            expect(runtime).toBeDefined();
+            const menu = await runtime!.semanticActions.callTool("app.describe_actions", {});
+            if (mode.startsWith("lazy")) expect(menu).toMatchObject({ actions: [] });
+            else expect(JSON.stringify(menu)).toContain("inventory.replenish");
+            if (mode === "queue") {
+              const authority = await loadActiveActionRuleAuthority(projectRoot);
+              const rule = authority.registry.rules[0]!;
+              const scope = subjectReferenceScopeFingerprints({ key, deployment_scope: runtime!.deployment_scope,
+                source_id: rule.compiled.source, tenant: "tenant_one", principal: "principal_one" });
+              const [subject] = await runtime!.subjectReferences.issue({ source_id: rule.compiled.source,
+                read_boundary_digest: rule.read_boundary_digest, generation_lock_fingerprint: rule.compiled.generation_lock_fingerprint,
+                ...scope, workflow_session_id: runtime!.workflow_session_id, resource: "inventory.items",
+                evidence_bundle_id: "cutover_evidence", observations: [{ row_index: 0, primary_key_value: "item_1", observed_version_value: 1 }] });
+              const approve = store.approveProposalByPolicy.bind(store);
+              store.approveProposalByPolicy = async (...args) => { const result = await approve(...args); await publish(); return result; };
+              await expect(runtime!.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: rule.compiled.outcome,
+                subject_refs: { item: subject!.ref } })).resolves.toMatchObject({ execution: "held", source_database_changed: false });
+              expect(await store.listWorkerQueue!()).toEqual([]);
+            } else {
+              if (mode === "lazy_bind") {
+                const bindingRace = vi.spyOn(policyStoreAccess, "borrowRuntimeControlPolicies").mockImplementation(async (...args) => {
+                  await publish(); return borrow(...args);
+                });
+                try {
+                  await expect(runtime!.semanticActions.callTool("app.describe_actions", {}))
+                    .rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+                } finally { bindingRace.mockRestore(); }
+              } else if (mode === "action_loader") {
+                loaderBlocked = true;
+                await expect(runtime!.subjectReferences.observationRequirement("inventory.items"))
+                  .rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+              } else await publish();
+              await expect(runtime!.semanticActions.callTool("app.describe_actions", {}))
+                .rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+              await expect(runtime!.subjectReferences.observationRequirement("inventory.items"))
+                .rejects.toMatchObject({ code: "POLICY_RUNTIME_RESTART_REQUIRED" });
+              expect(facts).not.toHaveBeenCalled(); expect(createProposal).not.toHaveBeenCalled();
+            }
+          }
+          const restarted = await createOptionalActionRuleRuntimeServices({ projectRoot, config, store, key, env, factSessionFactory: facts });
+          expect(JSON.stringify(await restarted!.semanticActions.callTool("app.describe_actions", {}))).toContain("inventory.replenish");
+        } finally { createProposal.mockRestore(); audit.mockRestore(); store.claimExploreBudgetReservation = claim; await publish(); await read?.close(); await store.close(); }
       });
     });
 

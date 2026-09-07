@@ -194,6 +194,23 @@ export async function borrowRuntimeControlPolicies(projectRoot: string,
   return manifest ? borrowBoundRepository(manifest, store) : undefined;
 }
 
+/** A file-backed runtime cannot silently adopt repository authority while
+ * retaining its old ledger/config. Bound runtimes keep their normal current
+ * repository checks; legacy clients must restart after a cutover. */
+export async function assertRuntimeControlPolicyContinuity(projectRoot: string,
+  initialBinding: BoundProjectPolicyStore | undefined): Promise<void> {
+  if (initialBinding) return assertProjectControlPolicyBinding(projectRoot, initialBinding);
+  if (await readManifest(projectRoot)) {
+    throw failure("POLICY_RUNTIME_RESTART_REQUIRED",
+      "This client started before the policy-store migration. Restart it against the reviewed deployment before continuing.");
+  }
+}
+
+export function isControlPolicyFailure(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && code.startsWith("POLICY_");
+}
+
 async function borrowBoundRepository(manifest: Manifest, store: ProposalRuntimeStore): Promise<BoundProjectPolicyStore> {
   await requireExistingLocalStore(manifest.target);
   const repository = requireRepository(store);

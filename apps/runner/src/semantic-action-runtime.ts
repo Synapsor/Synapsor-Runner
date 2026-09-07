@@ -44,7 +44,7 @@ import {
   type LoadedActiveActionRuleAuthorityV1,
 } from "./action-rule-authority.js";
 import { loadExploreAuditKey } from "./scoped-explore.js";
-import { borrowRuntimeControlPolicies } from "./control-policy-store.js";
+import { assertRuntimeControlPolicyContinuity, borrowRuntimeControlPolicies, isControlPolicyFailure } from "./control-policy-store.js";
 import { readOperatorExecutionConfig } from "./control-policy-execution.js";
 
 type SemanticFactSession = {
@@ -103,6 +103,7 @@ export async function createOptionalReadActionRuleRuntimeServices(
     let ready: ActionRuleRuntimeServices | undefined;
     let pending: Promise<ActionRuleRuntimeServices | undefined> | undefined;
     const current = async () => {
+      await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
       if (ready) {
         try { await authorityLoader(); return ready; }
         catch (error) {
@@ -112,7 +113,11 @@ export async function createOptionalReadActionRuleRuntimeServices(
         }
       }
       pending ??= createOptionalActionRuleRuntimeServices({ ...input, authorityLoader, key: referenceContext.key, catalogSession });
-      try { ready = await pending; return ready; }
+      try {
+        ready = await pending;
+        await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+        return ready;
+      }
       finally { pending = undefined; }
     };
     return {
@@ -130,6 +135,7 @@ export async function createOptionalReadActionRuleRuntimeServices(
       },
     };
   } catch (error) {
+    if (isControlPolicyFailure(error)) throw error;
     onUnavailable?.(error);
     return undefined;
   }
@@ -145,11 +151,17 @@ export async function createOptionalActionRuleRuntimeServices(
   }
   let authority: LoadedActiveActionRuleAuthorityV1;
   const policyStore = await borrowRuntimeControlPolicies(projectRoot, input.store);
-  const authorityLoader = (policyStore ? undefined : input.authorityLoader)
+  const readAuthority = (policyStore ? undefined : input.authorityLoader)
     ?? (() => {
       const load = createActiveActionRuleAuthorityLoader(projectRoot, policyStore);
       return () => load({ dependency_check: "report" });
     })();
+  const authorityLoader = async () => {
+    await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+    const current = await readAuthority();
+    await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+    return current;
+  };
   try {
     authority = await authorityLoader();
   } catch (error) {
@@ -187,6 +199,7 @@ export async function createOptionalActionRuleRuntimeServices(
         return { execution: "human_review", source_database_changed: false };
       }
       try {
+        await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
         const currentConfig = policyStore ? (await readOperatorExecutionConfig({
           projectRoot, config: input.config, policyStore,
         })).config : input.config;
@@ -197,6 +210,7 @@ export async function createOptionalActionRuleRuntimeServices(
         if (!input.store.enqueueWorkerProposal) {
           return { execution: "held", source_database_changed: false };
         }
+        await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
         await input.store.enqueueWorkerProposal({
           proposal_id: proposal.proposal_id,
           execution_mode: "supervised_worker",

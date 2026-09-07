@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
 import path from "node:path";
-import { borrowRuntimeControlPolicies, createProjectRuntimeStore, type BoundProjectPolicyStore } from "./control-policy-store.js";
+import { assertRuntimeControlPolicyContinuity, borrowRuntimeControlPolicies, createProjectRuntimeStore, isControlPolicyFailure, type BoundProjectPolicyStore } from "./control-policy-store.js";
 import mysql from "mysql2/promise";
 import { Pool, type PoolClient } from "pg";
 import {
@@ -577,6 +577,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
   const projectRoot = path.resolve(input.projectRoot);
   const env = input.env ?? process.env;
   const mode = input.mode ?? "local_authoring";
+  await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
   const prepared = await prepareScopedExplore({
     projectRoot,
     policyStore,
@@ -669,10 +670,21 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
     })
     : undefined;
   const ownsExecutor = !input.executor;
-  const executor = input.executor ?? createScopedExploreDatabaseExecutor({
+  const sourceExecutor = input.executor ?? createScopedExploreDatabaseExecutor({
     engine: prepared.lock.engine,
     databaseUrl,
   });
+  const executor: ScopedExploreExecutor = {
+    execute: async (request) => {
+      await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+      return sourceExecutor.execute(request);
+    },
+    executeBatch: async (request) => {
+      await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+      return sourceExecutor.executeBatch(request);
+    },
+    close: () => sourceExecutor.close(),
+  };
   const reviewableBoundary = await readOptionalExplorationDraft(projectRoot);
   let timeCoveragePromise: Promise<ReviewedTimeCoverage> | undefined;
 
@@ -686,6 +698,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
   };
 
   const requireCurrentAuthority = async (): Promise<void> => {
+    await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
     const active = await loadActivatedExplorationBoundary(projectRoot, { name: prepared.boundary.pack.name, policyStore })
       .catch((error) => { throw scopedExploreBoundaryLoadError(error); });
     if (active.activation.digest !== prepared.boundary.activation.digest) {
@@ -707,15 +720,13 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
         ...(trustedScope.principal_binding ? { binding: trustedScope.principal_binding } : {}),
       },
     },
-    describe: async (request = {}) => describeBoundary(
-      prepared.boundary,
-      request,
-      reviewableBoundary,
-      mode === "production_http" || request.include_time_coverage !== true
-        ? {}
-        : await reviewedTimeCoverage(),
-    ),
+    describe: async (request = {}) => {
+      await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+      return describeBoundary(prepared.boundary, request, reviewableBoundary,
+        mode === "production_http" || request.include_time_coverage !== true ? {} : await reviewedTimeCoverage());
+    },
     validate: async (unknownPlan) => {
+      await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
       const validationStartedAt = clock();
       const currentPrepared = await prepareScopedExplore({
         projectRoot,
@@ -726,6 +737,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
         env,
         ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
       });
+      await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
       if (currentPrepared.boundary.activation.digest !== prepared.boundary.activation.digest
         || currentPrepared.boundary.generation_lock_fingerprint !== prepared.boundary.generation_lock_fingerprint) {
         throw new ScopedExploreError(
@@ -747,6 +759,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
         );
       });
       assertTrustedScopeUnchanged(trustedScope, currentScope);
+      await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
 
       let validated: ValidatedExploreRequest;
       try {
@@ -766,6 +779,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
       const subjectRequirement = validated.plan.kind === "rows" && input.subjectReferences
         ? await input.subjectReferences.service.observationRequirement(validated.plan.resource)
         : undefined;
+      await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
       const statements = compileExplorePlan(
         validated.plan,
         currentPrepared.boundary,
@@ -815,6 +829,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
       };
     },
     explore: async (unknownPlan) => {
+      await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
       let currentPrepared: PreparedExplore;
       try {
         currentPrepared = await prepareScopedExplore({
@@ -848,6 +863,8 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
         });
         assertTrustedScopeUnchanged(trustedScope, currentScope);
       } catch (error) {
+        await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+        if (isControlPolicyFailure(error)) throw error;
         await recordPreExecutionRefusalAudit(store, {
           mode,
           ...auditIdentity,
@@ -862,6 +879,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
         });
         throw error;
       }
+      await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
       const executionStartedAt = clock();
       let plan: ExplorePlan;
       let resolvedTimeWindows: ResolvedRelativeTimeWindow[] = [];
@@ -940,6 +958,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
           subjectRequirement,
         );
         requiresDifferencing = requiresDifferencingProtection(plan, prepared.boundary);
+        await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
         const reservation = mode === "production_http"
           ? await claimProductionExploreBudget(store, {
             reservation_id: reservationId,
@@ -1014,6 +1033,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
           principalVariantAlreadyCounted = reservation.variant_already_counted;
         }
       } catch (error) {
+        if (isControlPolicyFailure(error)) throw error;
         const refusal = error instanceof ScopedExploreError
           ? error
           : new ScopedExploreError(
@@ -1054,6 +1074,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
           resultRows.push(...rows.map((row) => query.period ? { __period: query.period, ...row } : row));
         });
       } catch (error) {
+        if (isControlPolicyFailure(error)) throw error;
         await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
           mode,

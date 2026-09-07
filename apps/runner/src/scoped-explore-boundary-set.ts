@@ -1,5 +1,5 @@
 import path from "node:path";
-import { borrowRuntimeControlPolicies, createProjectRuntimeStore, type BoundProjectPolicyStore } from "./control-policy-store.js";
+import { assertRuntimeControlPolicyContinuity, borrowRuntimeControlPolicies, createProjectRuntimeStore, type BoundProjectPolicyStore } from "./control-policy-store.js";
 import {
   type ExploreBudgetLimits,
   type ProposalRuntimeStore,
@@ -125,18 +125,22 @@ async function createBoundarySetWithStore(input: Parameters<typeof createScopedE
   store: ProposalRuntimeStore, ownsStore: boolean, policyStore?: BoundProjectPolicyStore): Promise<ScopedExploreBoundarySetRuntime> {
   const projectRoot = path.resolve(input.projectRoot);
   const children = new Map<string, Child>();
+  await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
   let boundaries = await loadActivatedExplorationBoundaries(projectRoot, policyStore).catch((error) => {
     throw scopedExploreBoundaryLoadError(error);
   });
+  await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
   let selected = boundaries.at(-1)!;
   let setDigest = activatedExplorationBoundarySetDigest(boundaries);
   let closed = false;
 
   const refresh = async (): Promise<void> => {
     if (closed) throw new ScopedExploreError("EXPLORE_DISABLED", "Scoped Explore is closed.");
+    await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
     const current = await loadActivatedExplorationBoundaries(projectRoot, policyStore).catch((error) => {
       throw scopedExploreBoundaryLoadError(error);
     });
+    await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
     const currentNames = new Set(current.map((boundary) => boundary.pack.name));
     for (const [name, child] of children) {
       const active = current.find((boundary) => boundary.pack.name === name);
