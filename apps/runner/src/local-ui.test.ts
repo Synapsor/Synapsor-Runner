@@ -2151,6 +2151,20 @@ export default defineCapability({
       await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
 
+      const priorCandidate = structuredClone(boundary.instant_onboarding.candidate);
+      priorCandidate.pack.name = "prior_customer_view";
+      const priorDigest = explorationBoundaryCandidateDigest(priorCandidate);
+      const priorActive = await activateExplorationBoundary({
+        projectRoot: tempDir,
+        candidate: priorCandidate,
+        reviewDraft: build.exploration_boundary,
+        generationLock: build.lock,
+        expectedDigest: priorDigest,
+        actor: "prior-reviewer",
+        confirmation: `ACTIVATE ${priorDigest}`,
+        confirmedDecisions: priorCandidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
       const activated = await postJson(
         `http://${server.host}:${server.port}/api/instant/activate-and-read`,
         headers,
@@ -2189,6 +2203,9 @@ export default defineCapability({
         },
       });
       expect(active.activation).not.toHaveProperty("profile_assertion");
+      const activeSet = await loadActivatedExplorationBoundaries(tempDir);
+      expect(activeSet).toHaveLength(2);
+      expect(activeSet).toContainEqual(priorActive);
       expect(JSON.stringify(active)).not.toContain("trainer-7");
       expect(JSON.stringify(active)).not.toContain("acme");
       const reviewBaseline = JSON.parse(await fs.readFile(
@@ -2417,6 +2434,20 @@ export default defineCapability({
         ".synapsor/exploration-boundary.active.json",
       ))).rejects.toMatchObject({ code: "ENOENT" });
 
+      const priorCandidate = structuredClone(boundary.instant_onboarding.candidate);
+      priorCandidate.pack.name = "prior_customer_view";
+      const priorDigest = explorationBoundaryCandidateDigest(priorCandidate);
+      const priorActive = await activateExplorationBoundary({
+        projectRoot: tempDir,
+        candidate: priorCandidate,
+        reviewDraft: build.exploration_boundary,
+        generationLock: build.lock,
+        expectedDigest: priorDigest,
+        actor: "prior-reviewer",
+        confirmation: `ACTIVATE ${priorDigest}`,
+        confirmedDecisions: priorCandidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
       const activated = await postJson(
         `http://${server.host}:${server.port}/api/instant/activate`,
         headers,
@@ -2441,6 +2472,9 @@ export default defineCapability({
       expect(runtimeCreations).toBe(0);
       expect(resolveTrustedScopeFn).toHaveBeenCalledOnce();
       expect(activated).not.toHaveProperty("result");
+      const activeSet = await loadActivatedExplorationBoundaries(tempDir);
+      expect(activeSet).toHaveLength(2);
+      expect(activeSet).toContainEqual(priorActive);
       const active = JSON.parse(await fs.readFile(
         path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
         "utf8",

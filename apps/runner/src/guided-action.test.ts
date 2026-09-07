@@ -93,7 +93,7 @@ describe("guided write actions", () => {
     ]));
 
     await deactivateExplorationBoundary(fixture.root, candidate.pack.name);
-    const progress = await saveInstantBoundaryReviewBaseline({
+    const { progress } = await saveInstantBoundaryReviewBaseline({
       projectRoot: fixture.root,
       draft: generatedDraft,
       candidate,

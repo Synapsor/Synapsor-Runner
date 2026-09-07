@@ -38,6 +38,7 @@ import {
 } from "./explore-trusted-scope.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { padTerminalBlock } from "./terminal-layout.js";
+import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 
 export type InstantCliBoundaryActivationResult =
   | {
@@ -89,12 +90,22 @@ async function activateInstantCliBoundaryAttempt(
   input: InstantCliBoundaryActivationInput,
   initialAskSelection: PostActivationAskSelection | undefined,
 ): Promise<InstantCliBoundaryActivationResult> {
+  const stored = await readProjectReadAuthoring(input.projectRoot);
+  if (stored && !stored.selected) {
+    throw new Error("No saved Read boundary is selected. Prepare a disabled boundary before Quick Start.");
+  }
+  const reviewDraft = stored?.selected?.progress.candidate ?? input.draft;
+  if (stored?.selected) input = { ...input, draft: stored.selected.draft, lock: stored.selected.candidate_lock };
   const env = input.env ?? process.env;
   const stdout = input.stdout ?? process.stdout;
   const write = (value: string) => stdout.write(
     stdout.isTTY === true ? padTerminalBlock(value) : value,
   );
-  const candidate = instantLocalBoundaryCandidate(input.draft);
+  if (stored && reviewDraft.deployment_profile !== "development") {
+    write("Quick Start is for local development. Continue the saved boundary review for this deployment; no authority changed.\n");
+    return { accepted: false, reason: "not_eligible" };
+  }
+  const candidate = instantLocalBoundaryCandidate(reviewDraft);
   const theme = terminalTheme(stdout.isTTY === true && !("NO_COLOR" in env), {
     brand: true,
   });
@@ -258,6 +269,7 @@ async function activateInstantCliBoundaryAttempt(
         draft: input.draft,
         candidate,
         actor,
+        expectedAuthoring: stored?.bindings,
       });
       write([
         "Quick Start was not accepted. Nothing is active.",
@@ -300,15 +312,20 @@ async function activateInstantCliBoundaryAttempt(
     inspection,
     env,
   });
-  await saveInstantBoundaryReviewBaseline({
+  const saved = await saveInstantBoundaryReviewBaseline({
     projectRoot: input.projectRoot,
     draft: input.draft,
     candidate,
     actor,
+    expectedAuthoring: stored?.bindings,
   });
   const active = await activateExplorationBoundary({
     projectRoot: input.projectRoot,
     candidate,
+    reviewDraft,
+    generationLock: input.lock,
+    expectedAuthoring: saved.authoring,
+    activeSetMode: "add",
     expectedDigest: digest,
     actor,
     confirmation: `ACTIVATE ${digest}`,

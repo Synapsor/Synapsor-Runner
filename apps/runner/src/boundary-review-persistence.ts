@@ -3,10 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { emptyReviewOverrides, explorationBoundaryCandidateDigest, generationLockSharedFactsDigest,
   loadGenerationLockSnapshot, reviewExplorationBoundaryCandidate, type ExplorationBoundaryDraft } from "./auto-boundary.js";
-import { BOUNDARY_REVIEW_PROGRESS_VERSION, createBoundaryReviewProgress, legacyBoundaryReviewId,
+import { BOUNDARY_REVIEW_PROGRESS_VERSION, boundaryReviewDecisions, createBoundaryReviewProgress, legacyBoundaryReviewId,
   legacyPolicyMigration, normalizePartialReviewDecisions, normalizePolicyMigration,
   normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
-import { readProjectReadAuthoring, saveProjectReadProgress,
+import { assertReadAuthoringBindings, readProjectReadAuthoring, saveProjectReadProgress,
   type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 
 const LEGACY_BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v1";
@@ -135,44 +135,56 @@ export async function saveBoundaryReviewProgress(
   );
 }
 
-export async function saveInstantBoundaryReviewBaseline(input: {
+type InstantBoundaryBaselineInput = {
   projectRoot: string;
   draft: ExplorationBoundaryDraft;
   candidate: ExplorationBoundaryDraft;
   actor: string;
   now?: string;
-}): Promise<BoundaryReviewProgress> {
-  const progress = createBoundaryReviewProgress({
-    draft: input.draft,
-    candidate: input.candidate,
-    confirmedDecisions: input.candidate.unresolved_decisions,
-    actor: input.actor,
-    reason: "Accepted as the conservative Quick Start boundary.",
-    revision: 1,
-    ...(input.now ? { now: input.now } : {}),
-  });
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
-  return progress;
+  expectedAuthoring?: ReadAuthoringBindings;
+};
+
+export async function saveInstantBoundaryReviewBaseline(input: InstantBoundaryBaselineInput) {
+  return saveInstantBoundaryBaseline(input, true);
 }
 
-export async function saveInstantBoundaryEditBaseline(input: {
-  projectRoot: string;
-  draft: ExplorationBoundaryDraft;
-  candidate: ExplorationBoundaryDraft;
-  actor: string;
-  now?: string;
-}): Promise<BoundaryReviewProgress> {
+export async function saveInstantBoundaryEditBaseline(input: InstantBoundaryBaselineInput) {
+  return saveInstantBoundaryBaseline(input, false);
+}
+
+async function saveInstantBoundaryBaseline(input: InstantBoundaryBaselineInput, accepted: boolean): Promise<{
+  progress: BoundaryReviewProgress; authoring: ReadAuthoringBindings | undefined;
+}> {
+  input = structuredClone(input);
+  const stored = await readProjectReadAuthoring(input.projectRoot);
+  let previous: BoundaryReviewProgress | undefined;
+  if (stored) {
+    assertReadAuthoringBindings(input.expectedAuthoring, stored.bindings);
+    if (!stored.selected || stored.selected.progress.draft_digest !== explorationBoundaryCandidateDigest(input.draft)) {
+      throw new Error("The selected saved Read baseline changed. Reopen Quick Start before deciding.");
+    }
+    previous = stored.selected.progress;
+  } else if (input.expectedAuthoring) {
+    throw new Error("The reviewed policy repository is unavailable. No Quick Start authority changed.");
+  }
+  const candidate = reviewExplorationBoundaryCandidate(previous?.candidate ?? input.draft, input.candidate).candidate;
+  const decisions = new Map(boundaryReviewDecisions(candidate).map((decision) => [decision.id, decision]));
+  const retained = (previous?.confirmations ?? [])
+    .filter((confirmation) => decisions.get(confirmation.id)?.input_digest === confirmation.input_digest)
+    .map((confirmation) => decisions.get(confirmation.id)!.decision);
   const progress = createBoundaryReviewProgress({
     draft: input.draft,
-    candidate: input.candidate,
-    confirmedDecisions: [],
+    candidate,
+    previous,
+    confirmedDecisions: accepted ? candidate.unresolved_decisions : retained,
     actor: input.actor,
-    reason: "Opened the conservative Quick Start candidate for detailed access editing.",
-    revision: 1,
+    reason: accepted ? "Accepted as the conservative Quick Start boundary."
+      : "Opened the conservative Quick Start candidate for detailed access editing.",
+    revision: (previous?.revision ?? 0) + 1,
     ...(input.now ? { now: input.now } : {}),
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
-  return progress;
+  const authoring = await saveBoundaryReviewProgress(input.projectRoot, progress, input.expectedAuthoring);
+  return { progress, authoring };
 }
 
 async function writePrivateJsonAtomic(filePath: string, value: unknown): Promise<void> {

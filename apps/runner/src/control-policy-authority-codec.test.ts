@@ -28,7 +28,9 @@ import { readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy
 import { commitBoundaryRescan, prepareBoundaryRescan, readBoundaryRescanReport } from "./boundary-rescan.js";
 import { commitBoundaryResourceReviewMutation, inspectBoundaryResourceReview, prepareBoundaryResourceReviewMutation } from "./boundary-review-mutation.js";
 import { applyManagedBoundaryReviewDecision, createBoundaryReviewProgress } from "./boundary-review-domain.js";
-import { readBoundaryReviewProgress, saveBoundaryReviewProgress } from "./boundary-review-persistence.js";
+import { readBoundaryReviewProgress, saveBoundaryReviewProgress, saveInstantBoundaryReviewBaseline,
+  saveInstantBoundaryEditBaseline } from "./boundary-review-persistence.js";
+import { activateInstantCliBoundary } from "./instant-cli-boundary.js";
 import { readProjectReadAuthoring, saveProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { boundaryActivateCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
 import { startLocalUiServer } from "./local-ui.js";
@@ -56,7 +58,7 @@ import { activateActionRuleAuthority, buildActionRuleAuthorityDraft, createActiv
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 
-function fixture(domain = "inventory") {
+function fixture(domain = "inventory", deploymentProfile: "staging" | "development" = "staging") {
   const inspection: SchemaInspection = {
     engine: "postgres", server_version: "PostgreSQL 16", current_user: "reader", inspected_at: "2026-09-06T00:00:00.000Z",
     schemas: [domain], warnings: [], role_posture: { verified: true, superuser: false, bypass_rls: false,
@@ -74,7 +76,7 @@ function fixture(domain = "inventory") {
       suggestions: { tenant_columns: ["tenant_id"], conflict_columns: ["version"], sensitive_columns: [], default_visible_columns: ["quantity"] },
     }],
   };
-  const build = buildAutoBoundary({ inspection, inspectedSchema: domain, sourceEnv: "DATABASE_URL", overrides: {
+  const build = buildAutoBoundary({ inspection, inspectedSchema: domain, sourceEnv: "DATABASE_URL", deploymentProfile, overrides: {
     schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: { [`${domain}.items`]: { tenant_key: {
       value: "tenant_id", actor: "fixture_operator", reason: "Reviewed fixture authenticated tenant binding.", decided_at: "2026-09-06T00:00:00.000Z",
     }, principal_key: {
@@ -93,8 +95,8 @@ function fixture(domain = "inventory") {
   return { candidate, boundary, generation_lock: build.lock, inspection, build };
 }
 
-function snapshot(): ControlPolicyMigrationSnapshot {
-  const input = fixture();
+function snapshot(profile: "staging" | "development" = "staging"): ControlPolicyMigrationSnapshot {
+  const input = fixture("inventory", profile);
   const active = encodeOperatorAuthority({ type: "read", boundary: input.boundary, generation_lock: input.generation_lock });
   const draft = encodeOperatorAuthority({ type: "read", boundary: input.candidate, generation_lock: input.generation_lock });
   const selection = encodeOperatorAuthority({ type: "read_selection", selected_name: active.name });
@@ -103,9 +105,9 @@ function snapshot(): ControlPolicyMigrationSnapshot {
     provenance: [{ path: ".synapsor/exploration-boundary.active.json", digest: canonicalJsonDigest(input.boundary) }] };
 }
 
-function readAuthoringFixture(): StoredReadAuthoring {
+function readAuthoringFixture(profile: "staging" | "development" = "staging"): StoredReadAuthoring {
   const entries = ["inventory", "university"].map((domain) => {
-    const source = fixture(domain);
+    const source = fixture(domain, profile);
     source.candidate.pack.name = `${domain}_draft`;
     return { draft: source.candidate, draft_lock: source.generation_lock, candidate_lock: source.generation_lock,
       progress: createBoundaryReviewProgress({ draft: source.candidate, candidate: source.candidate,
@@ -336,13 +338,13 @@ for (const backend of ["sqlite", "postgres"] as const) {
       binding: Awaited<ReturnType<typeof migrateProjectControlPolicies>>["binding"];
       original: ControlPolicyMigrationSnapshot;
       config: RuntimeConfig;
-    }) => Promise<void>) {
+    }) => Promise<void>, profile: "staging" | "development" = "staging") {
       const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-operator-policy-")); roots.push(projectRoot);
       const schema = `operator_policy_${randomUUID().replaceAll("-", "")}`;
       const config = backend === "sqlite" ? {} as RuntimeConfig : { storage: { shared_postgres: {
         mode: "runtime_store", url_env: "TEST_POLICY_URL", schema,
       } } } as RuntimeConfig;
-      const original = snapshot();
+      const original = snapshot(profile);
       const result = await migrateProjectControlPolicies({ projectRoot, storePath: path.join(projectRoot, "control.db"), config,
         env: { TEST_POLICY_URL: process.env.SYNAPSOR_TEST_POSTGRES_URL }, actor: "operator",
         readLegacySnapshot: async () => original, validateSnapshot: async (value) => validateOperatorPolicySnapshot(value) });
@@ -455,6 +457,108 @@ for (const backend of ["sqlite", "postgres"] as const) {
         expect(final.drafts.map(({ revision }) => revision.name)).toEqual(["university_draft"]);
         expect(final.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(initial.active);
       });
+    });
+
+    it("binds Quick Start saves to the original review and returns the exact activation successor", async () => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture(); const first = authoring.entries[0]!;
+        first.progress.review_overrides = fixture().build.overrides;
+        const before = await policies.current();
+        await policies.commitReadAuthoring({ expected_epoch: before.epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare_quick_start" });
+        const shown = (await readProjectReadAuthoring(projectRoot))!;
+        const input = { projectRoot, draft: first.draft, candidate: structuredClone(first.progress.candidate), actor: "operator" };
+        input.candidate.budgets.max_top_n = 12;
+        await expect(saveInstantBoundaryReviewBaseline(input)).rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        const editing = await saveInstantBoundaryEditBaseline({ ...input, expectedAuthoring: shown.bindings });
+        expect(editing.progress.boundary_id).toBe(first.progress.boundary_id);
+        expect(editing.progress.revision).toBe(2);
+        expect(editing.progress.review_overrides).toEqual(first.progress.review_overrides);
+        expect(editing.progress.confirmations.length).toBeGreaterThan(0);
+        expect(editing.progress.confirmations.length).toBeLessThan(first.progress.confirmations.length);
+        for (const confirmation of editing.progress.confirmations) {
+          expect(first.progress.confirmations).toContainEqual(confirmation);
+        }
+        const edited = (await readProjectReadAuthoring(projectRoot))!;
+        expect(editing.authoring).toEqual(edited.bindings);
+        expect(edited.authoring.entries[1]).toEqual(authoring.entries[1]);
+        await expect(saveInstantBoundaryReviewBaseline({ ...input, expectedAuthoring: shown.bindings }))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        await expect(saveInstantBoundaryReviewBaseline({ ...input, expectedAuthoring: editing.authoring,
+          candidate: { ...input.candidate, pack: { ...input.candidate.pack,
+            resources: [...input.candidate.pack.resources, fixture("unreviewed").candidate.pack.resources[0]!] } } }))
+          .rejects.toThrow();
+        expect((await readProjectReadAuthoring(projectRoot))!.bindings).toEqual(editing.authoring);
+        const saved = await saveInstantBoundaryReviewBaseline({ ...input, expectedAuthoring: editing.authoring });
+        expect(saved.progress.boundary_id).toBe(first.progress.boundary_id);
+        expect(saved.progress.revision).toBe(3);
+        expect(saved.progress.confirmed_decisions.length).toBeGreaterThan(0);
+        const confirmed = (await readProjectReadAuthoring(projectRoot))!;
+        expect(saved.authoring).toEqual(confirmed.bindings);
+        const changed = structuredClone(confirmed.authoring);
+        changed.entries[0]!.progress = createBoundaryReviewProgress({ draft: first.draft,
+          candidate: { ...saved.progress.candidate, budgets: { ...saved.progress.candidate.budgets, max_top_n: 10 } },
+          previous: saved.progress, confirmedDecisions: [], actor: "other_operator", revision: 4 });
+        await saveProjectReadAuthoring({ projectRoot, expected: confirmed.bindings, authoring: changed,
+          actor: "other_operator", operation: "newer_read_review" });
+        const digest = saved.progress.candidate_digest;
+        await expect(activateExplorationBoundary({ projectRoot, candidate: saved.progress.candidate,
+          reviewDraft: first.draft, generationLock: first.candidate_lock, expectedDigest: digest,
+          actor: "operator", confirmation: `ACTIVATE ${digest}`, confirmedDecisions: saved.progress.confirmed_decisions,
+          currentInspection: fixture().inspection, expectedAuthoring: saved.authoring }))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        expect((await policies.current()).active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
+      });
+    });
+
+    it.each(["accept", "edit", "prompt_race", "inspection_race", "staging"])("uses stored Quick Start candidates without export fallback: %s", async (mode) => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture(mode === "staging" ? "staging" : "development"); const first = authoring.entries[0]!;
+        const candidate = structuredClone(first.progress.candidate); candidate.budgets.max_top_n = 11;
+        first.progress = createBoundaryReviewProgress({ draft: first.draft, candidate,
+          previous: first.progress, reviewOverrides: fixture().build.overrides, confirmedDecisions: [], actor: "operator", revision: 4 });
+        const before = await policies.current();
+        await policies.commitReadAuthoring({ expected_epoch: before.epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare_quick_start" });
+        const inspect = vi.fn(async () => {
+          if (mode === "inspection_race" && inspect.mock.calls.length === 2) await compete();
+          return fixture().inspection;
+        });
+        const compete = async () => {
+          const current = (await readProjectReadAuthoring(projectRoot))!;
+          const changed = structuredClone(current.authoring);
+          changed.entries[0]!.progress = createBoundaryReviewProgress({ draft: first.draft,
+            candidate: { ...first.progress.candidate, budgets: { ...first.progress.candidate.budgets, max_top_n: 7 } },
+            previous: first.progress, confirmedDecisions: [], actor: "other_operator", revision: 5 });
+          await saveProjectReadAuthoring({ projectRoot, expected: current.bindings, authoring: changed,
+            actor: "other_operator", operation: "newer_read_review" });
+        };
+        let output = "";
+        const run = activateInstantCliBoundary({ projectRoot, draft: fixture("wrong_export").candidate,
+          lock: fixture("wrong_export").generation_lock, schemaInspector: inspect,
+          env: { SYNAPSOR_TENANT_ID: "test-tenant", SYNAPSOR_PRINCIPAL: "test-principal" },
+          stdout: { write: (chunk) => { output += String(chunk); return true; }, isTTY: false },
+          chooseAskSelection: async () => ({ route: "later" }),
+          session: { promptText: async () => { if (mode === "prompt_race") await compete(); return mode === "edit" ? "e" : ""; } } });
+        if (mode.endsWith("race")) await expect(run).rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        else expect(await run).toMatchObject({ accepted: mode === "accept" });
+        const current = (await readProjectReadAuthoring(projectRoot))!;
+        expect(current.selected!.progress.boundary_id).toBe(first.progress.boundary_id);
+        expect(current.selected!.progress.revision).toBe(mode === "staging" ? 4 : 5);
+        expect(current.selected!.progress.candidate.budgets.max_top_n).toBe(mode.endsWith("race") ? 7 : 11);
+        expect(current.selected!.progress.review_overrides).toEqual(first.progress.review_overrides);
+        expect(current.authoring.entries[1]).toEqual(authoring.entries[1]);
+        expect(output).not.toContain("wrong_export");
+        if (mode === "staging") expect(inspect).not.toHaveBeenCalled();
+        const final = await policies.current();
+        if (mode === "accept") {
+          const active = await loadActivatedExplorationBoundary(projectRoot, { name: "inventory_draft" });
+          expect(active.pack.resources[0]!.id).toBe("inventory.items");
+          expect(active.budgets.max_top_n).toBe(11);
+          expect(final.active).toEqual(expect.arrayContaining(before.active.filter(({ policy }) => policy.type === "read")));
+        } else expect(final.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
+        await expect(fs.stat(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      }, "development");
     });
 
     it("persists exact disabled edits independently, avoids duplicate history, and resumes current state", async () => {
@@ -716,7 +820,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const boundaryRoot = path.join(projectRoot, "synapsor/generated");
         const server = await startLocalUiServer({ projectRoot, boundaryRoot,
           configPath: path.join(projectRoot, "synapsor.runner.json"), storePath: path.join(projectRoot, "control.db"),
-          token: "manual-review-token", csrfToken: "manual-review-csrf" });
+          token: "manual-review-token", csrfToken: "manual-review-csrf", instantOnboarding: true, deploymentProfile: "development" });
         try {
           const base = `http://${server.host}:${server.port}`;
           const bootstrap = await fetch(server.url, { redirect: "manual" });
@@ -728,6 +832,12 @@ for (const backend of ["sqlite", "postgres"] as const) {
             const payload = await response.json(); expect(response.status, JSON.stringify(payload)).toBe(200); return payload;
           };
           const post = (route: string, body: unknown) => fetch(`${base}${route}`, { method: "POST", headers, body: JSON.stringify(body) });
+          for (const route of ["/api/instant/activate", "/api/instant/activate-and-read"]) {
+            const refusal = await post(route, { next_surface: "no_model" });
+            expect(refusal.status).toBe(409);
+            expect(await refusal.json()).toMatchObject({ source_database_changed: false,
+              error: expect.stringContaining("Resume the saved review") });
+          }
           const shown = await get();
           expect(shown.candidate).toEqual(authoring.entries[0]!.progress.candidate);
           expect(shown.review.resources[0].id).toBe("inventory.items");

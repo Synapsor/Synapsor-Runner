@@ -1492,8 +1492,10 @@ async function handleRequest(input: {
       sendJson(response, 403, { ok: false, error: "CSRF token required for instant onboarding." });
       return;
     }
-    const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
-    if (await readBoundaryReviewProgress(projectRoot, draft)) {
+    const stored = await readProjectReadAuthoring(projectRoot);
+    const draft = stored?.selected?.draft ?? (stored ? undefined
+      : JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft);
+    if (stored || (draft && await readBoundaryReviewProgress(projectRoot, draft))) {
       sendJson(response, 409, {
         ok: false,
         error: "Quick Start is unavailable after the full boundary review has begun. Resume the saved review instead.",
@@ -1501,6 +1503,7 @@ async function handleRequest(input: {
       });
       return;
     }
+    if (!draft) throw new Error("No saved Read boundary is selected. Resume the Boundary review first.");
     if (draft.pack.resources.length === 0) {
       sendJson(response, 409, {
         ok: false,
@@ -1594,7 +1597,7 @@ async function handleRequest(input: {
     let active: ActivatedExplorationBoundary;
     const digest = explorationBoundaryCandidateDigest(candidate);
     const activationActor = instantActivationActor();
-    await saveInstantBoundaryReviewBaseline({
+    const saved = await saveInstantBoundaryReviewBaseline({
       projectRoot,
       draft,
       candidate,
@@ -1603,6 +1606,8 @@ async function handleRequest(input: {
     active = await activateExplorationBoundary({
       projectRoot,
       candidate,
+      expectedAuthoring: saved.authoring,
+      activeSetMode: "add",
       expectedDigest: digest,
       actor: activationActor,
       confirmation: `ACTIVATE ${digest}`,
