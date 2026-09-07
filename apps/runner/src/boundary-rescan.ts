@@ -388,6 +388,7 @@ export async function prepareBoundaryRescan(input: {
     }
     nextBoundaries[boundaryName] = progress;
     if (storedEntry) nextStoredEntries.push({ draft: build.exploration_boundary, draft_lock: build.lock,
+      ...(candidate.pack.resources.length === 0 ? { stage: "metadata_only" as const } : {}),
       candidate_lock: build.lock, progress,
       catalog: readAuthoringCatalog(build) });
     entries.push(rescanEntry({

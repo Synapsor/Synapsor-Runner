@@ -60,8 +60,12 @@ export async function saveProjectReadProgress(input: {
     fail("POLICY_AUTHORING_SELECTION_CHANGED", "This edit does not belong to the selected saved boundary.");
   }
   const authoring = structuredClone(current.authoring);
-  authoring.entries = authoring.entries.map((entry) => entry.progress.boundary_id === previous.progress.boundary_id
-    ? { ...entry, ...frozen.replacement, progress: frozen.progress } : entry);
+  authoring.entries = authoring.entries.map((entry) => {
+    if (entry.progress.boundary_id !== previous.progress.boundary_id) return entry;
+    const { stage: _stage, ...retained } = entry;
+    return { ...retained, ...frozen.replacement, progress: frozen.progress,
+      ...(frozen.progress.candidate.pack.resources.length === 0 ? { stage: "metadata_only" as const } : {}) };
+  });
   return saveProjectReadAuthoring({ projectRoot: input.projectRoot, expected: current.bindings,
     authoring, actor: "local_operator", operation: "edit_prepared_read" });
 }

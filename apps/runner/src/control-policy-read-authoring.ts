@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { AUTO_BOUNDARY_VERSION, assertStoredExplorationPolicy, explorationBoundaryCandidateDigest, generationLockSharedFactsDigest, generationReviewEvidenceDigest, parseAutoBoundaryPolicyBaseline,
+import { AUTO_BOUNDARY_VERSION, assertStoredExplorationMetadata, assertStoredExplorationPolicy, explorationBoundaryCandidateDigest, generationLockSharedFactsDigest, generationReviewEvidenceDigest, parseAutoBoundaryPolicyBaseline,
   type AutoBoundaryBuild, type ExplorationBoundaryDraft, type GenerationLock } from "./auto-boundary.js";
 import { normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
 import { BOUNDARY_REVIEW_PROGRESS_VERSION } from "./boundary-review-progress-types.js";
@@ -38,6 +38,7 @@ const catalogSchema = z.object({
   policy_baseline: z.object({ schema_version: z.string(), boundary: z.record(z.unknown()), lock: z.record(z.unknown()) }).strict(),
 }).strict();
 const entrySchema = z.object({
+  stage: z.literal("metadata_only").optional(),
   draft: z.record(z.unknown()), draft_lock: z.record(z.unknown()),
   candidate_lock: z.record(z.unknown()), progress: progressSchema,
   catalog: catalogSchema.optional(),
@@ -49,6 +50,7 @@ export const readAuthoringDocument = z.object({
 }).strict();
 
 export type PreparedReadEntry = {
+  stage?: "metadata_only";
   draft: ExplorationBoundaryDraft; draft_lock: GenerationLock;
   candidate_lock: GenerationLock; progress: BoundaryReviewProgress;
   catalog?: Pick<AutoBoundaryBuild, "lock" | "review" | "policy_baseline"> & { evidence_project: AutoBoundaryBuild["graph"]["project"] };
@@ -77,14 +79,23 @@ export function parseReadAuthoringDocument(input: unknown): StoredReadAuthoring 
     }
     const draftLock = entry.draft_lock as unknown as GenerationLock;
     const candidateLock = entry.candidate_lock as unknown as GenerationLock;
-    assertStoredExplorationPolicy(draft, draftLock);
-    assertStoredExplorationPolicy(candidate, candidateLock);
+    const metadataOnly = entry.stage === "metadata_only";
+    if (metadataOnly !== (candidate.pack.resources.length === 0)) fail("POLICY_AUTHORING_STAGE_MISMATCH");
+    if ((metadataOnly || draft.pack.resources.length === 0) && !entry.catalog) fail("POLICY_AUTHORING_CATALOG_REQUIRED");
+    if (draft.pack.resources.length === 0) assertStoredExplorationMetadata(draft, draftLock);
+    else assertStoredExplorationPolicy(draft, draftLock);
+    if (metadataOnly) assertStoredExplorationMetadata(candidate, candidateLock);
+    else assertStoredExplorationPolicy(candidate, candidateLock);
     if (generationLockSharedFactsDigest(draftLock) !== generationLockSharedFactsDigest(candidateLock)) {
       fail("POLICY_AUTHORING_SCHEMA_MISMATCH");
     }
     if (entry.catalog) {
       const catalog = entry.catalog as unknown as NonNullable<PreparedReadEntry["catalog"]>;
       parseAutoBoundaryPolicyBaseline(catalog.policy_baseline);
+      if (metadataOnly && ![draftLock, candidateLock].some((lock) =>
+        canonicalJsonDigest(lock) === canonicalJsonDigest(catalog.lock))) {
+        fail("POLICY_AUTHORING_CATALOG_MISMATCH");
+      }
       if (catalog.review.engine !== draftLock.engine
         || generationReviewEvidenceDigest(catalog.review, catalog.evidence_project) !== catalog.lock.evidence_fingerprint
         || generationLockSharedFactsDigest(catalog.lock) !== generationLockSharedFactsDigest(draftLock)

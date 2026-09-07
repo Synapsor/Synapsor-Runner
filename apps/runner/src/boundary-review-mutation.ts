@@ -1473,6 +1473,12 @@ export async function commitBoundaryResourceReviewMutation(
     if (preview.candidate.pack.resources.length === 0) {
       const current = await loadBoundaryReviewFiles(projectRoot);
       assertBindingsEqual(preview.bindings, reviewBindings(current));
+      if (current.authoring) {
+        const result = await commitPreparedBoundaryReviewMutation({ projectRoot, bindings: preview.bindings,
+          build: preview.build, candidate: preview.candidate, boundaryRoot: preview.boundary_root,
+          previousProgress: preview.previous_progress, actor: preview.request.actor, reason: preview.request.reason });
+        return { ...result, semantic_diff: preview.semantic_diff };
+      }
       await writeAutoBoundaryArtifacts({
         projectRoot,
         outputRoot: path.relative(projectRoot, preview.boundary_root),

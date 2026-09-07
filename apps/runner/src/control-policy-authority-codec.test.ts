@@ -13,7 +13,7 @@ import { migrateSharedPostgresRuntimeStore, ProposalStore } from "@synapsor-runn
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type { RuleVerificationBoundarySpecV1, DerivedEffectEnvelopeSpecV1, ActionRuleSpecV1 } from "@synapsor/spec";
 import { AUTO_BOUNDARY_OVERRIDES_VERSION, activateExplorationBoundary, buildAutoBoundary, deactivateExplorationBoundary,
-  explorationBoundaryCandidateDigest, loadActivatedExplorationBoundary, loadActivatedExplorationBoundaries,
+  explorationBoundaryCandidateDigest, generationReviewEvidenceDigest, loadActivatedExplorationBoundary, loadActivatedExplorationBoundaries,
   loadGenerationLockForActivatedBoundary, writeAutoBoundaryArtifacts, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { decodeOperatorAuthority, encodeOperatorAuthority, encodeOperatorExecutionPolicy, OPERATOR_READ_SELECTION, OPERATOR_READ_AUTHORING, OPERATOR_EXECUTION_POLICY,
@@ -114,7 +114,56 @@ function readAuthoringFixture(): StoredReadAuthoring {
   return { type: "read_authoring", selected_boundary_id: entries[0]!.progress.boundary_id, entries };
 }
 
+function metadataAuthoringFixture(projectRoot = "/test") {
+  const inspection = structuredClone(fixture("coded").inspection);
+  const table = inspection.tables[0]!; table.name = "x17";
+  const names = ["k01", "k02", "k03", "v01", "v02"];
+  table.columns = table.columns.map((column, index) => ({ ...column, name: names[index]!,
+    suggestions: { tenant: false, conflict: false, sensitive: false, immutable: index < 3, large_or_binary: false } }));
+  table.primary_key = [];
+  table.unique_constraints = [{ name: "x17_k01", columns: ["k01"] }, { name: "x17_k03", columns: ["k03"] }];
+  table.suggestions = { tenant_columns: [], conflict_columns: [], sensitive_columns: [], default_visible_columns: ["v01"] };
+  const build = buildAutoBoundary({ inspection, inspectedSchema: "coded", sourceEnv: "DATABASE_URL",
+    project: { root: projectRoot, package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+  const draft = build.exploration_boundary; draft.pack.name = "coded_draft";
+  const candidate = recommendedBoundaryReviewCandidate(draft);
+  expect(candidate.pack.resources).toHaveLength(0);
+  const progress = createBoundaryReviewProgress({ draft, candidate, confirmedDecisions: [], reviewOverrides: build.overrides,
+    actor: "operator", revision: 1 });
+  const authoring: StoredReadAuthoring = { type: "read_authoring", selected_boundary_id: progress.boundary_id,
+    entries: [{ stage: "metadata_only", draft, draft_lock: build.lock, candidate_lock: build.lock,
+      catalog: readAuthoringCatalog(build), progress }] };
+  return { inspection, build, authoring };
+}
+
 describe("exact stored operator authority", () => {
+  it("stores an ambiguous metadata scaffold without making it a valid Read policy", () => {
+    const { authoring } = metadataAuthoringFixture(); const entry = authoring.entries[0]!;
+    expect(decodeOperatorAuthority(encodeOperatorAuthority(authoring))).toEqual(authoring);
+    expect(() => encodeOperatorAuthority({ type: "read", boundary: entry.progress.candidate,
+      generation_lock: entry.candidate_lock })).toThrow("at least one reviewed resource");
+  });
+
+  it.each(["missing_stage", "missing_catalog", "nonempty", "enabled", "lock", "budget", "catalog", "self_attested_catalog"])(
+    "refuses malformed metadata-only authoring: %s", (change) => {
+      const { authoring } = metadataAuthoringFixture(); const entry = authoring.entries[0]!;
+      if (change === "missing_stage") delete entry.stage;
+      if (change === "missing_catalog") delete entry.catalog;
+      if (change === "nonempty") entry.progress.candidate = fixture().candidate;
+      if (change === "enabled") entry.progress.candidate.activation = fixture().boundary.activation as never;
+      if (change === "lock") entry.candidate_lock = fixture().generation_lock;
+      if (change === "budget") entry.progress.candidate.budgets.max_top_n = -1;
+      if (change === "catalog") entry.catalog!.review.resources[0]!.fields[0]!.name = "forged_field";
+      if (change === "self_attested_catalog") {
+        const catalog = entry.catalog!;
+        catalog.review.resources[0]!.fields[0]!.name = "forged_field";
+        catalog.lock.evidence_fingerprint = generationReviewEvidenceDigest(catalog.review, catalog.evidence_project);
+      }
+      const original = structuredClone(authoring);
+      expect(() => encodeOperatorAuthority(authoring)).toThrow();
+      expect(authoring).toEqual(original);
+    });
+
   it("binds private authoring catalogs to exact inspected evidence without granting their fields", () => {
     const authoring = readAuthoringFixture(); const source = fixture();
     authoring.entries[0]!.catalog = readAuthoringCatalog(source.build);
@@ -310,6 +359,103 @@ for (const backend of ["sqlite", "postgres"] as const) {
         }
       }
     }
+
+    it("retains partial coded metadata decisions and promotes only a fully valid disabled Read candidate", async () => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const { authoring, inspection } = metadataAuthoringFixture(projectRoot);
+        const other = readAuthoringFixture().entries[1]!; other.catalog = readAuthoringCatalog(fixture("university").build);
+        authoring.entries.push(other);
+        const initial = await policies.current();
+        await policies.commitReadAuthoring({ expected_epoch: initial.epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "inspect_coded_metadata" });
+        const prepared = await policies.current();
+        expect(prepared.drafts.map(({ revision }) => revision.name)).toEqual(["university_draft"]);
+        const context = await loadBoundaryReviewContext(projectRoot);
+        expect(context.candidate.pack.resources).toHaveLength(0);
+        await expect(activateExplorationBoundary({ projectRoot, candidate: context.candidate,
+          reviewDraft: context.draft, generationLock: context.lock,
+          expectedDigest: explorationBoundaryCandidateDigest(context.candidate), actor: "operator",
+          confirmation: `ACTIVATE ${explorationBoundaryCandidateDigest(context.candidate)}`,
+          confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection,
+          expectedAuthoring: (await readProjectReadAuthoring(projectRoot))!.bindings })).rejects.toThrow("at least one reviewed resource");
+        expect(await policies.current()).toEqual(prepared);
+        const id = context.progress!.boundary_id;
+        const view = await inspectBoundaryResourceReview(projectRoot, "coded.x17");
+        expect(view.fields.map((field) => field.name)).toContain("k01");
+        const preview = await prepareBoundaryResourceReviewMutation(projectRoot, { resource_id: "coded.x17",
+          include: true, row_identity: "k01", actor: "operator", reason: "k01 identifies one business record." }, async () => inspection);
+        expect(preview.partial_scope_resolution).toBe(true);
+        expect(preview.candidate.pack.resources).toHaveLength(0);
+        const committed = await commitBoundaryResourceReviewMutation(projectRoot, preview);
+        expect(committed).toMatchObject({ review_revision: 2, source_database_changed: false });
+        const resumed = (await readProjectReadAuthoring(projectRoot))!;
+        expect(resumed.selected!.stage).toBe("metadata_only");
+        expect(resumed.selected!.progress.boundary_id).toBe(id);
+        expect(resumed.selected!.progress.review_overrides.resources["coded.x17"]!.row_identity?.value).toBe("k01");
+        expect((await policies.current()).drafts.map(({ revision }) => revision.name)).toEqual(["university_draft"]);
+        await expect(commitBoundaryResourceReviewMutation(projectRoot, preview)).rejects.toThrow();
+        const scoped = await prepareBoundaryResourceReviewMutation(projectRoot, { resource_id: "coded.x17", include: true,
+          tenant_key: "k02", principal_key: "k03", actor: "operator", reason: "k02 is the account; k03 is the authenticated owner." }, async () => inspection);
+        expect(scoped.candidate.pack.resources).toHaveLength(1);
+        const saved = await commitBoundaryResourceReviewMutation(projectRoot, scoped);
+        const complete = (await readProjectReadAuthoring(projectRoot))!;
+        expect(complete.selected!.stage).toBeUndefined();
+        expect(complete.selected!.progress.boundary_id).toBe(id);
+        expect(complete.selected!.progress.revision).toBe(3);
+        expect(saved.candidate_digest).toBe(complete.selected!.progress.candidate_digest);
+        expect(complete.selected!.progress.candidate.pack.resources[0]).toMatchObject({ primary_key: "k01", tenant_key: "k02", principal_key: "k03" });
+        const final = await policies.current();
+        expect(final.drafts.map(({ revision }) => revision.name).sort()).toEqual(["coded_draft", "university_draft"]);
+        expect(final.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(initial.active);
+        expect(complete.authoring.entries[1]).toEqual(other);
+        await expect(fs.stat(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json")))
+          .rejects.toMatchObject({ code: "ENOENT" });
+      });
+    });
+
+    it("rescans and renames incomplete metadata without publishing Read authority or losing reviewed answers", async () => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const { authoring, inspection } = metadataAuthoringFixture(projectRoot);
+        const other = readAuthoringFixture().entries[1]!;
+        authoring.entries.push(other);
+        const initial = await policies.current();
+        await policies.commitReadAuthoring({ expected_epoch: initial.epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "inspect_coded_metadata" });
+        const preview = await prepareBoundaryResourceReviewMutation(projectRoot, { resource_id: "coded.x17",
+          include: true, row_identity: "k01", actor: "operator", reason: "k01 identifies one business record." }, async () => inspection);
+        await commitBoundaryResourceReviewMutation(projectRoot, preview);
+        const before = await policies.current();
+        const noOp = await prepareBoundaryRescan({ projectRoot, inspection });
+        expect(noOp.report.changed).toBe(false);
+        await commitBoundaryRescan(noOp);
+        expect(await policies.current()).toEqual(before);
+        const changed = structuredClone(inspection);
+        changed.tables[0]!.columns.push({ ...structuredClone(changed.tables[0]!.columns[3]!), name: "v03", ordinal_position: 6 });
+        const rescan = await prepareBoundaryRescan({ projectRoot, inspection: changed });
+        const competing = await prepareBoundaryRescan({ projectRoot, inspection: changed });
+        expect(rescan.report.changed).toBe(true);
+        await commitBoundaryRescan(rescan);
+        const resumed = (await readProjectReadAuthoring(projectRoot))!;
+        expect(resumed.selected!.stage).toBe("metadata_only");
+        expect(resumed.selected!.progress.candidate.pack.resources).toHaveLength(0);
+        expect(resumed.selected!.progress.boundary_id).toBe(authoring.selected_boundary_id);
+        expect(resumed.selected!.progress.review_overrides.resources["coded.x17"]!.row_identity?.value).toBe("k01");
+        expect(resumed.authoring.entries[1]).toEqual(other);
+        expect((await inspectBoundaryResourceReview(projectRoot, "coded.x17")).fields.map((field) => field.name)).toContain("v03");
+        await expect(commitBoundaryRescan(competing)).rejects.toThrow("Boundary review changed");
+        await renameSavedBoundary({ projectRoot, draft: resumed.selected!.draft,
+          currentCandidate: resumed.selected!.progress.candidate, currentProgress: resumed.selected!.progress,
+          expectedAuthoring: resumed.bindings, name: "coded_draft", newName: "customer_records",
+          actor: "operator", reason: "Name the metadata scaffold after the clarified business records." });
+        const renamed = (await readProjectReadAuthoring(projectRoot))!;
+        expect(renamed.selected!.stage).toBe("metadata_only");
+        expect(renamed.selected!.progress.boundary_id).toBe(authoring.selected_boundary_id);
+        expect(renamed.selected!.progress.candidate.pack.name).toBe("customer_records");
+        const final = await policies.current();
+        expect(final.drafts.map(({ revision }) => revision.name)).toEqual(["university_draft"]);
+        expect(final.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(initial.active);
+      });
+    });
 
     it("persists exact disabled edits independently, avoids duplicate history, and resumes current state", async () => {
       await useRepository(async ({ policies, binding, original }) => {

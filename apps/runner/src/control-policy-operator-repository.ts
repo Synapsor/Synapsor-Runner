@@ -56,7 +56,7 @@ export class OperatorAuthorityRepository {
     const previous = before.active.find(({ policy }) => policy.type === "read_authoring");
     if (before.epoch !== frozen.expected_epoch
       || (previous?.revision.revision_id ?? null) !== frozen.expected_revision_id) fail("POLICY_REVISION_CONFLICT");
-    const desired: OperatorAuthorityChange[] = frozen.authoring.entries.map((entry) => ({
+    const desired: OperatorAuthorityChange[] = frozen.authoring.entries.filter((entry) => entry.stage !== "metadata_only").map((entry) => ({
       key: { scope: { level: "operator" }, kind: "read", name: entry.progress.candidate.pack.name },
       policy: { type: "read", boundary: entry.progress.candidate, generation_lock: entry.candidate_lock },
     }));

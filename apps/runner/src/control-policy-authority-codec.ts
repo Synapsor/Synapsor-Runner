@@ -107,8 +107,9 @@ export function validateOperatorPolicySnapshot(snapshot: ControlPolicyMigrationS
   }
   if (readBindings.size > 1) fail("POLICY_ACTIVE_READ_BINDINGS_MISMATCH");
   if (authoring) {
-    if (drafts.size !== authoring.entries.length) fail("POLICY_AUTHORING_DRAFT_MISMATCH");
-    for (const entry of authoring.entries) {
+    const reviewedEntries = authoring.entries.filter((entry) => entry.stage !== "metadata_only");
+    if (drafts.size !== reviewedEntries.length) fail("POLICY_AUTHORING_DRAFT_MISMATCH");
+    for (const entry of reviewedEntries) {
       const draft = drafts.get(entry.progress.candidate.pack.name);
       if (!draft || canonicalJsonDigest(draft.boundary) !== canonicalJsonDigest(entry.progress.candidate)
         || canonicalJsonDigest(draft.generation_lock) !== canonicalJsonDigest(entry.candidate_lock)) {

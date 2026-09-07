@@ -2288,6 +2288,20 @@ export function assertStoredExplorationPolicy(
   }
 }
 
+/** Non-authorizing metadata scaffold only. Empty scaffolds must never become Read pointers. */
+export function assertStoredExplorationMetadata(
+  boundary: ExplorationBoundaryDraft,
+  lock: GenerationLock,
+): void {
+  if (boundary.schema_version !== EXPLORATION_BOUNDARY_VERSION
+    || boundary.activation !== "disabled_unreviewed"
+    || !Array.isArray(boundary.pack.resources) || boundary.pack.resources.length !== 0) {
+    throw new Error("Metadata-only authoring requires an empty disabled scaffold, not Read authority.");
+  }
+  assertGenerationLockFingerprint(lock, boundary.generation_lock_fingerprint);
+  assertBoundaryCandidateMetadata(boundary, boundary);
+}
+
 export function reviewExplorationBoundaryCandidate(
   draft: ExplorationBoundaryDraft,
   candidate: ExplorationBoundaryDraft,
@@ -4259,7 +4273,7 @@ function boundaryAuthority(candidate: ExplorationBoundaryDraft): Record<string, 
   return { ...authority, activation: "reviewed" };
 }
 
-function assertBoundaryCandidateNarrowsDraft(
+function assertBoundaryCandidateMetadata(
   draft: ExplorationBoundaryDraft,
   candidate: ExplorationBoundaryDraft,
 ): void {
@@ -4319,6 +4333,13 @@ function assertBoundaryCandidateNarrowsDraft(
     throw new Error("trusted_context cannot change during boundary review.");
   }
   assertBudgetsNarrow(draft.budgets, candidate.budgets);
+}
+
+function assertBoundaryCandidateNarrowsDraft(
+  draft: ExplorationBoundaryDraft,
+  candidate: ExplorationBoundaryDraft,
+): void {
+  assertBoundaryCandidateMetadata(draft, candidate);
   const draftResources = new Map(draft.pack.resources.map((resource) => [resource.id, resource]));
   const candidateResources = new Map(candidate.pack.resources.map((resource) => [resource.id, resource]));
   if (candidate.pack.resources.length < 1) throw new Error("Boundary review must retain at least one reviewed resource.");

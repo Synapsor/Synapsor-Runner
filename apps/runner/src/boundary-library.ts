@@ -4,6 +4,7 @@ import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   AUTO_BOUNDARY_VERSION,
+  assertStoredExplorationMetadata,
   emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
   generationLockSharedFactsDigest,
@@ -359,7 +360,13 @@ export async function renameSavedBoundary(input: BoundaryLibraryContext & {
   const storedEntry = library.stored?.authoring.entries.find((entry) => entry.progress.boundary_id === stored.boundary_id);
   const candidate = structuredClone(stored.candidate);
   candidate.pack.name = input.newName;
-  const reviewed = reviewExplorationBoundaryCandidate(storedEntry?.progress.candidate ?? input.draft, candidate).candidate;
+  let reviewed: ExplorationBoundaryDraft;
+  if (storedEntry?.stage === "metadata_only") {
+    assertStoredExplorationMetadata(candidate, storedEntry.candidate_lock);
+    reviewed = candidate;
+  } else {
+    reviewed = reviewExplorationBoundaryCandidate(storedEntry?.progress.candidate ?? input.draft, candidate).candidate;
+  }
   const progress = createBoundaryReviewProgress({
     draft: storedEntry?.draft ?? input.draft,
     candidate: reviewed,
