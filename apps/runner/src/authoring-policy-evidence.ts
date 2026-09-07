@@ -74,6 +74,20 @@ export function policyCoverageDraft(input: {
         conflict_protection: "Runner records immutable eligibility/effect evidence, re-verifies current facts and approved effect at execution, and checks configured version fields. A changed version or changed approved effect refuses stale execution; do not require duplicate equality predicates in require for these Runner-owned checks.",
         receipts: "Runner's control ledger records processing and execution receipts, separately from source effects. A second source-table audit INSERT is not required. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed.",
         client_responsibilities: "The application authenticates the person, supplies trusted session identity, captures their selection and uses returned execution status/receipts for messages. A scoped subject reference authorizes one reviewed row; it does not prove the human clicked a UI. When an effective date is in the future, recording the change is not proof its benefits are already in force. Boundary rules cannot prove arbitrary client UI wording.",
+        application_obligations: {
+          customer_selection: "The client captures the customer's intended choice and submits that reviewed subject reference. Runner independently verifies its scope and eligibility; it cannot prove the human selected it.",
+          status_presentation: "The client presents returned statuses and receipts accurately. Approval, a queued request or a failed execution is not completion. A recorded future-effective change does not mean benefits are already in force.",
+        },
+        deployment_prerequisites: {
+          authenticated_identity: {
+            reviewed_customer_scope: input.read.pack.resources.length > 0
+              && input.read.pack.resources.every((resource) => hasReviewedPrincipalScope(resource)
+                && Boolean(resource.tenant_key || resource.rls_session?.tenant_setting || resource.tenant_scope)),
+            verified: false,
+            meaning: "Only connecting an authenticated application session to the already reviewed tenant/principal bindings remains a deployment step. Runtime refuses missing identity. This does not settle which customers are authorized or permit weakening database scope. Metadata-only drafting needs no actual identity values.",
+            next_step: "After authority review, choose a client and configure runtime identity. A local fixed-identity test is not production authentication verification; production must supply identity from its authenticated session, never model arguments.",
+          },
+        },
       },
     },
   };

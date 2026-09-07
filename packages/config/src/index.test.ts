@@ -405,6 +405,23 @@ describe("runner capability config validation", () => {
     }];
     expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
 
+    const outcomeSchema = JSON.parse(fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../schemas/synapsor.runner.schema.json"), "utf8"));
+    const schemaValidate = new Ajv2020({ strict: false, allErrors: true }).compile({
+      $defs: outcomeSchema.$defs, $ref: "#/$defs/supervised_worker_outcome",
+    });
+    for (const outcome of ["support.request_refund", "telecom.offered_plan_change.apply", "university.enrollment.course.add"]) {
+      const nested = structuredClone(config);
+      nested.supervised_worker.outcomes[0].outcome = outcome;
+      expect(validateRunnerCapabilityConfig(nested)).toMatchObject({ ok: true, errors: [] });
+      expect(schemaValidate(nested.supervised_worker.outcomes[0]), JSON.stringify(schemaValidate.errors)).toBe(true);
+    }
+    for (const outcome of ["apply", "telecom..apply", "telecom.apply.", "telecom.*", "telecom.apply\n", "telecom.apply;drop", "telecom.0apply"]) {
+      const invalid = structuredClone(config);
+      invalid.supervised_worker.outcomes[0].outcome = outcome;
+      expect(validateRunnerCapabilityConfig(invalid).errors.map((issue) => issue.code)).toContain("INVALID_SUPERVISED_WORKER_OUTCOME");
+      expect(schemaValidate(invalid.supervised_worker.outcomes[0])).toBe(false);
+    }
+
     const missingAuthority = structuredClone(config);
     delete missingAuthority.action_rules;
     expect(validateRunnerCapabilityConfig(missingAuthority).errors.map((issue) => issue.code))

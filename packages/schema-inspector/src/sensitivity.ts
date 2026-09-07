@@ -254,7 +254,8 @@ const UNRESOLVED_DATA_TYPES = new Set(["json", "jsonb", "xml", "object", "array"
 
 export function classifySensitivity(input: SensitivityClassificationInput): SensitivityClassification {
   const evidence = normalizeEvidence(input);
-  const matched = HIGH_CONFIDENCE_RULES.filter((candidate) => candidate.matches(evidence));
+  const matched = HIGH_CONFIDENCE_RULES.filter((candidate) => candidate.matches(evidence)
+    && !(candidate.code === "direct_contact_or_address" && isBooleanContactPreference(evidence)));
   if (input.writeOnly) {
     matched.push({
       code: "write_only_input",
@@ -307,6 +308,13 @@ export function classifySensitivity(input: SensitivityClassificationInput): Sens
     ["No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."],
     input.source,
   );
+}
+
+function isBooleanContactPreference(evidence: NormalizedEvidence): boolean {
+  // A reviewed boolean preference cannot contain an address. Do not generalize
+  // this exception to unknown/text types, or to any other sensitivity signal.
+  return /^(?:boolean|bool)$/u.test(evidence.dataType)
+    && /(?:optin|optout|notificationsenabled|notificationsallowed)$/u.test(evidence.compact);
 }
 
 function classification(

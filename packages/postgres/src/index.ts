@@ -1761,19 +1761,39 @@ function verifyVersionAdvanced(job: WritebackJob, actual: unknown): void {
 
 async function claimSourceReceipt(client: PostgresApplyClient, job: WritebackJob, config: RunnerConfig): Promise<WritebackResult | undefined> {
   const table = sourceReceiptTable(config);
-  const claimed = await client.query(`INSERT INTO ${table} (idempotency_key, job_id, proposal_id, status, result_hash, semantic_verification_json)\nVALUES ($1, $2, $3, 'in_progress', NULL, NULL)\nON CONFLICT (idempotency_key) DO NOTHING\nRETURNING status, result_hash`, [job.idempotency_key, job.job_id, job.proposal_id]);
+  const semanticReceipt = job.protocol_version === "5.0";
+  const claimed = await client.query(
+    semanticReceipt
+      ? `INSERT INTO ${table} (idempotency_key, job_id, proposal_id, status, result_hash, semantic_verification_json)\nVALUES ($1, $2, $3, 'in_progress', NULL, NULL)\nON CONFLICT (idempotency_key) DO NOTHING\nRETURNING status, result_hash`
+      : `INSERT INTO ${table} (idempotency_key, job_id, proposal_id, status, result_hash)\nVALUES ($1, $2, $3, 'in_progress', NULL)\nON CONFLICT (idempotency_key) DO NOTHING\nRETURNING status, result_hash`,
+    [job.idempotency_key, job.job_id, job.proposal_id],
+  );
   if (claimed.rowCount === 1) return undefined;
-  const receipt = await client.query(`SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM ${table} WHERE idempotency_key = $1 FOR UPDATE`, [job.idempotency_key]);
+  const receipt = await client.query(
+    semanticReceipt
+      ? `SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM ${table} WHERE idempotency_key = $1 FOR UPDATE`
+      : `SELECT job_id, proposal_id, status, result_hash FROM ${table} WHERE idempotency_key = $1 FOR UPDATE`,
+    [job.idempotency_key],
+  );
   const row = receipt.rows[0];
   if (!row) return failedResult(job, config, "SOURCE_RECEIPT_UNAVAILABLE");
   return resultFromExistingReceipt(job, config, row);
 }
 
 async function recordSourceReceipt(client: PostgresApplyClient, job: WritebackJob, config: RunnerConfig, result: WritebackResult): Promise<void> {
-  const semanticVerification = job.protocol_version === "5.0" && result.protocol_version === "5.0"
-    ? JSON.stringify(result.semantic_verification)
-    : null;
-  const updated = await client.query(`UPDATE ${sourceReceiptTable(config)}\nSET status = $2, result_hash = $3, semantic_verification_json = $4::jsonb, completed_at = now()\nWHERE idempotency_key = $1`, [job.idempotency_key, result.status, resultHashFromResult(job, result), semanticVerification]);
+  if (job.protocol_version === "5.0") {
+    if (result.protocol_version !== "5.0") throw new Error("SOURCE_RECEIPT_SEMANTIC_PROOF_UNAVAILABLE");
+    const updated = await client.query(
+      `UPDATE ${sourceReceiptTable(config)}\nSET status = $2, result_hash = $3, semantic_verification_json = $4::jsonb, completed_at = now()\nWHERE idempotency_key = $1`,
+      [job.idempotency_key, result.status, resultHashFromResult(job, result), JSON.stringify(result.semantic_verification)],
+    );
+    if (updated.rowCount !== 1) throw new Error("SOURCE_RECEIPT_UNAVAILABLE");
+    return;
+  }
+  const updated = await client.query(
+    `UPDATE ${sourceReceiptTable(config)}\nSET status = $2, result_hash = $3, completed_at = now()\nWHERE idempotency_key = $1`,
+    [job.idempotency_key, result.status, resultHashFromResult(job, result)],
+  );
   if (updated.rowCount !== 1) throw new Error("SOURCE_RECEIPT_UNAVAILABLE");
 }
 

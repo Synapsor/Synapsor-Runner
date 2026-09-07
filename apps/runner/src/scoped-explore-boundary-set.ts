@@ -51,6 +51,8 @@ export type ScopedExploreBoundarySetRuntime = {
   session_fingerprint: `sha256:${string}`;
   model_authority_metadata?: ModelAuthorityMetadataMode;
   trusted_scope?: ScopedExploreRuntime["trusted_scope"];
+  requireTrustedScope?(): Promise<void>;
+  authorizedCatalogBoundaries?(): Promise<ActivatedExplorationBoundary[]>;
   describe(input?: BoundarySetDescribeInput): Promise<Record<string, unknown>>;
   validate(plan: unknown, boundaryName?: string): Promise<ScopedExploreValidationResult & {
     active_boundary_set_digest: `sha256:${string}`;
@@ -94,11 +96,17 @@ export async function createScopedExploreBoundarySetRuntime(input: {
   resolveTrustedScopeFn?: ResolveExploreTrustedScopeFn;
   runtimeFactory?: typeof createScopedExploreRuntime;
   modelAuthorityMetadata?: ModelAuthorityMetadataMode;
+  /** Local stdio can advertise fixed tool schemas before a caller identity is
+   * supplied. Every describe/validate/explore call still initializes scope. */
+  deferTrustedScope?: boolean;
   subjectReferences?: {
     service: SubjectReferenceService;
     workflow_session_id: string;
   };
 }): Promise<ScopedExploreBoundarySetRuntime> {
+  if (input.deferTrustedScope && (input.transport !== "stdio" || input.mode === "production_http")) {
+    throw new ScopedExploreError("EXPLORE_PLAN_INVALID", "Deferred scope initialization is restricted to local stdio protocol setup.");
+  }
   const projectRoot = path.resolve(input.projectRoot);
   const ownsStore = !input.store;
   const store = input.store ?? new ProposalStore(path.join(projectRoot, ".synapsor/local.db"));
@@ -163,8 +171,20 @@ export async function createScopedExploreBoundarySetRuntime(input: {
   const route = (boundaryName: string | undefined, resource: string | undefined) =>
     resolveActiveExploreTarget(boundaries, boundaryName, resource);
 
-  const initialRuntime = await childFor(selected);
+  const initialRuntime = input.deferTrustedScope ? undefined : await childFor(selected);
   const runtime: ScopedExploreBoundarySetRuntime = {
+    authorizedCatalogBoundaries: async () => {
+      await refresh();
+      const allowed: ActivatedExplorationBoundary[] = [];
+      for (const boundary of boundaries) {
+        try { await childFor(boundary); allowed.push(boundary); }
+        catch (error) {
+          if (!(error instanceof ScopedExploreError) || error.code !== "EXPLORE_SCOPE_FORBIDDEN") throw error;
+        }
+      }
+      return allowed;
+    },
+    requireTrustedScope: async () => { await refresh(); await childFor(selected); },
     get boundary() {
       return selected;
     },
@@ -175,16 +195,19 @@ export async function createScopedExploreBoundarySetRuntime(input: {
       return setDigest;
     },
     get session_fingerprint() {
-      return children.get(selected.pack.name)?.runtime.session_fingerprint
-        ?? initialRuntime.session_fingerprint;
+      const fingerprint = children.get(selected.pack.name)?.runtime.session_fingerprint
+        ?? initialRuntime?.session_fingerprint;
+      if (!fingerprint) throw new ScopedExploreError("EXPLORE_SCOPE_FORBIDDEN", "A trusted runtime identity is required before scoped tool use.");
+      return fingerprint;
     },
     model_authority_metadata: input.modelAuthorityMetadata ?? "semantic",
     get trusted_scope() {
       return children.get(selected.pack.name)?.runtime.trusted_scope
-        ?? initialRuntime.trusted_scope;
+        ?? initialRuntime?.trusted_scope;
     },
     describe: async (request = {}) => {
       await refresh();
+      if (input.deferTrustedScope) await childFor(selected);
       if (request.boundary || request.resource || boundaries.length === 1) {
         const target = route(request.boundary, request.resource);
         const boundary = target.boundary;
@@ -208,17 +231,19 @@ export async function createScopedExploreBoundarySetRuntime(input: {
       if (!Number.isSafeInteger(cursor) || cursor < 0) {
         throw new ScopedExploreError("EXPLORE_PLAN_INVALID", "app.describe_data cursor must be a non-negative integer.");
       }
-      const catalog: Array<Record<string, unknown>> = [];
+      const page: Array<Record<string, unknown>> = [];
+      let skipped = 0;
+      let total = 0;
       for (const boundary of boundaries) {
+        total += boundary.pack.resources.length;
+        const localOffset = Math.max(0, cursor - skipped);
+        skipped += boundary.pack.resources.length;
+        if (localOffset >= boundary.pack.resources.length || page.length >= limit) continue;
         const child = await childFor(boundary);
-        for (const resource of await describeAllResources(
-          child,
-          request.include_time_coverage,
-        )) {
-          catalog.push({ ...resource, boundary_name: boundary.pack.name });
-        }
+        const described = await child.describe({ cursor: localOffset, limit: limit - page.length,
+          include_time_coverage: request.include_time_coverage === true });
+        page.push(...recordArray(described.resources).map((resource) => ({ ...resource, boundary_name: boundary.pack.name })));
       }
-      const page = catalog.slice(cursor, cursor + limit);
       const relativeTimeAvailable = boundaries.some((boundary) =>
         boundary.reporting_timezone === "UTC");
       return {
@@ -236,7 +261,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
           model_supplied_date_arithmetic: false,
         },
         resources: page,
-        next_cursor: cursor + page.length < catalog.length ? cursor + page.length : null,
+        next_cursor: cursor + page.length < total ? cursor + page.length : null,
         raw_sql_available: false,
         source_rows_available_before_activation: false,
         source_database_changed: false,
@@ -244,6 +269,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
     },
     validate: async (unknownPlan, boundaryName) => {
       await refresh();
+      if (input.deferTrustedScope) await childFor(selected);
       const resource = isRecord(unknownPlan) && typeof unknownPlan.resource === "string"
         ? unknownPlan.resource
         : undefined;
@@ -262,6 +288,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
     },
     explore: async (unknownPlan, boundaryName) => {
       await refresh();
+      if (input.deferTrustedScope) await childFor(selected);
       const resource = isRecord(unknownPlan) && typeof unknownPlan.resource === "string"
         ? unknownPlan.resource
         : undefined;
@@ -528,30 +555,6 @@ function boundarySummaries(boundaries: ActivatedExplorationBoundary[]): Array<Re
 
 function recordArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.filter(isRecord) : [];
-}
-
-async function describeAllResources(
-  runtime: ScopedExploreRuntime,
-  includeTimeCoverage?: boolean,
-): Promise<Array<Record<string, unknown>>> {
-  const resources: Array<Record<string, unknown>> = [];
-  let cursor: number | undefined;
-  for (let page = 0; page < 100; page += 1) {
-    const described = await runtime.describe({
-      limit: 10,
-      ...(cursor === undefined ? {} : { cursor }),
-      ...(includeTimeCoverage === undefined
-        ? {}
-        : { include_time_coverage: includeTimeCoverage }),
-    });
-    resources.push(...recordArray(described.resources));
-    cursor = typeof described.next_cursor === "number" ? described.next_cursor : undefined;
-    if (cursor === undefined) return resources;
-  }
-  throw new ScopedExploreError(
-    "EXPLORE_PLAN_INVALID",
-    "The reviewed boundary catalog exceeded its fixed pagination limit.",
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

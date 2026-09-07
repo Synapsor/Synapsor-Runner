@@ -24,6 +24,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   inspectDatabase,
   rolePostureFingerprint,
+  type RelationPrivilegeInfo,
   type SchemaInspection,
   type TableInfo
 } from "@synapsor-runner/schema-inspector";
@@ -132,6 +133,7 @@ export type SupervisedWriterPostureAssessment = {
   reasons: string[];
   allowed_relations: string[];
   writable_relations: string[];
+  relation_issues?: Array<{ relation: string; issue: "missing" | "unreviewed" | "excess"; privileges: string[] }>;
 };
 
 
@@ -237,9 +239,10 @@ export function assessSupervisedWriterPosture(
       reasons.push("writer_relation_posture_unavailable");
       continue;
     }
-    const granted = Object.entries(posture.privileges)
-      .filter(([, enabled]) => enabled)
-      .map(([privilege]) => privilege as keyof typeof posture.privileges);
+    const granted = [...new Set([
+      ...Object.entries(posture.privileges).filter(([, enabled]) => enabled).map(([privilege]) => privilege),
+      ...Object.entries(posture.column_privileges ?? {}).filter(([, fields]) => fields?.length).map(([privilege]) => privilege),
+    ])] as Array<keyof typeof posture.privileges>;
     if (granted.length === 0) continue;
     const reviewed = allowed.get(relation);
     if (!reviewed) {
@@ -271,6 +274,9 @@ export function assessSemanticSupervisedWriterPosture(
   inspection: SchemaInspection,
 ): SupervisedWriterPostureAssessment {
   const reasons: string[] = [];
+  const relationIssues: NonNullable<SupervisedWriterPostureAssessment["relation_issues"]> = [];
+  const updateColumns = new Map<string, Set<string>>();
+  const lockColumns = new Map<string, string>();
   const fingerprint = rolePostureFingerprint(inspection);
   const role = inspection.role_posture;
   const allowed = new Map<string, Set<keyof NonNullable<TableInfo["role_posture"]>["privileges"]>>();
@@ -315,12 +321,21 @@ export function assessSemanticSupervisedWriterPosture(
     addAllowed(targetRelation, ["select", operation]);
     addRequired(targetRelation, "select");
     addRequired(targetRelation, operation);
+    if (operation === "update") {
+      const fields = updateColumns.get(targetRelation) ?? new Set<string>();
+      compiled.effect_envelope.allowed_fields.forEach((field) => fields.add(field.name));
+      if (compiled.effect_envelope.version_advance?.strategy === "integer_increment") {
+        fields.add(compiled.effect_envelope.version_advance.column);
+      }
+      updateColumns.set(targetRelation, fields);
+    }
     if (source.database_scope?.mode === "postgres_rls") rlsRequired.add(targetRelation);
 
     for (const binding of compiled.bindings) {
       const relation = `${binding.resource.schema}.${binding.resource.table}`;
       addAllowed(relation, ["select"]);
       addRequired(relation, "select");
+      if (inspection.engine === "postgres") lockColumns.set(relation, binding.resource.primary_key);
       if (source.database_scope?.mode === "postgres_rls") rlsRequired.add(relation);
     }
     if (source.receipts?.authority === "source_db") {
@@ -354,7 +369,23 @@ export function assessSemanticSupervisedWriterPosture(
       continue;
     }
     for (const privilege of requiredPrivileges) {
-      if (!table.role_posture.privileges[privilege]) reasons.push(`writer_${privilege}_missing`);
+      const grantedColumns = table.role_posture.column_privileges?.update ?? [];
+      const expectedColumns = updateColumns.get(relation);
+      const sufficientColumns = privilege === "update" && expectedColumns?.size
+        && [...expectedColumns].every((field) => grantedColumns.includes(field));
+      if (!table.role_posture.privileges[privilege] && !sufficientColumns) {
+        reasons.push(`writer_${privilege}_missing`);
+        relationIssues.push({ relation, issue: "missing", privileges: [privilege] });
+      }
+    }
+    const lockColumn = lockColumns.get(relation);
+    if (lockColumn && table.row_level_security === true && table.role_posture.row_security_update_permitted !== true) {
+      reasons.push("writer_row_lock_rls_policy_missing");
+      relationIssues.push({ relation, issue: "missing", privileges: ["applicable permissive UPDATE/ALL RLS policy for row locking (SELECT alone is insufficient)"] });
+    }
+    if (lockColumn && !table.role_posture.privileges.update && !table.role_posture.column_privileges?.update?.length) {
+      reasons.push("writer_row_lock_privilege_missing");
+      relationIssues.push({ relation, issue: "missing", privileges: [`UPDATE (${lockColumn}) for row locking`] });
     }
     if (rlsRequired.has(relation)
       && (table.row_level_security !== true || table.role_posture.row_security_effective_for_current_role !== true)) {
@@ -371,10 +402,23 @@ export function assessSemanticSupervisedWriterPosture(
     const granted = Object.entries(posture.privileges)
       .filter(([, enabled]) => enabled)
       .map(([privilege]) => privilege as keyof typeof posture.privileges);
-    if (granted.length === 0) continue;
+    const columnGrants = Object.entries(posture.column_privileges ?? {}).filter(([, fields]) => fields?.length);
+    if (granted.length === 0 && columnGrants.length === 0) continue;
     const reviewed = allowed.get(relation);
-    if (!reviewed) reasons.push("writer_unreviewed_relation_privilege");
-    else if (granted.some((privilege) => !reviewed.has(privilege))) reasons.push("writer_excess_relation_privilege");
+    if (!reviewed) {
+      reasons.push("writer_unreviewed_relation_privilege");
+      relationIssues.push({ relation, issue: "unreviewed", privileges: [...granted, ...columnGrants.map(([privilege]) => `column ${privilege}`)] });
+    } else if (granted.some((privilege) => !reviewed.has(privilege))) {
+      reasons.push("writer_excess_relation_privilege");
+      relationIssues.push({ relation, issue: "excess", privileges: granted.filter((privilege) => !reviewed.has(privilege)) });
+    }
+    for (const [privilege, fields] of columnGrants) {
+      const expected = privilege === "update" ? new Set([...(updateColumns.get(relation) ?? []), ...(lockColumns.has(relation) ? [lockColumns.get(relation)!] : [])]) : undefined;
+      if (!reviewed || (privilege === "update" ? fields!.some((field) => !expected!.has(field)) : !reviewed.has(privilege as keyof RelationPrivilegeInfo))) {
+        reasons.push("writer_excess_column_privilege");
+        relationIssues.push({ relation, issue: "excess", privileges: [`${privilege} (${fields!.join(", ")})`] });
+      }
+    }
     if (posture.current_role_is_owner || posture.current_role_can_assume_owner) reasons.push("writer_owns_relation");
   }
   return {
@@ -384,6 +428,7 @@ export function assessSemanticSupervisedWriterPosture(
     reasons: [...new Set(reasons)].sort(),
     allowed_relations: [...allowed.keys()].sort(),
     writable_relations: [...(role?.writable_relations ?? [])].sort(),
+    relation_issues: relationIssues,
   };
 }
 

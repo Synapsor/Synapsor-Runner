@@ -1470,7 +1470,12 @@ async function verifySingleOrganizationProductionExplore(input) {
     const tools = await alice.client.listTools();
     assert(tools.tools.map((tool) => tool.name).join(",") === "app.describe_data,app.explore_data",
       "MySQL single-organization MCP exposed an unexpected tool surface.", tools.tools);
-    const described = resultPayload(await alice.client.callTool({ name: "app.describe_data", arguments: {} }));
+    const summary = resultPayload(await alice.client.callTool({ name: "app.describe_data", arguments: {} }));
+    assert(summary.resources?.[0]?.id === singleOrganizationSourceId,
+      "MySQL single-organization discovery did not expose the canonical resource summary.", summary);
+    const described = resultPayload(await alice.client.callTool({
+      name: "app.describe_data", arguments: { resource: summary.resources[0].id },
+    }));
     const describedText = JSON.stringify(described);
     assert(describedText.includes("single_organization") && !describedText.includes("internal-finance"),
       "MySQL model-facing catalog did not report the fixed posture safely.", described);
@@ -1969,9 +1974,10 @@ async function main() {
       "MySQL multi-boundary HTTP verification exposed an unexpected tool surface.", tools);
       const described = resultPayload(await scoped.client.callTool({
         name: "app.describe_data",
-        arguments: {},
+        arguments: { limit: 20 },
       }));
-      assert(described.boundaries?.map((boundary) => boundary.name).sort().join(",")
+      const describedBoundaryNames = [...new Set(described.resources?.map((resource) => resource.boundary_name))].sort();
+      assert(described.next_cursor === null && describedBoundaryNames.join(",")
         === "mysql_events_production,mysql_events_secondary",
       "MySQL HTTP catalog did not span both exact reviewed boundaries.", described);
       const plan = {
@@ -2008,7 +2014,7 @@ async function main() {
       process.stdout.write(`${JSON.stringify({
         ok: true,
         engine: "mysql",
-        active_boundaries: described.boundaries.map((boundary) => boundary.name).sort(),
+        active_boundaries: describedBoundaryNames,
         tools: tools.tools.map((tool) => tool.name),
         ambiguity_refused: true,
         primary_boundary_query: primary.ok,
@@ -2198,13 +2204,26 @@ async function main() {
     assert(tools.tools.map((tool) => tool.name).join(",") === "app.describe_data,app.explore_data",
       "MySQL production MCP exposed an unexpected tool surface.", tools.tools);
 
-    const described = resultPayload(await alice.client.callTool({ name: "app.describe_data", arguments: {} }));
-    const describedEvents = described.resources?.find((candidateResource) => candidateResource.id === sourceId);
-    const focusedTimeDescription = resultPayload(await alice.client.callTool({
-      name: "app.describe_data",
-      arguments: { resource: sourceId },
-    }));
-    const describedItems = described.resources?.find((candidateResource) => candidateResource.id === scopedOrderItemsId);
+    const discoveryResponse = await alice.client.callTool({ name: "app.describe_data", arguments: {} });
+    const described = resultPayload(discoveryResponse);
+    assert(Buffer.byteLength(JSON.stringify(discoveryResponse)) <= 16 * 1024
+      && described.catalog_version === "synapsor.scoped-catalog.v2"
+      && described.resources?.every((resource) => !Object.hasOwn(resource, "fields")),
+    "MySQL discovery must return bounded metadata summaries before exact details.", described);
+    const details = [];
+    for (const resource of described.resources ?? []) {
+      const response = await alice.client.callTool({
+        name: "app.describe_data",
+        arguments: { resource: resource.id, boundary: resource.boundary_name },
+      });
+      assert(Buffer.byteLength(JSON.stringify(response)) <= 16 * 1024,
+        "MySQL resource details exceeded the complete MCP response budget.", resource.id);
+      details.push(resultPayload(response));
+    }
+    const detailedResources = details.flatMap((detail) => detail.resources ?? []);
+    const describedEvents = detailedResources.find((resource) => resource.id === sourceId);
+    const focusedTimeDescription = details.find((detail) => detail.resources?.[0]?.id === sourceId);
+    const describedItems = detailedResources.find((resource) => resource.id === scopedOrderItemsId);
     assert(described.ok === true
       && described.resources?.length === 4
       && JSON.stringify(describedEvents?.field_enums?.category)
@@ -2214,7 +2233,7 @@ async function main() {
       && describedEvents?.fields?.some((field) => field.id === "category"
         && field.label === "Event category"
         && field.description === "Reviewed category used to group customer events.")
-      && !described.resources?.some((candidateResource) => candidateResource.fields?.some((field) =>
+      && !detailedResources.some((candidateResource) => candidateResource.fields?.some((field) =>
         field.id === "internal_notes" || field.label === "Operator internal notes"))
       && describedEvents?.numeric_bands?.some((band) => band.name === "amount_band")
       && describedEvents?.auto_bands?.some((policy) => policy.field === "amount_cents"
@@ -2232,9 +2251,9 @@ async function main() {
       && describedEvents?.relative_time_window_fields?.includes("occurred_at")
       && describedItems?.relationships?.some((relationship) =>
         relationship.id === "scoped_order_items_order_id_fkey" && relationship.activation === "active"),
-    "MySQL production describe_data did not return the complete reviewed metadata catalog.", described);
-    assert(!JSON.stringify(described).match(/a-private-|bob-[1-5]|operator-only hardware note|derived-acme-item/i),
-      "MySQL production describe_data returned source-row data instead of metadata only.", described);
+    "MySQL production describe_data did not return complete reviewed metadata on exact lookup.", details);
+    assert(!JSON.stringify([described, ...details]).match(/a-private-|bob-[1-5]|operator-only hardware note|derived-acme-item/i),
+      "MySQL production describe_data returned source-row data instead of metadata only.", details);
 
     const injectedScope = await alice.client.callTool({
       name: "app.explore_data",

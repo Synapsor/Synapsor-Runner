@@ -98,7 +98,7 @@ import {
   storeReadWorkloadAnalysis,
 } from "./read-workloads.js";
 import { readDelegationDraft } from "./delegation-setup.js";
-import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { readBoundaryAuthoringResumeState, buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import { boundaryCommand } from "./guided-start.js";
 import { initializeGuidedProject, readGuidedOnboardingState } from "./guided-project.js";
@@ -4132,7 +4132,48 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("reuses an exact active Read Boundary when its original workload record is unavailable", async () => {
+  it("revalidates a saved job when the model says reuse, instead of clearing its pending review", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-revalidate-reuse-"));
+    const inspection = actionTargetInspection();
+    const build = buildAutoBoundary({ inspection, project: { root, package_manager: "npm", frameworks: ["node"],
+      schema_inputs: [], database_env_names: ["DATABASE_URL"] }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
+    const prompts: string[] = [];
+    const modelReadWorkloadGenerator = vi.fn();
+    const confirmActivation = vi.fn(async () => false);
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined, editFieldTiers: async () => undefined,
+      promptText: async (prompt) => { throw new Error(`Business job must be retained: ${prompt}`); },
+      chooseOption: async (title) => { prompts.push(title);
+        if (title === "START BOUNDARY DRAFTING") return "resume";
+        if (title === "ACTIVATE READ BOUNDARY") return "finish";
+        throw new Error(`Unexpected revalidation menu: ${title}`);
+      }, confirm: async () => true, confirmActivation, confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const context = await loadBoundaryReviewContext(root);
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({
+        binding: { boundary_name: context.candidate.pack.name,
+          generation_lock_fingerprint: context.bundle.authority.generation_lock_fingerprint,
+          schema_fingerprint: `sha256:${"0".repeat(64)}`, role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint },
+        stage: "authority_review", jobIntent: "Keep the reviewed maintenance request reads.", provider: "openai", model: "gpt-test",
+      }));
+      await expect(boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"],
+        async () => inspection, session, undefined, {
+          startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
+          modelBoundaryJobPlanner: async () => ({ state: "planned", read_mode: "reuse", action_mode: "none",
+            summary: "Keep the current Read rules.", correction_used: false, authority_granted: false, source_database_changed: false }),
+          modelReadWorkloadGenerator, modelAuthoringNarrator: async () => "Review the reconciled Read revision; nothing is active.",
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(session),
+        })).resolves.toBe(0);
+      expect(modelReadWorkloadGenerator).not.toHaveBeenCalled();
+      expect(confirmActivation.mock.calls.length + prompts.filter((title) => title === "ACTIVATE READ BOUNDARY").length).toBeGreaterThan(0);
+      await expect(fs.access(path.join(root, ".synapsor/boundary-authoring/resume.json"))).resolves.toBeUndefined();
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each([502, 2_000])("reuses exact active reads for a %i-character Action edit without remapping or changing Read authority", async (jobLength) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-action-only-reuse-"));
     const inspection = actionTargetInspection();
     const build = buildAutoBoundary({
@@ -4148,7 +4189,7 @@ describe("boundary operator-plane CLI", () => {
       inspectedSchema: "public",
     });
     const modelReadWorkloadGenerator = vi.fn();
-    const operatorJob = "Keep the existing reviewed reads and add only a bounded maintenance-request proposal.";
+    const operatorJob = "Keep the existing reviewed reads and add only a bounded maintenance-request proposal.".padEnd(jobLength, ".");
     const expandedActionIntent = `Propose inserting one bounded maintenance request. ${"Keep this as proposal-only reviewed Action detail. ".repeat(12)}`;
     expect([...expandedActionIntent].length).toBeGreaterThan(500);
     const modelBoundaryJobPlanner = vi.fn(async () => ({
@@ -4980,15 +5021,24 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised", "repair_on_resume", "privacy_retry", "guided_privacy", "decline_privacy", "policy_text", "clarified_privacy", "application_clarification", "read_only_pivot"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
-    const clarifiedPrivacy = posture === "clarified_privacy";
+  it.each(["proposal_only", "supervised", "repair_on_resume", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+    const coverageFailure = posture === "coverage_failure";
+    const partialConfirmation = posture === "partial_confirmation";
+    const manualGuidedRetryNoop = posture === "guided_privacy_manual_retry_noop";
+    const manualGuidedRetryChange = posture === "guided_privacy_manual_retry_change";
+    const manualGuidedRetry = manualGuidedRetryNoop || manualGuidedRetryChange;
+    const failedReadCorrection = posture === "read_correction_failed" || posture === "read_correction_retry";
+    const mechanicalRead = posture === "read_correction" || failedReadCorrection;
+    const confirmedCurrent = posture === "confirmed_current" || partialConfirmation || manualGuidedRetryNoop;
+    const clarifiedPrivacy = posture === "clarified_privacy" || confirmedCurrent || mechanicalRead || manualGuidedRetry;
     const applicationClarification = posture === "application_clarification";
-    const policyText = posture === "policy_text" || clarifiedPrivacy || applicationClarification;
+    const policyText = posture === "policy_text" || (clarifiedPrivacy && !manualGuidedRetry) || applicationClarification || coverageFailure;
     const writeback = posture === "supervised" || posture === "privacy_retry" ? "supervised" : "proposal_only";
     const guidedPrivacy = posture === "guided_privacy" || posture === "decline_privacy";
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-semantic-action-"));
     let sourceHandler: ((command: string, argument: string) => Promise<boolean>) | undefined;
     const sourceText = applicationClarification ? "The application captures the customer's selected visit.\nRequire one maintenance reviewer. Do not execute changes."
+      : confirmedCurrent ? "Customers may see business status; internal eligibility state stays private.\nRequire one maintenance reviewer. Do not execute changes."
       : clarifiedPrivacy ? "Hide internal visit status from the customer; retain eligibility verification.\nRequire one maintenance reviewer. Do not execute changes."
       : "A scheduled visit may receive one two-hour follow-up.\nRequire two maintenance reviewers. Do not execute changes.";
     if (policyText) await fs.writeFile(path.join(root, "Rules.txt"), sourceText);
@@ -5009,7 +5059,8 @@ describe("boundary operator-plane CLI", () => {
       inspectedSchema: "public",
     });
     const operatorJob = "When an authenticated customer's own scheduled service visit needs follow-up, let the agent request one bounded maintenance action."
-      + (writeback === "proposal_only" && posture !== "repair_on_resume" ? "" : " Automatically approve and complete eligible follow-ups.");
+      + (writeback === "proposal_only" && posture !== "repair_on_resume" ? "" : " Automatically approve and complete eligible follow-ups.")
+      + (posture === "repair_on_resume" ? " Do not write refunds or unrelated changes." : "");
     const modelBoundaryJobPlanner = vi.fn(async () => ({
       state: "planned" as const,
       read_mode: "create" as const,
@@ -5186,6 +5237,7 @@ describe("boundary operator-plane CLI", () => {
     const readReviewChoiceValues: string[][] = [];
     const boundaryListStarts: Array<boolean | undefined> = [];
     let preRevisionReadDigest: `sha256:${string}` | undefined;
+    const manualRetryPrivacyOnly: boolean[] = [];
     const modelReadBoundaryRevisionGenerator = vi.fn(async (
       input: Parameters<typeof generateModelReadBoundaryRevision>[0],
     ): Promise<Awaited<ReturnType<typeof generateModelReadBoundaryRevision>>> => {
@@ -5196,6 +5248,49 @@ describe("boundary operator-plane CLI", () => {
       expect(resource.model_withheld_fields ?? []).not.toContain("status");
       preRevisionReadDigest = explorationBoundaryCandidateDigest(input.boundary);
       const before = await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8");
+      if (manualGuidedRetry) {
+        manualRetryPrivacyOnly.push(Boolean(input.privacyOnly));
+        if (modelReadBoundaryRevisionGenerator.mock.calls.length === 1) {
+          throw new Error("GUIDED_PRIVACY_RETRY_TEST_UNAVAILABLE");
+        }
+        const result = await generateModelReadBoundaryRevision({ ...input, dependencies: { requestJson: async () => ({ status: 200,
+          body: { output: [{ type: "function_call", call_id: "manual_retry", name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({
+            status: manualGuidedRetryNoop ? "already_satisfied" : "revision", resource_changes: [{ resource: resource.id,
+              field_exposure: [{ field: "status", exposure: manualGuidedRetryNoop ? "model_and_runner" : "runner_only" }],
+            }],
+          }) }] },
+        }) } });
+        expect(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8")).toBe(before);
+        return result;
+      }
+      if (failedReadCorrection && modelReadBoundaryRevisionGenerator.mock.calls.length === 1) {
+        throw new Error("READ_CORRECTION_TEST_UNAVAILABLE");
+      }
+      if (posture === "privacy_retry" && modelReadBoundaryRevisionGenerator.mock.calls.length === 2) {
+        const clarificationHandler = input.clarificationHandler;
+        if (!clarificationHandler) throw new Error("Read revision clarification handler missing");
+        await expect(clarificationHandler({
+          question: "Is visit status internal eligibility state?",
+          reason: "The revision needs the operator's exact privacy meaning.",
+        })).resolves.toEqual({ state: "answered", answer: "Visit status is internal eligibility state." });
+      }
+      if (confirmedCurrent) {
+        const result = await generateModelReadBoundaryRevision({ ...input,
+          // Exercise a general revision that also confirms an unchanged field.
+          ...(partialConfirmation ? { privacyOnly: false } : {}),
+          dependencies: { requestJson: async () => ({ status: 200,
+          body: { output: [{ type: "function_call", call_id: "same", name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({
+            status: partialConfirmation ? "revision" : "already_satisfied", resource_changes: [{ resource: resource.id,
+              field_exposure: [{ field: "status", exposure: "model_and_runner" }],
+              ...(partialConfirmation ? { settings: { field_metadata: [{ field: "status", label: "Customer status" }] } } : {}),
+            }],
+          }) }] },
+        }) } });
+        expect(result.changes).toEqual([]);
+        expect(result.confirmed_fields).toHaveLength(1);
+        expect(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8")).toBe(before);
+        return result;
+      }
       let attempt = 0;
       expect(input.validateRevision).toBeTypeOf("function");
       const result = await generateModelReadBoundaryRevision({
@@ -5245,6 +5340,11 @@ describe("boundary operator-plane CLI", () => {
         }
         if (policyText) {
           if (title === "SEND ATTACHED RULES") return "send";
+          if (title === "CLIENT INTEGRATION RESPONSIBILITIES") {
+            expect(applicationClarification).toBe(true);
+            expect(choiceOptions?.initialValue).toBe("back");
+            return "assign";
+          }
           if (title === "REVIEW ATTACHED RULES") {
             rulesMenuVisits++;
             if (semanticActionAttempt < 3) {
@@ -5259,15 +5359,22 @@ describe("boundary operator-plane CLI", () => {
             return "save";
           }
           if (title === "FINISH BOUNDARY REVIEW") {
+            if (confirmedCurrent) throw new Error(`No-change reconciliation did not finish: ${JSON.stringify(vi.mocked(semanticChat.rememberDetails).mock.calls)}`);
             expect(options.some((option) => option.value === "activate")).toBe(false);
             expect(choiceOptions?.initialValue).toBe("resolve");
             expect(choiceOptions?.reviewOnly).toBe(true);
             expect(choiceOptions?.context?.join("\n"), JSON.stringify(vi.mocked(semanticChat.rememberDetails).mock.calls)).toContain("Activation is unavailable");
+            if (coverageFailure) return rulesMenuVisits++ === 0 ? "rules" : "finish";
+            if (failedReadCorrection) {
+              expect(coverageRequests).toHaveLength(2);
+              expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledOnce();
+              return posture === "read_correction_retry" && rulesMenuVisits++ === 0 ? "resolve" : "finish";
+            }
             return "resolve";
           }
           if (title === "ACTIVATE READ BOUNDARY") {
             expect(options.some((option) => option.value === "rules")).toBe(true);
-            expect(choiceOptions?.context?.join("\n")).toContain("Attached rules: Rules.txt v1;");
+            expect(choiceOptions?.context?.join("\n")).toContain("Rules.txt v1");
             expect(semanticActionAttempt).toBe(clarifiedPrivacy || applicationClarification ? 2 : 3);
             return "finish";
           }
@@ -5275,7 +5382,7 @@ describe("boundary operator-plane CLI", () => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         if (title === "SAVE DISABLED PRIVACY REVISION") {
-          expect(choiceOptions?.exactDetails?.sections?.[0]?.id).toBe("reductions");
+          if (!partialConfirmation) expect(choiceOptions?.exactDetails?.sections?.[0]?.id).toBe("reductions");
           expect(choiceOptions?.explainOnRequest).toBe(true);
           expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(preRevisionReadDigest);
           return posture === "decline_privacy" ? "back" : "save";
@@ -5289,11 +5396,15 @@ describe("boundary operator-plane CLI", () => {
           const review = choiceOptions?.context?.join("\n") ?? "";
           expect(review).toContain("Read review -> Action review");
           expect(review).toContain("Invalid requests are refused.");
-          expect(review).toContain(posture === "repair_on_resume" ? "UNMET REQUEST:" : writeback === "supervised" ? "execution review PENDING" : "Execution: proposal-only");
+          expect(review).toContain(posture === "repair_on_resume" || writeback === "supervised" ? "prepared for separate execution review; not enabled" : "Execution 1: proposal only; no source writes");
           expect(review).not.toMatch(/\+\d+ more|small-group minimum|fields per|1000 queries/u);
-          if (writeback === "supervised") expect(review).toContain("Once execution is enabled");
+          if (writeback === "supervised") expect(review).toContain("-> execution review");
           readReviewChoiceValues.push(options.map((option) => option.value));
           readActivationReviewCount += 1;
+          if (manualGuidedRetry) {
+            return readActivationReviewCount === 1 ? "privacy"
+              : readActivationReviewCount === 2 ? "revise_model" : "finish";
+          }
           return readActivationReviewCount <= (posture === "privacy_retry" ? 2 : 1) ? guidedPrivacy ? "privacy" : "revise_model" : "finish";
         }
         throw new Error(`Unexpected semantic Action choice: ${title}`);
@@ -5308,17 +5419,21 @@ describe("boundary operator-plane CLI", () => {
       narration: Parameters<typeof import("./model-authoring-narration.js").narrateValidatedAuthoringStep>[0],
     ) => narration.operatorMessage === "Why does Runner need this limit?"
       ? `It bounds automatic approval while proposals outside the limit remain reviewable. ${clarificationQuestion}`
+      : narration.responseStyle === "clarification" ? "Should customers see the visit status, or should it stay internal?"
       : "The exact disabled drafts are ready for review.");
     const semanticChat = testBoundaryAuthoringChat(session);
-    semanticChat.readOperator = vi.fn()
+    const readOperator = vi.fn()
       .mockResolvedValueOnce("Why does Runner need this limit?")
-      .mockResolvedValueOnce("At most ten proposals in a rolling 24 hours.")
-      .mockResolvedValueOnce("Keep the service visit status private for eligibility verification.");
-    if (posture === "privacy_retry") vi.mocked(semanticChat.readOperator).mockResolvedValueOnce("retry");
+      .mockResolvedValueOnce("At most ten proposals in a rolling 24 hours.");
+    if (!manualGuidedRetry) readOperator.mockResolvedValueOnce("Keep the service visit status private for eligibility verification.");
+    if (posture === "privacy_retry" || manualGuidedRetry) readOperator.mockResolvedValueOnce("retry");
+    if (posture === "privacy_retry") readOperator.mockResolvedValueOnce("Visit status is internal eligibility state.");
+    semanticChat.readOperator = readOperator;
     if (policyText) {
       semanticChat.setSourceCommandHandler = (handler) => { sourceHandler = handler; };
       semanticChat.readOperator = vi.fn().mockResolvedValueOnce("One reviewer currently; inspect the attached requirement before activation.")
         .mockResolvedValueOnce(applicationClarification ? "Our client captures and submits the customer's selected visit reference. Preserve the draft."
+          : confirmedCurrent ? "Visit status is customer-facing business information. Preserve the existing access, Action rule and execution setup."
           : clarifiedPrivacy ? "Yes, visit status is internal eligibility state; hide it from customers, retaining private verification."
           : "Use two maintenance reviewers as required by the attached rules. Keep this same outcome and all other rules.");
     }
@@ -5338,23 +5453,26 @@ describe("boundary operator-plane CLI", () => {
             apiKey: "session-secret",
             ...(policyText ? { dependencies: { requestJson: async (request: Parameters<NonNullable<import("./model-ask.js").AskProviderDependencies["requestJson"]>>[0]) => {
               coverageRequests.push(JSON.stringify(request.body));
+              if (coverageFailure) throw new Error("COVERAGE_TEST_PROVIDER_UNAVAILABLE");
               if (applicationClarification) return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
-                arguments: JSON.stringify({ passages: [{ start: 1, end: 2, disposition: coverageRequests.length === 1 ? "needs_decision" : "implemented",
+                arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: "needs_decision",
                   topic: "Customer selection", issue_kind: "missing_configuration", responsibility: "application",
+                  application_obligations: ["customer_selection"],
                   interpretation: "The client captures the customer's selection; Runner validates the selected scoped reference.", next_step: "Does your client capture the customer's selected visit before submitting its reference?",
-                  draft_paths: ["/actions/0/verification", "/actions/0/approval"],
-                }] }),
+                  draft_paths: ["/runner_evidence/runtime_contract/application_obligations/customer_selection"],
+                }, { start: 2, end: 2, disposition: "implemented", interpretation: "One maintenance reviewer; execution is disabled.",
+                  draft_paths: ["/actions/0/approval", "/actions/0/effect"] }] }),
               }] } };
               const privateStatus = clarifiedPrivacy && (await loadBoundaryReviewContext(root)).candidate.pack.resources
                 .find((resource) => resource.id === "public.service_visits")?.model_withheld_fields?.includes("status");
               if (clarifiedPrivacy) return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
                 arguments: JSON.stringify({ passages: [{ start: 1, end: 2,
-                  disposition: privateStatus ? "implemented" : "needs_decision",
-                  topic: "Internal visit status", issue_kind: coverageRequests.length === 1 ? "schema_meaning" : "contradiction",
-                  responsibility: coverageRequests.length === 1 ? "operator" : "runner",
+                  disposition: privateStatus || confirmedCurrent && coverageRequests.length > 1 ? "implemented" : "needs_decision",
+                  topic: "Internal visit status", issue_kind: coverageRequests.length === 1 && !mechanicalRead ? "schema_meaning" : "contradiction",
+                  responsibility: coverageRequests.length === 1 && !mechanicalRead ? "operator" : "runner",
                   interpretation: coverageRequests.length === 1 ? "Is visit status internal eligibility state?" : "Keep internal status private and preserve verification.",
                   next_step: "Is visit status internal eligibility state rather than customer-facing information?",
-                  field_checks: [{ resource: "public.service_visits", field: "status", expectation: "private" }],
+                  ...(confirmedCurrent && coverageRequests.length > 1 ? {} : { field_checks: [{ resource: "public.service_visits", field: "status", expectation: "private" }] }),
                   draft_paths: ["/read", "/actions/0/approval"],
                 }] }),
               }] } };
@@ -5420,12 +5538,20 @@ describe("boundary operator-plane CLI", () => {
       }
 
       if (policyText) {
+        if (coverageFailure) {
+          expect(sourceReviews.flat().join("\n")).toContain("COVERAGE_TEST_PROVIDER_UNAVAILABLE");
+          expect(sourceReviews.flat().join("\n")).toContain("Viewing this record makes no model request");
+          expect(coverageRequests).toHaveLength(1);
+          expect(rulesMenuVisits).toBe(2);
+          expect(await readActionRuleAuthorityDraft(root, "reviewed_staging_rules")).toBeDefined();
+          await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+          return;
+        }
         if (applicationClarification) {
           expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
           expect(modelReadBoundaryRevisionGenerator).not.toHaveBeenCalled();
-          expect(semanticChat.readOperator).toHaveBeenCalledTimes(2);
-          expect(coverageRequests).toHaveLength(2);
-          expect(coverageRequests[1]).toContain("Our client captures and submits");
+          expect(semanticChat.readOperator).toHaveBeenCalledOnce();
+          expect(coverageRequests).toHaveLength(1);
           expect(rulesMenuVisits).toBe(0);
           const saved = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
           expect(saved?.authority.rules).toHaveLength(1);
@@ -5435,18 +5561,50 @@ describe("boundary operator-plane CLI", () => {
         }
         if (clarifiedPrivacy) {
           expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
-          expect(modelReadBoundaryRevisionGenerator).not.toHaveBeenCalled();
-          expect(semanticChat.readOperator).toHaveBeenCalledTimes(2);
-          expect(coverageRequests).toHaveLength(4); // one bounded mechanical recheck, then repaired-candidate check
+          expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledTimes(posture === "read_correction_retry" ? 2 : 1);
+          expect(semanticChat.readOperator).toHaveBeenCalledTimes(mechanicalRead ? 1 : 2);
+          expect(coverageRequests).toHaveLength(posture === "read_correction_failed" ? 2 : mechanicalRead ? 3 : 2);
           const context = await loadBoundaryReviewContext(root);
           const visit = context.candidate.pack.resources.find((resource) => resource.id === "public.service_visits")!;
-          expect(visit.model_withheld_fields).toContain("status");
+          if (confirmedCurrent) {
+            expect(visit.model_withheld_fields ?? []).not.toContain("status");
+            if (partialConfirmation) expect(context.bundle.candidate_digest).not.toBe(preRevisionReadDigest);
+            else {
+              expect(context.bundle.candidate_digest).toBe(preRevisionReadDigest);
+              expect(vi.mocked(semanticChat.streamModel).mock.calls.flat(2).join("\n")).toContain("No access change was needed");
+            }
+            expect(vi.mocked(semanticChat.checkpoint).mock.calls.flat(2).join("\n")).not.toContain("Read revision not saved");
+            const resumeLoad = await readBoundaryAuthoringResumeState(root, { boundary_name: context.candidate.pack.name,
+              generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
+              schema_fingerprint: context.bundle.authority.schema_fingerprint, role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint });
+            if (resumeLoad.status !== "ready") throw new Error("No saved interpretation session");
+            const restored = await loadPolicySources(root, resumeLoad.value.policy_source_session!);
+            expect(restored.read_interpretations?.[0]?.fields).toContainEqual({ resource: "public.service_visits", field: "status", exposure: "model_and_runner" });
+            expect(restored.read_interpretations?.[0]?.instruction).toContain("Visit status is customer-facing business information");
+            expect(restored.read_interpretations?.[0]?.read_digest).toBe(context.bundle.candidate_digest);
+            expect(restored.coverage?.passages[0]?.disposition).toBe("implemented");
+            expect(resumeLoad.value.conversation).toContainEqual({
+              question: "Should customers see the visit status, or should it stay internal?",
+              answer: "Visit status is customer-facing business information. Preserve the existing access, Action rule and execution setup.",
+              kind: "clarification",
+            });
+            if (!partialConfirmation) {
+              expect(resumeLoad.value.conversation).toContainEqual({
+                question: "Visit status is customer-facing business information. Preserve the existing access, Action rule and execution setup.",
+                answer: expect.stringContaining("Confirmed: the checked field settings already match your answer."),
+              });
+            }
+          } else if (posture === "read_correction_failed") {
+            expect(visit.model_withheld_fields ?? []).not.toContain("status");
+            expect(context.bundle.candidate_digest).toBe(preRevisionReadDigest);
+            expect(vi.mocked(semanticChat.rememberDetails).mock.calls.flat(2).join("\n")).toContain("READ_CORRECTION_TEST_UNAVAILABLE");
+          } else expect(visit.model_withheld_fields).toContain("status");
           expect(visit.kept_out_fields).toContain("tenant_id");
           const saved = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
           expect(saved?.authority.rules).toHaveLength(1);
           expect(saved?.authority.approval_classes[0]?.required_approvals).toBe(1);
           await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
-          expect(rulesMenuVisits).toBe(0);
+          expect(rulesMenuVisits).toBe(posture === "read_correction_retry" ? 1 : 0);
           return;
         }
         expect(modelActionRuleGenerator).toHaveBeenCalledTimes(3);
@@ -5454,7 +5612,7 @@ describe("boundary operator-plane CLI", () => {
         expect(coverageRequests).toHaveLength(2);
         expect(coverageRequests.every((request) => request.includes("Require two maintenance reviewers"))).toBe(true);
         expect(coverageRequests.every((request) => request.includes("runner_evidence") && request.includes("read_review") && request.includes("scoped_bindings"))).toBe(true);
-        expect(sourceReviews.flat().join("\n")).toContain("2 | Require two maintenance reviewers");
+        expect(rulesMenuVisits).toBe(0); // same-action clarification does not require inspecting source menus
         const saved = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
         expect(saved?.authority.rules).toHaveLength(1);
         expect(saved?.authority.approval_classes[0]?.required_approvals).toBe(2);
@@ -5471,14 +5629,42 @@ describe("boundary operator-plane CLI", () => {
         expect(activePolicySource(restored)?.text).toBe(sourceText);
         expect(restored.coverage?.passages[0]?.disposition).toBe("implemented");
         await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
-        expect(semanticChat.checkpoint).toHaveBeenCalledWith("Proposed Action changes", expect.any(Array));
+        expect(semanticChat.checkpoint).toHaveBeenCalledWith("Action revision saved", expect.any(Array));
+        return;
+      }
+
+      if (manualGuidedRetry) {
+        expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledTimes(2);
+        expect(manualRetryPrivacyOnly).toEqual([true, true]);
+        const context = await loadBoundaryReviewContext(root);
+        const visit = context.candidate.pack.resources.find((resource) => resource.id === "public.service_visits")!;
+        expect(visit.kept_out_fields).toContain("tenant_id");
+        expect(await readActionRuleAuthorityDraft(root, "reviewed_staging_rules")).toBeDefined();
+        await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+        if (manualGuidedRetryNoop) {
+          expect(visit.model_withheld_fields ?? []).not.toContain("status");
+          expect(context.bundle.candidate_digest).toBe(preRevisionReadDigest);
+        } else {
+          expect(visit.model_withheld_fields).toContain("status");
+          expect(context.bundle.candidate_digest).not.toBe(preRevisionReadDigest);
+        }
+        const resume = await readBoundaryAuthoringResumeState(root, {
+          boundary_name: context.candidate.pack.name,
+          generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
+          schema_fingerprint: context.bundle.authority.schema_fingerprint,
+          role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint,
+        });
+        if (resume.status !== "ready") throw new Error("Manual retry resume missing");
+        const conversation = resume.value.conversation.flatMap((turn) => [turn.question, turn.answer]).join("\n");
+        expect(conversation).not.toContain("Keep the service visit status private for eligibility verification.");
+        expect(conversation).not.toContain("retry");
         return;
       }
 
       expect(modelBoundaryJobPlanner).toHaveBeenCalledWith(expect.objectContaining({ jobIntent: operatorJob }));
       expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
       expect(clarificationAnswer).toBe("At most ten proposals in a rolling 24 hours.");
-      expect(semanticChat.readOperator).toHaveBeenCalledTimes(guidedPrivacy ? 2 : posture === "privacy_retry" ? 4 : 3);
+      expect(semanticChat.readOperator).toHaveBeenCalledTimes(guidedPrivacy ? 2 : posture === "privacy_retry" ? 5 : 3);
       expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledTimes(posture === "privacy_retry" ? 2 : 1);
       if (posture === "decline_privacy") {
         const unchanged = await loadBoundaryReviewContext(root);
@@ -5496,6 +5682,24 @@ describe("boundary operator-plane CLI", () => {
           expect.stringContaining("settings.selectable_fields removes Runner's access"),
           "The exact disabled Read and Action drafts are unchanged.",
         ]));
+        const context = await loadBoundaryReviewContext(root);
+        const resume = await readBoundaryAuthoringResumeState(root, {
+          boundary_name: context.candidate.pack.name,
+          generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
+          schema_fingerprint: context.bundle.authority.schema_fingerprint,
+          role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint,
+        });
+        if (resume.status !== "ready") throw new Error("Manual revision resume missing");
+        expect(resume.value.conversation).toContainEqual({
+          question: "What should change in this Read Boundary?",
+          answer: "Keep the service visit status private for eligibility verification.",
+          kind: "clarification",
+        });
+        expect(resume.value.conversation).toContainEqual({
+          question: "Is visit status internal eligibility state?",
+          answer: "Visit status is internal eligibility state.",
+          kind: "clarification",
+        });
       }
       const readRevisionDetails = vi.mocked(semanticChat.rememberDetails).mock.calls
         .find(([title]) => title === "READ BOUNDARY REVISION");
@@ -5513,7 +5717,6 @@ describe("boundary operator-plane CLI", () => {
       ]);
       expect(readReviewChoiceValues[0]).toEqual([
         "activate",
-        ...(posture === "repair_on_resume" ? ["prepare_execution"] : []),
         "privacy",
         "revise_model",
         "details",
@@ -5620,15 +5823,10 @@ describe("boundary operator-plane CLI", () => {
         chooseOption: async (title, choices, options) => {
           if (title === "START BOUNDARY DRAFTING") return "resume";
           if (title === "ACTIVATE READ BOUNDARY") {
-            if (posture === "repair_on_resume" && !executionPrepared) {
-              expect(options?.context?.join("\n")).toContain("UNMET REQUEST:");
-              expect(choices.some((choice) => choice.value === "prepare_execution")).toBe(true);
-              executionPrepared = true;
-              return "prepare_execution";
-            }
             if (posture === "repair_on_resume") {
-              expect(options?.context?.join("\n")).toContain("execution review PENDING");
+              expect(options?.context?.join("\n")).toContain("prepared for separate execution review; not enabled");
               expect(choices.some((choice) => choice.value === "prepare_execution")).toBe(false);
+              executionPrepared = true;
             }
             return "finish";
           }
@@ -5668,6 +5866,10 @@ describe("boundary operator-plane CLI", () => {
         expect(updated.authority.approval_classes).toEqual(semantic.authority.approval_classes);
         expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(exactReadDigest);
         await expect(fs.access(path.join(root, ".synapsor/action-rules/active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      } else {
+        const unchanged = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+        expect(unchanged?.digest).toBe(semantic?.digest);
+        expect(unchanged?.authority).toEqual(semantic?.authority);
       }
 
       const revisionJob = "Keep the reviewed reads and change the maintenance outcome to require two reviewers.";
@@ -5908,7 +6110,7 @@ describe("boundary operator-plane CLI", () => {
         expect(savedResume.action.completed_outcomes).toEqual(["maintenance.same_followup"]);
         expect(splitChats[1]!.streamCheckpoint).toHaveBeenCalledWith("One Action draft; policy clarification incorporated",
           expect.arrayContaining([expect.stringContaining("Human-review quorum:")]), "normal");
-        expect(splitContexts.join("\n")).toContain("execution review PENDING");
+        expect(splitContexts.join("\n")).toContain("prepared for separate execution review; not enabled");
         await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
       }
     } finally {
@@ -6182,7 +6384,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["required_tool", "validation", "mixed"] as const)("offers model retry and exact %s details while preserving optional Runner guidance", async (failureKind) => {
+  it.each(["required_tool", "validation", "mixed", "clarification_paused"] as const)("offers model retry and exact %s details while preserving optional Runner guidance", async (failureKind) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-model-fallback-"));
     const inspection = actionTargetInspection();
     const build = buildAutoBoundary({
@@ -6208,6 +6410,9 @@ describe("boundary operator-plane CLI", () => {
       activated_actions: [],
     }));
     const modelReadWorkloadGenerator = vi.fn(async () => {
+      if (failureKind === "clarification_paused") throw new Error(
+        "READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for public.service_visits.visit_date; Runner accepted no model draft.",
+      );
       if (failureKind !== "required_tool") throw new ReadWorkloadDraftError([
         { attempt: 1, phase: "initial", category: "validation", code: "READ_WORKLOAD_BLOCKED", reasons: ["READ_WORKLOAD_ID_INVALID: allowed[0].id must be one stable lower-case id."] },
         failureKind === "mixed"
@@ -6298,12 +6503,17 @@ describe("boundary operator-plane CLI", () => {
         tone: "danger",
         lines: expect.arrayContaining([
           expect.stringContaining(failureKind === "required_tool"
-            ? "required bounded Read Boundary authoring tool" : "READ_WORKLOAD_ID_INVALID"),
+            ? "required bounded Read Boundary authoring tool"
+            : failureKind === "clarification_paused" ? "READ_WORKLOAD_CLARIFICATION_DECLINED" : "READ_WORKLOAD_ID_INVALID"),
           expect.stringContaining("no source query or write ran"),
+          expect.stringContaining("intermediate metadata workspace, not an accepted model draft or active access"),
         ]),
       }));
       const failureText = fallbackDetails.map((detail) => detail.lines.join("\n")).join("\n");
-      if (failureKind !== "required_tool") {
+      if (failureKind === "clarification_paused") {
+        expect(failureText).toContain("business clarification was left unanswered");
+        expect(failureText).not.toContain("submitted a structured Read Boundary draft");
+      } else if (failureKind !== "required_tool") {
         expect(failureText).toContain("Attempt 1 (initial)");
         expect(failureText).toContain("Attempt 2 (correction)");
         expect(failureText).not.toContain("did not produce");
@@ -7036,6 +7246,16 @@ describe("boundary operator-plane CLI", () => {
       expect(summary).toContain("Excluded:");
       expect(summary).not.toMatch(/relationships|scheduled_at|tenant_id|fingerprint|\+\d+ more/u);
       expect(summary.split("\n").length).toBeLessThanOrEqual(6);
+      const acknowledged = structuredClone(before.bundle);
+      const resource = acknowledged.candidate.pack.resources[0]!;
+      resource.field_types.updated_at = "timestamp with time zone";
+      resource.field_types.version = "integer";
+      resource.selectable_fields.push("updated_at", "version");
+      const meanings = new Set([`${resource.id}.updated_at`]);
+      const reviewedSummary = formatReadActivationBusinessSummary(acknowledged, meanings).join("\n");
+      expect(reviewedSummary).toContain("Confirmed meaning: 1 flagged field(s)");
+      expect(reviewedSummary).toContain("Privacy decision:"); // The unrelated version still needs review.
+      expect(formatReadActivationBusinessSummary(acknowledged).join("\n")).not.toContain("Confirmed meaning:");
       await expect(boundaryReviewCommandInternal(["--project-root", root, "--access"], async () => inspection,
         chat.session)).resolves.toBe(0);
       expect(reviews, writes.join("\n")).toHaveLength(4);

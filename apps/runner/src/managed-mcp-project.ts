@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { applyEdits, modify, parse, printParseErrorCode, type ParseError } from "jsonc-parser";
 import runnerPackage from "../package.json" with { type: "json" };
 
@@ -151,7 +152,7 @@ export async function previewManagedMcpProjectInstall(input: {
   const paths = await resolveInstallPaths(input, definition);
   const existing = await readOptionalJsonDocument(paths.destination);
   const marker = await readMarker(paths.marker, definition, paths.serverName);
-  const entry = managedEntry(paths.configArgument, paths.storeArgument, input.packageSpec, input.authoring === true);
+  const entry = await managedEntry(paths.configArgument, paths.storeArgument, input.packageSpec, input.authoring === true);
   assertSecretFree(entry, definition);
   const existingServersValue = existing?.value[definition.serversKey];
   if (existingServersValue !== undefined && !isRecord(existingServersValue)) {
@@ -474,23 +475,40 @@ async function pathsFromMarker(
   };
 }
 
-function managedEntry(
-  configPath: string,
-  storePath: string,
-  packageSpec: string | undefined,
-  authoring: boolean,
-): JsonRecord {
+export async function resolveManagedMcpLauncher(
+  packageSpec?: string,
+  bundleUrl = new URL("./runner.mjs", import.meta.url),
+): Promise<{ command: string; args: string[] }> {
+  if (packageSpec === undefined) {
+    // Reuse the installed build, including local tarball/unpublished releases.
+    // Never make a working local installation depend on another registry fetch.
+    try {
+      const bundle = await fs.realpath(fileURLToPath(bundleUrl));
+      if ((await fs.stat(bundle)).isFile()) return { command: process.execPath, args: [bundle] };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
   const resolvedPackage = packageSpec ?? `@synapsor/runner@${runnerPackage.version}`;
   if (!resolvedPackage.trim() || resolvedPackage.length > 2_048 || /[\u0000-\u001f\u007f]/.test(resolvedPackage)) {
     throw new Error("Runner package spec must be a non-empty package reference without control characters");
   }
+  return { command: "npx", args: ["-y", resolvedPackage] };
+}
+
+async function managedEntry(
+  configPath: string,
+  storePath: string,
+  packageSpec: string | undefined,
+  authoring: boolean,
+): Promise<JsonRecord> {
+  const launcher = await resolveManagedMcpLauncher(packageSpec);
   return {
     type: "stdio",
-    command: "npx",
+    command: launcher.command,
     args: authoring
       ? [
-        "-y",
-        resolvedPackage,
+        ...launcher.args,
         "mcp",
         "serve",
         "--authoring",
@@ -499,7 +517,7 @@ function managedEntry(
         "--config",
         configPath,
       ]
-      : ["-y", resolvedPackage, "mcp", "serve", "--config", configPath, "--store", storePath],
+      : [...launcher.args, "mcp", "serve", "--config", configPath, "--store", storePath],
   };
 }
 

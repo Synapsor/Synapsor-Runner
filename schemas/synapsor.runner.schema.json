@@ -690,7 +690,7 @@
         "write_url_env"
       ],
       "properties": {
-        "outcome": { "$ref": "#/$defs/qualified_name" },
+        "outcome": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+(?![\\s\\S])" },
         "action_boundary_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
         "mode": { "const": "supervised_worker" },
         "concurrency": { "type": "integer", "minimum": 1, "maximum": 32 },

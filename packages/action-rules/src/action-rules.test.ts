@@ -15,7 +15,8 @@ import {
   createActionRuleAuthority,
   parseActionRuleAuthority,
 } from "./authority.js";
-import { compileActionRule } from "./compile.js";
+import { compileActionRule, createActionRuleCompiler } from "./compile.js";
+import { ACTION_AUTHORITY_LIMITS } from "./limits.js";
 import { evaluateActionRule } from "./evaluate.js";
 import { loadActionRuleFacts, normalizeActionRuleDatabaseValue, type ActionRuleFactQueryV1 } from "./fact-loader.js";
 import {
@@ -1290,6 +1291,39 @@ describe("activated semantic outcome registry", () => {
 });
 
 describe("canonical Action Rule authority", () => {
+  it("reuses an owned catalog index without changing compiler checks or digests", () => {
+    const fixture = fieldServiceFixture();
+    const input = { rule: fixture.rule, verification_boundary: fixture.boundary, effect_envelope: fixture.envelope };
+    const compile = createActionRuleCompiler(fixture.catalog);
+    const first = compile(input);
+    expect(first).toEqual(compileActionRule({ ...input, catalog: fixture.catalog }));
+    fixture.catalog.resources[0]!.primary_key = "tampered_key";
+    expect(compile(input)).toEqual(first);
+    expect(() => { first.bindings[0]!.resource.primary_key = "another_key"; }).toThrow();
+    const changed = structuredClone(input);
+    changed.verification_boundary.generation_lock_fingerprint = `sha256:${"f".repeat(64)}`;
+    expect(() => compile(changed)).toThrow(/generation lock/);
+  });
+
+  it("bounds total rules and approval classes before compiling oversized bundles", () => {
+    const fixture = fieldServiceFixture();
+    const rule = { read_boundary_name: "reviewed_field_service", read_boundary_digest: `sha256:${"c".repeat(64)}` as const,
+      verification_boundary: fixture.boundary, effect_envelope: fixture.envelope, rule: fixture.rule,
+      activated_at: "2026-09-02T20:00:00.000Z" };
+    expect(() => createActionRuleAuthority({ name: "bounded", action_boundary_name: "bounded_actions", catalog: fixture.catalog,
+      rules: Array.from({ length: ACTION_AUTHORITY_LIMITS.rules + 1 }, () => rule) })).toThrow(/4096 reviewed rules/);
+    expect(() => createActionRuleApprovalClasses({ rules: [],
+      sources: Array.from({ length: ACTION_AUTHORITY_LIMITS.approvalClasses + 1 }, () => ({
+        name: "test.approval", mode: "human", rules: [], required_role: "reviewer", required_approvals: 1, shared_limits: [],
+      })) })).toThrow(/4096 approval classes/);
+    const [approvalClass] = createActionRuleApprovalClasses({ rules: [compileActionRule({
+      catalog: fixture.catalog, verification_boundary: fixture.boundary, effect_envelope: fixture.envelope, rule: fixture.rule,
+    })] });
+    expect(() => createActionRuleRegistry({ name: "bounded", rules: [],
+      approval_classes: Array.from({ length: ACTION_AUTHORITY_LIMITS.approvalClasses + 1 }, () => approvalClass!),
+    })).toThrow(/4096 approval classes/);
+  });
+
   it("rebuilds one immutable semantic Action Boundary and registry", () => {
     const fixture = fieldServiceFixture();
     const input = {

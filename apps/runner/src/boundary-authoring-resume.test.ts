@@ -6,6 +6,7 @@ import {
   buildBoundaryAuthoringResumeState,
   clearBoundaryAuthoringResumeState,
   readBoundaryAuthoringResumeState,
+  revalidateBoundaryAuthoringResume,
   writeBoundaryAuthoringResumeState,
   type BoundaryAuthoringResumeBinding,
 } from "./boundary-authoring-resume.js";
@@ -18,6 +19,26 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it("revalidates business context without carrying stale analysis, Action checkpoints or consent", () => {
+    const state = buildBoundaryAuthoringResumeState({ binding, stage: "client_setup",
+      jobIntent: "Review visits and propose rescheduling.", provider: "openai", model: "gpt-5.6-terra",
+      policySourceSession: "d2c11000-aaa1-4bbb-8ccc-111111111111",
+      conversation: [{ question: "Who reviews exceptions?", answer: "The clinic manager." }],
+      read: { analysis_id: "read_one", analysis_digest: `sha256:${"4".repeat(64)}` },
+      action: { intent: "Reschedule visits.", outcome: "clinic.reschedule" },
+      clientHandoff: { read_digest: `sha256:${"5".repeat(64)}` },
+    });
+    const current = { ...binding, schema_fingerprint: `sha256:${"6".repeat(64)}` as const };
+    const next = revalidateBoundaryAuthoringResume(state, current);
+    expect(next).toMatchObject({ stage: "planning", binding: current, job_intent: state.job_intent,
+      conversation: state.conversation, policy_source_session: state.policy_source_session, authority_granted: false });
+    expect(next.read).toBeUndefined();
+    expect(next.action).toBeUndefined();
+    expect(next.client_handoff).toBeUndefined();
+    expect(state.stage).toBe("client_setup");
+    expect(() => revalidateBoundaryAuthoringResume(state, { ...current, boundary_name: "other" })).toThrow("different Read Boundary");
+    expect(() => revalidateBoundaryAuthoringResume({ ...state, job_intent: "tampered" }, current)).toThrow("digest");
+  });
   it("persists bounded symbolic context without credentials or trusted identities", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-resume-"));
     try {
@@ -30,6 +51,7 @@ describe("Boundary authoring resume state", () => {
         conversation: [{
           question: "What is the largest refund the agent may propose?",
           answer: "Twenty-five dollars.",
+          kind: "clarification",
         }],
         policySourceSession: "d2c11000-aaa1-4bbb-8ccc-111111111111",
         readIntent: "Let the authenticated customer inspect only their own tickets and charges.",
@@ -59,6 +81,36 @@ describe("Boundary authoring resume state", () => {
       expect(state.read_intent).toBe(
         "Let the authenticated customer inspect only their own tickets and charges.",
       );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("round-trips clarification history and rejects unsupported saved turn kinds", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-resume-kind-"));
+    try {
+      const state = buildBoundaryAuthoringResumeState({
+        binding,
+        stage: "planning",
+        jobIntent: "Review visits without activating authority.",
+        provider: "openai",
+        model: "gpt-test",
+        conversation: [{
+          question: "Should customers see the visit status?",
+          answer: "Visit status is customer-facing business information.",
+          kind: "clarification",
+        }],
+      });
+      await writeBoundaryAuthoringResumeState(root, state);
+      await expect(readBoundaryAuthoringResumeState(root, binding)).resolves.toEqual({ status: "ready", value: state });
+      const filePath = path.join(root, ".synapsor/boundary-authoring/resume.json");
+      const parsed = JSON.parse(await fs.readFile(filePath, "utf8")) as { conversation: Array<Record<string, unknown>> };
+      parsed.conversation[0]!.kind = "unsupported";
+      await fs.writeFile(filePath, `${JSON.stringify(parsed)}\n`, "utf8");
+      await expect(readBoundaryAuthoringResumeState(root, binding)).resolves.toEqual({
+        status: "invalid",
+        reason: "The saved authoring state failed its schema or integrity check.",
+      });
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

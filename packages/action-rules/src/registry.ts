@@ -1,6 +1,8 @@
 import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/protocol";
 import { compileActionRuleBooleanPredicate } from "./compile.js";
 import { ActionRuleError } from "./errors.js";
+import { assertActionDiscoveryContractFits } from "./discovery.js";
+import { ACTION_AUTHORITY_LIMITS } from "./limits.js";
 import {
   ACTION_RULE_APPROVAL_CLASS_VERSION,
   ACTION_RULE_REGISTRY_VERSION,
@@ -14,6 +16,11 @@ import {
 const QUALIFIED_NAME = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$/u;
 const ROLE_NAME = /^[A-Za-z_][A-Za-z0-9_.:-]{0,159}$/u;
 const LIMIT_ID = /^[A-Za-z][A-Za-z0-9_.-]{0,79}$/u;
+
+const registryIndexes = new WeakMap<RuntimeActionRuleRegistryV1, {
+  rules: Map<string, ActivatedActionRuleV1>;
+  approvals: Map<string, ActivatedActionRuleApprovalClassV1>;
+}>();
 
 type ActivatedActionRuleInputV1 = Omit<ActivatedActionRuleV1, "approval_policy_digest"> & {
   approval_policy_digest?: `sha256:${string}`;
@@ -105,8 +112,8 @@ export function createActionRuleApprovalClasses(input: {
 }): ActivatedActionRuleApprovalClassV1[] {
   const rulesByOutcome = new Map(input.rules.map((rule) => [rule.outcome, rule]));
   const sources = input.sources ?? defaultHumanApprovalSources(input.rules);
-  if (sources.length < 1 || sources.length > 128) {
-    throw new ActionRuleError("ACTION_RULE_INVALID", "Action Rule authority must contain from 1 through 128 approval classes.");
+  if (sources.length < 1 || sources.length > ACTION_AUTHORITY_LIMITS.approvalClasses) {
+    throw new ActionRuleError("ACTION_RULE_INVALID", `Action Rule authority must contain from 1 through ${ACTION_AUTHORITY_LIMITS.approvalClasses} approval classes.`);
   }
   const seenClasses = new Set<string>();
   const boundOutcomes = new Set<string>();
@@ -210,6 +217,9 @@ export function createActionRuleRegistry(input: {
   rules: ActivatedActionRuleInputV1[];
   approval_classes?: ActivatedActionRuleApprovalClassV1[];
 }): RuntimeActionRuleRegistryV1 {
+  if (input.rules.length > ACTION_AUTHORITY_LIMITS.rules) {
+    throw new ActionRuleError("ACTION_RULE_INVALID", `Action Rule registry exceeds ${ACTION_AUTHORITY_LIMITS.rules} reviewed rules.`);
+  }
   const inputOutcomes = new Set<string>();
   for (const source of input.rules) {
     if (inputOutcomes.has(source.compiled.outcome)) {
@@ -223,20 +233,25 @@ export function createActionRuleRegistry(input: {
   }
   const approvalClasses = input.approval_classes
     ?? createActionRuleApprovalClasses({ rules: input.rules.map((rule) => rule.compiled) });
+  if (approvalClasses.length > ACTION_AUTHORITY_LIMITS.approvalClasses) {
+    throw new ActionRuleError("ACTION_RULE_INVALID", `Action Rule registry exceeds ${ACTION_AUTHORITY_LIMITS.approvalClasses} approval classes.`);
+  }
   approvalClasses.forEach(assertApprovalClassIntegrity);
   const approvalByOutcome = new Map<string, ActivatedActionRuleApprovalClassV1>();
+  const bindingsByOutcome = new Map<string, ActivatedActionRuleApprovalClassV1["rules"][number]>();
   for (const approvalClass of approvalClasses) {
     for (const binding of approvalClass.rules) {
       if (approvalByOutcome.has(binding.outcome)) {
         throw new ActionRuleError("ACTION_RULE_AMBIGUOUS", `Outcome ${binding.outcome} has more than one activated approval policy.`);
       }
       approvalByOutcome.set(binding.outcome, approvalClass);
+      bindingsByOutcome.set(binding.outcome, binding);
     }
   }
   const rules = input.rules.map((source) => {
     const outcome = source.compiled.outcome;
     const approvalClass = approvalByOutcome.get(outcome);
-    const binding = approvalClass?.rules.find((candidate) => candidate.outcome === outcome);
+    const binding = bindingsByOutcome.get(outcome);
     if (approvalClass === undefined || approvalClass.name !== source.compiled.approval_class
       || binding?.action_rule_digest !== source.compiled.rule_digest
       || binding.compiled_plan_digest !== source.compiled.compiled_plan_digest
@@ -244,6 +259,7 @@ export function createActionRuleRegistry(input: {
       || source.approval_policy_digest !== undefined && source.approval_policy_digest !== approvalClass.digest) {
       throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", `Approval authority for outcome ${outcome} does not match its activated Action Rule.`);
     }
+    assertActionDiscoveryContractFits(source.compiled, approvalClass.mode);
     return { ...source, approval_policy_digest: approvalClass.digest };
   });
   if (approvalByOutcome.size !== rules.length) {
@@ -251,16 +267,36 @@ export function createActionRuleRegistry(input: {
   }
   const canonicalRuleList = canonicalRules(rules);
   const canonicalClassList = canonicalApprovalClasses(approvalClasses);
-  return {
+  return indexImmutableRegistry({
     schema_version: ACTION_RULE_REGISTRY_VERSION,
     name: input.name,
     digest: actionRuleRegistryDigest({ name: input.name, rules: canonicalRuleList, approval_classes: canonicalClassList }),
     rules: canonicalRuleList,
     approval_classes: canonicalClassList,
+  });
+}
+
+function indexImmutableRegistry(value: RuntimeActionRuleRegistryV1): RuntimeActionRuleRegistryV1 {
+  // Only an owned, deeply frozen snapshot may skip repeated whole-registry
+  // hashing. Parsed or caller-mutated objects still take the integrity path.
+  const snapshot = structuredClone(value);
+  const freeze = (value: unknown): void => {
+    if (!value || typeof value !== "object" || Object.isFrozen(value)) return;
+    for (const child of Object.values(value)) freeze(child);
+    Object.freeze(value);
   };
+  freeze(snapshot);
+  const rules = new Map(snapshot.rules.map((entry) => [entry.compiled.outcome, entry]));
+  const approvals = new Map<string, ActivatedActionRuleApprovalClassV1>();
+  for (const approval of snapshot.approval_classes) {
+    for (const rule of approval.rules) approvals.set(rule.outcome, approval);
+  }
+  registryIndexes.set(snapshot, { rules, approvals });
+  return snapshot;
 }
 
 function assertRegistryIntegrity(registry: RuntimeActionRuleRegistryV1): void {
+  if (registryIndexes.has(registry)) return;
   const expected = actionRuleRegistryDigest({
     name: registry.name,
     rules: registry.rules,
@@ -272,11 +308,23 @@ function assertRegistryIntegrity(registry: RuntimeActionRuleRegistryV1): void {
   registry.approval_classes.forEach(assertApprovalClassIntegrity);
 }
 
+export function snapshotActionRuleRegistry(registry: RuntimeActionRuleRegistryV1): RuntimeActionRuleRegistryV1 {
+  if (registryIndexes.has(registry)) return registry;
+  assertRegistryIntegrity(registry);
+  return createActionRuleRegistry({ name: registry.name, rules: registry.rules, approval_classes: registry.approval_classes });
+}
+
 export function resolveActivatedActionRule(
   registry: RuntimeActionRuleRegistryV1,
   outcome: string,
 ): ActivatedActionRuleV1 {
   assertRegistryIntegrity(registry);
+  const index = registryIndexes.get(registry);
+  if (index) {
+    const entry = index.rules.get(outcome);
+    if (!entry) throw new ActionRuleError("ACTION_RULE_NOT_ELIGIBLE", "No activated Action Rule resolves the requested outcome.", "outcome");
+    return entry;
+  }
   const matches = registry.rules.filter((entry) => entry.compiled.outcome === outcome);
   if (matches.length !== 1) {
     throw new ActionRuleError(
@@ -295,6 +343,8 @@ export function resolveActivatedApprovalClass(
   outcome: string,
 ): ActivatedActionRuleApprovalClassV1 {
   const activated = resolveActivatedActionRule(registry, outcome);
+  const indexed = registryIndexes.get(registry)?.approvals.get(outcome);
+  if (indexed) return indexed;
   const matches = registry.approval_classes.filter((approvalClass) =>
     approvalClass.digest === activated.approval_policy_digest
     && approvalClass.rules.some((binding) => binding.outcome === outcome));

@@ -88,6 +88,7 @@ class SemanticMysqlIntentStore implements WritebackIntentStore {
 class SemanticMysqlConnection implements MysqlApplyConnection {
   readonly queryLog: Array<{ sql: string; values: unknown[] }> = [];
   updateCount = 0;
+  private receipt?: Record<string, unknown>;
 
   constructor(private readonly commitUnknown = false) {}
 
@@ -110,6 +111,29 @@ class SemanticMysqlConnection implements MysqlApplyConnection {
     }
     if (normalized.startsWith("SET SESSION time_zone = ?")) return [{} as T, undefined];
     if (normalized === "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ") return [{} as T, undefined];
+    if (normalized.startsWith("INSERT IGNORE INTO synapsor_writeback_receipts")) {
+      if (this.receipt) return [{ affectedRows: 0 } as T, undefined];
+      this.receipt = {
+        job_id: String(values[1]),
+        proposal_id: String(values[2]),
+        status: "in_progress",
+        result_hash: null,
+      };
+      return [{ affectedRows: 1 } as T, undefined];
+    }
+    if (normalized.startsWith("SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM synapsor_writeback_receipts")) {
+      return [[...(this.receipt ? [this.receipt] : [])] as T, undefined];
+    }
+    if (normalized.startsWith("UPDATE synapsor_writeback_receipts")) {
+      if (!this.receipt) throw new Error("missing semantic receipt");
+      this.receipt = {
+        ...this.receipt,
+        status: values[0],
+        result_hash: values[1],
+        semantic_verification_json: values[2],
+      };
+      return [{ affectedRows: 1 } as T, undefined];
+    }
     if (normalized.startsWith("SELECT")
       && normalized.includes("FROM `support_cases`.`case_actions`")
       && normalized.includes("`status`")
@@ -170,6 +194,28 @@ describe("mysql semantic Action adapter conformance", () => {
       affected_rows: 0,
       semantic_verification: { status: "previously_reverified" },
     });
+    expect(connection.updateCount).toBe(1);
+    expect(semanticActionVerifier).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists semantic proof in source receipts and requires it for idempotent replay", async () => {
+    const vector = createSemanticAdapterConformanceVector("mysql");
+    const connection = new SemanticMysqlConnection();
+    const semanticActionVerifier = vi.fn(async ({ factLoader }) => {
+      await factLoader.load(vector.fact_query);
+      return vector.reverification;
+    });
+
+    const applied = await applyMysqlJobWithConnection(vector.job, { ...config, semanticActionVerifier }, connection);
+    const replayed = await applyMysqlJobWithConnection(vector.job, { ...config, semanticActionVerifier }, connection);
+
+    expect(applied).toMatchObject({ protocol_version: "5.0", status: "applied" });
+    expect(replayed).toMatchObject({
+      protocol_version: "5.0",
+      status: "already_applied",
+      semantic_verification: { status: "previously_reverified" },
+    });
+    expect(connection.sqlLog.filter((sql) => sql.includes("semantic_verification_json"))).toHaveLength(4);
     expect(connection.updateCount).toBe(1);
     expect(semanticActionVerifier).toHaveBeenCalledTimes(1);
   });
@@ -380,6 +426,7 @@ describe("mysql adapter", () => {
     expect(result.result_hash).toBe("sha256:existing");
     expect(connection.sqlLog.some((sql) => /CREATE\s+TABLE/i.test(sql))).toBe(false);
     expect(connection.sqlLog.some((sql) => sql.includes("UPDATE `appdb`.`orders`"))).toBe(false);
+    expect(connection.sqlLog.some((sql) => sql.includes("semantic_verification_json"))).toBe(false);
     expect(connection.sqlLog).toContain("COMMIT");
   });
 
@@ -494,7 +541,7 @@ describe("mysql adapter", () => {
     expect(state.businessUpdates).toBe(1);
   });
 
-  it("applies one matching row and records the receipt", async () => {
+  it("applies through a pre-created legacy receipt table and records the receipt", async () => {
     const connection = new FakeMysqlConnection({
       businessRow: { updated_at: "2026-05-16 00:00:00.123456" },
       businessUpdateAffectedRows: 1
@@ -513,6 +560,7 @@ describe("mysql adapter", () => {
     expect(result).not.toHaveProperty("error_code");
     expect(connection.sqlLog.some((sql) => sql.includes("UPDATE `appdb`.`orders`"))).toBe(true);
     expect(connection.recordedReceiptStatus).toBe("applied");
+    expect(connection.sqlLog.some((sql) => sql.includes("semantic_verification_json"))).toBe(false);
     expect(connection.sqlLog).toContain("COMMIT");
   });
 
@@ -1233,7 +1281,7 @@ class FakeMysqlConnection implements MysqlApplyConnection {
     if (sql.startsWith("INSERT IGNORE INTO synapsor_writeback_receipts")) {
       return [{ affectedRows: this.options.claimAffectedRows ?? 1 } as T, undefined];
     }
-    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM synapsor_writeback_receipts")) {
+    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash FROM synapsor_writeback_receipts")) {
       return [[...(this.options.receiptRow ? [this.options.receiptRow] : [])] as T, undefined];
     }
     if (sql.startsWith("SELECT") && sql.includes("FROM `appdb`.`order_eligibility`") && sql.includes("FOR UPDATE")) {
@@ -1363,7 +1411,7 @@ class ConcurrentMysqlConnection implements MysqlApplyConnection {
       }
       return [{ affectedRows: 0 } as T, undefined];
     }
-    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM synapsor_writeback_receipts")) {
+    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash FROM synapsor_writeback_receipts")) {
       await this.state.finalizedPromise;
       return [[{ job_id: job.job_id, proposal_id: job.proposal_id, status: this.state.receiptStatus, result_hash: this.state.resultHash }] as T, undefined];
     }

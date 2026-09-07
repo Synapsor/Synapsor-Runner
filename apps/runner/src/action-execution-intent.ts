@@ -5,7 +5,10 @@ export function explicitActionExecutionIntent(messages: readonly string[]): "aut
     for (const sentence of message.split(/[.!?;\n]/u)) {
       if (/^\s*(?:why|how|can|could|should|would|what)\b/iu.test(sentence)) continue;
       const setupOnly = /\b(?:during (?:setup|authoring|drafting)|until .{0,40}(?:review|confirm|approval))\b/iu.test(sentence);
-      if (!setupOnly && /\b(?:proposal[- ]only|(?:keep|leave) (?:source )?(?:writeback|execution|writes) (?:off|disabled)|(?:do not|don't|never) (?:(?:actually|automatically) )?(?:apply|execute|write|complete)|(?:automatic completion|automatic execution) (?:is )?not (?:needed|wanted|requested))\b/iu.test(sentence)) {
+      // An excluded business effect ("do not write refunds") is not a global
+      // execution prohibition for another explicitly requested effect.
+      const globalProhibition = /\b(?:do not|don't|never) (?:(?:actually|automatically) )?(?:apply|execute|write|complete)(?:\s+(?:or|and)\s+(?:apply|execute|write|complete))*\s*(?:(?:any|the|these|those|actual|source|database)\s+)*(?:changes|data|rows|anything|requests|proposals|updates|writes|writeback|execution)?(?=\s*(?:$|,|during\b|in this\b|for (?:now|this)\b|until\b))/iu.test(sentence);
+      if (!setupOnly && (globalProhibition || /\b(?:proposal[- ]only|(?:keep|leave) (?:source )?(?:writeback|execution|writes) (?:off|disabled)|(?:automatic completion|automatic execution) (?:is )?not (?:needed|wanted|requested))\b/iu.test(sentence))) {
         intent = "proposal_only";
       } else if (/\b(?:automatically|automatic)\b[^.!?;\n]{0,90}\b(?:complete|completion|execute|execution|apply)\b|\b(?:complete|execute|apply)\b[^.!?;\n]{0,60}\bautomatically\b|\bsupervised (?:source )?execution\b/iu.test(sentence)) {
         intent = "automatic";

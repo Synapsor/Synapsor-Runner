@@ -1180,7 +1180,10 @@ function validateSupervisedWorkerOutcomes(input: {
       continue;
     }
     if (input.strict) checkUnknownKeys(rawEntry, SUPERVISED_WORKER_OUTCOME_KEYS, path, input.errors);
-    if (!isQualifiedName(rawEntry.outcome)) {
+    // Action Rules allow nested qualified outcomes; legacy capabilities have
+    // the separate namespace.capability grammar checked by isQualifiedName.
+    if (typeof rawEntry.outcome !== "string"
+      || !/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+(?![\s\S])/u.test(rawEntry.outcome)) {
       input.errors.push({ path: `${path}.outcome`, code: "INVALID_SUPERVISED_WORKER_OUTCOME", message: "outcome must be one fixed qualified semantic outcome name." });
     }
     if (typeof rawEntry.action_boundary_digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(rawEntry.action_boundary_digest)) {

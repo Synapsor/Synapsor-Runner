@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { ProposalStore } from "@synapsor-runner/proposal-store";
+import { ScopedCatalogSession } from "@synapsor-runner/mcp-server";
 import type {
   ActionRuleSpecV1,
   ActionRuleScalarTypeSpecV1,
@@ -18,6 +20,8 @@ import { runActionControlPlane, type ActionControlPrompter } from "./action-tui.
 import {
   activateActionRuleAuthority,
   buildActionRuleAuthorityDraft,
+  createActiveActionRuleAuthorityLoader,
+  deactivateActionRuleAuthority,
   listActionRuleAuthorityDrafts,
   loadActiveActionRuleAuthority,
   mergeActionRuleAuthorityDraft,
@@ -35,6 +39,7 @@ import {
 import { inspectMcpToolBoundary, toolsPreview } from "./mcp-runtime.js";
 import { mcp } from "./mcp-project.js";
 import { runPostActivationAskHandoff } from "./post-activation-ask.js";
+import { createOptionalActionRuleRuntimeServices } from "./semantic-action-runtime.js";
 
 const roots: string[] = [];
 const lock = `sha256:${"a".repeat(64)}` as const;
@@ -51,6 +56,126 @@ afterEach(async () => {
 });
 
 describe("semantic Action Rule authority persistence", () => {
+  it("reuses verified compiled snapshots but observes changed files and Read revocation", async () => {
+    const root = await temporaryRoot();
+    const boundary = activeReadBoundary();
+    await writeActiveReadSet(root, boundary);
+    const source = authoritySource(boundary.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({
+      name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: boundary.pack.name, read_boundary_digest: boundary.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }],
+      reviews: [authorityReview()], now: "2026-09-02T20:00:00.000Z",
+    });
+    await writeActionRuleAuthorityDraft(root, draft);
+    const activation = await activateActionRuleAuthority({ projectRoot: root, name: draft.authority.name,
+      expected_digest: draft.digest, confirmation: `ACTIVATE ${draft.digest}`, actor: "reviewer" });
+    const load = createActiveActionRuleAuthorityLoader(root);
+    const first = await load();
+    expect((await load()).registry).toBe(first.registry);
+    expect(Object.isFrozen(first.activation.authority.rules[0]!.rule)).toBe(true);
+    expect(() => { first.activation.authority.rules[0]!.rule.outcome = "billing.invented"; }).toThrow();
+    const revoked = await load({ read_boundaries: [], dependency_check: "report" });
+    expect(revoked.registry).toBe(first.registry);
+    expect(revoked.unavailable_outcomes).toEqual(["billing.pause_notifications"]);
+    await expect(load({ read_boundaries: [] })).rejects.toMatchObject({ code: "ACTION_RULE_READ_AUTHORITY_STALE" });
+    expect((await load()).unavailable_outcomes).toBeUndefined();
+
+    const activeFile = path.join(root, ".synapsor/action-rules/active.json");
+    const revisionFile = path.join(root, ".synapsor/action-rules/revisions", draft.digest.slice(7), "authority.json");
+    const originalActive = await fs.readFile(activeFile, "utf8");
+    const originalRevision = await fs.readFile(revisionFile, "utf8");
+    const tampered = structuredClone(activation);
+    tampered.authority.rules[0]!.rule.outcome = "billing.invented";
+    await fs.writeFile(activeFile, JSON.stringify(tampered));
+    await expect(load()).rejects.toThrow();
+    await fs.writeFile(activeFile, originalActive);
+    await fs.writeFile(revisionFile, JSON.stringify(tampered));
+    await expect(load()).rejects.toMatchObject({ code: "ACTION_RULE_AUTHORITY_STALE" });
+    await fs.writeFile(revisionFile, originalRevision);
+    expect((await load()).registry.rules[0]!.compiled.outcome).toBe("billing.pause_notifications");
+    await deactivateActionRuleAuthority(root);
+    await expect(load()).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("loads and searches a real 2000-outcome authority without recompiling warm requests", async () => {
+    const root = await temporaryRoot();
+    const boundary = activeReadBoundary();
+    await writeActiveReadSet(root, boundary);
+    const source = authoritySource(boundary.activation.digest);
+    const count = 2_000;
+    const rules = Array.from({ length: count }, (_, index) => {
+      const outcome = `billing.option_${String(index).padStart(4, "0")}`;
+      const approval = `${outcome}_approval`;
+      return { read_boundary_name: boundary.pack.name, read_boundary_digest: boundary.activation.digest,
+        verification_boundary: source.verification,
+        effect_envelope: { ...source.envelope, approval_classes: [approval] },
+        rule: { ...source.rule, name: outcome, outcome, approval_class: approval } };
+    });
+    const started = performance.now();
+    const draft = buildActionRuleAuthorityDraft({
+      name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules, reviews: rules.map(({ rule }) => ({ ...authorityReview(), outcome: rule.outcome })),
+      now: "2026-09-02T20:00:00.000Z",
+    });
+    await writeActionRuleAuthorityDraft(root, draft);
+    await activateActionRuleAuthority({ projectRoot: root, name: draft.authority.name,
+      expected_digest: draft.digest, confirmation: `ACTIVATE ${draft.digest}`, actor: "reviewer" });
+    const load = createActiveActionRuleAuthorityLoader(root);
+    const coldStart = performance.now();
+    const first = await load();
+    const coldMs = performance.now() - coldStart;
+    const warmStart = performance.now();
+    expect((await load()).registry).toBe(first.registry);
+    const warmMs = performance.now() - warmStart;
+    expect(first.registry.rules).toHaveLength(count);
+    expect(first.registry.approval_classes).toHaveLength(count);
+    const store = new ProposalStore(":memory:");
+    const session = new ScopedCatalogSession();
+    const visible = rules.slice(0, 1_000).map(({ rule }) => rule.outcome);
+    let scope = "tenant-a";
+    const facts = vi.fn(async () => { throw new Error("Discovery must not read source rows"); });
+    try {
+      const services = await createOptionalActionRuleRuntimeServices({
+        projectRoot: root, config: { version: 1, mode: "review", sources: {} }, store, key: Buffer.alloc(32, 7),
+        catalogSession: session, factSessionFactory: facts,
+        resolveCatalogAuthorization: async () => ({ scope_key: scope, revision: "1", allowed_outcomes: visible }),
+      });
+      const runtime = services!.semanticActions;
+      const queryStart = performance.now();
+      const response = await runtime.callTool("app.describe_actions", { query: "option 0100" });
+      const queryMs = performance.now() - queryStart;
+      expect(response.actions).toEqual([expect.objectContaining({ outcome: "billing.option_0100", eligibility: "not_checked" })]);
+      expect(session.lastWork.visited).toBe(1);
+      expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThanOrEqual(16_384);
+      const detail = await runtime.callTool("app.describe_actions", { outcome: "billing.option_0100" });
+      expect(detail.actions).toEqual([expect.objectContaining({ outcome: "billing.option_0100", request_shape: expect.any(Object) })]);
+      const firstPage = await runtime.callTool("app.describe_actions", { limit: 20 });
+      const secondPage = await runtime.callTool("app.describe_actions", { limit: 20, cursor: firstPage.next_cursor });
+      const outcomes = [firstPage, secondPage].flatMap((page) => (page.actions as Array<{ outcome: string }>).map((action) => action.outcome));
+      expect(new Set(outcomes).size).toBe(40);
+      expect(outcomes.every((outcome) => visible.includes(outcome))).toBe(true);
+      for (const outcome of ["billing.option_1999", "billing.missing"]) {
+        await expect(runtime.callTool("app.describe_actions", { outcome })).rejects.toMatchObject({
+          code: "CATALOG_ENTRY_UNAVAILABLE", message: "That entry is not available in the current authorized catalog.",
+        });
+      }
+      const deniedSearch = await runtime.callTool("app.describe_actions", { query: "option 1999" });
+      expect(deniedSearch.actions).toEqual([]);
+      scope = "tenant-b";
+      await expect(runtime.callTool("app.describe_actions", { limit: 20, cursor: secondPage.next_cursor }))
+        .rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+      await expect(runtime.callTool("app.request_change", { outcome: "billing.option_1999",
+        subject_refs: { preference: `obj_${"x".repeat(40)}` } }))
+        .rejects.toMatchObject({ code: "SEMANTIC_ACTION_UNAVAILABLE" });
+      expect(facts).not.toHaveBeenCalled();
+      console.info(JSON.stringify({ benchmark: "production_action_discovery", outcomes: count,
+        authorized: visible.length, query_ms: Math.round(queryMs), response_bytes: Buffer.byteLength(JSON.stringify(response)) }));
+    } finally { store.close(); }
+    console.info(JSON.stringify({ benchmark: "real_action_authority", outcomes: count,
+      total_ms: Math.round(performance.now() - started), cold_ms: Math.round(coldMs), warm_ms: Math.round(warmMs) }));
+  }, 60_000);
+
   it("previews a managed authoring MCP install without concrete runtime identity", async () => {
     const root = await temporaryRoot();
     await writeActiveReadSet(root, activeReadBoundary());

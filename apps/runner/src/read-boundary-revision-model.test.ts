@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import {
   DEFAULT_REVIEWED_EXPLORATION_BUDGETS,
   type ExplorationBoundaryDraft,
@@ -11,6 +12,75 @@ import {
 } from "./read-boundary-revision-model.js";
 
 describe("model-assisted Read Boundary field exposure revisions", () => {
+  it.each([true, false])("advertises valid exposure combinations and precisely corrects an irrelevant operation option (recovers: %s)", async (recovers) => {
+    const draft = boundary(), before = structuredClone(draft);
+    let calls = 0;
+    const requestJson: NonNullable<AskProviderDependencies["requestJson"]> = async (request) => {
+      calls += 1;
+      const payload = { status: "revision", resource_changes: [{ resource: "public.orders", field_exposure: [
+        { field: "status", exposure: "model_and_runner", ...(!recovers || calls === 1 ? { model_operations: "none" } : {}) },
+        { field: "id", exposure: "runner_only", model_operations: "none" },
+      ] }] };
+      const body = request.body as { tools: Array<{ name: string; parameters: object }> };
+      const tool = body.tools.find((item) => item.name === "runner__submit_read_boundary_revision")!;
+      const validate = new Ajv2020({ strict: false }).compile(tool.parameters);
+      expect(validate(payload)).toBe(recovers && calls > 1);
+      const valid = structuredClone(payload);
+      delete valid.resource_changes[0]!.field_exposure[0]!.model_operations;
+      expect(validate(valid), JSON.stringify(validate.errors)).toBe(true);
+      if (calls > 1) {
+        expect(JSON.stringify(request.body)).toContain("public.orders.status");
+        expect(JSON.stringify(request.body)).toContain("omit model_operations entirely");
+      }
+      return { status: 200, body: { output: [{ type: "function_call", call_id: `attempt_${calls}`,
+        name: "runner__submit_read_boundary_revision", arguments: JSON.stringify(payload) }] } };
+    };
+    const result = generateModelReadBoundaryRevision({ instruction: "Keep order status customer-facing and IDs private.",
+      privacyOnly: true, provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: draft,
+      egressAcknowledged: true, dependencies: { requestJson } });
+    if (recovers) await expect(result).resolves.toMatchObject({ correction_used: true,
+      changes: [{ field: "id", after: "runner_only", model_operations: "none" }],
+      confirmed_fields: [{ field: "status", after: "model_and_runner" }], authority_granted: false });
+    else await expect(result).rejects.toThrow("public.orders.status: model_operations");
+    expect(calls).toBe(2);
+    expect(draft).toEqual(before);
+  });
+
+  it.each([false, true])("reconciles explicitly confirmed visible fields without inventing access changes (partial: %s)", async (partial) => {
+    const draft = boundary(), before = structuredClone(draft);
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "reconcile",
+      name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ status: partial ? "revision" : "already_satisfied",
+        resource_changes: [{ resource: "public.orders", field_exposure: [
+          { field: "status", exposure: "model_and_runner", rationale: "Customer-facing information remains visible." },
+          ...(partial ? [{ field: "id", exposure: "runner_only", model_operations: "none" }] : []),
+        ] }],
+      }),
+    }] } }));
+    const result = await generateModelReadBoundaryRevision({ instruction: "Customers should see order status. Keep internal IDs private.",
+      privacyOnly: true, provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: draft,
+      egressAcknowledged: true, dependencies: { requestJson } });
+    expect(result.confirmed_fields).toMatchObject([{ resource: "public.orders", field: "status", before: "model_and_runner", after: "model_and_runner" }]);
+    expect(result.checked_catalog_digest).toBe(readBoundaryRevisionCatalog(draft).digest);
+    expect(result.changes).toHaveLength(partial ? 1 : 0);
+    if (partial) expect(result.changes[0]).toMatchObject({ field: "id", after: "runner_only" });
+    expect(result.correction_used).toBe(false);
+    expect(result.authority_granted).toBe(false);
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(draft).toEqual(before);
+  });
+
+  it("refuses a claimed no-op when any requested field is not in that state", async () => {
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "not_satisfied",
+      name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ status: "already_satisfied",
+        resource_changes: [{ resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }] }],
+      }),
+    }] } }));
+    await expect(generateModelReadBoundaryRevision({ instruction: "Keep internal IDs private.",
+      privacyOnly: true, provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: boundary(),
+      egressAcknowledged: true, dependencies: { requestJson } })).rejects.toThrow("not already satisfied");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
   it.each([true, false])("corrects private-access expansion during a narrow privacy review (recovers: %s)", async (recovers) => {
     const draft = boundary(), before = structuredClone(draft);
     const requests: string[] = [];

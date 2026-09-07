@@ -95,7 +95,8 @@ vi.mock("./scoped-explore.js", async (importOriginal) => {
   };
 });
 
-vi.mock("./scoped-explore-boundary-set.js", async () => ({
+vi.mock("./scoped-explore-boundary-set.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./scoped-explore-boundary-set.js")>(),
   createScopedExploreBoundarySetRuntime: async () => {
     if (fixture.errorCode) {
       const { ScopedExploreError } = await import("./scoped-explore.js");

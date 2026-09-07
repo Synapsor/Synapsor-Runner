@@ -525,6 +525,32 @@ function assertEnvelope(
 
 export function compileActionRule(input: CompileActionRuleInput): CompiledActionRuleV1 {
   const catalog = normalizeActionRuleCatalog(input.catalog);
+  return compileAgainstCatalog(input, catalog, uniqueByName(catalog.resources, "Catalog resource"),
+    uniqueByName(catalog.relationships, "Catalog relationship"));
+}
+
+/** Reuse an owned catalog index while compiling one authority bundle. Caller
+ * mutations and previously returned rules cannot alter this source snapshot. */
+export function createActionRuleCompiler(source: ActionRuleCatalogV1) {
+  const catalog = normalizeActionRuleCatalog(source);
+  const freeze = (value: unknown): void => {
+    if (!value || typeof value !== "object" || Object.isFrozen(value)) return;
+    for (const child of Object.values(value)) freeze(child);
+    Object.freeze(value);
+  };
+  freeze(catalog);
+  const resources = uniqueByName(catalog.resources, "Catalog resource");
+  const relationships = uniqueByName(catalog.relationships, "Catalog relationship");
+  return (input: Omit<CompileActionRuleInput, "catalog">): CompiledActionRuleV1 =>
+    compileAgainstCatalog(input, catalog, resources, relationships);
+}
+
+function compileAgainstCatalog(
+  input: Omit<CompileActionRuleInput, "catalog">,
+  catalog: ActionRuleCatalogV1,
+  catalogResources: Map<string, ActionRuleCatalogV1["resources"][number]>,
+  relationships: Map<string, ActionRuleCatalogV1["relationships"][number]>,
+): CompiledActionRuleV1 {
   const rule = normalizeActionRule(input.rule);
   const boundary = normalizeVerificationBoundary(input.verification_boundary);
   const envelope = normalizeDerivedEffectEnvelope(input.effect_envelope);
@@ -547,8 +573,6 @@ export function compileActionRule(input: CompileActionRuleInput): CompiledAction
   if (rule.source !== boundary.source || rule.source !== envelope.source || rule.context !== boundary.context) fail("ACTION_RULE_INVALID", "Action Rule source or trusted context differs across its authority objects.");
   if (boundary.generation_lock_fingerprint !== catalog.generation_lock_fingerprint) fail("ACTION_RULE_AUTHORITY_STALE", "The Verification Boundary generation lock does not match the inspected catalog.");
 
-  const catalogResources = uniqueByName(catalog.resources, "Catalog resource");
-  const relationships = uniqueByName(catalog.relationships, "Catalog relationship");
   const bindings = new Map<string, CompiledRuleBindingV1>();
   for (const verification of boundary.resources) {
     if (bindings.has(verification.binding)) fail("ACTION_RULE_INVALID", `Verification binding ${verification.binding} is duplicated.`);

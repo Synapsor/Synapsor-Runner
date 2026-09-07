@@ -47,6 +47,7 @@ export {
   actionRuleRegistryDigest,
   createActionRuleApprovalClasses,
   createActionRuleRegistry,
+  snapshotActionRuleRegistry,
   resolveActivatedApprovalClass,
   resolveActivatedActionRule,
 } from "./registry.js";
@@ -66,3 +67,5 @@ export {
 export * from "./types.js";
 export { validateActionRuleInputs } from "./inputs.js";
 export { actionRuleRelationshipPairs } from "./relationships.js";
+export { actionRuleDiscoveryMetadata, actionRuleDiscoveryContract, assertActionDiscoveryContractFits, ACTION_DISCOVERY_CONTRACT_BYTES } from "./discovery.js";
+export { ACTION_AUTHORITY_LIMITS } from "./limits.js";

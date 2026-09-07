@@ -3,6 +3,7 @@ import type { Dirent } from "node:fs";
 import path from "node:path";
 import {
   ACTION_RULE_AUTHORITY_VERSION,
+  ACTION_AUTHORITY_LIMITS,
   createActionRuleAuthority,
   parseActionRuleAuthority,
   type ActionRuleAuthoritySourceV1,
@@ -328,6 +329,82 @@ export async function loadActiveActionRuleAuthority(
     throw Object.assign(new Error("No active semantic Action Rule authority is available."), { code: "ENOENT" });
   }
   const loaded = parseActionRuleAuthority(activation.authority, activation.digest);
+  return checkLoadedReadDependencies(projectRoot, loaded, activation, options);
+}
+
+type ActiveAuthorityLoadOptions = NonNullable<Parameters<typeof loadActiveActionRuleAuthority>[1]>;
+
+/** A runtime owns one compiled snapshot. Files are checked by content on every
+ * use, not mtime, claimed digest, or TTL; Read revocation is never cached. */
+export function createActiveActionRuleAuthorityLoader(projectRootInput: string) {
+  const projectRoot = path.resolve(projectRootInput);
+  let cached: { activeText: string; revisionText: string;
+    loaded: LoadedActionRuleAuthorityV1; activation: ActionRuleAuthorityActivationV1 } | undefined;
+  return async (options: ActiveAuthorityLoadOptions = {}): Promise<LoadedActiveActionRuleAuthorityV1> => {
+    const activeText = await readBoundedAuthorityText(activePath(projectRoot));
+    if (activeText === undefined) {
+      cached = undefined;
+      throw Object.assign(new Error("No active semantic Action Rule authority is available."), { code: "ENOENT" });
+    }
+    let snapshot = cached;
+    if (!snapshot || snapshot.activeText !== activeText) {
+      const { activation, loaded } = parseActivationSnapshot(JSON.parse(activeText));
+      const revisionText = await readBoundedAuthorityText(revisionPath(projectRoot, activation.digest));
+      if (revisionText === undefined || (revisionText !== activeText
+        && canonicalJsonStringify(parseActivation(JSON.parse(revisionText))) !== canonicalJsonStringify(activation))) {
+        throw invalidActivation();
+      }
+      freezeAuthoritySnapshot(activation);
+      freezeAuthoritySnapshot(loaded);
+      snapshot = { activeText, revisionText, loaded, activation };
+    }
+    const result = await checkLoadedReadDependencies(projectRoot, snapshot.loaded, snapshot.activation, options);
+    // Recheck both records after the asynchronous dependency load. A removed or
+    // replaced pointer cannot be hidden behind a previously compiled snapshot.
+    if (await readBoundedAuthorityText(activePath(projectRoot)) !== activeText
+      || await readBoundedAuthorityText(revisionPath(projectRoot, snapshot.activation.digest)) !== snapshot.revisionText) {
+      cached = undefined;
+      throw invalidActivation();
+    }
+    cached = snapshot;
+    return result;
+  };
+}
+
+async function readBoundedAuthorityText(target: string): Promise<string | undefined> {
+  const handle = await fs.open(target, "r").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (!handle) return undefined;
+  try {
+    const size = (await handle.stat()).size;
+    if (size > ACTION_AUTHORITY_LIMITS.sourceBytes) throw invalidActivation();
+    // Read at most the accepted size plus one byte, including concurrent growth.
+    const bytes = Buffer.alloc(size + 1);
+    let total = 0;
+    while (total < bytes.length) {
+      const { bytesRead } = await handle.read(bytes, total, bytes.length - total, total);
+      if (!bytesRead) break;
+      total += bytesRead;
+    }
+    if (total > size) throw invalidActivation();
+    return bytes.subarray(0, total).toString("utf8");
+  } finally { await handle.close(); }
+}
+
+function freezeAuthoritySnapshot(value: unknown): void {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return;
+  for (const child of Object.values(value)) freezeAuthoritySnapshot(child);
+  Object.freeze(value);
+}
+
+async function checkLoadedReadDependencies(
+  projectRoot: string,
+  loaded: LoadedActionRuleAuthorityV1,
+  activation: ActionRuleAuthorityActivationV1,
+  options: ActiveAuthorityLoadOptions,
+): Promise<LoadedActiveActionRuleAuthorityV1> {
   const readBoundaries = options.read_boundaries
     ?? await loadActivatedExplorationBoundaries(projectRoot);
   const unavailable = unavailableReadDependencies(loaded, readBoundaries);
@@ -403,6 +480,12 @@ function parseDraft(value: unknown): ActionRuleAuthorityDraftV1 {
 }
 
 function parseActivation(value: unknown): ActionRuleAuthorityActivationV1 {
+  return parseActivationSnapshot(value).activation;
+}
+
+function parseActivationSnapshot(value: unknown): {
+  activation: ActionRuleAuthorityActivationV1; loaded: LoadedActionRuleAuthorityV1;
+} {
   const record = exactRecord(
     value,
     ["schema_version", "state", "authority", "digest", "reviews", "actor", "activated_at"],
@@ -416,7 +499,7 @@ function parseActivation(value: unknown): ActionRuleAuthorityActivationV1 {
   const loaded = parseActionRuleAuthority(record.authority, record.digest);
   const reviews = normalizeReviews(record.reviews, loaded.authority, invalidActivation);
   canonicalTimestamp(record.activated_at);
-  return {
+  return { loaded, activation: {
     schema_version: ACTION_RULE_AUTHORITY_ACTIVATION_VERSION,
     state: "active",
     authority: loaded.authority,
@@ -424,7 +507,7 @@ function parseActivation(value: unknown): ActionRuleAuthorityActivationV1 {
     reviews,
     actor: reviewedActor(record.actor),
     activated_at: record.activated_at,
-  };
+  } };
 }
 
 function normalizeReviews(
@@ -569,7 +652,11 @@ async function exists(target: string): Promise<boolean> {
 }
 
 async function writePrivateJsonAtomic(target: string, value: unknown): Promise<void> {
-  await writePrivateTextAtomic(target, `${JSON.stringify(value, null, 2)}\n`);
+  const text = `${JSON.stringify(value, null, 2)}\n`;
+  if (Buffer.byteLength(text) > ACTION_AUTHORITY_LIMITS.sourceBytes) {
+    throw authorityError("ACTION_RULE_AUTHORITY_TOO_LARGE", "The complete reviewed authority exceeds the supported 64 MiB storage budget.");
+  }
+  await writePrivateTextAtomic(target, text);
 }
 
 async function writePrivateTextAtomic(target: string, value: string): Promise<void> {

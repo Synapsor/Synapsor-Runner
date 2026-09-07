@@ -201,6 +201,26 @@ describe("model-authored Action Rule draft compilation", () => {
     expect(JSON.stringify(reconstructed)).not.toContain("for_update");
   });
 
+  it("retains unused reviewed verification fields and the exact authority on unchanged resume", () => {
+    const original = draft(), catalog = builtCatalog();
+    catalog.catalog.resources[0]!.fields.push({ name: "display_name", type: stringId, nullable: false });
+    catalog.authoring.resources[0]!.fields.push({ name: "display_name", type: stringId, role: "model_visible", nullable: false, writable: false });
+    original.verification.resources[0]!.fields.push("display_name");
+    const options = { builtCatalog: catalog, readBoundary: boundary(), readBoundaryDigest: readDigest,
+      activatedAt: "2026-09-03T01:00:00.000Z" };
+    const compiled = compileActionRuleModelDraft({ ...options, draft: original });
+    const reconstructed = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority,
+      outcome: original.outcome, review: compiled.review, preserveVerificationFields: true });
+    expect(reconstructed.verification.resources[0]!.fields).toContain("display_name");
+    expect(reconstructed.verification.resources[0]!.fields).not.toContain("tenant_id");
+    expect(reconstructed.verification.resources[0]!.fields).not.toContain("principal_id");
+    expect(compileActionRuleModelDraft({ ...options, draft: reconstructed }).loaded.authority)
+      .toEqual(compiled.loaded.authority);
+    const editable = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority,
+      outcome: original.outcome, review: compiled.review });
+    expect(editable.verification.resources[0]!.fields).not.toContain("display_name");
+  });
+
   it("refuses a model attempt to write a trusted guard field", () => {
     const attempted = draft();
     attempted.effect.allowed_fields = [{ name: "tenant_id" }];

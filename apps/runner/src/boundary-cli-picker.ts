@@ -1282,8 +1282,7 @@ async function chooseResource(
             ...(actionNotice ? [theme.warning(actionNotice)] : []),
             "",
             theme.dim(
-              "Activation returns here so you can keep editing. Press Q when finished " +
-              "to choose how to ask.",
+              "Activation returns here so you can keep editing. W continues model setup; Q closes this editor.",
             ),
             theme.dim("The draft grants no AI access until you confirm it."),
             ...(options?.notice
@@ -2312,7 +2311,9 @@ async function editFieldTiers(
       const principalScope = (view.candidate ?? view.generated_candidate)!.principal_key
         ?? ((view.candidate ?? view.generated_candidate)!.principal_scope
           ? formatDerivedScopePath((view.candidate ?? view.generated_candidate)!.principal_scope!)
-          : "not configured");
+          : (view.candidate ?? view.generated_candidate)!.rls_session?.principal_setting
+            ? "reviewed PostgreSQL RLS"
+            : "not configured");
       const primaryActions = [
         `${theme.key("Up/Down")} Navigate`,
         `${theme.key("Left/Right/Space")} Change access [${tierLabel(selectedTier)}]`,
@@ -2464,7 +2465,12 @@ async function editFieldTiers(
         frame = buildFrame(windowSize, false);
       }
       if (terminalRows !== undefined && terminalFrameRows(frame, tableWidth) > terminalRows) {
-        frame = buildFrame(1, true);
+        windowSize = Math.min(12, fields.length);
+        frame = buildFrame(windowSize, true);
+        while (terminalFrameRows(frame, tableWidth) > terminalRows && windowSize > 1) {
+          windowSize -= 1;
+          frame = buildFrame(windowSize, true);
+        }
       }
       render(frame);
       const key = await nextKey();

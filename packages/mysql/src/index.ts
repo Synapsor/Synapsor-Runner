@@ -1394,18 +1394,38 @@ function verifyVersionAdvanced(job: WritebackJob, actual: unknown): void {
 
 async function claimSourceReceipt(connection: MysqlApplyConnection, job: WritebackJob, config: RunnerConfig): Promise<WritebackResult | undefined> {
   const table = sourceReceiptTable(config);
-  const [claim] = await connection.query<Record<string, unknown>>(`INSERT IGNORE INTO ${table} (idempotency_key, job_id, proposal_id, status, result_hash, semantic_verification_json) VALUES (?, ?, ?, 'in_progress', NULL, NULL)`, [job.idempotency_key, job.job_id, job.proposal_id]);
+  const semanticReceipt = job.protocol_version === "5.0";
+  const [claim] = await connection.query<Record<string, unknown>>(
+    semanticReceipt
+      ? `INSERT IGNORE INTO ${table} (idempotency_key, job_id, proposal_id, status, result_hash, semantic_verification_json) VALUES (?, ?, ?, 'in_progress', NULL, NULL)`
+      : `INSERT IGNORE INTO ${table} (idempotency_key, job_id, proposal_id, status, result_hash) VALUES (?, ?, ?, 'in_progress', NULL)`,
+    [job.idempotency_key, job.job_id, job.proposal_id],
+  );
   if (affectedRows(claim) === 1) return undefined;
-  const [rows] = await connection.query<Record<string, unknown>[]>(`SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM ${table} WHERE idempotency_key = ? FOR UPDATE`, [job.idempotency_key]);
+  const [rows] = await connection.query<Record<string, unknown>[]>(
+    semanticReceipt
+      ? `SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM ${table} WHERE idempotency_key = ? FOR UPDATE`
+      : `SELECT job_id, proposal_id, status, result_hash FROM ${table} WHERE idempotency_key = ? FOR UPDATE`,
+    [job.idempotency_key],
+  );
   if (!rows[0]) return failedResult(job, config, "SOURCE_RECEIPT_UNAVAILABLE");
   return resultFromExistingReceipt(job, config, rows[0]);
 }
 
 async function recordSourceReceipt(connection: MysqlApplyConnection, job: WritebackJob, config: RunnerConfig, result: WritebackResult): Promise<void> {
-  const semanticVerification = job.protocol_version === "5.0" && result.protocol_version === "5.0"
-    ? JSON.stringify(result.semantic_verification)
-    : null;
-  const [updated] = await connection.query<Record<string, unknown>>(`UPDATE ${sourceReceiptTable(config)} SET status = ?, result_hash = ?, semantic_verification_json = ?, completed_at = CURRENT_TIMESTAMP WHERE idempotency_key = ?`, [result.status, resultHashFromResult(job, result), semanticVerification, job.idempotency_key]);
+  if (job.protocol_version === "5.0") {
+    if (result.protocol_version !== "5.0") throw new Error("SOURCE_RECEIPT_SEMANTIC_PROOF_UNAVAILABLE");
+    const [updated] = await connection.query<Record<string, unknown>>(
+      `UPDATE ${sourceReceiptTable(config)} SET status = ?, result_hash = ?, semantic_verification_json = ?, completed_at = CURRENT_TIMESTAMP WHERE idempotency_key = ?`,
+      [result.status, resultHashFromResult(job, result), JSON.stringify(result.semantic_verification), job.idempotency_key],
+    );
+    if (affectedRows(updated) !== 1) throw new Error("SOURCE_RECEIPT_UNAVAILABLE");
+    return;
+  }
+  const [updated] = await connection.query<Record<string, unknown>>(
+    `UPDATE ${sourceReceiptTable(config)} SET status = ?, result_hash = ?, completed_at = CURRENT_TIMESTAMP WHERE idempotency_key = ?`,
+    [result.status, resultHashFromResult(job, result), job.idempotency_key],
+  );
   if (affectedRows(updated) !== 1) throw new Error("SOURCE_RECEIPT_UNAVAILABLE");
 }
 

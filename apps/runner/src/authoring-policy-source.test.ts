@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activePolicySource, authoringDestination, newPolicySourceSession, policySourceHistory, policyTextSnapshot,
-  readPolicyTextFile, savePolicySources, loadPolicySources, removePolicySources, POLICY_TEXT_MAX_BYTES } from "./authoring-policy-source.js";
+import { activePolicySource, authoringDestination, confirmedReadFieldMeanings, newPolicySourceSession, policySourceHistory, policyTextSnapshot,
+  readPolicyTextFile, recordReadInterpretation, savePolicySources, loadPolicySources, removePolicySources, POLICY_TEXT_MAX_BYTES } from "./authoring-policy-source.js";
 import { createModelAuthoringConversation, modelAuthoringHistory, rememberModelAuthoringTurn } from "./model-authoring-conversation.js";
 import { installPolicySourceCommands } from "./authoring-policy-source-ui.js";
 import { parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, reviewPolicyCoverage } from "./authoring-policy-coverage.js";
@@ -24,6 +24,47 @@ function approved(text?: string) {
 }
 
 describe("complete operator-selected policy text", () => {
+  it("refuses an oversized saved session without replacing the previous readable snapshot", async () => {
+    const root = await directory(), session = approved();
+    await savePolicySources(root, session);
+    const file = path.join(root, ".synapsor/boundary-authoring/policy-sources", `${session.id}.json`);
+    const before = await fs.readFile(file, "utf8");
+    session.operator_messages = ["x".repeat(2 * 1024 * 1024)];
+    await expect(savePolicySources(root, session)).rejects.toThrow("previous snapshot remains unchanged");
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+    expect(activePolicySource(await loadPolicySources(root, session.id))).toEqual(session.snapshots[0]);
+    expect(await fs.readdir(path.dirname(file))).toEqual([`${session.id}.json`]);
+  });
+  it("persists a bounded no-change interpretation without pretending authority or coverage changed", async () => {
+    const root = await directory(), session = approved();
+    const evidence = { read_digest: `sha256:${"a".repeat(64)}`, catalog_digest: `sha256:${"b".repeat(64)}`,
+      instruction: "Customers may see when their support case was last updated. Keep internal IDs private.",
+      checked_at: new Date().toISOString(), fields: [
+        { resource: "telecom.support_cases", field: "updated_at", exposure: "model_and_runner" as const },
+        { resource: "telecom.support_cases", field: "case_id", exposure: "runner_only" as const },
+      ] };
+    recordReadInterpretation(session, evidence);
+    await savePolicySources(root, session);
+    const saved = await loadPolicySources(root, session.id);
+    expect(saved.read_interpretations).toEqual(session.read_interpretations);
+    expect(saved.read_interpretations![0]).toMatchObject({ ...evidence, source_digest: session.snapshots[0]!.digest, authority_changed: false });
+    expect(saved.coverage).toBeUndefined();
+    expect([...confirmedReadFieldMeanings(saved, evidence.read_digest)]).toEqual(["telecom.support_cases.updated_at"]);
+    expect(confirmedReadFieldMeanings(saved, `sha256:${"c".repeat(64)}`).size).toBe(0);
+    const replaced = structuredClone(saved);
+    replaced.snapshots.push(policyTextSnapshot(Buffer.from("A new unreviewed policy."), "Rules.txt", 2));
+    replaced.active = 2;
+    expect(confirmedReadFieldMeanings(replaced, evidence.read_digest).size).toBe(0);
+    const before = structuredClone(saved);
+    expect(() => recordReadInterpretation(saved, { ...evidence, fields: Array.from({ length: 8192 }, () => evidence.fields[0]!) })).toThrow("evidence is invalid");
+    expect(saved).toEqual(before);
+    saved.read_interpretations![0]!.fields[0]!.exposure = "kept_out";
+    expect(confirmedReadFieldMeanings(saved, evidence.read_digest).size).toBe(0);
+    await savePolicySources(root, saved);
+    const corrupted = await loadPolicySources(root, saved.id);
+    expect(corrupted.read_interpretations).toBeUndefined();
+    expect(activePolicySource(corrupted)).toEqual(session.snapshots[0]);
+  });
   it("cancels replacement, reconsents a changed destination, retains overrides and explicitly removes snapshots", async () => {
     const root = await directory(), conversation = createModelAuthoringConversation();
     conversation.policySources = approved();
@@ -163,6 +204,26 @@ describe("complete operator-selected policy text", () => {
     expect(requestJson).toHaveBeenCalledTimes(2);
     expect(report.passages[0]!.disposition).toBe("needs_decision");
     expect(JSON.stringify(draft)).toBe(before);
+  });
+
+  it("identifies a misplaced schema keyword and gives the correction the exact shape problem", async () => {
+    const conversation = createModelAuthoringConversation(); conversation.policySources = approved("Keep the refund bounded.");
+    const requestJson = vi.fn(async (request) => {
+      if (requestJson.mock.calls.length === 2) {
+        expect(JSON.stringify(request.body)).toContain("unexpected top-level keys: maxItems");
+      }
+      return { status: 200, body: { output: [{ type: "function_call", name: "runner__review_policy_coverage", call_id: "coverage",
+        arguments: JSON.stringify({ ...(requestJson.mock.calls.length === 1 ? { maxItems: 120 } : {}), passages: [{
+          start: 1, end: 1, disposition: "needs_decision", interpretation: "What refund amount is permitted?", draft_paths: ["/limit"],
+        }] }),
+      }] } };
+    });
+    const draft = { limit: null };
+    const report = await reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
+      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(report.passages).toHaveLength(1);
+    expect(draft).toEqual({ limit: null });
   });
 
   it("previews and consents locally, keeps path case, and does not accept the stale default after attach", async () => {

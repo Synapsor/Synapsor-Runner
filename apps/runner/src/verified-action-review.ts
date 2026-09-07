@@ -322,6 +322,30 @@ export async function reviewSemanticSupervisedExecution(input: {
   env?: NodeJS.ProcessEnv;
   inspectDatabaseFn?: typeof inspectDatabase;
 }): Promise<BoundaryAccessNotice | undefined> {
+  for (;;) {
+    const result = await reviewSemanticSupervisedExecutionAttempt(input);
+    if (result?.tone !== "danger" || !input.session.chooseOption) return result;
+    input.session.rememberDetails?.(result.title, result.lines);
+    const recovery = await input.session.chooseOption("Execution needs a deployment fix", [
+      { value: "retry", label: "Recheck the writer and continue setup", detail: "Correct the grants externally, or choose another configured credential. This does not execute a request." },
+      { value: "details", label: "Inspect the exact writer requirements" },
+      { value: "pause", label: "Save and pause execution setup", detail: "Read and proposal authority stay active; automatic completion stays off." },
+    ], { initialValue: "pause", context: result.lines });
+    if (recovery === "retry") continue;
+    if (recovery === "details") {
+      await input.session.showReviewDetails?.(result.title, result.lines);
+      // Inspection does not repeat the provider/role request or discard the pending failure.
+      const next = await input.session.chooseOption("Continue execution setup", [
+        { value: "retry", label: "Recheck the writer" },
+        { value: "pause", label: "Save and pause execution setup" },
+      ], { initialValue: "pause" });
+      if (next === "retry") continue;
+    }
+    return { ...result, footer: "Setup saved. Run the same start command to continue execution review; no need to recreate or reactivate the boundaries." };
+  }
+}
+
+async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof reviewSemanticSupervisedExecution>[0]): Promise<BoundaryAccessNotice | undefined> {
   const writeUrlAnswer = await input.session.promptText(
     "Separate writer credential environment name [SYNAPSOR_DATABASE_WRITE_URL]",
     {
@@ -374,7 +398,7 @@ export async function reviewSemanticSupervisedExecution(input: {
             ["Queue / retries", `${preview.policy.queue_limit} / ${preview.policy.max_attempts}`],
             ["Rate", `${preview.policy.rate_limit.executions} per ${preview.policy.rate_limit.window_seconds}s`],
           ],
-          { widths: [20, 50], rowSeparators: false },
+          { widths: twoColumnReviewWidths(reviewTableWidth(input.session.terminalColumns ?? 80)), rowSeparators: false },
         ),
         "This enables an operator-run worker for approved proposals only. The model still cannot approve, apply, or choose a patch.",
         "No proposal is executed during this confirmation.",

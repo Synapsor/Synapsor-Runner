@@ -273,6 +273,11 @@ describe("semantic writeback authority orchestration", () => {
     };
 
     expect(assessSemanticSupervisedWriterPosture(
+      config, policy, authority.registry, inspection,
+    )).toMatchObject({ ok: false, reasons: ["writer_row_lock_privilege_missing"] });
+    inspection.tables[1]!.role_posture!.column_privileges = { update: ["policy_id"] };
+    policy.writer_posture_fingerprint = rolePostureFingerprint(inspection);
+    expect(assessSemanticSupervisedWriterPosture(
       config,
       policy,
       authority.registry,
@@ -282,6 +287,33 @@ describe("semantic writeback authority orchestration", () => {
       reasons: [],
       allowed_relations: ["billing.policy_flags", "billing.preferences"],
     });
+
+    const narrow = structuredClone(inspection);
+    narrow.tables[0]!.role_posture!.privileges.update = false;
+    narrow.tables[0]!.role_posture!.column_privileges = { update: [
+      ...activated.compiled.effect_envelope.allowed_fields.map((field) => field.name),
+      activated.compiled.effect_envelope.version_advance!.column,
+    ] };
+    const narrowPolicy = { ...policy, writer_posture_fingerprint: rolePostureFingerprint(narrow) };
+    expect(assessSemanticSupervisedWriterPosture(config, narrowPolicy, authority.registry, narrow).ok).toBe(true);
+    const missingVersion = structuredClone(narrow);
+    missingVersion.tables[0]!.role_posture!.column_privileges!.update = activated.compiled.effect_envelope.allowed_fields.map((field) => field.name);
+    expect(assessSemanticSupervisedWriterPosture(config, narrowPolicy, authority.registry, missingVersion).reasons).toContain("writer_update_missing");
+    const rlsLock = structuredClone(narrow);
+    rlsLock.tables[1]!.row_level_security = true;
+    rlsLock.tables[1]!.role_posture!.row_security_update_permitted = false;
+    expect(assessSemanticSupervisedWriterPosture(config, narrowPolicy, authority.registry, rlsLock).reasons).toContain("writer_row_lock_rls_policy_missing");
+    rlsLock.tables[1]!.role_posture!.row_security_update_permitted = true;
+    expect(assessSemanticSupervisedWriterPosture(config, narrowPolicy, authority.registry, rlsLock).reasons).not.toContain("writer_row_lock_rls_policy_missing");
+    const missingColumn = structuredClone(narrow);
+    missingColumn.tables[0]!.role_posture!.column_privileges!.update = ["preference_id"];
+    expect(assessSemanticSupervisedWriterPosture(config, narrowPolicy, authority.registry, missingColumn).reasons).toContain("writer_update_missing");
+    const excessColumn = structuredClone(narrow);
+    excessColumn.tables[1]!.role_posture!.column_privileges!.update!.push("auto_approval_eligible");
+    expect(assessSemanticSupervisedWriterPosture(config, narrowPolicy, authority.registry, excessColumn).reasons).toContain("writer_excess_column_privilege");
+    const broadLock = structuredClone(inspection);
+    broadLock.tables[1]!.role_posture!.privileges.update = true;
+    expect(assessSemanticSupervisedWriterPosture(config, policy, authority.registry, broadLock).reasons).toContain("writer_excess_relation_privilege");
 
     const missingPrivateRead = structuredClone(inspection);
     missingPrivateRead.tables[1]!.role_posture!.privileges.select = false;
@@ -293,6 +325,7 @@ describe("semantic writeback authority orchestration", () => {
     )).toMatchObject({
       ok: false,
       reasons: expect.arrayContaining(["writer_select_missing", "writer_posture_fingerprint_changed"]),
+      relation_issues: expect.arrayContaining([expect.objectContaining({ issue: "missing", privileges: ["select"] })]),
     });
 
     const excessive = structuredClone(inspection);
@@ -308,6 +341,7 @@ describe("semantic writeback authority orchestration", () => {
         "writer_unreviewed_relation_privilege",
         "writer_posture_fingerprint_changed",
       ]),
+      relation_issues: expect.arrayContaining([{ relation: "billing.private_notes", issue: "unreviewed", privileges: ["select"] }]),
     });
   });
 });

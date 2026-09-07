@@ -69,7 +69,9 @@ export {
   REQUEST_CHANGE_TOOL,
 } from "./semantic-actions.js";
 export { semanticActionInputSchema } from "./semantic-action-schema.js";
-export type { SemanticActionContinuation } from "./semantic-actions.js";
+export type { SemanticActionContinuation, CatalogAuthorization } from "./semantic-actions.js";
+export { ScopedCatalogIndex, ScopedCatalogSession, CATALOG_LIMITS, catalogResponseBytes } from "./scoped-catalog.js";
+export type { CatalogRequest, CatalogEntry } from "./scoped-catalog.js";
 export {
   buildDerivedChangeSet,
 } from "./proposal-builder.js";

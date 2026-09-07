@@ -12,9 +12,12 @@ import {
   type ModelAuthorityMetadataMode,
   type LocalToolPresentationSink,
   type SubjectReferenceService,
+  CATALOG_LIMITS,
+  catalogResponseBytes,
 } from "@synapsor-runner/mcp-server";
 import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { z } from "zod";
+import { createScopedReadDiscovery } from "./scoped-read-discovery.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import { EXPLORATION_TIME_BUCKETS } from "./auto-boundary.js";
 import {
@@ -235,22 +238,28 @@ export function createScopedExploreMcpServer(
         title: tool.title, description: tool.description,
         inputSchema: semanticActionInputSchema(tool.name),
         annotations: { readOnlyHint: tool.name === "app.describe_actions", destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      }, async (args, extra) => toolResult(() => actions.callTool(tool.name, args), undefined, {
+      }, async (args: Record<string, unknown>, extra: { _meta?: Record<string, unknown> }) => toolResult(async () => {
+        if (isBoundarySetRuntime(runtime)) await runtime.requireTrustedScope?.();
+        return actions.callTool(tool.name, args);
+      }, undefined, {
         requestMeta: extra._meta, localPresentation: options.localPresentation,
         authorityMetadata: runtime.model_authority_metadata ?? "semantic",
       }));
     }
   }
+  const discoverReads = createScopedReadDiscovery(runtime, (result, detail) =>
+    projectDescribeDataForModel(result, detail, runtime.model_authority_metadata ?? "semantic"));
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
-    description: "Metadata only; never answers a data question. Without resource, lists a compact index of exact active resource ids and direct analysis. With one exact resource id, returns focused fields and relationship details. Copy ids into app.explore_data for values; use boundary only to disambiguate overlaps. No source rows.",
+    description: "Metadata only; no source rows. Search reviewed resources with query, limit and the opaque returned cursor. Empty input returns a bounded shortlist. Use resource with optional boundary, without search/pagination arguments, for a complete focused contract. Copy exact ids into app.explore_data for values. Search matches are not row eligibility.",
     inputSchema: z.object({
       boundary: optionalBoundarySelector,
       resource: optionalResourceSelector,
-      cursor: optionalModelArgument(z.number().int().nonnegative()),
+      query: optionalModelArgument(z.string().max(256)),
+      cursor: optionalModelArgument(z.union([z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u), z.literal(0)]).transform((value) => value === 0 ? undefined : value)),
       limit: z.preprocess(
         (value) => value === 0 ? undefined : value,
-        optionalModelArgument(z.number().int().positive().max(10)),
+        optionalModelArgument(z.number().int().positive().max(20)),
       ),
     }).strict(),
     outputSchema: scopedExploreDescribeToolOutputSchema,
@@ -269,21 +278,26 @@ export function createScopedExploreMcpServer(
       "synapsor.commit_tool": false,
     },
   }, async (input, extra) => toolResult(
-    async () => runtime.describe({
+    async () => discoverReads({
         ...(input.boundary ? { boundary: input.boundary } : {}),
         ...(input.resource ? { resource: input.resource } : {}),
+        ...(input.query === undefined ? {} : { query: input.query }),
         ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
         ...(input.limit === undefined ? {} : { limit: input.limit }),
       }),
     (result) => {
       const authorityMetadata = runtime.model_authority_metadata ?? "semantic";
       const authority = projectAuthorityMetadataForModel(result, authorityMetadata);
-      return {
-        value: projectDescribeDataForModel(
+      const value = projectDescribeDataForModel(
           result,
           Boolean(input.resource),
           authorityMetadata,
-        ),
+        );
+      if (catalogResponseBytes(value, "compact") > CATALOG_LIMITS.responseBytes) {
+        throw new McpRuntimeError("CATALOG_CONTRACT_TOO_LARGE", "The complete Read contract exceeds the bounded response size. Operator revision is required; no constraints were truncated.");
+      }
+      return {
+        value,
         withheld: false,
         ...(authority.withheld ? { operator_metadata_withheld: true } : {}),
       };
@@ -447,7 +461,12 @@ export function projectDescribeDataForModel(
   const resources = result.resources
     .filter(modelRecord)
     .map((resource) => resourceDetail
-      ? modelResourceDetail(resource)
+      ? result.catalog_version === "synapsor.scoped-catalog.v2"
+        ? compactCatalogResourceDetail(modelResourceDetail(resource), result.vocabulary_policy)
+        : modelResourceDetail(resource)
+      : result.catalog_version === "synapsor.scoped-catalog.v2"
+        ? withoutUndefined({ id: modelString(resource.id), label: modelString(resource.label),
+            description: modelString(resource.description), boundary_name: modelString(resource.boundary_name) })
       : modelResourceIndex(resource));
   const projected: Record<string, unknown> = {
     ...structuredClone(result),
@@ -457,14 +476,41 @@ export function projectDescribeDataForModel(
     contains_source_values: false,
     next_action: resourceDetail
       ? "For application-data values, call app.explore_data with one smallest valid plan. Do not answer from this metadata."
-      : typeof result.next_cursor === "number"
-        ? `More active reviewed resources are available. If this page does not match the question, call app.describe_data again with cursor ${result.next_cursor} before concluding that the data is unavailable. Otherwise choose an exact resource id, request its focused details when needed, then call app.explore_data for values. Do not answer from this metadata.`
+      : typeof result.next_cursor === "number" || typeof result.next_cursor === "string"
+        ? "More authorized resources are available. Continue with the returned cursor and unchanged query/limit, or search another phrase. Request exact resource details before app.explore_data. Discovery does not answer a data question."
         : "This is the final catalog page. Choose an exact resource id, request its focused details when needed, then call app.explore_data for values. Do not answer from this metadata.",
   };
   // Keep the compact index small for weaker models. The fixed vocabulary is
   // useful only after one resource and its reviewed time fields are selected.
   if (!resourceDetail) delete projected.relative_time_windows;
   return projectAuthorityMetadataForModel(projected, authorityMetadata).value;
+}
+
+function compactCatalogResourceDetail(resource: Record<string, unknown>, vocabularyPolicy: unknown): Record<string, unknown> {
+  // Keep executable grammar intact. Only omit operator statistics and metadata
+  // already stated globally or in the same contract's examples.
+  const compact = (entry: Record<string, unknown>): Record<string, unknown> => {
+    const result = { ...entry };
+    if (modelRecord(result.vocabulary)) {
+      const vocabulary = { ...result.vocabulary };
+      for (const key of ["model_facing_fields", "fields_with_labels", "fields_with_descriptions", "fields_with_reviewed_vocabulary"]) {
+        delete vocabulary[key];
+      }
+      result.vocabulary = vocabulary;
+    }
+    if (modelRecord(vocabularyPolicy) && vocabularyPolicy.exact_ids_required_in_plans === true) {
+      result.fields = modelRecords(result.fields).map((field) => {
+        const copy = { ...field };
+        if (copy.plan_reference === "exact_id_only") delete copy.plan_reference;
+        return copy;
+      });
+    }
+    return result;
+  };
+  const result = compact(resource);
+  delete result.valid_plan_example;
+  result.relationships = modelRecords(resource.relationships).map(compact);
+  return result;
 }
 
 function modelResourceIndex(resource: Record<string, unknown>): Record<string, unknown> {
@@ -696,6 +742,7 @@ export async function serveScopedExploreStdio(options: {
     ...(options.store ? { store: options.store } : {}),
     ...(options.subjectReferences ? { subjectReferences: options.subjectReferences } : {}),
     modelAuthorityMetadata: options.modelAuthorityMetadata ?? "semantic",
+    deferTrustedScope: true,
   });
   const server = createScopedExploreMcpServer(runtime, {
     semanticActions: options.semanticActions ?? createInactiveSemanticActionRuntime(),

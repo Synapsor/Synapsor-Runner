@@ -303,7 +303,9 @@ describe("Scoped Explore", () => {
             arguments: { resource: "public.select" },
           });
           expect(described.isError).not.toBe(true);
+          expect(Buffer.byteLength(JSON.stringify(described))).toBeLessThanOrEqual(16_384);
           expect(described.structuredContent).toMatchObject({
+            vocabulary_policy: { exact_ids_required_in_plans: true },
             resources: [{
               id: "public.select",
               selectable_fields: expect.arrayContaining([
@@ -315,7 +317,6 @@ describe("Scoped Explore", () => {
               vocabulary: expect.objectContaining({ status: "ready" }),
               fields: expect.arrayContaining([expect.objectContaining({
                 id: "total amount",
-                plan_reference: "exact_id_only",
                 semantic_status: "descriptive_identifier",
                 operations: expect.objectContaining({ return_value: true }),
               })]),
@@ -2326,12 +2327,12 @@ describe("Scoped Explore", () => {
           id: "public.subscriptions",
           kept_out_field_count: expect.any(Number),
           minimum_cohort_size: expect.any(Number),
-          valid_plan_example: {
+          valid_plan_examples: { aggregate: {
             kind: "aggregate",
             resource: "public.subscriptions",
             measures: [{ function: "count" }],
             dimensions: [{ field: "region" }],
-          },
+          } },
         }],
         raw_sql_available: false,
       });
@@ -2431,6 +2432,8 @@ describe("Scoped Explore", () => {
           model_withheld_fields: expect.arrayContaining(["billing_token"]),
         }],
       });
+      expect(described.isError).not.toBe(true);
+      expect(Buffer.byteLength(JSON.stringify(described))).toBeLessThanOrEqual(16_384);
       expect((described.structuredContent as any).resources[0].field_enums)
         .not.toHaveProperty("billing_token");
       expect(JSON.stringify(described)).not.toContain("billing-token-secret");
@@ -2731,7 +2734,10 @@ describe("Scoped Explore", () => {
       const described = await runtime.describe({ resource: "public.subscriptions" }) as {
         resources: Array<{ time_coverage: Record<string, unknown> }>;
       };
-      expect(described.resources[0]?.time_coverage).toMatchObject({
+      expect(described.resources[0]?.time_coverage).toEqual({});
+      expect(queries).toHaveLength(0);
+      const withCoverage = await runtime.describe({ resource: "public.subscriptions", include_time_coverage: true }) as typeof described;
+      expect(withCoverage.resources[0]?.time_coverage).toMatchObject({
         churned_at: {
           status: "available",
           start_date: "2026-06-01",
@@ -2797,7 +2803,9 @@ describe("Scoped Explore", () => {
       const described = await runtime.describe({ resource: "public.subscriptions" }) as {
         resources: Array<{ time_coverage: Record<string, unknown> }>;
       };
-      expect(described.resources[0]?.time_coverage).toEqual({
+      const withCoverage = await runtime.describe({ resource: "public.subscriptions", include_time_coverage: true }) as typeof described;
+      expect(described.resources[0]?.time_coverage).toEqual({});
+      expect(withCoverage.resources[0]?.time_coverage).toEqual({
         churned_at: { status: "withheld_below_minimum_cohort" },
       });
       expect(JSON.stringify(described)).not.toContain("2026-06-01");
@@ -3803,12 +3811,29 @@ describe("Scoped Explore", () => {
         ...description,
         next_cursor: 8,
       }, false) as any;
-      expect(pagedProjection.next_action).toMatch(/cursor 8.*before concluding.*unavailable/i);
+      expect(pagedProjection.next_action).toMatch(/returned cursor and unchanged query\/limit/i);
       const focusedProjection = projectDescribeDataForModel(description, true) as any;
       expect(focusedProjection.resources[0].fields).toContainEqual(expect.objectContaining({
         id: "region",
         operations: expect.objectContaining({ groupable: true }),
       }));
+      const compact = projectDescribeDataForModel({
+        ...description, catalog_version: "synapsor.scoped-catalog.v2",
+      }, true) as any;
+      const compactResource = compact.resources[0];
+      expect(compact.vocabulary_policy).toEqual(focusedProjection.vocabulary_policy);
+      expect(compactResource.valid_plan_examples).toEqual(focusedProjection.resources[0].valid_plan_examples);
+      expect(compactResource).not.toHaveProperty("valid_plan_example");
+      expect(compactResource.vocabulary).not.toHaveProperty("fields_with_labels");
+      expect(compactResource.vocabulary.status).toBe(focusedProjection.resources[0].vocabulary.status);
+      for (const field of focusedProjection.resources[0].fields) {
+        const { plan_reference: _duplicateGlobalRule, ...completeField } = field;
+        expect(compactResource.fields.find((candidate: { id: string }) => candidate.id === field.id)).toEqual(completeField);
+      }
+      expect(compactResource.filter_operators).toEqual(focusedProjection.resources[0].filter_operators);
+      expect(compactResource.field_enums).toEqual(focusedProjection.resources[0].field_enums);
+      expect(compactResource.model_withheld_fields).toEqual(focusedProjection.resources[0].model_withheld_fields);
+      expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(focusedProjection).length);
       expect(JSON.stringify(projected.resources[0].fields))
         .not.toMatch(/billing_token|Internal billing credential|Kept out/i);
 
@@ -3864,6 +3889,7 @@ describe("Scoped Explore", () => {
             arguments: { resource: "public.subscriptions" },
           });
           expect(described.isError).not.toBe(true);
+          expect(Buffer.byteLength(JSON.stringify(described))).toBeLessThanOrEqual(16_384);
           expect(described.structuredContent).toMatchObject({
             vocabulary_policy: {
               coded_value_behavior: expect.stringContaining("do_not_infer_business_meaning"),
@@ -3878,7 +3904,7 @@ describe("Scoped Explore", () => {
                 semantic_status: "coded_values",
                 allowed_values: ["P1", "P2", "P3"],
               })]),
-              valid_plan_example: expect.not.objectContaining({ dimensions: expect.anything() }),
+              valid_plan_examples: { aggregate: expect.not.objectContaining({ dimensions: expect.anything() }) },
             }],
           });
         } finally {

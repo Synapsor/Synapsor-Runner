@@ -21,6 +21,9 @@ const MAX_QUESTION_CHARS = 4_000;
 const MAX_MODEL_CHARS = 128;
 const MAX_BASE_URL_CHARS = 2_048;
 const MAX_PROVIDER_RESPONSE_BYTES = 1_048_576;
+// SSE repeats identifiers and framing for every token. Bound wire traffic
+// separately while preserving the same final JSON payload limit.
+const MAX_PROVIDER_STREAM_BYTES = 8 * MAX_PROVIDER_RESPONSE_BYTES;
 const MAX_PROVIDER_REQUEST_BYTES = 262_144;
 const MAX_TOOL_RESULT_BYTES = 131_072;
 const MAX_TOOL_SCHEMA_BYTES = 131_072;
@@ -215,6 +218,8 @@ type ResolvedAskProviderConfiguration = AskProviderPublicConfiguration & {
 export type AskHistoryTurn = {
   question: string;
   answer: string;
+  /** A model clarification followed by the operator's answer. */
+  kind?: "clarification";
   runner_context?: string;
 };
 
@@ -711,17 +716,16 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
         return;
       }
       const declaredLength = Number(response.headers["content-length"] ?? 0);
-      if (Number.isFinite(declaredLength) && declaredLength > MAX_PROVIDER_RESPONSE_BYTES) {
+      const status = response.statusCode ?? 500;
+      const contentType = String(response.headers["content-type"] ?? "").toLowerCase();
+      const eventStream = status >= 200 && status < 300 && contentType.includes("text/event-stream") ? input.stream : undefined;
+      if (Number.isFinite(declaredLength) && declaredLength > (eventStream ? MAX_PROVIDER_STREAM_BYTES : MAX_PROVIDER_RESPONSE_BYTES)) {
         response.destroy();
         finishReject(new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider response exceeded the bounded Ask response size.", 502));
         return;
       }
-      const status = response.statusCode ?? 500;
-      const contentType = String(response.headers["content-type"] ?? "").toLowerCase();
-      const readResponse = status >= 200 && status < 300
-        && input.stream
-        && contentType.includes("text/event-stream")
-        ? readProviderEventStream(response, input.stream)
+      const readResponse = eventStream
+        ? readProviderEventStream(response, eventStream)
         : readProviderJsonResponse(response, status).then((body) => {
             if (input.stream && status >= 200 && status < 300) {
               emitProviderStream(input.stream.onEvent, { phase: "started" });
@@ -793,8 +797,8 @@ async function readProviderEventStream(
   for await (const chunk of response) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
     total += buffer.length;
-    if (total > MAX_PROVIDER_RESPONSE_BYTES) {
-      throw new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider response exceeded the bounded streamed response size.", 502);
+    if (total > MAX_PROVIDER_STREAM_BYTES) {
+      throw new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider exceeded the bounded streaming transport size.", 502);
     }
     pending += decoder.write(buffer);
     pending = pending.replace(/\r\n/gu, "\n").replace(/\r/gu, "\n");
@@ -805,13 +809,23 @@ async function readProviderEventStream(
       consumeProviderSseBlock(block, assembler);
       separator = pending.indexOf("\n\n");
     }
+    if (Buffer.byteLength(pending) > MAX_PROVIDER_RESPONSE_BYTES) {
+      throw new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider streaming event exceeded the bounded payload size.", 502);
+    }
   }
   pending += decoder.end();
   if (pending.trim()) consumeProviderSseBlock(pending, assembler);
-  return assembler.finish();
+  const result = assembler.finish();
+  if (Buffer.byteLength(JSON.stringify(result)) > MAX_PROVIDER_RESPONSE_BYTES) {
+    throw new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider response exceeded the bounded Ask response size.", 502);
+  }
+  return result;
 }
 
 function consumeProviderSseBlock(block: string, assembler: ProviderStreamAssembler): void {
+  if (Buffer.byteLength(block) > MAX_PROVIDER_RESPONSE_BYTES) {
+    throw new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider streaming event exceeded the bounded payload size.", 502);
+  }
   const data = block.split("\n")
     .filter((line) => line.startsWith("data:"))
     .map((line) => line.slice(5).trimStart())
@@ -6328,10 +6342,15 @@ function safeProviderIdentifier(value: unknown, label: string): string {
 }
 
 function historyMessages(history: AskHistoryTurn[]): Array<Record<string, unknown>> {
-  return history.flatMap((turn) => [
-    { role: "user", content: turn.question },
-    { role: "assistant", content: turn.answer },
-  ]);
+  return history.flatMap((turn) => turn.kind === "clarification"
+    ? [
+        { role: "assistant", content: turn.question },
+        { role: "user", content: turn.answer },
+      ]
+    : [
+        { role: "user", content: turn.question },
+        { role: "assistant", content: turn.answer },
+      ]);
 }
 
 function currentQuestionWithRunnerContext(

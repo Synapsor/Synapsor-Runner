@@ -67,6 +67,33 @@ describe("conversational Action authoring tools", () => {
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
 
+  it.each([false, true])("streams business questions but defers a compiled recap only when policy review owns the turn (%s)", async (deferCompletionMessage) => {
+    const question = "Who should review valid requests?";
+    const recap = "The disabled pause draft is prepared for review.";
+    const steps = [say(question), call("runner.submit_verification_boundary_draft"),
+      call("runner.submit_approval_policy_draft"), call("runner.submit_action_rule_draft"),
+      call("runner.submit_effect_envelope_draft"), call("runner.validate_action_draft", {}), say(recap)];
+    const onStream = vi.fn();
+    const input = requestInput(async (request) => {
+      const step = steps.shift()!;
+      const item = step.body.output[0]!;
+      const text = "content" in item ? item.content[0]?.text : undefined;
+      if (text) request.stream?.onEvent?.({ phase: "text_delta", text });
+      return step;
+    });
+    const askClarification = vi.fn(async () => "One billing reviewer.");
+    const result = await converseActionRuleDraft({ ...input,
+      session: { ...input.session, dependencies: { ...input.session.dependencies, onStream } },
+      askClarification, deferCompletionMessage });
+    expect(onStream).toHaveBeenCalledWith(expect.objectContaining({ text: question, operator_text: true }));
+    expect(onStream).toHaveBeenCalledWith(expect.objectContaining({ text: recap, operator_text: !deferCompletionMessage }));
+    expect(askClarification).toHaveBeenCalledTimes(1);
+    expect(result.message).toBe(recap);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(steps).toEqual([]);
+  });
+
   it("allows an explicit read-only pivot but rejects an invented cancellation message", async () => {
     const answer = "Drop the pending action; keep the read-only draft.";
     const steps = [call("runner.finish_without_new_actions", { operator_message: answer, reason: "Read-only requested" }),

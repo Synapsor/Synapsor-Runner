@@ -1,9 +1,13 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
+import { BoundaryJobPlanningError, planningErrorDiagnostic, planningResponseDiagnostic,
+  type BoundaryJobPlanningDiagnostic, type PlanningAttemptDiagnostic } from "./boundary-job-diagnostics.js";
+import { activePolicySource } from "./authoring-policy-source.js";
 import {
   askToolSurfaceDigest,
   resolveAskProviderConfiguration,
   runAskProviderTurn,
+  secureAskJsonRequest,
+  AskError,
   type AskProviderDependencies,
   type AskToolDefinition,
   type AskToolGateway,
@@ -123,6 +127,7 @@ export async function planModelBoundaryJob(input: {
   env?: NodeJS.ProcessEnv;
   egressAcknowledged: boolean;
   signal?: AbortSignal;
+  onDiagnostic?: (diagnostic: BoundaryJobPlanningDiagnostic) => Promise<void> | void;
 }): Promise<BoundaryJobPlan> {
   const jobIntent = boundedText(
     input.jobIntent,
@@ -148,6 +153,14 @@ export async function planModelBoundaryJob(input: {
     input.egressAcknowledged,
     input.env,
   );
+  const history = structuredClone(modelAuthoringHistory(input.session.conversation, input.session));
+  const diagnostic: BoundaryJobPlanningDiagnostic = { version: 1, expected_tool: PLAN_BOUNDARY_JOB_TOOL,
+    context_digest: canonicalJsonDigest({ state, jobIntent, clarificationAnswer: clarificationAnswer ?? null, availableResourceIds, history }),
+    ...(activePolicySource(input.session.conversation?.policySources) ? { source_digest: activePolicySource(input.session.conversation?.policySources)!.digest } : {}),
+    attempts: [], model_requests: 0, duration_ms: 0, authority_changed: false, source_database_changed: false };
+  const started = Date.now();
+  let responseDiagnostic: PlanningAttemptDiagnostic["response"];
+  const requestJson = input.session.dependencies?.requestJson ?? secureAskJsonRequest;
   let resolution: BoundaryJobPlanCore | undefined;
   let issue = "The model did not submit one bounded Read/Action job plan.";
   let callCount = 0;
@@ -210,11 +223,19 @@ export async function planModelBoundaryJob(input: {
   const run = (nextQuestion: string) => runAskProviderTurn({
     configuration,
     question: nextQuestion,
-    history: modelAuthoringHistory(input.session.conversation, input.session),
+    history,
     gateway,
     tools,
     signal: input.signal ?? new AbortController().signal,
-    dependencies: input.session.dependencies,
+    dependencies: { ...input.session.dependencies, requestJson: async (request) => {
+      diagnostic.model_requests += 1;
+      const response = await requestJson(request);
+      responseDiagnostic = planningResponseDiagnostic(response);
+      if (responseDiagnostic.status === "incomplete" || ["length", "max_tokens"].includes(responseDiagnostic.stop_reason)) {
+        throw new AskError("ASK_PROVIDER_RESPONSE_INCOMPLETE", "The planning response stopped before completion. No partial tool output was accepted.", 502);
+      }
+      return response;
+    } },
     authorityDigest,
     providerSystemPrompt: [
       "You classify one Boundary-authoring job through the required structured tool.",
@@ -231,23 +252,38 @@ export async function planModelBoundaryJob(input: {
       ? authorityDigest
       : canonicalJsonDigest({ stale: true }),
   });
-  const initial = await runRequiredAuthoringToolCall({
-    run,
-    question,
-    toolName: PLAN_BOUNDARY_JOB_TOOL,
-  });
-  let correctionUsed = initial.correction_used;
-  if (!resolution) {
-    correctionUsed = true;
-    await run([
-      "Runner rejected the first job split. Do not repeat it.",
-      `Validation issue: ${issue.slice(0, 700)}`,
-      "Submit one corrected create/resume/reuse/revise/none plan or one clarification question.",
-      question,
-    ].join("\n"));
-  }
-  await gateway.close().catch(() => undefined);
-  if (!resolution) throw new Error(`BOUNDARY_JOB_PLAN_INVALID: ${issue}`);
+  let correctionUsed = false;
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      responseDiagnostic = undefined;
+      resolution = undefined;
+      correctionUsed = attempt > 0;
+      let failure: ReturnType<typeof planningErrorDiagnostic> | undefined;
+      let retryable = true;
+      try {
+        await run(attempt ? [
+          "Runner rejected the first job split. This is the one bounded correction, with the same job and approved policy snapshot.",
+          `Validation issue: ${issue.slice(0, 700)}`,
+          `Return DATA through ${PLAN_BOUNDARY_JOB_TOOL}, not JSON Schema or prose. Keep routing intents concise.`,
+          "Submit one corrected create/resume/reuse/revise/none plan or one clarification question.",
+          question,
+        ].join("\n") : question);
+        if (!resolution) failure = planningErrorDiagnostic(new Error(issue));
+      } catch (error) {
+        resolution = undefined;
+        failure = planningErrorDiagnostic(error);
+        retryable = error instanceof AskError && ["ASK_REQUIRED_TOOL_NOT_CALLED", "ASK_PROVIDER_RESPONSE_INVALID", "ASK_TOOL_ARGUMENTS_INVALID", "ASK_PROVIDER_RESPONSE_INCOMPLETE"].includes(error.code);
+      }
+      diagnostic.attempts.push({ attempt: attempt + 1, phase: attempt ? "correction" : "initial",
+        ...(failure ?? { category: "accepted", code: "PLANNING_ACCEPTED", message: "Validated job plan or business clarification; no draft authority changed." }),
+        ...(responseDiagnostic ? { response: responseDiagnostic } : {}) });
+      if (resolution || !retryable) break;
+      issue = `${failure!.code}: ${failure!.message}`;
+    }
+    diagnostic.duration_ms = Date.now() - started;
+    await input.onDiagnostic?.(diagnostic);
+  } finally { await gateway.close().catch(() => undefined); }
+  if (!resolution) throw new BoundaryJobPlanningError(diagnostic);
   const result = { ...resolution, correction_used: correctionUsed } as BoundaryJobPlan;
   const remembered = result.state === "clarification"
     ? result.question
@@ -373,6 +409,9 @@ function parseJobPlan(
   explicitlyRequestedReadResources: string[],
   jobIntent: string,
 ): BoundaryJobPlanCore {
+  const keys = value.status === "clarification" ? ["status", "question"]
+    : ["status", "read_mode", "read_intent", "action_mode", "action_intent", "action_intents", "action_outcome", "action_strategy", "summary"];
+  if (Object.keys(value).some((key) => !keys.includes(key))) throw new Error("Planning arguments contain an unexpected property. Return only the fields in the selected tool contract, not schema keywords.");
   if (value.status === "clarification") {
     const question = boundedText(
       value.question,
@@ -448,7 +487,9 @@ function parseJobPlan(
       }
     }
     if (effectiveReadIntent) {
-      const covered = new Set(requestedReadResourceIds(effectiveReadIntent, explicitlyRequestedReadResources));
+      // A typed Read routing intent can be a noun phrase. It need not repeat
+      // the verb used to distinguish Read from Action in the original job.
+      const covered = new Set(requestedReadResourceIds(effectiveReadIntent, explicitlyRequestedReadResources, true));
       const missing = explicitlyRequestedReadResources.filter((resource) => !covered.has(resource));
       if (missing.length) {
         throw new Error(
@@ -575,31 +616,23 @@ function normalizeAvailableResourceIds(values: string[]): string[] {
   return [...new Set(values.map((value) => boundedText(value, "available resource id", 300)))].sort();
 }
 
-function requestedReadResourceIds(jobIntent: string, availableResourceIds: string[]): string[] {
+function requestedReadResourceIds(jobIntent: string, availableResourceIds: string[], readOnlyText = false): string[] {
   if (!availableResourceIds.length) return [];
-  const readText = readOrientedJobText(jobIntent);
+  const readText = readOnlyText ? jobIntent : readOrientedJobText(jobIntent);
   if (!readText) return [];
   const words = normalizedSemanticWords(readText);
-  const wordSet = new Set(words);
   const resourceWords = availableResourceIds.map((id) => ({
     id,
     words: normalizedSemanticWords(id.split(".").at(-1) ?? id),
   }));
-  const tokenFrequency = new Map<string, number>();
-  for (const resource of resourceWords) {
-    for (const token of new Set(resource.words)) {
-      tokenFrequency.set(token, (tokenFrequency.get(token) ?? 0) + 1);
-    }
-  }
   return resourceWords.flatMap(({ id, words: candidateWords }) => {
     if (!candidateWords.length) return [];
     const fullNameMatched = containsWordSequence(words, candidateWords);
-    const uniqueTokenMatched = candidateWords.some((token) =>
-      token.length >= 4
-      && !RESOURCE_MENTION_STOP_WORDS.has(token)
-      && tokenFrequency.get(token) === 1
-      && wordSet.has(token));
-    return fullNameMatched || uniqueTokenMatched ? [id] : [];
+    // A single coincidentally unique word is not an explicit table request:
+    // "services" does not establish service_lines, nor "change" plan offers.
+    // Ambiguous business concepts belong to the metadata-aware mapper.
+    const meaningfulWords = candidateWords.filter((token) => !RESOURCE_MENTION_STOP_WORDS.has(token));
+    return fullNameMatched || meaningfulWords.length > 0 && containsWordSequence(words, meaningfulWords) ? [id] : [];
   });
 }
 
@@ -736,7 +769,7 @@ function planningConfiguration(
     authority_digest: authorityDigest,
     egress_acknowledged: egressAcknowledged,
     request_timeout_seconds: 120,
-    max_output_tokens: 1_200,
+    max_output_tokens: 4_000,
   }, env, new Date());
 }
 

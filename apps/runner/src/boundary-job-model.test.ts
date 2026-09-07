@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { BoundaryJobPlanningError, planningDiagnosticLines, type BoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
+import { AskError } from "./model-ask.js";
+import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
 import {
   planModelBoundaryJob,
   type BoundaryJobCurrentState,
@@ -22,6 +25,95 @@ const reusableState: BoundaryJobCurrentState = {
 };
 
 describe("model Boundary job planning", () => {
+  it.each(["Customer account, subscription and recent usage.", "Read the customer's account, subscription and recent usage."])("accepts a concise typed Read intent without requiring a particular verb: %s", async (read_intent) => {
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "plan", name: "runner__plan_boundary_job",
+      arguments: JSON.stringify({ status: "planned", read_mode: "create", read_intent, action_mode: "none", summary: "Prepare the requested customer information." }),
+    }] } }));
+    const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      jobIntent: "Read customer account, subscription and recent usage.",
+      availableResourceIds: ["telecom.accounts", "telecom.subscriptions", "telecom.usage_daily"],
+      currentState: reusableState, egressAcknowledged: true });
+    expect(result).toMatchObject({ state: "planned", correction_used: false });
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
+
+  it("does not invent explicit resource requests from individual words in a mixed business job", async () => {
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "plan", name: "runner__plan_boundary_job",
+      arguments: JSON.stringify({ status: "planned", read_mode: "create", read_intent: "Customer information according to the attached policy.",
+        action_mode: "create", action_intent: "Handle offered plan changes according to the policy with separately reviewed automatic completion.",
+        summary: "Map the policy's customer information and one plan-change outcome." }),
+    }] } }));
+    const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      jobIntent: "Help customers understand their services and handle offered plan changes according to this policy, including automatic completion where allowed.",
+      availableResourceIds: ["telecom.plan_change_offers", "telecom.service_lines"], currentState: reusableState, egressAcknowledged: true });
+    expect(result).toMatchObject({ state: "planned", correction_used: false });
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
+  it.each(["schema", "missing_intent", "incomplete", "wrong_tool", "malformed"])("preserves precise %s failure and the approved source through exactly one correction", async (failure) => {
+    const bodies: Array<Record<string, unknown>> = [];
+    let diagnostic: BoundaryJobPlanningDiagnostic | undefined;
+    const policy = newPolicySourceSession();
+    const source = policyTextSnapshot(Buffer.from("Allow routine changes. Keep account IDs private.\nAt most 10 overall, 3 per account. Complete only after separate execution review."), "policy.txt");
+    policy.snapshots = [source]; policy.active = 1;
+    policy.approvals = [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+    const valid = { status: "planned", read_mode: "reuse", action_mode: "create", action_strategy: "rule_derived",
+      action_intent: "Apply the attached policy to offered plan changes, including approval limits and separately reviewed automatic completion.", summary: "Preserve Read and draft one bounded action." };
+    const stateBefore = structuredClone(reusableState);
+    const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "secret-test-key",
+      conversation: { turns: [], policySources: policy }, dependencies: { requestJson: async (request) => {
+        bodies.push(request.body);
+        const first = bodies.length === 1;
+        const args = first && failure === "schema" ? { ...valid, properties: { sensitive: "private-value-not-diagnostic" } }
+          : first && failure === "missing_intent" ? { ...valid, action_intent: undefined } : valid;
+        return { status: 200, body: { status: first && failure === "incomplete" ? "incomplete" : "completed",
+          ...(first && failure === "incomplete" ? { incomplete_details: { reason: "max_output_tokens" } } : {}),
+          output: [{ type: "function_call", call_id: "plan",
+            name: first && failure === "wrong_tool" ? "untrusted_secret_tool_name" : "runner__plan_boundary_job",
+            arguments: first && failure === "malformed" ? "{unparseable" : JSON.stringify(args) }],
+        } };
+      } } }, jobIntent: "Draft the changes in my attached policy.", currentState: reusableState, egressAcknowledged: true,
+      onDiagnostic: (value) => { diagnostic = value; } });
+    expect(result).toMatchObject({ correction_used: true, state: "planned", action_mode: "create", read_mode: "reuse" });
+    expect(bodies).toHaveLength(2);
+    for (const body of bodies) {
+      expect(JSON.stringify(body)).toContain(JSON.stringify(source.text).slice(1, -1).replaceAll("\\n", "\\\\n"));
+      expect(body).toHaveProperty("tool_choice", { type: "function", name: "runner__plan_boundary_job" });
+    }
+    expect(diagnostic?.attempts).toHaveLength(2);
+    expect(diagnostic?.attempts[0]?.code).not.toBe("PLANNING_ACCEPTED");
+    expect(diagnostic?.attempts[1]?.code).toBe("PLANNING_ACCEPTED");
+    expect(diagnostic?.source_digest).toBe(source.digest);
+    expect(diagnostic?.model_requests).toBe(2);
+    expect(JSON.stringify(diagnostic)).not.toMatch(/secret-test-key|private-value-not-diagnostic|untrusted_secret_tool_name|Allow routine changes/u);
+    expect(reusableState).toEqual(stateBefore);
+  });
+
+  it("does not give a second correction after a malformed response followed by a refused plan", async () => {
+    let calls = 0;
+    let diagnostic: BoundaryJobPlanningDiagnostic | undefined;
+    const operation = planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "memory-key",
+      dependencies: { requestJson: async () => { calls++;
+        return { status: 200, body: { output: [{ type: "function_call", call_id: "bad", name: "runner__plan_boundary_job",
+          arguments: calls === 1 ? "{bad" : JSON.stringify({ status: "planned", read_mode: "create", action_mode: "none", summary: "Missing Read intent" }),
+        }] } };
+      } } }, jobIntent: "Read my services.", currentState: reusableState, egressAcknowledged: true,
+      onDiagnostic: (value) => { diagnostic = value; } });
+    await expect(operation).rejects.toBeInstanceOf(BoundaryJobPlanningError);
+    expect(calls).toBe(2);
+    expect(diagnostic?.attempts[1]).toMatchObject({ category: "contract_validation", code: "PLANNING_CONTRACT_INVALID" });
+    expect(planningDiagnosticLines(diagnostic!).join("\n")).toContain("read_mode=create requires one bounded read_intent");
+  });
+
+  it("retains a provider failure category without retrying a rejected credential", async () => {
+    const requestJson = vi.fn(async () => { throw new AskError("ASK_PROVIDER_AUTH_FAILED", "Provider authentication failed.", 401); });
+    let diagnostic: BoundaryJobPlanningDiagnostic | undefined;
+    await expect(planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      jobIntent: "Read my services.", currentState: reusableState, egressAcknowledged: true,
+      onDiagnostic: (value) => { diagnostic = value; } })).rejects.toBeInstanceOf(BoundaryJobPlanningError);
+    expect(diagnostic?.attempts[0]).toMatchObject({ category: "provider_request", code: "ASK_PROVIDER_AUTH_FAILED" });
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
+
   it("resumes an exact disabled Read mapping instead of asking the model to map it again", async () => {
     let requestBody = "";
     const requestJson = vi.fn(async (request) => {

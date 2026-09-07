@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createModelAuthoringConversation,
   modelAuthoringHistory,
+  rememberModelAuthoringClarification,
   rememberModelAuthoringTurn,
 } from "./model-authoring-conversation.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
@@ -9,6 +10,25 @@ import { AskError, type AskProviderDependencies } from "./model-ask.js";
 import { authoringExplanationFailure } from "./authoring-explanation-failure.js";
 
 describe("model-assisted Boundary authoring conversation", () => {
+  it("retains supported clarification turns and refuses unknown turn kinds", () => {
+    const conversation = createModelAuthoringConversation();
+    rememberModelAuthoringClarification(
+      conversation,
+      "Should customers see the visit status?",
+      "Visit status is customer-facing business information.",
+    );
+    expect(modelAuthoringHistory(conversation)).toEqual([{
+      question: "Should customers see the visit status?",
+      answer: "Visit status is customer-facing business information.",
+      kind: "clarification",
+    }]);
+    expect(() => createModelAuthoringConversation([{
+      question: "Unsupported question",
+      answer: "Unsupported answer",
+      kind: "other" as never,
+    }])).toThrow("unsupported conversation turn kind");
+  });
+
   it.each([
     ["Read authority is not active. Source data remains unchanged.", true],
     ["If you activate later, Read authority will become active. Source data is unchanged.", true],

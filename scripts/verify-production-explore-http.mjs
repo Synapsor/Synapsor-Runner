@@ -1538,9 +1538,15 @@ async function verifySingleOrganizationProductionExplore(input) {
     const tools = await alice.client.listTools();
     assert(tools.tools.map((tool) => tool.name).join(",") === "app.describe_data,app.explore_data",
       "Single-organization MCP exposed more than the two reviewed Explore tools.", tools.tools);
-    const described = resultPayload(await alice.client.callTool({
+    const summary = resultPayload(await alice.client.callTool({
       name: "app.describe_data",
       arguments: {},
+    }));
+    assert(summary.resources?.[0]?.id === "single_org_http.activity",
+      "Single-organization discovery did not expose the canonical resource summary.", summary);
+    const described = resultPayload(await alice.client.callTool({
+      name: "app.describe_data",
+      arguments: { resource: summary.resources[0].id },
     }));
     const describedText = JSON.stringify(described);
     assert(describedText.includes("single_organization")
@@ -2216,16 +2222,29 @@ async function main() {
       && tool._meta?.["synapsor.commit_tool"] === false),
     "Production MCP tool metadata did not preserve the read-only boundary.", tools.tools);
 
-    const described = resultPayload(await alice.client.callTool({
+    const discoveryResponse = await alice.client.callTool({
       name: "app.describe_data",
       arguments: {},
-    }));
-    const describedChurn = described.resources?.find((resource) => resource.id === "public.churn_events");
-    const focusedTimeDescription = resultPayload(await alice.client.callTool({
-      name: "app.describe_data",
-      arguments: { resource: "public.churn_events" },
-    }));
-    const describedItems = described.resources?.find((resource) => resource.id === "public.scoped_order_items");
+    });
+    const described = resultPayload(discoveryResponse);
+    assert(Buffer.byteLength(JSON.stringify(discoveryResponse)) <= 16 * 1024
+      && described.catalog_version === "synapsor.scoped-catalog.v2"
+      && described.resources?.every((resource) => !Object.hasOwn(resource, "fields")),
+    "Production discovery must return bounded metadata summaries before exact details.", described);
+    const details = [];
+    for (const resource of described.resources ?? []) {
+      const response = await alice.client.callTool({
+        name: "app.describe_data",
+        arguments: { resource: resource.id, boundary: resource.boundary_name },
+      });
+      assert(Buffer.byteLength(JSON.stringify(response)) <= 16 * 1024,
+        "Production resource details exceeded the complete MCP response budget.", resource.id);
+      details.push(resultPayload(response));
+    }
+    const detailedResources = details.flatMap((detail) => detail.resources ?? []);
+    const describedChurn = detailedResources.find((resource) => resource.id === "public.churn_events");
+    const focusedTimeDescription = details.find((detail) => detail.resources?.[0]?.id === "public.churn_events");
+    const describedItems = detailedResources.find((resource) => resource.id === "public.scoped_order_items");
     assert(described.ok === true
       && described.resources?.length === 4
       && JSON.stringify(describedChurn?.field_enums?.reason_category)
@@ -2255,9 +2274,9 @@ async function main() {
       && describedChurn?.relative_time_window_fields?.includes("churned_at")
       && describedItems?.relationships?.some((relationship) =>
         relationship.id === "scoped_order_items_order_id_fkey" && relationship.activation === "active"),
-    "Production describe_data did not return the complete reviewed metadata catalog.", described);
-    assert(!JSON.stringify(described).match(/event-p1-|pm-other-event|@example\.invalid|synthetic kept-out note|31415/i),
-      "Production describe_data returned source-row data instead of metadata only.", described);
+    "Production describe_data did not return complete reviewed metadata on exact lookup.", details);
+    assert(!JSON.stringify([described, ...details]).match(/event-p1-|pm-other-event|@example\.invalid|synthetic kept-out note|31415/i),
+      "Production describe_data returned source-row data instead of metadata only.", details);
 
     const unreviewedField = await alice.client.callTool({
       name: "app.explore_data",

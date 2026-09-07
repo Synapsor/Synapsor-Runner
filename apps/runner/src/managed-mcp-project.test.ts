@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parse } from "jsonc-parser";
 import { describe, expect, it, vi } from "vitest";
 import runnerPackage from "../package.json" with { type: "json" };
@@ -12,9 +13,22 @@ import {
   managedMcpProjectStatus,
   parseManagedMcpProjectClient,
   previewManagedMcpProjectInstall,
+  resolveManagedMcpLauncher,
   uninstallManagedMcpProject,
   type ManagedMcpProjectClient,
 } from "./managed-mcp-project.js";
+
+it("launches the installed unpublished bundle without fetching a registry package", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-local-launch-"));
+  try {
+    const bundle = path.join(root, "runner.mjs");
+    await fs.writeFile(bundle, "// test installed bundle\n");
+    expect(await resolveManagedMcpLauncher(undefined, pathToFileURL(bundle))).toEqual({ command: process.execPath, args: [bundle] });
+    expect(await resolveManagedMcpLauncher("@synapsor/runner@1.8.0", pathToFileURL(bundle))).toEqual({ command: "npx", args: ["-y", "@synapsor/runner@1.8.0"] });
+    await fs.rm(bundle);
+    expect(await resolveManagedMcpLauncher(undefined, pathToFileURL(bundle))).toEqual({ command: "npx", args: ["-y", `@synapsor/runner@${runnerPackage.version}`] });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
 
 const clients: Array<{
   client: ManagedMcpProjectClient;

@@ -777,7 +777,7 @@ describe("model-assisted Read workload mapping", () => {
     });
   });
 
-  it("refuses a second clarification request after one bounded operator answer", async () => {
+  it("refuses repeating the same answered clarification without asking the operator again", async () => {
     const requestJson = vi.fn(async () => ({
       status: 200,
       body: {
@@ -813,6 +813,54 @@ describe("model-assisted Read workload mapping", () => {
     })).rejects.toThrow(/READ_WORKLOAD_CLARIFICATION_REFUSED/);
     expect(requestJson).toHaveBeenCalledTimes(2);
     expect(clarificationHandler).toHaveBeenCalledOnce();
+  });
+
+  it("retains two independent coded-field answers through the final validated mapping", async () => {
+    const boundary = generatedBoundary();
+    const resource = boundary.pack.resources[0]!;
+    resource.field_types.col_8 = "text";
+    resource.field_types.col_9 = "text";
+    resource.selectable_fields.push("col_8", "col_9");
+    const requests: string[] = [];
+    let attempt = 0;
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(JSON.stringify(request.body));
+      const index = attempt++;
+      const args = index < 2 ? { clarification_request: { resource: "public.orders", field: `col_${index + 8}`,
+        reason: "The reviewed code has ambiguous business meaning.", question: `What business detail does col_${index + 8} represent?` } }
+        : { allowed: [{ id: "order_details", description: "Review order delivery details", plan: {
+          kind: "rows", resource: "public.orders", select: ["col_8", "col_9"],
+        } }], forbidden: [] };
+      return { status: 200, body: { output: [{ type: "function_call", call_id: `clarification_${index}`,
+        name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } };
+    });
+    const answers = ["Delivery preference", "Gift wrapping preference"];
+    const handler = vi.fn(async () => ({ state: "answered" as const, answer: answers.shift()! }));
+    const result = await generateModelReadWorkload({ name: "coded_customer_details", allowedQuestions: ["Review delivery and gift wrapping preferences"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, env: { OPENAI_API_KEY: "provider-test-key" },
+      egressAcknowledged: true, clarificationHandler: handler, dependencies: { requestJson }, deferNarration: true });
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(requestJson).toHaveBeenCalledTimes(3);
+    expect(requests[2]).toContain("Delivery preference");
+    expect(requests[2]).toContain("Gift wrapping preference");
+    expect(result.analysis.status).toBe("ready");
+    expect(result.source_query_executed).toBe(false);
+    expect(result.authority_granted).toBe(false);
+  });
+
+  it("bounds distinct follow-up questions and retains an explicit failure without accepting a draft", async () => {
+    let count = 0;
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call",
+      call_id: `clarification_${count}`, name: "runner__submit_read_workloads", arguments: JSON.stringify({ clarification_request: {
+        resource: "public.orders", field: "status", reason: "Need business meaning", question: `What is status meaning number ${++count}?`,
+      } }) }] } }));
+    const handler = vi.fn(async () => ({ state: "answered" as const, answer: "This is the order lifecycle status." }));
+    await expect(generateModelReadWorkload({ name: "bounded_clarifications", allowedQuestions: ["Count orders"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: generatedBoundary(), env: { OPENAI_API_KEY: "provider-test-key" },
+      egressAcknowledged: true, clarificationHandler: handler, dependencies: { requestJson }, deferNarration: true,
+    })).rejects.toThrow("Four business questions were answered");
+    expect(handler).toHaveBeenCalledTimes(4);
+    expect(requestJson).toHaveBeenCalledTimes(5);
   });
 
   it("allows one naming clarification followed by one separately approved value request", async () => {

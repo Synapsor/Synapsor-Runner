@@ -102,6 +102,8 @@ export function actionRuleModelDraftFromAuthority(input: {
   authority: ActionRuleAuthorityV1;
   outcome: string;
   review: ActionRuleModelDraftV1["review"];
+  /** Unchanged resume must round-trip reviewed private reads, not minimize them. */
+  preserveVerificationFields?: boolean;
 }): ActionRuleModelDraftV1 {
   const source = input.authority.rules.find((candidate) =>
     candidate.rule.outcome === input.outcome);
@@ -139,7 +141,12 @@ export function actionRuleModelDraftFromAuthority(input: {
               direction: resource.source.direction,
             },
         fields: resource.fields
-          .filter((field) => referencedFields.get(resource.binding)?.has(field.name))
+          .filter((field) => {
+            if (referencedFields.get(resource.binding)?.has(field.name)) return true;
+            if (!input.preserveVerificationFields) return false;
+            const catalog = input.authority.catalog.resources.find((entry) => entry.name === resource.resource)!;
+            return ![catalog.primary_key, catalog.tenant_key, catalog.principal_scope_key, catalog.version_field].includes(field.name);
+          })
           .map((field) => field.name),
         ...(resource.cardinality === "many"
           ? {

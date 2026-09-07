@@ -1,5 +1,8 @@
 import {
   ActionRuleError,
+  actionRuleDiscoveryContract,
+  actionRuleDiscoveryMetadata,
+  snapshotActionRuleRegistry,
   evaluateSemanticActionEligibility,
   resolveActivatedApprovalClass,
   resolveActivatedActionRule,
@@ -30,6 +33,8 @@ import type {
   ResolvedSubjectRequest,
   SubjectReferenceService,
 } from "./subject-references.js";
+import { semanticActionInputSchema } from "./semantic-action-schema.js";
+import { ScopedCatalogIndex, ScopedCatalogSession, type CatalogRequest } from "./scoped-catalog.js";
 
 export const DESCRIBE_ACTIONS_TOOL = "app.describe_actions";
 export const REQUEST_CHANGE_TOOL = "app.request_change";
@@ -44,7 +49,7 @@ export function createInactiveSemanticActionRuntime(): SemanticActionRuntime {
     hasTool: (name) => name === DESCRIBE_ACTIONS_TOOL || name === REQUEST_CHANGE_TOOL,
     async callTool(name, args) {
       if (name === DESCRIBE_ACTIONS_TOOL) {
-        assertExactKeys(args, []);
+        parseCatalogRequest(args);
         return { ok: true, actions: [], availability: "operator_review_required", source_database_changed: false };
       }
       if (name === REQUEST_CHANGE_TOOL) {
@@ -64,29 +69,69 @@ export type SemanticActionContinuation = {
   source_database_changed: boolean;
 };
 
+export type CatalogAuthorization = {
+  scope_key: string;
+  revision: string;
+  /** Absent only for the deployment's unpartitioned operator-reviewed catalog. */
+  allowed_outcomes?: readonly string[];
+};
+
 export function createSemanticActionRuntime(input: {
   store: ProposalRuntimeStore;
   registry: RegistryLoader;
   subjectReferences: SubjectReferenceService;
   resolveContext: SemanticActionContextResolver;
+  resolveCatalogAuthorization: (registry: RuntimeActionRuleRegistryV1) => CatalogAuthorization | Promise<CatalogAuthorization>;
+  catalogSession?: ScopedCatalogSession;
   unavailableOutcomes?: () => string[] | Promise<string[]>;
   onProposalReady?: (input: {
     proposal: StoredProposal;
     activated: ActivatedActionRuleV1;
   }) => Promise<SemanticActionContinuation>;
 }): SemanticActionRuntime {
-  const loadRegistry = async () => typeof input.registry === "function"
+  const loadRegistry = async () => snapshotActionRuleRegistry(typeof input.registry === "function"
     ? await input.registry()
-    : input.registry;
+    : input.registry);
   const tools = semanticActionToolMetadata();
+  const catalogSession = input.catalogSession ?? new ScopedCatalogSession();
+  let cachedCatalog: { binding: string; index: ScopedCatalogIndex } | undefined;
 
   return {
     listTools: () => structuredClone(tools),
     hasTool: (name) => name === DESCRIBE_ACTIONS_TOOL || name === REQUEST_CHANGE_TOOL,
     async callTool(name, args) {
       if (name === DESCRIBE_ACTIONS_TOOL) {
-        assertExactKeys(args, []);
-        return describeActions(await loadRegistry(), await input.unavailableOutcomes?.() ?? []);
+        const registry = await loadRegistry();
+        const authorization = await input.resolveCatalogAuthorization(registry);
+        const request = parseCatalogRequest(args);
+        const unavailable = await input.unavailableOutcomes?.() ?? [];
+        const binding = canonicalJsonDigest({ registry: registry.digest, authorization, unavailable });
+        if (!cachedCatalog || cachedCatalog.binding !== binding) {
+          const allowed = authorization.allowed_outcomes ? new Set(authorization.allowed_outcomes) : undefined;
+          const visible = registry.rules.filter((entry) => !allowed || allowed.has(entry.compiled.outcome));
+          const unavailableSet = new Set(unavailable);
+          const index = new ScopedCatalogIndex(visible.map((entry) => {
+            const activated = resolveActivatedActionRule(registry, entry.compiled.outcome);
+            const metadata = actionRuleDiscoveryMetadata(activated.compiled.rule);
+            const description = metadata.title;
+            const availability = unavailableSet.has(activated.compiled.outcome) ? "operator_review_required" : "available";
+            return { id: activated.compiled.outcome, ...metadata,
+              value: { outcome: activated.compiled.outcome, description, summary: metadata.summary, availability,
+                subjects: activated.compiled.rule.subjects.map(({ binding, resource }) => ({ binding, resource })),
+                eligibility: "not_checked" },
+              detail: () => describeAction(registry, activated, availability),
+            };
+          }));
+          cachedCatalog = { binding, index };
+        }
+        const current = await loadRegistry();
+        const currentAuthorization = await input.resolveCatalogAuthorization(current);
+        const currentUnavailable = await input.unavailableOutcomes?.() ?? [];
+        if (canonicalJsonDigest({ registry: current.digest, authorization: currentAuthorization, unavailable: currentUnavailable }) !== binding) {
+          throw new McpRuntimeError("CATALOG_CURSOR_INVALID", "Reviewed authority changed during discovery. Restart discovery with the current authorized catalog.");
+        }
+        return catalogSession.describe({ index: cachedCatalog.index, binding, request,
+          legacy: Object.keys(args).length === 0, key: "actions", context: actionCatalogContext() });
       }
       if (name !== REQUEST_CHANGE_TOOL) {
         throw new McpRuntimeError("MCP_TOOL_NOT_FOUND", "The requested Synapsor Action tool is not available.");
@@ -94,6 +139,10 @@ export function createSemanticActionRuntime(input: {
       const request = parseRequestChange(args);
       try {
         const registry = await loadRegistry();
+        const authorization = await input.resolveCatalogAuthorization(registry);
+        if (authorization.allowed_outcomes && !authorization.allowed_outcomes.includes(request.outcome)) {
+          throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "The requested outcome is not available in the current authorized catalog.");
+        }
         const expected = resolveActivatedActionRule(registry, request.outcome);
         if ((await input.unavailableOutcomes?.() ?? []).includes(request.outcome)) {
           throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "This outcome needs operator review of its changed Read dependency. Other reviewed outcomes remain available. No proposal or source change was created.");
@@ -224,9 +273,10 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
     {
       name: DESCRIBE_ACTIONS_TOOL,
       title: "Describe reviewed actions",
-      description: "List activated semantic outcomes and the opaque observed subjects each outcome requires. This tool grants no authority and reads no source rows.",
+      description: "Search reviewed actions with query/limit/cursor, or use outcome alone for the complete request contract. Search returns bounded summaries; an empty call retains a bounded compatibility page of full contracts. Browse or search a shortlist, inspect the chosen outcome, then request it. Availability is not eligibility. No source rows are read and no authority is granted.",
       kind: "action_catalog",
-      input_schema: {},
+      input_schema: { query: { type: "string", required: false }, limit: { type: "number", required: false },
+        cursor: { type: "string", required: false }, outcome: { type: "string", required: false } },
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -258,51 +308,15 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
   ];
 }
 
-function describeActions(registry: RuntimeActionRuleRegistryV1, unavailable: string[] = []): Record<string, unknown> {
-  const actions = registry.rules.map((entry) => resolveActivatedActionRule(registry, entry.compiled.outcome));
+function describeAction(registry: RuntimeActionRuleRegistryV1, activated: ActivatedActionRuleV1, availability: string): Record<string, unknown> {
+  return actionRuleDiscoveryContract(activated.compiled, resolveActivatedApprovalClass(registry, activated.compiled.outcome).mode, availability);
+}
+
+function actionCatalogContext(): Record<string, unknown> {
   return {
-    ok: true,
-    actions: actions.map((activated) => ({
-      outcome: activated.compiled.outcome,
-      availability: unavailable.includes(activated.compiled.outcome) ? "operator_review_required" : "available",
-      description: humanizeOutcome(activated.compiled.outcome),
-      inputs: (activated.compiled.rule.inputs ?? []).map((definition) => ({
-        ...definition,
-        required: true,
-        origin: "caller_business_input",
-      })),
-      subjects: activated.compiled.rule.subjects.map((subject) => ({
-        binding: subject.binding,
-        resource: subject.resource,
-        reference: "opaque Explore subject reference",
-      })),
-      request_shape: {
-        outcome: activated.compiled.outcome,
-        subject_refs: Object.fromEntries(activated.compiled.rule.subjects.map((subject) => [subject.binding, "obj_<opaque reference>"])),
-        ...(activated.compiled.rule.inputs?.length ? { inputs: Object.fromEntries(activated.compiled.rule.inputs.map((definition) =>
-          [definition.name, "<value matching this input's reviewed type and bounds>"])) } : {}),
-      },
-      eligibility: "not_checked; request_change validates this customer's references, inputs and current facts",
-      proposal_effect: {
-        operation: activated.compiled.effect_envelope.operation,
-        resource: activated.compiled.effect_envelope.target_resource,
-        fields: activated.compiled.effect_envelope.allowed_fields.map((field) => field.name),
-        max_rows: 1,
-      },
-      approval: {
-        class: activated.compiled.approval_class,
-        decision: resolveActivatedApprovalClass(registry, activated.compiled.outcome).mode === "policy"
-          ? "automatic only when the separate reviewed policy and atomic limits pass; otherwise human review"
-          : "human review required",
-      },
-      source_write: "never during request_change",
-    })),
     request_shape: {
       outcome: "<one listed outcome>",
-      subject_refs: Object.fromEntries(
-        actions.length === 1 ? actions[0]!.compiled.rule.subjects.map((subject) => [subject.binding, "obj_<opaque reference>"])
-          : [["<binding from the selected action's request_shape>", "obj_<opaque reference>"]],
-      ),
+      subject_refs: { "<binding from the selected action's request_shape>": "obj_<opaque reference>" },
     },
     request_guidance: "Use the selected action's request_shape and reviewed inputs, not another outcome's subjects. Listed availability is not customer eligibility.",
     authority: {
@@ -313,6 +327,15 @@ function describeActions(registry: RuntimeActionRuleRegistryV1, unavailable: str
     },
     source_database_changed: false,
   };
+}
+
+function parseCatalogRequest(args: Record<string, unknown>): CatalogRequest {
+  const parsed = semanticActionInputSchema(DESCRIBE_ACTIONS_TOOL).safeParse(args);
+  if (!parsed.success) throw new McpRuntimeError("ARGUMENT_INVALID", "Use outcome alone for detail, or query (up to 256 characters), limit (1-20) and the returned cursor for discovery.");
+  return { ...(typeof args.outcome === "string" ? { detail: args.outcome } : {}),
+    ...(typeof args.query === "string" ? { query: args.query } : {}),
+    ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
+    ...(typeof args.cursor === "string" ? { cursor: args.cursor } : {}) };
 }
 
 function parseRequestChange(args: Record<string, unknown>): {

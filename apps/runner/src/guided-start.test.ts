@@ -4,7 +4,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { buildAutoBoundary } from "./auto-boundary.js";
-import { boundaryDeleteCommand } from "./boundary-commands.js";
+import { boundaryDeleteCommand, loadBoundaryReviewContext, boundaryAuthoringResumeBinding } from "./boundary-commands.js";
+import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { saveInstantBoundaryEditBaseline } from "./boundary-review-domain.js";
 import { reviewUnresolvedOrganizationScope, start } from "./guided-start.js";
 import {
   activateInstantCliBoundary,
@@ -17,6 +19,29 @@ describe("guided start surfaces", () => {
   afterEach(() => {
     process.chdir(suiteCwd);
     vi.restoreAllMocks();
+  });
+
+  it.each([false, true])("reopens the saved guided job despite existing review progress or active Read (%s)", async (active) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-saved-job-"));
+    const schemaInspector = vi.fn(async () => inspection());
+    const runBoundaryReview = vi.fn(async () => 0), handoff = vi.fn(async () => 0);
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    process.chdir(root);
+    try {
+      await start(["--from-env", "DATABASE_URL", "--no-open"], { interactive: false, schemaInspector });
+      const context = await loadBoundaryReviewContext(root);
+      await saveInstantBoundaryEditBaseline({ projectRoot: root, draft: context.draft, candidate: context.candidate, actor: "test-operator" });
+      const state = buildBoundaryAuthoringResumeState({ binding: boundaryAuthoringResumeBinding(context.bundle),
+        stage: "authority_review", jobIntent: "Review service visits and propose rescheduling.", provider: "openai", model: "gpt-5.6-terra" });
+      await writeBoundaryAuthoringResumeState(root, state);
+      const progressBefore = await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8");
+      if (active) await fs.writeFile(path.join(root, ".synapsor/exploration-boundary.active.json"), "{}\n");
+      await start(["--from-env", "DATABASE_URL", "--cli"], { interactive: true, schemaInspector, runBoundaryReview, runPostActivationHandoff: handoff });
+      expect(runBoundaryReview).toHaveBeenCalledWith(["--project-root", root, "--access", "--job-first"], schemaInspector, expect.any(Function));
+      expect(handoff).not.toHaveBeenCalled();
+      expect(schemaInspector).toHaveBeenCalledOnce();
+      expect(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8")).toBe(progressBefore);
+    } finally { process.chdir(suiteCwd); await fs.rm(root, { recursive: true, force: true }); }
   });
 
   it("offers explicit single-organization scope before saving a fresh unscoped database", async () => {
@@ -35,6 +60,30 @@ describe("guided start surfaces", () => {
       const draft = JSON.parse(await fs.readFile(path.join(root, "synapsor/generated/exploration-boundary.draft.json"), "utf8"));
       expect(draft.organization_scope).toMatchObject({ organization_id: "university-operations" });
       expect(draft.activation?.enabled).not.toBe(true);
+    } finally { process.chdir(suiteCwd); await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("keeps a changed-schema rescan in the guided job without reusing a client checkpoint", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-rescan-"));
+    const schemaInspector = vi.fn(async () => inspection());
+    const review = vi.fn(async () => 0), handoff = vi.fn(async () => 0);
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    process.chdir(root);
+    try {
+      await start(["--from-env", "DATABASE_URL", "--no-open"], { interactive: false, schemaInspector });
+      const context = await loadBoundaryReviewContext(root);
+      const state = buildBoundaryAuthoringResumeState({ binding: boundaryAuthoringResumeBinding(context.bundle),
+        stage: "authority_review", jobIntent: "Review service visits and propose rescheduling.", provider: "openai", model: "gpt-5.6-terra" });
+      await writeBoundaryAuthoringResumeState(root, state);
+      const changed = inspection();
+      changed.tables[0]!.columns[0]!.nullable = !changed.tables[0]!.columns[0]!.nullable;
+      schemaInspector.mockResolvedValue(changed);
+      await start(["--from-env", "DATABASE_URL", "--cli", "--rescan"], {
+        interactive: true, schemaInspector, runBoundaryReview: review, runPostActivationHandoff: handoff,
+      });
+      expect(review).toHaveBeenCalledWith(["--project-root", root, "--access", "--job-first"], schemaInspector, expect.any(Function));
+      expect(handoff).not.toHaveBeenCalled();
+      expect(JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"))).toEqual(state);
     } finally { process.chdir(suiteCwd); await fs.rm(root, { recursive: true, force: true }); }
   });
 

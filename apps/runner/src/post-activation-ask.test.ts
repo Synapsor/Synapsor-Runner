@@ -16,6 +16,44 @@ import {
 import { ProviderCredentialInputCancelledError } from "./secret-input.js";
 
 describe("post-activation Ask handoff", () => {
+  it.each(["success", "failure"])("continues execution setup without redrafting or losing client choices (%s)", async (result) => {
+    const output: string[] = [];
+    const runExecutionReview = vi.fn(async () => { if (result === "failure") throw new Error("Execution config needs repair"); });
+    const runBoundaryReview = vi.fn(async () => 0), runAsk = vi.fn(async () => 0), runMcpInstall = vi.fn(async () => 0);
+    const chooseRoute = vi.fn(async () => "later" as const);
+    expect(await choosePostActivationAskSelection({ chooseRoute: async (initial) => {
+      expect(initial).toBe("execution-setup"); return initial;
+    } }, "execution-setup")).toEqual({ route: "execution-setup" });
+    expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", selection: { route: "execution-setup" } }, {
+      env: {}, runExecutionReview, runBoundaryReview, runAsk, runMcpInstall, chooseRoute,
+      stdout: { write: (value) => { output.push(String(value)); return true; } }, stderr: { write: () => true },
+    })).toBe(0);
+    expect(runExecutionReview).toHaveBeenCalledExactlyOnceWith("/tmp/not-created-project");
+    expect(chooseRoute).toHaveBeenCalledOnce();
+    expect(runBoundaryReview).not.toHaveBeenCalled();
+    expect(runAsk).not.toHaveBeenCalled();
+    expect(runMcpInstall).not.toHaveBeenCalled();
+    if (result === "failure") expect(output.join("")).toContain("without redrafting");
+  });
+
+  it.each(["edit-rules", "manual-editor"] as const)("reopens %s without runtime identity, Analytics or client reconfiguration", async (route) => {
+    const runBoundaryReview = vi.fn(async () => 0);
+    const runAsk = vi.fn(async () => 0);
+    const runMcpInstall = vi.fn(async () => 0);
+    const promptWithDefault = vi.fn(async () => { throw new Error("No runtime model selection needed"); });
+    expect(await choosePostActivationAskSelection({ chooseRoute: async () => route, promptWithDefault, env: {} }))
+      .toEqual({ route });
+    expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", selection: { route } }, {
+      env: {}, runBoundaryReview, runAsk, runMcpInstall,
+      stdout: { write: () => true }, stderr: { write: () => true },
+    })).toBe(0);
+    expect(runBoundaryReview).toHaveBeenCalledWith(["--project-root", "/tmp/not-created-project", "--access",
+      ...(route === "edit-rules" ? ["--job-first"] : [])]);
+    expect(runAsk).not.toHaveBeenCalled();
+    expect(runMcpInstall).not.toHaveBeenCalled();
+    expect(promptWithDefault).not.toHaveBeenCalled();
+  });
+
   it.each(["decline", "pass", "fail", "exception"])("checks client launch only with permission and reports actual status (%s)", async (mode) => {
     const writes: string[] = [];
     const checkClientLaunch = vi.fn(async () => {

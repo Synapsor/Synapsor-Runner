@@ -4,6 +4,11 @@ import {
   compileActionRule,
   createActionRuleApprovalClasses,
   createActionRuleRegistry,
+  snapshotActionRuleRegistry,
+  resolveActivatedActionRule,
+  actionRuleDiscoveryContract,
+  actionRuleDiscoveryMetadata,
+  assertActionDiscoveryContractFits,
   type ActionRuleApprovalClassSourceV1,
   type ActionRuleCatalogV1,
   type ActionRuleFactQueryV1,
@@ -42,7 +47,8 @@ const stateType: ActionRuleScalarTypeSpecV1 = {
 };
 const integer = { kind: "integer" } as const;
 
-function semanticFixture(options: { automaticApproval?: boolean; requiredApprovals?: number; businessInput?: boolean } = {}) {
+function semanticFixture(options: { automaticApproval?: boolean; requiredApprovals?: number; businessInput?: boolean;
+  outcome?: string; aliases?: string[] } = {}) {
   const catalog: ActionRuleCatalogV1 = {
     schema_version: "synapsor.action-rule-catalog.v1",
     generation_lock_fingerprint: lock,
@@ -134,6 +140,8 @@ function semanticFixture(options: { automaticApproval?: boolean; requiredApprova
     rule.inputs = [{ name: "notification_state", description: "Requested notification preference", type: stateType }];
     rule.effect.set.status = { kind: "input", name: "notification_state" };
   }
+  if (options.outcome) { rule.name = options.outcome; rule.outcome = options.outcome; }
+  if (options.aliases) rule["x-runner-discovery"] = { title: "Pause notifications", summary: "Stop account notifications", aliases: options.aliases };
   const compiled = compileActionRule({
     catalog,
     verification_boundary: verificationBoundary,
@@ -228,6 +236,7 @@ function createFixtureRuntime(options: {
     store,
     registry,
     subjectReferences,
+    resolveCatalogAuthorization: () => ({ scope_key: "test:northstar:maya", revision: "deployment-only" }),
     ...(options.unavailableOutcomes ? { unavailableOutcomes: options.unavailableOutcomes } : {}),
     ...(options.onProposalReady ? { onProposalReady: options.onProposalReady } : {}),
     async resolveContext() {
@@ -314,6 +323,93 @@ const configuredReadCapability: NonNullable<RuntimeConfig["capabilities"]>[numbe
 };
 
 describe("fixed semantic Action MCP", () => {
+  it.each(["authority", "scope", "availability"] as const)("does not disclose a catalog withdrawn during asynchronous %s loading", async (change) => {
+    const fixture = semanticFixture();
+    let revision = "before";
+    let registry = fixture.registry;
+    let unavailable: string[] = [];
+    let calls = 0;
+    const store = new ProposalStore(":memory:");
+    const runtime = createSemanticActionRuntime({
+      store, registry: () => registry,
+      subjectReferences: { claim: vi.fn() } as unknown as Parameters<typeof createSemanticActionRuntime>[0]["subjectReferences"],
+      resolveContext: vi.fn(),
+      resolveCatalogAuthorization: () => ({ scope_key: "tenant-a", revision }),
+      unavailableOutcomes: async () => {
+        const result = unavailable;
+        if (++calls === 1) {
+          if (change === "scope") revision = "revoked";
+          else if (change === "authority") registry = createActionRuleRegistry({ name: "replacement", rules: [fixture.activated] });
+          else unavailable = [fixture.activated.compiled.outcome];
+        }
+        return result;
+      },
+    });
+    try {
+      await expect(runtime.callTool(DESCRIBE_ACTIONS_TOOL, {})).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+      await expect(runtime.callTool(DESCRIBE_ACTIONS_TOOL, {})).resolves.toMatchObject({ ok: true });
+    } finally { store.close(); }
+  });
+
+  it("filters before searching and rechecks current scope, revision and registry integrity before cached results", async () => {
+    const entries = Array.from({ length: 7 }, (_, index) => semanticFixture({ outcome: `billing.pause_${index}`, aliases: ["quiet"], businessInput: true }).activated);
+    const registry = createActionRuleRegistry({ name: "billing.actions", rules: entries.map(({ approval_policy_digest: _, ...entry }) => entry) });
+    let loaded = registry;
+    let authorization = { scope_key: "north/maya", revision: "v1", allowed_outcomes: entries.slice(0, 6).map((entry) => entry.compiled.outcome) };
+    const store = new ProposalStore();
+    const claim = vi.fn();
+    const resolveContext = vi.fn();
+    const runtime = createSemanticActionRuntime({ store, registry: () => loaded,
+      subjectReferences: { claim } as unknown as Parameters<typeof createSemanticActionRuntime>[0]["subjectReferences"],
+      resolveContext, resolveCatalogAuthorization: () => authorization });
+    try {
+      const first = await runtime.callTool(DESCRIBE_ACTIONS_TOOL, { query: "quiet", limit: 2 });
+      expect(first.actions).toHaveLength(2);
+      expect(first.next_cursor).toMatch(/^cur_/u);
+      expect(JSON.stringify(first)).not.toMatch(/billing.pause_6|north\/maya|sha256:|auto_approve_when/u);
+      expect(first.actions).toEqual(expect.arrayContaining([expect.objectContaining({ eligibility: "not_checked" })]));
+      expect((first.actions as Array<Record<string, unknown>>)[0]).not.toHaveProperty("inputs");
+      expect(await runtime.callTool(DESCRIBE_ACTIONS_TOOL, { outcome: "billing.pause_0" })).toMatchObject({ actions: [{
+        inputs: [{ name: "notification_state", required: true, type: { enum: ["active", "paused"] } }],
+        request_shape: { outcome: "billing.pause_0", subject_refs: { preference: "obj_<opaque reference>" } },
+      }] });
+      for (const outcome of ["billing.pause_6", "billing.never_existed"]) {
+        await expect(runtime.callTool(DESCRIBE_ACTIONS_TOOL, { outcome })).rejects.toMatchObject({ code: "CATALOG_ENTRY_UNAVAILABLE" });
+      }
+      authorization = { ...authorization, scope_key: "south/maya" };
+      await expect(runtime.callTool(DESCRIBE_ACTIONS_TOOL, { query: "quiet", limit: 2, cursor: first.next_cursor })).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+      authorization = { scope_key: "north/maya", revision: "v2", allowed_outcomes: [] };
+      await expect(runtime.callTool(DESCRIBE_ACTIONS_TOOL, { query: "quiet", limit: 2, cursor: first.next_cursor })).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+      expect(await runtime.callTool(DESCRIBE_ACTIONS_TOOL, {})).toMatchObject({ actions: [] });
+      await expect(runtime.callTool(REQUEST_CHANGE_TOOL, { outcome: "billing.pause_0", subject_refs: { preference: `obj_${"a".repeat(43)}` } })).rejects.toMatchObject({ code: "SEMANTIC_ACTION_UNAVAILABLE" });
+      expect(claim).not.toHaveBeenCalled();
+      expect(resolveContext).not.toHaveBeenCalled();
+      loaded = structuredClone(registry);
+      loaded.rules[0]!.compiled.rule.name = "tampered.cached.metadata";
+      await expect(runtime.callTool(DESCRIBE_ACTIONS_TOOL, {})).rejects.toMatchObject({ code: "ACTION_RULE_AUTHORITY_STALE" });
+    } finally { store.close(); }
+  });
+
+  it("owns immutable registry snapshots and rejects oversized complete contracts without dropping constraints", () => {
+    const { registry, activated } = semanticFixture({ businessInput: true, aliases: ["quiet"] });
+    const caller = structuredClone(registry);
+    const owned = snapshotActionRuleRegistry(caller);
+    caller.rules[0]!.compiled.rule.name = "caller.mutated";
+    expect(resolveActivatedActionRule(owned, activated.compiled.outcome).compiled.rule.name).toBe(activated.compiled.rule.name);
+    expect(snapshotActionRuleRegistry(owned)).toBe(owned);
+    expect(Object.isFrozen(owned.rules[0]!.compiled.rule.inputs![0]!.type)).toBe(true);
+    expect(() => snapshotActionRuleRegistry(caller)).toThrow(/integrity/u);
+    const compiled = structuredClone(activated.compiled);
+    compiled.rule.inputs![0]!.description = "x".repeat(13_000);
+    expect(() => assertActionDiscoveryContractFits(compiled, "human")).toThrow(/12288/u);
+    expect(actionRuleDiscoveryContract(compiled, "human")).toHaveProperty("inputs.0.description", "x".repeat(13_000));
+    compiled.rule.inputs![0]!.description = "x".repeat(6_000);
+    expect(Buffer.byteLength(JSON.stringify(actionRuleDiscoveryContract(compiled, "human")))).toBeLessThan(12_288);
+    expect(() => assertActionDiscoveryContractFits(compiled, "human")).toThrow(/MCP response budget/u);
+    compiled.rule["x-runner-discovery"] = { title: "Pause", summary: "Pause", aliases: ["x".repeat(81)] };
+    expect(() => actionRuleDiscoveryMetadata(compiled.rule)).toThrow(/aliases/u);
+  });
+
   it.each([
     [false, false, "approved_pending_execution"],
     [false, true, "approved_pending_execution"],

@@ -1,20 +1,60 @@
-import type { PolicyCoverage, PolicyTextSnapshot } from "./authoring-policy-source.js";
+import type { PolicyCoverage, PolicyTextSnapshot, PolicyPassage, PolicySourceSession } from "./authoring-policy-source.js";
 import { unresolvedPolicyPassages } from "./authoring-policy-coverage.js";
 import { readBoundaryRevisionCatalog, type ReadBoundaryFieldExposureChange } from "./read-boundary-revision-model.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
 
-export function policyReviewReadiness(source: PolicyTextSnapshot, report?: PolicyCoverage) {
+export type AuthoringReadinessItem = {
+  kind: "business_decision" | "mechanical_correction" | "unsupported_runtime" | "deployment_prerequisite" | "provider_failure";
+  title: string; nextStep: string; passages: PolicyPassage[]; blocksReview: boolean;
+};
+
+export function applicationObligationAssigned(report: PolicyCoverage, passage: PolicyPassage, session?: PolicySourceSession): boolean {
+  return passage.responsibility === "application" && !passage.field_checks?.length && Boolean(passage.application_obligations?.length
+    && session?.application_assignments?.some((entry) => entry.source_digest === report.source_digest && entry.draft_digest === report.draft_digest
+      && entry.start === passage.start && entry.end === passage.end && entry.verified === false && entry.owner === "client_application"
+      && entry.obligations.length === passage.application_obligations!.length
+      && entry.obligations.every((id) => passage.application_obligations!.includes(id))));
+}
+
+export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySourceSession): AuthoringReadinessItem[] {
+  if (!report) return [{ kind: "provider_failure", title: "Attached rules need checking",
+    nextStep: "Retry the coverage check for this saved draft.", passages: [], blocksReview: true }];
+  const grouped = new Map<string, AuthoringReadinessItem>();
+  for (const passage of unresolvedPolicyPassages(report)) {
+    const kind = passage.application_obligations?.length || passage.deployment_prerequisite ? "deployment_prerequisite"
+      : passage.issue_kind === "schema_meaning" || passage.issue_kind === "business_choice" ? "business_decision"
+      : passage.responsibility === "runner" || passage.issue_kind === "coverage_link" ? "mechanical_correction"
+      : passage.disposition === "unsupported" ? "unsupported_runtime"
+      : passage.responsibility === "deployment" ? "deployment_prerequisite" : "business_decision";
+    const title = passage.topic ?? `Rule at lines ${passage.start}-${passage.end}`;
+    const key = `${kind}:${title}`;
+    const nextStep = passage.deployment_prerequisite === "authenticated_identity"
+      ? "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it."
+      : passage.next_step ?? passage.interpretation;
+    const item = grouped.get(key) ?? { kind, title, nextStep, passages: [], blocksReview: false };
+    item.passages.push(passage);
+    item.blocksReview ||= !passage.deployment_prerequisite && !applicationObligationAssigned(report, passage, session);
+    grouped.set(key, item);
+  }
+  return [...grouped.values()];
+}
+
+export function policyReviewReadiness(source: PolicyTextSnapshot, report?: PolicyCoverage, session?: PolicySourceSession) {
   if (!report) return { ready: false, privacy: false, summary: [
     "Before activation: recheck the attached rules. Activation is unavailable; the saved draft and exact details remain available.",
   ] };
-  const pending = unresolvedPolicyPassages(report);
-  const topics = [...new Set(pending.map((passage) => passage.topic ?? `Rule at lines ${passage.start}-${passage.end}`))];
+  const items = policyReadinessItems(report, session);
+  const pending = items.filter((item) => item.blocksReview).flatMap((item) => item.passages);
+  const topics = items.filter((item) => item.blocksReview).map((item) => item.title);
+  const assigned = items.filter((item) => !item.blocksReview);
   const privacy = pending.some((passage) => passage.field_checks?.some((check) => check.expectation === "private"));
-  return { ready: !pending.length, privacy, summary: pending.length ? [
+  return { ready: !pending.length, privacy, items, summary: [...(pending.length ? [
     `Before activation: ${topics.join("; ")}. These are required decisions, not optional recommendations.`,
     "Continue with the model to resolve them in this saved draft. Activation is unavailable until the checks pass.",
-  ] : [`Attached rules: ${source.name} v${source.version}; interpretation checked against this revision. Exact source and decisions remain available in Review attached rules.`] };
+  ] : [`Attached rules: ${source.name} v${source.version}; interpretation checked for this revision.`]),
+    ...(assigned.length ? [`Client integration still unverified: ${assigned.map((item) => item.title).join("; ")}. Continue to client setup after review; test before customer use.`] : []),
+  ] };
 }
 
 /** Repair only a model-interpreted source requirement on a proven structural
@@ -28,9 +68,10 @@ export function knownPolicyPrivacyReductions(input: {
   const businessVisible = new Set(input.report.passages.flatMap((passage) => (passage.field_checks ?? [])
     .filter((check) => check.expectation === "business_visible").map((check) => `${check.resource}.${check.field}`)));
   for (const passage of unresolvedPolicyPassages(input.report)) {
-    if (passage.issue_kind === "schema_meaning" || passage.disposition === "unsupported") continue;
+    if (passage.disposition === "unsupported") continue;
     for (const check of passage.field_checks ?? []) {
       const key = `${check.resource}.${check.field}`;
+      if (passage.issue_kind === "schema_meaning" && !input.clarifiedFields?.has(key)) continue;
       if (check.expectation !== "private" || businessVisible.has(key)) continue;
       const field = catalog.resources.find((resource) => resource.id === check.resource)?.fields.find((field) => field.id === check.field);
       if (!field || field.current_exposure === "kept_out" || !field.raw_return && !field.model_operations.length) continue;

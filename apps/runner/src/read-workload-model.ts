@@ -27,6 +27,7 @@ import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { ReadWorkloadDraftError, safeReadWorkloadDiagnostic, type ReadWorkloadDiagnostic } from "./read-workload-diagnostics.js";
 
 const SUBMIT_READ_WORKLOAD_TOOL = "runner.submit_read_workloads";
+const MAX_READ_CLARIFICATIONS = 4;
 
 function isReadProviderFailure(error: unknown): error is AskError {
   return error instanceof AskError && (error.code.startsWith("ASK_PROVIDER_")
@@ -143,7 +144,10 @@ export async function generateModelReadWorkload(input: {
   let valueRequest: ModelReadValueRequest | undefined;
   let clarificationRequest: ModelReadClarificationRequest | undefined;
   let mechanicalClarificationRequest: ModelReadClarificationRequest | undefined;
-  let clarifiedTarget: ModelReadClarificationRequest | undefined;
+  const clarifiedTargets: ModelReadClarificationRequest[] = [];
+  const clarificationAnswers: string[] = [];
+  const clarificationKey = (request: ModelReadClarificationRequest) =>
+    JSON.stringify([request.resource, request.field ?? "", request.question.trim().toLowerCase().replace(/\s+/gu, " ")]);
   let approvedValueContext: Extract<ModelReadValueContextDecision, { state: "provided" }> | undefined;
   let opaqueGuessBlockers: string[] = [];
   let workloadValidationBlockers: string[] = [];
@@ -157,12 +161,12 @@ export async function generateModelReadWorkload(input: {
     listTools: () => tools,
     async callTool(nameCalled, args) {
       callCount += 1;
-      if (nameCalled !== SUBMIT_READ_WORKLOAD_TOOL || callCount > 5) {
+      if (nameCalled !== SUBMIT_READ_WORKLOAD_TOOL || callCount > MAX_READ_CLARIFICATIONS + 4) {
         return {
           ok: false,
           value: {
             error_code: "READ_WORKLOAD_SUBMISSION_REFUSED",
-            message: "Runner accepts one initial mapping, at most one Runner-resolved scope redirect, one naming clarification, one separately approved value-context request, and one corrected workload.",
+            message: "Runner accepts one initial mapping, up to four business clarification answers, one Runner-resolved scope redirect, one separately approved value-context request, and one corrected workload.",
             authority_granted: false,
             source_database_changed: false,
           },
@@ -258,13 +262,16 @@ export async function generateModelReadWorkload(input: {
             },
           };
         }
-        if (clarificationResolved || valueRequest || clarificationRequest) {
+        if (clarifiedTargets.length >= MAX_READ_CLARIFICATIONS || valueRequest || clarificationRequest
+          || clarifiedTargets.some((prior) => clarificationKey(prior) === clarificationKey(parsedRequest))) {
           repeatedAssistanceRequest = true;
           return {
             ok: false,
             value: {
               error_code: "READ_WORKLOAD_CLARIFICATION_REFUSED",
-              message: "Runner permits one exact clarification request per bounded Read Boundary mapping.",
+              message: clarifiedTargets.length >= MAX_READ_CLARIFICATIONS
+                ? "Four business questions were answered without a validated Read mapping. The saved answers are retained; review the unresolved mapping before retrying."
+                : "The same business question was already answered. Use the retained answer or identify a different missing fact; no draft was accepted.",
               authority_granted: false,
               source_query_executed: false,
               source_database_changed: false,
@@ -286,11 +293,11 @@ export async function generateModelReadWorkload(input: {
           },
         };
       }
-      const unresolvedOpaque = opaqueWorkloadReferences(args, catalog, clarifiedTarget);
+      const unresolvedOpaque = opaqueWorkloadReferences(args, catalog, clarifiedTargets);
       if (unresolvedOpaque.length) {
         opaqueGuessBlockers = unresolvedOpaque;
-        const interceptedClarification = !clarificationResolved
-          ? opaqueWorkloadClarificationRequest(args, catalog, clarifiedTarget)
+        const interceptedClarification = clarifiedTargets.length < MAX_READ_CLARIFICATIONS
+          ? opaqueWorkloadClarificationRequest(args, catalog, clarifiedTargets)
           : undefined;
         if (interceptedClarification && !clarificationRequest && !valueRequest) {
           clarificationRequest = interceptedClarification;
@@ -400,6 +407,7 @@ export async function generateModelReadWorkload(input: {
     "Schema-declared ENUM/CHECK allowlists already appear as structural metadata. Do not request them as observed values.",
     "Every resource in this catalog already has reviewed trusted scope. Tenant/principal ownership fields are intentionally omitted and Runner injects them outside the plan. Never ask which field, key, or relationship owns a row; map only the requested business projection, filter, grouping, and measure.",
     "If an opaque reviewed resource or field name makes the business meaning ambiguous, submit clarification_request for one exact catalog resource and optional field instead of guessing.",
+    "Use clear reviewed business field names directly. Ask only for genuinely missing meaning; up to four distinct business questions can be answered in this mapping. Retain all earlier answers and never ask the same question again.",
     "If and only if one exact reviewed field's observed values are indispensable to map the job, submit value_request instead of a workload. Runner has not queried those values and will ask the operator separately.",
     "Decompose a compound job into separate representative plans when one plan cannot cover every requested read. Do not silently drop part of the job.",
     'Every plan.kind must be exactly "rows" or "aggregate". A rows plan requires resource and select. An aggregate plan requires resource and measures.',
@@ -449,7 +457,7 @@ export async function generateModelReadWorkload(input: {
     try {
       return await runAskProviderTurn({
         configuration,
-        question,
+        question: [...clarificationAnswers, question].join("\n"),
     history: modelAuthoringHistory(input.conversation, input),
         gateway: diagnosedGateway,
         tools,
@@ -524,7 +532,6 @@ export async function generateModelReadWorkload(input: {
         await input.clarificationHandler(request),
       );
       clarificationRequest = undefined;
-      clarifiedTarget = request;
       clarificationResolved = true;
       opaqueGuessBlockers = [];
       if (decision.state === "declined") {
@@ -532,6 +539,8 @@ export async function generateModelReadWorkload(input: {
           `READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for ${request.resource}${request.field ? `.${request.field}` : ""}; Runner accepted no model draft.`,
         );
       }
+      clarifiedTargets.push(request);
+      clarificationAnswers.push(`Reviewed business clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: question ${JSON.stringify(request.question)}, operator answer ${JSON.stringify(decision.answer)}. This is naming context, not database values or authority.`);
       await remap([
         `The operator answered the exact metadata clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: ${JSON.stringify(decision.answer)}.`,
         "Use that answer only as a naming explanation for this bounded mapping. It is not database data or authority.",
@@ -573,7 +582,7 @@ export async function generateModelReadWorkload(input: {
         ];
     await remap([
       ...valueContext,
-      clarificationResolved ? "The reviewed naming clarification is already complete. Do not request another clarification." : "If one reviewed name remains genuinely ambiguous, use one clarification_request now; do not guess it.",
+      "Retain the completed business clarifications. If a different reviewed name remains genuinely ambiguous, request that missing meaning; do not repeat an answered question or guess it.",
       baseQuestion,
     ].join("\n"));
   }
@@ -608,7 +617,7 @@ export async function generateModelReadWorkload(input: {
       );
     }
     throw new Error(repeatedAssistanceRequest
-      ? "READ_WORKLOAD_ASSISTANCE_REQUEST_REPEATED: the model requested another clarification or database-value context after the one bounded operator decision. Runner sent nothing else and accepted no draft."
+      ? "READ_WORKLOAD_ASSISTANCE_REQUEST_REPEATED: the model exceeded the bounded clarification or value-context review. Runner sent nothing else and accepted no draft."
       : "READ_WORKLOAD_NOT_SUBMITTED: the model did not submit one bounded structured workload.");
   }
   const modelMessage = input.deferNarration
@@ -964,7 +973,7 @@ function runnerResolvedReadMechanicalGuidance(request: ModelReadClarificationReq
 function opaqueWorkloadReferences(
   args: Record<string, unknown>,
   catalog: ReturnType<typeof readWorkloadCatalog>,
-  clarified: ModelReadClarificationRequest | undefined,
+  clarified: readonly ModelReadClarificationRequest[],
 ): string[] {
   const entries = [
     ...(Array.isArray(args.allowed) ? args.allowed : []),
@@ -976,7 +985,7 @@ function opaqueWorkloadReferences(
     const plan = entry.plan;
     const resource = catalog.resources.find((candidate) => candidate.id === plan.resource);
     if (!resource) continue;
-    const resourceClarified = clarified?.resource === resource.id && clarified.field === undefined;
+    const resourceClarified = clarified.some((entry) => entry.resource === resource.id && entry.field === undefined);
     if (isClearlyOpaqueExploreIdentifier(resource.id)
       && !resource.label
       && !resource.description
@@ -986,7 +995,7 @@ function opaqueWorkloadReferences(
     for (const field of workloadPlanFields(plan)) {
       const metadata = resource.fields.find((candidate) => candidate.id === field);
       if (!metadata) continue;
-      const fieldClarified = clarified?.resource === resource.id && clarified.field === field;
+      const fieldClarified = clarified.some((entry) => entry.resource === resource.id && entry.field === field);
       if (isClearlyOpaqueExploreIdentifier(field)
         && !metadata.label
         && !metadata.description
@@ -1002,7 +1011,7 @@ function opaqueWorkloadReferences(
 function opaqueWorkloadClarificationRequest(
   args: Record<string, unknown>,
   catalog: ReturnType<typeof readWorkloadCatalog>,
-  clarified: ModelReadClarificationRequest | undefined,
+  clarified: readonly ModelReadClarificationRequest[],
 ): ModelReadClarificationRequest | undefined {
   const entries = [
     ...(Array.isArray(args.allowed) ? args.allowed : []),
@@ -1013,7 +1022,7 @@ function opaqueWorkloadClarificationRequest(
     const plan = entry.plan;
     const resource = catalog.resources.find((candidate) => candidate.id === plan.resource);
     if (!resource) continue;
-    const resourceClarified = clarified?.resource === resource.id && clarified.field === undefined;
+    const resourceClarified = clarified.some((entry) => entry.resource === resource.id && entry.field === undefined);
     if (isClearlyOpaqueExploreIdentifier(resource.id)
       && !resource.label
       && !resource.description
@@ -1031,7 +1040,7 @@ function opaqueWorkloadClarificationRequest(
     for (const field of workloadPlanFields(plan)) {
       const metadata = resource.fields.find((candidate) => candidate.id === field);
       if (!metadata) continue;
-      const fieldClarified = clarified?.resource === resource.id && clarified.field === field;
+      const fieldClarified = clarified.some((entry) => entry.resource === resource.id && entry.field === field);
       if (isClearlyOpaqueExploreIdentifier(field)
         && !metadata.label
         && !metadata.description

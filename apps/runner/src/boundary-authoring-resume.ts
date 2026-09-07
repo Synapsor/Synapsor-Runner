@@ -19,7 +19,13 @@ export type BoundaryAuthoringResumeStage =
   | "planning"
   | "read_mapping"
   | "action_drafting"
-  | "authority_review";
+  | "authority_review"
+  | "client_setup";
+
+export type BoundaryAuthoringClientHandoff = {
+  read_digest: `sha256:${string}`;
+  action_digest?: `sha256:${string}`;
+};
 
 export type BoundaryAuthoringResumeBinding = {
   boundary_name: string;
@@ -59,6 +65,7 @@ export type BoundaryAuthoringResumeState = {
   read_intent?: string;
   read?: BoundaryAuthoringResumeRead;
   action?: BoundaryAuthoringResumeAction;
+  client_handoff?: BoundaryAuthoringClientHandoff;
   created_at: string;
   updated_at: string;
   authority_granted: false;
@@ -84,6 +91,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   readIntent?: string;
   read?: BoundaryAuthoringResumeRead;
   action?: BoundaryAuthoringResumeAction;
+  clientHandoff?: BoundaryAuthoringClientHandoff;
   previous?: BoundaryAuthoringResumeState;
   now?: string;
 }): BoundaryAuthoringResumeState {
@@ -117,6 +125,7 @@ export function buildBoundaryAuthoringResumeState(input: {
       : {}),
     ...(input.read ? { read: normalizeRead(input.read) } : {}),
     ...(input.action ? { action: normalizeAction(input.action) } : {}),
+    ...(input.clientHandoff ? { client_handoff: normalizeClientHandoff(input.clientHandoff) } : {}),
     created_at: input.previous?.created_at ?? now,
     updated_at: now,
     authority_granted: false as const,
@@ -181,6 +190,23 @@ export async function clearBoundaryAuthoringResumeState(projectRootInput: string
   await fs.rm(resumePath(path.resolve(projectRootInput)), { force: true });
 }
 
+/** Retain business context, never old validation or authority, after a rescan. */
+export function revalidateBoundaryAuthoringResume(
+  state: BoundaryAuthoringResumeState,
+  binding: BoundaryAuthoringResumeBinding,
+): BoundaryAuthoringResumeState {
+  assertBoundaryAuthoringResumeState(state);
+  if (state.binding.boundary_name !== binding.boundary_name) {
+    throw new Error("The saved job belongs to a different Read Boundary.");
+  }
+  return buildBoundaryAuthoringResumeState({
+    binding, stage: "planning", jobIntent: state.job_intent,
+    provider: state.model.provider, model: state.model.name,
+    conversation: state.conversation, policySourceSession: state.policy_source_session,
+    readIntent: state.read_intent, previous: state,
+  });
+}
+
 export function assertBoundaryAuthoringResumeState(
   value: unknown,
 ): asserts value is BoundaryAuthoringResumeState {
@@ -201,7 +227,7 @@ export function assertBoundaryAuthoringResumeState(
     || value.source_database_changed !== false) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: the saved authoring state is invalid.");
   }
-  if (!["planning", "read_mapping", "action_drafting", "authority_review"].includes(value.stage)) {
+  if (!["planning", "read_mapping", "action_drafting", "authority_review", "client_setup"].includes(value.stage)) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: the saved authoring stage is invalid.");
   }
   normalizeBinding(value.binding as BoundaryAuthoringResumeBinding);
@@ -226,12 +252,20 @@ export function assertBoundaryAuthoringResumeState(
     reviewedText(value.read_intent, "Read intent", MAX_BOUNDARY_READ_QUESTION_CHARACTERS);
   }
   if (value.action !== undefined) normalizeAction(value.action as BoundaryAuthoringResumeAction);
+  if (value.stage === "client_setup" && value.client_handoff === undefined) throw new Error("Client continuation requires its exact reviewed authority.");
+  if (value.client_handoff !== undefined) normalizeClientHandoff(value.client_handoff as BoundaryAuthoringClientHandoff);
   assertNoPrivateRuntimeMaterial(value);
   const unsigned = { ...value } as Record<string, unknown>;
   delete unsigned.revision_digest;
   if (canonicalJsonDigest(unsigned) !== value.revision_digest) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: the saved authoring state does not match its digest.");
   }
+}
+
+function normalizeClientHandoff(value: BoundaryAuthoringClientHandoff): BoundaryAuthoringClientHandoff {
+  return { read_digest: reviewedDigest(value.read_digest, "client Read digest"),
+    ...(value.action_digest ? { action_digest: reviewedDigest(value.action_digest, "client Action digest") } : {}),
+  };
 }
 
 function normalizeSourceSession(value: unknown): string {

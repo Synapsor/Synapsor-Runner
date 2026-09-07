@@ -658,8 +658,12 @@ export type RelationRolePosture = {
   current_role_is_owner: boolean;
   current_role_can_assume_owner: boolean;
   privileges: RelationPrivilegeInfo;
+  /** Effective column grants only where the corresponding table grant is absent. */
+  column_privileges?: Partial<Record<"select" | "insert" | "update" | "references", string[]>>;
   row_security_forced: boolean | "unsupported" | "unknown";
   row_security_effective_for_current_role: boolean | "unsupported" | "unknown";
+  /** A permissive UPDATE/ALL policy applies; predicates still need runtime checks. */
+  row_security_update_permitted?: boolean;
 };
 
 export type TableInfo = {
@@ -1426,7 +1430,11 @@ async function inspectPostgres(
     const rlsPolicies = await client.query<RawRlsPolicy>(
       `SELECT schemaname AS schema, tablename AS table_name, policyname AS name,
               cmd AS command, permissive, pg_catalog.to_json(roles) AS roles,
-              qual AS using_expression, with_check AS check_expression
+              qual AS using_expression, with_check AS check_expression,
+              EXISTS (SELECT 1 FROM unnest(roles) AS policy_role(name)
+                WHERE CASE WHEN policy_role.name = 'public' THEN true
+                  ELSE pg_catalog.pg_has_role(current_user, policy_role.name, 'USAGE') END
+              ) AS applies_to_current_role
        FROM pg_catalog.pg_policies
        WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR schemaname = $1)
@@ -1446,6 +1454,15 @@ async function inspectPostgres(
               pg_catalog.has_table_privilege(current_user, c.oid, 'TRUNCATE') AS can_truncate,
               pg_catalog.has_table_privilege(current_user, c.oid, 'REFERENCES') AS can_references,
               pg_catalog.has_table_privilege(current_user, c.oid, 'TRIGGER') AS can_trigger,
+              (SELECT pg_catalog.jsonb_object_agg(p.privilege, p.columns) FROM (
+                SELECT lower(grant_kind.privilege) AS privilege,
+                       pg_catalog.jsonb_agg(a.attname ORDER BY a.attname) AS columns
+                FROM (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('REFERENCES')) AS grant_kind(privilege)
+                JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+                WHERE NOT pg_catalog.has_table_privilege(current_user, c.oid, grant_kind.privilege)
+                  AND pg_catalog.has_column_privilege(current_user, c.oid, a.attnum, grant_kind.privilege)
+                GROUP BY grant_kind.privilege
+              ) p) AS column_privileges,
               c.relforcerowsecurity AS row_security_forced
        FROM pg_catalog.pg_class c
        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
@@ -1525,6 +1542,8 @@ async function inspectPostgres(
                AND ($1::text IS NULL OR n.nspname = $1)
                AND (pg_catalog.has_table_privilege(current_user, c.oid, 'INSERT')
                  OR pg_catalog.has_table_privilege(current_user, c.oid, 'UPDATE')
+                 OR pg_catalog.has_any_column_privilege(current_user, c.oid, 'INSERT')
+                 OR pg_catalog.has_any_column_privilege(current_user, c.oid, 'UPDATE')
                  OR pg_catalog.has_table_privilege(current_user, c.oid, 'DELETE')
                  OR pg_catalog.has_table_privilege(current_user, c.oid, 'TRUNCATE')
                  OR pg_catalog.has_table_privilege(current_user, c.oid, 'TRIGGER'))
@@ -1934,6 +1953,7 @@ type RawRlsPolicy = {
   command: string;
   permissive: boolean | string;
   roles?: unknown;
+  applies_to_current_role?: boolean;
   using_expression?: string | null;
   check_expression?: string | null;
 };
@@ -1950,6 +1970,7 @@ type RawRelationRolePosture = {
   can_truncate: boolean;
   can_references: boolean;
   can_trigger: boolean;
+  column_privileges?: RelationRolePosture["column_privileges"] | null;
   row_security_forced: boolean;
 };
 
@@ -2021,7 +2042,9 @@ function normalizeInspection(input: {
       ...(policy.using_expression ? { using_expression: policy.using_expression } : {}),
       ...(policy.check_expression ? { check_expression: policy.check_expression } : {}),
     }));
-    const rolePosture = role ? normalizeRelationRolePosture(role, rowSecurityEnabled, policies, superuser, bypassRls) : undefined;
+    const applicable = new Set((policiesByTable.get(key) ?? []).filter((policy) => policy.applies_to_current_role === true).map((policy) => policy.name));
+    const updatePolicy = policies.some((policy) => applicable.has(policy.name) && policy.permissive && (policy.command === "ALL" || policy.command === "UPDATE"));
+    const rolePosture = role ? normalizeRelationRolePosture(role, rowSecurityEnabled, policies, superuser, bypassRls, updatePolicy) : undefined;
     return {
       schema: raw.schema,
       name: raw.name,
@@ -2181,6 +2204,7 @@ function normalizeRelationRolePosture(
   policies: RowLevelSecurityPolicyInfo[],
   superuser: boolean | "unsupported" | "unknown",
   bypassRls: boolean | "unsupported" | "unknown",
+  updatePolicy = false,
 ): RelationRolePosture {
   const selectPolicies = policies.filter((policy) => policy.command === "ALL" || policy.command === "SELECT");
   const ownerBypass = role.current_role_is_owner || role.current_role_can_assume_owner;
@@ -2206,15 +2230,20 @@ function normalizeRelationRolePosture(
       references: Boolean(role.can_references),
       trigger: Boolean(role.can_trigger),
     },
+    ...(role.column_privileges && Object.values(role.column_privileges).some((columns) => columns?.length)
+      ? { column_privileges: role.column_privileges } : {}),
     row_security_forced: Boolean(role.row_security_forced),
     row_security_effective_for_current_role: rlsEffective,
+    ...(rowSecurityEnabled && (role.can_update || role.column_privileges?.update?.length)
+      ? { row_security_update_permitted: updatePolicy } : {}),
   };
 }
 
 function relationIsWriteCapable(table: TableInfo): boolean {
   const privileges = table.role_posture?.privileges;
   if (!privileges) return true;
-  return privileges.insert || privileges.update || privileges.delete || privileges.truncate || privileges.trigger;
+  return privileges.insert || privileges.update || privileges.delete || privileges.truncate || privileges.trigger
+    || Boolean(table.role_posture?.column_privileges?.insert?.length || table.role_posture?.column_privileges?.update?.length);
 }
 
 export function mysqlGrantPosture(

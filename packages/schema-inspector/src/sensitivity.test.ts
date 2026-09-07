@@ -69,6 +69,27 @@ describe("shared deterministic sensitivity classifier", () => {
     }).state).toBe("high_confidence_sensitive");
   });
 
+  it.each(["email_opt_in", "phone_opt_out", "emailNotificationsEnabled"])(
+    "does not mistake reviewed boolean preference %s for a contact address", (name) => {
+      expect(classifySensitivity({ name, dataType: "boolean", source: "database" }).state)
+        .toBe("structurally_low_risk");
+      for (const dataType of [undefined, "text", "boolean[]", "jsonb", "tinyint"]) {
+        expect(classifySensitivity({ name, dataType, source: "database" }).state)
+          .toBe("high_confidence_sensitive");
+      }
+    },
+  );
+
+  it("retains independent sensitivity and write-only signals on boolean preferences", () => {
+    for (const extra of [{ description: "Patient treatment notifications" }, { writeOnly: true },
+      { description: "Contains an API key" }]) {
+      expect(classifySensitivity({ name: "email_opt_in", dataType: "boolean", source: "database", ...extra }).state)
+        .toBe("high_confidence_sensitive");
+    }
+    expect(classifySensitivity({ name: "email_address", dataType: "boolean", source: "database" }).state)
+      .toBe("high_confidence_sensitive");
+  });
+
   it.each([
     ["trainer_notes", "text"],
     ["reviewComment", "varchar"],

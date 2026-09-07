@@ -901,7 +901,7 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Enter");
     expect(rendered).toContain("Enter/C Review + activate");
     expect(rendered).toContain("Activation returns here so you can keep editing");
-    expect(rendered).toContain("Press Q when finished to choose how to ask");
+    expect(rendered).toContain("W continues model setup; Q closes this editor");
   });
 
   it("uses arrow-key resource selection without changing risk-first order", async () => {
@@ -2485,7 +2485,23 @@ describe("boundary review terminal picker", () => {
     expect(plain).toMatch(/B\/Esc Back to (?:boundary )?tables/u);
     expect(plain).toContain("Showing columns");
     expect(plain).not.toContain("rows hidden");
+    const visible = plain.match(/Showing columns (\d+)-(\d+) of 14/u)!;
+    expect(Number(visible[2]) - Number(visible[1]) + 1).toBeGreaterThanOrEqual(5);
 
+    await send(input, "b");
+    await expect(edited).resolves.toBe("back");
+  });
+
+  it.each([[80, 24], [160, 40]])("shows reviewed RLS owner scope as configured at %sx%s", async (columns, rows) => {
+    const { input, output } = fakeTerminal(columns, rows);
+    const view = reviewView();
+    view.candidate!.rls_session = { principal_setting: "synapsor.principal" };
+    delete view.candidate!.principal_key;
+    delete view.candidate!.principal_scope;
+    const edited = createBoundaryReviewInteractiveSession(input, output).editFieldTiers(view, { focusedAccess: true });
+    const text = stripAnsi(output.read()?.toString() ?? "");
+    expect(text).not.toMatch(/User\/owner[^\n]*\[(?:OFF|not configured)\]/u);
+    expect(text).toMatch(/User\/owner[^\n]*\[(?:SET|reviewed PostgreSQL RLS)\]/u);
     await send(input, "b");
     await expect(edited).resolves.toBe("back");
   });

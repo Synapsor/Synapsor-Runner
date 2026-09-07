@@ -610,7 +610,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
       relationship_review_required: z.boolean().optional(),
     }).strict()),
   }).strict()).optional(),
-  next_cursor: z.number().int().nonnegative().nullable().optional(),
+  next_cursor: z.union([z.number().int().nonnegative(), z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u)]).nullable().optional(),
   raw_sql_available: z.literal(false).optional(),
   source_rows_available_before_activation: z.literal(false).optional(),
 }).strict();
@@ -643,7 +643,7 @@ export const scopedExploreDescribeToolOutputSchema = z.object({
   details: safeRecordSchema.optional(),
   source_database_changed: z.literal(false).optional(),
   resources: z.array(scopedExploreClientDescribeResourceSchema).optional(),
-  next_cursor: z.number().int().nonnegative().nullable().optional(),
+  next_cursor: z.union([z.number().int().nonnegative(), z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u)]).nullable().optional(),
   catalog_view: z.enum(["resource_index", "resource_detail"]).optional(),
   metadata_only: z.literal(true).optional(),
   contains_source_values: z.literal(false).optional(),

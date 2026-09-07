@@ -96,6 +96,7 @@ class SemanticPostgresIntentStore implements WritebackIntentStore {
 class SemanticPostgresClient implements PostgresApplyClient {
   readonly queryLog: Array<{ sql: string; values: unknown[] }> = [];
   updateCount = 0;
+  private receipt?: Record<string, unknown>;
 
   constructor(private readonly commitUnknown = false) {}
 
@@ -107,6 +108,29 @@ class SemanticPostgresClient implements PostgresApplyClient {
     if (normalized === "COMMIT" && this.commitUnknown) throw new Error("connection lost after COMMIT");
     if (["BEGIN", "COMMIT", "ROLLBACK", "SET LOCAL TIME ZONE 'UTC'", "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"].includes(normalized)) {
       return { rows: [], rowCount: null };
+    }
+    if (normalized.startsWith("INSERT INTO synapsor_writeback_receipts")) {
+      if (this.receipt) return { rows: [], rowCount: 0 };
+      this.receipt = {
+        job_id: String(values[1]),
+        proposal_id: String(values[2]),
+        status: "in_progress",
+        result_hash: null,
+      };
+      return { rows: [{ status: "in_progress", result_hash: null }], rowCount: 1 };
+    }
+    if (normalized.startsWith("SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM synapsor_writeback_receipts")) {
+      return { rows: this.receipt ? [this.receipt] : [], rowCount: this.receipt ? 1 : 0 };
+    }
+    if (normalized.startsWith("UPDATE synapsor_writeback_receipts")) {
+      if (!this.receipt) throw new Error("missing semantic receipt");
+      this.receipt = {
+        ...this.receipt,
+        status: values[1],
+        result_hash: values[2],
+        semantic_verification_json: values[3],
+      };
+      return { rows: [], rowCount: 1 };
     }
     if (normalized.startsWith("SELECT")
       && normalized.includes('FROM "support_cases"."case_actions"')
@@ -170,6 +194,28 @@ describe("postgres semantic Action adapter conformance", () => {
       affected_rows: 0,
       semantic_verification: { status: "previously_reverified" },
     });
+    expect(client.updateCount).toBe(1);
+    expect(semanticActionVerifier).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists semantic proof in source receipts and requires it for idempotent replay", async () => {
+    const vector = createSemanticAdapterConformanceVector("postgres");
+    const client = new SemanticPostgresClient();
+    const semanticActionVerifier = vi.fn(async ({ factLoader }) => {
+      await factLoader.load(vector.fact_query);
+      return vector.reverification;
+    });
+
+    const applied = await applyPostgresJobWithClient(vector.job, { ...config, semanticActionVerifier }, client);
+    const replayed = await applyPostgresJobWithClient(vector.job, { ...config, semanticActionVerifier }, client);
+
+    expect(applied).toMatchObject({ protocol_version: "5.0", status: "applied" });
+    expect(replayed).toMatchObject({
+      protocol_version: "5.0",
+      status: "already_applied",
+      semantic_verification: { status: "previously_reverified" },
+    });
+    expect(client.sqlLog.filter((sql) => sql.includes("semantic_verification_json"))).toHaveLength(4);
     expect(client.updateCount).toBe(1);
     expect(semanticActionVerifier).toHaveBeenCalledTimes(1);
   });
@@ -559,6 +605,7 @@ describe("postgres adapter", () => {
     expect(result.result_hash).toBe("sha256:existing");
     expect(client.sqlLog.some((sql) => /CREATE\s+TABLE/i.test(sql))).toBe(false);
     expect(client.sqlLog.some((sql) => sql.includes('UPDATE "public"."tickets"'))).toBe(false);
+    expect(client.sqlLog.some((sql) => sql.includes("semantic_verification_json"))).toBe(false);
     expect(client.sqlLog).toContain("COMMIT");
   });
 
@@ -673,7 +720,7 @@ describe("postgres adapter", () => {
     expect(state.businessUpdates).toBe(1);
   });
 
-  it("applies one matching row and records the receipt", async () => {
+  it("applies through a pre-created legacy receipt table and records the receipt", async () => {
     const client = new FakePostgresClient({
       businessRow: { __synapsor_conflict_value: "2026-05-16 00:00:00.123456" },
       businessUpdateRowCount: 1
@@ -692,6 +739,7 @@ describe("postgres adapter", () => {
     expect(result).not.toHaveProperty("error_code");
     expect(client.sqlLog.some((sql) => sql.includes('UPDATE "public"."tickets"'))).toBe(true);
     expect(client.recordedReceiptStatus).toBe("applied");
+    expect(client.sqlLog.some((sql) => sql.includes("semantic_verification_json"))).toBe(false);
     expect(client.sqlLog).toContain("COMMIT");
   });
 
@@ -1516,7 +1564,7 @@ class FakePostgresClient implements PostgresApplyClient {
       const rowCount = this.options.claimRowCount ?? 1;
       return { rows: rowCount === 1 ? [{ status: "in_progress", result_hash: null }] : [], rowCount };
     }
-    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM synapsor_writeback_receipts")) {
+    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash FROM synapsor_writeback_receipts")) {
       return { rows: this.options.receiptRow ? [this.options.receiptRow] : [], rowCount: this.options.receiptRow ? 1 : 0 };
     }
     if (sql.startsWith("SELECT") && sql.includes('FROM "public"."invoice_eligibility"') && sql.includes("FOR UPDATE")) {
@@ -1574,7 +1622,7 @@ class ConcurrentPostgresClient implements PostgresApplyClient {
       }
       return { rows: [], rowCount: 0 };
     }
-    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM synapsor_writeback_receipts")) {
+    if (sql.startsWith("SELECT job_id, proposal_id, status, result_hash FROM synapsor_writeback_receipts")) {
       await this.state.finalizedPromise;
       return {
         rows: [{ job_id: job.job_id, proposal_id: job.proposal_id, status: this.state.receiptStatus, result_hash: this.state.resultHash }],

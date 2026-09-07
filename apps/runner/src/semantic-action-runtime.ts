@@ -21,6 +21,8 @@ import {
   type SubjectReferenceService,
   type TenantCredentialResolver,
   type TrustedContext,
+  type CatalogAuthorization,
+  ScopedCatalogSession,
 } from "@synapsor-runner/mcp-server";
 import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import {
@@ -38,7 +40,7 @@ import {
 } from "@synapsor-runner/mysql";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
-  loadActiveActionRuleAuthority,
+  createActiveActionRuleAuthorityLoader,
   type LoadedActiveActionRuleAuthorityV1,
 } from "./action-rule-authority.js";
 import { loadExploreAuditKey } from "./scoped-explore.js";
@@ -68,6 +70,8 @@ export type ActionRuleRuntimeServiceInput = {
   trustedContext?: TrustedContext;
   credentialResolver?: TenantCredentialResolver;
   authorityLoader?: () => Promise<LoadedActiveActionRuleAuthorityV1>;
+  resolveCatalogAuthorization?: () => Promise<CatalogAuthorization>;
+  catalogSession?: ScopedCatalogSession;
   factSessionFactory?: (input: {
     activated: ActivatedActionRuleV1;
     config: RuntimeConfig;
@@ -88,7 +92,24 @@ export async function createOptionalReadActionRuleRuntimeServices(
     const inactive = createInactiveSemanticActionRuntime();
     // Keep the same client usable when its first Action is activated later.
     // Reuse the normal authority loader and validators; absence grants nothing.
-    const current = () => createOptionalActionRuleRuntimeServices({ ...input, key: referenceContext.key });
+    const catalogSession = input.catalogSession ?? new ScopedCatalogSession();
+    const load = createActiveActionRuleAuthorityLoader(path.resolve(input.config.action_rules?.project_root ?? input.projectRoot));
+    const authorityLoader = input.authorityLoader ?? (() => load({ dependency_check: "report" }));
+    let ready: ActionRuleRuntimeServices | undefined;
+    let pending: Promise<ActionRuleRuntimeServices | undefined> | undefined;
+    const current = async () => {
+      if (ready) {
+        try { await authorityLoader(); return ready; }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          ready = undefined;
+          return undefined;
+        }
+      }
+      pending ??= createOptionalActionRuleRuntimeServices({ ...input, authorityLoader, key: referenceContext.key, catalogSession });
+      try { ready = await pending; return ready; }
+      finally { pending = undefined; }
+    };
     return {
       ...referenceContext,
       semanticActions: { ...inactive, callTool: async (name, args) =>
@@ -119,7 +140,10 @@ export async function createOptionalActionRuleRuntimeServices(
   }
   let authority: LoadedActiveActionRuleAuthorityV1;
   const authorityLoader = input.authorityLoader
-    ?? (async () => await loadActiveActionRuleAuthority(projectRoot, { dependency_check: "report" }));
+    ?? (() => {
+      const load = createActiveActionRuleAuthorityLoader(projectRoot);
+      return () => load({ dependency_check: "report" });
+    })();
   try {
     authority = await authorityLoader();
   } catch (error) {
@@ -140,6 +164,14 @@ export async function createOptionalActionRuleRuntimeServices(
     store: input.store,
     registry,
     subjectReferences,
+    catalogSession: input.catalogSession,
+    resolveCatalogAuthorization: input.resolveCatalogAuthorization ?? ((currentRegistry) => {
+      const first = currentRegistry.rules[0];
+      const context = resolveTrustedContext(input.config, env,
+        first ? semanticContextCapability(first) : undefined, input.trustedContext);
+      return { scope_key: canonicalJsonDigest({ deployment: deploymentScope, session: workflowSessionId, context }),
+        revision: "deployment_authority" };
+    }),
     unavailableOutcomes: async () => (await loadAuthority()).unavailable_outcomes ?? [],
     onProposalReady: async ({ proposal, activated }) => {
       if (proposal.state === "applied") {

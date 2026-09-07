@@ -14,7 +14,9 @@ export function createModelAuthoringConversation(
 ): ModelAuthoringConversation {
   const conversation: ModelAuthoringConversation = { turns: [] };
   for (const turn of initialTurns) {
-    rememberModelAuthoringTurn(conversation, turn.question, turn.answer);
+    if (turn.kind === undefined) rememberModelAuthoringTurn(conversation, turn.question, turn.answer);
+    else if (turn.kind === "clarification") rememberModelAuthoringClarification(conversation, turn.question, turn.answer);
+    else throw new Error("AUTHORING_CONVERSATION_INVALID: unsupported conversation turn kind.");
   }
   return conversation;
 }
@@ -31,6 +33,24 @@ export function rememberModelAuthoringTurn(
   question: string,
   answer: string,
 ): void {
+  rememberAuthoringTurn(conversation, question, answer);
+}
+
+/** Retain a model question followed by the operator's direct clarification. */
+export function rememberModelAuthoringClarification(
+  conversation: ModelAuthoringConversation | undefined,
+  question: string,
+  answer: string,
+): void {
+  rememberAuthoringTurn(conversation, question, answer, "clarification");
+}
+
+function rememberAuthoringTurn(
+  conversation: ModelAuthoringConversation | undefined,
+  question: string,
+  answer: string,
+  kind?: "clarification",
+): void {
   if (!conversation) return;
   const normalizedQuestion = boundedConversationText(question, 4_000);
   const normalizedAnswer = boundedConversationText(answer, 8_000);
@@ -38,6 +58,7 @@ export function rememberModelAuthoringTurn(
   conversation.turns.push({
     question: normalizedQuestion,
     answer: normalizedAnswer,
+    ...(kind ? { kind } : {}),
   });
   while (conversation.turns.length > MAX_AUTHORING_HISTORY_TURNS
     || conversationSize(conversation.turns) > MAX_AUTHORING_HISTORY_CHARS) {

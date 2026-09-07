@@ -14,6 +14,18 @@ export class McpRuntimeError extends Error {
 
 export function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["error"]> {
   const runtimeCode = error instanceof McpRuntimeError ? error.code : undefined;
+  const catalogMessages: Record<string, string> = {
+    CATALOG_CURSOR_INVALID: "This catalog page is stale, expired or not valid for this scope. Restart discovery with the same intended search.",
+    CATALOG_ENTRY_UNAVAILABLE: "That entry is not available in the current authorized catalog. Search or browse the permitted catalog.",
+    CATALOG_SESSION_LIMIT: "This session reached its bounded catalog-disclosure limit. Use the existing shortlist; additional discovery needs a new authorized session.",
+    CATALOG_CONTRACT_TOO_LARGE: "The complete reviewed contract exceeds the disclosure limit. Operator revision is required; no constraints were truncated.",
+    CATALOG_QUERY_TOO_BROAD: "Narrow the search or browse the bounded catalog pages.",
+    CATALOG_TOO_LARGE: "The reviewed catalog exceeds the supported entry limit. Operator review is required.",
+    CATALOG_INVALID: "The reviewed catalog failed validation. Operator review is required.",
+  };
+  if (runtimeCode && Object.hasOwn(catalogMessages, runtimeCode)) {
+    return { code: "POLICY_VIOLATION", message: catalogMessages[runtimeCode]!, retryable: false };
+  }
   if (runtimeCode === "ROW_NOT_FOUND") {
     return { code: "NOT_FOUND_IN_TENANT", message: "No authorized row was found in the trusted tenant scope.", retryable: false };
   }

@@ -281,6 +281,7 @@ export type ScopedExploreRuntime = {
   boundary: ActivatedExplorationBoundary;
   session_fingerprint: `sha256:${string}`;
   model_authority_metadata?: ModelAuthorityMetadataMode;
+  requireCurrentAuthority?(): Promise<void>;
   trusted_scope?: {
     tenant: { source: "environment" | "postgres_role_setting" | "verified_http_claim" | "reviewed_organization"; binding: string };
     principal: { source: "environment" | "verified_http_claim" | "not_required"; binding?: string };
@@ -669,7 +670,15 @@ export async function createScopedExploreRuntime(input: {
     return timeCoveragePromise;
   };
 
+  const requireCurrentAuthority = async (): Promise<void> => {
+    const active = await loadActivatedExplorationBoundary(projectRoot, { name: prepared.boundary.pack.name })
+      .catch((error) => { throw scopedExploreBoundaryLoadError(error); });
+    if (active.activation.digest !== prepared.boundary.activation.digest) {
+      throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "Reviewed Read authority changed. Restart discovery against the current revision.");
+    }
+  };
   return {
+    requireCurrentAuthority,
     boundary: prepared.boundary,
     session_fingerprint: sessionFingerprint,
     model_authority_metadata: input.modelAuthorityMetadata ?? "semantic",
@@ -687,7 +696,7 @@ export async function createScopedExploreRuntime(input: {
       prepared.boundary,
       request,
       reviewableBoundary,
-      mode === "production_http" || request.include_time_coverage === false
+      mode === "production_http" || request.include_time_coverage !== true
         ? {}
         : await reviewedTimeCoverage(),
     ),

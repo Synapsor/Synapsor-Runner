@@ -32,7 +32,7 @@ export async function narrateValidatedAuthoringStep(input: {
   env?: NodeJS.ProcessEnv;
   egressAcknowledged: boolean;
   signal?: AbortSignal;
-  responseStyle?: "validated_result" | "permission" | "opening";
+  responseStyle?: "validated_result" | "permission" | "opening" | "clarification";
   onFailure?: (failure: AuthoringExplanationFailure) => void;
 }): Promise<string | undefined> {
   const unavailable = (code: string, mismatch?: string) => {
@@ -64,18 +64,23 @@ export async function narrateValidatedAuthoringStep(input: {
   };
   const permission = input.responseStyle === "permission";
   const opening = input.responseStyle === "opening";
+  const clarification = input.responseStyle === "clarification";
   const question = [
     `Operator message: ${JSON.stringify(input.operatorMessage)}`,
     "Runner-validated record:",
     ...input.validatedFacts.map((fact) => `- ${fact}`),
-    ...(input.nextQuestion ? [`Exact next question: ${JSON.stringify(input.nextQuestion)}`] : []),
+    ...(input.nextQuestion ? [`${clarification ? "Pending business meaning to clarify" : "Exact next question"}: ${JSON.stringify(input.nextQuestion)}`] : []),
     "Respond as the selected Boundary-drafting model, not as Runner.",
-    opening
+    clarification
+      ? "Ask exactly ONE short business question, at most 280 characters. Translate the pending meaning into a choice the operator can answer. Do not recap the action, cite source lines, give implementation instructions, or repeat safety notices. Do not decide the answer."
+      : opening
       ? "Use exactly two short sentences. First say only that you are ready to help draft reviewed boundaries while Runner validates each decision. Then ask the exact next question."
       : permission
       ? "Use at most three short sentences. Answer the operator's question when one was supplied, then explain why this permission is needed and what allowing or declining changes."
       : "Use at most four short sentences. Explain the validated result in ordinary business language.",
-    input.nextQuestion
+    clarification
+      ? "Preserve the pending question's business meaning, but remove schema jargon and instructions to edit permissions. A yes/no or visible/internal choice is appropriate when that is the actual missing decision."
+      : input.nextQuestion
       ? "End by asking the exact next question without changing its meaning."
       : "State the next useful operator choice only when the validated record names one.",
     "Do not mention internal hashes, SQL, credentials, hidden fields, or claim that authority, approval, apply, or source writes occurred.",
@@ -126,6 +131,8 @@ export async function narrateValidatedAuthoringStep(input: {
     });
     if (result.answer_source !== "model" || !result.answer.trim()) return unavailable("NARRATION_EMPTY");
     const answer = result.answer.trim();
+    if (clarification && (answer.length > 280 || (answer.match(/\?/gu) ?? []).length !== 1
+      || !answer.endsWith("?") || answer.includes("\n"))) return unavailable("NARRATION_VALIDATION_REJECTED", "Clarification must be one short business question.");
     if (opening && !openingNarrationIsSafe(answer, input.nextQuestion)) return unavailable("NARRATION_VALIDATION_REJECTED", "Opening exceeded the greeting contract or changed the next question.");
     const mismatch = narrationContradictsValidatedRecord(answer, input.validatedFacts);
     if (mismatch) return unavailable("NARRATION_VALIDATION_REJECTED", mismatch);

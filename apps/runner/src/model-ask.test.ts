@@ -925,6 +925,45 @@ describe("Workbench BYOM Ask", () => {
     expect(requestJson).toHaveBeenCalledTimes(2);
   });
 
+  it("serializes retained clarification history as assistant then user", async () => {
+    const narrationTools = [{ ...tools[0]!, name: "runner.inspect_draft" }];
+    const authorityDigest = askToolSurfaceDigest(narrationTools);
+    const configuration = resolveAskProviderConfiguration({
+      provider: "openai_compatible", model: "local-fixture", base_url: "http://127.0.0.1:11434/v1",
+      authority_digest: authorityDigest, egress_acknowledged: true,
+    }, {}, new Date("2026-09-03T00:00:00.000Z"));
+    let messages: Array<Record<string, unknown>> = [];
+    await expect(runAskProviderTurn({
+      configuration,
+      question: "Continue the exact disabled revision.",
+      history: [{
+        question: "Should customers see the visit status?",
+        answer: "Visit status is customer-facing business information.",
+        kind: "clarification",
+      }, {
+        question: "Keep status model-visible.",
+        answer: "Confirmed: no access change was needed.",
+      }],
+      gateway: { ...testGateway(narrationTools).gateway, mode: "authoring" },
+      tools: narrationTools,
+      authorityDigest,
+      signal: new AbortController().signal,
+      conversationalAuthoring: true,
+      skipRunnerQuestionContext: true,
+      dependencies: { requestJson: async (request) => {
+        messages = (request.body.messages ?? []) as Array<Record<string, unknown>>;
+        return openAiText("The disabled revision remains unchanged.");
+      } },
+    })).resolves.toMatchObject({ answer: "The disabled revision remains unchanged." });
+    expect(messages.slice(1, 6)).toEqual([
+      { role: "assistant", content: "Should customers see the visit status?" },
+      { role: "user", content: "Visit status is customer-facing business information." },
+      { role: "user", content: "Keep status model-visible." },
+      { role: "assistant", content: "Confirmed: no access change was needed." },
+      { role: "user", content: "Continue the exact disabled revision." },
+    ]);
+  });
+
   it("never enables conversational authoring behavior for client data tools", async () => {
     const authorityDigest = askToolSurfaceDigest(tools);
     const configuration = resolveAskProviderConfiguration({
@@ -8453,6 +8492,37 @@ describe("Workbench BYOM Ask", () => {
     expect(JSON.stringify(responses.events)).not.toContain("plans");
     expect(JSON.stringify(chat.events)).not.toContain("plans");
     expect(JSON.stringify(anthropic.events)).not.toContain("plans");
+  });
+
+  it("bounds SSE framing separately from the completed payload", async () => {
+    const small = { output: [{ type: "function_call", name: "review", arguments: JSON.stringify({ passages: "a".repeat(24_000) }) }] };
+    const event = (value: unknown) => `data: ${JSON.stringify(value)}\n\n`;
+    const framing = event({ type: "response.function_call_arguments.delta", item_id: "fc_" + "x".repeat(100), delta: "a" }).repeat(9_000);
+    expect(Buffer.byteLength(framing)).toBeGreaterThan(1_048_576);
+    const streamServer = createServer((request, response) => {
+      request.resume();
+      request.on("end", () => {
+        response.setHeader("content-type", "text/event-stream");
+        const body = request.url === "/framing"
+          ? framing + event({ type: "response.completed", response: small })
+          : request.url === "/wire-limit" ? ": keepalive\n\n".repeat(700_000)
+          : request.url === "/event-limit" ? "data: " + "x".repeat(1_048_577)
+          : Array.from({ length: 18 }, () => event({ choices: [{ delta: { content: "x".repeat(64_000) } }] })).join("") + "data: [DONE]\n\n";
+        response.setHeader("content-length", Buffer.byteLength(body));
+        response.end(body);
+      });
+    });
+    servers.push(streamServer);
+    await new Promise<void>((resolve) => streamServer.listen(0, "127.0.0.1", resolve));
+    const port = (streamServer.address() as AddressInfo).port;
+    const call = (path: string) => secureAskJsonRequest({
+      endpoint: new URL(`http://127.0.0.1:${port}${path}`), scope: "custom_loopback", headers: {}, body: {},
+      signal: new AbortController().signal, stream: { format: path === "/payload-limit" ? "openai_chat" : "openai_responses" },
+    });
+    await expect(call("/framing")).resolves.toMatchObject({ body: small });
+    for (const path of ["/wire-limit", "/event-limit", "/payload-limit"]) {
+      await expect(call(path)).rejects.toMatchObject({ code: "ASK_PROVIDER_RESPONSE_TOO_LARGE" });
+    }
   });
 
   it("cancels an incomplete provider stream without returning a partial draft", async () => {

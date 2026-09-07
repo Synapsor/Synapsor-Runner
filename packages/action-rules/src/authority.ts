@@ -7,8 +7,9 @@ import type {
   DerivedEffectEnvelopeSpecV1,
   RuleVerificationBoundarySpecV1,
 } from "@synapsor/spec";
-import { compileActionRule } from "./compile.js";
+import { createActionRuleCompiler } from "./compile.js";
 import { ActionRuleError } from "./errors.js";
+import { ACTION_AUTHORITY_LIMITS } from "./limits.js";
 import {
   normalizeActionRule,
   normalizeActionRuleCatalog,
@@ -83,8 +84,12 @@ export function createActionRuleAuthority(input: {
 }): LoadedActionRuleAuthorityV1 {
   const name = safeName(input.name, "Action Rule authority");
   const actionBoundaryName = safeName(input.action_boundary_name, "semantic Action Boundary");
-  if (input.rules.length < 1 || input.rules.length > 128) {
-    throw new ActionRuleError("ACTION_RULE_INVALID", "Action Rule authority must contain from 1 through 128 reviewed rules.");
+  if (input.rules.length < 1 || input.rules.length > ACTION_AUTHORITY_LIMITS.rules) {
+    throw new ActionRuleError("ACTION_RULE_INVALID", `Action Rule authority must contain from 1 through ${ACTION_AUTHORITY_LIMITS.rules} reviewed rules.`);
+  }
+  if (Buffer.byteLength(canonicalJsonStringify({ ...input,
+    approval_classes: input.approval_classes ?? null })) > ACTION_AUTHORITY_LIMITS.sourceBytes) {
+    throw new ActionRuleError("ACTION_RULE_INVALID", "Action Rule authority exceeds the supported 64 MiB source budget.");
   }
   const catalog = normalizeActionRuleCatalog(input.catalog);
   const sources = input.rules.map((entry) => ({
@@ -95,8 +100,8 @@ export function createActionRuleAuthority(input: {
     rule: normalizeActionRule(entry.rule),
     activated_at: timestamp(entry.activated_at),
   })).sort((left, right) => left.rule.outcome.localeCompare(right.rule.outcome));
-  const compiled = sources.map((entry) => compileActionRule({
-    catalog,
+  const compile = createActionRuleCompiler(catalog);
+  const compiled = sources.map((entry) => compile({
     verification_boundary: entry.verification_boundary,
     effect_envelope: entry.effect_envelope,
     rule: entry.rule,
@@ -116,12 +121,12 @@ export function createActionRuleAuthority(input: {
     required_approvals: approvalClass.required_approvals,
     shared_limits: structuredClone(approvalClass.shared_limits),
   }));
+  const approvalsByOutcome = new Map(approvalClasses.flatMap((approval) =>
+    approval.rules.map((binding) => [binding.outcome, approval] as const)));
   const actionRules: SemanticActionBoundaryRuleV1[] = compiled.map((rule) => ({
     ...(() => {
-      const approvalClass = approvalClasses.find((candidate) =>
-        candidate.name === rule.approval_class
-        && candidate.rules.some((binding) => binding.outcome === rule.outcome));
-      if (approvalClass === undefined) {
+      const approvalClass = approvalsByOutcome.get(rule.outcome);
+      if (approvalClass === undefined || approvalClass.name !== rule.approval_class) {
         throw new ActionRuleError("ACTION_RULE_INVALID", `Action Rule ${rule.outcome} has no exact approval authority.`);
       }
       return {

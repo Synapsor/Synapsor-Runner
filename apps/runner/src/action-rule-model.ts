@@ -190,6 +190,8 @@ export type ModelActionRuleDraftInput = {
   checkpoint?: ActionRuleAuthoringCheckpoint;
   onCheckpoint?: (checkpoint: ActionRuleAuthoringCheckpoint) => Promise<void>;
   onRelationshipReview?: (lines: string[]) => void;
+  /** The enclosing policy review owns the next visible turn once compilation succeeds. */
+  deferCompletionMessage?: boolean;
   egressAcknowledged: boolean;
   prepareResources?: (input: {
     phase: "verification" | "effect";
@@ -430,7 +432,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       signal: input.signal ?? new AbortController().signal,
       dependencies: {
         ...input.session.dependencies,
-        onStream: (event) => input.session.dependencies?.onStream?.({ ...event, operator_text: true }),
+        onStream: (event) => input.session.dependencies?.onStream?.({ ...event,
+          operator_text: !(compiled && input.deferCompletionMessage) }),
       },
       history: input.session.conversation ? modelAuthoringHistory(input.session.conversation, input.session) : history.slice(-16),
       question: [

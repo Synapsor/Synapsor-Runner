@@ -399,7 +399,9 @@ for client in cursor claude-code vscode; do
 done
 node --input-type=module - "$EXPECTED_VERSION" <<'NODE'
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 const version = process.argv[2];
+const installedRunner = fs.realpathSync("node_modules/@synapsor/runner/dist/runner.mjs");
 const cases = [
   ["cursor", ".cursor/mcp.json", "mcpServers", "preserve-cursor"],
   ["claude-code", ".mcp.json", "mcpServers", "preserve-claude"],
@@ -412,8 +414,12 @@ for (const [client, destination, key, setting] of cases) {
   if (json.projectSetting !== setting || json[key]?.existing?.command !== "node") {
     throw new Error(`${client} install did not preserve unrelated project configuration`);
   }
-  if (entry?.command !== "npx" || entry?.args?.[1] !== `@synapsor/runner@${version}`) {
-    throw new Error(`${client} install did not pin the packed Runner version`);
+  if (entry?.command !== process.execPath || entry?.args?.[0] !== installedRunner) {
+    throw new Error(`${client} install did not select the exact installed Runner build`);
+  }
+  const launchedVersion = execFileSync(entry.command, [entry.args[0], "--version"], { encoding: "utf8" }).trim();
+  if (launchedVersion !== version) {
+    throw new Error(`${client} installed launcher used Runner ${launchedVersion}, expected ${version}`);
   }
   if (/postgres(?:ql)?:\/\/|mysql:\/\/|password|bearer|secret/i.test(JSON.stringify(entry))) {
     throw new Error(`${client} install leaked credential material`);

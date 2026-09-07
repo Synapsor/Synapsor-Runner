@@ -33,11 +33,14 @@ import {
   boundaryDisableCommand,
   boundaryRenameCommand,
   boundaryReviewCommand,
+  boundaryAuthoringResumeBinding,
   loadBoundaryReviewContext,
   preferredDetectedDatabaseEnv,
   startSafeAction,
   type BoundaryActivationHandoff,
 } from "./boundary-commands.js";
+import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { clientHandoffMatchesActiveAuthority } from "./authoring-client-readiness.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { fileExists, readJsonFileWithLocation } from "./cli-files.js";
 import { isRecord, shellQuote } from "./cli-format.js";
@@ -396,11 +399,17 @@ async function startAutoBoundary(
       ? path.join(project.root, existingJourney.artifacts.boundary_root)
       : context.boundaryRoot;
     const activeBoundaryExists = await guidedActiveBoundaryExists(project.root);
+    const savedJob = await readBoundaryAuthoringResumeState(project.root, boundaryAuthoringResumeBinding(context.bundle));
+    const hasGuidedJob = savedJob.status !== "none";
     const savedReviewSummary = context.progress
       ? `Saved Read candidate: ${context.candidate.pack.resources.length} table(s) in revision ${context.progress.revision}; `
         + `${context.bundle.decisions.filter((decision) => decision.confirmed).length}/${context.bundle.decisions.length} exact review decisions confirmed.`
       : `Saved Read candidate: ${context.candidate.pack.resources.length} table(s) in the initial disabled revision; review has not started.`;
-    writeGuidedOutput([
+    writeGuidedOutput(cliMode && hasGuidedJob ? [
+      "Saved guided setup found. Restoring your job, rules and reviewed drafts.",
+      `Read access: ${activeBoundaryExists ? "active" : "disabled"}. No authority or source data changed.`,
+      "",
+    ].join("\n") : [
       existingJourney
         ? "Existing Synapsor guided project found."
         : "Existing Runner-managed boundary project found.",
@@ -411,7 +420,9 @@ async function startAutoBoundary(
       "No schema inspection, digest change, or file rewrite was performed.",
       ...(cliMode
         ? [
-          activeBoundaryExists
+          hasGuidedJob
+            ? "Continuing your saved guided job. Runner will validate its checkpoint before restoring it; manual editing remains available."
+            : activeBoundaryExists
             ? "Continuing to model or MCP-client selection in this terminal."
             : "Continuing from the saved disabled candidate. A new model conversation receives the current saved Read and Action state; the prior provider transcript is not retained.",
         ]
@@ -419,6 +430,18 @@ async function startAutoBoundary(
       "",
     ].join("\n"));
     if (cliMode) {
+      if (savedJob.status === "ready" && savedJob.value.stage === "client_setup"
+        && await clientHandoffMatchesActiveAuthority(project.root, savedJob.value)) {
+        return runPostActivationHandoff({ projectRoot: project.root, ...terminalAskLimits });
+      }
+      // A partly activated job still has Action/execution/client work to do.
+      // Let the authoring entry validate stale checkpoints, never bypass it
+      // just because the Read layer is already active.
+      if (hasGuidedJob) return runBoundaryReview(
+        ["--project-root", project.root, "--access", "--job-first"],
+        schemaInspector,
+        activationHandoff,
+      );
       if (activeBoundaryExists) {
         return runPostActivationHandoff({
           projectRoot: project.root,
@@ -476,6 +499,8 @@ async function startAutoBoundary(
   }
   if ((existingJourney || managedBoundaryContext) && shouldRescan) {
     const context = managedBoundaryContext ?? await loadBoundaryReviewContext(project.root);
+    const savedJob = await readBoundaryAuthoringResumeState(project.root, boundaryAuthoringResumeBinding(context.bundle));
+    const hasGuidedJob = savedJob.status !== "none";
     const reviewedSourceEnv = existingJourney?.source.environment_variable ?? context.lock.source_env;
     if (reviewedSourceEnv !== sourceEnv) {
       throw new Error(
@@ -503,16 +528,20 @@ async function startAutoBoundary(
         authorityActive: activeBoundaryExists,
       });
     }
-    writeGuidedOutput(`${formatBoundaryRescanReport(prepared.report)}\n\n`);
+    writeGuidedOutput(cliMode && hasGuidedJob && !verbose
+      ? `Schema recheck complete. ${prepared.report.changed ? "Saved drafts need revalidation; current authority was not replaced." : "Reviewed structure is unchanged."}\nContinuing your saved guided job. Use --verbose for the full rescan report.\n\n`
+      : `${formatBoundaryRescanReport(prepared.report)}\n\n`);
     if (cliMode) {
-      if (!prepared.report.changed && activeBoundaryExists) {
+      if (!prepared.report.changed && activeBoundaryExists && (!hasGuidedJob
+        || (savedJob.status === "ready" && savedJob.value.stage === "client_setup"
+          && await clientHandoffMatchesActiveAuthority(project.root, savedJob.value)))) {
         return runPostActivationHandoff({
           projectRoot: project.root,
           ...terminalAskLimits,
         });
       }
       return runBoundaryReview(
-        ["--project-root", project.root, "--access"],
+        ["--project-root", project.root, "--access", ...(hasGuidedJob ? ["--job-first"] : [])],
         schemaInspector,
         activationHandoff,
       );

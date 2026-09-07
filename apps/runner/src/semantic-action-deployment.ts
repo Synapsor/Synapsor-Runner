@@ -19,6 +19,8 @@ import {
   type ActionRuleAuthorityDraftV1,
 } from "./action-rule-authority.js";
 import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
+import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+import { bindSemanticReadScope } from "./semantic-action-read-scope.js";
 
 export const SEMANTIC_ACTION_RUNTIME_CONFIG = "synapsor.actions.runner.json";
 
@@ -84,14 +86,14 @@ export async function activateSemanticActionRuntime(input: {
   const previous = await readOptionalText(outputConfigPath);
   const sourceConfigPath = previous === undefined ? baseConfigPath : outputConfigPath;
   const sourceConfig = await readJsonObject(sourceConfigPath);
-  const nextConfig = semanticActionRuntimeConfig({
+  const nextConfig = bindSemanticReadScope(semanticActionRuntimeConfig({
     projectRoot,
     sourceConfigPath,
     outputConfigPath,
     sourceConfig,
     draft: input.draft,
     preserveActionRuntime: previous !== undefined,
-  });
+  }), input.draft.authority.rules, await loadActivatedExplorationBoundaries(projectRoot));
   await validateRuntimeConfig(nextConfig, outputConfigPath);
   const nextText = `${JSON.stringify(nextConfig, null, 2)}\n`;
   const configChanged = nextText !== previous;
@@ -117,6 +119,21 @@ export async function activateSemanticActionRuntime(input: {
     }
     throw error;
   }
+}
+
+/** Repair only omitted, already-authorized RLS wiring on a guided resume. */
+export async function restoreReviewedSemanticReadScope(projectRoot: string): Promise<boolean> {
+  const configPath = path.join(path.resolve(projectRoot), SEMANTIC_ACTION_RUNTIME_CONFIG);
+  const previous = await readOptionalText(configPath);
+  if (previous === undefined) return false;
+  const config = JSON.parse(previous) as Record<string, unknown>;
+  if (!isRecord(config.action_rules)) return false;
+  const active = await loadActiveActionRuleAuthority(projectRoot);
+  const next = bindSemanticReadScope(config, active.authority.rules, await loadActivatedExplorationBoundaries(projectRoot));
+  if (canonicalJsonDigest(next) === canonicalJsonDigest(config)) return false;
+  await validateRuntimeConfig(next, configPath);
+  await writePrivateTextAtomic(configPath, `${JSON.stringify(next, null, 2)}\n`);
+  return true;
 }
 
 /**
@@ -195,7 +212,14 @@ export async function previewSemanticSupervisedExecution(input: {
   );
   if (!assessment.ok) {
     throw new Error(
-      `SEMANTIC_ACTION_WRITER_POSTURE_INVALID: ${writeUrlEnv} is not the exact least-privilege writer for this outcome (${assessment.reasons.join(", ")}).`,
+      [
+        `SEMANTIC_ACTION_WRITER_POSTURE_INVALID: ${writeUrlEnv} is not the exact least-privilege writer for this outcome (${assessment.reasons.join(", ")}).`,
+        ...(assessment.relation_issues ?? []).slice(0, 12).map((issue) => `${JSON.stringify(issue.relation)}: ${issue.issue} ${issue.privileges.join(", ")} privilege(s).`),
+        ...((assessment.relation_issues?.length ?? 0) > 12 ? ["Additional role privileges also need review."] : []),
+        "Use a dedicated writer limited to the reviewed effect and private verification relations. Ask your database administrator to compare its grants with these issues; Runner does not change database grants.",
+        "PostgreSQL UPDATE can use exact column grants. Private row locks need UPDATE on the reviewed key column, not permission to change unrelated business fields. Do not broaden a shared role as a workaround.",
+        "The action and completion intent remain saved. Correct the writer configuration and resume execution review; no source changes have run.",
+      ].join("\n"),
     );
   }
   await validateRuntimeConfig(nextConfig, configPath);
