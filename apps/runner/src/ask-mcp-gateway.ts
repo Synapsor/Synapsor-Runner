@@ -3,7 +3,8 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ProposalStore } from "@synapsor-runner/proposal-store";
+import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
+import { createProjectRuntimeStore } from "./control-policy-store.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import {
   createMcpRuntime,
@@ -12,6 +13,7 @@ import {
   TrustedLocalToolPresentationChannel,
   type LocalToolPresentation,
   type McpRuntime,
+  type RuntimeConfig,
 } from "@synapsor-runner/mcp-server";
 import {
   createScopedExploreMcpServer,
@@ -287,27 +289,23 @@ async function connectAuthoringSurface(input: {
   env: NodeJS.ProcessEnv;
 }): Promise<ConnectedMcpSurface | undefined> {
   let runtime: ScopedExploreBoundarySetRuntime | undefined;
-  let subjectStore: ProposalStore | undefined;
+  let subjectStore: ProposalRuntimeStore | undefined;
   try {
     const modelAuthorityMetadata = await readModelAuthorityMetadataMode(input.configPath);
     const actionConfig = await optionalActionRuntimeConfig(input.projectRoot);
+    const selectedConfig = actionConfig ?? await authoringStoreConfig(input.configPath);
+    subjectStore = await createProjectRuntimeStore({ projectRoot: input.projectRoot, config: selectedConfig ?? {} as RuntimeConfig,
+      env: input.env, storePath: input.storePath });
     const semantic = actionConfig
-      ? await (async () => {
-          subjectStore = new ProposalStore(input.storePath);
-          return await createOptionalActionRuleRuntimeServices({
-            projectRoot: input.projectRoot,
-            config: actionConfig,
-            env: input.env,
-            store: subjectStore,
-          });
-        })()
+      ? await createOptionalActionRuleRuntimeServices({ projectRoot: input.projectRoot, config: actionConfig,
+          env: input.env, store: subjectStore })
       : undefined;
     runtime = await createScopedExploreBoundarySetRuntime({
       projectRoot: input.projectRoot,
       transport: "loopback_workbench",
       env: input.env,
       modelAuthorityMetadata,
-      ...(subjectStore ? { store: subjectStore } : {}),
+      store: subjectStore,
       ...(semantic
         ? {
           subjectReferences: {
@@ -385,7 +383,8 @@ async function connectSemanticActionSurface(input: {
 }): Promise<ConnectedMcpSurface | undefined> {
   const config = await optionalActionRuntimeConfig(input.projectRoot);
   if (!config) return undefined;
-  const store = new ProposalStore(input.storePath);
+  const store = await createProjectRuntimeStore({ projectRoot: input.projectRoot, config,
+    env: input.env, storePath: input.storePath });
   let runtime: McpRuntime | undefined;
   try {
     const semantic = await createOptionalActionRuleRuntimeServices({
@@ -395,7 +394,7 @@ async function connectSemanticActionSurface(input: {
       store,
     });
     if (!semantic) {
-      store.close();
+      await store.close();
       return undefined;
     }
     runtime = createMcpRuntime(config, {
@@ -425,6 +424,10 @@ async function optionalActionRuntimeConfig(
   projectRoot: string,
 ): Promise<ReturnType<typeof loadRuntimeConfigFromFile> | undefined> {
   const configPath = path.join(path.resolve(projectRoot), "synapsor.actions.runner.json");
+  return optionalRuntimeConfig(configPath);
+}
+
+async function optionalRuntimeConfig(configPath: string): Promise<RuntimeConfig | undefined> {
   try {
     await fs.access(configPath);
   } catch (error) {
@@ -432,6 +435,19 @@ async function optionalActionRuntimeConfig(
     throw error;
   }
   return loadRuntimeConfigFromFile(configPath);
+}
+
+async function authoringStoreConfig(configPath: string): Promise<RuntimeConfig | undefined> {
+  const text = await fs.readFile(configPath, "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (text === undefined) return undefined;
+  const parsed: unknown = JSON.parse(text);
+  if (!isRecord(parsed)) throw new Error("Runner configuration must be a JSON object.");
+  // createProjectRuntimeStore validates this selection independently. Source
+  // capabilities belong to their own runtime, never this active Read surface.
+  return { storage: parsed.storage } as RuntimeConfig;
 }
 
 function addAskOperatorReviewMetadata(

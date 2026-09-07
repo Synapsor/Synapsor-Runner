@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { createDefaultRuntimeStore, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/protocol";
+import { assertValidRunnerStorageConfig } from "@synapsor-runner/config";
 import { createPostgresPool } from "@synapsor-runner/postgres";
 import { sqliteControlPolicyRepository, postgresControlPolicyRepository,
   type ControlPolicyRepository, type ControlPolicyRevision, type ControlPolicyPointer, type ControlPolicyCommit,
@@ -128,6 +129,26 @@ export async function openProjectControlPolicies(input: ProjectPolicyStoreSelect
   return openBoundRepository(manifest, input.env ?? process.env);
 }
 
+/** Check an established deployment before a ledger constructor can create a
+ * new local file. The returned store, not a second policy connection, is owned
+ * by the calling runtime. No migration or activation is performed here. */
+export async function createProjectRuntimeStore(input: ProjectPolicyStoreSelection): Promise<ProposalRuntimeStore> {
+  assertValidRunnerStorageConfig(input.config.storage);
+  const manifest = await readManifest(input.projectRoot);
+  if (manifest) {
+    assertSameTarget(manifest, selectedTarget(input));
+    await requireExistingLocalStore(manifest.target);
+  }
+  const store = createDefaultRuntimeStore(input.config, input.env ?? process.env, input.storePath);
+  try {
+    await bindRuntimeControlPolicies({ ...input, store });
+    return store;
+  } catch (error) {
+    await store.close();
+    throw error;
+  }
+}
+
 /** Existing project-authority access follows its governed locator. Runtime
  * composition must separately bind its actual store before serving requests. */
 export async function openBoundProjectControlPolicies(projectRoot: string, env: NodeJS.ProcessEnv = process.env): Promise<BoundProjectPolicyStore | undefined> {
@@ -161,9 +182,26 @@ export async function bindRuntimeControlPolicies(input: ProjectPolicyStoreSelect
   if (!manifest) return undefined;
   const target = selectedTarget(input);
   assertSameTarget(manifest, target);
-  await requireExistingLocalStore(target);
-  const repository = requireRepository(input.store);
+  return borrowBoundRepository(manifest, input.store);
+}
+
+/** Runtime constructors receive the actual ledger, not another connection
+ * opened from a policy locator. Config-aware composition also checks selection
+ * with bindRuntimeControlPolicies; both routes verify repository identity. */
+export async function borrowRuntimeControlPolicies(projectRoot: string,
+  store: ProposalRuntimeStore): Promise<BoundProjectPolicyStore | undefined> {
+  const manifest = await readManifest(projectRoot);
+  return manifest ? borrowBoundRepository(manifest, store) : undefined;
+}
+
+async function borrowBoundRepository(manifest: Manifest, store: ProposalRuntimeStore): Promise<BoundProjectPolicyStore> {
+  await requireExistingLocalStore(manifest.target);
+  const repository = requireRepository(store);
   await assertRepositoryIdentity(repository, manifest);
+  if (manifest.target.kind === "sqlite" && "path" in store && typeof store.path === "string"
+    && (store.path === ":memory:" || path.resolve(store.path) !== manifest.target.path)) {
+    throw failure("POLICY_STORE_SELECTION_CHANGED", "The runtime ledger is not this project's configured policy store.");
+  }
   const deployment = await repository.deployment(manifest.deployment_id);
   if (!deployment) throw failure("POLICY_MIGRATION_PENDING", "Policy migration is unfinished. Resume the same migration; legacy exports cannot serve authority.");
   assertDeployment(deployment, manifest);

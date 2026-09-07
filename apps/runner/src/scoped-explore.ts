@@ -2,10 +2,10 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
 import path from "node:path";
+import { borrowRuntimeControlPolicies, createProjectRuntimeStore, type BoundProjectPolicyStore } from "./control-policy-store.js";
 import mysql from "mysql2/promise";
 import { Pool, type PoolClient } from "pg";
 import {
-  ProposalStore,
   type ExploreBudgetUsage,
   type ExploreBudgetLimits,
   type ExploreBudgetReservationInput,
@@ -21,6 +21,7 @@ import {
   type ModelAuthorityMetadataMode,
   type SubjectObservationRequirement,
   type SubjectReferenceService,
+  type RuntimeConfig,
 } from "@synapsor-runner/mcp-server";
 import {
   PrivacyBoundaryError,
@@ -374,6 +375,7 @@ export async function prepareScopedExplore(input: {
   boundaryName?: string;
   env?: NodeJS.ProcessEnv;
   inspectDatabaseFn?: InspectDatabaseFn;
+  policyStore?: BoundProjectPolicyStore;
 }): Promise<PreparedExplore> {
   const projectRoot = path.resolve(input.projectRoot);
   const mode = input.mode ?? "local_authoring";
@@ -385,7 +387,7 @@ export async function prepareScopedExplore(input: {
   }
   const boundary = await loadActivatedExplorationBoundary(
     projectRoot,
-    input.boundaryName ? { name: input.boundaryName } : undefined,
+    { ...(input.boundaryName ? { name: input.boundaryName } : {}), policyStore: input.policyStore },
   ).catch((error) => {
     throw scopedExploreBoundaryLoadError(error);
   });
@@ -401,7 +403,7 @@ export async function prepareScopedExplore(input: {
     || !SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS.has(boundary.spec_version)) {
     throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The active exploration boundary was compiled by a different compiler or Spec version.");
   }
-  const lock = await loadGenerationLockForActivatedBoundary(projectRoot, boundary).catch((error) => {
+  const lock = await loadGenerationLockForActivatedBoundary(projectRoot, boundary, input.policyStore).catch((error) => {
     throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", safeError(error));
   });
   if (boundary.activation.generation_lock_fingerprint !== boundary.generation_lock_fingerprint) {
@@ -558,11 +560,26 @@ export async function createScopedExploreRuntime(input: {
     workflow_session_id: string;
   };
 }): Promise<ScopedExploreRuntime> {
+  const ownsStore = !input.store;
+  const store = input.store ?? await createProjectRuntimeStore({ projectRoot: input.projectRoot, config: {} as RuntimeConfig,
+    env: input.env, storePath: path.join(path.resolve(input.projectRoot), ".synapsor/local.db") });
+  try {
+    const policyStore = await borrowRuntimeControlPolicies(input.projectRoot, store);
+    return await createScopedExploreRuntimeWithStore(input, store, ownsStore, policyStore);
+  } catch (error) {
+    if (ownsStore) await store.close();
+    throw error;
+  }
+}
+
+async function createScopedExploreRuntimeWithStore(input: Parameters<typeof createScopedExploreRuntime>[0],
+  store: ProposalRuntimeStore, ownsStore: boolean, policyStore?: BoundProjectPolicyStore): Promise<ScopedExploreRuntime> {
   const projectRoot = path.resolve(input.projectRoot);
   const env = input.env ?? process.env;
   const mode = input.mode ?? "local_authoring";
   const prepared = await prepareScopedExplore({
     projectRoot,
+    policyStore,
     transport: input.transport,
     mode,
     ...(input.boundaryName ? { boundaryName: input.boundaryName } : {}),
@@ -651,8 +668,6 @@ export async function createScopedExploreRuntime(input: {
       ...(principal ? { principal } : {}),
     })
     : undefined;
-  const ownsStore = !input.store;
-  const store = input.store ?? new ProposalStore(path.join(projectRoot, ".synapsor/local.db"));
   const ownsExecutor = !input.executor;
   const executor = input.executor ?? createScopedExploreDatabaseExecutor({
     engine: prepared.lock.engine,
@@ -671,7 +686,7 @@ export async function createScopedExploreRuntime(input: {
   };
 
   const requireCurrentAuthority = async (): Promise<void> => {
-    const active = await loadActivatedExplorationBoundary(projectRoot, { name: prepared.boundary.pack.name })
+    const active = await loadActivatedExplorationBoundary(projectRoot, { name: prepared.boundary.pack.name, policyStore })
       .catch((error) => { throw scopedExploreBoundaryLoadError(error); });
     if (active.activation.digest !== prepared.boundary.activation.digest) {
       throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "Reviewed Read authority changed. Restart discovery against the current revision.");
@@ -704,6 +719,7 @@ export async function createScopedExploreRuntime(input: {
       const validationStartedAt = clock();
       const currentPrepared = await prepareScopedExplore({
         projectRoot,
+        policyStore,
         transport: input.transport,
         mode,
         boundaryName: prepared.boundary.pack.name,
@@ -803,6 +819,7 @@ export async function createScopedExploreRuntime(input: {
       try {
         currentPrepared = await prepareScopedExplore({
           projectRoot,
+          policyStore,
           transport: input.transport,
           mode,
           boundaryName: prepared.boundary.pack.name,

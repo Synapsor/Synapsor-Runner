@@ -1,6 +1,6 @@
 import path from "node:path";
+import { borrowRuntimeControlPolicies, createProjectRuntimeStore, type BoundProjectPolicyStore } from "./control-policy-store.js";
 import {
-  ProposalStore,
   type ExploreBudgetLimits,
   type ProposalRuntimeStore,
 } from "@synapsor-runner/proposal-store";
@@ -8,6 +8,7 @@ import {
   projectAuthorityMetadataForModel,
   type ModelAuthorityMetadataMode,
   type SubjectReferenceService,
+  type RuntimeConfig,
 } from "@synapsor-runner/mcp-server";
 import {
   activatedExplorationBoundarySetDigest,
@@ -109,9 +110,22 @@ export async function createScopedExploreBoundarySetRuntime(input: {
   }
   const projectRoot = path.resolve(input.projectRoot);
   const ownsStore = !input.store;
-  const store = input.store ?? new ProposalStore(path.join(projectRoot, ".synapsor/local.db"));
+  const store = input.store ?? await createProjectRuntimeStore({ projectRoot, config: {} as RuntimeConfig,
+    env: input.env, storePath: path.join(projectRoot, ".synapsor/local.db") });
+  try {
+    const policyStore = await borrowRuntimeControlPolicies(projectRoot, store);
+    return await createBoundarySetWithStore(input, store, ownsStore, policyStore);
+  } catch (error) {
+    if (ownsStore) await store.close();
+    throw error;
+  }
+}
+
+async function createBoundarySetWithStore(input: Parameters<typeof createScopedExploreBoundarySetRuntime>[0],
+  store: ProposalRuntimeStore, ownsStore: boolean, policyStore?: BoundProjectPolicyStore): Promise<ScopedExploreBoundarySetRuntime> {
+  const projectRoot = path.resolve(input.projectRoot);
   const children = new Map<string, Child>();
-  let boundaries = await loadActivatedExplorationBoundaries(projectRoot).catch((error) => {
+  let boundaries = await loadActivatedExplorationBoundaries(projectRoot, policyStore).catch((error) => {
     throw scopedExploreBoundaryLoadError(error);
   });
   let selected = boundaries.at(-1)!;
@@ -120,7 +134,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
 
   const refresh = async (): Promise<void> => {
     if (closed) throw new ScopedExploreError("EXPLORE_DISABLED", "Scoped Explore is closed.");
-    const current = await loadActivatedExplorationBoundaries(projectRoot).catch((error) => {
+    const current = await loadActivatedExplorationBoundaries(projectRoot, policyStore).catch((error) => {
       throw scopedExploreBoundaryLoadError(error);
     });
     const currentNames = new Set(current.map((boundary) => boundary.pack.name));

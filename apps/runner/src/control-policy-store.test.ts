@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { ControlPolicyRepository, ProposalStore } from "@synapsor-runner/proposal-store";
-import { migrateProjectControlPolicies, openProjectControlPolicies, bindRuntimeControlPolicies, type BoundProjectPolicyStore,
+import { migrateProjectControlPolicies, openProjectControlPolicies, bindRuntimeControlPolicies, createProjectRuntimeStore, type BoundProjectPolicyStore,
   type ControlPolicyMigrationSnapshot, type ProjectPolicyStoreSelection } from "./control-policy-store.js";
 
 const roots: string[] = [];
@@ -88,6 +88,30 @@ describe("governed policy-store binding and recovery", () => {
       await expect(bindRuntimeControlPolicies({ ...selection, store: different })).rejects.toMatchObject({ code: "POLICY_REPOSITORY_MISMATCH" });
       expect(await different.controlPolicies.identity()).toBeTruthy();
     } finally { different.close(); }
+  });
+
+  it("refuses a changed or missing store before runtime creation can leave an empty shadow file", async () => {
+    const selection = await fixture(); const binding = track((await migrateProjectControlPolicies(migration(selection))).binding);
+    await binding.close();
+    const shadow = path.join(selection.projectRoot, "must-not-create.db");
+    await expect(createProjectRuntimeStore({ ...selection, storePath: shadow })).rejects.toMatchObject({ code: "POLICY_STORE_SELECTION_CHANGED" });
+    await expect(fs.stat(shadow)).rejects.toMatchObject({ code: "ENOENT" });
+    const runtime = await createProjectRuntimeStore(selection);
+    expect(await runtime.controlPolicies!.identity()).toBe(binding.repository_id);
+    await runtime.close();
+    await fs.rename(selection.storePath, `${selection.storePath}.saved`);
+    await expect(createProjectRuntimeStore(selection)).rejects.toMatchObject({ code: "POLICY_REPOSITORY_UNAVAILABLE" });
+    await expect(fs.stat(selection.storePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("validates only the required store selection before constructing an authoring ledger", async () => {
+    const selection = await fixture();
+    await expect(createProjectRuntimeStore({ ...selection, config: { storage: { shared_postgres: {
+      mode: "runtime_store", schema: "invalid.schema", url_env: "CONTROL_URL",
+    } } } as RuntimeConfig })).rejects.toThrow("INVALID_SHARED_POSTGRES_SCHEMA");
+    await expect(fs.stat(selection.storePath)).rejects.toMatchObject({ code: "ENOENT" });
+    const runtime = await createProjectRuntimeStore({ ...selection, config: { storage: { sqlite_path: selection.storePath } } as RuntimeConfig });
+    await runtime.close();
   });
 
   it("resumes a frozen pending import rather than rereading changed legacy files", async () => {

@@ -1690,6 +1690,14 @@ export function assertValidRunnerCapabilityConfig(input: unknown): asserts input
   }
 }
 
+/** Read-only authoring may use the ledger selection without loading unrelated
+ * legacy capabilities as authority. Keep the same strict storage validator. */
+export function assertValidRunnerStorageConfig(value: unknown): void {
+  const errors: ConfigIssue[] = [];
+  validateStorage(value, true, errors);
+  if (errors.length) throw new Error(`Invalid Runner storage config: ${errors.map((issue) => `${issue.path} ${issue.code}: ${issue.message}`).join("; ")}`);
+}
+
 function validateStorage(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
   if (value === undefined) return;
   if (!isRecord(value)) {

@@ -1,4 +1,5 @@
 import { createDefaultRuntimeStore, createMcpRuntime, createSynapsorMcpServer, DESCRIBE_ACTIONS_TOOL, describeIsolationAssurance, modelAuthorityMetadataMode, preflightGeneratedAuthority, REQUEST_CHANGE_TOOL, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpSessionFactory, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { borrowRuntimeControlPolicies, createProjectRuntimeStore } from "./control-policy-store.js";
 import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
@@ -195,13 +196,13 @@ export async function mcpServe(args: string[]): Promise<number> {
   const resultFormat = resultFormatOption(args);
   const storePath = optionalResolvedLocalStorePath(args);
   const releaseLease = await writeStoreLease(mcpServeLeaseStorePath(config, storePath), "mcp", "stdio", args.includes("--allow-concurrent-store"));
-  const runtimeStore = createDefaultRuntimeStore(
-    config,
-    process.env,
-    storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db",
-  );
+  let runtimeStore: ReturnType<typeof createDefaultRuntimeStore> | undefined;
   try {
     const semanticProjectRoot = configuredActionRuleProjectRoot(config);
+    const selectedStorePath = storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db";
+    runtimeStore = semanticProjectRoot
+      ? await createProjectRuntimeStore({ projectRoot: semanticProjectRoot, config, env: process.env, storePath: selectedStorePath })
+      : createDefaultRuntimeStore(config, process.env, selectedStorePath);
     const semantic = semanticProjectRoot
       ? await createOptionalActionRuleRuntimeServices({
           projectRoot: semanticProjectRoot,
@@ -221,7 +222,7 @@ export async function mcpServe(args: string[]): Promise<number> {
     });
     return 0;
   } finally {
-    await Promise.resolve(runtimeStore.close()).catch(() => undefined);
+    await Promise.resolve(runtimeStore?.close()).catch(() => undefined);
     await releaseLease();
   }
 }
@@ -867,6 +868,7 @@ export function productionExploreSessionFactory(
         ? "Single-organization production Explore requires a verified principal and the exact reviewed organization identity for every MCP session."
         : "Production Explore requires verified tenant and principal HTTP claims for every MCP session.");
     }
+    await borrowRuntimeControlPolicies(production.project_root, store);
     const executor = await sharedExecutor();
     const semantic = await createOptionalReadActionRuleRuntimeServices({
       projectRoot: production.project_root,
@@ -934,10 +936,11 @@ async function serveLocalExploreStdio(input: {
   disableActions?: boolean;
   modelAuthorityMetadata: ReturnType<typeof modelAuthorityMetadataMode>;
 }): Promise<void> {
-  const store = new ProposalStore(path.join(input.projectRoot, ".synapsor", "local.db"));
+  const actionConfigPath = path.join(input.projectRoot, "synapsor.actions.runner.json");
+  const actionConfig = await fileExists(actionConfigPath) ? await readRuntimeConfig(actionConfigPath) : input.config;
+  const store = await createProjectRuntimeStore({ projectRoot: input.projectRoot, config: actionConfig, env: process.env,
+    storePath: path.resolve(input.projectRoot, actionConfig.storage?.sqlite_path ?? ".synapsor/local.db") });
   try {
-    const actionConfigPath = path.join(input.projectRoot, "synapsor.actions.runner.json");
-    const actionConfig = await fileExists(actionConfigPath) ? await readRuntimeConfig(actionConfigPath) : input.config;
     const semantic = input.disableActions ? undefined : await createOptionalReadActionRuleRuntimeServices({
       projectRoot: input.projectRoot,
       config: actionConfig,

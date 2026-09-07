@@ -3,10 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
+import { createDefaultRuntimeStore, type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import { ProposalStore } from "@synapsor-runner/proposal-store";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type { RuleVerificationBoundarySpecV1, DerivedEffectEnvelopeSpecV1, ActionRuleSpecV1 } from "@synapsor/spec";
 import { AUTO_BOUNDARY_OVERRIDES_VERSION, activateExplorationBoundary, buildAutoBoundary, deactivateExplorationBoundary,
@@ -17,6 +18,9 @@ import { decodeOperatorAuthority, encodeOperatorAuthority, encodeOperatorExecuti
   validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
 import { migrateProjectControlPolicies, openProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
 import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
+import { createOptionalActionRuleRuntimeServices, createOptionalReadActionRuleRuntimeServices } from "./semantic-action-runtime.js";
+import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
+import { createScopedExploreRuntime } from "./scoped-explore.js";
 import { activateActionRuleAuthority, buildActionRuleAuthorityDraft, createActiveActionRuleAuthorityLoader,
   deactivateActionRuleAuthority, listActionRuleAuthorityDrafts, loadActiveActionRuleAuthority, readActionRuleAuthorityActivation,
   readActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, type ActionRuleAuthorityActivationV1 } from "./action-rule-authority.js";
@@ -189,6 +193,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
       projectRoot: string;
       binding: Awaited<ReturnType<typeof migrateProjectControlPolicies>>["binding"];
       original: ControlPolicyMigrationSnapshot;
+      config: RuntimeConfig;
     }) => Promise<void>) {
       const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-operator-policy-")); roots.push(projectRoot);
       const schema = `operator_policy_${randomUUID().replaceAll("-", "")}`;
@@ -201,7 +206,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         readLegacySnapshot: async () => original, validateSnapshot: async (value) => validateOperatorPolicySnapshot(value) });
       const previousUrl = process.env.TEST_POLICY_URL;
       if (backend === "postgres") process.env.TEST_POLICY_URL = process.env.SYNAPSOR_TEST_POSTGRES_URL;
-      try { await run({ policies: new OperatorAuthorityRepository(result.binding, config), binding: result.binding, original, projectRoot }); }
+      try { await run({ policies: new OperatorAuthorityRepository(result.binding, config), binding: result.binding, original, projectRoot, config }); }
       finally {
         if (previousUrl === undefined) delete process.env.TEST_POLICY_URL;
         else process.env.TEST_POLICY_URL = previousUrl;
@@ -324,6 +329,68 @@ for (const backend of ["sqlite", "postgres"] as const) {
         expect((await loadActivatedExplorationBoundaries(projectRoot, binding)).map((boundary) => boundary.pack.name))
           .toEqual([fixture().boundary.pack.name, "aaa_selected"]);
         expect(await loadActivatedExplorationBoundary(projectRoot)).toEqual(active);
+      });
+    });
+
+    it("refuses an unrelated runtime ledger before Read inspection, scope resolution or Action facts", async () => {
+      await useRepository(async ({ projectRoot, config }) => {
+        const wrongStore = new ProposalStore(":memory:"); await wrongStore.controlPolicies.initialize();
+        const inspect = vi.fn(async () => fixture().inspection);
+        const facts = vi.fn(async () => { throw new Error("must not access source facts"); });
+        const unavailable = vi.fn();
+        try {
+          const input = { projectRoot, store: wrongStore, config, factSessionFactory: facts };
+          await expect(createOptionalActionRuleRuntimeServices(input)).rejects.toMatchObject({ code: "POLICY_REPOSITORY_MISMATCH" });
+          await expect(createOptionalReadActionRuleRuntimeServices(input, unavailable)).rejects.toMatchObject({ code: "POLICY_REPOSITORY_MISMATCH" });
+          for (const factory of [createScopedExploreRuntime, createScopedExploreBoundarySetRuntime]) {
+            await expect(factory({ projectRoot, store: wrongStore, transport: "stdio", inspectDatabaseFn: inspect }))
+              .rejects.toMatchObject({ code: "POLICY_REPOSITORY_MISMATCH" });
+          }
+          expect(inspect).not.toHaveBeenCalled(); expect(facts).not.toHaveBeenCalled();
+          expect(unavailable).not.toHaveBeenCalled();
+          expect(await wrongStore.controlPolicies.identity()).toBeTruthy();
+        } finally { wrongStore.close(); }
+      });
+    });
+
+    it("uses the same live repository for discovery and observes revocation without reopening a locator", async () => {
+      await useRepository(async ({ projectRoot, config, binding }) => {
+        const draft = actionFixture(fixture());
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        await activateActionRuleAuthority({ projectRoot, name: draft.authority.name, expected_digest: draft.digest,
+          confirmation: `ACTIVATE ${draft.digest}`, actor: "operator" });
+        const store = createDefaultRuntimeStore(config, process.env, path.join(projectRoot, "control.db"));
+        const inspect = vi.fn(async () => { throw new Error("discovery must not inspect source"); });
+        const ignoredLoader = vi.fn(async () => { throw new Error("an injected snapshot cannot replace current repository authority"); });
+        const url = process.env.TEST_POLICY_URL;
+        // A borrowed PostgreSQL connection continues to work without credentials
+        // for opening another connection from the migration locator.
+        if (backend === "postgres") delete process.env.TEST_POLICY_URL;
+        try {
+          const action = await createOptionalActionRuleRuntimeServices({ projectRoot, config, store,
+            key: Buffer.alloc(32, 7), authorityLoader: ignoredLoader,
+            resolveCatalogAuthorization: async () => ({ scope_key: "test-tenant-a-maya", revision: "test" }),
+          });
+          expect(action!.authority.authority.name).toBe(draft.authority.name);
+          const described = await action!.semanticActions.callTool("app.describe_actions", {});
+          expect(JSON.stringify(described)).toContain("inventory.replenish");
+          const read = await createScopedExploreBoundarySetRuntime({ projectRoot, store, transport: "stdio",
+            deferTrustedScope: true, inspectDatabaseFn: inspect });
+          expect(read.boundaries).toEqual([fixture().boundary]);
+          await read.close();
+          expect(await store.controlPolicies!.identity()).toBeTruthy();
+          expect(inspect).not.toHaveBeenCalled(); expect(ignoredLoader).not.toHaveBeenCalled();
+          // Operate through the borrowed connection, then verify the existing
+          // runtime rejects stale authority even if exports still exist.
+          const current = (await store.controlPolicies!.deployment(binding.deployment_id))!;
+          await store.controlPolicies!.commit({ deployment_id: binding.deployment_id, expected_epoch: current.epoch,
+            revisions: [], active: [{ scope: { level: "operator" }, kind: "action", name: draft.authority.name, revision_id: null }],
+            event: { event_id: randomUUID(), actor: "test_operator", occurred_at: new Date().toISOString(), receipt: { operation: "revoke" } } });
+          await expect(action!.semanticActions.callTool("app.describe_actions", {})).rejects.toMatchObject({ code: "ENOENT" });
+        } finally {
+          if (url !== undefined) process.env.TEST_POLICY_URL = url;
+          await store.close();
+        }
       });
     });
 

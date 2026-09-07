@@ -44,6 +44,7 @@ import {
   type LoadedActiveActionRuleAuthorityV1,
 } from "./action-rule-authority.js";
 import { loadExploreAuditKey } from "./scoped-explore.js";
+import { borrowRuntimeControlPolicies } from "./control-policy-store.js";
 
 type SemanticFactSession = {
   fact_loader: ActionRuleFactLoaderAdapterV1;
@@ -85,6 +86,9 @@ export async function createOptionalReadActionRuleRuntimeServices(
   input: ActionRuleRuntimeServiceInput,
   onUnavailable?: (error: unknown) => void,
 ): Promise<Omit<ActionRuleRuntimeServices, "authority"> | undefined> {
+  // A wrong control store is a deployment failure, not optional Action absence.
+  const projectRoot = path.resolve(input.config.action_rules?.project_root ?? input.projectRoot);
+  const policyStore = await borrowRuntimeControlPolicies(projectRoot, input.store);
   try {
     const initial = await createOptionalActionRuleRuntimeServices(input);
     if (initial) return initial;
@@ -93,8 +97,8 @@ export async function createOptionalReadActionRuleRuntimeServices(
     // Keep the same client usable when its first Action is activated later.
     // Reuse the normal authority loader and validators; absence grants nothing.
     const catalogSession = input.catalogSession ?? new ScopedCatalogSession();
-    const load = createActiveActionRuleAuthorityLoader(path.resolve(input.config.action_rules?.project_root ?? input.projectRoot));
-    const authorityLoader = input.authorityLoader ?? (() => load({ dependency_check: "report" }));
+    const load = createActiveActionRuleAuthorityLoader(projectRoot, policyStore);
+    const authorityLoader = (policyStore ? undefined : input.authorityLoader) ?? (() => load({ dependency_check: "report" }));
     let ready: ActionRuleRuntimeServices | undefined;
     let pending: Promise<ActionRuleRuntimeServices | undefined> | undefined;
     const current = async () => {
@@ -139,9 +143,10 @@ export async function createOptionalActionRuleRuntimeServices(
     throw new Error("ACTION_RULE_PROJECT_ROOT_MISMATCH: the runtime entry point does not match the configured Action Rule authority project.");
   }
   let authority: LoadedActiveActionRuleAuthorityV1;
-  const authorityLoader = input.authorityLoader
+  const policyStore = await borrowRuntimeControlPolicies(projectRoot, input.store);
+  const authorityLoader = (policyStore ? undefined : input.authorityLoader)
     ?? (() => {
-      const load = createActiveActionRuleAuthorityLoader(projectRoot);
+      const load = createActiveActionRuleAuthorityLoader(projectRoot, policyStore);
       return () => load({ dependency_check: "report" });
     })();
   try {
