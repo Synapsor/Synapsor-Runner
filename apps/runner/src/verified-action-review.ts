@@ -1,6 +1,6 @@
 import process from "node:process";
 import { inspectDatabase } from "@synapsor-runner/schema-inspector";
-import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+import { loadActivatedExplorationBoundaries, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import {
   deactivateActionRuleAuthority,
   type ActionRuleAuthorityActivationV1,
@@ -13,6 +13,7 @@ import type {
 } from "./boundary-cli-picker.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
+import { redactCliErrorMessage } from "./cli-logging.js";
 import { clearPausedExecutionSetup, executionSetupProblem, savePausedExecutionSetup, type ExecutionSetupProblem } from "./semantic-execution-setup.js";
 import {
   activateSemanticActionRuntime,
@@ -20,6 +21,7 @@ import {
   enableSemanticSupervisedExecution,
   previewSemanticSupervisedExecution,
   readSemanticSupervisedExecutionState,
+  recoverSemanticActionRuntime,
   semanticExecutionConfirmation,
 } from "./semantic-action-deployment.js";
 
@@ -38,13 +40,47 @@ export async function reviewVerifiedActionAuthority(input: {
     run: () => Promise<BoundaryAccessNotice>;
   };
 }): Promise<BoundaryAccessNotice> {
-  const activeReads = await loadActivatedExplorationBoundaries(input.projectRoot).catch((error) => {
+  while (true) {
+    try {
+      const recovered = await recoverSemanticActionRuntime({ projectRoot: input.projectRoot, env: input.env,
+        draftName: input.draft?.authority.name ?? input.active?.authority.name });
+      if (recovered.authority) input = { ...input, ...recovered.authority };
+      return await reviewSavedVerifiedActionAuthority(input, recovered.readBoundaries);
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      if (typeof code !== "string" || !["POLICY_CONFIG_COMMIT_UNCONFIRMED", "POLICY_CONFIG_PUBLICATION_PENDING",
+        "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING", "POLICY_CONFIG_RECOVERY_CONFLICT", "POLICY_CONFIG_RECOVERY_INVALID"].includes(code)) throw error;
+      const details = [redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+        "Recovery checks the original receipt; it never replays activation. Existing authority is not disabled by pausing."];
+      input.session.rememberDetails?.("Action save recovery", details);
+      const choice = await input.session.chooseOption?.("CHECK ACTION SAVE", [
+        { value: "recover", label: "Check the saved activation receipt", detail: "Recover this exact attempt without activating again." },
+        { value: "details", label: "View recovery details" },
+        { value: "pause", label: "Pause and preserve the saved state" },
+      ], { initialValue: "pause", context: ["The Action save needs recovery before another activation decision.", `Diagnostic: ${code}`] });
+      if (choice === "details") { await input.session.showReviewDetails?.("Action save recovery", details); continue; }
+      if (choice === "recover") continue;
+      return { tone: "warning", title: "Action save recovery paused.", lines: [
+        `Diagnostic: ${code}. Reopen Action review to check the exact receipt.`,
+        "The saved state is preserved. Do not assume existing authority is disabled; no source request was executed here.",
+      ] };
+    }
+  }
+}
+
+async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof reviewVerifiedActionAuthority>[0],
+  recoveredReads?: ActivatedExplorationBoundary[]): Promise<BoundaryAccessNotice> {
+  const activeReads = recoveredReads ?? await loadActivatedExplorationBoundaries(input.projectRoot).catch((error) => {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   });
   const draftReady = input.draft?.authority.rules.every((rule) => activeReads.some((boundary) =>
     boundary.pack.name === rule.read_boundary_name
     && boundary.activation.digest === rule.read_boundary_digest)) ?? false;
+  const unavailableOutcomes = new Set(input.active?.authority.rules.filter((rule) => !activeReads.some((boundary) =>
+    boundary.pack.name === rule.read_boundary_name && boundary.activation.digest === rule.read_boundary_digest))
+    .map((rule) => rule.rule.outcome) ?? []);
+  const unavailableNotice = "Verified Action authority is saved; Read dependency unavailable.";
   const current = input.draft ?? input.active;
   if (!current) {
     return {
@@ -68,9 +104,10 @@ export async function reviewVerifiedActionAuthority(input: {
   const activeSummary = input.active
     ? verifiedActionAuthoritySummary(
         input.active,
-        "ACTIVE AUTHORITY",
+        unavailableOutcomes.size ? "SAVED AUTHORITY - READ DEPENDENCY UNAVAILABLE" : "ACTIVE AUTHORITY",
         enabledExecutionOutcomes(),
         input.session.terminalColumns,
+        unavailableOutcomes,
       )
     : [];
   const draftSummary = input.draft
@@ -86,21 +123,27 @@ export async function reviewVerifiedActionAuthority(input: {
     ...(activeSummary.length && draftSummary.length ? [""] : []),
     ...draftSummary,
     "The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.",
+    ...(unavailableOutcomes.size ? [
+      `Read dependency unavailable: ${[...unavailableOutcomes].join(", ")}. These outcomes cannot be used or executed.`,
+      "Their activation records are retained. Review the linked Read authority; opening these details does not restore access.",
+    ] : []),
     input.draft
       ? draftReady
         ? input.active
-          ? "The active authority remains live until you separately confirm this exact replacement."
+          ? unavailableOutcomes.size ? "The saved activation is unchanged until you separately confirm this exact replacement."
+            : "The active authority remains live until you separately confirm this exact replacement."
           : "Disabled revision is ready for its separate proposal-authority confirmation."
         : input.active
-          ? `The active authority remains live. Activate the exact linked Read Boundary ${input.boundaryName} before reviewing its replacement.`
+          ? `The saved activation is unchanged. Activate the exact linked Read Boundary ${input.boundaryName} before reviewing its replacement.`
           : `Activate the exact linked Read Boundary ${input.boundaryName} before this Action revision.`
-      : "This verified Action Boundary is active. Approval and apply remain separate.",
+      : unavailableOutcomes.size ? "Only outcomes with current reviewed Read dependencies remain usable. Approval and apply remain separate."
+        : "This verified Action Boundary is active. Approval and apply remain separate.",
   ];
   if (!input.session.chooseOption) {
     if (!input.draft || !draftReady) {
       return {
-        tone: input.active && !input.draft ? "success" : "warning",
-        title: input.active && input.draft
+        tone: input.active && !input.draft && !unavailableOutcomes.size ? "success" : "warning",
+        title: unavailableOutcomes.size ? unavailableNotice : input.active && input.draft
           ? "Active verified authority is unchanged; its replacement is not ready."
           : input.active
             ? "Verified Action Boundary is active."
@@ -118,6 +161,7 @@ export async function reviewVerifiedActionAuthority(input: {
       ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}),
       draft: input.draft,
       actor: localInteractiveActor(),
+      env: input.env,
     });
     return verifiedActionNotice(activated.activation, true, activated.config_path);
   }
@@ -145,8 +189,8 @@ export async function reviewVerifiedActionAuthority(input: {
         ...(input.active
           ? [{
               value: "details_active",
-              label: "View active authority details",
-              detail: "Shows the exact rules currently available to agents.",
+              label: unavailableOutcomes.size ? "View saved activation details" : "View active authority details",
+              detail: "Shows the exact saved rules; current Read dependencies still determine availability.",
             }]
           : []),
         ...(input.modelRevision
@@ -159,6 +203,7 @@ export async function reviewVerifiedActionAuthority(input: {
         ...(input.active?.authority.action_boundary.rules.flatMap((rule) => {
           if (rule.writeback.mode !== "direct_sql" || rule.writeback.supervised_worker !== "allowed") return [];
           const enabled = enabledExecutionOutcomes().has(rule.outcome);
+          if (!enabled && unavailableOutcomes.has(rule.outcome)) return [];
           return [{
             value: `${enabled ? "disable" : "enable"}_execution:${rule.outcome}`,
             label: enabled
@@ -191,8 +236,8 @@ export async function reviewVerifiedActionAuthority(input: {
     );
     if (!choice || choice === "back") {
       return {
-        tone: input.active && !input.draft ? "success" : "warning",
-        title: input.active && input.draft
+        tone: input.active && !input.draft && !unavailableOutcomes.size ? "success" : "warning",
+        title: unavailableOutcomes.size ? unavailableNotice : input.active && input.draft
           ? "Active verified authority is unchanged; replacement remains disabled."
           : input.active
             ? "Verified Action Boundary remains active."
@@ -230,7 +275,7 @@ export async function reviewVerifiedActionAuthority(input: {
     if (choice === "model_revision" && input.modelRevision) {
       return input.modelRevision.run();
     }
-    if (choice.startsWith("enable_execution:") && input.active) {
+    if (choice.startsWith("enable_execution:") && input.active && !unavailableOutcomes.has(choice.slice("enable_execution:".length))) {
       const outcome = choice.slice("enable_execution:".length);
       const notice = await reviewSemanticSupervisedExecution({
         projectRoot: input.projectRoot,
@@ -309,6 +354,7 @@ export async function reviewVerifiedActionAuthority(input: {
         ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}),
         draft: input.draft,
         actor: localInteractiveActor(),
+        env: input.env,
       });
       return verifiedActionNotice(activated.activation, true, activated.config_path);
     }
@@ -384,9 +430,10 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
   if (writeUrlAnswer === undefined) return undefined;
     writeUrlEnv = writeUrlAnswer.trim() || writeUrlEnv;
   }
-  const profile = semanticExecutionProfile(input.active, input.activeReads);
+  let profile: "development" | "staging" | "production";
   let preview: Awaited<ReturnType<typeof previewSemanticSupervisedExecution>>;
   try {
+    profile = semanticExecutionProfile(input.active, input.activeReads, input.outcome);
     preview = await previewSemanticSupervisedExecution({
       projectRoot: input.projectRoot,
       outcome: input.outcome,
@@ -460,9 +507,10 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
 function semanticExecutionProfile(
   active: ActionRuleAuthorityActivationV1,
   activeReads: Awaited<ReturnType<typeof loadActivatedExplorationBoundaries>>,
+  outcome: string,
 ): "development" | "staging" | "production" {
   const rank = { development: 0, staging: 1, production: 2 } as const;
-  const profiles = active.authority.rules.map((rule) => {
+  const profiles = active.authority.rules.filter((rule) => rule.rule.outcome === outcome).map((rule) => {
     const boundary = activeReads.find((candidate) =>
       candidate.pack.name === rule.read_boundary_name
       && candidate.activation.digest === rule.read_boundary_digest);
@@ -479,12 +527,15 @@ function verifiedActionAuthoritySummary(
   stateLabel: string,
   enabledExecutionOutcomes: Set<string> = new Set(),
   terminalColumns = 100,
+  unavailableOutcomes: Set<string> = new Set(),
 ): string[] {
   const rows = value.authority.action_boundary.rules.map((rule) => [
     rule.outcome,
     `${rule.operation.toUpperCase()} ${rule.target_resource}`,
     rule.approval_mode === "policy" ? "Policy + fallback" : "Human review",
-    rule.writeback.mode === "none"
+    unavailableOutcomes.has(rule.outcome)
+      ? enabledExecutionOutcomes.has(rule.outcome) ? "Enabled, blocked" : "Unavailable"
+      : rule.writeback.mode === "none"
       ? "Proposal only"
       : enabledExecutionOutcomes.has(rule.outcome)
         ? "Worker on"

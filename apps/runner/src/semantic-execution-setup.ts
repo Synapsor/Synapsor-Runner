@@ -51,7 +51,7 @@ export function executionSetupProblem(error: unknown): ExecutionSetupProblem {
   if (error instanceof SemanticWriterPostureError) return error.problem;
   const message = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
   const code = message.match(/^([A-Z][A-Z0-9_]{2,79}):/u)?.[1] ?? "EXECUTION_SETUP_CHECK_FAILED";
-  if (["POLICY_EXECUTION_COMMIT_UNCONFIRMED", "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING", "POLICY_CONFIG_PUBLICATION_PENDING",
+  if (["POLICY_CONFIG_COMMIT_UNCONFIRMED", "POLICY_EXECUTION_COMMIT_UNCONFIRMED", "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING", "POLICY_CONFIG_PUBLICATION_PENDING",
     "POLICY_CONFIG_RECOVERY_CONFLICT", "POLICY_CONFIG_RECOVERY_INVALID"].includes(code)) {
     const saved = (error as { publication_state?: unknown } | null)?.publication_state;
     const state = code === "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING" && (saved === "committed" || saved === "cancelled") ? saved : "unconfirmed";

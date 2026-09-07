@@ -123,7 +123,7 @@ for (const backend of ["sqlite", ...(process.env.SYNAPSOR_TEST_POSTGRES_URL ? ["
           if (mode === "unknown_commit") throw new Error("Receipt temporarily unavailable");
           return lookup(...input);
         });
-        try { await expect(publishPolicyConfiguration(args)).rejects.toThrow(mode === "journal_cleanup" ? "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING" : "POLICY_EXECUTION_COMMIT_UNCONFIRMED"); }
+        try { await expect(publishPolicyConfiguration(args)).rejects.toThrow(mode === "journal_cleanup" ? "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING" : "POLICY_CONFIG_COMMIT_UNCONFIRMED"); }
         finally { commitFault.mockRestore(); lookupFault.mockRestore(); renameFault.mockRestore(); unlinkFault.mockRestore(); }
         const journals = (await fs.readdir(journalDirectory)).filter((file) => file.endsWith(".json"));
         expect(journals).toHaveLength(1);
@@ -160,7 +160,7 @@ for (const backend of ["sqlite", ...(process.env.SYNAPSOR_TEST_POSTGRES_URL ? ["
             if (mode === "unavailable" || cancelled) throw new Error("Recovery receipt unavailable");
             return originalEvent.call(this, ...input);
           });
-          try { await expect(recoverPolicyConfiguration(recovery)).rejects.toThrow(mode === "restore_race" ? "POLICY_CONFIG_RECOVERY_CONFLICT" : "POLICY_EXECUTION_COMMIT_UNCONFIRMED"); }
+          try { await expect(recoverPolicyConfiguration(recovery)).rejects.toThrow(mode === "restore_race" ? "POLICY_CONFIG_RECOVERY_CONFLICT" : "POLICY_CONFIG_COMMIT_UNCONFIRMED"); }
           finally { fault.mockRestore(); eventFault.mockRestore(); }
           expect(await fs.readFile(configPath, "utf8")).toBe(mode === "restore_race" ? "newer edit during cancellation" : after);
           expect(await fs.readFile(journalPath, "utf8")).toBe(journal);

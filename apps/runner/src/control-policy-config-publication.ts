@@ -58,7 +58,7 @@ export async function publishPolicyConfiguration(input: Location & {
   }, { permit: input.mutationPermit });
 }
 
-/** Called by operator execution review after restart, never by runtime/model
+/** Called by operator authority review after restart, never by runtime/model
  * requests. It settles only the saved attempt; it cannot replay activation. */
 export async function recoverPolicyConfiguration(input: Location & { env?: NodeJS.ProcessEnv }):
 Promise<{ state: "none" | "committed" | "cancelled" }> {
@@ -154,7 +154,7 @@ async function readRecord(file: string): Promise<PublicationRecord | undefined> 
 
 async function assertNoRecord(file: string): Promise<void> {
   if (await readPrivateTarget(file) !== undefined) {
-    throw Object.assign(new Error("POLICY_CONFIG_PUBLICATION_PENDING: reopen execution review to recover the previous save before changing this configuration."),
+    throw Object.assign(new Error("POLICY_CONFIG_PUBLICATION_PENDING: reopen Action or execution review to recover the previous save before changing this configuration."),
       { code: "POLICY_CONFIG_PUBLICATION_PENDING" });
   }
 }
@@ -182,7 +182,7 @@ async function syncDirectory(directory: string): Promise<void> {
 async function finishJournal(file: string, record: PublicationRecord, state: "committed" | "cancelled"): Promise<void> {
   try { await fs.unlink(file); await syncDirectory(path.dirname(file)); }
   catch (cause) {
-    throw Object.assign(new Error(`POLICY_CONFIG_RECOVERY_CLEANUP_PENDING: the publication is confirmed ${state}, but recovery-record cleanup could not be confirmed. Reopen execution review; do not repeat activation.`, { cause }),
+    throw Object.assign(new Error(`POLICY_CONFIG_RECOVERY_CLEANUP_PENDING: the publication is confirmed ${state}, but recovery-record cleanup could not be confirmed. Reopen Action or execution review; do not repeat activation.`, { cause }),
       { code: "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING", publication_state: state, event_id: record.event.event_id });
   }
 }
@@ -198,6 +198,6 @@ function configConflict(): Error {
 }
 
 function unconfirmed(record: PublicationRecord, cause: unknown): Error {
-  return Object.assign(new Error("POLICY_EXECUTION_COMMIT_UNCONFIRMED: the execution save could not be confirmed. Its private recovery record is retained; reopen execution review to check the exact receipt. No rollback was attempted.", { cause }),
-    { code: "POLICY_EXECUTION_COMMIT_UNCONFIRMED", event_id: record.event.event_id, expected_epoch: record.expected_epoch });
+  return Object.assign(new Error("POLICY_CONFIG_COMMIT_UNCONFIRMED: the authority save could not be confirmed. Its private recovery record is retained; reopen Action or execution review to check the exact receipt. No rollback was attempted.", { cause }),
+    { code: "POLICY_CONFIG_COMMIT_UNCONFIRMED", publication_state: "unconfirmed", event_id: record.event.event_id, expected_epoch: record.expected_epoch });
 }

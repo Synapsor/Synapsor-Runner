@@ -2,6 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import { SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -55,11 +58,14 @@ import { applyProposal } from "./guarded-apply.js";
 import { verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
 import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, withSharedPostgresRuntimeStoreReadBridge } from "./store-shared.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
-import { disableSemanticSupervisedExecution, enableSemanticSupervisedExecution,
-  previewSemanticSupervisedExecution, readSemanticSupervisedExecutionState, semanticExecutionConfirmation } from "./semantic-action-deployment.js";
+import { activateSemanticActionRuntime, disableSemanticSupervisedExecution, enableSemanticSupervisedExecution,
+  previewSemanticSupervisedExecution, readSemanticSupervisedExecutionState, recoverSemanticActionRuntime, semanticExecutionConfirmation } from "./semantic-action-deployment.js";
 import { activateActionRuleAuthority, buildActionRuleAuthorityDraft, createActiveActionRuleAuthorityLoader,
   deactivateActionRuleAuthority, listActionRuleAuthorityDrafts, loadActiveActionRuleAuthority, readActionRuleAuthorityActivation,
   readActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, type ActionRuleAuthorityActivationV1 } from "./action-rule-authority.js";
+import { recoverPolicyConfiguration } from "./control-policy-config-publication.js";
+import { reviewVerifiedActionAuthority } from "./verified-action-review.js";
+import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
@@ -2204,6 +2210,346 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
+    it.each(["failed", "replacement_failed", "lost_response", "unknown_receipt", "different_receipt"])(
+      "recovers Action runtime publication from the exact activation receipt: %s", async (mode) => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const draft = actionFixture(fixture());
+        const config = executionConfig(); delete config.supervised_worker; delete config.action_rules;
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), JSON.stringify(config));
+        const configPath = path.join(projectRoot, "synapsor.actions.runner.json");
+        if (mode === "replacement_failed") {
+          await writeActionRuleAuthorityDraft(projectRoot, draft);
+          await activateSemanticActionRuntime({ projectRoot, draft, actor: "operator" });
+          const prior = JSON.parse(await fs.readFile(configPath, "utf8"));
+          await fs.writeFile(configPath, JSON.stringify(prior));
+        }
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        const previous = await fs.readFile(configPath, "utf8").catch((error) => { if (error.code === "ENOENT") return undefined; throw error; });
+        const beforeReads = await loadActivatedExplorationBoundaries(projectRoot);
+        const beforeEpoch = (await binding.repository.deployment(binding.deployment_id))!.epoch;
+        const commit = ControlPolicyRepository.prototype.commit, event = ControlPolicyRepository.prototype.event;
+        let intercepted = false;
+        const fault = vi.spyOn(ControlPolicyRepository.prototype, "commit").mockImplementation(async function (this: ControlPolicyRepository, change) {
+          if ((change.event.receipt as { operation?: string }).operation !== "activate_action") return commit.call(this, change);
+          intercepted = true;
+          if (mode !== "failed" && mode !== "replacement_failed") await commit.call(this, change);
+          throw new Error("Lost or failed Action activation response");
+        });
+        const lookup = vi.spyOn(ControlPolicyRepository.prototype, "event").mockImplementation(async function (this: ControlPolicyRepository, ...args) {
+          if (intercepted && mode === "unknown_receipt") throw new Error("Receipt unavailable");
+          const result = await event.call(this, ...args);
+          return intercepted && mode === "different_receipt" && result ? { ...result, actor: "different_operator" } : result;
+        });
+        try {
+          const attempt = activateSemanticActionRuntime({ projectRoot, draft, actor: "operator" });
+          if (mode === "lost_response") await expect(attempt).resolves.toMatchObject({ activation: { digest: draft.digest } });
+          else await expect(attempt).rejects.toMatchObject({ code: "POLICY_CONFIG_COMMIT_UNCONFIRMED" });
+        } finally { fault.mockRestore(); lookup.mockRestore(); }
+        expect(intercepted).toBe(true);
+        const after = await fs.readFile(configPath, "utf8");
+        expect(JSON.parse(after).action_rules).toBeDefined();
+        expect(after).not.toBe(previous);
+        const committed = !["failed", "replacement_failed"].includes(mode);
+        expect((await binding.repository.deployment(binding.deployment_id))!.epoch).toBe(beforeEpoch + Number(committed));
+        await expect(recoverPolicyConfiguration({ projectRoot, configPath })).resolves.toEqual({
+          state: mode === "lost_response" ? "none" : committed ? "committed" : "cancelled",
+        });
+        expect((await binding.repository.deployment(binding.deployment_id))!.epoch).toBe(beforeEpoch + 1);
+        expect(await fs.readFile(configPath, "utf8").catch((error) => { if (error.code === "ENOENT") return undefined; throw error; }))
+          .toBe(committed ? after : previous);
+        expect(await readActionRuleAuthorityDraft(projectRoot, draft.authority.name)).toEqual(committed ? undefined : draft);
+        expect((await readActionRuleAuthorityActivation(projectRoot))?.digest).toBe(committed || mode === "replacement_failed" ? draft.digest : undefined);
+        expect(await loadActivatedExplorationBoundaries(projectRoot)).toEqual(beforeReads);
+        expect(await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY)).toBeUndefined();
+        expect(await fs.readdir(path.join(projectRoot, ".synapsor/control-policy/publications"))).toEqual([]);
+      });
+    });
+
+    it.each(["before_config", "before_commit", "after_commit"])("recovers a terminated Action activation process: %s", async (stage) => {
+      await useRepository(async ({ projectRoot, binding, config: storageConfig }) => {
+        const draft = actionFixture(fixture());
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        const config = executionConfig(); delete config.supervised_worker; delete config.action_rules;
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), JSON.stringify(config));
+        const configPath = path.join(projectRoot, "synapsor.actions.runner.json");
+        const beforeEpoch = (await binding.repository.deployment(binding.deployment_id))!.epoch;
+        const code = `
+          import fs from 'node:fs/promises';
+          import { ControlPolicyRepository } from '@synapsor-runner/proposal-store';
+          import { activateSemanticActionRuntime } from ${JSON.stringify(new URL("./semantic-action-deployment.ts", import.meta.url).href)};
+          const stage = ${JSON.stringify(stage)}, configPath = ${JSON.stringify(configPath)};
+          const pause = async () => { setInterval(() => {}, 1000); process.send('paused'); await new Promise(() => {}); };
+          const rename = fs.rename.bind(fs);
+          fs.rename = async (from, to) => { if (stage === 'before_config' && to === configPath) await pause(); return rename(from, to); };
+          const commit = ControlPolicyRepository.prototype.commit;
+          ControlPolicyRepository.prototype.commit = async function(change) {
+            if (change.event.receipt?.operation !== 'activate_action') return commit.call(this, change);
+            if (stage === 'before_commit') await pause();
+            const epoch = await commit.call(this, change);
+            if (stage === 'after_commit') await pause();
+            return epoch;
+          };
+          await activateSemanticActionRuntime(${JSON.stringify({ projectRoot, draft, actor: "operator" })});
+        `;
+        const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", code], {
+          cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.."),
+          env: { ...process.env }, stdio: ["ignore", "ignore", "pipe", "ipc"],
+        });
+        let errorText = ""; child.stderr!.on("data", (data) => { errorText += String(data); });
+        const exited = once(child, "exit");
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            once(child, "message").then(([message]) => expect(message).toBe("paused")),
+            exited.then(() => { throw new Error(`Action child exited before publication pause: ${errorText.slice(-2000)}`); }),
+            new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error("Action child did not pause")), 15000); }),
+          ]);
+        } finally {
+          clearTimeout(timer);
+          if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+          await exited;
+        }
+        const recovery = await recoverSemanticActionRuntime({ projectRoot, draftName: draft.authority.name });
+        expect(recovery.state).toBe(stage === "after_commit" ? "committed" : "cancelled");
+        expect(recovery.authority?.active?.digest).toBe(stage === "after_commit" ? draft.digest : undefined);
+        expect(recovery.authority?.draft?.digest).toBe(stage === "after_commit" ? undefined : draft.digest);
+        expect((await binding.repository.deployment(binding.deployment_id))!.epoch).toBe(beforeEpoch + 1);
+        if (stage === "after_commit") expect(JSON.parse(await fs.readFile(configPath, "utf8")).action_rules).toBeDefined();
+        else await expect(fs.stat(configPath)).rejects.toMatchObject({ code: "ENOENT" });
+        expect(await fs.readdir(path.join(projectRoot, ".synapsor/control-policy/publications"))).toEqual([]);
+        expect((await recoverSemanticActionRuntime({ projectRoot, draftName: draft.authority.name })).state).toBe("none");
+        expect((await binding.repository.deployment(binding.deployment_id))!.epoch).toBe(beforeEpoch + 1);
+      });
+    }, 25000);
+
+    it.each(["forged_draft", "changed_draft", "revoked_read", "wrong_store", "changed_config"])(
+      "refuses changed Action publication inputs before replacing authority: %s", async (mode) => {
+      await useRepository(async ({ projectRoot, binding, config: storageConfig }) => {
+        const draft = actionFixture(fixture()), supplied = structuredClone(draft);
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        const config = executionConfig(); delete config.supervised_worker; delete config.action_rules;
+        config.storage = mode === "wrong_store" ? { sqlite_path: "./wrong.db" } : storageConfig.storage ?? { sqlite_path: "./control.db" };
+        await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), JSON.stringify(config));
+        if (mode === "forged_draft") supplied.authority.rules[0]!.rule.ttl_seconds += 1;
+        if (mode === "changed_draft") await writeActionRuleAuthorityDraft(projectRoot, actionFixture(fixture(), true));
+        if (mode === "revoked_read") await deactivateExplorationBoundary(projectRoot);
+        const before = await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id, scope: { level: "operator" }, kinds: ["read", "action", "execution"] });
+        const configPath = path.join(projectRoot, "synapsor.actions.runner.json"), rename = fs.rename.bind(fs);
+        const renameSpy = vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+          const result = await rename(from, to);
+          if (mode === "changed_config" && path.basename(String(to)).startsWith(".synapsor-semantic-action-")) {
+            await fs.writeFile(configPath, "newer operator config");
+          }
+          return result;
+        });
+        try { await expect(activateSemanticActionRuntime({ projectRoot, draft: supplied, actor: "operator" })).rejects.toThrow(); }
+        finally { renameSpy.mockRestore(); }
+        expect(await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id, scope: { level: "operator" }, kinds: ["read", "action", "execution"] })).toEqual(before);
+        if (mode === "changed_config") expect(await fs.readFile(configPath, "utf8")).toBe("newer operator config");
+        else await expect(fs.stat(configPath)).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(fs.stat(path.join(projectRoot, "wrong.db"))).rejects.toMatchObject({ code: "ENOENT" });
+        expect(await fs.readdir(path.join(projectRoot, ".synapsor/control-policy/publications")).catch((error) => {
+          if (error.code === "ENOENT") return []; throw error;
+        })).toEqual([]);
+      });
+    });
+
+    it.each(["cancelled", "committed", "cleanup", "unavailable", "newer_config"])(
+      "reopens Action review without repeating an interrupted activation: %s", async (mode) => {
+      await useRepository(async ({ projectRoot, binding, config: storageConfig }) => {
+        const draft = actionFixture(fixture());
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        const config = executionConfig(); delete config.supervised_worker; delete config.action_rules;
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), JSON.stringify(config));
+        const configPath = path.join(projectRoot, "synapsor.actions.runner.json");
+        const commit = ControlPolicyRepository.prototype.commit, lookup = ControlPolicyRepository.prototype.event;
+        const unlink = fs.unlink.bind(fs);
+        const commitFault = vi.spyOn(ControlPolicyRepository.prototype, "commit").mockImplementation(async function (this: ControlPolicyRepository, change) {
+          if ((change.event.receipt as { operation?: string }).operation !== "activate_action") return commit.call(this, change);
+          if (mode === "committed" || mode === "cleanup") {
+            const epoch = await commit.call(this, change);
+            if (mode === "cleanup") return epoch;
+          }
+          throw new Error("Interrupted Action save");
+        });
+        const lookupFault = vi.spyOn(ControlPolicyRepository.prototype, "event").mockRejectedValue(new Error("Receipt unavailable"));
+        const unlinkFault = vi.spyOn(fs, "unlink").mockImplementation(async (file) => {
+          if (mode === "cleanup" && String(file).includes("/publications/")) throw new Error("Recovery cleanup failed");
+          return unlink(file);
+        });
+        try { await expect(activateSemanticActionRuntime({ projectRoot, draft, actor: "operator" })).rejects.toHaveProperty("code"); }
+        finally { commitFault.mockRestore(); lookupFault.mockRestore(); unlinkFault.mockRestore(); }
+        const env = { ...process.env };
+        if (backend === "postgres") delete process.env.TEST_POLICY_URL;
+        if (mode === "newer_config") await fs.writeFile(configPath, "later configuration edit");
+        const beforeEpoch = (await binding.repository.deployment(binding.deployment_id))!.epoch;
+        const finalLookup = vi.spyOn(ControlPolicyRepository.prototype, "event").mockImplementation(async function (this: ControlPolicyRepository, ...args) {
+          if (mode === "unavailable") throw new Error("Receipt still unavailable");
+          return lookup.call(this, ...args);
+        });
+        const prompts: string[] = [], showReviewDetails = vi.fn(async () => {}), confirm = vi.fn(async () => { throw new Error("Recovery must not ask to activate"); });
+        const chooseOption = vi.fn(async (title: string, options: Array<{ value: string }>) => {
+          prompts.push(title);
+          if (title === "CHECK ACTION SAVE") return prompts.filter((entry) => entry === title).length === 1 ? "details" : "pause";
+          expect(title).toBe("VERIFIED ACTION BOUNDARY");
+          expect(options.some((entry) => entry.value === "activate")).toBe(mode === "cancelled");
+          expect(options.some((entry) => entry.value === "details_active")).toBe(mode === "committed" || mode === "cleanup");
+          return "back";
+        });
+        try {
+          const notice = await reviewVerifiedActionAuthority({ projectRoot, boundaryName: fixture().boundary.pack.name,
+            draft, env, session: { chooseOption, confirm, confirmActivation: confirm, showReviewDetails } as unknown as BoundaryReviewInteractiveSession });
+          expect(confirm).not.toHaveBeenCalled();
+          if (mode === "unavailable" || mode === "newer_config") {
+            expect(notice.title).toBe("Action save recovery paused.");
+            expect(showReviewDetails).toHaveBeenCalledWith("Action save recovery", expect.any(Array));
+            expect((await binding.repository.deployment(binding.deployment_id))!.epoch).toBe(beforeEpoch);
+            if (mode === "newer_config") expect(await fs.readFile(configPath, "utf8")).toBe("later configuration edit");
+          } else {
+            expect(notice.title).toBe(mode === "cancelled" ? "Verified Action Boundary remains disabled." : "Verified Action Boundary remains active.");
+            expect((await binding.repository.deployment(binding.deployment_id))!.epoch).toBe(beforeEpoch + Number(mode === "cancelled"));
+            expect(await fs.readdir(path.join(projectRoot, ".synapsor/control-policy/publications"))).toEqual([]);
+          }
+        } finally { finalLookup.mockRestore(); }
+      });
+    });
+
+    it.each(["disabled", "revoked", "revoked_execution", "revoked_unconfirmed"])("keeps Action recovery review available with unavailable Read authority: %s", async (mode) => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const draft = actionFixture(fixture());
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        const config = executionConfig(); delete config.supervised_worker; delete config.action_rules;
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), JSON.stringify(config));
+        if (mode === "revoked_unconfirmed") {
+          const commit = ControlPolicyRepository.prototype.commit;
+          const failedResponse = vi.spyOn(ControlPolicyRepository.prototype, "commit").mockImplementation(async function (this: ControlPolicyRepository, change) {
+            const result = await commit.call(this, change);
+            if ((change.event.receipt as { operation?: string }).operation === "activate_action") throw new Error("Lost activation response");
+            return result;
+          });
+          const unavailableReceipt = vi.spyOn(ControlPolicyRepository.prototype, "event").mockRejectedValue(new Error("Receipt temporarily unavailable"));
+          try { await expect(activateSemanticActionRuntime({ projectRoot, draft, actor: "operator" })).rejects.toHaveProperty("code", "POLICY_CONFIG_COMMIT_UNCONFIRMED"); }
+          finally { failedResponse.mockRestore(); unavailableReceipt.mockRestore(); }
+        } else if (mode !== "disabled") await activateSemanticActionRuntime({ projectRoot, draft, actor: "operator" });
+        if (mode === "revoked_execution") {
+          const inspection = structuredClone(fixture().inspection);
+          inspection.current_user = "inventory_writer"; inspection.role_posture!.read_only = false;
+          inspection.role_posture!.writable_relations = ["inventory.items"];
+          inspection.tables[0]!.role_posture!.privileges.update = true;
+          const input = { projectRoot, outcome: "inventory.replenish", profile: "staging" as const,
+            env: { ...process.env, SYNAPSOR_DATABASE_WRITE_URL: "postgresql://fixture.invalid/not-used" }, inspect: async () => inspection };
+          const preview = await previewSemanticSupervisedExecution(input);
+          await enableSemanticSupervisedExecution({ ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
+            expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
+            confirmation: semanticExecutionConfirmation(preview) });
+        }
+        await deactivateExplorationBoundary(projectRoot);
+        const env = { ...process.env };
+        if (backend === "postgres") delete process.env.TEST_POLICY_URL;
+        const before = await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id,
+          scope: { level: "operator" }, kinds: ["read", "action", "execution"] });
+        const recovered = await recoverSemanticActionRuntime({ projectRoot, draftName: draft.authority.name, env });
+        expect(recovered).toMatchObject({ state: mode === "revoked_unconfirmed" ? "committed" : "none", readBoundaries: [], authority: {
+          draft: mode === "disabled" ? draft : undefined,
+          active: mode !== "disabled" ? expect.objectContaining({ digest: draft.digest }) : undefined,
+        } });
+        const confirm = vi.fn(async () => { throw new Error("Inspecting unavailable authority cannot activate it"); });
+        const chooseOption = vi.fn(async (title: string, options: Array<{ value: string; disabled?: boolean }>, settings?: { context?: string[] }) => {
+          if (title.startsWith("EXACT ")) return "back";
+          expect(title).toBe("VERIFIED ACTION BOUNDARY");
+          if (mode === "disabled") expect(options.find((entry) => entry.value === "activate")).toMatchObject({ disabled: true });
+          else {
+            expect(options.some((entry) => entry.value === "activate")).toBe(false);
+            expect(settings?.context?.join("\n")).toContain("Read dependency unavailable");
+            expect(settings?.context?.join("\n")).not.toContain("Worker on");
+            expect(options.filter((entry) => entry.value.startsWith("enable_execution:"))).toEqual([]);
+            expect(options.some((entry) => entry.value.startsWith("disable_execution:"))).toBe(mode === "revoked_execution");
+          }
+          return chooseOption.mock.calls.length === 1 ? mode === "disabled" ? "details_draft" : "details_active" : "back";
+        });
+        const notice = await reviewVerifiedActionAuthority({ projectRoot, boundaryName: fixture().boundary.pack.name,
+          draft, env, session: { chooseOption, confirm, confirmActivation: confirm } as unknown as BoundaryReviewInteractiveSession });
+        expect(chooseOption).toHaveBeenCalledTimes(3);
+        expect(confirm).not.toHaveBeenCalled();
+        expect(notice.tone).toBe("warning");
+        expect(notice.title).toBe(mode === "disabled" ? "Verified Action Boundary remains disabled."
+          : "Verified Action authority is saved; Read dependency unavailable.");
+        expect(await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id,
+          scope: { level: "operator" }, kinds: ["read", "action", "execution"] })).toEqual(before);
+        if (mode === "revoked_execution") {
+          await expect(disableSemanticSupervisedExecution({ projectRoot, outcome: "inventory.replenish", env,
+            expectedActionBoundaryDigest: draft.authority.action_boundary.digest })).resolves.toMatchObject({ enabled: false });
+          expect(await binding.repository.active(binding.deployment_id, { scope: { level: "operator" }, kind: "action", name: draft.authority.name }))
+            .toEqual(before.active.find((entry) => entry.kind === "action"));
+        }
+      });
+    });
+
+    it("reviews execution only against the selected outcome's current Read dependency", async () => {
+      await useRepository(async ({ projectRoot, policies, binding, config: storageConfig }) => {
+        const source = fixture(), first = actionFixture(source);
+        const other = structuredClone(source.boundary); other.pack.name = "other_inventory";
+        other.activation.digest = explorationBoundaryCandidateDigest({ ...source.candidate, pack: other.pack });
+        await policies.commit({ expected_epoch: (await policies.current()).epoch,
+          active: [{ key: { scope: { level: "operator" }, kind: "read", name: other.pack.name },
+            policy: { type: "read", boundary: other, generation_lock: source.generation_lock } }],
+          actor: "operator", operation: "add_other_read" });
+        const secondRule = structuredClone(first.authority.rules[0]!);
+        secondRule.rule.name = "inventory.replenish_other"; secondRule.rule.outcome = "inventory.replenish_other";
+        secondRule.read_boundary_name = other.pack.name; secondRule.read_boundary_digest = other.activation.digest;
+        const draft = buildActionRuleAuthorityDraft({ name: first.authority.name, action_boundary_name: first.authority.action_boundary.name,
+          catalog: first.authority.catalog, rules: [first.authority.rules[0]!, secondRule],
+          reviews: [...first.reviews, { ...first.reviews[0]!, outcome: secondRule.rule.outcome }] });
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        const config = executionConfig(); delete config.supervised_worker; delete config.action_rules;
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), JSON.stringify(config));
+        await activateSemanticActionRuntime({ projectRoot, draft, actor: "operator" });
+        await deactivateExplorationBoundary(projectRoot, other.pack.name);
+        const before = await binding.repository.deployment(binding.deployment_id);
+        const inspection = structuredClone(source.inspection);
+        inspection.current_user = "inventory_writer"; inspection.role_posture!.read_only = false;
+        inspection.role_posture!.writable_relations = ["inventory.items"];
+        inspection.tables[0]!.role_posture!.privileges.update = true;
+        const inspect = vi.fn(async () => inspection);
+        const input = { projectRoot, outcome: "inventory.replenish", profile: "staging" as const, inspect,
+          env: { ...process.env, SYNAPSOR_DATABASE_WRITE_URL: "postgresql://fixture.invalid/not-used" } };
+        const preview = await previewSemanticSupervisedExecution(input);
+        expect(preview).toMatchObject({ outcome: input.outcome });
+        expect(inspect).toHaveBeenCalledOnce();
+        await expect(previewSemanticSupervisedExecution({ ...input, outcome: secondRule.rule.outcome }))
+          .rejects.toThrow("ACTION_RULE_READ_AUTHORITY_STALE");
+        expect(inspect).toHaveBeenCalledOnce();
+        expect(await binding.repository.deployment(binding.deployment_id)).toEqual(before);
+        expect(await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY)).toBeUndefined();
+        await enableSemanticSupervisedExecution({ ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
+          expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
+          confirmation: semanticExecutionConfirmation(preview) });
+        const execution = await readSemanticSupervisedExecutionState({ projectRoot });
+        expect(execution.enabled).toBe(true);
+        expect(execution.policies.map((policy) => policy.outcome)).toEqual([input.outcome]);
+      });
+    });
+
+    it("does not treat corrupt stored Read authority as disabled during Action recovery", async () => {
+      await useRepository(async ({ projectRoot, binding }) => {
+        const before = await binding.repository.deployment(binding.deployment_id);
+        const read = ControlPolicyRepository.prototype.scopeSnapshot;
+        const corrupt = vi.spyOn(ControlPolicyRepository.prototype, "scopeSnapshot").mockImplementation(async function (this: ControlPolicyRepository, input) {
+          const result = await read.call(this, input);
+          return { ...result, active: result.active.map((entry) => entry.kind === "read"
+            ? { ...entry, content: { type: "invalid_read" } } : entry) };
+        });
+        try { await expect(recoverSemanticActionRuntime({ projectRoot })).rejects.toMatchObject({ code: "POLICY_READ_AUTHORITY_INVALID" }); }
+        finally { corrupt.mockRestore(); }
+        expect(await binding.repository.deployment(binding.deployment_id)).toEqual(before);
+      });
+    });
+
     it("recovers and disables an interrupted execution save with an explicit control-store environment", async () => {
       await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
         const source = fixture(), draft = actionFixture(source);
@@ -2240,7 +2586,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         try {
           await expect(enableSemanticSupervisedExecution({ ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
             expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
-            confirmation: semanticExecutionConfirmation(preview) })).rejects.toThrow("POLICY_EXECUTION_COMMIT_UNCONFIRMED");
+            confirmation: semanticExecutionConfirmation(preview) })).rejects.toThrow("POLICY_CONFIG_COMMIT_UNCONFIRMED");
         } finally { fault.mockRestore(); receiptFault.mockRestore(); }
         expect((await readSemanticSupervisedExecutionState({ projectRoot, env })).enabled).toBe(true);
         const beforeDisable = (await binding.repository.deployment(binding.deployment_id))!.epoch;
@@ -2295,7 +2641,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         });
         try {
           if (mode === "lost_response") await expect(enableSemanticSupervisedExecution(reviewed)).resolves.toBeDefined();
-          else await expect(enableSemanticSupervisedExecution(reviewed)).rejects.toThrow("POLICY_EXECUTION_COMMIT_UNCONFIRMED");
+          else await expect(enableSemanticSupervisedExecution(reviewed)).rejects.toThrow("POLICY_CONFIG_COMMIT_UNCONFIRMED");
         } finally { fault.mockRestore(); lookup.mockRestore(); }
         expect(intercepted).toBe(true);
         const after = await binding.repository.deployment(binding.deployment_id);

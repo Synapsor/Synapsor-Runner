@@ -3,7 +3,8 @@ import type { Dirent } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
-import type { ControlPolicyRevision, ControlPolicyScopeSnapshot } from "@synapsor-runner/proposal-store";
+import type { ControlPolicyCommit, ControlPolicyRevision, ControlPolicyScopeSnapshot } from "@synapsor-runner/proposal-store";
+import { publishPolicyConfiguration } from "./control-policy-config-publication.js";
 import { openBoundProjectControlPolicies, assertProjectControlPolicyBinding, commitImmutableControlPolicies,
   type BoundProjectPolicyStore } from "./control-policy-store.js";
 import { OPERATOR_POLICY_RECORD_VERSION, assertOperatorPolicyRecord, storedOperatorPolicyRecord } from "./control-policy-record.js";
@@ -317,9 +318,10 @@ async function writeActionRuleAuthorityDraftUnlocked(projectRootInput: string, d
 export async function readActionRuleAuthorityDraft(
   projectRootInput: string,
   name: string,
+  policyStore?: BoundProjectPolicyStore,
 ): Promise<ActionRuleAuthorityDraftV1 | undefined> {
   safeName(name);
-  const stored = await withStoredActionPolicies(projectRootInput, undefined, async (_binding, current) => ({
+  const stored = await withStoredActionPolicies(projectRootInput, policyStore, async (_binding, current) => ({
     draft: current.drafts.find((revision) => revision.name === name),
   }));
   if (stored) return stored.draft ? parseStoredActionDraft(stored.draft) : undefined;
@@ -352,9 +354,10 @@ export async function listActionRuleAuthorityDrafts(
 
 export async function readActionRuleAuthorityActivation(
   projectRootInput: string,
+  policyStore?: BoundProjectPolicyStore,
 ): Promise<ActionRuleAuthorityActivationV1 | undefined> {
   const projectRoot = path.resolve(projectRootInput);
-  const stored = await withStoredActionPolicies(projectRoot, undefined, async (_binding, current) => ({ active: current.active[0] }));
+  const stored = await withStoredActionPolicies(projectRoot, policyStore, async (_binding, current) => ({ active: current.active[0] }));
   if (stored) return stored.active ? parseStoredActionActivation(stored.active).activation : undefined;
   const parsed = await readOptionalJson(activePath(projectRoot));
   if (parsed === undefined) return undefined;
@@ -375,23 +378,30 @@ export async function activateActionRuleAuthority(input: {
   actor: string;
   now?: string;
   mutationPermit?: ProjectAuthorityMutationPermit;
+  /** Internal, already-validated runtime binding; never model-supplied authority. */
+  runtimePublication?: { binding: BoundProjectPolicyStore; configPath: string; before: string | undefined; after: string };
 }): Promise<ActionRuleAuthorityActivationV1> {
-  return withProjectAuthorityMutation(input.projectRoot, (held) => activateActionRuleAuthorityUnlocked({ ...input, projectRoot: held.projectRoot }), { permit: input.mutationPermit });
+  return withProjectAuthorityMutation(input.projectRoot, (held) => activateActionRuleAuthorityUnlocked({ ...input,
+    projectRoot: held.projectRoot, mutationPermit: held }), { permit: input.mutationPermit });
 }
 
 async function activateActionRuleAuthorityUnlocked(input: Parameters<typeof activateActionRuleAuthority>[0]): Promise<ActionRuleAuthorityActivationV1> {
   const projectRoot = path.resolve(input.projectRoot);
-  const stored = await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
+  const stored = await withStoredActionPolicies(projectRoot, input.runtimePublication?.binding, async (binding, current) => {
     const revision = current.drafts.find((entry) => entry.name === safeName(input.name));
     const draft = revision ? parseStoredActionDraft(revision) : undefined;
     const activation = await reviewedActionActivation(input, draft, () => loadActivatedExplorationBoundaries(projectRoot, binding));
     const active = storedActionRecord(activation);
-    await commitImmutableControlPolicies(binding, { expected_epoch: current.epoch, revisions: [active],
+    const change: Omit<ControlPolicyCommit, "deployment_id"> = { expected_epoch: current.epoch, revisions: [active],
       active: [...current.active.filter((entry) => entry.name !== active.name).map((entry) => ({ ...actionKey(entry.name), revision_id: null })), actionPointer(active)],
-      drafts: [{ ...actionKey(active.name), revision_id: null }], event: actionPolicyEvent("activate_action", activation.actor, current, active) });
+      drafts: [{ ...actionKey(active.name), revision_id: null }], event: actionPolicyEvent("activate_action", activation.actor, current, active) };
+    if (input.runtimePublication) {
+      await publishPolicyConfiguration({ projectRoot, ...input.runtimePublication, mutationPermit: input.mutationPermit, change });
+    } else await commitImmutableControlPolicies(binding, change);
     return activation;
   });
   if (stored) return stored;
+  if (input.runtimePublication) throw authorityError("POLICY_REPOSITORY_MISSING", "Runtime publication requires this project's governed policy repository.");
   const draft = await readActionRuleAuthorityDraft(projectRoot, input.name);
   const activation = await reviewedActionActivation(input, draft, () => loadActivatedExplorationBoundaries(projectRoot));
   const active = activePath(projectRoot);

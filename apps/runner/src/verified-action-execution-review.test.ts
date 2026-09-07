@@ -48,6 +48,19 @@ describe("guided execution recovery", () => {
       expect.objectContaining({ context: expect.arrayContaining([expect.stringContaining("EXECUTION_SETUP_CHECK_FAILED")]) }));
   });
 
+  it("does not require an unrelated revoked Read to review execution for a current outcome", async () => {
+    const input = fixture();
+    input.active.authority.rules = [
+      { rule: { outcome: input.outcome }, read_boundary_name: "current", read_boundary_digest: "current_digest" },
+      { rule: { outcome: "inventory.other" }, read_boundary_name: "revoked", read_boundary_digest: "revoked_digest" },
+    ] as unknown as typeof input.active.authority.rules;
+    input.activeReads = [{ pack: { name: "current" }, activation: { digest: "current_digest" }, deployment_profile: "staging" }] as unknown as typeof input.activeReads;
+    vi.mocked(input.session.confirmActivation!).mockResolvedValueOnce(false);
+    expect(await reviewSemanticSupervisedExecution(input)).toBeUndefined();
+    expect(previewSemanticSupervisedExecution).toHaveBeenCalledWith(expect.objectContaining({ outcome: input.outcome, profile: "staging" }));
+    expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
+  });
+
   it("keeps a failed prerequisite inspectable and pauses without activating or retrying implicitly", async () => {
     const input = fixture();
     vi.mocked(previewSemanticSupervisedExecution).mockRejectedValue(new Error("Writer credential is not configured."));
