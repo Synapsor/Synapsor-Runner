@@ -259,6 +259,7 @@ import {
   saveBoundaryReviewProgress as saveSharedBoundaryReviewProgress,
   saveInstantBoundaryReviewBaseline,
 } from "./boundary-review-persistence.js";
+import { assertReadAuthoringBindings, readProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 import {
   boundaryResourceRemovalImpact,
   commitBoundaryReviewMutationBatch,
@@ -622,9 +623,12 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
         bootstrapState,
       });
     } catch (error) {
-      sendJson(response, 500, {
+      const code = (error as { code?: string }).code;
+      const staleReview = code === "POLICY_AUTHORING_REVIEW_CHANGED" || code === "POLICY_REVISION_CONFLICT";
+      sendJson(response, staleReview ? 409 : 500, {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
+        ...(staleReview ? { error_code: code, recovery_action: "Reload the current saved boundary before retrying this edit." } : {}),
       });
     }
   });
@@ -842,16 +846,9 @@ async function handleRequest(input: {
       sendJson(response, 404, { ok: false, error: "Auto Boundary review is not enabled for this Workbench session." });
       return;
     }
-    const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
-    const generationLock = JSON.parse(await fs.readFile(
-      path.join(projectRoot, ".synapsor/generation-lock.json"),
-      "utf8",
-    )) as GenerationLock;
+    const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    const { draft, lock: generationLock, review } = savedReview;
     const serverCompatibility = databaseServerCompatibilityForLock(generationLock) ?? null;
-    const review = JSON.parse(await fs.readFile(
-      path.join(boundaryRoot, "generation-review.json"),
-      "utf8",
-    )) as AutoBoundaryBuild["review"];
     const reviewForDisplay = {
       ...review,
       resources: review.resources.map((resource) => {
@@ -876,7 +873,7 @@ async function handleRequest(input: {
         };
       }),
     };
-    let progress = await readBoundaryReviewProgress(projectRoot, draft);
+    let progress = savedReview.progress;
     const hasReviewableResource = draft.pack.resources.length > 0;
     let candidate = progress?.candidate
       ?? (hasReviewableResource ? recommendedBoundaryReviewCandidate(draft) : structuredClone(draft));
@@ -932,6 +929,7 @@ async function handleRequest(input: {
           draft,
           currentCandidate: candidate,
           ...(progress ? { currentProgress: progress } : {}),
+          expectedAuthoring: savedReview.authoring,
         }),
       );
     } catch (error) {
@@ -939,7 +937,7 @@ async function handleRequest(input: {
         `Saved boundary workspace could not be synchronized: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    progress = await readBoundaryReviewProgress(projectRoot, draft);
+    progress = savedReview.authoring ? progress : await readBoundaryReviewProgress(projectRoot, draft);
     candidate = progress?.candidate
       ?? (hasReviewableResource ? recommendedBoundaryReviewCandidate(draft) : structuredClone(draft));
     const active = activeBoundaries.find((boundary) =>
@@ -969,6 +967,7 @@ async function handleRequest(input: {
       ok: true,
       draft,
       candidate,
+      ...(savedReview.authoring ? { authoring_binding: savedReview.authoring } : {}),
       vocabulary_structural_profiles: Object.fromEntries(
         draft.pack.resources.map((resource) => [
           resource.id,
@@ -1781,17 +1780,16 @@ async function handleRequest(input: {
     }
     const body = await readJsonBody(request);
     const name = requiredReviewText(body.name, "boundary name");
-    const draft = JSON.parse(await fs.readFile(
-      path.join(boundaryRoot, "exploration-boundary.draft.json"),
-      "utf8",
-    )) as ExplorationBoundaryDraft;
-    const currentProgress = await readBoundaryReviewProgress(projectRoot, draft);
+    const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    assertWorkbenchReviewBinding(body, savedReview.authoring);
+    const { draft, progress: currentProgress } = savedReview;
     const currentCandidate = currentProgress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
     const context = {
       projectRoot,
       draft,
       currentCandidate,
       ...(currentProgress ? { currentProgress } : {}),
+      expectedAuthoring: savedReview.authoring,
     };
     let progress: BoundaryReviewProgress;
     if (url.pathname === "/api/boundary/library/create") {
@@ -1853,10 +1851,7 @@ async function handleRequest(input: {
         return;
       }
       if (discardCuratedReview) {
-        const lock = JSON.parse(await fs.readFile(
-          path.join(projectRoot, ".synapsor/generation-lock.json"),
-          "utf8",
-        )) as GenerationLock;
+        const lock = savedReview.lock;
         const discarded = await discardOnlySavedBoundaryReview({
           ...context,
           name,
@@ -1879,13 +1874,16 @@ async function handleRequest(input: {
       await deleteAskIntentCheckPreference(projectRoot, name);
       progress = deleted.progress;
     }
+    const currentView = savedReview.authoring ? await readWorkbenchBoundaryReview(projectRoot, boundaryRoot) : undefined;
+    if (currentView?.progress) progress = currentView.progress;
     const boundaryLibrary = await withAskIntentCheckModes(
       projectRoot,
       await synchronizeBoundaryLibrary({
         projectRoot,
-        draft,
+        draft: currentView?.draft ?? draft,
         currentCandidate: progress.candidate,
         currentProgress: progress,
+        expectedAuthoring: currentView?.authoring,
       }),
     );
     sendJson(response, 200, {
@@ -1898,6 +1896,7 @@ async function handleRequest(input: {
       },
       candidate_digest: progress.candidate_digest,
       boundary_library: boundaryLibrary,
+      ...(currentView?.authoring ? { authoring_binding: currentView.authoring } : {}),
       authority_changed: false,
       source_database_changed: false,
     });
@@ -1919,8 +1918,9 @@ async function handleRequest(input: {
       || body.confirmed_decisions.some((decision) => typeof decision !== "string")) {
       throw new Error("Boundary-review progress requires a candidate and an array of confirmed decisions.");
     }
-    const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
-    const existingProgress = await readBoundaryReviewProgress(projectRoot, draft);
+    const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    assertWorkbenchReviewBinding(body, savedReview.authoring);
+    const { draft, progress: existingProgress } = savedReview;
     const currentRevision = existingProgress?.revision ?? 0;
     if (body.expected_revision !== undefined
       && (!Number.isSafeInteger(body.expected_revision) || body.expected_revision !== currentRevision)) {
@@ -1960,7 +1960,7 @@ async function handleRequest(input: {
     const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
       projectRoot,
       draft,
-      candidate: submittedCandidate,
+      candidate: savedReview.authoring ? currentCandidate : submittedCandidate,
       ...(existingProgress ? { progress: existingProgress } : {}),
     });
     const preview = reviewExplorationBoundaryCandidate(
@@ -1985,6 +1985,7 @@ async function handleRequest(input: {
         revision: existingProgress.revision,
         invalidated_decisions: existingProgress.invalidated_decisions,
         unchanged: true,
+        ...(savedReview.authoring ? { authoring_binding: savedReview.authoring } : {}),
         source_database_changed: false,
       });
       return;
@@ -1997,7 +1998,7 @@ async function handleRequest(input: {
       actor: typeof body.actor === "string" ? body.actor : undefined,
       revision: currentRevision + 1,
     });
-    await saveSharedBoundaryReviewProgress(projectRoot, progress);
+    const authoringBinding = await saveSharedBoundaryReviewProgress(projectRoot, progress, savedReview.authoring);
     if (currentCandidate.pack.name !== preview.candidate.pack.name) {
       await renameAskIntentCheckPreference({
         projectRoot,
@@ -2011,6 +2012,7 @@ async function handleRequest(input: {
       confirmed_decisions: confirmed,
       revision: progress.revision,
       invalidated_decisions: progress.invalidated_decisions,
+      ...(authoringBinding ? { authoring_binding: authoringBinding } : {}),
       source_database_changed: false,
     });
     return;
@@ -7429,6 +7431,29 @@ function instantActivationActor(): string {
   return candidate.length <= 128 && !/[\u0000-\u001f\u007f]/.test(candidate)
     ? candidate
     : "local-developer";
+}
+
+async function readWorkbenchBoundaryReview(projectRoot: string, boundaryRoot: string): Promise<{
+  draft: ExplorationBoundaryDraft; lock: GenerationLock; review: AutoBoundaryBuild["review"];
+  progress: BoundaryReviewProgress | undefined; authoring?: ReadAuthoringBindings;
+}> {
+  const stored = await readProjectReadAuthoring(projectRoot);
+  if (stored) {
+    if (!stored.selected) throw new Error("No saved Read boundary is selected. Prepare a new draft first.");
+    if (!stored.selected.catalog) throw new Error("Rescan this saved boundary to restore its exact metadata catalog before editing.");
+    return { draft: stored.selected.draft, lock: stored.selected.draft_lock, progress: stored.selected.progress,
+      review: stored.selected.catalog.review, authoring: stored.bindings };
+  }
+  const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
+  return { draft,
+    lock: JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock,
+    review: JSON.parse(await fs.readFile(path.join(boundaryRoot, "generation-review.json"), "utf8")) as AutoBoundaryBuild["review"],
+    progress: await readSharedBoundaryReviewProgress(projectRoot, draft) };
+}
+
+function assertWorkbenchReviewBinding(body: Record<string, unknown>, current: ReadAuthoringBindings | undefined): void {
+  if (current) assertReadAuthoringBindings(body.authoring_binding as ReadAuthoringBindings | undefined, current);
+  else if (body.authoring_binding) throw new Error("The saved review repository changed. Reload before editing.");
 }
 
 export async function readBoundaryReviewProgress(

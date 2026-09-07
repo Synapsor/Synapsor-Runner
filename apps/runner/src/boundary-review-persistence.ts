@@ -126,8 +126,9 @@ export async function saveBoundaryReviewProgress(
   projectRoot: string,
   progress: BoundaryReviewProgress,
   expected?: ReadAuthoringBindings,
-): Promise<void> {
-  if (await saveProjectReadProgress({ projectRoot, progress, expected })) return;
+): Promise<ReadAuthoringBindings | undefined> {
+  const saved = await saveProjectReadProgress({ projectRoot, progress, expected });
+  if (saved) return saved;
   await writePrivateJsonAtomic(
     path.join(path.resolve(projectRoot), ".synapsor/boundary-review-progress.json"),
     progress,

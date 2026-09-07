@@ -3,6 +3,7 @@ import { openBoundProjectControlPolicies, type BoundProjectPolicyStore } from ".
 import { OperatorAuthorityRepository, type OperatorAuthorityState } from "./control-policy-operator-repository.js";
 import type { StoredReadAuthoring, PreparedReadEntry } from "./control-policy-read-authoring.js";
 import type { BoundaryReviewProgress } from "./boundary-review-domain.js";
+import { OPERATOR_READ_AUTHORING_KEY } from "./control-policy-record.js";
 
 export type ReadAuthoringBindings = {
   repository_id: string;
@@ -39,7 +40,7 @@ export function assertReadAuthoringBindings(expected: ReadAuthoringBindings | un
 export async function saveProjectReadAuthoring(input: {
   projectRoot: string; expected: ReadAuthoringBindings;
   authoring: StoredReadAuthoring; actor: string; operation: string;
-}): Promise<void> {
+}): Promise<ReadAuthoringBindings> {
   const frozen = structuredClone(input);
   const binding = await openBoundProjectControlPolicies(input.projectRoot);
   if (!binding) fail("POLICY_AUTHORING_STORE_CHANGED", "The governed Read review repository is unavailable.");
@@ -47,9 +48,12 @@ export async function saveProjectReadAuthoring(input: {
     const repository = new OperatorAuthorityRepository(binding);
     const current = authoringState(binding, await repository.currentReadState());
     assertReadAuthoringBindings(frozen.expected, current.bindings);
-    await repository.commitReadAuthoring({ expected_epoch: frozen.expected.epoch,
+    const committed = await repository.commitReadAuthoring({ expected_epoch: frozen.expected.epoch,
       expected_revision_id: frozen.expected.revision_id, authoring: frozen.authoring,
       actor: frozen.actor, operation: frozen.operation });
+    const authoringChange = committed.changes.find((change) => change.state === "active"
+      && change.key.kind === OPERATOR_READ_AUTHORING_KEY.kind && change.key.name === OPERATOR_READ_AUTHORING_KEY.name);
+    return { ...frozen.expected, epoch: committed.epoch, revision_id: authoringChange?.after ?? frozen.expected.revision_id };
   } finally { await binding.close(); }
 }
 
@@ -57,7 +61,7 @@ export async function saveProjectReadProgress(input: {
   projectRoot: string; expected: ReadAuthoringBindings | undefined;
   progress: BoundaryReviewProgress;
   replacement?: Pick<PreparedReadEntry, "draft" | "draft_lock" | "candidate_lock" | "catalog">;
-}): Promise<boolean> {
+}): Promise<false | ReadAuthoringBindings> {
   const frozen = structuredClone(input);
   const current = await readProjectReadAuthoring(input.projectRoot);
   if (!current) {
@@ -72,9 +76,8 @@ export async function saveProjectReadProgress(input: {
   const authoring = structuredClone(current.authoring);
   authoring.entries = authoring.entries.map((entry) => entry.progress.boundary_id === previous.progress.boundary_id
     ? { ...entry, ...frozen.replacement, progress: frozen.progress } : entry);
-  await saveProjectReadAuthoring({ projectRoot: input.projectRoot, expected: current.bindings,
+  return saveProjectReadAuthoring({ projectRoot: input.projectRoot, expected: current.bindings,
     authoring, actor: "local_operator", operation: "edit_prepared_read" });
-  return true;
 }
 
 function authoringState(binding: BoundProjectPolicyStore, state: OperatorAuthorityState): ProjectReadAuthoring {

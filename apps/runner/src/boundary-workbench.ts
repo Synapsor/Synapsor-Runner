@@ -988,6 +988,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let openedResources=new Set();
     let confirmedDecisions=new Set();
     let reviewRevision=0;
+    let authoringBinding;
     let reviewInvalidations=[];
     let exploreDescription=null;
     let exploreBudgets=null;
@@ -1102,7 +1103,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    }
 	    const readPayload=async response=>{try{return await response.json()}catch{return {ok:false,error:"Workbench returned an unreadable response."}}};
 	    const getJson=async url=>{const response=await fetch(url);const payload=await readPayload(response);if(handleSessionFailure(payload)){const error=new Error(payload.error);error.payload=payload;throw error}if(!response.ok||!payload.ok){const error=new Error(payload.error||"Request failed");error.payload=payload;throw error}return payload};
-	    const post=async(url,body)=>{const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json","x-synapsor-csrf":csrf},body:JSON.stringify(body)});const payload=await readPayload(response);if(handleSessionFailure(payload)){const error=new Error(payload.error);error.payload=payload;throw error}if(!response.ok||!payload.ok){const error=new Error(payload.error||"Request failed");error.payload=payload;throw error}return payload};
+	    const post=async(url,body)=>{const reviewWrite=url==="/api/boundary/progress"||url.startsWith("/api/boundary/library/");const submitted={...body,...(reviewWrite&&authoringBinding?{authoring_binding:structuredClone(authoringBinding)}:{})};const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json","x-synapsor-csrf":csrf},body:JSON.stringify(submitted)});const payload=await readPayload(response);if(handleSessionFailure(payload)){const error=new Error(payload.error);error.payload=payload;throw error}if(!response.ok||!payload.ok){const error=new Error(payload.error||"Request failed");error.payload=payload;throw error}if(payload.authoring_binding)authoringBinding=payload.authoring_binding;return payload};
 	    const currentResource=id=>candidate&&candidate.pack.resources.find(resource=>resource.id===id);
 	    const activeBoundaryForCandidate=()=>activeBoundaries.find(boundary=>
 	      boundary?.pack?.name===candidate?.pack?.name);
@@ -8916,6 +8917,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
 		    async function load(){
 		      const payload=await getJson("/api/boundary");
+		      authoringBinding=payload.authoring_binding;
 		      original=payload.draft;
 		      candidate=structuredClone(payload.candidate||payload.draft);
 		      vocabularyStructuralProfiles=payload.vocabulary_structural_profiles||{};

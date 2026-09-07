@@ -30,6 +30,7 @@ import { commitBoundaryResourceReviewMutation, inspectBoundaryResourceReview, pr
 import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
 import { readBoundaryReviewProgress, saveBoundaryReviewProgress } from "./boundary-review-persistence.js";
 import { loadBoundaryReviewContext } from "./boundary-commands.js";
+import { startLocalUiServer } from "./local-ui.js";
 import { createSavedBoundary, deleteSavedBoundary, discardOnlySavedBoundaryReview, renameSavedBoundary, switchSavedBoundary,
   resolveSavedBoundaryReviewAuthority, synchronizeBoundaryLibrary } from "./boundary-library.js";
 import { readRuntimeConfig } from "./cli-project.js";
@@ -546,6 +547,61 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const unsafe = structuredClone(changed); unsafe.role_posture!.superuser = true;
         await expect(prepareBoundaryRescan({ projectRoot, inspection: unsafe })).rejects.toMatchObject({ code: "DATABASE_ROLE_UNSAFE" });
         expect(await policies.current()).toEqual(final);
+      });
+    });
+
+    it("uses exact saved revisions for manual Workbench reads, progress and library switches", async () => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture();
+        for (const [index, domain] of ["inventory", "university"].entries()) {
+          authoring.entries[index]!.catalog = readAuthoringCatalog(fixture(domain).build);
+        }
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare" });
+        const original = await policies.current();
+        const boundaryRoot = path.join(projectRoot, "synapsor/generated");
+        const server = await startLocalUiServer({ projectRoot, boundaryRoot,
+          configPath: path.join(projectRoot, "synapsor.runner.json"), storePath: path.join(projectRoot, "control.db"),
+          token: "manual-review-token", csrfToken: "manual-review-csrf" });
+        try {
+          const base = `http://${server.host}:${server.port}`;
+          const bootstrap = await fetch(server.url, { redirect: "manual" });
+          expect(bootstrap.status).toBe(303);
+          const headers = { cookie: bootstrap.headers.get("set-cookie")!.split(";", 1)[0]!,
+            "content-type": "application/json", "x-synapsor-csrf": "manual-review-csrf" };
+          const get = async () => {
+            const response = await fetch(`${base}/api/boundary`, { headers });
+            const payload = await response.json(); expect(response.status, JSON.stringify(payload)).toBe(200); return payload;
+          };
+          const post = (route: string, body: unknown) => fetch(`${base}${route}`, { method: "POST", headers, body: JSON.stringify(body) });
+          const shown = await get();
+          expect(shown.candidate).toEqual(authoring.entries[0]!.progress.candidate);
+          expect(shown.review.resources[0].id).toBe("inventory.items");
+          expect(await policies.current()).toEqual(original);
+          const candidate = structuredClone(shown.candidate); candidate.budgets.max_top_n = 8;
+          const body = { candidate, confirmed_decisions: [], expected_revision: shown.review_progress.revision };
+          const missing = await post("/api/boundary/progress", body);
+          expect(missing.status).toBe(409);
+          const saved = await post("/api/boundary/progress", { ...body, authoring_binding: shown.authoring_binding });
+          const savedBody = await saved.json(); expect(saved.status, JSON.stringify(savedBody)).toBe(200);
+          const readBack = await get();
+          expect(readBack.candidate.budgets.max_top_n).toBe(8);
+          expect(savedBody.authoring_binding).toEqual(readBack.authoring_binding);
+          expect(savedBody.authoring_binding.revision_id).not.toBe(shown.authoring_binding.revision_id);
+          const stale = await post("/api/boundary/library/switch", { name: "university_draft", authoring_binding: shown.authoring_binding });
+          expect(stale.status).toBe(409);
+          const switched = await post("/api/boundary/library/switch", { name: "university_draft", authoring_binding: savedBody.authoring_binding });
+          const switchedBody = await switched.json(); expect(switched.status, JSON.stringify(switchedBody)).toBe(200);
+          expect(switchedBody.candidate).toEqual(authoring.entries[1]!.progress.candidate);
+          const university = await get();
+          expect(university.draft).toEqual(authoring.entries[1]!.draft);
+          expect(university.review.resources[0].id).toBe("university.items");
+          const oldSave = await post("/api/boundary/progress", { ...body, authoring_binding: savedBody.authoring_binding });
+          expect(oldSave.status).toBe(409);
+          const changed = await policies.current();
+          expect(changed.active.filter(({ policy }) => policy.type !== "read_authoring"))
+            .toEqual(original.active.filter(({ policy }) => policy.type !== "read_authoring"));
+        } finally { await server.close(); }
       });
     });
 
