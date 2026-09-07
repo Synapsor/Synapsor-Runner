@@ -2900,7 +2900,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 30_000);
 
-  it("stops before Action drafting when trusted-scope review still blocks a model projection", async () => {
+  it.each(["new", "already reviewed"] as const)("stops before Action drafting when %s trusted scope blocks a model projection", async (scope) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-scope-reprojection-blocked-"));
     const inspection = principalScopeInspection();
     const build = buildAutoBoundary({
@@ -2934,6 +2934,9 @@ describe("boundary operator-plane CLI", () => {
         forbidden: [],
         source: { kind: "model", provider: input.provider, model: input.model },
       });
+      expect(input.generatedBoundary.pack.resources.find((resource) => resource.id === "public.service_visits")!
+        .model_withheld_fields).toContain("principal_id");
+      // Private scope fields remain compiler-readable, but cannot be the model's whole row projection.
       const analysis = analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary });
       expect(analysis.status).toBe("ready");
       return {
@@ -2948,6 +2951,7 @@ describe("boundary operator-plane CLI", () => {
       };
     });
     const actionProjectInspector = vi.fn();
+    let scopeConfirmations = 0;
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => undefined,
       editFieldTiers: async () => undefined,
@@ -2965,7 +2969,10 @@ describe("boundary operator-plane CLI", () => {
       },
       confirm: async (prompt) => {
         if (prompt.includes("reviewed structural context")) return true;
-        if (prompt.includes("trusted user scope") || prompt.includes("trusted user/owner predicate")) return true;
+        if (prompt.includes("trusted user scope") || prompt.includes("trusted user/owner predicate")) {
+          scopeConfirmations += 1;
+          return true;
+        }
         throw new Error(`Unexpected blocked reprojection confirmation: ${prompt}`);
       },
       confirmActivation: async () => false,
@@ -2974,6 +2981,14 @@ describe("boundary operator-plane CLI", () => {
     const chat = testBoundaryAuthoringChat(session);
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      if (scope === "already reviewed") {
+        const preview = await prepareBoundaryResourceReviewMutation(root, {
+          resource_id: "public.service_visits", principal_key: "principal_id",
+          withhold_from_model_fields: ["principal_id"], actor: "operator",
+          reason: "Keep the previously reviewed trusted identity private.",
+        }, async () => inspection);
+        await commitBoundaryResourceReviewMutation(root, preview);
+      }
       await expect(boundaryReviewCommandInternal(
         ["--project-root", root, "--access", "--job-first"],
         async () => inspection,
@@ -2992,7 +3007,9 @@ describe("boundary operator-plane CLI", () => {
         },
       )).resolves.toBe(0);
 
-      expect(actionProjectInspector).not.toHaveBeenCalled();
+      expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
+      expect(scopeConfirmations).toBe(scope === "new" ? 1 : 0);
+      expect(actionProjectInspector.mock.calls.length).toBe(0);
       expect(chat.rememberDetails).toHaveBeenCalledWith(
         "READ PLAN BLOCKED AFTER TRUSTED-SCOPE REVIEW",
         expect.arrayContaining([

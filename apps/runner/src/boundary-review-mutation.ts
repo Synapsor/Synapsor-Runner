@@ -722,6 +722,22 @@ export async function inspectBoundaryResourceReview(
   resourceId: string,
 ): Promise<BoundaryResourceReviewView> {
   const state = await loadBoundaryReviewFiles(projectRoot);
+  return boundaryResourceReviewView(state, resourceId);
+}
+
+export async function loadBoundaryResourceReviewCatalog(projectRoot: string): Promise<{
+  candidate: ExplorationBoundaryDraft;
+  progress?: BoundaryReviewProgress;
+  bindings: BoundaryReviewMutationBindings;
+  views: BoundaryResourceReviewView[];
+}> {
+  const state = await loadBoundaryReviewFiles(projectRoot);
+  return { candidate: state.candidate, ...(state.progress ? { progress: state.progress } : {}),
+    bindings: reviewBindings(state),
+    views: state.review.resources.map((resource) => boundaryResourceReviewView(state, resource.id)) };
+}
+
+function boundaryResourceReviewView(state: BoundaryReviewFiles, resourceId: string): BoundaryResourceReviewView {
   const reviewed = state.review.resources.find((resource) => resource.id === resourceId);
   if (!reviewed) {
     throw new Error(

@@ -3548,10 +3548,11 @@ function hasReviewedJobPrincipalScope(view: BoundaryResourceReviewView): boolean
 function reconcileModelWorkloadScopeProjection(
   workload: ReadWorkloadSet,
   boundary: ExplorationBoundaryDraft,
-): { workload: ReadWorkloadSet; removed: string[] } {
-  if (workload.source.kind !== "model") return { workload, removed: [] };
+): { workload: ReadWorkloadSet; removed: string[]; blockers: string[] } {
+  if (workload.source.kind !== "model") return { workload, removed: [], blockers: [] };
   const resources = new Map(boundary.pack.resources.map((resource) => [resource.id, resource]));
   const removed: string[] = [];
+  const blockers: string[] = [];
   const allowed = workload.allowed.map((entry) => {
     if (entry.plan.kind !== "rows" || typeof entry.plan.resource !== "string" || !Array.isArray(entry.plan.select)) {
       return entry;
@@ -3563,7 +3564,11 @@ function reconcileModelWorkloadScopeProjection(
     );
     const selected = entry.plan.select.filter((field): field is string => typeof field === "string");
     const retained = selected.filter((field) => !trustedScopeFields.has(field));
-    if (retained.length === selected.length || retained.length === 0) return entry;
+    if (retained.length === selected.length) return entry;
+    if (retained.length === 0) {
+      blockers.push(`${entry.id}: the row projection contains only trusted scope fields (${selected.join(", ")}); select customer-facing information instead.`);
+      return entry;
+    }
     for (const field of selected) {
       if (trustedScopeFields.has(field)) removed.push(`${entry.id}: ${resource.id}.${field}`);
     }
@@ -3576,8 +3581,8 @@ function reconcileModelWorkloadScopeProjection(
     };
   });
   return removed.length
-    ? { workload: normalizeReadWorkloadSet({ ...workload, allowed }), removed }
-    : { workload, removed };
+    ? { workload: normalizeReadWorkloadSet({ ...workload, allowed }), removed, blockers }
+    : { workload, removed, blockers };
 }
 
 function exactReviewedPrincipalScopeAnswer(
@@ -5476,7 +5481,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       if (readPrincipalScope.changed) {
         context = await loadBoundaryReviewContext(input.projectRoot);
         mappingBoundary = context.candidate;
-        const reconciliation = reconcileModelWorkloadScopeProjection(mappedWorkload!, mappingBoundary);
+      }
+      let scopeProjectionBlockers: string[] = [];
+      if (mappedWorkload) {
+        const reconciliation = reconcileModelWorkloadScopeProjection(mappedWorkload, mappingBoundary);
+        scopeProjectionBlockers = reconciliation.blockers;
         mappedWorkload = reconciliation.workload;
         if (reconciliation.removed.length) {
           input.authoringChat?.rememberDetails("TRUSTED SCOPE KEPT OUT OF MODEL OUTPUT", [
@@ -5489,14 +5498,18 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ...mappedWorkload.allowed.map((entry) => `- ${modelReadPlanSummary(entry.plan)}`),
           ];
         }
+      }
+      // Provider analysis can predate catalog privacy changes, even without a new scope decision.
+      if (mappedWorkload) {
         mappedAnalysis = analyzeReadWorkloadSet({
           workload: mappedWorkload,
           generatedBoundary: mappingBoundary,
         });
       }
-      if (mappedAnalysis.status === "blocked") {
+      if (mappedAnalysis.status === "blocked" || scopeProjectionBlockers.length) {
         input.authoringChat?.rememberDetails("READ PLAN BLOCKED AFTER TRUSTED-SCOPE REVIEW", [
           ...mappedAnalysis.blockers,
+          ...scopeProjectionBlockers,
           "The model-generated Read plan was not saved and Action drafting did not start.",
           "Trusted scope remains a Runner input; it is never converted into a model argument.",
         ]);
@@ -8049,10 +8062,21 @@ async function prepareJobMappingCatalog(input: {
       !== plan.proposed_limits.max_derived_scope_hops
     || plan.current_limits.max_analysis_relationship_hops
       !== plan.proposed_limits.max_analysis_relationship_hops;
+  const applyCatalog = () => applyJobMappingCatalog({
+    projectRoot: input.projectRoot,
+    expectedPlanDigest: plan.plan_digest,
+    expectedAuthoring: plan.authoring_binding,
+    acceptedSharedResources: acceptedShared,
+    actor: localInteractiveActor(),
+    reason: "Prepare a complete disabled structural catalog for one-job Boundary mapping.",
+    schemaInspector: input.schemaInspector,
+  });
   if (!plan.direct_resources_to_include.length
     && !plan.derived_resources.length
     && !acceptedShared.length
+    && !plan.unresolved_principal_fields_to_withhold.length
     && !limitsChange) {
+    await applyCatalog();
     const lines = [
       `${plan.direct_resources.length} directly scoped table${plan.direct_resources.length === 1 ? " is" : "s are"} available for disabled job mapping.`,
       ...(skippedSharedCount
@@ -8077,14 +8101,6 @@ async function prepareJobMappingCatalog(input: {
   ];
   if (input.write) await input.write("PREPARING DISABLED MAPPING CATALOG", preparingLines);
   else process.stdout.write(["", "PREPARING DISABLED MAPPING CATALOG", ...preparingLines, ""].join("\n"));
-  const applyCatalog = () => applyJobMappingCatalog({
-      projectRoot: input.projectRoot,
-      expectedPlanDigest: plan.plan_digest,
-      acceptedSharedResources: acceptedShared,
-      actor: localInteractiveActor(),
-      reason: "Prepare a complete disabled structural catalog for one-job Boundary mapping.",
-      schemaInspector: input.schemaInspector,
-    });
   const applied = input.progress
     ? await input.progress("Preparing the disabled mapping catalog", applyCatalog)
     : await applyCatalog();

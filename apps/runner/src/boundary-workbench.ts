@@ -1103,7 +1103,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    }
 	    const readPayload=async response=>{try{return await response.json()}catch{return {ok:false,error:"Workbench returned an unreadable response."}}};
 	    const getJson=async url=>{const response=await fetch(url);const payload=await readPayload(response);if(handleSessionFailure(payload)){const error=new Error(payload.error);error.payload=payload;throw error}if(!response.ok||!payload.ok){const error=new Error(payload.error||"Request failed");error.payload=payload;throw error}return payload};
-	    const post=async(url,body)=>{const reviewWrite=["/api/boundary/progress","/api/boundary/preview","/api/boundary/activate","/api/boundary/regenerate","/api/boundary/workloads/analyze","/api/boundary/workloads/apply","/api/boundary/review-relationship"].includes(url)||url.startsWith("/api/boundary/library/");const submitted={...body,...(reviewWrite&&authoringBinding?{authoring_binding:structuredClone(authoringBinding)}:{})};const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json","x-synapsor-csrf":csrf},body:JSON.stringify(submitted)});const payload=await readPayload(response);if(handleSessionFailure(payload)){const error=new Error(payload.error);error.payload=payload;throw error}if(!response.ok||!payload.ok){const error=new Error(payload.error||"Request failed");error.payload=payload;throw error}if(payload.authoring_binding)authoringBinding=payload.authoring_binding;return payload};
+	    const post=async(url,body)=>{const reviewWrite=["/api/boundary/progress","/api/boundary/preview","/api/boundary/activate","/api/boundary/regenerate","/api/boundary/workloads/analyze","/api/boundary/workloads/apply","/api/boundary/review-relationship","/api/boundary/delegations/catalog"].includes(url)||url.startsWith("/api/boundary/library/");const submitted={...body,...(reviewWrite&&authoringBinding?{authoring_binding:structuredClone(authoringBinding)}:{})};const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json","x-synapsor-csrf":csrf},body:JSON.stringify(submitted)});const payload=await readPayload(response);if(handleSessionFailure(payload)){const error=new Error(payload.error);error.payload=payload;throw error}if(!response.ok||!payload.ok){const error=new Error(payload.error||"Request failed");error.payload=payload;throw error}if(payload.authoring_binding)authoringBinding=payload.authoring_binding;return payload};
 	    const currentResource=id=>candidate&&candidate.pack.resources.find(resource=>resource.id===id);
 	    const activeBoundaryForCandidate=()=>activeBoundaries.find(boundary=>
 	      boundary?.pack?.name===candidate?.pack?.name);
@@ -7313,12 +7313,6 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const catalog=delegationData?.mapping_catalog;
       if(!catalog)throw new Error("Reload the reviewed mapping catalog before preparing this job.");
       const accepted=[...document.querySelectorAll("[data-delegation-shared]:checked")].map(input=>input.value);
-      const needsPreparation=(catalog.direct_resources_to_include||[]).length>0
-        ||(catalog.derived_resources||[]).length>0
-        ||accepted.length>0
-        ||catalog.current_limits.max_derived_scope_hops!==catalog.proposed_limits.max_derived_scope_hops
-        ||catalog.current_limits.max_analysis_relationship_hops!==catalog.proposed_limits.max_analysis_relationship_hops;
-      if(!needsPreparation)return;
       const prepared=await post("/api/boundary/delegations/catalog",{
         expected_plan_digest:catalog.plan_digest,
         accepted_shared_resources:accepted,

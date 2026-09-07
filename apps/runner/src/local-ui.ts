@@ -1056,15 +1056,17 @@ async function handleRequest(input: {
       sendJson(response, 404, { ok: false, error: "Delegation setup is available only in an Auto Boundary Workbench." });
       return;
     }
-    const draft = JSON.parse(await fs.readFile(
-      path.join(boundaryRoot, "exploration-boundary.draft.json"),
-      "utf8",
-    )) as ExplorationBoundaryDraft;
+    const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    const draft = savedReview.progress?.candidate ?? savedReview.draft;
+    const delegations = await listDelegationDrafts(projectRoot);
+    const mappingCatalog = await loadJobMappingCatalog(projectRoot);
+    assertWorkbenchReviewBinding({ authoring_binding: savedReview.authoring }, mappingCatalog.authoring_binding);
     sendJson(response, 200, {
       ok: true,
-      delegations: await listDelegationDrafts(projectRoot),
+      ...(savedReview.authoring ? { authoring_binding: savedReview.authoring } : {}),
+      delegations,
       plan_cards: buildReadWorkloadPlanCards(draft),
-      mapping_catalog: await loadJobMappingCatalog(projectRoot),
+      mapping_catalog: mappingCatalog,
       defaults: {
         openai_model: DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
         anthropic_model: DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
@@ -1110,6 +1112,7 @@ async function handleRequest(input: {
         "expected_plan_digest",
         "accepted_shared_resources",
         "actor",
+        "authoring_binding",
       ], "job-mapping catalog review");
       if (typeof body.expected_plan_digest !== "string"
         || !Array.isArray(body.accepted_shared_resources)
@@ -1121,23 +1124,35 @@ async function handleRequest(input: {
       const actor = typeof body.actor === "string" && body.actor.trim()
         ? requiredReviewText(body.actor, "human reviewer")
         : "local-workbench-review";
+      const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+      assertWorkbenchReviewBinding(body, savedReview.authoring);
       const applied = await applyJobMappingCatalog({
         projectRoot,
         expectedPlanDigest: body.expected_plan_digest,
+        expectedAuthoring: savedReview.authoring,
         acceptedSharedResources: body.accepted_shared_resources,
         actor,
         reason: "Prepare a complete disabled structural catalog for one-job Workbench mapping.",
         schemaInspector,
       });
-      const draft = JSON.parse(await fs.readFile(
-        path.join(boundaryRoot, "exploration-boundary.draft.json"),
-        "utf8",
-      )) as ExplorationBoundaryDraft;
+      let mappingCatalog;
+      try {
+        mappingCatalog = await loadJobMappingCatalog(projectRoot);
+        assertWorkbenchReviewBinding({ authoring_binding: applied.authoring_binding }, mappingCatalog.authoring_binding);
+      } catch (error) {
+        if (!applied.changed) throw error;
+        sendJson(response, 503, { ...workbenchReadWorkloadError(error),
+          error: "The disabled mapping catalog was saved, but its current review could not be refreshed. Reopen the saved draft before continuing.",
+          code: "JOB_MAPPING_REVIEW_REFRESH_REQUIRED", draft_saved: true, applied,
+          ...(applied.authoring_binding ? { authoring_binding: applied.authoring_binding } : {}) });
+        return;
+      }
       sendJson(response, 200, {
         ok: true,
         applied,
-        mapping_catalog: await loadJobMappingCatalog(projectRoot),
-        plan_cards: buildReadWorkloadPlanCards(draft),
+        ...(applied.authoring_binding ? { authoring_binding: applied.authoring_binding } : {}),
+        mapping_catalog: mappingCatalog,
+        plan_cards: buildReadWorkloadPlanCards(applied.candidate),
         authority_activated: false,
         source_query_executed: false,
         explore_budget_consumed: false,

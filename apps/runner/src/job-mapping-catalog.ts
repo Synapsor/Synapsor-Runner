@@ -2,15 +2,17 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { inspectDatabase } from "@synapsor-runner/schema-inspector";
 import {
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
+  type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
 import {
   commitBoundaryReviewMutationBatch,
-  inspectBoundaryResourceReview,
-  listBoundaryResourceReviews,
+  loadBoundaryResourceReviewCatalog,
   prepareBoundaryReviewMutationBatch,
   type BoundaryResourceReviewRequest,
   type BoundaryResourceReviewView,
 } from "./boundary-review-mutation.js";
+import type { BoundaryReviewProgress } from "./boundary-review-domain.js";
+import { assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 
 type DerivedScopeCandidate = NonNullable<
   BoundaryResourceReviewView["derived_tenant_scope"]
@@ -67,6 +69,9 @@ export type JobMappingCatalogPlan = {
 
 export type AppliedJobMappingCatalog = {
   plan_digest: `sha256:${string}`;
+  candidate: ExplorationBoundaryDraft;
+  progress?: BoundaryReviewProgress;
+  authoring_binding?: ReadAuthoringBindings;
   review_revision?: number;
   direct_resources: number;
   derived_resources: number;
@@ -77,13 +82,17 @@ export type AppliedJobMappingCatalog = {
   source_database_changed: false;
 };
 
+export type LoadedJobMappingCatalog = JobMappingCatalogPlan & { authoring_binding?: ReadAuthoringBindings };
+
 export async function loadJobMappingCatalog(
   projectRoot: string,
-): Promise<JobMappingCatalogPlan> {
-  const summaries = await listBoundaryResourceReviews(projectRoot);
-  const views = await Promise.all(summaries.map((summary) =>
-    inspectBoundaryResourceReview(projectRoot, summary.resource_id)));
-  return buildJobMappingCatalog(views);
+): Promise<LoadedJobMappingCatalog> {
+  return mappingCatalogFromReview(await loadBoundaryResourceReviewCatalog(projectRoot));
+}
+
+function mappingCatalogFromReview(review: Awaited<ReturnType<typeof loadBoundaryResourceReviewCatalog>>): LoadedJobMappingCatalog {
+  return { ...buildJobMappingCatalog(review.views),
+    ...(review.bindings.authoring ? { authoring_binding: review.bindings.authoring } : {}) };
 }
 
 export function buildJobMappingCatalog(
@@ -226,18 +235,22 @@ function isGeneratedDirectResource(view: BoundaryResourceReviewView): boolean {
 export async function applyJobMappingCatalog(input: {
   projectRoot: string;
   expectedPlanDigest: string;
+  expectedAuthoring?: ReadAuthoringBindings;
   acceptedSharedResources?: string[];
   actor: string;
   reason: string;
   schemaInspector?: typeof inspectDatabase;
 }): Promise<AppliedJobMappingCatalog> {
-  const plan = await loadJobMappingCatalog(input.projectRoot);
+  const expectedAuthoring = structuredClone(input.expectedAuthoring);
+  const accepted = [...new Set(input.acceptedSharedResources ?? [])].sort();
+  const review = await loadBoundaryResourceReviewCatalog(input.projectRoot);
+  const plan = mappingCatalogFromReview(review);
+  assertCatalogAuthoring(expectedAuthoring, plan.authoring_binding);
   if (plan.plan_digest !== input.expectedPlanDigest) {
     throw new Error(
       "JOB_MAPPING_CATALOG_CHANGED: the reviewed structural catalog changed. Reload it before preparing this job.",
     );
   }
-  const accepted = [...new Set(input.acceptedSharedResources ?? [])].sort();
   const eligibleShared = new Set(plan.shared_reference_resources.map((resource) => resource.resource_id));
   const invalid = accepted.find((resourceId) => !eligibleShared.has(resourceId));
   if (invalid) {
@@ -293,6 +306,9 @@ export async function applyJobMappingCatalog(input: {
   if (!requests.length && !budgetReviewNeeded) {
     return {
       plan_digest: plan.plan_digest,
+      candidate: review.candidate,
+      ...(review.progress ? { progress: review.progress } : {}),
+      ...(plan.authoring_binding ? { authoring_binding: plan.authoring_binding } : {}),
       direct_resources: plan.direct_resources.length,
       derived_resources: 0,
       shared_reference_resources: 0,
@@ -315,10 +331,15 @@ export async function applyJobMappingCatalog(input: {
     input.projectRoot,
     requests,
     input.schemaInspector ?? inspectDatabase,
+    review.bindings,
   );
+  assertCatalogAuthoring(expectedAuthoring, preview.bindings.authoring);
   const committed = await commitBoundaryReviewMutationBatch(input.projectRoot, preview);
   return {
     plan_digest: plan.plan_digest,
+    candidate: committed.progress?.candidate ?? preview.candidate,
+    ...(committed.progress ? { progress: committed.progress } : {}),
+    ...(committed.authoring_binding ? { authoring_binding: committed.authoring_binding } : {}),
     review_revision: committed.review_revision,
     direct_resources: plan.direct_resources.length,
     derived_resources: plan.derived_resources.length,
@@ -328,6 +349,12 @@ export async function applyJobMappingCatalog(input: {
     authority_activated: false,
     source_database_changed: false,
   };
+}
+
+function assertCatalogAuthoring(expected: ReadAuthoringBindings | undefined, current: ReadAuthoringBindings | undefined): void {
+  if (current) assertReadAuthoringBindings(expected, current);
+  else if (expected) throw Object.assign(new Error("The saved mapping catalog repository changed. Reload the current draft before preparing this job."),
+    { code: "POLICY_AUTHORING_REVIEW_CHANGED" });
 }
 
 function catalogPath(path: DerivedScopeCandidate): JobMappingCatalogPath {

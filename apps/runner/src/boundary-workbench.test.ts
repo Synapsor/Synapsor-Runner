@@ -18,7 +18,7 @@ describe("Auto Boundary Workbench renderer", () => {
       const readPayload=async r=>r.payload; const handleSessionFailure=()=>false;
       ${script.slice(start, end)}
       ({post, binding:()=>authoringBinding});`, context) as { post(url: string, body: unknown): Promise<unknown>; binding(): unknown };
-    for (const route of ["preview", "activate", "regenerate", "workloads/analyze", "workloads/apply", "review-relationship"]) {
+    for (const route of ["preview", "activate", "regenerate", "workloads/analyze", "workloads/apply", "review-relationship", "delegations/catalog"]) {
       await api.post(`/api/boundary/${route}`, { candidate: { name: "reviewed" } });
       expect(sent.at(-1)!.body.authoring_binding).toEqual(initial);
     }
@@ -32,6 +32,22 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(sent.at(-1)!.body.authoring_binding).toEqual(next);
     await api.post("/api/ask", { question: "Stock?" });
     expect(sent.at(-1)!.body).toEqual({ question: "Stock?" });
+  });
+
+  it("revalidates even a no-op job catalog instead of skipping the original review check in the browser", async () => {
+    const script = renderBoundaryWorkbench("test-csrf").match(/<script>([\s\S]*?)<\/script>/)![1]!;
+    const start = script.indexOf("async function prepareDelegationCatalog");
+    const end = script.indexOf("function renderSavedDelegations", start);
+    expect(start).toBeGreaterThan(0); expect(end).toBeGreaterThan(start);
+    const sent: Array<{ url: string; body: unknown }> = [];
+    const context = vm.createContext({ delegationData: { mapping_catalog: { plan_digest: "reviewed-catalog" } },
+      document: { querySelectorAll: () => [] }, delegationCardSelectionEdited: false,
+      renderDelegationCatalog: () => undefined, useDelegationRecommendations: () => undefined,
+      post: async (url: string, body: unknown) => { sent.push({ url, body }); return { mapping_catalog: {}, plan_cards: [] }; } });
+    const prepare = vm.runInContext(`${script.slice(start, end)}; prepareDelegationCatalog`, context) as (actor: string) => Promise<void>;
+    await prepare("reviewer");
+    expect(sent).toEqual([{ url: "/api/boundary/delegations/catalog",
+      body: { expected_plan_digest: "reviewed-catalog", accepted_shared_resources: [], actor: "reviewer" } }]);
   });
 
   it("ships an executable code-editor playground with parameterized SQL as a primary path", () => {
@@ -123,7 +139,6 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(script).toContain("delegationCardRecommendations");
     expect(script).toContain("useDelegationRecommendations");
     expect(script).toContain("!useModel&&actionIntents.length===0&&delegationJobRequestsActions(jobIntent)");
-    expect(script).toContain("catalog.direct_resources_to_include");
     expect(script).toContain("Runner found no unique reviewed-metadata match");
     expect(script).toContain("unrelated optional shared-reference table");
     expect(script).toContain("delegationSelectedCards=new Map()");

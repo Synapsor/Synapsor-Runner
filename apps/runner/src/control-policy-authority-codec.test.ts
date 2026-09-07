@@ -35,6 +35,8 @@ import { startLocalUiServer } from "./local-ui.js";
 import { analyzeReadWorkloadSet, type ReadWorkloadSet } from "./read-workload-assist.js";
 import * as readWorkloads from "./read-workloads.js";
 import * as autoBoundary from "./auto-boundary.js";
+import * as mappingCatalog from "./job-mapping-catalog.js";
+import * as boundaryMutations from "./boundary-review-mutation.js";
 import { createSavedBoundary, deleteSavedBoundary, discardOnlySavedBoundaryReview, renameSavedBoundary, switchSavedBoundary,
   resolveSavedBoundaryReviewAuthority, synchronizeBoundaryLibrary } from "./boundary-library.js";
 import { readRuntimeConfig } from "./cli-project.js";
@@ -793,6 +795,105 @@ for (const backend of ["sqlite", "postgres"] as const) {
             .toEqual(initial.active.filter(({ policy }) => policy.type !== "read_authoring"));
           expect((await readProjectReadAuthoring(projectRoot))!.authoring.entries[1]).toEqual(authoring.entries[1]);
         } finally { await server.close(); }
+      });
+    });
+
+    it.each(["no-op", "expand", "preparation", "inspection", "refresh"] as const)("keeps the original saved job-mapping review through %s and recovery", async (phase) => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const source = fixture(); const inspection = structuredClone(source.inspection);
+        const overrides = structuredClone(source.build.overrides);
+        if (phase !== "no-op") {
+          const bins = structuredClone(inspection.tables[0]!); bins.name = "bins"; inspection.tables.push(bins);
+          overrides.resources["inventory.bins"] = structuredClone(overrides.resources["inventory.items"]!);
+        }
+        const build = buildAutoBoundary({ inspection, sourceEnv: "DATABASE_URL", inspectedSchema: "inventory", overrides,
+          project: { root: projectRoot, package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+        const draft = build.exploration_boundary; draft.pack.name = "inventory_draft";
+        const candidate = recommendedBoundaryReviewCandidate(draft);
+        candidate.pack.resources = candidate.pack.resources.filter((resource) => resource.id === "inventory.items");
+        const reviewed = autoBoundary.reviewExplorationBoundaryCandidate(draft, candidate).candidate;
+        const authoring = readAuthoringFixture();
+        authoring.entries[0] = { draft, draft_lock: build.lock, candidate_lock: build.lock, catalog: readAuthoringCatalog(build),
+          progress: createBoundaryReviewProgress({ draft, candidate: reviewed, confirmedDecisions: reviewed.unresolved_decisions,
+            actor: "reviewer", revision: 1, reviewOverrides: build.overrides }) };
+        authoring.entries[1]!.catalog = readAuthoringCatalog(fixture("university").build);
+        authoring.selected_boundary_id = authoring.entries[0]!.progress.boundary_id;
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare" });
+        const initial = await policies.current();
+        const edit = async (limit: number) => {
+          const current = (await readProjectReadAuthoring(projectRoot))!; const entry = current.selected!;
+          const next = structuredClone(entry.progress.candidate); next.budgets.max_top_n = limit;
+          await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: entry.draft, candidate: next,
+            previous: entry.progress, confirmedDecisions: next.unresolved_decisions, revision: entry.progress.revision + 1 }), current.bindings);
+        };
+        let duringInspection = false; let inspections = 0; let duringRefresh = false;
+        let duringPreparation = false;
+        const originalRead = boundaryMutations.loadBoundaryResourceReviewCatalog;
+        const readSnapshot = vi.spyOn(boundaryMutations, "loadBoundaryResourceReviewCatalog").mockImplementation(async (root) => {
+          const snapshot = await originalRead(root);
+          if (duringPreparation) { duringPreparation = false; await edit(7); }
+          return snapshot;
+        });
+        const originalLoad = mappingCatalog.loadJobMappingCatalog;
+        const refresh = vi.spyOn(mappingCatalog, "loadJobMappingCatalog").mockImplementation(async (root) => {
+          if (duringRefresh) { duringRefresh = false; await edit(6); }
+          return originalLoad(root);
+        });
+        const server = await startLocalUiServer({ projectRoot, boundaryRoot: path.join(projectRoot, "synapsor/generated"),
+          configPath: path.join(projectRoot, "synapsor.runner.json"), storePath: path.join(projectRoot, "control.db"),
+          token: "mapping-token", csrfToken: "mapping-csrf", schemaInspector: async () => {
+            inspections++; if (duringInspection) { duringInspection = false; await edit(7); } return inspection;
+          } });
+        try {
+          const base = `http://${server.host}:${server.port}`;
+          const bootstrap = await fetch(server.url, { redirect: "manual" }); expect(bootstrap.status).toBe(303);
+          const headers = { cookie: bootstrap.headers.get("set-cookie")!.split(";", 1)[0]!,
+            "content-type": "application/json", "x-synapsor-csrf": "mapping-csrf" };
+          const get = async () => {
+            const response = await fetch(`${base}/api/boundary/delegations`, { headers }); const payload = await response.json();
+            expect(response.status, JSON.stringify(payload)).toBe(200); return payload;
+          };
+          const post = (shown: Awaited<ReturnType<typeof get>>, token: unknown = shown.authoring_binding) => fetch(`${base}/api/boundary/delegations/catalog`, {
+            method: "POST", headers, body: JSON.stringify({ expected_plan_digest: shown.mapping_catalog.plan_digest,
+              accepted_shared_resources: [], actor: "reviewer", authoring_binding: token }) });
+          const shown = await get(); expect(shown.mapping_catalog.authoring_binding).toEqual(shown.authoring_binding);
+          expect((await post(shown, null)).status).toBe(409);
+          await expect(mappingCatalog.applyJobMappingCatalog({ projectRoot, expectedPlanDigest: shown.mapping_catalog.plan_digest,
+            actor: "reviewer", reason: "Prepare the job." })).rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+          expect(await policies.current()).toEqual(initial);
+          await edit(9);
+          const changed = await get(); expect(changed.mapping_catalog.plan_digest).toBe(shown.mapping_catalog.plan_digest);
+          expect((await post(shown)).status).toBe(409); expect(inspections).toBe(0);
+          if (phase === "inspection" || phase === "preparation") {
+            duringInspection = phase === "inspection";
+            duringPreparation = phase === "preparation";
+            const raced = await post(changed); const result = await raced.json(); expect(raced.status, JSON.stringify(result)).toBe(409);
+            expect((await readProjectReadAuthoring(projectRoot))!.selected!.progress.candidate.budgets.max_top_n).toBe(7);
+            if (phase === "preparation") expect(inspections).toBe(0);
+          }
+          const reloaded = await get();
+          if (phase === "refresh") duringRefresh = true;
+          const saved = await post(reloaded); const result = await saved.json();
+          expect(saved.status, JSON.stringify(result)).toBe(phase === "refresh" ? 503 : 200);
+          const after = (await readProjectReadAuthoring(projectRoot))!;
+          if (phase === "refresh") {
+            expect(result).toMatchObject({ draft_saved: true, code: "JOB_MAPPING_REVIEW_REFRESH_REQUIRED" });
+            expect(result.authoring_binding).not.toEqual(after.bindings);
+            expect(after.selected!.progress.candidate.budgets.max_top_n).toBe(6);
+          } else expect(result.authoring_binding).toEqual(after.bindings);
+          expect(result.applied.changed).toBe(phase !== "no-op");
+          expect(result.applied.candidate.pack.resources).toHaveLength(phase === "no-op" ? 1 : 2);
+          expect(result.applied.candidate.budgets.max_top_n).toBe(phase === "inspection" || phase === "preparation" ? 7 : 9);
+          expect(result.applied.authority_activated).toBe(false); expect(result.applied.source_database_changed).toBe(false);
+          const fresh = await get(); const retry = await post(fresh); expect(retry.status).toBe(200);
+          expect((await retry.json()).applied.changed).toBe(false);
+          expect((await policies.current()).active.filter(({ policy }) => policy.type !== "read_authoring"))
+            .toEqual(initial.active.filter(({ policy }) => policy.type !== "read_authoring"));
+          expect(after.authoring.entries[1]).toEqual(authoring.entries[1]);
+          await expect(fs.stat(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json")))
+            .rejects.toMatchObject({ code: "ENOENT" });
+        } finally { await server.close(); refresh.mockRestore(); readSnapshot.mockRestore(); }
       });
     });
 
