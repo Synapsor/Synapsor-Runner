@@ -111,6 +111,18 @@ export type {
 export { ProposalStore } from "./sqlite-store.js";
 export { ProposalStoreError } from "./errors.js";
 export {
+  ControlPolicyRepository,
+  sqliteControlPolicyRepository,
+  postgresControlPolicyRepository,
+  type ControlPolicyScope,
+  type ControlPolicyKind,
+  type ControlPolicyKey,
+  type ControlPolicyRevision,
+  type ControlPolicyPointer,
+  type ControlPolicyEvent,
+  type ControlPolicyCommit,
+} from "./control-policy-repository.js";
+export {
   PostgresProposalRuntimeStore,
   PostgresWritebackIntentStore,
   migrateSharedPostgresRuntimeStore,

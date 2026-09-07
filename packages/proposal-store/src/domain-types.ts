@@ -1,3 +1,6 @@
+import type { ControlPolicyRepository } from "./control-policy-repository.js";
+import type { PostgresRuntimePool } from "./postgres-runtime-types.js";
+export type { PostgresRuntimeQueryResult, PostgresRuntimeClient, PostgresRuntimePool } from "./postgres-runtime-types.js";
 import type {
   ChangeSet,
   ExecutionReceipt,
@@ -1160,6 +1163,8 @@ export type MaybePromise<T> = T | Promise<T>;
 // concrete SQLite class. A primary Postgres runtime store must implement this
 // surface before it can replace SQLite for live proposal/evidence/replay state.
 export type ProposalRuntimeStore = {
+  // Optional for legacy/custom stores; governed policy deployments require it.
+  readonly controlPolicies?: ControlPolicyRepository;
   close(): MaybePromise<void>;
   recordEvidenceBundle(input: {
     evidence_bundle_id: string;
@@ -1407,21 +1412,6 @@ export type ProposalRuntimeStore = {
   compactCloudOutbox?(input: { acknowledged_before: string }): MaybePromise<number>;
   recordCloudGovernanceEvent?(input: Omit<CloudGovernanceEvent, "authority" | "integrity_hash" | "created_at"> & { created_at?: string }): MaybePromise<CloudGovernanceEvent>;
   listCloudGovernanceEvents?(proposalId?: string): MaybePromise<CloudGovernanceEvent[]>;
-};
-
-export type PostgresRuntimeQueryResult = {
-  rows: Record<string, unknown>[];
-};
-
-export type PostgresRuntimeClient = {
-  query(sql: string, values?: unknown[]): Promise<PostgresRuntimeQueryResult>;
-  release(): void;
-};
-
-export type PostgresRuntimePool = {
-  connect(): Promise<PostgresRuntimeClient>;
-  query(sql: string, values?: unknown[]): Promise<PostgresRuntimeQueryResult>;
-  end?(): Promise<void>;
 };
 
 export type PostgresProposalRuntimeStoreOptions = {

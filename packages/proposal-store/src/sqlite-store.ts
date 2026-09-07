@@ -23,11 +23,13 @@ import { proposalStoreCloudControlMethods } from "./sqlite-cloud-control-methods
 import { proposalStoreShadowMethods } from "./sqlite-shadow-methods.js";
 import { proposalStoreInternalsMethods } from "./sqlite-core-methods.js";
 import { installProposalStoreMethods } from "./sqlite-method-installer.js";
+import { sqliteControlPolicyRepository, type ControlPolicyRepository } from "./control-policy-repository.js";
 
 const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
 export class ProposalStore {
   readonly db: DatabaseSync;
+  readonly controlPolicies: ControlPolicyRepository;
 
   readonly path: string;
 
@@ -48,6 +50,7 @@ export class ProposalStore {
       }
     }
     this.migrate();
+    this.controlPolicies = sqliteControlPolicyRepository(this.db);
   }
 }
 

@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { postgresControlPolicyRepository, type ControlPolicyRepository } from "./control-policy-repository.js";
 import {
   canonicalJsonStringify,
   parseWritebackJob,
@@ -228,6 +229,7 @@ ON CONFLICT (entry_key) DO UPDATE SET kind = EXCLUDED.kind, proposal_id = EXCLUD
 }
 
 export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
+  readonly controlPolicies: ControlPolicyRepository;
   private readonly pool: PostgresRuntimePool;
   private readonly schema: string;
   private readonly lockTimeoutMs: number;
@@ -246,6 +248,7 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
     this.autoMigrate = options.autoMigrate === true;
     this.closePool = options.closePool === true;
     this.maxEntries = Math.max(100, Math.min(options.maxEntries ?? 10_000, 100_000));
+    this.controlPolicies = postgresControlPolicyRepository(this.pool, this.schema);
   }
 
   async close(): Promise<void> {
