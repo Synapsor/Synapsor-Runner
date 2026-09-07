@@ -1,6 +1,11 @@
 import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
-import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withProjectRuntimeCutover } from "./project-runtime-admission.js";
 import {
   CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
   type ActivatedExplorationBoundary,
@@ -18,6 +23,16 @@ type PrepareBoundary = NonNullable<Parameters<typeof inspectProductionExploreSta
 
 const hmacSecret = "production-budget-hmac-key-material-1234567890";
 const controlDatabaseUrl = "postgresql://control:secret@control.internal/synapsor";
+let projectRoot: string;
+let cleanup: Array<() => void | Promise<void>>;
+beforeEach(async () => {
+  projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-runtime-"));
+  cleanup = [];
+});
+afterEach(async () => {
+  try { for (const close of cleanup.reverse()) await close(); }
+  finally { await fs.rm(projectRoot, { recursive: true, force: true }); }
+});
 
 function productionConfig(): RuntimeConfig {
   return {
@@ -61,7 +76,7 @@ function productionConfig(): RuntimeConfig {
     },
     production_explore: {
       enabled: true,
-      project_root: "/srv/synapsor/production-explore",
+      project_root: projectRoot,
       required_oauth_scope: "synapsor.explore",
       budget_hmac_key_env: "SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY",
       accounting_namespace: "example.analytics.production",
@@ -267,7 +282,7 @@ describe("production Explore startup posture", () => {
       "boundary rescan --from-env DATABASE_URL",
     );
     expect(formatProductionExploreStartupReport(report)).toContain(
-      "--project-root '/srv/synapsor/production-explore'",
+      `--project-root '${projectRoot}'`,
     );
   });
 
@@ -588,6 +603,7 @@ describe("production Explore startup posture", () => {
     };
     const factory = productionExploreSessionFactory(config, productionEnv(), dependencies);
     const secondFactory = productionExploreSessionFactory(config, productionEnv(), dependencies);
+    cleanup.push(() => store.close(), async () => { await factory.close?.(); await secondFactory.close?.(); });
     const sessionInput = {
       config,
       env: productionEnv(),
@@ -618,7 +634,6 @@ describe("production Explore startup posture", () => {
     expect(executorCloses).toBe(0);
     await secondFactory.close?.();
     expect(executorCloses).toBe(1);
-    store.close();
   });
 
   it("retries shared executor bootstrap after one transient failure", async () => {
@@ -652,6 +667,7 @@ describe("production Explore startup posture", () => {
       })) as unknown as NonNullable<Parameters<typeof productionExploreSessionFactory>[2]>["createMcpServer"],
     };
     const factory = productionExploreSessionFactory(config, env, dependencies);
+    cleanup.push(() => store.close(), async () => { await factory.close?.(); });
     const sessionInput = {
       config,
       env,
@@ -672,7 +688,6 @@ describe("production Explore startup posture", () => {
     await Promise.all([recovered.close(), cached.close()]);
     await expect(factory.close?.()).resolves.toBeUndefined();
     expect(executorCloses).toBe(1);
-    store.close();
   });
 
   it("binds single-organization production sessions to the fixed organization and verified principal", async () => {
@@ -706,6 +721,7 @@ describe("production Explore startup posture", () => {
       })) as unknown as NonNullable<Parameters<typeof productionExploreSessionFactory>[2]>["createMcpServer"],
     };
     const factory = productionExploreSessionFactory(config, productionEnv(), dependencies);
+    cleanup.push(() => store.close(), async () => { await factory.close?.(); });
     const session = await factory({
       config,
       env: productionEnv(),
@@ -735,6 +751,53 @@ describe("production Explore startup posture", () => {
     })).rejects.toThrow(/exact reviewed organization identity/i);
     await session.close();
     await factory.close?.();
-    store.close();
+  });
+
+  it("drains production bootstrap and failed session cleanup before maintenance or factory close", async () => {
+    const config = productionConfig(), env = productionEnv(), store = new ProposalStore();
+    let releaseMaintenance!: () => void, enteredMaintenance!: () => void;
+    const maintenanceReady = new Promise<void>((resolve) => { enteredMaintenance = resolve; });
+    const maintenanceHold = new Promise<void>((resolve) => { releaseMaintenance = resolve; });
+    let releaseBootstrap!: () => void, enteredBootstrap!: () => void;
+    const bootstrapReady = new Promise<void>((resolve) => { enteredBootstrap = resolve; });
+    const bootstrapHold = new Promise<void>((resolve) => { releaseBootstrap = resolve; });
+    const executorClose = vi.fn(async () => undefined);
+    const runtimeClose = vi.fn(async () => {
+      await expect(withProjectRuntimeCutover(projectRoot, async () => undefined, { waitMs: 0 }))
+        .rejects.toMatchObject({ code: "POLICY_RUNTIME_BUSY" });
+    });
+    const loadBoundaries = vi.fn(async () => {
+      enteredBootstrap(); await bootstrapHold; return [productionBoundary()];
+    });
+    const factory = productionExploreSessionFactory(config, env, {
+      loadBoundaries,
+      createExecutor: () => ({ execute: async () => [], executeBatch: async () => [], close: executorClose }),
+      createBoundarySetRuntime: (async () => ({ close: runtimeClose })) as unknown as
+        NonNullable<Parameters<typeof productionExploreSessionFactory>[2]>["createBoundarySetRuntime"],
+      createMcpServer: () => { throw new Error("injected MCP bootstrap failure"); },
+    });
+    cleanup.push(() => store.close(), async () => { await factory.close?.(); });
+    const input = { config, env, store, authenticationFingerprint: "admission-test", trustedContext: {
+      tenant_id: "tenant-a", principal: "principal-a", provenance: "http_claims" as const,
+    } };
+    const maintenance = withProjectRuntimeCutover(projectRoot, async () => { enteredMaintenance(); await maintenanceHold; });
+    await maintenanceReady;
+    const pending = factory(input);
+    const refused = expect(pending).rejects.toThrow("injected MCP bootstrap failure");
+    try {
+      await delay(40); expect(loadBoundaries).not.toHaveBeenCalled();
+      releaseMaintenance(); await maintenance; await bootstrapReady;
+      const closing = factory.close?.();
+      await delay(40); expect(executorClose).not.toHaveBeenCalled();
+      await expect(factory(input)).rejects.toThrow(/closed/);
+      await expect(withProjectRuntimeCutover(projectRoot, async () => undefined, { waitMs: 0 }))
+        .rejects.toMatchObject({ code: "POLICY_RUNTIME_BUSY" });
+      releaseBootstrap(); await refused; await closing;
+      expect(runtimeClose).toHaveBeenCalledOnce(); expect(executorClose).toHaveBeenCalledOnce();
+      await expect(withProjectRuntimeCutover(projectRoot, async () => "drained")).resolves.toBe("drained");
+    } finally {
+      releaseMaintenance(); releaseBootstrap();
+      await Promise.allSettled([maintenance, pending, refused]);
+    }
   });
 });

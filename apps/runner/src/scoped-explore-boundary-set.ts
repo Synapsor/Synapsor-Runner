@@ -1,5 +1,6 @@
 import path from "node:path";
 import { assertRuntimeControlPolicyContinuity, borrowRuntimeControlPolicies, createProjectRuntimeStore, type BoundProjectPolicyStore } from "./control-policy-store.js";
+import { projectRuntimeOperations, withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import {
   type ExploreBudgetLimits,
   type ProposalRuntimeStore,
@@ -53,6 +54,7 @@ export type ScopedExploreBoundarySetRuntime = {
   model_authority_metadata?: ModelAuthorityMetadataMode;
   trusted_scope?: ScopedExploreRuntime["trusted_scope"];
   requireTrustedScope?(): Promise<void>;
+  withOperation?: ScopedExploreRuntime["withOperation"];
   authorizedCatalogBoundaries?(): Promise<ActivatedExplorationBoundary[]>;
   describe(input?: BoundarySetDescribeInput): Promise<Record<string, unknown>>;
   validate(plan: unknown, boundaryName?: string): Promise<ScopedExploreValidationResult & {
@@ -105,6 +107,10 @@ export async function createScopedExploreBoundarySetRuntime(input: {
     workflow_session_id: string;
   };
 }): Promise<ScopedExploreBoundarySetRuntime> {
+  return withProjectRuntimeAdmission(input.projectRoot, (root) => createAdmittedBoundarySet({ ...input, projectRoot: root }));
+}
+
+async function createAdmittedBoundarySet(input: Parameters<typeof createScopedExploreBoundarySetRuntime>[0]): Promise<ScopedExploreBoundarySetRuntime> {
   if (input.deferTrustedScope && (input.transport !== "stdio" || input.mode === "production_http")) {
     throw new ScopedExploreError("EXPLORE_PLAN_INVALID", "Deferred scope initialization is restricted to local stdio protocol setup.");
   }
@@ -114,7 +120,19 @@ export async function createScopedExploreBoundarySetRuntime(input: {
     env: input.env, storePath: path.join(projectRoot, ".synapsor/local.db") });
   try {
     const policyStore = await borrowRuntimeControlPolicies(projectRoot, store);
-    return await createBoundarySetWithStore(input, store, ownsStore, policyStore);
+    const runtime = await createBoundarySetWithStore(input, store, ownsStore, policyStore);
+    const operations = projectRuntimeOperations(projectRoot);
+    runtime.withOperation = (operation) => operations.run(operation);
+    const describe = runtime.describe.bind(runtime), validate = runtime.validate.bind(runtime), explore = runtime.explore.bind(runtime);
+    const close = runtime.close.bind(runtime), scope = runtime.requireTrustedScope?.bind(runtime);
+    const catalog = runtime.authorizedCatalogBoundaries?.bind(runtime);
+    runtime.describe = (request) => operations.run(() => describe(request));
+    runtime.validate = (plan, name) => operations.run(() => validate(plan, name));
+    runtime.explore = (plan, name) => operations.run(() => explore(plan, name));
+    if (scope) runtime.requireTrustedScope = () => operations.run(scope);
+    if (catalog) runtime.authorizedCatalogBoundaries = () => operations.run(catalog);
+    runtime.close = () => operations.close(close);
+    return runtime;
   } catch (error) {
     if (ownsStore) await store.close();
     throw error;

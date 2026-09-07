@@ -18,6 +18,7 @@ import { TrustedOperatorDecisionOverride } from "./operator-authority.js";
 import { resolveOperatorIdentity, type OperatorIdentityConfig } from "./operator-identity.js";
 import { type SynapsorProjectResolution } from "./project-resolution.js";
 import { readOperatorExecutionConfig } from "./control-policy-execution.js";
+import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 
 export const activeProjectResolutionState: { current: SynapsorProjectResolution | undefined } = { current: undefined };
 
@@ -215,6 +216,34 @@ export async function readRuntimeConfig(
   const parsed = await readJsonFileWithLocation<RuntimeConfig>(configPath, "Runner config");
   const directory = path.dirname(path.resolve(configPath));
   const normalized = resolveRuntimeConfig(parsed, directory);
+  return readResolvedRuntimeConfig(normalized, configPath, options);
+}
+
+/** The first file read locates the project only. Reload under admission before
+ * resolving any authority, and use that same configuration throughout work. */
+export async function withRuntimeConfigAdmission<T>(configPath: string,
+  operation: (config: RuntimeConfig, canonicalRoot: string) => Promise<T>,
+  options: { env?: NodeJS.ProcessEnv; storePath?: string } = {}): Promise<T> {
+  const directory = path.dirname(path.resolve(configPath));
+  const locate = (config: RuntimeConfig) => config.action_rules?.project_root ?? config.production_explore?.project_root ?? directory;
+  const hint = resolveRuntimeConfig(await readJsonFileWithLocation<RuntimeConfig>(configPath, "Runner config"), directory);
+  return withProjectRuntimeAdmission(locate(hint), async (root) => {
+    const normalized = resolveRuntimeConfig(await readJsonFileWithLocation<RuntimeConfig>(configPath, "Runner config"), directory);
+    const roots = [locate(normalized), normalized.action_rules?.project_root, normalized.production_explore?.project_root]
+      .filter((value): value is string => value !== undefined);
+    if ((await Promise.all(roots.map((value) => fs.realpath(value)))).some((value) => value !== root)) {
+      throw Object.assign(new Error("The runtime configuration now selects another project. Restart this request against its current configuration."),
+        { code: "POLICY_RUNTIME_PROJECT_CHANGED" });
+    }
+    if (normalized.action_rules?.project_root) normalized.action_rules.project_root = root;
+    if (normalized.production_explore?.project_root) normalized.production_explore.project_root = root;
+    return operation(await readResolvedRuntimeConfig(normalized, configPath, options), root);
+  });
+}
+
+async function readResolvedRuntimeConfig(normalized: RuntimeConfig, configPath: string,
+  options: { env?: NodeJS.ProcessEnv; storePath?: string }): Promise<RuntimeConfig> {
+  const directory = path.dirname(path.resolve(configPath));
   const resolved = (await readOperatorExecutionConfig({
     projectRoot: normalized.action_rules?.project_root ?? normalized.production_explore?.project_root ?? directory,
     config: normalized,

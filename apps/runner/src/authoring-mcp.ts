@@ -18,6 +18,7 @@ import {
 import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { z } from "zod";
 import { createScopedReadDiscovery } from "./scoped-read-discovery.js";
+import { RuntimeAdmissionError } from "./project-runtime-admission.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import { EXPLORATION_TIME_BUCKETS } from "./auto-boundary.js";
 import {
@@ -244,6 +245,7 @@ export function createScopedExploreMcpServer(
       }, undefined, {
         requestMeta: extra._meta, localPresentation: options.localPresentation,
         authorityMetadata: runtime.model_authority_metadata ?? "semantic",
+        withOperation: runtime.withOperation,
       }));
     }
   }
@@ -306,6 +308,7 @@ export function createScopedExploreMcpServer(
       requestMeta: extra._meta,
       localPresentation: options.localPresentation,
       authorityMetadata: runtime.model_authority_metadata ?? "semantic",
+      withOperation: runtime.withOperation,
     },
   ));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
@@ -370,6 +373,7 @@ export function createScopedExploreMcpServer(
         requestMeta: extra._meta,
         localPresentation: options.localPresentation,
         authorityMetadata: runtime.model_authority_metadata ?? "semantic",
+        withOperation: runtime.withOperation,
       },
     );
   });
@@ -798,42 +802,46 @@ async function toolResult(
     requestMeta?: Record<string, unknown>;
     localPresentation?: LocalToolPresentationSink;
     authorityMetadata?: ModelAuthorityMetadataMode;
+    withOperation?: ScopedExploreRuntime["withOperation"];
   } = {},
 ) {
   try {
-    const result = await action();
-    const projection = projectForModel?.(result);
-    const authority = projectAuthorityMetadataForModel(
-      projection?.value ?? result,
-      options.authorityMetadata ?? "semantic",
-    );
-    const modelResult = authority.value;
-    const operatorMetadataWithheld = projection?.operator_metadata_withheld === true
-      || authority.withheld;
-    if (projection?.withheld || operatorMetadataWithheld) {
-      options.localPresentation?.capture(options.requestMeta, {
-        value: result,
-        provider_value: modelResult,
-        model_withheld_values: projection?.withheld === true,
-        operator_metadata_withheld: operatorMetadataWithheld,
-      });
-    }
-    return {
-      content: [{ type: "text" as const, text: JSON.stringify(modelResult) }],
-      structuredContent: modelResult,
-      ...(projection?.withheld || operatorMetadataWithheld
-        ? {
-          _meta: {
-            ...(projection?.withheld ? { "synapsor.model_withheld_values": true } : {}),
-            ...(operatorMetadataWithheld
-              ? { "synapsor.operator_metadata_withheld": true }
-              : {}),
-          },
-        }
-        : {}),
+    const prepare = async () => {
+      const result = await action();
+      const projection = projectForModel?.(result);
+      const authority = projectAuthorityMetadataForModel(
+        projection?.value ?? result,
+        options.authorityMetadata ?? "semantic",
+      );
+      const modelResult = authority.value;
+      const operatorMetadataWithheld = projection?.operator_metadata_withheld === true
+        || authority.withheld;
+      if (projection?.withheld || operatorMetadataWithheld) {
+        options.localPresentation?.capture(options.requestMeta, {
+          value: result,
+          provider_value: modelResult,
+          model_withheld_values: projection?.withheld === true,
+          operator_metadata_withheld: operatorMetadataWithheld,
+        });
+      }
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(modelResult) }],
+        structuredContent: modelResult,
+        ...(projection?.withheld || operatorMetadataWithheld
+          ? {
+            _meta: {
+              ...(projection?.withheld ? { "synapsor.model_withheld_values": true } : {}),
+              ...(operatorMetadataWithheld
+                ? { "synapsor.operator_metadata_withheld": true }
+                : {}),
+            },
+          }
+          : {}),
+      };
     };
+    return options.withOperation ? await options.withOperation(prepare) : await prepare();
   } catch (error) {
-    const payload = error instanceof ScopedExploreError || error instanceof McpRuntimeError
+    const payload = error instanceof ScopedExploreError || error instanceof McpRuntimeError || error instanceof RuntimeAdmissionError
       ? {
         ok: false,
         outcome: {

@@ -26,6 +26,7 @@ import { renderTerminalSql, terminalSyntaxColorEnabled } from "./terminal-syntax
 import { withPreservedCleanup } from "./resource-lifecycle.js";
 import { hashReceipt } from "./writeback-domain.js";
 import { openProjectControlPolicies, borrowRuntimeControlPolicies, type BoundProjectPolicyStore } from "./control-policy-store.js";
+import { RuntimeAdmissionError, withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 
 
 export async function storeStats(args: string[]): Promise<number> {
@@ -432,6 +433,19 @@ function policyProjectRoot(config: RuntimeConfig | undefined, configPath: string
   return path.resolve(config?.action_rules?.project_root ?? config?.production_explore?.project_root ?? path.dirname(configPath));
 }
 
+async function withBridgeAdmission<T>(args: string[], config: RuntimeConfig | undefined,
+  operation: () => Promise<T>): Promise<T> {
+  const configPath = runnerConfigPath(args);
+  return withProjectRuntimeAdmission(policyProjectRoot(config, configPath), async (root) => {
+    const selected = [policyProjectRoot(config, configPath), config?.action_rules?.project_root, config?.production_explore?.project_root]
+      .filter((value): value is string => value !== undefined);
+    if ((await Promise.all(selected.map((value) => fs.realpath(value)))).some((value) => value !== root)) {
+      throw new RuntimeAdmissionError("POLICY_RUNTIME_PROJECT_CHANGED", "The ledger bridge now selects another project. Restart this request against its current configuration.");
+    }
+    return operation();
+  });
+}
+
 export async function assertGovernedLocalRuntimeStore(input: {
   args: string[]; config?: RuntimeConfig; configPath: string; storePath: string;
   store?: ProposalStore; readOnly?: boolean;
@@ -519,6 +533,12 @@ export async function withSharedPostgresRuntimeStoreBridge<T>(
   command: string,
   callback: (storePath: string) => Promise<T>,
 ): Promise<T> {
+  return withBridgeAdmission(args, config,
+    () => withAdmittedPostgresRuntimeStoreBridge(args, config, command, callback));
+}
+
+async function withAdmittedPostgresRuntimeStoreBridge<T>(args: string[], config: RuntimeConfig,
+  command: string, callback: (storePath: string) => Promise<T>): Promise<T> {
   const mirror = sharedPostgresLedgerMirrorOptions(args, config);
   const binding = await governedBridgeBinding(args, config, mirror);
   const tempDir = await runtimeStoreTemporaryDirectory("synapsor-runtime-store-bridge-")
@@ -580,6 +600,12 @@ export async function withSharedPostgresRuntimeStoreReadBridge<T>(
   command: string,
   callback: (storePath: string) => Promise<T>,
 ): Promise<T> {
+  return withBridgeAdmission(args, config,
+    () => withAdmittedPostgresRuntimeStoreReadBridge(args, config, command, callback));
+}
+
+async function withAdmittedPostgresRuntimeStoreReadBridge<T>(args: string[], config: RuntimeConfig,
+  command: string, callback: (storePath: string) => Promise<T>): Promise<T> {
   const mirror = sharedPostgresLedgerMirrorOptions(args, config);
   const binding = await governedBridgeBinding(args, config, mirror);
   const tempDir = await runtimeStoreTemporaryDirectory("synapsor-runtime-store-read-")
@@ -703,6 +729,12 @@ export async function withSharedPostgresLedgerMirror<T>(
   callback: () => Promise<T>,
   config?: RuntimeConfig,
 ): Promise<T> {
+  return withBridgeAdmission(args, config,
+    () => withAdmittedPostgresLedgerMirror(args, storePath, command, callback, config));
+}
+
+async function withAdmittedPostgresLedgerMirror<T>(args: string[], storePath: string,
+  command: string, callback: () => Promise<T>, config?: RuntimeConfig): Promise<T> {
   if (storePath === ":memory:") {
     throw new Error("shared Postgres ledger mirror requires a durable --store path, not :memory:");
   }

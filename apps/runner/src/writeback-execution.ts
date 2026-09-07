@@ -34,7 +34,8 @@ import { cliCommandName } from "./cli-command-meta.js";
 import { isRecord } from "./cli-format.js";
 import { operationalLog } from "./cli-logging.js";
 import { envValue, splitCommand, trimmedEnvValue } from "./cli-options.js";
-import { readRuntimeConfig, redactConfig } from "./cli-project.js";
+import { readRuntimeConfig, redactConfig, withRuntimeConfigAdmission } from "./cli-project.js";
+import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import { adapters } from "./cli-runtime.js";
 import { trustedCliContext } from "./operator-authority.js";
 import { verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
@@ -45,11 +46,19 @@ import { hashReceipt, runnerReceiptConfig, toExecutionReceipt, writebackDatabase
 const handlerReceiptStatuses = new Set(["applied", "already_applied", "conflict", "failed"]);
 
 
-export async function applySqlJob(job: unknown, configPath: string, storePath: string | undefined, dryRun: boolean, env: NodeJS.ProcessEnv = process.env): Promise<WritebackResult> {
+export async function applySqlJob(job: unknown, configPath: string, storePath: string | undefined, dryRun: boolean,
+  env: NodeJS.ProcessEnv = process.env, admittedConfig?: RuntimeConfig): Promise<WritebackResult> {
+  if (!admittedConfig) return withRuntimeConfigAdmission(configPath,
+    (config) => applyAdmittedSqlJob(job, configPath, storePath, dryRun, env, config), { env });
+  const root = admittedConfig.action_rules?.project_root ?? admittedConfig.production_explore?.project_root ?? path.dirname(path.resolve(configPath));
+  return withProjectRuntimeAdmission(root, () => applyAdmittedSqlJob(job, configPath, storePath, dryRun, env, admittedConfig));
+}
+
+async function applyAdmittedSqlJob(job: unknown, configPath: string, storePath: string | undefined, dryRun: boolean,
+  env: NodeJS.ProcessEnv, runtimeConfig: RuntimeConfig): Promise<WritebackResult> {
   const parsedJob = parseWritebackJob(job);
-  await verifyLocalWritebackAuthority(parsedJob, configPath, storePath);
-  const runtimeConfig = await readRuntimeConfig(configPath);
-  const databaseUrl = await resolveSqlWriteDatabaseUrl(parsedJob, configPath, env);
+  await verifyLocalWritebackAuthority(parsedJob, configPath, storePath, { config: runtimeConfig });
+  const databaseUrl = await resolveSqlWriteDatabaseUrl(parsedJob, configPath, env, runtimeConfig);
   const store = storePath ? new ProposalStore(storePath) : undefined;
   const config: RunnerConfig = {
     controlPlaneUrl: env.SYNAPSOR_CONTROL_PLANE_URL || "http://localhost:8000",
@@ -166,8 +175,9 @@ export function createWritebackIntentAuthority(
 }
 
 
-export async function resolveSqlWriteDatabaseUrl(job: WritebackJob, configPath: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const config = await readRuntimeConfig(configPath);
+export async function resolveSqlWriteDatabaseUrl(job: WritebackJob, configPath: string, env: NodeJS.ProcessEnv,
+  admittedConfig?: RuntimeConfig): Promise<string> {
+  const config = admittedConfig ?? await readRuntimeConfig(configPath);
   const source = config.sources?.[job.source_id];
   if (source?.credential_scope?.mode === "tenant_resolver") {
     throw new Error(
@@ -733,9 +743,9 @@ export async function verifyLocalWritebackAuthority(
   job: WritebackJob,
   configPath: string,
   storePath?: string,
-  options: { cloudApproved?: boolean } = {},
+  options: { cloudApproved?: boolean; config?: RuntimeConfig } = {},
 ): Promise<void> {
-  const config = await readRuntimeConfig(configPath);
+  const config = options.config ?? await readRuntimeConfig(configPath);
   const validation = validateRunnerCapabilityConfig(config);
   if (!validation.ok) {
     throw new Error(`cannot apply writeback with invalid local config: ${validation.errors.map((error) => error.code).join(", ")}`);

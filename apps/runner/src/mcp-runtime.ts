@@ -1,5 +1,6 @@
 import { createDefaultRuntimeStore, createMcpRuntime, createSynapsorMcpServer, DESCRIBE_ACTIONS_TOOL, describeIsolationAssurance, modelAuthorityMetadataMode, preflightGeneratedAuthority, REQUEST_CHANGE_TOOL, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpSessionFactory, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { borrowRuntimeControlPolicies, createProjectRuntimeStore } from "./control-policy-store.js";
+import { projectRuntimeOperations } from "./project-runtime-admission.js";
 import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
@@ -828,11 +829,12 @@ export function productionExploreSessionFactory(
     max_response_cells: production.tenant_limits.max_response_cells_per_response ?? Number.MAX_SAFE_INTEGER,
   };
   let sharedExecutorLeasePromise: Promise<ProductionExploreExecutorLease> | undefined;
+  const startupOperations = projectRuntimeOperations(production.project_root);
   let closed = false;
-  const sharedExecutor = (): Promise<ScopedExploreExecutor> => {
+  const sharedExecutor = (projectRoot: string): Promise<ScopedExploreExecutor> => {
     if (!sharedExecutorLeasePromise) {
       const bootstrap = (async () => {
-        const boundaries = await (dependencies.loadBoundaries ?? loadActivatedExplorationBoundaries)(production.project_root);
+        const boundaries = await (dependencies.loadBoundaries ?? loadActivatedExplorationBoundaries)(projectRoot);
         const sourceNames = [...new Set(boundaries.map((boundary) => boundary.source))];
         if (sourceNames.length !== 1) {
           throw new Error("Production Explore requires every active boundary to use one reviewed source.");
@@ -868,63 +870,68 @@ export function productionExploreSessionFactory(
         ? "Single-organization production Explore requires a verified principal and the exact reviewed organization identity for every MCP session."
         : "Production Explore requires verified tenant and principal HTTP claims for every MCP session.");
     }
-    await borrowRuntimeControlPolicies(production.project_root, store);
-    const executor = await sharedExecutor();
-    const semantic = await createOptionalReadActionRuleRuntimeServices({
-      projectRoot: production.project_root,
-      config,
-      env,
-      store,
-      key: hmacKey,
-      deployment_scope: production.accounting_namespace,
-      workflow_session_id: authenticatedActionWorkflowId(authenticationFingerprint),
-      trustedContext,
-    }, reportOptionalActionSubjectFailure);
-    const runtime = await (dependencies.createBoundarySetRuntime ?? createScopedExploreBoundarySetRuntime)({
-      projectRoot: production.project_root,
-      transport: "streamable_http",
-      mode: "production_http",
-      env,
-      store,
-      sessionContext: {
-        tenant_id: trustedContext.tenant_id,
-        principal: trustedContext.principal,
-        provenance: "http_claims",
-      },
-      productionPrivacyHmacKey: hmacKey,
-      productionAccountingNamespace: production.accounting_namespace,
-      productionTenantLimits: tenantLimits,
-      executor,
-      modelAuthorityMetadata: modelAuthorityMetadataMode(config),
-      ...(semantic
-        ? {
-          subjectReferences: {
-            service: semantic.subjectReferences,
-            workflow_session_id: semantic.workflow_session_id,
-          },
-        }
-        : {}),
-      ...(executor.inspectDatabase ? { inspectDatabaseFn: executor.inspectDatabase } : {}),
+    return await startupOperations.run(async (projectRoot) => {
+      await borrowRuntimeControlPolicies(projectRoot, store);
+      const executor = await sharedExecutor(projectRoot);
+      const semantic = await createOptionalReadActionRuleRuntimeServices({
+        projectRoot,
+        config,
+        env,
+        store,
+        key: hmacKey,
+        deployment_scope: production.accounting_namespace,
+        workflow_session_id: authenticatedActionWorkflowId(authenticationFingerprint),
+        trustedContext,
+      }, reportOptionalActionSubjectFailure);
+      const runtime = await (dependencies.createBoundarySetRuntime ?? createScopedExploreBoundarySetRuntime)({
+        projectRoot,
+        transport: "streamable_http",
+        mode: "production_http",
+        env,
+        store,
+        sessionContext: {
+          tenant_id: trustedContext.tenant_id,
+          principal: trustedContext.principal,
+          provenance: "http_claims",
+        },
+        productionPrivacyHmacKey: hmacKey,
+        productionAccountingNamespace: production.accounting_namespace,
+        productionTenantLimits: tenantLimits,
+        executor,
+        modelAuthorityMetadata: modelAuthorityMetadataMode(config),
+        ...(semantic
+          ? {
+            subjectReferences: {
+              service: semantic.subjectReferences,
+              workflow_session_id: semantic.workflow_session_id,
+            },
+          }
+          : {}),
+        ...(executor.inspectDatabase ? { inspectDatabaseFn: executor.inspectDatabase } : {}),
+      });
+      let server: ReturnType<typeof createScopedExploreMcpServer>;
+      try { server = (dependencies.createMcpServer ?? createScopedExploreMcpServer)(runtime, { mode: "production_http" }); }
+      catch (error) { await runtime.close(); throw error; }
+      return {
+        connect: (transport) => server.connect(transport),
+        close: async () => {
+          await Promise.allSettled([server.close(), runtime.close()]);
+        },
+      };
     });
-    const server = (dependencies.createMcpServer ?? createScopedExploreMcpServer)(runtime, { mode: "production_http" });
-    return {
-      connect: (transport) => server.connect(transport),
-      close: async () => {
-        await Promise.allSettled([server.close(), runtime.close()]);
-      },
-    };
   };
   factory.maxSessionsPerPrincipal = production.max_sessions_per_principal ?? 4;
   factory.close = async () => {
-    if (closed) return;
     closed = true;
-    const pendingLease = sharedExecutorLeasePromise;
-    sharedExecutorLeasePromise = undefined;
-    if (!pendingLease) return;
-    const lease = await pendingLease.catch(() => undefined);
-    if (!lease) return;
-    await lease.release().catch(() => {
-      process.stderr.write("Warning: the shared production Explore source pool did not close cleanly.\n");
+    return await startupOperations.close(async () => {
+      const pendingLease = sharedExecutorLeasePromise;
+      sharedExecutorLeasePromise = undefined;
+      if (!pendingLease) return;
+      const lease = await pendingLease.catch(() => undefined);
+      if (!lease) return;
+      await lease.release().catch(() => {
+        process.stderr.write("Warning: the shared production Explore source pool did not close cleanly.\n");
+      });
     });
   };
   return factory;

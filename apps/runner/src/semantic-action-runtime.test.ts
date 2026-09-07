@@ -14,7 +14,12 @@ import type {
   DerivedEffectEnvelopeSpecV1,
   RuleVerificationBoundarySpecV1,
 } from "@synapsor/spec";
-import { describe, expect, it, vi } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withProjectRuntimeCutover } from "./project-runtime-admission.js";
 import type { LoadedActiveActionRuleAuthorityV1 } from "./action-rule-authority.js";
 import {
   createOptionalActionRuleRuntimeServices,
@@ -24,7 +29,9 @@ import {
 const lock = `sha256:${"a".repeat(64)}` as const;
 const readBoundary = `sha256:${"b".repeat(64)}` as const;
 const key = Buffer.alloc(32, 17);
-const projectRoot = "/tmp/synapsor-semantic-action-runtime-test";
+let projectRoot: string;
+beforeEach(async () => { projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-semantic-action-runtime-")); });
+afterEach(async () => { await fs.rm(projectRoot, { recursive: true, force: true }); });
 
 const config: RuntimeConfig = {
   version: 1,
@@ -44,6 +51,42 @@ const config: RuntimeConfig = {
 };
 
 describe("composed semantic Action runtime", () => {
+  it.each(["active", "initially_inactive"])("holds %s discovery through its final authority checks", async (mode) => {
+    const store = new ProposalStore();
+    let authority = mode === "active" ? authorityFixture("active") : undefined;
+    let paused = false, entered!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      const services = (await createOptionalReadActionRuleRuntimeServices({ projectRoot, config, store, key,
+        authorityLoader: async () => {
+          if (paused) { entered(); await hold; }
+          if (!authority) throw Object.assign(new Error("No active authority"), { code: "ENOENT" });
+          return authority;
+        } }))!;
+      authority = authorityFixture("active"); paused = true;
+      const request = services.semanticActions.callTool("app.describe_actions", {});
+      await ready;
+      const cutover = vi.fn(async () => undefined);
+      const waiting = withProjectRuntimeCutover(projectRoot, cutover);
+      await delay(50); expect(cutover).not.toHaveBeenCalled();
+      release(); await expect(request).resolves.toMatchObject({ actions: [{ outcome: "billing.pause_notifications" }] });
+      await waiting; expect(cutover).toHaveBeenCalledOnce();
+    } finally { release(); store.close(); }
+  });
+
+  it("waits before constructor authority loading during a cutover", async () => {
+    const store = new ProposalStore(), authorityLoader = vi.fn(async () => authorityFixture("active"));
+    let pending!: ReturnType<typeof createOptionalActionRuleRuntimeServices>;
+    try {
+      await withProjectRuntimeCutover(projectRoot, async () => {
+        pending = createOptionalActionRuleRuntimeServices({ projectRoot, config, store, key, authorityLoader });
+        await delay(50); expect(authorityLoader).not.toHaveBeenCalled();
+      });
+      expect(await pending).toBeDefined(); expect(authorityLoader).toHaveBeenCalled();
+    } finally { await pending; store.close(); }
+  });
+
   it("discovers the first activated outcome without reconnecting the read-only client", async () => {
     const store = new ProposalStore();
     let authority: LoadedActiveActionRuleAuthorityV1 | undefined;

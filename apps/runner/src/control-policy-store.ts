@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { withProjectRuntimeCutover } from "./project-runtime-admission.js";
 import { z } from "zod";
 import { createDefaultRuntimeStore, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/protocol";
@@ -69,12 +70,12 @@ export async function migrateProjectControlPolicies(input: ProjectPolicyStoreSel
   readLegacySnapshot(lockedProjectRoot: string): Promise<ControlPolicyMigrationSnapshot>;
   validateSnapshot(snapshot: ControlPolicyMigrationSnapshot): Promise<void>;
 }): Promise<{ binding: BoundProjectPolicyStore; status: "imported" | "already_imported" }> {
-  return withProjectAuthorityMutation(input.projectRoot, (held) => {
+  return withProjectRuntimeCutover(input.projectRoot, (root) => withProjectAuthorityMutation(root, (held) => {
     const relativeStore = path.relative(path.resolve(input.projectRoot), path.resolve(input.storePath));
     const storePath = input.storePath !== ":memory:" && relativeStore !== ".." && !relativeStore.startsWith(`..${path.sep}`) && !path.isAbsolute(relativeStore)
       ? path.resolve(held.projectRoot, relativeStore) : input.storePath;
     return migrateProjectControlPoliciesUnlocked({ ...input, projectRoot: held.projectRoot, storePath });
-  });
+  }));
 }
 
 async function migrateProjectControlPoliciesUnlocked(input: Parameters<typeof migrateProjectControlPolicies>[0]):

@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { DatabaseSync } from "node:sqlite";
+import { withProjectRuntimeCutover } from "./project-runtime-admission.js";
+import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { SubjectReferenceService } from "@synapsor-runner/mcp-server";
@@ -47,6 +51,68 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
+  it("holds the MCP lifecycle through model projection and refuses calls after close", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreBoundarySetRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection, executor: fixedExecutor([]) });
+    const project = runtime.projectResultForModel.bind(runtime);
+    const projection = vi.spyOn(runtime, "projectResultForModel").mockImplementation((input) => {
+      const db = new DatabaseSync(path.join(fixture.root, ".synapsor/runtime-admission.sqlite"));
+      try { expect(() => db.exec("BEGIN EXCLUSIVE")).toThrow(/locked/); }
+      finally { if (db.isTransaction) db.exec("ROLLBACK"); db.close(); }
+      return project(input);
+    });
+    const server = createScopedExploreMcpServer(runtime);
+    const client = new Client({ name: "admission-test", version: "1" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport); await client.connect(clientTransport);
+      const result = await client.callTool({ name: "app.explore_data", arguments: {
+        plan: { kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 1 },
+      } });
+      expect(result.isError).not.toBe(true); expect(projection).toHaveBeenCalledOnce();
+      await runtime.close();
+      const closed = await client.callTool({ name: "app.describe_data", arguments: {} });
+      expect(closed.isError).toBe(true);
+      expect(closed.structuredContent).toHaveProperty("error_code", "POLICY_RUNTIME_CLOSED");
+      await withProjectRuntimeCutover(fixture.root, async () => undefined);
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
+  it.each(["single", "boundary_set"])("waits before %s constructor metadata while a cutover is running", async (mode) => {
+    const fixture = await activatedFixture(), inspect = vi.fn(async () => fixture.inspection);
+    const factory = mode === "single" ? createScopedExploreRuntime : createScopedExploreBoundarySetRuntime;
+    let creating!: ReturnType<typeof factory>;
+    await withProjectRuntimeCutover(fixture.root, async () => {
+      creating = factory({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+        inspectDatabaseFn: inspect, executor: fixedExecutor([]) });
+      await delay(60); expect(inspect).not.toHaveBeenCalled();
+    });
+    const runtime = await creating;
+    try { expect(inspect).toHaveBeenCalled(); }
+    finally { await runtime.close(); }
+  });
+
+  it.each(["single", "boundary_set"])("drains an in-progress %s source read before cutover", async (mode) => {
+    const fixture = await activatedFixture();
+    let entered!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const base = fixedExecutor([]);
+    const execute = async () => { entered(); await hold; return []; };
+    const factory = mode === "single" ? createScopedExploreRuntime : createScopedExploreBoundarySetRuntime;
+    const runtime = await factory({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection, executor: { ...base, execute,
+        executeBatch: async ({ queries }) => { await execute(); return queries.map(() => []); } } });
+    try {
+      const reading = runtime.explore({ kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 1 });
+      await Promise.race([ready, reading.then((result) => { throw new Error(`Source executor was not called: ${JSON.stringify(result)}`); })]);
+      const cutover = vi.fn(async () => undefined), waiting = withProjectRuntimeCutover(fixture.root, cutover);
+      await delay(60); expect(cutover).not.toHaveBeenCalled();
+      release(); await reading; await waiting; expect(cutover).toHaveBeenCalledOnce();
+    } finally { release(); await runtime.close(); }
+  });
+
   it("distinguishes raw withholding from private analysis and refuses inference plans after privacy revision", async () => {
     const fixture = await activatedFixture();
     const original = structuredClone(fixture.boundary);

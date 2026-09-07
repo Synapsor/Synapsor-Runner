@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
 import path from "node:path";
 import { assertRuntimeControlPolicyContinuity, borrowRuntimeControlPolicies, createProjectRuntimeStore, isControlPolicyFailure, type BoundProjectPolicyStore } from "./control-policy-store.js";
+import { projectRuntimeOperations, withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import mysql from "mysql2/promise";
 import { Pool, type PoolClient } from "pg";
 import {
@@ -283,6 +284,8 @@ export type ScopedExploreRuntime = {
   session_fingerprint: `sha256:${string}`;
   model_authority_metadata?: ModelAuthorityMetadataMode;
   requireCurrentAuthority?(): Promise<void>;
+  /** Keeps a composed tool operation, including model projection, in one lifecycle. */
+  withOperation?<T>(operation: () => Promise<T>): Promise<T>;
   trusted_scope?: {
     tenant: { source: "environment" | "postgres_role_setting" | "verified_http_claim" | "reviewed_organization"; binding: string };
     principal: { source: "environment" | "verified_http_claim" | "not_required"; binding?: string };
@@ -560,12 +563,26 @@ export async function createScopedExploreRuntime(input: {
     workflow_session_id: string;
   };
 }): Promise<ScopedExploreRuntime> {
+  return withProjectRuntimeAdmission(input.projectRoot, (root) => createAdmittedScopedExploreRuntime({ ...input, projectRoot: root }));
+}
+
+async function createAdmittedScopedExploreRuntime(input: Parameters<typeof createScopedExploreRuntime>[0]): Promise<ScopedExploreRuntime> {
   const ownsStore = !input.store;
   const store = input.store ?? await createProjectRuntimeStore({ projectRoot: input.projectRoot, config: {} as RuntimeConfig,
     env: input.env, storePath: path.join(path.resolve(input.projectRoot), ".synapsor/local.db") });
   try {
     const policyStore = await borrowRuntimeControlPolicies(input.projectRoot, store);
-    return await createScopedExploreRuntimeWithStore(input, store, ownsStore, policyStore);
+    const runtime = await createScopedExploreRuntimeWithStore(input, store, ownsStore, policyStore);
+    const operations = projectRuntimeOperations(input.projectRoot);
+    runtime.withOperation = (operation) => operations.run(operation);
+    const describe = runtime.describe.bind(runtime), validate = runtime.validate.bind(runtime), explore = runtime.explore.bind(runtime);
+    const close = runtime.close.bind(runtime), current = runtime.requireCurrentAuthority?.bind(runtime);
+    runtime.describe = (request) => operations.run(() => describe(request));
+    runtime.validate = (plan) => operations.run(() => validate(plan));
+    runtime.explore = (plan) => operations.run(() => explore(plan));
+    if (current) runtime.requireCurrentAuthority = () => operations.run(current);
+    runtime.close = () => operations.close(close);
+    return runtime;
   } catch (error) {
     if (ownsStore) await store.close();
     throw error;

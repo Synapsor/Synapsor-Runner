@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
 import path from "node:path";
+import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import mysql from "mysql2/promise";
 import {
   ActionRuleError,
@@ -87,6 +89,11 @@ export async function createOptionalReadActionRuleRuntimeServices(
   input: ActionRuleRuntimeServiceInput,
   onUnavailable?: (error: unknown) => void,
 ): Promise<Omit<ActionRuleRuntimeServices, "authority"> | undefined> {
+  return withProjectRuntimeAdmission(input.projectRoot, async (root) => createAdmittedReadActionServices(await canonicalActionInput(input, root), onUnavailable));
+}
+
+async function createAdmittedReadActionServices(input: ActionRuleRuntimeServiceInput,
+  onUnavailable?: (error: unknown) => void): Promise<Omit<ActionRuleRuntimeServices, "authority"> | undefined> {
   // A wrong control store is a deployment failure, not optional Action absence.
   const projectRoot = path.resolve(input.config.action_rules?.project_root ?? input.projectRoot);
   const policyStore = await borrowRuntimeControlPolicies(projectRoot, input.store);
@@ -120,7 +127,7 @@ export async function createOptionalReadActionRuleRuntimeServices(
       }
       finally { pending = undefined; }
     };
-    return {
+    return admitActionServices({
       ...referenceContext,
       semanticActions: { ...inactive, callTool: async (name, args) =>
         ((await current())?.semanticActions ?? inactive).callTool(name, args) },
@@ -133,7 +140,7 @@ export async function createOptionalReadActionRuleRuntimeServices(
           return services.subjectReferences.claim(request);
         },
       },
-    };
+    }, projectRoot);
   } catch (error) {
     if (isControlPolicyFailure(error)) throw error;
     onUnavailable?.(error);
@@ -144,6 +151,10 @@ export async function createOptionalReadActionRuleRuntimeServices(
 export async function createOptionalActionRuleRuntimeServices(
   input: ActionRuleRuntimeServiceInput,
 ): Promise<ActionRuleRuntimeServices | undefined> {
+  return withProjectRuntimeAdmission(input.projectRoot, async (root) => createAdmittedActionServices(await canonicalActionInput(input, root)));
+}
+
+async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput): Promise<ActionRuleRuntimeServices | undefined> {
   const projectRoot = path.resolve(input.config.action_rules?.project_root ?? input.projectRoot);
   if (input.config.action_rules?.project_root
     && projectRoot !== path.resolve(input.projectRoot)) {
@@ -264,14 +275,34 @@ export async function createOptionalActionRuleRuntimeServices(
       };
     },
   });
-  return {
+  return admitActionServices({
     authority,
     subjectReferences,
     semanticActions,
     key,
     deployment_scope: deploymentScope,
     workflow_session_id: workflowSessionId,
-  };
+  }, projectRoot);
+}
+
+async function canonicalActionInput(input: ActionRuleRuntimeServiceInput, root: string): Promise<ActionRuleRuntimeServiceInput> {
+  const configured = input.config.action_rules?.project_root;
+  if (configured && await fs.realpath(configured) !== root) {
+    throw new Error("ACTION_RULE_PROJECT_ROOT_MISMATCH: the runtime entry point does not match the configured Action Rule authority project.");
+  }
+  return { ...input, projectRoot: root, config: configured
+    ? { ...input.config, action_rules: { ...input.config.action_rules!, project_root: root } } : input.config };
+}
+
+function admitActionServices<T extends Omit<ActionRuleRuntimeServices, "authority">>(services: T, projectRoot: string): T {
+  const call = services.semanticActions.callTool.bind(services.semanticActions);
+  services.semanticActions.callTool = (name, args) => withProjectRuntimeAdmission(projectRoot, () => call(name, args));
+  const references = services.subjectReferences;
+  const observation = references.observationRequirement.bind(references), issue = references.issue.bind(references), claim = references.claim.bind(references);
+  references.observationRequirement = (resource) => withProjectRuntimeAdmission(projectRoot, () => observation(resource));
+  references.issue = (request) => withProjectRuntimeAdmission(projectRoot, () => issue(request));
+  references.claim = (request) => withProjectRuntimeAdmission(projectRoot, () => claim(request));
+  return services;
 }
 
 async function actionReferenceContext(input: ActionRuleRuntimeServiceInput, projectRoot: string) {

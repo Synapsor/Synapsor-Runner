@@ -1,4 +1,4 @@
-import { capabilityWritebackMode } from "@synapsor-runner/mcp-server";
+import { capabilityWritebackMode, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import {
   ProposalStore,
   type StoredProposal,
@@ -17,7 +17,7 @@ import { cliCommandName } from "./cli-command-meta.js";
 import { safeErrorMessage } from "./cli-format.js";
 import { logIdentifier, operationalLog, safeOperationalErrorCode } from "./cli-logging.js";
 import { firstPositional, optionalArg, optionalPositiveIntegerArg, positional, runtimeStoreBridgeFlag } from "./cli-options.js";
-import { isSynapsorContractLike, operatorIdentityForDecision, optionalResolvedLocalStorePath, optionalRunnerConfigPath, optionalRuntimeConfig, readRuntimeConfig, requireLocalProposal, resolveProposalIdFromStore, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
+import { isSynapsorContractLike, operatorIdentityForDecision, optionalResolvedLocalStorePath, optionalRunnerConfigPath, optionalRuntimeConfig, readRuntimeConfig, requireLocalProposal, resolveProposalIdFromStore, resolvedLocalStorePath, runnerConfigPath, withRuntimeConfigAdmission } from "./cli-project.js";
 import { adapters } from "./cli-runtime.js";
 import { readJob } from "./config-templates.js";
 import { BatchApplyResult, applyProposal, authorizeConfiguredJobApply, formatBatchApplySummary } from "./guarded-apply.js";
@@ -222,18 +222,25 @@ export async function apply(args: string[]): Promise<number> {
   const proposalId = optionalArg(args, "--proposal") ?? (directProposalId && !directProposalId.endsWith(".json") ? directProposalId : undefined);
   if (proposalId) return applyProposal(args, proposalId);
 
-  const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
   const configPath = await optionalRunnerConfigPath(args);
-  const runtimeConfig = configPath ? await optionalRuntimeConfig(configPath) : undefined;
+  return configPath
+    ? withRuntimeConfigAdmission(configPath, (config) => applyAdmittedJob(args, configPath, config))
+    : applyAdmittedJob(args);
+}
+
+async function applyAdmittedJob(args: string[], configPath?: string, runtimeConfig?: RuntimeConfig): Promise<number> {
+  const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
   if (!dryRun) assertLocalGovernanceMutationAllowed(runtimeConfig, "apply --job");
   if (runtimeConfig && runtimeStoreBridgeRequired(args, runtimeConfig)) {
-    return withSharedPostgresRuntimeStoreBridge(args, runtimeConfig, "apply --job", (bridgeStorePath) => apply(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+    return withSharedPostgresRuntimeStoreBridge(args, runtimeConfig, "apply --job", (bridgeStorePath) =>
+      applyAdmittedJob(argsWithRuntimeStoreBridge(args, bridgeStorePath), configPath, runtimeConfig));
   }
   assertNoRuntimeStoreForLocalMutation(runtimeConfig, "apply --job", args);
   const storePath = optionalResolvedLocalStorePath(args);
   const mirrorStorePath = storePath ?? runtimeConfig?.storage?.sqlite_path;
   if (mirrorStorePath && sharedPostgresLedgerMirrorRequested(args, runtimeConfig)) {
-    return withSharedPostgresLedgerMirror(args, mirrorStorePath, "apply --job", () => apply(withoutSharedPostgresLedgerMirror(args)), runtimeConfig);
+    return withSharedPostgresLedgerMirror(args, mirrorStorePath, "apply --job", () =>
+      applyAdmittedJob(withoutSharedPostgresLedgerMirror(args), configPath, runtimeConfig), runtimeConfig);
   }
 
   const raw = await readJob(args);
@@ -242,11 +249,11 @@ export async function apply(args: string[]): Promise<number> {
     if (!dryRun && !storePath) {
       throw new Error("local config writeback apply requires --store so proposal approval and digest can be verified");
     }
-    await verifyLocalWritebackAuthority(job, configPath, storePath);
-    await authorizeConfiguredJobApply(args, job, configPath, storePath);
+    await verifyLocalWritebackAuthority(job, configPath, storePath, { config: runtimeConfig });
+    await authorizeConfiguredJobApply(args, job, configPath, storePath, runtimeConfig);
   }
   const databaseUrl = configPath
-    ? await resolveSqlWriteDatabaseUrl(job, configPath, process.env)
+    ? await resolveSqlWriteDatabaseUrl(job, configPath, process.env, runtimeConfig)
     : process.env.SYNAPSOR_DATABASE_URL || "";
   let localStore: ProposalStore | undefined;
   if (storePath) {

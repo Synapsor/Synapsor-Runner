@@ -3,6 +3,7 @@ import {
   preflightGeneratedAuthority,
   resolveSemanticSupervisedWorkerEligibility,
   resolveSupervisedWorkerEligibility,
+  type RuntimeConfig,
   type RuntimeSupervisedWorkerPolicy,
 } from "@synapsor-runner/mcp-server";
 import {
@@ -15,7 +16,7 @@ import process from "node:process";
 import { requiredAttentionSinksHealthy } from "./attention-domain.js";
 import { operationalLog } from "./cli-logging.js";
 import { optionalArg } from "./cli-options.js";
-import { envWithDemoDefaults, operatorIdentityForDecision, readRuntimeConfig, redactConfig, requireLocalProposal, resolveProposalId, resolvedRuntimeStorePath, runnerConfigPath } from "./cli-project.js";
+import { envWithDemoDefaults, operatorIdentityForDecision, readRuntimeConfig, redactConfig, requireLocalProposal, resolveProposalId, resolvedRuntimeStorePath, runnerConfigPath, withRuntimeConfigAdmission } from "./cli-project.js";
 import { TrustedOperatorInvocation, trustedCliContext } from "./operator-authority.js";
 import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge, withoutSharedPostgresLedgerMirror } from "./store-shared.js";
 import { assertSemanticSupervisedWriterPosture, assertSupervisedPolicyApprovalCurrent, assertSupervisedWriterPosture, supervisedWorkerEligibilityCode, workerControlAllowsPolicy, workerPolicyError } from "./worker-policy.js";
@@ -27,8 +28,9 @@ export async function authorizeConfiguredJobApply(
   job: WritebackJob,
   configPath: string,
   storePath: string | undefined,
+  admittedConfig?: RuntimeConfig,
 ): Promise<void> {
-  const config = await readRuntimeConfig(configPath);
+  const config = admittedConfig ?? await readRuntimeConfig(configPath);
   if (storePath) await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath });
   if (!config.operator_identity) return;
   if (!storePath) {
@@ -90,13 +92,17 @@ export async function applyProposal(
   proposalId: string,
   invocation: TrustedOperatorInvocation = {},
 ): Promise<number> {
+  return withRuntimeConfigAdmission(runnerConfigPath(args), (config) => applyAdmittedProposal(args, proposalId, invocation, config));
+}
+
+async function applyAdmittedProposal(args: string[], proposalId: string,
+  invocation: TrustedOperatorInvocation, config: RuntimeConfig): Promise<number> {
   const configPath = runnerConfigPath(args);
   const dryRun = args.includes("--dry-run") || process.env.SYNAPSOR_DRY_RUN === "true";
   const runnerId = optionalArg(args, "--runner") ?? process.env.SYNAPSOR_RUNNER_ID ?? "local_runner";
   const workerAttempt = Number(optionalArg(args, "--worker-attempt") ?? "1");
   const workerExecutionMode = optionalArg(args, "--worker-execution-mode");
   const workerLeaseId = optionalArg(args, "--worker-lease-id");
-  const config = await readRuntimeConfig(configPath);
   const storePath = resolvedRuntimeStorePath(args, configPath, config.storage?.sqlite_path);
   assertLocalGovernanceMutationAllowed(config, "apply");
   if (config && runtimeStoreBridgeRequired(args, config)) {
@@ -315,7 +321,7 @@ export async function applyProposal(
         ...(workerLeaseId ? { lease_id: workerLeaseId } : {}),
         attempt: workerAttempt,
       });
-      const result = await applySqlJob(job, configPath, storePath, dryRun, envWithDemoDefaults(config, configPath));
+      const result = await applySqlJob(job, configPath, storePath, dryRun, envWithDemoDefaults(config, configPath), config);
       logProposalWritebackOutcome(proposal, runnerId, executorName, result, dryRun);
       if (!invocation.quiet && !args.includes("--batch-quiet")) {
         process.stdout.write(args.includes("--json") ? `${JSON.stringify(result, null, 2)}\n` : formatApplyResult(parseWritebackJob(job), result, dryRun, storePath));

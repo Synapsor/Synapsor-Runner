@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
+import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
@@ -41,6 +43,21 @@ function migration(selection: ProjectPolicyStoreSelection) {
 const manifestPath = (selection: ProjectPolicyStoreSelection) => path.join(selection.projectRoot, ".synapsor/control-policy/migration.json");
 
 describe("governed policy-store binding and recovery", () => {
+  it("drains runtime work before reading the migration snapshot or installing its locator", async () => {
+    const selection = await fixture(), input = migration(selection);
+    let pending!: ReturnType<typeof migrateProjectControlPolicies>;
+    await withProjectRuntimeAdmission(selection.projectRoot, async () => {
+      pending = migrateProjectControlPolicies(input);
+      await delay(80);
+      expect(input.readLegacySnapshot).not.toHaveBeenCalled();
+      await expect(fs.stat(manifestPath(selection))).rejects.toHaveProperty("code", "ENOENT");
+    });
+    const result = await pending; track(result.binding);
+    expect(result.status).toBe("imported");
+    expect(input.readLegacySnapshot).toHaveBeenCalledOnce();
+    expect(await result.binding.repository.active(result.binding.deployment_id, key)).toEqual(snapshot().revisions[0]);
+  });
+
   it("does not initialize authority from a read or accept an ephemeral store", async () => {
     const selection = await fixture();
     expect(await openProjectControlPolicies(selection)).toBeUndefined();
