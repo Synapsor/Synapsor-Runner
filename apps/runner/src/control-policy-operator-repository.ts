@@ -6,6 +6,7 @@ import { decodeOperatorAuthority, encodeOperatorAuthority, validateOperatorPolic
   OPERATOR_READ_SELECTION, OPERATOR_READ_AUTHORING, OPERATOR_EXECUTION_POLICY, type StoredOperatorAuthority } from "./control-policy-authority-codec.js";
 import type { StoredReadAuthoring } from "./control-policy-read-authoring.js";
 import { commitImmutableControlPolicies, type BoundProjectPolicyStore, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
+import { assertGovernedReadEditDecision, type GovernedReadEditDecision } from "./control-policy-read-edit.js";
 
 export type OperatorAuthorityState = {
   epoch: number;
@@ -50,12 +51,30 @@ export class OperatorAuthorityRepository {
   async commitReadAuthoring(input: {
     expected_epoch: number; expected_revision_id: string | null;
     authoring: StoredReadAuthoring; actor: string; operation: string;
+    verifiedDecision?: GovernedReadEditDecision;
   }): Promise<Awaited<ReturnType<OperatorAuthorityRepository["commit"]>>> {
     const frozen = structuredClone(input);
     const before = await this.currentReadState();
     const previous = before.active.find(({ policy }) => policy.type === "read_authoring");
     if (before.epoch !== frozen.expected_epoch
       || (previous?.revision.revision_id ?? null) !== frozen.expected_revision_id) fail("POLICY_REVISION_CONFLICT");
+    if (frozen.verifiedDecision) {
+      const prior = previous?.policy;
+      const selected = frozen.authoring.entries.find((entry) => entry.progress.boundary_id === frozen.authoring.selected_boundary_id);
+      if (prior?.type !== "read_authoring" || !selected || frozen.operation !== "edit_prepared_read"
+        || prior.selected_boundary_id !== frozen.authoring.selected_boundary_id
+        || canonicalJsonDigest(prior.entries.filter((entry) => entry.progress.boundary_id !== prior.selected_boundary_id))
+          !== canonicalJsonDigest(frozen.authoring.entries.filter((entry) => entry.progress.boundary_id !== prior.selected_boundary_id))) {
+        fail("POLICY_READ_EDIT_DECISION_INVALID");
+      }
+      assertGovernedReadEditDecision(frozen.verifiedDecision, this.binding, frozen.actor, {
+        before: { repository_id: this.binding.repository_id, deployment_id: this.binding.deployment_id,
+          project_id: this.binding.project_id, epoch: before.epoch, revision_id: previous!.revision.revision_id },
+        review_decision_digest: frozen.verifiedDecision.review_decision_digest,
+        candidate_digest: selected.progress.candidate_digest,
+        generated_contract_digest: selected.candidate_lock.generated_contract_digest,
+      });
+    }
     const desired: OperatorAuthorityChange[] = frozen.authoring.entries.filter((entry) => entry.stage !== "metadata_only").map((entry) => ({
       key: { scope: { level: "operator" }, kind: "read", name: entry.progress.candidate.pack.name },
       policy: { type: "read", boundary: entry.progress.candidate, generation_lock: entry.candidate_lock },
@@ -70,7 +89,7 @@ export class OperatorAuthorityRepository {
       }
     }
     return this.commitAgainstState({ expected_epoch: frozen.expected_epoch, actor: frozen.actor, operation: frozen.operation,
-      drafts, active: [{ key: OPERATOR_READ_AUTHORING, policy: frozen.authoring }] }, before);
+      drafts, active: [{ key: OPERATOR_READ_AUTHORING, policy: frozen.authoring }], verifiedDecision: frozen.verifiedDecision }, before);
   }
 
   /** Commits an exact reviewed set, never a best-effort merge after a race.
@@ -85,6 +104,7 @@ export class OperatorAuthorityRepository {
   private async commitAgainstState(input: {
     expected_epoch: number; active?: OperatorAuthorityChange[]; drafts?: OperatorAuthorityChange[];
     actor: string; operation: string;
+    verifiedDecision?: GovernedReadEditDecision;
   }, before: OperatorAuthorityState): Promise<Awaited<ReturnType<OperatorAuthorityRepository["commit"]>>> {
     const frozen = structuredClone(input);
     if (!validLabel(frozen.actor) || !validLabel(frozen.operation)) fail("POLICY_REVIEW_RECEIPT_INVALID");
@@ -117,13 +137,35 @@ export class OperatorAuthorityRepository {
     const proposed = asSnapshot([...next.active.values()], [...next.drafts.values()]);
     validateOperatorPolicySnapshot(proposed, { runtimeConfig: this.runtimeConfig });
     assertNewActivationDependencies([...next.active.values()], changes, this.runtimeConfig);
-    if (!changes.length) return { epoch: before.epoch, changes };
+    if (!changes.length) {
+      if (frozen.verifiedDecision) fail("POLICY_READ_EDIT_NO_CHANGE");
+      return { epoch: before.epoch, changes };
+    }
     // The epoch CAS covers concurrent edits, revocations and dependency changes
     // during compilation and the immutable-history lookups above.
-    const epoch = await commitImmutableControlPolicies(this.binding, {
-      expected_epoch: before.epoch, revisions: [...incoming.values()], ...pointers,
-      event: { event_id: randomUUID(), actor: frozen.actor, occurred_at: new Date().toISOString(),
-        receipt: { operation: frozen.operation, changes, source_database_changed: false } } });
+    if (frozen.verifiedDecision) {
+      assertGovernedReadEditDecision(frozen.verifiedDecision, this.binding, frozen.actor, frozen.verifiedDecision);
+    }
+    const event = { event_id: frozen.verifiedDecision?.event_id ?? randomUUID(), actor: frozen.actor, occurred_at: new Date().toISOString(),
+      receipt: { operation: frozen.operation, changes, source_database_changed: false,
+        ...(frozen.verifiedDecision ? { verified_decision: frozen.verifiedDecision } : {}) } };
+    let epoch: number;
+    try {
+      epoch = await commitImmutableControlPolicies(this.binding, {
+        expected_epoch: before.epoch, revisions: [...incoming.values()], ...pointers, event });
+    } catch (error) {
+      if (!frozen.verifiedDecision || (error as { code?: string }).code === "POLICY_EVENT_ALREADY_RECORDED") throw error;
+      // Lost COMMIT responses require this exact receipt, not a coincidentally
+      // matching candidate or a newer policy pointer.
+      let recorded;
+      try { recorded = await this.binding.repository.event(this.binding.deployment_id, event.event_id); }
+      catch {
+        throw Object.assign(new Error("Read edit could not be confirmed. Inspect the control-store review receipt before retrying; do not assume the draft is unchanged. Active authority was not changed by this edit."),
+          { code: "POLICY_READ_EDIT_COMMIT_UNCONFIRMED" });
+      }
+      if (!recorded || canonicalJsonDigest(recorded) !== canonicalJsonDigest({ ...event, epoch: before.epoch + 1 })) throw error;
+      epoch = recorded.epoch;
+    }
     return { epoch, changes };
   }
 }

@@ -1,4 +1,5 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { z } from "zod";
 import type { ControlPolicyKey, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 
 export const OPERATOR_POLICY_RECORD_VERSION = "synapsor.stored-operator-authority/v1";
@@ -13,6 +14,12 @@ export type ReadAuthoringBindings = {
   epoch: number;
   revision_id: string;
 };
+
+export const readAuthoringBindingsSchema = z.object({
+  repository_id: z.string().uuid(), deployment_id: z.string().uuid(), project_id: z.string().uuid(),
+  epoch: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  revision_id: z.string().regex(/^policy:[a-f0-9]{64}$/u),
+}).strict();
 
 export function assertReadAuthoringBindings(expected: ReadAuthoringBindings | undefined, current: ReadAuthoringBindings): void {
   if (!expected || canonicalJsonDigest(expected) !== canonicalJsonDigest(current)) {

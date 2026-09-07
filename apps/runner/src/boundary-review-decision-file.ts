@@ -2,6 +2,7 @@ import type {
   BoundaryResourceReviewRequest,
   BoundaryReviewMutationBindings,
 } from "./boundary-review-mutation.js";
+import { readAuthoringBindingsSchema } from "./control-policy-record.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -68,6 +69,7 @@ function parseBindings(value: unknown): BoundaryReviewMutationBindings {
     "schema_fingerprint",
     "role_posture_fingerprint",
     "review_revision",
+    "authoring",
   ], "bindings");
   if (!Number.isSafeInteger(input.review_revision) || Number(input.review_revision) < 0) {
     throw new Error("bindings.review_revision must be a non-negative integer.");
@@ -85,6 +87,7 @@ function parseBindings(value: unknown): BoundaryReviewMutationBindings {
       "bindings.role_posture_fingerprint",
     ),
     review_revision: Number(input.review_revision),
+    ...(input.authoring === undefined ? {} : { authoring: readAuthoringBindingsSchema.parse(input.authoring) }),
   };
 }
 
@@ -102,6 +105,7 @@ function parseResource(
     "tenant_key",
     "principal_key",
     "keep_out_fields",
+    "withhold_from_model_fields",
     "allow_reviewed_fields",
     "selectable_fields",
     "filterable_fields",
@@ -140,6 +144,7 @@ function parseResource(
     result.minimum_cohort_size = Number(input.minimum_cohort_size);
   }
   assignStringList(result, input, "keep_out_fields", label);
+  assignStringList(result, input, "withhold_from_model_fields", label);
   assignStringList(result, input, "allow_reviewed_fields", label);
   assignStringList(result, input, "selectable_fields", label);
   assignStringList(result, input, "filterable_fields", label);
@@ -176,7 +181,7 @@ function parseResource(
 }
 
 function assignStringList<
-  Key extends "keep_out_fields" | "allow_reviewed_fields" | "selectable_fields"
+  Key extends "keep_out_fields" | "withhold_from_model_fields" | "allow_reviewed_fields" | "selectable_fields"
     | "filterable_fields" | "sortable_fields" | "groupable_fields"
     | "aggregate_measures" | "count_distinct_fields" | "time_bucket_fields"
     | "relationship_ids",

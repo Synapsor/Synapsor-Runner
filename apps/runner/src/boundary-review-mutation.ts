@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { assertGovernedReadEditDecision, type GovernedReadEditDecision } from "./control-policy-read-edit.js";
 import { Buffer } from "node:buffer";
 import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -1466,9 +1467,13 @@ export async function prepareExactBoundaryCandidateMutation(
 export async function commitBoundaryResourceReviewMutation(
   projectRoot: string,
   preview: BoundaryReviewMutationPreview,
+  verifiedDecision?: GovernedReadEditDecision,
 ): Promise<BoundaryReviewMutationCommit & {
   semantic_diff: BoundaryReviewSemanticDiff;
 }> {
+  preview = structuredClone(preview);
+  verifiedDecision = verifiedDecision && structuredClone(verifiedDecision);
+  assertVerifiedMutationPreview(preview, preview.request.actor, verifiedDecision);
   if (preview.partial_scope_resolution) {
     if (preview.candidate.pack.resources.length === 0) {
       const current = await loadBoundaryReviewFiles(projectRoot);
@@ -1476,9 +1481,10 @@ export async function commitBoundaryResourceReviewMutation(
       if (current.authoring) {
         const result = await commitPreparedBoundaryReviewMutation({ projectRoot, bindings: preview.bindings,
           build: preview.build, candidate: preview.candidate, boundaryRoot: preview.boundary_root,
-          previousProgress: preview.previous_progress, actor: preview.request.actor, reason: preview.request.reason });
+          previousProgress: preview.previous_progress, actor: preview.request.actor, reason: preview.request.reason, verifiedDecision });
         return { ...result, semantic_diff: preview.semantic_diff };
       }
+      if (verifiedDecision) throw new Error("POLICY_AUTHORING_STORE_CHANGED: restore the governed review repository before editing.");
       await writeAutoBoundaryArtifacts({
         projectRoot,
         outputRoot: path.relative(projectRoot, preview.boundary_root),
@@ -1503,6 +1509,7 @@ export async function commitBoundaryResourceReviewMutation(
       previousProgress: preview.previous_progress,
       actor: preview.request.actor,
       reason: preview.request.reason,
+      verifiedDecision,
     });
     return {
       ...result,
@@ -1518,6 +1525,7 @@ export async function commitBoundaryResourceReviewMutation(
     previousProgress: preview.previous_progress,
     actor: preview.request.actor,
     reason: preview.request.reason,
+    verifiedDecision,
   });
   return {
     ...result,
@@ -1641,9 +1649,13 @@ async function configuredTrustedContextForReviewMutation(
 export async function commitBoundaryReviewMutationBatch(
   projectRoot: string,
   preview: BoundaryReviewMutationBatchPreview,
+  verifiedDecision?: GovernedReadEditDecision,
 ): Promise<BoundaryReviewMutationCommit & {
   semantic_diff: BoundaryReviewSemanticDiff[];
 }> {
+  preview = structuredClone(preview);
+  verifiedDecision = verifiedDecision && structuredClone(verifiedDecision);
+  assertVerifiedMutationPreview(preview, preview.requests[0]!.actor, verifiedDecision);
   const result = await commitPreparedBoundaryReviewMutation({
     projectRoot,
     bindings: preview.bindings,
@@ -1653,6 +1665,7 @@ export async function commitBoundaryReviewMutationBatch(
     previousProgress: preview.previous_progress,
     actor: preview.requests[0]!.actor,
     reason: `Applied ${preview.requests.length} reviewed resource decision(s) atomically.`,
+    verifiedDecision,
   });
   return {
     ...result,
@@ -1693,6 +1706,7 @@ async function commitPreparedBoundaryReviewMutation(input: {
   previousProgress: BoundaryReviewProgress | undefined;
   actor: string;
   reason: string;
+  verifiedDecision?: GovernedReadEditDecision;
 }): Promise<BoundaryReviewMutationCommit> {
   const current = await loadBoundaryReviewFiles(input.projectRoot);
   assertBindingsEqual(input.bindings, reviewBindings(current));
@@ -1722,12 +1736,14 @@ async function commitPreparedBoundaryReviewMutation(input: {
   });
   if (current.authoring) {
     const binding = await saveProjectReadProgress({ projectRoot: input.projectRoot, expected: input.bindings.authoring, progress,
+      actor: input.actor, verifiedDecision: input.verifiedDecision,
       replacement: { draft: input.build.exploration_boundary, draft_lock: input.build.lock, candidate_lock: input.build.lock,
         catalog: readAuthoringCatalog(input.build) } });
     if (!binding) throw new Error("The saved review repository changed before the edit could be saved.");
     return { candidate_digest: progress.candidate_digest, review_revision: progress.revision, progress,
       authoring_binding: binding, source_database_changed: false };
   }
+  if (input.verifiedDecision) throw new Error("POLICY_AUTHORING_STORE_CHANGED: restore the governed review repository before editing.");
   if (!input.previousProgress || input.previousProgress.policy_migration.status === "review_required") {
     await backupLegacyBoundaryReviewOverrides(input.projectRoot);
   }
@@ -1752,6 +1768,17 @@ async function commitPreparedBoundaryReviewMutation(input: {
     progress,
     source_database_changed: false,
   };
+}
+
+function assertVerifiedMutationPreview(preview: BoundaryReviewMutationPreview | BoundaryReviewMutationBatchPreview,
+  actor: string, decision?: GovernedReadEditDecision): void {
+  if (!decision) return;
+  const before = preview.bindings.authoring;
+  if (!before) throw new Error("POLICY_READ_EDIT_DECISION_INVALID: this verified edit is missing its original repository review.");
+  assertGovernedReadEditDecision(decision, before, actor, { before,
+    review_decision_digest: preview.decision_digest,
+    candidate_digest: explorationBoundaryCandidateDigest(preview.candidate),
+    generated_contract_digest: preview.build.contract_digest });
 }
 
 function managedDecisionsForRequest(

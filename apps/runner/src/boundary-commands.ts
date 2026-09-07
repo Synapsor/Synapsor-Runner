@@ -67,6 +67,8 @@ import { assertReadAuthoringBindings, readProjectReadAuthoring } from "./control
 import { openProjectControlPolicies } from "./control-policy-store.js";
 import { assertGovernedReadActivationDecision, readActivationAlreadyConsumed, readActivationEventId,
   type GovernedReadActivationDecision } from "./control-policy-activation.js";
+import { assertGovernedReadEditDecision, readEditAlreadyConsumed, readEditEventId,
+  type GovernedReadEditDecision } from "./control-policy-read-edit.js";
 import { displayPath } from "./onboarding.js";
 import { sharedPostgresLedgerDoctorChecks } from "./doctor-domain.js";
 import {
@@ -1188,9 +1190,9 @@ async function boundaryDecisionFileCommand(
 
   let committed: Awaited<ReturnType<typeof commitBoundaryReviewMutationBatch>>;
   try {
-    committed = await commitBoundaryReviewMutationBatch(projectRoot, preview);
-    if (verifiedDecision) {
-      verifiedDecision.store.setRunnerState(verifiedDecision.key, {
+    committed = await commitBoundaryReviewMutationBatch(projectRoot, preview, verifiedDecision?.governed);
+    if (verifiedDecision?.store) {
+      verifiedDecision.store.setRunnerState(verifiedDecision.key!, {
         status: "applied_disabled_review",
         decision_id: verifiedDecision.decisionId,
         review_decision_digest: preview.decision_digest,
@@ -1203,8 +1205,8 @@ async function boundaryDecisionFileCommand(
       });
     }
   } catch (error) {
-    if (verifiedDecision) {
-      verifiedDecision.store.setRunnerState(verifiedDecision.key, {
+    if (verifiedDecision?.store) {
+      verifiedDecision.store.setRunnerState(verifiedDecision.key!, {
         status: "consumed_review_failed",
         decision_id: verifiedDecision.decisionId,
         review_decision_digest: preview.decision_digest,
@@ -1217,7 +1219,7 @@ async function boundaryDecisionFileCommand(
     }
     throw error;
   } finally {
-    verifiedDecision?.store.close();
+    verifiedDecision?.store?.close();
   }
   process.stdout.write(args.includes("--json")
     ? `${JSON.stringify({ ok: true, decision_digest: preview.decision_digest, ...committed }, null, 2)}\n`
@@ -1619,9 +1621,9 @@ async function boundaryResourceReviewCommand(
   }
   let committed: Awaited<ReturnType<typeof commitBoundaryResourceReviewMutation>>;
   try {
-    committed = await commitBoundaryResourceReviewMutation(projectRoot, preview);
-    if (verifiedDecision) {
-      verifiedDecision.store.setRunnerState(verifiedDecision.key, {
+    committed = await commitBoundaryResourceReviewMutation(projectRoot, preview, verifiedDecision?.governed);
+    if (verifiedDecision?.store) {
+      verifiedDecision.store.setRunnerState(verifiedDecision.key!, {
         status: "applied_disabled_review",
         decision_id: verifiedDecision.decisionId,
         review_decision_digest: preview.decision_digest,
@@ -1633,8 +1635,8 @@ async function boundaryResourceReviewCommand(
       });
     }
   } catch (error) {
-    if (verifiedDecision) {
-      verifiedDecision.store.setRunnerState(verifiedDecision.key, {
+    if (verifiedDecision?.store) {
+      verifiedDecision.store.setRunnerState(verifiedDecision.key!, {
         status: "consumed_review_failed",
         decision_id: verifiedDecision.decisionId,
         review_decision_digest: preview.decision_digest,
@@ -1647,7 +1649,7 @@ async function boundaryResourceReviewCommand(
     }
     throw error;
   } finally {
-    verifiedDecision?.store.close();
+    verifiedDecision?.store?.close();
   }
   process.stdout.write(args.includes("--json")
     ? `${JSON.stringify({ ok: true, decision_digest: preview.decision_digest, ...committed }, null, 2)}\n`
@@ -13432,8 +13434,9 @@ async function verifyBoundaryReviewMutationOperator(input: {
   expectedActor: string;
   reason: string;
 }): Promise<{
-  store: ProposalStore;
-  key: string;
+  store?: ProposalStore;
+  key?: string;
+  governed?: GovernedReadEditDecision;
   decisionId: `sha256:${string}`;
   subject: string;
   provider: "signed_key" | "jwt_oidc";
@@ -13498,10 +13501,30 @@ async function verifyBoundaryReviewMutationOperator(input: {
     config.operator_identity as OperatorIdentityConfig,
     configPath,
   );
-  const storePath = resolvedProject?.store_path
-    ?? (config.storage?.sqlite_path
-      ? path.resolve(config.storage.sqlite_path)
-      : path.join(input.projectRoot, ".synapsor/local.db"));
+  const configuredStorePath = path.resolve(path.dirname(path.resolve(configPath)), config.storage?.sqlite_path ?? ".synapsor/local.db");
+  const storePath = optionalArg(input.args, "--config") ? configuredStorePath : resolvedProject?.store_path ?? configuredStorePath;
+  const policyStore = await openProjectControlPolicies({ projectRoot: input.projectRoot, config, storePath });
+  if (policyStore) {
+    try {
+      const before = input.preview.bindings.authoring;
+      if (!before) throw new Error("POLICY_READ_EDIT_DECISION_INVALID: reopen the governed review before editing.");
+      const decision = { purpose: "edit_read" as const,
+        repository_id: policyStore.repository_id, deployment_id: policyStore.deployment_id, project_id: policyStore.project_id,
+        before, nonce_digest: canonicalJsonDigest({ nonce }), decision_id: decisionId,
+        review_decision_digest: input.preview.decision_digest, candidate_digest: input.preview.candidate_digest,
+        generated_contract_digest: input.preview.generated_contract_digest,
+        subject: identity.subject, provider: identity.provider, decision_hash: identity.decision_hash, integrity_hash: identity.integrity_hash,
+        issued_at: now.toISOString(), expires_at: expiresAt,
+        operator_envelope: { ...envelope, schema_version: "synapsor.boundary-review-operator-decision.v1" as const,
+          before: { ...envelope.before, authoring: before } },
+        operator_proof: JSON.parse(JSON.stringify(identity)) as GovernedReadEditDecision["operator_proof"] };
+      const governed = { ...decision, event_id: readEditEventId(decision) };
+      assertGovernedReadEditDecision(governed, policyStore, input.expectedActor, { ...decision, before });
+      if (await policyStore.repository.event(policyStore.deployment_id, governed.event_id)) throw readEditAlreadyConsumed();
+      return { governed, decisionId, subject: identity.subject, provider: identity.provider };
+    } finally { await policyStore.close(); }
+  }
+  if (input.preview.bindings.authoring) throw new Error("POLICY_AUTHORING_STORE_CHANGED: restore the governed review repository before editing.");
   await fs.mkdir(path.dirname(storePath), { recursive: true, mode: 0o700 });
   const store = new ProposalStore(storePath);
   const key = `boundary_review_decision:${decisionId}`;
