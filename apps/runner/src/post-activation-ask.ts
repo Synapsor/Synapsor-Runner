@@ -234,7 +234,7 @@ export async function runPostActivationAskHandoff(
   const configuredSelection = input.autoStartConfiguredProvider && !executionReviewPending
     ? soleConfiguredHostedSelection(env)
     : undefined;
-  if (executionReviewPending && !input.selection) write("Read and change requests are active. Automatic updates are off; you can connect a client now or resume execution setup.\n");
+  if (executionReviewPending && !input.selection) write("Read and change requests are active. Some outcomes still need execution review; existing execution settings are unchanged. You can connect a client now or resume execution setup.\n");
   const selection = input.selection
     ?? configuredSelection
     ?? await choosePostActivationAskSelection(dependencies, guidedClientSetup || executionReviewPending ? "mcp-client" : undefined);
@@ -753,22 +753,24 @@ export async function savedSetupReceipt(projectRoot: string, executionPending: b
   return [
     executionPending ? "Setup saved - not ready for automatic changes." : "Setup saved. Your reviewed boundaries remain active.",
     ...(executionPending ? ["Read and reviewed change-request rules are active.",
-      paused ? `Automatic updates are off. Last check: ${paused.problem.summary}` : "Automatic updates are off: execution setup still needs review.",
-      "Next: review the saved writer requirements, repair the connection, then resume Execution setup."] : []),
+      paused ? `Last check: ${paused.problem.summary}` : "Automatic completion is not fully configured: execution setup still needs review.",
+      paused?.problem.publication_state ? "Next: reopen Execution setup to recover the exact save. Pausing does not disable existing execution."
+        : "Next: review the saved writer requirements, repair the connection, then resume Execution setup."] : []),
     "This exit does not verify a client connection, runtime identity, or worker. Existing configuration is preserved.",
     `Resume saved setup: ${resume}`, "",
   ].join("\n");
 }
 
 export async function reviewPausedExecutionSetup(session: BoundaryReviewInteractiveSession, paused: SavedExecutionSetup): Promise<boolean> {
+  const publication = paused.problem.publication_state !== undefined;
   for (;;) {
     const selected = await session.chooseOption?.("Resume execution setup", [
-      { value: "recheck", label: "I repaired the connection; recheck it" },
-      { value: "details", label: "View saved blocker and administrator handoff" },
+      { value: "recheck", label: publication ? "Recover the saved execution attempt" : "I repaired the connection; recheck it" },
+      { value: "details", label: publication ? "View saved recovery details" : "View saved blocker and administrator handoff" },
       { value: "back", label: "Back to client setup" },
     ], { initialValue: "details", context: [paused.problem.summary, `Last check: ${paused.paused_at}. Not rechecked since pausing.`] });
     if (selected !== "details") return selected === "recheck";
-    await session.showReviewDetails?.("Saved writer requirements", paused.problem.details);
+    await session.showReviewDetails?.(publication ? "Saved execution recovery" : "Saved writer requirements", paused.problem.details);
   }
 }
 

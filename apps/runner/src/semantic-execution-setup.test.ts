@@ -17,6 +17,18 @@ const problem = { code: "CHECK_FAILED", summary: "The writer needs repair.", det
 afterEach(async () => { for (const dir of roots.splice(0)) await fs.rm(dir, { recursive: true, force: true }); });
 
 describe("non-authoritative execution setup diagnostics", () => {
+  it.each(["unconfirmed", "committed", "cancelled"])("preserves the true publication outcome on pause: %s", async (state) => {
+    const code = state === "unconfirmed" ? "POLICY_EXECUTION_COMMIT_UNCONFIRMED" : "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING";
+    const error = Object.assign(new Error(`${code}: private interrupted save`), { code, publication_state: state });
+    const diagnostic = executionSetupProblem(error);
+    expect(diagnostic).toMatchObject({ publication_state: state });
+    expect(diagnostic.details.join("\n")).not.toMatch(/remain off|updates are off/);
+    expect(diagnostic.summary).toContain(state === "unconfirmed" ? "not confirmed" : state === "committed" ? "was saved" : "was cancelled");
+    const dir = await root();
+    await savePausedExecutionSetup(dir, { action_digest: digest, outcome: "plan", problem: diagnostic });
+    expect((await readPausedExecutionSetup(dir, digest))?.problem).toEqual(diagnostic);
+  });
+
   it("retains the exact revision/outcome on pause and never clears another outcome's blocker", async () => {
     const dir = await root();
     await savePausedExecutionSetup(dir, { action_digest: digest, outcome: "telecom.plan_change", problem });

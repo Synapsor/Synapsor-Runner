@@ -5,13 +5,15 @@ import { z } from "zod";
 import type { SupervisedWriterPostureAssessment } from "./worker-policy.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 
-export type ExecutionSetupProblem = { code: string; summary: string; details: string[] };
+export type ExecutionSetupProblem = { code: string; summary: string; details: string[];
+  publication_state?: "unconfirmed" | "committed" | "cancelled" };
 
 const safeDiagnosticLine = (line: string) => redactCliErrorMessage(line)
   .replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/gu, " ");
 const safeProblem = (problem: ExecutionSetupProblem): ExecutionSetupProblem => ({
   code: safeDiagnosticLine(problem.code), summary: safeDiagnosticLine(problem.summary),
   details: problem.details.map(safeDiagnosticLine),
+  ...(problem.publication_state ? { publication_state: problem.publication_state } : {}),
 });
 
 export class SemanticWriterPostureError extends Error {
@@ -49,6 +51,16 @@ export function executionSetupProblem(error: unknown): ExecutionSetupProblem {
   if (error instanceof SemanticWriterPostureError) return error.problem;
   const message = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
   const code = message.match(/^([A-Z][A-Z0-9_]{2,79}):/u)?.[1] ?? "EXECUTION_SETUP_CHECK_FAILED";
+  if (["POLICY_EXECUTION_COMMIT_UNCONFIRMED", "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING", "POLICY_CONFIG_PUBLICATION_PENDING",
+    "POLICY_CONFIG_RECOVERY_CONFLICT", "POLICY_CONFIG_RECOVERY_INVALID"].includes(code)) {
+    const saved = (error as { publication_state?: unknown } | null)?.publication_state;
+    const state = code === "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING" && (saved === "committed" || saved === "cancelled") ? saved : "unconfirmed";
+    const summary = state === "committed" ? "The execution policy was saved, but recovery cleanup needs attention. Reopen execution review; do not repeat activation."
+      : state === "cancelled" ? "The interrupted save was cancelled and the prior configuration restored. Reopen execution review to finish recovery."
+        : "The execution save is not confirmed. Reopen execution review to recover its exact receipt; do not assume existing execution is disabled.";
+    return safeProblem({ code, publication_state: state, summary, details: [`Code: ${code}`, ...message.split(/\r?\n/u),
+      "Pausing this review does not disable existing execution authority. No source request was executed by this setup step."] });
+  }
   const summary = code === "SEMANTIC_ACTION_WRITER_URL_MISSING"
     ? "The separate write connection is not configured. Set its environment variable, then recheck."
     : code === "SEMANTIC_ACTION_WRITER_POSTURE_INVALID"
@@ -59,7 +71,8 @@ export function executionSetupProblem(error: unknown): ExecutionSetupProblem {
 
 const savedSchema = z.object({ version: z.literal(1), action_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
   outcome: z.string().max(256), paused_at: z.string().datetime(),
-  problem: z.object({ code: z.string().max(80), summary: z.string().max(2000), details: z.array(z.string().max(20000)).max(10000) }).strict(),
+  problem: z.object({ code: z.string().max(80), summary: z.string().max(2000), details: z.array(z.string().max(20000)).max(10000),
+    publication_state: z.enum(["unconfirmed", "committed", "cancelled"]).optional() }).strict(),
 }).strict();
 export type SavedExecutionSetup = z.infer<typeof savedSchema>;
 const savedPath = (root: string) => path.join(root, ".synapsor", "execution-setup-paused.json");

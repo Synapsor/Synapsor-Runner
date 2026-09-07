@@ -2204,6 +2204,53 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
+    it("recovers and disables an interrupted execution save with an explicit control-store environment", async () => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const source = fixture(), draft = actionFixture(source);
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        await activateActionRuleAuthority({ projectRoot, name: draft.authority.name, expected_digest: draft.digest,
+          confirmation: `ACTIVATE ${draft.digest}`, actor: "operator" });
+        const config = executionConfig(); delete config.supervised_worker;
+        config.action_rules!.project_root = "./";
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        await fs.writeFile(path.join(projectRoot, "synapsor.actions.runner.json"), JSON.stringify(config));
+        const inspection = structuredClone(source.inspection);
+        inspection.current_user = "inventory_writer"; inspection.role_posture!.read_only = false;
+        inspection.role_posture!.writable_relations = ["inventory.items"];
+        inspection.tables[0]!.role_posture!.privileges.update = true;
+        const env = { TEST_POLICY_URL: process.env.TEST_POLICY_URL, WRITER_URL: "postgresql://fixture.invalid/not-used" };
+        if (backend === "postgres") delete process.env.TEST_POLICY_URL;
+        const input = { projectRoot, outcome: "inventory.replenish", profile: "staging" as const, writeUrlEnv: "WRITER_URL",
+          env, inspect: async () => inspection };
+        const preview = await previewSemanticSupervisedExecution(input);
+        const commit = ControlPolicyRepository.prototype.commit;
+        const lookup = ControlPolicyRepository.prototype.event;
+        let intercepted = false;
+        const fault = vi.spyOn(ControlPolicyRepository.prototype, "commit").mockImplementation(async function (this: ControlPolicyRepository, change) {
+          const epoch = await commit.call(this, change);
+          if ((change.event.receipt as { operation?: string }).operation === "enable_reviewed_execution") {
+            intercepted = true; throw new Error("Lost commit response");
+          }
+          return epoch;
+        });
+        const receiptFault = vi.spyOn(ControlPolicyRepository.prototype, "event").mockImplementation(async function (this: ControlPolicyRepository, ...args) {
+          if (intercepted) throw new Error("Unavailable receipt");
+          return lookup.call(this, ...args);
+        });
+        try {
+          await expect(enableSemanticSupervisedExecution({ ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
+            expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
+            confirmation: semanticExecutionConfirmation(preview) })).rejects.toThrow("POLICY_EXECUTION_COMMIT_UNCONFIRMED");
+        } finally { fault.mockRestore(); receiptFault.mockRestore(); }
+        expect((await readSemanticSupervisedExecutionState({ projectRoot, env })).enabled).toBe(true);
+        const beforeDisable = (await binding.repository.deployment(binding.deployment_id))!.epoch;
+        await expect(disableSemanticSupervisedExecution({ projectRoot, outcome: input.outcome, env,
+          expectedActionBoundaryDigest: preview.action_boundary_digest })).resolves.toMatchObject({ enabled: false });
+        expect((await binding.repository.deployment(binding.deployment_id))!.epoch).toBe(beforeDisable + 1);
+        expect(await fs.readdir(path.join(projectRoot, ".synapsor/control-policy/publications"))).toEqual([]);
+      });
+    });
+
     it.each(["new_failed", "same_failed", "lost_response", "unknown_receipt", "different_receipt"])(
       "confirms execution publication from its exact transaction receipt: %s", async (mode) => {
       await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
@@ -2231,6 +2278,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         if (mode === "same_failed") await enableSemanticSupervisedExecution(await reviewedInput());
         const reviewed = await reviewedInput();
         const before = await binding.repository.deployment(binding.deployment_id);
+        const beforeFile = await fs.readFile(file, "utf8");
         const commit = ControlPolicyRepository.prototype.commit;
         const event = ControlPolicyRepository.prototype.event;
         let intercepted = false;
@@ -2257,6 +2305,15 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const exported = JSON.parse(await fs.readFile(file, "utf8"));
         expect(exported.supervised_worker.enabled).toBe(true);
         expect((await readSemanticSupervisedExecutionState({ projectRoot })).enabled).toBe(mode !== "new_failed");
+        // A subsequent operator review resolves the durable attempt without
+        // activating anything again or trusting the exported worker flag.
+        await expect(previewSemanticSupervisedExecution(input)).resolves.toBeDefined();
+        expect(await fs.readdir(path.join(projectRoot, ".synapsor/control-policy/publications"))).toEqual([]);
+        const recoveredEpoch = (await binding.repository.deployment(binding.deployment_id))!.epoch;
+        expect(recoveredEpoch).toBe(before!.epoch + 1);
+        if (mode === "new_failed" || mode === "same_failed") expect(await fs.readFile(file, "utf8")).toBe(beforeFile);
+        await previewSemanticSupervisedExecution(input);
+        expect((await binding.repository.deployment(binding.deployment_id))!.epoch).toBe(recoveredEpoch);
       });
     });
 

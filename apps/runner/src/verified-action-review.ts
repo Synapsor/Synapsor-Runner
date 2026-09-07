@@ -56,6 +56,7 @@ export async function reviewVerifiedActionAuthority(input: {
   }
   let executionState = await readSemanticSupervisedExecutionState({
     projectRoot: input.projectRoot,
+    env: input.env,
   });
   const enabledExecutionOutcomes = () => new Set(
     executionState.enabled && input.active
@@ -241,7 +242,7 @@ export async function reviewVerifiedActionAuthority(input: {
         ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
       });
       if (notice) return notice;
-      executionState = await readSemanticSupervisedExecutionState({ projectRoot: input.projectRoot });
+      executionState = await readSemanticSupervisedExecutionState({ projectRoot: input.projectRoot, env: input.env });
       continue;
     }
     if (choice.startsWith("disable_execution:") && input.active) {
@@ -259,6 +260,7 @@ export async function reviewVerifiedActionAuthority(input: {
       if (!confirmed) continue;
       executionState = await disableSemanticSupervisedExecution({
         projectRoot: input.projectRoot,
+        env: input.env,
         outcome,
         expectedActionBoundaryDigest: input.active.authority.action_boundary.digest,
       });
@@ -326,24 +328,30 @@ export async function reviewSemanticSupervisedExecution(input: {
     const result = await reviewSemanticSupervisedExecutionAttempt(input);
     if (result?.tone !== "danger" || !input.session.chooseOption) return result;
     const problem = result.problem ?? executionSetupProblem(new Error(result.lines.join("\n")));
-    input.session.rememberDetails?.("Writer requirements", problem.details);
-    const recovery = await input.session.chooseOption("Execution needs a deployment fix", [
-      { value: "retry", label: "Recheck the writer and continue setup", detail: "Correct the grants externally, or choose another configured credential. This does not execute a request." },
-      { value: "details", label: "Inspect the exact writer requirements" },
-      { value: "pause", label: "Save and pause execution setup", detail: "Read and proposal authority stay active; automatic completion stays off." },
-    ], { initialValue: "pause", context: [problem.summary, `Diagnostic: ${problem.code}. Inspect requirements for the exact administrator handoff.`] });
+    const publication = problem.publication_state !== undefined;
+    const detailsTitle = publication ? "Execution save recovery" : "Writer requirements";
+    input.session.rememberDetails?.(detailsTitle, problem.details);
+    const recovery = await input.session.chooseOption(publication ? "Execution save needs recovery" : "Execution needs a deployment fix", [
+      { value: "retry", label: publication ? "Recover the saved attempt and reopen review" : "Recheck the writer and continue setup",
+        detail: publication ? "Check the exact saved receipt without replaying activation or executing a request." : "Correct the grants externally, or choose another configured credential. This does not execute a request." },
+      { value: "details", label: publication ? "Inspect the saved recovery details" : "Inspect the exact writer requirements" },
+      { value: "pause", label: "Save and pause execution setup", detail: publication ? "Preserve the recovery record. Pausing does not disable existing execution." : "Read and proposal authority stay active; automatic completion stays off." },
+    ], { initialValue: "pause", context: [problem.summary, `Diagnostic: ${problem.code}.`] });
     if (recovery === "retry") continue;
     if (recovery === "details") {
-      await input.session.showReviewDetails?.("Writer requirements", problem.details);
+      await input.session.showReviewDetails?.(detailsTitle, problem.details);
       // Inspection does not repeat the provider/role request or discard the pending failure.
       const next = await input.session.chooseOption("Continue execution setup", [
-        { value: "retry", label: "Recheck the writer" },
+        { value: "retry", label: publication ? "Recover the saved attempt" : "Recheck the writer" },
         { value: "pause", label: "Save and pause execution setup" },
       ], { initialValue: "pause" });
       if (next === "retry") continue;
     }
     await savePausedExecutionSetup(input.projectRoot, { action_digest: input.active.authority.action_boundary.digest,
       outcome: input.outcome, problem });
+    if (publication) return { tone: "warning", title: "Execution review paused.", lines: [problem.summary,
+      "Existing execution authority was not disabled. The recovery record is preserved; no source request ran during setup."],
+      footer: "Resume execution review with the same start command to recover this exact save." };
     return { tone: "success", title: "Execution setup paused.",
       lines: ["Read and reviewed change requests remain available; automatic database updates are off."],
       footer: "Resume execution setup with the same start command after repairing the write connection. Saved writer requirements remain available." };
@@ -390,7 +398,7 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
     });
   } catch (error) {
     const problem = executionSetupProblem(error);
-    return { tone: "danger", title: "Execution was not enabled.", lines: [problem.summary], problem };
+    return { tone: "danger", title: problem.publication_state ? "Execution save needs recovery." : "Execution was not enabled.", lines: [problem.summary], problem };
   }
   const confirmed = await (input.session.confirmActivation ?? input.session.confirm)(
     `Enable supervised source execution for ${input.outcome}?`,
@@ -445,7 +453,7 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
     };
   } catch (error) {
     const problem = executionSetupProblem(error);
-    return { tone: "danger", title: "Execution was not enabled.", lines: [problem.summary], problem };
+    return { tone: "danger", title: problem.publication_state ? "Execution save needs recovery." : "Execution was not enabled.", lines: [problem.summary], problem };
   }
 }
 

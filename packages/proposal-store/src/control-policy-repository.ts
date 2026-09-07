@@ -278,6 +278,15 @@ export class ControlPolicyRepository {
     if (typeof event.occurred_at !== "string" || !Number.isFinite(Date.parse(event.occurred_at))
       || new Date(event.occurred_at).toISOString() !== event.occurred_at) fail("POLICY_EVENT_TIME_INVALID");
     const receipt = boundedJson(event.receipt, 64 * 1024);
+    const receiptValue = JSON.parse(receipt);
+    // A recovery fence owns the original epoch/event identity but must never
+    // smuggle a revision or pointer update into a claimed cancellation.
+    if (receiptValue?.operation === "cancel_unconfirmed_policy_publication") {
+      if (input.revisions.length || input.active.length || input.drafts?.length
+        || receiptValue.authority_changed !== false || receiptValue.source_database_changed !== false
+        || Object.keys(receiptValue).length !== 4) fail("POLICY_PUBLICATION_FENCE_INVALID");
+      digest(receiptValue.publication_event_digest);
+    }
     const statements: Statement[] = [{
       sql: `UPDATE ${this.connection.table("deployments")} SET epoch = epoch + 1
         WHERE deployment_id = $1 AND epoch = $2 RETURNING epoch`,

@@ -18,6 +18,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivatedExplorationBoundary } from "./auto-boundary.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { reviewVerifiedActionAuthority } from "./boundary-commands.js";
+import { reviewSemanticSupervisedExecution } from "./verified-action-review.js";
+import * as semanticDeployment from "./semantic-action-deployment.js";
+import { readPausedExecutionSetup } from "./semantic-execution-setup.js";
 import { runActionControlPlane, type ActionControlPrompter } from "./action-tui.js";
 import {
   activateActionRuleAuthority,
@@ -229,6 +232,14 @@ describe("semantic Action Rule authority persistence", () => {
       else process.env.SYNAPSOR_PRINCIPAL = priorPrincipal;
     }
     expect(output.join("")).toContain("Model-facing tools: app.describe_data, app.explore_data");
+  });
+
+  it("does not create Action writer state during a read-only handoff with no runtime config", async () => {
+    const root = await temporaryRoot();
+    const before = await fs.readdir(root);
+    expect(await restoreReviewedSemanticReadScope(path.join(root, "absent-project"))).toBe(false);
+    expect(await restoreReviewedSemanticReadScope(root)).toBe(false);
+    expect(await fs.readdir(root)).toEqual(before);
   });
 
   it.each(["draft", "activate", "deactivate", "runtime", "scope_repair"])("coordinates native Action %s with the project authority writer", async (mode) => {
@@ -804,6 +815,34 @@ describe("semantic Action Rule authority persistence", () => {
     });
     const config = JSON.parse(await fs.readFile(path.join(root, "synapsor.actions.runner.json"), "utf8"));
     expect(config.supervised_worker.outcomes).toHaveLength(1);
+  });
+
+  it.each(["unconfirmed", "committed", "cancelled"] as const)("keeps the execution review truthful after a %s save and pause", async (state) => {
+    const root = await temporaryRoot(), read = activeReadBoundary();
+    await writeActiveReadSet(root, read);
+    const source = authoritySource(read.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: read.pack.name, read_boundary_digest: read.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }], reviews: [authorityReview()] });
+    await writeActionRuleAuthorityDraft(root, draft);
+    const active = (await activateSemanticActionRuntime({ projectRoot: root, draft, actor: "reviewer" })).activation;
+    const code = state === "unconfirmed" ? "POLICY_EXECUTION_COMMIT_UNCONFIRMED" : "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING";
+    const fault = vi.spyOn(semanticDeployment, "enableSemanticSupervisedExecution").mockRejectedValue(
+      Object.assign(new Error(`${code}: simulated publication outcome`), { code, publication_state: state }));
+    const chooseOption = vi.fn().mockResolvedValueOnce("details").mockResolvedValueOnce("pause");
+    const showReviewDetails = vi.fn(async () => {}), confirmActivation = vi.fn(async () => true);
+    try {
+      const notice = await reviewSemanticSupervisedExecution({ projectRoot: root, outcome: source.rule.outcome,
+        active, activeReads: [read], env: { BILLING_WRITER_URL: "postgresql://fixture.invalid" }, inspectDatabaseFn: async () => writerInspection(),
+        session: { promptText: async () => "BILLING_WRITER_URL", confirmActivation, chooseOption, showReviewDetails } as unknown as BoundaryReviewInteractiveSession });
+      expect(notice).toMatchObject({ tone: "warning", title: "Execution review paused." });
+      expect(JSON.stringify(notice)).not.toMatch(/remain off|updates are off|not enabled/);
+      expect(chooseOption.mock.calls[0]![0]).toBe("Execution save needs recovery");
+      expect(JSON.stringify(chooseOption.mock.calls)).not.toMatch(/grants externally|completion stays off/);
+      expect(showReviewDetails).toHaveBeenCalledWith("Execution save recovery", expect.any(Array));
+      expect((await readPausedExecutionSetup(root, active.authority.action_boundary.digest))?.problem.publication_state).toBe(state);
+      expect(confirmActivation).toHaveBeenCalledTimes(1);
+    } finally { fault.mockRestore(); }
   });
 
   it("publishes one immutable authority only while its exact Read revision is active", async () => {

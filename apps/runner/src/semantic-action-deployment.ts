@@ -28,8 +28,9 @@ import { bindSemanticReadScope } from "./semantic-action-read-scope.js";
 import { SemanticWriterPostureError } from "./semantic-execution-setup.js";
 import { encodeOperatorExecutionPolicy, readOperatorExecutionConfig } from "./control-policy-execution.js";
 import { OPERATOR_EXECUTION_POLICY_KEY } from "./control-policy-record.js";
-import { commitImmutableControlPolicies, openProjectControlPolicies,
+import { openBoundProjectControlPolicies, openProjectControlPolicies,
   type BoundProjectPolicyStore } from "./control-policy-store.js";
+import { assertNoPendingPolicyConfiguration, publishPolicyConfiguration, recoverPolicyConfiguration } from "./control-policy-config-publication.js";
 
 export const SEMANTIC_ACTION_RUNTIME_CONFIG = "synapsor.actions.runner.json";
 
@@ -99,6 +100,7 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
     input.outputConfigPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG),
   );
   assertContainedProjectPath(projectRoot, outputConfigPath);
+  await assertNoPendingPolicyConfiguration(projectRoot, outputConfigPath);
   const baseConfigPath = path.resolve(
     input.baseConfigPath ?? path.join(projectRoot, "synapsor.runner.json"),
   );
@@ -143,11 +145,16 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
 
 /** Repair only omitted, already-authorized RLS wiring on a guided resume. */
 export async function restoreReviewedSemanticReadScope(projectRoot: string): Promise<boolean> {
+  // Read-only handoffs need no Action config or writer state. If one appears
+  // after this check, a later repair can inspect it; this invocation writes nothing.
+  const configPath = path.join(path.resolve(projectRoot), SEMANTIC_ACTION_RUNTIME_CONFIG);
+  if (await readOptionalText(configPath) === undefined) return false;
   return withProjectAuthorityMutation(projectRoot, (held) => restoreReviewedSemanticReadScopeUnlocked(held.projectRoot));
 }
 
 async function restoreReviewedSemanticReadScopeUnlocked(projectRoot: string): Promise<boolean> {
   const configPath = path.join(path.resolve(projectRoot), SEMANTIC_ACTION_RUNTIME_CONFIG);
+  await assertNoPendingPolicyConfiguration(projectRoot, configPath);
   const previous = await readOptionalText(configPath);
   if (previous === undefined) return false;
   const config = JSON.parse(previous) as Record<string, unknown>;
@@ -180,7 +187,8 @@ export async function previewSemanticSupervisedExecution(input: {
     input.configPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG),
   );
   assertContainedProjectPath(projectRoot, configPath);
-  const active = await loadActiveActionRuleAuthority(projectRoot);
+  await recoverPolicyConfiguration({ projectRoot, configPath, env: input.env });
+  const active = await executionReviewActionAuthority(projectRoot, input.env);
   const activated = active.registry.rules.find((candidate) => candidate.compiled.outcome === input.outcome);
   if (!activated) {
     throw new Error(`SEMANTIC_ACTION_OUTCOME_NOT_ACTIVE: ${input.outcome} is not in the active verified Action Boundary.`);
@@ -303,6 +311,7 @@ export function semanticExecutionConfirmation(
 export async function readSemanticSupervisedExecutionState(input: {
   projectRoot: string;
   configPath?: string;
+  env?: NodeJS.ProcessEnv;
 }): Promise<SemanticSupervisedExecutionState> {
   const projectRoot = path.resolve(input.projectRoot);
   const configPath = path.resolve(
@@ -313,7 +322,7 @@ export async function readSemanticSupervisedExecutionState(input: {
   if (text === undefined) {
     return { enabled: false, config_path: projectRelativePath(projectRoot, configPath), policies: [] };
   }
-  const { config } = await executionConfigForReview(projectRoot, configPath, await readJsonObject(configPath));
+  const { config } = await executionConfigForReview(projectRoot, configPath, await readJsonObject(configPath), undefined, input.env);
   const worker = isRecord(config.supervised_worker) ? config.supervised_worker : undefined;
   const policies = Array.isArray(worker?.outcomes)
     ? worker.outcomes.filter(isRecord).map((entry) => entry as RuntimeSupervisedWorkerOutcomePolicy)
@@ -330,22 +339,24 @@ export async function disableSemanticSupervisedExecution(input: {
   outcome: string;
   expectedActionBoundaryDigest: string;
   configPath?: string;
+  env?: NodeJS.ProcessEnv;
 }): Promise<SemanticSupervisedExecutionState> {
   const projectRoot = path.resolve(input.projectRoot);
   const configPath = path.resolve(
     input.configPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG),
   );
   assertContainedProjectPath(projectRoot, configPath);
-  const active = await loadActiveActionRuleAuthority(projectRoot, { dependency_check: "report" });
+  await recoverPolicyConfiguration({ projectRoot, configPath, env: input.env });
+  const active = await executionReviewActionAuthority(projectRoot, input.env, { dependency_check: "report" });
   if (active.authority.action_boundary.digest !== input.expectedActionBoundaryDigest) {
     throw new Error("SEMANTIC_ACTION_AUTHORITY_CHANGED: the active Action Boundary changed; review execution again.");
   }
-  const review = await executionConfigForReview(projectRoot, configPath, await readJsonObject(configPath));
+  const review = await executionConfigForReview(projectRoot, configPath, await readJsonObject(configPath), undefined, input.env);
   const config = review.config;
   const worker = isRecord(config.supervised_worker)
     ? structuredClone(config.supervised_worker)
     : undefined;
-  if (!worker) return readSemanticSupervisedExecutionState({ projectRoot, configPath });
+  if (!worker) return readSemanticSupervisedExecutionState({ projectRoot, configPath, env: input.env });
   const capabilities = Array.isArray(worker.capabilities) ? worker.capabilities : [];
   const outcomes = Array.isArray(worker.outcomes)
     ? worker.outcomes.filter((entry) => !isRecord(entry) || entry.outcome !== input.outcome)
@@ -357,8 +368,15 @@ export async function disableSemanticSupervisedExecution(input: {
   config.supervised_worker = worker;
   await validateRuntimeConfig(config, configPath);
   await publishReviewedExecutionConfig({ projectRoot, configPath, config, expectedDigest: review.digest,
-    expectedEpoch: review.epoch, expectedActionDigest: input.expectedActionBoundaryDigest, operation: "disable_reviewed_execution" });
-  return readSemanticSupervisedExecutionState({ projectRoot, configPath });
+    expectedEpoch: review.epoch, expectedActionDigest: input.expectedActionBoundaryDigest, operation: "disable_reviewed_execution", env: input.env });
+  return readSemanticSupervisedExecutionState({ projectRoot, configPath, env: input.env });
+}
+
+async function executionReviewActionAuthority(projectRoot: string, env?: NodeJS.ProcessEnv,
+  options: Parameters<typeof loadActiveActionRuleAuthority>[1] = {}) {
+  const binding = await openBoundProjectControlPolicies(projectRoot, env);
+  try { return binding ? await createActiveActionRuleAuthorityLoader(projectRoot, binding)(options) : await loadActiveActionRuleAuthority(projectRoot, options); }
+  finally { await binding?.close(); }
 }
 
 async function executionConfigForReview(projectRoot: string, configPath: string, raw: Record<string, unknown>,
@@ -383,7 +401,7 @@ async function publishReviewedExecutionConfig(input: {
   return withProjectAuthorityMutation(input.projectRoot, (held) => publishReviewedExecutionConfigUnlocked({ ...input,
     projectRoot: held.projectRoot,
     configPath: projectPathAfterLock(input.configPath, input.projectRoot, held.projectRoot),
-  }));
+  }, held));
 }
 
 function projectPathAfterLock(file: string, originalRoot: string, heldRoot: string): string {
@@ -393,7 +411,9 @@ function projectPathAfterLock(file: string, originalRoot: string, heldRoot: stri
     ? path.resolve(heldRoot, relative) : absolute;
 }
 
-async function publishReviewedExecutionConfigUnlocked(input: Parameters<typeof publishReviewedExecutionConfig>[0]): Promise<void> {
+async function publishReviewedExecutionConfigUnlocked(input: Parameters<typeof publishReviewedExecutionConfig>[0],
+  permit: ProjectAuthorityMutationPermit): Promise<void> {
+  await assertNoPendingPolicyConfiguration(input.projectRoot, input.configPath);
   const previous = await fs.readFile(input.configPath, "utf8");
   const previousConfig = resolveRuntimeConfig(JSON.parse(previous) as RuntimeConfig, path.dirname(input.configPath));
   const binding = await openProjectControlPolicies({ projectRoot: input.projectRoot, config: previousConfig, env: input.env,
@@ -440,32 +460,17 @@ async function publishReviewedExecutionConfigUnlocked(input: Parameters<typeof p
     }
     // Publish new source bindings first: until the CAS, the old policy either
     // remains exact or refuses the changed binding. A worker export is ignored.
-    await writePrivateTextAtomic(input.configPath, nextText);
     const event = { event_id: randomUUID(), actor: "local_operator", occurred_at: new Date().toISOString(),
       receipt: { operation: input.operation, action_boundary_digest: input.expectedActionDigest,
         execution_revision: revision.revision_id, source_database_changed: false } };
-    try {
-      await commitImmutableControlPolicies(binding, { expected_epoch: review.epoch!, revisions: [revision],
+    await publishPolicyConfiguration({ projectRoot: input.projectRoot, configPath: input.configPath, binding,
+      mutationPermit: permit, before: previous, after: nextText,
+      change: { expected_epoch: review.epoch!, revisions: [revision],
         active: [{ ...OPERATOR_EXECUTION_POLICY_KEY, revision_id: revision.revision_id }], drafts: [],
-        event });
-    } catch (error) {
-      // The same revision may have been active before this attempt. Only this
-      // exact transaction receipt proves success. Absence is not a safe basis
-      // for rollback while a remote COMMIT might still be in flight.
-      let recorded;
-      try { recorded = await binding.repository.event(binding.deployment_id, event.event_id); }
-      catch (lookupError) { throw executionPublicationUnconfirmed(event.event_id, review.epoch!, lookupError); }
-      if (recorded && canonicalJsonDigest(recorded) === canonicalJsonDigest({ ...event, epoch: review.epoch! + 1 })) return;
-      throw executionPublicationUnconfirmed(event.event_id, review.epoch!, error);
-    }
+        event } });
   } finally {
     await binding.close();
   }
-}
-
-function executionPublicationUnconfirmed(eventId: string, expectedEpoch: number, cause: unknown): Error {
-  return Object.assign(new Error("POLICY_EXECUTION_COMMIT_UNCONFIRMED: the execution save could not be confirmed. Runtime bindings may have changed; no rollback was attempted. Inspect execution authority and this transaction receipt before retrying.", { cause }),
-    { code: "POLICY_EXECUTION_COMMIT_UNCONFIRMED", event_id: eventId, expected_epoch: expectedEpoch });
 }
 
 export function semanticSupervisedExecutionConfig(input: {

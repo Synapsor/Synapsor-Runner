@@ -439,6 +439,20 @@ describe("post-activation Ask handoff", () => {
     expect(paused.problem.details).toEqual(["Exact grant"]);
   });
 
+  it.each(["unconfirmed", "committed", "cancelled"] as const)("does not declare execution off while resuming a %s publication", async (publication_state) => {
+    const paused = { version: 1 as const, action_digest: `sha256:${"a".repeat(64)}`, outcome: "courses.enroll",
+      paused_at: "2026-09-06T00:00:00.000Z", problem: { code: "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING",
+        summary: "Inspect the saved publication receipt.", details: ["Exact saved attempt"], publication_state } };
+    const receipt = await savedSetupReceipt("/saved project", true, paused);
+    expect(receipt).toContain("recover the exact save");
+    expect(receipt).not.toMatch(/updates are off|completion stays off|repair the connection/i);
+    const chooseOption = vi.fn().mockResolvedValueOnce("details").mockResolvedValueOnce("recheck");
+    const showReviewDetails = vi.fn(async () => {});
+    expect(await reviewPausedExecutionSetup({ chooseOption, showReviewDetails } as never, paused)).toBe(true);
+    expect(showReviewDetails).toHaveBeenCalledWith("Saved execution recovery", ["Exact saved attempt"]);
+    expect(JSON.stringify(chooseOption.mock.calls)).not.toMatch(/repaired the connection|administrator handoff/);
+  });
+
   it.each([80, 120])("wraps saved setup receipts inside both margins at %s columns", async (columns) => {
     const output: string[] = [];
     await runPostActivationAskHandoff({ projectRoot: "/a/very-long/saved/project-name/that-must-stay-on-the-same-build" }, {
