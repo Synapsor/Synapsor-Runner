@@ -48,12 +48,17 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
   const pending = items.filter((item) => item.blocksReview).flatMap((item) => item.passages);
   const topics = items.filter((item) => item.blocksReview).map((item) => item.title);
   const assigned = items.filter((item) => !item.blocksReview);
+  const clientChecks = [...new Set(assigned.flatMap((item) => item.passages.flatMap((passage) => [
+    ...(passage.deployment_prerequisite === "authenticated_identity" ? ["signed-in customer identity"] : []),
+    ...(passage.application_obligations ?? []).map((obligation) => obligation === "customer_selection"
+      ? "customer selection" : "accurate status messages"),
+  ])))];
   const privacy = pending.some((passage) => passage.field_checks?.some((check) => check.expectation === "private"));
   return { ready: !pending.length, privacy, items, summary: [...(pending.length ? [
     `Before activation: ${topics.join("; ")}. These are required decisions, not optional recommendations.`,
     "Continue with the model to resolve them in this saved draft. Activation is unavailable until the checks pass.",
   ] : [`Attached rules: ${source.name} v${source.version}; interpretation checked for this revision.`]),
-    ...(assigned.length ? [`Client integration still unverified: ${assigned.map((item) => item.title).join("; ")}. Continue to client setup after review; test before customer use.`] : []),
+    ...(assigned.length ? [`Client integration still unverified: ${clientChecks.join(", ")}. Check these during client setup before customer use.`] : []),
   ] };
 }
 

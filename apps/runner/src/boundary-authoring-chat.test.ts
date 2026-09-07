@@ -55,6 +55,38 @@ function memoryIo(input: {
 }
 
 describe("Boundary authoring chat", () => {
+  it.each([false, true])("opens named privacy evidence directly and keeps the pending gate after explanation failure=%s", async (fail) => {
+    const memory = memoryIo({ reads: ["Which field was flagged? Don't change anything."],
+      choices: ["__ask_boundary_model__", "privacy_details", "finish"] });
+    const review = vi.fn(async () => undefined);
+    memory.io.review = review;
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const recordPolicy = vi.fn(async () => undefined);
+    chat.setSourceAnswerRecorder!(recordPolicy);
+    const exact = { title: "Exact revision", lines: ["sha256:unchanged"], sections: [
+      { id: "privacy_findings", title: "Privacy findings and recorded meanings", lines: ["support_cases.updated_at: customer-facing date, checked; access unchanged."] },
+    ] };
+    const before = structuredClone(exact);
+    const guide = vi.fn(async () => { if (fail) throw new AskError("ASK_PROVIDER_TIMEOUT", "Unavailable"); return "It is the support-case update date. Your recorded answer already addresses that naming hint."; });
+    chat.setPermissionGuide!(guide);
+    const result = await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
+      { value: "activate", label: "Activate this revision" }, { value: "privacy_details", label: "Inspect privacy findings" },
+      { value: "details", label: "View exact details" }, { value: "finish", label: "Leave disabled" },
+    ], { initialValue: "finish", explainOnRequest: true, exactDetails: exact,
+      context: ["Readable information: support cases."], explanationContext: ["support_cases.updated_at is the exact checked date finding; no access change needed."] });
+    expect(result).toBe("finish");
+    expect(exact).toEqual(before);
+    expect(guide).toHaveBeenCalledOnce();
+    expect(recordPolicy).not.toHaveBeenCalled();
+    expect(guide).toHaveBeenCalledWith(expect.objectContaining({ operatorQuestion: "Which field was flagged? Don't change anything.",
+      explanationContext: ["support_cases.updated_at is the exact checked date finding; no access change needed."] }));
+    expect(review).toHaveBeenCalledWith("EXACT REVIEW - READ ONLY", expect.arrayContaining([
+      "Privacy findings and recorded meanings", ...exact.sections[0]!.lines,
+    ]), undefined);
+    expect(memory.choices).toHaveLength(3); // No resource/submenu hunt, same pending permission every time.
+    expect(memory.choices.every((choice) => choice.initialValue === "finish")).toBe(true);
+    chat.close();
+  });
   it("opens grouped changes directly without permission framing or unsolicited model narration", async () => {
     const memory = memoryIo({ choices: ["details", "section:0", "back", "save"] });
     const review = vi.fn(async () => undefined);
@@ -73,6 +105,24 @@ describe("Boundary authoring chat", () => {
     expect(review).toHaveBeenCalledOnce();
     expect(memory.choices.map((choice) => choice.title)).not.toContain("PERMISSION REQUIRED");
     expect(memory.choices.some((choice) => choice.labels.includes("Information hidden"))).toBe(true);
+    chat.close();
+  });
+
+  it("still records business answers and changed rules during a permission question", async () => {
+    const memory = memoryIo({ reads: ["Keep the date visible.", "/attach replacement.txt", "Use these revised rules."],
+      choices: ["__ask_boundary_model__", "finish"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const recordPolicy = vi.fn(async () => undefined);
+    const attach = vi.fn(async () => true);
+    chat.setSourceAnswerRecorder!(recordPolicy);
+    chat.setSourceCommandHandler!(attach, () => true);
+    expect(await chat.readOperator!()).toBe("Keep the date visible.");
+    chat.setPermissionGuide!(async () => "The replacement still needs review. No authority changed.");
+    expect(await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
+      { value: "activate", label: "Activate this revision" }, { value: "finish", label: "Leave disabled" },
+    ], { initialValue: "finish", explainOnRequest: true })).toBe("finish");
+    expect(recordPolicy.mock.calls).toEqual([["Keep the date visible."], ["Use these revised rules."]]);
+    expect(attach).toHaveBeenCalledWith("/attach", "replacement.txt");
     chat.close();
   });
   it("passes complete logical lines to the pager for narrow and wide reflow", async () => {

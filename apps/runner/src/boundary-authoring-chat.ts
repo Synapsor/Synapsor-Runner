@@ -27,6 +27,7 @@ export type BoundaryAuthoringPermissionGuideInput = {
   title: string;
   prompt: string;
   context: string[];
+  explanationContext?: string[];
   choices: Array<Pick<BoundaryPromptChoice, "value" | "label" | "detail">>;
   operatorQuestion?: string;
   onFailure?: (failure: AuthoringExplanationFailure) => void;
@@ -69,6 +70,7 @@ type ChoiceInput = {
   initialValue?: string;
   exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: ReviewSection[] };
   explainOnRequest?: boolean;
+  explanationContext?: string[];
 };
 
 const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 32;
@@ -806,7 +808,7 @@ export function createBoundaryAuthoringChat(input: {
   let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean>) | undefined;
   let sourceHasDraft: (() => boolean) | undefined;
   let sourceAnswerRecorder: ((answer: string) => Promise<void>) | undefined;
-  const readAnswer = async (defaultValue?: string) => {
+  const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true) => {
     finishLiveResponse();
     await livePending;
     io.clearStatus?.();
@@ -882,7 +884,7 @@ export function createBoundaryAuthoringChat(input: {
         continue;
       }
       pendingConversationQuestion = undefined;
-      if (answer?.trim() && sourceAnswerRecorder) {
+      if (answer?.trim() && sourceAnswerRecorder && (recordPolicyAnswer || sourceChanged)) {
         try { await sourceAnswerRecorder(answer); }
         catch (error) { checkpoint("Answer not sent", [safeTerminalText(error instanceof Error ? error.message : String(error))], "warning"); continue; }
       }
@@ -948,6 +950,7 @@ export function createBoundaryAuthoringChat(input: {
       title: choice.title,
       prompt: choice.message,
       context: meaningfulContext(context),
+      ...(choice.explanationContext ? { explanationContext: choice.explanationContext.map(transcriptText) } : {}),
       choices: exactChoices.map(({ value, label, detail }) => ({
         value,
         label: transcriptText(label),
@@ -957,7 +960,7 @@ export function createBoundaryAuthoringChat(input: {
     let explanationShown = false;
     let failure: AuthoringExplanationFailure | undefined;
     let lastQuestion: string | undefined;
-    const exact = choice.exactDetails ? structuredClone(choice.exactDetails) : latestDetails ? structuredClone(latestDetails) : undefined;
+    const exact: ChoiceInput["exactDetails"] = choice.exactDetails ? structuredClone(choice.exactDetails) : latestDetails ? structuredClone(latestDetails) : undefined;
     const retainExact = () => {
       if (exact) rememberDetails(exact.title, [...exact.lines, ...(failure ? ["", "EXPLANATION DIAGNOSTICS",
         `Category: ${failure.category}`, `Code: ${failure.code}`, `Retry possible: ${failure.retryable ? "yes" : "after correcting the reported issue"}`,
@@ -1033,6 +1036,12 @@ export function createBoundaryAuthoringChat(input: {
         ],
       });
       if (selected === "__retry_boundary_explanation__") { await explain(lastQuestion); continue; }
+      if (selected === "privacy_details" && exact?.sections) {
+        const section = exact.sections.find((entry) => entry.id === "privacy_findings");
+        if (section) await showReviewDetails(section.title, section.lines);
+        retainExact();
+        continue;
+      }
       if (selected === "details" && choice.exactDetails) {
         retainExact();
         if (choice.exactDetails.sections) {
@@ -1053,7 +1062,9 @@ export function createBoundaryAuthoringChat(input: {
       }
       if (selected !== askModelChoiceValue) return selected;
 
-      const operatorQuestion = await readAnswer();
+      // Inspection belongs in conversation history, not in governing policy.
+      // A changed attachment still invalidates the prior review as usual.
+      const operatorQuestion = await readAnswer(undefined, false);
       if (operatorQuestion === undefined || !operatorQuestion.trim()) continue;
       await explain(operatorQuestion.trim());
       if (!explanationShown) continue;
@@ -1162,6 +1173,7 @@ export function createBoundaryAuthoringChat(input: {
         ...(options?.initialValue ? { initialValue: options.initialValue } : {}),
         ...(options?.exactDetails ? { exactDetails: options.exactDetails } : {}),
         ...(options?.explainOnRequest ? { explainOnRequest: true } : {}),
+        ...(options?.explanationContext ? { explanationContext: options.explanationContext } : {}),
       } satisfies ChoiceInput;
       return permission
         ? choosePermission(choice, options?.context)

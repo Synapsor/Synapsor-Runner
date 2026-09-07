@@ -93,6 +93,7 @@ export type PostActivationAskDependencies = {
   confirmLaunchCheck?: () => Promise<boolean | undefined>;
   checkClientLaunch?: (projectRoot: string, client: ManagedMcpProjectClient) => Promise<{ ok: boolean; messages: string[] }>;
   readExecutionState?: typeof readSemanticSupervisedExecutionState;
+  readRuntimeBindings?: typeof reviewedRuntimeBindingNames;
   confirmWorkerStart?: (context: string[]) => Promise<boolean | undefined>;
   runWorker?: (args: string[]) => Promise<number>;
   runBoundaryReview?: (args: string[]) => Promise<number>;
@@ -314,7 +315,11 @@ export async function runPostActivationAskHandoff(
       const code = await (dependencies.runMcpInstall ?? mcp)(installArgs);
       if (code !== 0) return code;
       clientConfigured = true;
-      const runtimeBindings = await reviewedRuntimeBindingNames(input.projectRoot).catch(() => []);
+      let runtimeBindingFailure = false;
+      const runtimeBindings = await (dependencies.readRuntimeBindings ?? reviewedRuntimeBindingNames)(input.projectRoot).catch(() => {
+        runtimeBindingFailure = true;
+        return [];
+      });
       const approvedCheck = await (dependencies.confirmLaunchCheck ?? (async () => {
         if (!process.stdin.isTTY || !stdout.isTTY) return false;
         return createBoundaryReviewInteractiveSession().confirm("Verify this configured client connection now?", {
@@ -345,10 +350,17 @@ export async function runPostActivationAskHandoff(
         write(`Execution policy: ${execution.enabled ? "enabled in configuration" : "off"}. Worker health: not checked; an empty queue does not prove a running worker.\n`);
         if (execution.enabled && execution.policies.length) {
           const missing = [...new Set(execution.policies.map((policy) => policy.write_url_env))].filter((name) => !env[name]?.trim());
+          const missingIdentity = runtimeBindings.filter((binding) => !env[binding.environment]?.trim());
           if (missing.length) {
             write(`Next: provide the reviewed writer environment ${missing.join(", ")} before starting the worker. Client configuration and boundaries are preserved.\n`);
+          } else if (runtimeBindingFailure) {
+            write("Worker not started: the reviewed identity requirements could not be loaded. Inspect the saved Read and Action authority and retry execution setup; client configuration is preserved.\n");
+          } else if (missingIdentity.length) {
+            write(`Worker not started: this local execution mode also requires trusted identity in ${missingIdentity.map((binding) => binding.environment).join(", ")}.\n`
+              + "Configure the reviewed test identity before local execution; do not take identity values from the model. Production identity must come from authenticated session wiring. Client configuration and boundaries are preserved.\n");
           } else {
             const context = [
+              `Client connection: ${connection}.`,
               `Process approved requests for: ${execution.policies.map((policy) => policy.outcome).join(", ")}.`,
               "This can write source rows for approved requests. The worker checks current authority, eligibility, writer posture and conflict guards before execution.",
               "Run in this terminal until Ctrl-C. Open the MCP client in another terminal; setup will not create a background daemon.",

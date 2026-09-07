@@ -193,6 +193,8 @@ export type BoundaryPromptChoice = {
 };
 
 type BoundaryChoicePromptOptions = BoundaryPromptOptions & {
+  /** Reviewed structural evidence for answers, not additional default screen text. */
+  explanationContext?: string[];
   exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: import("./read-boundary-review-view.js").ReviewSection[] };
   /** A draft task, not an activation permission; retain questions and exact details. */
   reviewOnly?: boolean;

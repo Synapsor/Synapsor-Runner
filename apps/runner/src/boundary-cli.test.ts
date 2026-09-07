@@ -4872,7 +4872,7 @@ describe("boundary operator-plane CLI", () => {
     let installedPermissionGuide: BoundaryAuthoringPermissionGuide | undefined;
     const modelAuthoringNarrator = vi.fn(async (
       input: Parameters<typeof import("./model-authoring-narration.js").narrateValidatedAuthoringStep>[0],
-    ) => input.responseStyle === "permission"
+    ) => input.responseStyle === "inspection"
       ? "This activates only the reviewed authority. Would you like Runner to activate it?"
       : "What should this agent be able to read or propose?");
     const session: BoundaryReviewInteractiveSession = {
@@ -4971,12 +4971,13 @@ describe("boundary operator-plane CLI", () => {
       })).resolves.toContain("activates only the reviewed authority");
       const permissionNarration = modelAuthoringNarrator.mock.calls
         .map(([call]) => call)
-        .find((call) => call.responseStyle === "permission");
+        .find((call) => call.responseStyle === "inspection");
       expect(permissionNarration).toMatchObject({
         operatorMessage: expect.stringContaining("Why is activation separate?"),
         egressAcknowledged: true,
-        responseStyle: "permission",
+        responseStyle: "inspection",
       });
+      expect(permissionNarration?.nextQuestion).toBeUndefined();
       expect(permissionNarration?.validatedFacts.join("\n")).not.toMatch(/deadbeef|northstar-mobile|secret_internal_note|password_hash/iu);
       expect(mappingChoices).toEqual([
         "model",
@@ -7208,7 +7209,7 @@ describe("boundary operator-plane CLI", () => {
     }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
     const writes: string[] = [];
     const reviews: string[] = [];
-    const choices = ["details", "section:0", "section:1", "section:1", "back", "back", "section:2", "section:4", "back", "__ask_boundary_model__", "details", "section:5", "back", "activate"];
+    const choices = ["details", "section:1", "section:1", "section:1", "back", "back", "section:3", "section:5", "back", "__ask_boundary_model__", "details", "section:6", "back", "activate"];
     const guide = vi.fn(async () => { throw new AskError("ASK_PROVIDER_TIMEOUT", "private-provider-body"); });
     let digest: string;
     let candidateBefore: string;
@@ -7253,8 +7254,8 @@ describe("boundary operator-plane CLI", () => {
       resource.selectable_fields.push("updated_at", "version");
       const meanings = new Set([`${resource.id}.updated_at`]);
       const reviewedSummary = formatReadActivationBusinessSummary(acknowledged, meanings).join("\n");
-      expect(reviewedSummary).toContain("Confirmed meaning: 1 flagged field(s)");
-      expect(reviewedSummary).toContain("Privacy decision:"); // The unrelated version still needs review.
+      expect(reviewedSummary).toContain("Confirmed meaning:");
+      expect(reviewedSummary).toContain("Privacy advisory:"); // The unrelated version still needs review; a hint is not a policy violation.
       expect(formatReadActivationBusinessSummary(acknowledged).join("\n")).not.toContain("Confirmed meaning:");
       await expect(boundaryReviewCommandInternal(["--project-root", root, "--access"], async () => inspection,
         chat.session)).resolves.toBe(0);
@@ -7340,6 +7341,49 @@ describe("boundary operator-plane CLI", () => {
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
+  });
+
+  it.each(["pause", "retry"] as const)("keeps a stale-schema activation failure in guided recovery (%s)", async (recovery) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-read-activation-recovery-"));
+    const inspection = boundaryInspection();
+    const drifted = structuredClone(inspection);
+    drifted.tables[0]!.role_posture!.owner = "replacement_owner";
+    const build = buildAutoBoundary({ inspection, project: {
+      root, package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"],
+    }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
+    let scans = 0;
+    let visits = 0;
+    let inspected = false;
+    const choices = ["activate", "details", recovery, ...(recovery === "retry" ? ["activate"] : [])];
+    const diagnostics: string[] = [];
+    const session: BoundaryReviewInteractiveSession = {
+      presentationMode: "conversation",
+      chooseResource: async () => visits++ === 0 ? { action: "confirm" } : undefined,
+      editFieldTiers: async () => undefined, promptText: async () => "reviewer", confirm: async () => true,
+      chooseOption: async (title, _options, context) => {
+        if (title === "READ ACTIVATION NEEDS ATTENTION") {
+          expect(context?.reviewOnly).toBe(true);
+          expect(context?.initialValue).toBe("pause");
+          await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+        }
+        return choices.shift();
+      },
+      showReviewDetails: async (_title, lines) => { inspected = true; diagnostics.push(...lines); },
+    };
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const digest = (await loadBoundaryReviewContext(root)).bundle.candidate_digest;
+      await expect(boundaryReviewCommandInternal(["--project-root", root, "--access"],
+        async () => scans++ === 0 ? drifted : inspection, session)).resolves.toBe(0);
+      expect(inspected).toBe(true);
+      expect(diagnostics.join("\n")).toContain("Generation lock is stale");
+      expect(diagnostics.join("\n")).toContain("boundary rescan --from-env DATABASE_URL");
+      expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(digest);
+      expect(choices).toEqual([]);
+      if (recovery === "retry") expect((await loadActivatedExplorationBoundaries(root))[0]?.activation.digest).toBe(digest);
+      else await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
   it("reports live boundary refresh after production runtime setup is already ready", async () => {

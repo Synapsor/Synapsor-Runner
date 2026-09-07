@@ -4,7 +4,7 @@ import type { ModelAuthoringNarrationSession } from "./model-authoring-narration
 import { modelAuthoringHistory } from "./model-authoring-conversation.js";
 import { activePolicySource, policyTextLines, validApplicationObligations, type PolicyTextSnapshot, type PolicyCoverage, type PolicyPassage } from "./authoring-policy-source.js";
 export type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js";
-import type { ReviewSection } from "./read-boundary-review-view.js";
+import type { ReviewSection } from "./read-boundary-review-types.js";
 
 const DISPOSITIONS = ["implemented", "needs_decision", "conflict", "unsupported", "background", "overridden"] as const;
 const TOOL = "runner.review_policy_coverage";

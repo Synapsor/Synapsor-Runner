@@ -32,7 +32,7 @@ export async function narrateValidatedAuthoringStep(input: {
   env?: NodeJS.ProcessEnv;
   egressAcknowledged: boolean;
   signal?: AbortSignal;
-  responseStyle?: "validated_result" | "permission" | "opening" | "clarification";
+  responseStyle?: "validated_result" | "permission" | "opening" | "clarification" | "inspection";
   onFailure?: (failure: AuthoringExplanationFailure) => void;
 }): Promise<string | undefined> {
   const unavailable = (code: string, mismatch?: string) => {
@@ -65,13 +65,16 @@ export async function narrateValidatedAuthoringStep(input: {
   const permission = input.responseStyle === "permission";
   const opening = input.responseStyle === "opening";
   const clarification = input.responseStyle === "clarification";
+  const inspection = input.responseStyle === "inspection";
   const question = [
     `Operator message: ${JSON.stringify(input.operatorMessage)}`,
     "Runner-validated record:",
     ...input.validatedFacts.map((fact) => `- ${fact}`),
     ...(input.nextQuestion ? [`${clarification ? "Pending business meaning to clarify" : "Exact next question"}: ${JSON.stringify(input.nextQuestion)}`] : []),
     "Respond as the selected Boundary-drafting model, not as Runner.",
-    clarification
+    inspection
+      ? "Answer the operator's actual question in at most three short sentences using the current evidence. Name the business information and exact field when needed to disambiguate. Distinguish advisory hints, checked business meanings and unresolved policy requirements. Do not repeat the activation pitch, ask for approval, suggest an edit merely to inspect, or claim a question changed the draft. If relevant evidence is unavailable, say what is unverified and name its direct local inspection option."
+      : clarification
       ? "Ask exactly ONE short business question, at most 280 characters. Translate the pending meaning into a choice the operator can answer. Do not recap the action, cite source lines, give implementation instructions, or repeat safety notices. Do not decide the answer."
       : opening
       ? "Use exactly two short sentences. First say only that you are ready to help draft reviewed boundaries while Runner validates each decision. Then ask the exact next question."
@@ -82,8 +85,9 @@ export async function narrateValidatedAuthoringStep(input: {
       ? "Preserve the pending question's business meaning, but remove schema jargon and instructions to edit permissions. A yes/no or visible/internal choice is appropriate when that is the actual missing decision."
       : input.nextQuestion
       ? "End by asking the exact next question without changing its meaning."
+      : inspection ? "Answer first; no generic permission question at the end."
       : "State the next useful operator choice only when the validated record names one.",
-    "Do not mention internal hashes, SQL, credentials, hidden fields, or claim that authority, approval, apply, or source writes occurred.",
+    "Do not mention internal hashes, SQL, credentials or hidden row values, or claim that authority, approval, apply, or source writes occurred. Reviewed field names in the operator inspection evidence may be used to identify the exact finding.",
     "Do not imply that previously validated work disappeared merely because the current record focuses on one authoring step.",
     "Do not claim that the operator supplied no decision or made no prior decision. Discuss only the exact pending gate; earlier confirmed draft decisions remain in the conversation history.",
     "Approval and proposal counts inside time windows are upper circuit-breaker ceilings. Describe them as 'at most' or 'up to'; never say authority begins 'after' that count.",

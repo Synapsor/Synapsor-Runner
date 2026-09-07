@@ -3,11 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { readBoundaryRevisionCatalog, reviewedModelAnalysisOperations } from "./read-boundary-revision-model.js";
+import { readPrivacyReview, readPrivacyFindingLines, readPrivacySummary, type ReadPrivacyReview } from "./read-boundary-privacy-review.js";
 
-export type ReviewSection = { id: string; title: string; lines: string[]; children?: ReviewSection[]; changeCounts?: ReadChangeCounts };
-type ReadChangeCounts = { fields: number; permissions: number; rawRemoved: number; analysisRemoved: number;
-  rawAdded: number; analysisAdded: number; selectionAdded: number; selectionRemoved: number;
-  exclusions: number; representation: number; other: number };
+import type { ReviewSection, ReadChangeCounts } from "./read-boundary-review-types.js";
+export type { ReviewSection } from "./read-boundary-review-types.js";
 type Resource = ExplorationBoundaryDraft["pack"]["resources"][number];
 
 const diffPath = (root: string) => path.join(root, ".synapsor", "boundary-authoring", "read-review-diff.json");
@@ -161,9 +160,10 @@ export function readRevisionDiff(
 }
 
 export function readBoundaryReviewSections(input: {
-  boundary: ExplorationBoundaryDraft; digest: string; changes?: ReviewSection; privateDependencies?: string[];
+  boundary: ExplorationBoundaryDraft; digest: string; changes?: ReviewSection; privateDependencies?: string[]; privacy?: ReadPrivacyReview;
 }): ReviewSection[] {
   const { boundary } = input;
+  const privacy = input.privacy ?? readPrivacyReview({ boundary });
   const catalog = readBoundaryRevisionCatalog(boundary);
   const resources = boundary.pack.resources.map((resource): ReviewSection => {
     const fields = catalog.resources.find((item) => item.id === resource.id)!.fields;
@@ -208,6 +208,13 @@ export function readBoundaryReviewSections(input: {
       ] };
   });
   return [
+    { id: "privacy_findings", title: "Privacy findings and recorded meanings", lines: [
+      ...readPrivacySummary(privacy),
+      ...(!privacy.findings.length ? ["No advisory field findings in this revision. This is not a general certification of privacy."] : []),
+      "Inspection only: no model request, permission change, or activation.",
+      ...privacy.findings.flatMap((finding) => ["", ...readPrivacyFindingLines(finding)]),
+      `Exact fingerprint: ${input.digest}`,
+    ] },
     { id: "resources", title: `Resources and fields (${resources.length})`, lines: ["Select a resource, then a field. All raw access and model analysis grants are shown separately."], children: resources },
     input.changes ?? { id: "changes", title: "Changes only", lines: ["No prior revision comparison is attached to this review. Current exact authority remains available under Resources and Raw JSON."] },
     { id: "scope", title: "Scope, limits and fingerprint", lines: [

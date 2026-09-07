@@ -92,8 +92,8 @@ describe("Scoped Explore", () => {
     expect(diff.lines.join("\n")).not.toContain("Hidden from the agent:");
     expect(JSON.stringify(diff.children)).toContain("Model analysis after: none");
     const sections = readBoundaryReviewSections({ boundary: candidate, digest: "test-digest", changes: diff });
-    expect(sections.map((item) => item.id)).toEqual(["resources", "changes", "scope", "dependencies", "json"]);
-    expect(sections[0]!.lines.join("\n")).not.toContain('"activation"');
+    expect(sections.map((item) => item.id)).toEqual(["privacy_findings", "resources", "changes", "scope", "dependencies", "json"]);
+    expect(sections.find((item) => item.id === "resources")!.lines.join("\n")).not.toContain('"activation"');
     expect(sections.at(-1)!.lines.join("\n")).toContain("disabled_unreviewed");
     expect(original.activation).toEqual(fixture.boundary.activation);
   });

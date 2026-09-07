@@ -143,8 +143,9 @@ describe("progressive Read authority review", () => {
     expect(findReviewSection([diff], "university.r17.id")!.lines.join("\n")).toContain("NEW ACCESS");
     expect(findReviewSection([diff], "university.r17.c7")!.lines.join("\n")).toContain("Model analysis after: none");
     const sections = readBoundaryReviewSections({ boundary: after, digest: "new", changes: diff });
-    expect(sections[0]!.children![0]!.children!.find((child) => child.id === "created_at")!.title).toContain("NO RAW RETURN");
-    expect(sections[0]!.children![0]!.children!.find((child) => child.id === "c7")!.lines.join("\n")).toContain("Private eligibility score");
+    const resourceSection = sections.find((section) => section.id === "resources")!.children![0]!;
+    expect(resourceSection.children!.find((child) => child.id === "created_at")!.title).toContain("NO RAW RETURN");
+    expect(resourceSection.children!.find((child) => child.id === "c7")!.lines.join("\n")).toContain("Private eligibility score");
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-review-diff-"));
     try {
       await saveReadReviewDiff(root, "new", diff);
@@ -168,14 +169,11 @@ describe("progressive Read authority review", () => {
     expect(reviewSectionLines(diff).join("\n")).not.toContain("Conflict/version guard remains");
   });
 
-  it.each([52, 80, 100, 160, 240])("formats the decision without overflowing %i columns", (width) => {
+  it.each([52, 80, 100, 160, 240])("keeps logical decision lines for width-aware transcript rendering at %i columns", (width) => {
     const lines = ["Automatic completion: execution review pending; not enabled.", "Information: account details and offered plans.", "Scope: signed-in customer's account only."];
     const rendered = formatReadActivationDecisionSummary(lines, width);
-    if (width < 96) expect(rendered).toEqual(lines);
-    else {
-      expect(rendered[1]).toContain("DECISION");
-      expect(rendered.every((line) => line.length <= width)).toBe(true);
-      expect(rendered.filter((line) => line.startsWith("+"))).toHaveLength(3);
-    }
+    expect(rendered.join(" ").replace(/\s+/gu, " ")).toBe(lines.join(" "));
+    expect(rendered).toEqual(lines);
+    expect(rendered.filter((line) => line.startsWith("+"))).toHaveLength(0);
   });
 });

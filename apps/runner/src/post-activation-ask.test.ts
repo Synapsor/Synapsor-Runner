@@ -80,6 +80,7 @@ describe("post-activation Ask handoff", () => {
     await expect(runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", includeActions: true,
       selection: { route: "mcp-client", client: "claude-code" } }, {
       env: mode === "missing_writer" ? {} : { WRITER_URL: "never-display-this" },
+      readRuntimeBindings: async () => [],
       runMcpInstall: async () => 0, confirmLaunchCheck: async () => false, confirmWorkerStart, runWorker,
       readExecutionState: async () => { if (mode === "configuration_failure") throw new Error("Execution configuration invalid"); return { enabled: true, config_path: "synapsor.actions.runner.json", policies: [
         { outcome: "courses.enroll", write_url_env: "WRITER_URL", action_boundary_digest: `sha256:${"a".repeat(64)}`,
@@ -96,6 +97,35 @@ describe("post-activation Ask handoff", () => {
       : mode === "start" ? "This worker has stopped" : "Worker not started by setup");
     expect(writes.join("")).not.toContain("never-display-this");
   });
+  it.each(["missing", "configured", "unavailable"] as const)("checks local execution identity before offering worker start (%s)", async (mode) => {
+    const configured = mode === "configured";
+    const writes: string[] = [];
+    const start = vi.fn(async () => false);
+    const run = vi.fn(async () => 0);
+    expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", includeActions: true,
+      selection: { route: "mcp-client", client: "claude-code" } }, {
+      env: { WRITER_URL: "secret-writer", ...(configured ? { ACCOUNT_ENV: "private-account", USER_ENV: "private-user" } : {}) },
+      runMcpInstall: async () => 0, confirmLaunchCheck: async () => true,
+      checkClientLaunch: async () => ({ ok: true, messages: [] }),
+      readRuntimeBindings: async () => { if (mode === "unavailable") throw new Error("Unavailable"); return [{ role: "tenant", environment: "ACCOUNT_ENV" }, { role: "principal", environment: "USER_ENV" }]; },
+      confirmWorkerStart: start, runWorker: run,
+      readExecutionState: async () => ({ enabled: true, config_path: "synapsor.actions.runner.json", policies: [{
+        outcome: "courses.enroll", write_url_env: "WRITER_URL", action_boundary_digest: `sha256:${"a".repeat(64)}`,
+        mode: "supervised_worker", concurrency: 1, queue_limit: 100, lease_seconds: 300, max_attempts: 5,
+        proposal_ttl_seconds: 3600, rate_limit: { executions: 10, window_seconds: 60 },
+      }] }),
+      stdout: { write: (value) => { writes.push(String(value)); return true; } },
+    })).toBe(0);
+    expect(start).toHaveBeenCalledTimes(configured ? 1 : 0);
+    if (configured) expect(start).toHaveBeenCalledWith(expect.arrayContaining([
+      "Client connection: verified MCP handshake and tool catalog; test connection closed.",
+    ]));
+    else expect(writes.join("")).toContain(mode === "unavailable" ? "Worker not started: the reviewed identity requirements could not be loaded"
+      : "Worker not started: this local execution mode also requires trusted identity in ACCOUNT_ENV, USER_ENV");
+    expect(run).not.toHaveBeenCalled();
+    expect(writes.join("")).not.toMatch(/secret-writer|private-account|private-user/);
+  });
+
   it("discovers either legacy or verified semantic Action authority for the MCP handoff", async () => {
     const noLegacy = vi.fn(async () => ({
       action_boundary: { active: undefined },
