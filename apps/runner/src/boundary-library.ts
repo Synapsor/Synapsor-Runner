@@ -22,10 +22,15 @@ import {
   legacyBoundaryReviewId,
   legacyPolicyMigration,
   normalizeStoredBoundaryReviewProgress,
-  saveBoundaryReviewProgress,
+  newBoundaryReviewId,
   type BoundaryReviewProgress,
 } from "./boundary-review-domain.js";
+import {
+  saveBoundaryReviewProgress,
+} from "./boundary-review-persistence.js";
 import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
+import { assertReadAuthoringBindings, readProjectReadAuthoring, saveProjectReadAuthoring,
+  type ProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 
 const BOUNDARY_LIBRARY_VERSION = "synapsor.boundary-library.v1" as const;
 
@@ -34,6 +39,7 @@ type BoundaryLibraryFile = {
   selected_name: string;
   boundaries: Record<string, BoundaryReviewProgress>;
   updated_at: string;
+  stored?: ProjectReadAuthoring;
 };
 
 export type BoundaryLibraryReconciliationState = {
@@ -63,6 +69,7 @@ type BoundaryLibraryContext = {
   draft: ExplorationBoundaryDraft;
   currentCandidate: ExplorationBoundaryDraft;
   currentProgress?: BoundaryReviewProgress;
+  expectedAuthoring?: ReadAuthoringBindings;
 };
 
 type BoundaryResource = ExplorationBoundaryDraft["pack"]["resources"][number];
@@ -77,6 +84,15 @@ export async function resolveSavedBoundaryReviewAuthority(input: {
   generationLock: GenerationLock;
 }> {
   const projectRoot = path.resolve(input.projectRoot);
+  const stored = await readProjectReadAuthoring(projectRoot);
+  if (stored) {
+    const entry = stored.authoring.entries.find((item) => item.progress.candidate_digest === explorationBoundaryCandidateDigest(input.candidate)
+      && item.progress.candidate.pack.name === input.candidate.pack.name);
+    if (!entry) throw new Error("The saved Read boundary changed. Reopen its current review before activation.");
+    const reviewDraft = entry.draft.generation_lock_fingerprint === entry.progress.candidate.generation_lock_fingerprint
+      ? entry.draft : entry.progress.candidate;
+    return { reviewDraft, generationLock: entry.candidate_lock };
+  }
   const [generationLock, currentLock] = await Promise.all([
     loadGenerationLockSnapshot(projectRoot, input.candidate.generation_lock_fingerprint),
     loadGenerationLockSnapshot(projectRoot, input.draft.generation_lock_fingerprint),
@@ -121,6 +137,7 @@ export async function synchronizeBoundaryLibrary(
 ): Promise<BoundaryLibrarySnapshot> {
   const library = await readOrCreateLibrary(input);
   const active = await readActiveBoundaryIdentities(input.projectRoot);
+  if (library.stored) return snapshot(input.projectRoot, library, active);
   let selectedChanged = false;
   for (const [name, progress] of Object.entries(library.boundaries)) {
     const aligned = alignDisabledBoundaryWithActiveSet(
@@ -213,7 +230,7 @@ export async function createSavedBoundary(input: BoundaryLibraryContext & {
   if (library.boundaries[input.name]) {
     throw new Error(`A saved boundary named ${input.name} already exists.`);
   }
-  const policyBaseline = await policyNeutralBoundaryForCurrentFacts(
+  const policyBaseline = library.stored?.selected?.draft ?? await policyNeutralBoundaryForCurrentFacts(
     input.projectRoot,
     input.draft,
   );
@@ -254,7 +271,7 @@ export async function createSavedBoundary(input: BoundaryLibraryContext & {
   library.selected_name = input.name;
   library.updated_at = new Date().toISOString();
   await writeBoundaryLibrary(input.projectRoot, library);
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
+  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress);
   return progress;
 }
 
@@ -310,7 +327,7 @@ export async function switchSavedBoundary(input: BoundaryLibraryContext & {
   const library = await readOrCreateLibrary(input);
   const stored = library.boundaries[input.name];
   if (!stored) throw new Error(`Saved boundary ${input.name} was not found.`);
-  const progress = await normalizeStoredProgress(
+  const progress = library.stored ? stored : await normalizeStoredProgress(
     input.projectRoot,
     input.draft,
     stored,
@@ -320,7 +337,7 @@ export async function switchSavedBoundary(input: BoundaryLibraryContext & {
   library.selected_name = input.name;
   library.updated_at = new Date().toISOString();
   await writeBoundaryLibrary(input.projectRoot, library);
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
+  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress);
   return progress;
 }
 
@@ -339,11 +356,12 @@ export async function renameSavedBoundary(input: BoundaryLibraryContext & {
     throw new Error(`A saved boundary named ${input.newName} already exists.`);
   }
   if (input.name === input.newName) return stored;
+  const storedEntry = library.stored?.authoring.entries.find((entry) => entry.progress.boundary_id === stored.boundary_id);
   const candidate = structuredClone(stored.candidate);
   candidate.pack.name = input.newName;
-  const reviewed = reviewExplorationBoundaryCandidate(input.draft, candidate).candidate;
+  const reviewed = reviewExplorationBoundaryCandidate(storedEntry?.progress.candidate ?? input.draft, candidate).candidate;
   const progress = createBoundaryReviewProgress({
-    draft: input.draft,
+    draft: storedEntry?.draft ?? input.draft,
     candidate: reviewed,
     confirmedDecisions: stored.confirmed_decisions,
     previous: stored,
@@ -354,12 +372,13 @@ export async function renameSavedBoundary(input: BoundaryLibraryContext & {
   const activeNames = new Set(
     (await readActiveBoundaryIdentities(input.projectRoot)).map((active) => active.name),
   );
+  if (library.stored && activeNames.has(input.name)) progress.boundary_id = newBoundaryReviewId();
   library.boundaries[input.newName] = progress;
   if (!activeNames.has(input.name)) delete library.boundaries[input.name];
   library.selected_name = input.newName;
   library.updated_at = new Date().toISOString();
   await writeBoundaryLibrary(input.projectRoot, library);
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
+  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress);
   return progress;
 }
 
@@ -389,7 +408,7 @@ export async function deleteSavedBoundary(input: BoundaryLibraryContext & {
   if (library.selected_name === input.name) {
     library.selected_name = Object.keys(library.boundaries).sort()[0]!;
   }
-  const progress = await normalizeStoredProgress(
+  const progress = library.stored ? library.boundaries[library.selected_name]! : await normalizeStoredProgress(
     input.projectRoot,
     input.draft,
     library.boundaries[library.selected_name]!,
@@ -398,7 +417,7 @@ export async function deleteSavedBoundary(input: BoundaryLibraryContext & {
   library.boundaries[library.selected_name] = progress;
   library.updated_at = new Date().toISOString();
   await writeBoundaryLibrary(input.projectRoot, library);
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
+  if (!library.stored) await saveBoundaryReviewProgress(input.projectRoot, progress);
   return { selected_name: library.selected_name, progress };
 }
 
@@ -422,6 +441,15 @@ export async function discardOnlySavedBoundaryReview(input: BoundaryLibraryConte
   );
   if (activeNames.has(input.name)) {
     throw new Error(`Boundary ${input.name} is active. Deactivate it before discarding its curated review.`);
+  }
+
+  if (library.stored) {
+    await saveProjectReadAuthoring({ projectRoot, expected: library.stored.bindings,
+      authoring: { type: "read_authoring", selected_boundary_id: null, entries: [] },
+      actor: "local_operator", operation: "discard_read_authoring" });
+    // Legacy exports are not authority and may still support unrelated active
+    // revisions. Discard only the selected disabled state, not shared artifacts.
+    return { removed: [] };
   }
 
   const boundaryRoot = path.resolve(input.boundaryRoot);
@@ -482,6 +510,21 @@ export async function discardOnlySavedBoundaryReview(input: BoundaryLibraryConte
 }
 
 async function readOrCreateLibrary(input: BoundaryLibraryContext): Promise<BoundaryLibraryFile> {
+  const stored = await readProjectReadAuthoring(input.projectRoot);
+  if (stored) {
+    assertReadAuthoringBindings(input.expectedAuthoring, stored.bindings);
+    if (!stored.selected) throw new Error("No saved Read boundary is selected.");
+    if (canonicalJsonDigest(input.currentProgress ?? null) !== canonicalJsonDigest(stored.selected.progress)
+      || explorationBoundaryCandidateDigest(input.draft) !== stored.selected.progress.draft_digest
+      || explorationBoundaryCandidateDigest(input.currentCandidate) !== stored.selected.progress.candidate_digest) {
+      throw new Error("The editing context does not match the stored Read revision. Reopen the selected boundary.");
+    }
+    return { schema_version: BOUNDARY_LIBRARY_VERSION,
+      selected_name: stored.selected.progress.candidate.pack.name,
+      boundaries: Object.fromEntries(stored.authoring.entries.map((entry) => [entry.progress.candidate.pack.name, entry.progress])),
+      updated_at: stored.selected.progress.updated_at, stored };
+  }
+  if (input.expectedAuthoring) throw new Error("The governed Read authoring repository changed.");
   const current = input.currentProgress
     ? input.currentProgress
     : createBoundaryReviewProgress({
@@ -1077,6 +1120,26 @@ async function readActiveBoundaryProgress(
 }
 
 async function writeBoundaryLibrary(projectRoot: string, value: BoundaryLibraryFile): Promise<void> {
+  if (value.stored) {
+    const original = value.stored;
+    const entries = Object.values(value.boundaries).map((progress) => {
+      const previous = original.authoring.entries.find((entry) => entry.progress.boundary_id === progress.boundary_id)
+        ?? original.authoring.entries.find((entry) => entry.progress.draft_digest === progress.draft_digest
+          && [entry.candidate_lock, entry.draft_lock].some((lock) => canonicalJsonDigest(lock) === progress.candidate.generation_lock_fingerprint));
+      if (!previous) throw new Error("A new saved boundary requires a reviewed generation baseline.");
+      const candidateLock = [previous.candidate_lock, previous.draft_lock]
+        .find((lock) => canonicalJsonDigest(lock) === progress.candidate.generation_lock_fingerprint);
+      if (!candidateLock) throw new Error("The saved boundary requires its exact reviewed generation lock.");
+      return { ...previous, candidate_lock: candidateLock, progress };
+    });
+    await saveProjectReadAuthoring({ projectRoot, expected: original.bindings,
+      authoring: { type: "read_authoring", entries, selected_boundary_id: value.boundaries[value.selected_name]!.boundary_id },
+      actor: "local_operator", operation: "edit_read_library" });
+    return;
+  }
+  if (await readProjectReadAuthoring(projectRoot)) {
+    throw new Error("The governed Read library requires an exact repository revision. No file-based replacement was saved.");
+  }
   const filePath = boundaryLibraryPath(projectRoot);
   await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const temporary = `${filePath}.${process.pid}.${crypto.randomBytes(8).toString("hex")}.tmp`;

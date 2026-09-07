@@ -247,16 +247,18 @@ import {
   createBoundaryReviewProgress as createSharedBoundaryReviewProgress,
   normalizeManagedBoundaryReviewDecision as normalizeSharedManagedBoundaryReviewDecision,
   normalizePartialReviewDecisions as normalizeSharedPartialReviewDecisions,
-  readBoundaryReviewProgress as readSharedBoundaryReviewProgress,
   reconcileBoundaryReviewProgress as reconcileSharedBoundaryReviewProgress,
-  saveBoundaryReviewProgress as saveSharedBoundaryReviewProgress,
-  saveInstantBoundaryReviewBaseline,
   type BoundaryReviewConfirmation as SharedBoundaryReviewConfirmation,
   type BoundaryReviewDecision as SharedBoundaryReviewDecision,
   type BoundaryReviewInvalidation as SharedBoundaryReviewInvalidation,
   type BoundaryReviewProgress as SharedBoundaryReviewProgress,
   type ManagedBoundaryReviewDecision,
 } from "./boundary-review-domain.js";
+import {
+  readBoundaryReviewProgress as readSharedBoundaryReviewProgress,
+  saveBoundaryReviewProgress as saveSharedBoundaryReviewProgress,
+  saveInstantBoundaryReviewBaseline,
+} from "./boundary-review-persistence.js";
 import {
   boundaryResourceRemovalImpact,
   commitBoundaryReviewMutationBatch,

@@ -21,8 +21,16 @@ export class OperatorAuthorityRepository {
   constructor(private readonly binding: BoundProjectPolicyStore, private readonly runtimeConfig?: RuntimeConfig) {}
 
   async current(): Promise<OperatorAuthorityState> {
+    return this.currentState(false);
+  }
+
+  async currentReadState(): Promise<OperatorAuthorityState> {
+    return this.currentState(true);
+  }
+
+  private async currentState(readOnly: boolean): Promise<OperatorAuthorityState> {
     const snapshot = await this.binding.repository.scopeSnapshot({ deployment_id: this.binding.deployment_id,
-      scope: { level: "operator" }, kinds: ["read", "action", "execution", "management"] });
+      scope: { level: "operator" }, kinds: readOnly ? ["read", "management"] : ["read", "action", "execution", "management"] });
     // Other management documents have distinct validators and authority. They
     // cannot be interpreted as the selected Read pointer or changed here.
     const managed = (revision: ControlPolicyRevision) => revision.kind !== "management"
@@ -44,7 +52,7 @@ export class OperatorAuthorityRepository {
     authoring: StoredReadAuthoring; actor: string; operation: string;
   }): Promise<Awaited<ReturnType<OperatorAuthorityRepository["commit"]>>> {
     const frozen = structuredClone(input);
-    const before = await this.current();
+    const before = await this.currentReadState();
     const previous = before.active.find(({ policy }) => policy.type === "read_authoring");
     if (before.epoch !== frozen.expected_epoch
       || (previous?.revision.revision_id ?? null) !== frozen.expected_revision_id) fail("POLICY_REVISION_CONFLICT");
@@ -61,8 +69,8 @@ export class OperatorAuthorityRepository {
         drafts.push({ key: { scope: revision.scope, kind: revision.kind, name: revision.name }, policy: null });
       }
     }
-    return this.commit({ expected_epoch: frozen.expected_epoch, actor: frozen.actor, operation: frozen.operation,
-      drafts, active: [{ key: OPERATOR_READ_AUTHORING, policy: frozen.authoring }] });
+    return this.commitAgainstState({ expected_epoch: frozen.expected_epoch, actor: frozen.actor, operation: frozen.operation,
+      drafts, active: [{ key: OPERATOR_READ_AUTHORING, policy: frozen.authoring }] }, before);
   }
 
   /** Commits an exact reviewed set, never a best-effort merge after a race.
@@ -71,10 +79,16 @@ export class OperatorAuthorityRepository {
     expected_epoch: number; active?: OperatorAuthorityChange[]; drafts?: OperatorAuthorityChange[];
     actor: string; operation: string;
   }): Promise<{ epoch: number; changes: Array<{ state: "active" | "draft"; key: ControlPolicyKey; before: string | null; after: string | null }> }> {
+    return this.commitAgainstState(structuredClone(input), await this.current());
+  }
+
+  private async commitAgainstState(input: {
+    expected_epoch: number; active?: OperatorAuthorityChange[]; drafts?: OperatorAuthorityChange[];
+    actor: string; operation: string;
+  }, before: OperatorAuthorityState): Promise<Awaited<ReturnType<OperatorAuthorityRepository["commit"]>>> {
     const frozen = structuredClone(input);
     if (!validLabel(frozen.actor) || !validLabel(frozen.operation)) fail("POLICY_REVIEW_RECEIPT_INVALID");
     if ((frozen.active?.length ?? 0) + (frozen.drafts?.length ?? 0) > 64) fail("POLICY_BATCH_TOO_LARGE");
-    const before = await this.current();
     if (before.epoch !== frozen.expected_epoch) fail("POLICY_REVISION_CONFLICT");
     const next = { active: new Map(before.active.map(({ revision }) => [keyDigest(revision), revision])),
       drafts: new Map(before.drafts.map(({ revision }) => [keyDigest(revision), revision])) };

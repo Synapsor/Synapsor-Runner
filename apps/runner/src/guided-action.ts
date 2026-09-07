@@ -28,8 +28,10 @@ import {
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import {
   boundaryReviewDecisions,
-  readBoundaryReviewProgress,
 } from "./boundary-review-domain.js";
+import {
+  readBoundaryReviewProgress,
+} from "./boundary-review-persistence.js";
 import {
   extendEnvironmentExample,
   readGuidedOnboardingState,

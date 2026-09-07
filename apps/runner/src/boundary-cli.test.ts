@@ -49,9 +49,11 @@ import type {
 } from "./boundary-cli-picker.js";
 import {
   createBoundaryReviewProgress,
+} from "./boundary-review-domain.js";
+import {
   readBoundaryReviewProgress,
   saveBoundaryReviewProgress,
-} from "./boundary-review-domain.js";
+} from "./boundary-review-persistence.js";
 import {
   commitBoundaryResourceReviewMutation,
   inspectBoundaryResourceReview,

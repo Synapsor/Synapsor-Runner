@@ -30,9 +30,11 @@ import {
 import {
   boundaryReviewDecisions,
   createBoundaryReviewProgress,
-  readBoundaryReviewProgress,
   type BoundaryReviewProgress,
 } from "./boundary-review-domain.js";
+import {
+  readBoundaryReviewProgress,
+} from "./boundary-review-persistence.js";
 import {
   loadBoundaryLibraryForReconciliation,
   rebaseSavedBoundaryForRescan,

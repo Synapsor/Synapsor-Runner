@@ -1636,6 +1636,14 @@ export async function writeAutoBoundaryArtifacts(input: {
   additionalPrivateStateFiles?: Record<string, string>;
 }): Promise<AutoBoundaryWriteResult> {
   const projectRoot = path.resolve(input.projectRoot);
+  const governed = await openBoundProjectControlPolicies(projectRoot);
+  if (governed) {
+    await governed.close();
+    throw Object.assign(new Error(
+      "This project stores reviewed boundaries in its control repository. File-only generation cannot replace that state. "
+      + "Use an exact saved-review revision; no artifacts or authority changed.",
+    ), { code: "POLICY_AUTHORING_REPOSITORY_REQUIRED" });
+  }
   const outputRoot = await assertSafeManagedOutputPath(
     path.resolve(projectRoot, input.outputRoot ?? DEFAULT_GENERATED_DIR),
   );

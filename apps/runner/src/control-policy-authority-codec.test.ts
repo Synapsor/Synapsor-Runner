@@ -14,7 +14,7 @@ import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type { RuleVerificationBoundarySpecV1, DerivedEffectEnvelopeSpecV1, ActionRuleSpecV1 } from "@synapsor/spec";
 import { AUTO_BOUNDARY_OVERRIDES_VERSION, activateExplorationBoundary, buildAutoBoundary, deactivateExplorationBoundary,
   explorationBoundaryCandidateDigest, loadActivatedExplorationBoundary, loadActivatedExplorationBoundaries,
-  loadGenerationLockForActivatedBoundary, type ActivatedExplorationBoundary } from "./auto-boundary.js";
+  loadGenerationLockForActivatedBoundary, writeAutoBoundaryArtifacts, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { decodeOperatorAuthority, encodeOperatorAuthority, encodeOperatorExecutionPolicy, OPERATOR_READ_SELECTION, OPERATOR_READ_AUTHORING, OPERATOR_EXECUTION_POLICY,
   validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
@@ -26,6 +26,10 @@ import { createScopedExploreRuntime } from "./scoped-explore.js";
 import { readOperatorExecutionConfig } from "./control-policy-execution.js";
 import type { StoredReadAuthoring } from "./control-policy-read-authoring.js";
 import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
+import { readBoundaryReviewProgress, saveBoundaryReviewProgress } from "./boundary-review-persistence.js";
+import { loadBoundaryReviewContext } from "./boundary-commands.js";
+import { createSavedBoundary, deleteSavedBoundary, discardOnlySavedBoundaryReview, renameSavedBoundary, switchSavedBoundary,
+  resolveSavedBoundaryReviewAuthority, synchronizeBoundaryLibrary } from "./boundary-library.js";
 import { readRuntimeConfig } from "./cli-project.js";
 import * as cliProject from "./cli-project.js";
 import { workerCommand } from "./worker-runtime.js";
@@ -75,7 +79,7 @@ function fixture(domain = "inventory") {
     activated_at: "2026-09-06T00:00:00.000Z", generation_lock_fingerprint: candidate.generation_lock_fingerprint,
     reviewed_decisions: [],
   } };
-  return { candidate, boundary, generation_lock: build.lock, inspection };
+  return { candidate, boundary, generation_lock: build.lock, inspection, build };
 }
 
 function snapshot(): ControlPolicyMigrationSnapshot {
@@ -375,6 +379,12 @@ for (const backend of ["sqlite", "postgres"] as const) {
         await fs.writeFile(path.join(projectRoot, ".synapsor/boundary-review-progress.json"), "not authoritative");
         await fs.writeFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "not authoritative");
         expect(await new OperatorAuthorityRepository(binding, config).current()).toEqual(final);
+        const review = await loadBoundaryReviewContext(projectRoot);
+        expect(review.progress).toEqual(first.progress);
+        expect(review.lock).toEqual(first.draft_lock);
+        // Disabled review remains usable even if execution has independent
+        // prerequisites and its exported files are unavailable.
+        expect(review.bundle.mutation_bindings.authoring!.epoch).toBe(final.epoch);
         expect((await loadActivatedExplorationBoundary(projectRoot)).pack.name).toBe(fixture().boundary.pack.name);
         await deactivateExplorationBoundary(projectRoot);
         const revoked = await policies.current();
@@ -383,6 +393,109 @@ for (const backend of ["sqlite", "postgres"] as const) {
         expect(revoked.drafts).toEqual(final.drafts);
         expect(revoked.active.filter(({ policy }) => policy.type === "action" || policy.type === "execution"))
           .toEqual(final.active.filter(({ policy }) => policy.type === "action" || policy.type === "execution"));
+      });
+    });
+
+    it("reopens, edits and switches stored Read reviews without file repair or stale overwrites", async () => {
+      await useRepository(async ({ binding, projectRoot }) => {
+        const repository = new OperatorAuthorityRepository(binding);
+        const original = await repository.current();
+        const authoring = readAuthoringFixture();
+        await repository.commitReadAuthoring({ expected_epoch: original.epoch, expected_revision_id: null,
+          authoring, actor: "reviewer", operation: "prepare" });
+        for (const name of ["boundary-library.json", "boundary-review-progress.json", "generation-lock.json"]) {
+          await fs.writeFile(path.join(projectRoot, ".synapsor", name), "invalid legacy export");
+        }
+        const loaded = await loadBoundaryReviewContext(projectRoot);
+        const context = { projectRoot, draft: loaded.draft, currentCandidate: loaded.candidate,
+          currentProgress: loaded.progress, expectedAuthoring: loaded.bundle.mutation_bindings.authoring };
+        const before = await repository.current();
+        const list = await synchronizeBoundaryLibrary(context);
+        expect(list.entries).toHaveLength(2);
+        await expect(writeAutoBoundaryArtifacts({ projectRoot, build: fixture().build, force: true, preserveActiveBoundary: true }))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_REPOSITORY_REQUIRED" });
+        expect(await repository.current()).toEqual(before);
+        expect(await readBoundaryReviewProgress(projectRoot, loaded.draft)).toEqual(loaded.progress);
+        const candidate = structuredClone(loaded.candidate); candidate.budgets.max_top_n = 8;
+        const progress = createBoundaryReviewProgress({ draft: loaded.draft, candidate, previous: loaded.progress,
+          confirmedDecisions: [], revision: loaded.progress!.revision + 1 });
+        await expect(saveBoundaryReviewProgress(projectRoot, progress)).rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        await saveBoundaryReviewProgress(projectRoot, progress, loaded.bundle.mutation_bindings.authoring);
+        expect((await loadBoundaryReviewContext(projectRoot)).progress).toEqual(progress);
+        await expect(switchSavedBoundary({ ...context, name: "university_draft" }))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+        const freshContext = async () => {
+          const state = await loadBoundaryReviewContext(projectRoot);
+          return { projectRoot, draft: state.draft, currentCandidate: state.candidate, currentProgress: state.progress,
+            expectedAuthoring: state.bundle.mutation_bindings.authoring };
+        };
+        const switched = await switchSavedBoundary({ ...await freshContext(), name: "university_draft" });
+        expect(switched).toEqual(authoring.entries[1]!.progress);
+        const university = await loadBoundaryReviewContext(projectRoot);
+        expect(university.draft).toEqual(authoring.entries[1]!.draft);
+        expect(university.lock).toEqual(authoring.entries[1]!.draft_lock);
+        await expect(readBoundaryReviewProgress(projectRoot, loaded.draft))
+          .rejects.toMatchObject({ code: "POLICY_AUTHORING_BASELINE_MISMATCH" });
+        await renameSavedBoundary({ ...await freshContext(), name: "university_draft", newName: "enrollment",
+          actor: "reviewer", reason: "Use a business label" });
+        expect((await loadBoundaryReviewContext(projectRoot)).progress!.boundary_id).toBe(switched.boundary_id);
+        await deleteSavedBoundary({ ...await freshContext(), name: "enrollment" });
+        expect((await loadBoundaryReviewContext(projectRoot)).progress).toEqual(progress);
+        await createSavedBoundary({ ...await freshContext(), name: "stock_review", resourceId: "inventory.items", actor: "reviewer" });
+        const created = await loadBoundaryReviewContext(projectRoot);
+        expect(created.candidate.pack.name).toBe("stock_review");
+        expect(created.progress!.boundary_id).not.toBe(progress.boundary_id);
+        const current = await repository.current();
+        expect(current.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(original.active);
+        expect(await fs.readFile(path.join(projectRoot, ".synapsor/boundary-library.json"), "utf8")).toBe("invalid legacy export");
+        await deleteSavedBoundary({ ...await freshContext(), name: "inventory_draft" });
+        await discardOnlySavedBoundaryReview({ ...await freshContext(), name: "stock_review",
+          boundaryRoot: path.join(projectRoot, "synapsor/generated") });
+        const empty = await repository.currentReadState();
+        expect(empty.drafts).toHaveLength(0);
+        expect(empty.active.find(({ policy }) => policy.type === "read_authoring")!.policy)
+          .toEqual({ type: "read_authoring", selected_boundary_id: null, entries: [] });
+        await expect(loadBoundaryReviewContext(projectRoot)).rejects.toThrow("No saved Read boundary");
+        expect((await repository.current()).active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(original.active);
+      });
+    });
+
+    it("preserves the active identity when renaming a stored draft and uses its exact policy lock", async () => {
+      await useRepository(async ({ binding, projectRoot }) => {
+        const repository = new OperatorAuthorityRepository(binding);
+        const before = await repository.current();
+        const source = fixture();
+        const candidateLock = { ...source.generation_lock, reviewed_overrides_digest: canonicalJsonDigest("separately reviewed field policy") };
+        const candidate = { ...source.candidate, generation_lock_fingerprint: canonicalJsonDigest(candidateLock) };
+        const progress = createBoundaryReviewProgress({ draft: source.candidate, candidate,
+          confirmedDecisions: candidate.unresolved_decisions, revision: 1 });
+        await repository.commitReadAuthoring({ expected_epoch: before.epoch, expected_revision_id: null,
+          authoring: { type: "read_authoring", selected_boundary_id: progress.boundary_id,
+            entries: [{ draft: source.candidate, draft_lock: source.generation_lock, candidate_lock: candidateLock, progress }] },
+          actor: "reviewer", operation: "prepare_policy_revision" });
+        const loaded = await loadBoundaryReviewContext(projectRoot);
+        const authority = await resolveSavedBoundaryReviewAuthority({ projectRoot, draft: loaded.draft,
+          candidate: loaded.candidate, progress: loaded.progress });
+        expect(authority.generationLock).toEqual(candidateLock);
+        expect(authority.reviewDraft.generation_lock_fingerprint).toBe(canonicalJsonDigest(authority.generationLock));
+        const renamed = await renameSavedBoundary({ projectRoot, draft: loaded.draft, currentCandidate: loaded.candidate,
+          currentProgress: loaded.progress, expectedAuthoring: loaded.bundle.mutation_bindings.authoring,
+          name: loaded.candidate.pack.name, newName: "next_inventory", actor: "reviewer", reason: "Keep the active boundary separate" });
+        expect(renamed.boundary_id).not.toBe(progress.boundary_id);
+        const current = await repository.current();
+        expect(current.drafts).toHaveLength(2);
+        expect(current.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
+        const selected = await loadBoundaryReviewContext(projectRoot);
+        expect(selected.candidate.pack.name).toBe("next_inventory");
+        await expect(deleteSavedBoundary({ projectRoot, draft: selected.draft, currentCandidate: selected.candidate,
+          currentProgress: selected.progress, expectedAuthoring: selected.bundle.mutation_bindings.authoring,
+          name: source.boundary.pack.name })).rejects.toThrow("is active");
+        await createSavedBoundary({ projectRoot, draft: selected.draft, currentCandidate: selected.candidate,
+          currentProgress: selected.progress, expectedAuthoring: selected.bundle.mutation_bindings.authoring,
+          name: "fresh_inventory", resourceId: "inventory.items", actor: "reviewer" });
+        const fresh = await loadBoundaryReviewContext(projectRoot);
+        expect(fresh.candidate.generation_lock_fingerprint).toBe(canonicalJsonDigest(source.generation_lock));
+        expect((await repository.current()).active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
       });
     });
 

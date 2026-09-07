@@ -25,9 +25,12 @@ import {
   type PostActivationAskSelection,
 } from "./post-activation-ask.js";
 import {
+
+} from "./boundary-review-domain.js";
+import {
   saveInstantBoundaryEditBaseline,
   saveInstantBoundaryReviewBaseline,
-} from "./boundary-review-domain.js";
+} from "./boundary-review-persistence.js";
 import {
   ExploreTrustedScopeError,
   resolveExploreTrustedScope,

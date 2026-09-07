@@ -51,10 +51,14 @@ import {
   createBoundaryReviewProgress,
   nativePolicyMigration,
   normalizeManagedBoundaryReviewDecision,
-  readBoundaryReviewProgress,
   type BoundaryReviewProgress,
   type ManagedBoundaryReviewDecision,
 } from "./boundary-review-domain.js";
+import {
+  readBoundaryReviewProgress,
+} from "./boundary-review-persistence.js";
+import { readProjectReadAuthoring, saveProjectReadProgress,
+  type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 import {
   backupLegacyBoundaryReviewOverrides,
   boundaryReviewOverridesForCandidate,
@@ -291,6 +295,7 @@ export type BoundaryReviewMutationBindings = {
   schema_fingerprint: `sha256:${string}`;
   role_posture_fingerprint: `sha256:${string}`;
   review_revision: number;
+  authoring?: ReadAuthoringBindings;
 };
 
 function normalizedRequestedDerivedMeasure(
@@ -678,6 +683,7 @@ export type BoundaryResourceReviewSummary = {
 
 type BoundaryReviewFiles = {
   boundary_root: string;
+  authoring?: ReadAuthoringBindings;
   draft: ExplorationBoundaryDraft;
   lock: GenerationLock;
   review: {
@@ -1696,6 +1702,11 @@ async function commitPreparedBoundaryReviewMutation(input: {
     reason: input.reason,
     revision: input.bindings.review_revision + 1,
   });
+  if (current.authoring) {
+    await saveProjectReadProgress({ projectRoot: input.projectRoot, expected: input.bindings.authoring, progress,
+      replacement: { draft: input.build.exploration_boundary, draft_lock: input.build.lock, candidate_lock: input.build.lock } });
+    return { candidate_digest: progress.candidate_digest, review_revision: progress.revision, source_database_changed: false };
+  }
   if (!input.previousProgress || input.previousProgress.policy_migration.status === "review_required") {
     await backupLegacyBoundaryReviewOverrides(input.projectRoot);
   }
@@ -2526,12 +2537,14 @@ async function loadBoundaryReviewFiles(projectRoot: string): Promise<BoundaryRev
     journey?.artifacts.boundary_root ?? "synapsor/generated",
   );
   assertInsideProject(resolvedRoot, boundaryRoot);
+  const stored = await readProjectReadAuthoring(resolvedRoot);
+  if (stored && !stored.selected) throw new Error("No saved Read boundary is selected for editing.");
   const [draft, lock, review] = await Promise.all([
-    readJson<ExplorationBoundaryDraft>(
+    stored?.selected?.draft ?? readJson<ExplorationBoundaryDraft>(
       path.join(boundaryRoot, "exploration-boundary.draft.json"),
       "exploration boundary draft",
     ),
-    readJson<GenerationLock>(
+    stored?.selected?.draft_lock ?? readJson<GenerationLock>(
       path.join(resolvedRoot, ".synapsor/generation-lock.json"),
       "generation lock",
     ),
@@ -2540,7 +2553,7 @@ async function loadBoundaryReviewFiles(projectRoot: string): Promise<BoundaryRev
       "boundary review report",
     ),
   ]);
-  const progress = await readBoundaryReviewProgress(resolvedRoot, draft);
+  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(resolvedRoot, draft);
   return {
     boundary_root: boundaryRoot,
     draft,
@@ -2548,6 +2561,7 @@ async function loadBoundaryReviewFiles(projectRoot: string): Promise<BoundaryRev
     review,
     ...(progress ? { progress } : {}),
     candidate: progress?.candidate ?? recommendedBoundaryReviewCandidate(draft),
+    ...(stored ? { authoring: stored.bindings } : {}),
   };
 }
 
@@ -2612,6 +2626,7 @@ function reviewBindings(state: BoundaryReviewFiles): BoundaryReviewMutationBindi
     schema_fingerprint: state.lock.schema_fingerprint,
     role_posture_fingerprint: state.lock.role_posture_fingerprint,
     review_revision: state.progress?.revision ?? 0,
+    ...(state.authoring ? { authoring: state.authoring } : {}),
   };
 }
 
@@ -2619,8 +2634,8 @@ function assertBindingsEqual(
   expected: BoundaryReviewMutationBindings,
   current: BoundaryReviewMutationBindings,
 ): void {
-  for (const key of Object.keys(expected) as Array<keyof BoundaryReviewMutationBindings>) {
-    if (expected[key] !== current[key]) {
+  for (const key of new Set([...Object.keys(expected), ...Object.keys(current)]) as Set<keyof BoundaryReviewMutationBindings>) {
+    if (canonicalJsonDigest(expected[key] ?? null) !== canonicalJsonDigest(current[key] ?? null)) {
       throw new Error(
         `Boundary review changed after preview (${key} mismatch). No decision was applied; inspect and preview the current review again.`,
       );

@@ -37,9 +37,11 @@ import { initializeGuidedProject } from "./guided-project.js";
 import { actionCommand } from "./boundary-commands.js";
 import {
   boundaryReviewDecisions,
+} from "./boundary-review-domain.js";
+import {
   readBoundaryReviewProgress,
   saveInstantBoundaryReviewBaseline,
-} from "./boundary-review-domain.js";
+} from "./boundary-review-persistence.js";
 import { readActionBoundaryActivation, readActionBoundaryDraft } from "./action-boundary.js";
 
 const temporaryRoots: string[] = [];

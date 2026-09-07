@@ -58,9 +58,12 @@ import {
 import {
   boundaryReviewDecisions,
   createBoundaryReviewProgress,
-  readBoundaryReviewProgress,
-  saveBoundaryReviewProgress
 } from "./boundary-review-domain.js";
+import {
+  readBoundaryReviewProgress,
+  saveBoundaryReviewProgress,
+} from "./boundary-review-persistence.js";
+import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { displayPath } from "./onboarding.js";
 import { sharedPostgresLedgerDoctorChecks } from "./doctor-domain.js";
 import {
@@ -674,6 +677,7 @@ export async function boundaryRenameCommand(args: string[]): Promise<number> {
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   let context = await loadBoundaryReviewContext(projectRoot);
   await synchronizeBoundaryLibrary({
+    expectedAuthoring: context.bundle.mutation_bindings.authoring,
     projectRoot,
     draft: context.draft,
     currentCandidate: context.candidate,
@@ -681,6 +685,7 @@ export async function boundaryRenameCommand(args: string[]): Promise<number> {
   });
   if (context.candidate.pack.name !== currentName) {
     await switchSavedBoundary({
+      expectedAuthoring: context.bundle.mutation_bindings.authoring,
       projectRoot,
       draft: context.draft,
       currentCandidate: context.candidate,
@@ -690,6 +695,7 @@ export async function boundaryRenameCommand(args: string[]): Promise<number> {
     context = await loadBoundaryReviewContext(projectRoot);
   }
   const progress = await renameSavedBoundary({
+    expectedAuthoring: context.bundle.mutation_bindings.authoring,
     projectRoot,
     draft: context.draft,
     currentCandidate: context.candidate,
@@ -756,6 +762,7 @@ export async function boundaryDeleteCommand(
   }
   const context = await loadBoundaryReviewContext(projectRoot);
   await synchronizeBoundaryLibrary({
+    expectedAuthoring: context.bundle.mutation_bindings.authoring,
     projectRoot,
     draft: context.draft,
     currentCandidate: context.candidate,
@@ -763,6 +770,7 @@ export async function boundaryDeleteCommand(
   });
   if (discardCuratedReview) {
     const discarded = await discardOnlySavedBoundaryReview({
+      expectedAuthoring: context.bundle.mutation_bindings.authoring,
       projectRoot,
       boundaryRoot: context.boundaryRoot,
       draft: context.draft,
@@ -795,6 +803,7 @@ export async function boundaryDeleteCommand(
     return 0;
   }
   const deleted = await deleteSavedBoundary({
+    expectedAuthoring: context.bundle.mutation_bindings.authoring,
     projectRoot,
     draft: context.draft,
     currentCandidate: context.candidate,
@@ -1691,6 +1700,7 @@ async function interactiveBoundaryReviewLoop(input: {
   while (true) {
     let context = await loadBoundaryReviewContext(input.projectRoot);
     const boundaryLibrary = await synchronizeBoundaryLibrary({
+      expectedAuthoring: context.bundle.mutation_bindings.authoring,
       projectRoot: input.projectRoot,
       draft: context.draft,
       currentCandidate: context.candidate,
@@ -2286,6 +2296,7 @@ async function interactiveBoundaryReviewLoop(input: {
       let progress;
       try {
         progress = await createSavedBoundary({
+          expectedAuthoring: context.bundle.mutation_bindings.authoring,
           projectRoot: input.projectRoot,
           draft: context.draft,
           currentCandidate: context.candidate,
@@ -2333,6 +2344,7 @@ async function interactiveBoundaryReviewLoop(input: {
     }
     if (selected.action === "switch") {
       await switchSavedBoundary({
+        expectedAuthoring: context.bundle.mutation_bindings.authoring,
         projectRoot: input.projectRoot,
         draft: context.draft,
         currentCandidate: context.candidate,
@@ -2357,6 +2369,7 @@ async function interactiveBoundaryReviewLoop(input: {
       let result: Awaited<ReturnType<typeof deleteSavedBoundary>>;
       try {
         result = await deleteSavedBoundary({
+          expectedAuthoring: context.bundle.mutation_bindings.authoring,
           projectRoot: input.projectRoot,
           draft: context.draft,
           currentCandidate: context.candidate,
@@ -10788,6 +10801,7 @@ async function confirmAndActivateFocusedBoundary(input: {
 }): Promise<number> {
   let context = await loadBoundaryReviewContext(input.projectRoot);
   const boundaryLibrary = await synchronizeBoundaryLibrary({
+    expectedAuthoring: context.bundle.mutation_bindings.authoring,
     projectRoot: input.projectRoot,
     draft: context.draft,
     currentCandidate: context.candidate,
@@ -11235,7 +11249,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     reason: "Confirmed the complete exact boundary shown by the focused access editor.",
     revision: (context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
+  await saveBoundaryReviewProgress(input.projectRoot, progress, context.bundle.mutation_bindings.authoring);
   const activationResult = await boundaryActivateCommand(
     [
       "--project-root", input.projectRoot,
@@ -11330,7 +11344,7 @@ async function saveReviewedDisabledBoundary(input: {
     reason: input.reason,
     revision: (input.context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
+  await saveBoundaryReviewProgress(input.projectRoot, progress, input.context.bundle.mutation_bindings.authoring);
 }
 
 function readBoundaryFieldOperationFlags(
@@ -11831,6 +11845,7 @@ async function interactiveBoundaryRename(input: {
     return 0;
   }
   const progress = await renameSavedBoundary({
+    expectedAuthoring: context.bundle.mutation_bindings.authoring,
     projectRoot: input.projectRoot,
     draft: context.draft,
     currentCandidate: context.candidate,
@@ -11944,7 +11959,7 @@ async function confirmBoundaryReviewInteractively(input: {
     reason: "Confirmed through the grouped CLI boundary review shown to this operator.",
     revision: (input.context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
+  await saveBoundaryReviewProgress(input.projectRoot, progress, input.context.bundle.mutation_bindings.authoring);
   return {
     context: await loadBoundaryReviewContext(input.projectRoot),
     actor,
@@ -12015,7 +12030,7 @@ async function confirmBoundaryResourceInteractively(input: {
     reason: `Confirmed the grouped CLI review for ${input.resourceId}.`,
     revision: (context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewProgress(input.projectRoot, progress);
+  await saveBoundaryReviewProgress(input.projectRoot, progress, context.bundle.mutation_bindings.authoring);
   const updated = await loadBoundaryReviewContext(input.projectRoot);
   const remaining = boundaryReviewOverview(updated.bundle);
   process.stdout.write([
@@ -13987,7 +14002,7 @@ export async function boundaryActivateCommand(
       now: now.toISOString(),
     });
     try {
-      await saveBoundaryReviewProgress(projectRoot, progress);
+      await saveBoundaryReviewProgress(projectRoot, progress, context.bundle.mutation_bindings.authoring);
     } catch (error) {
       store.setRunnerState(key, {
         status: "consumed_review_persistence_failed",
@@ -14297,15 +14312,19 @@ export async function loadBoundaryReviewContext(projectRoot: string): Promise<{
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error("Managed boundary root escapes the selected project.");
   }
-  const draft = await readJsonFileWithLocation<ExplorationBoundaryDraft>(
+  const stored = await readProjectReadAuthoring(projectRoot);
+  if (stored && !stored.selected) {
+    throw new Error("No saved Read boundary is selected. Create a disabled boundary before opening its review.");
+  }
+  const draft = stored?.selected?.draft ?? await readJsonFileWithLocation<ExplorationBoundaryDraft>(
     path.join(boundaryRoot, "exploration-boundary.draft.json"),
     "exploration boundary draft",
   );
-  const lock = await readJsonFileWithLocation<GenerationLock>(
+  const lock = stored?.selected?.draft_lock ?? await readJsonFileWithLocation<GenerationLock>(
     path.join(projectRoot, ".synapsor/generation-lock.json"),
     "generation lock",
   );
-  const progress = await readBoundaryReviewProgress(projectRoot, draft);
+  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(projectRoot, draft);
   const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
   const decisions = boundaryReviewDecisions(candidate).map((decision) => ({
     ...decision,
@@ -14340,6 +14359,7 @@ export async function loadBoundaryReviewContext(projectRoot: string): Promise<{
       schema_fingerprint: lock.schema_fingerprint,
       role_posture_fingerprint: lock.role_posture_fingerprint,
       review_revision: progress?.revision ?? 0,
+      ...(stored ? { authoring: stored.bindings } : {}),
     },
     bundle_digest: canonicalJsonDigest(core),
   };

@@ -6,7 +6,12 @@ import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { buildAutoBoundary } from "./auto-boundary.js";
 import { boundaryDeleteCommand, loadBoundaryReviewContext, boundaryAuthoringResumeBinding } from "./boundary-commands.js";
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
-import { saveInstantBoundaryEditBaseline } from "./boundary-review-domain.js";
+import {
+
+} from "./boundary-review-domain.js";
+import {
+  saveInstantBoundaryEditBaseline,
+} from "./boundary-review-persistence.js";
 import { reviewUnresolvedOrganizationScope, start } from "./guided-start.js";
 import {
   activateInstantCliBoundary,

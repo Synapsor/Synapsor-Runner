@@ -17,8 +17,10 @@ import {
   applyManagedBoundaryReviewDecision,
   boundaryReviewDecisions,
   createBoundaryReviewProgress,
-  saveBoundaryReviewProgress,
 } from "./boundary-review-domain.js";
+import {
+  saveBoundaryReviewProgress,
+} from "./boundary-review-persistence.js";
 import {
   createSavedBoundary,
   switchSavedBoundary,
