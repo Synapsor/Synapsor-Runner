@@ -138,3 +138,5 @@ export {
 } from "./attention-domain.js";
 export { workerControlDecisionSubject } from "./worker-control-domain.js";
 export { semanticApprovalSetDigest } from "./proposal-integrity.js";
+export type { HardBudgetAccount, HardBudgetLimit, HardBudgetReservation, HardBudgetState, HardBudgetReceipt } from "./control-hard-budgets.js";
+export type { EffectAdmissionTarget, EffectAdmissionState, PreparedEffectAdmission } from "./control-effect-admissions.js";

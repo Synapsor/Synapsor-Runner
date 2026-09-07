@@ -9,6 +9,8 @@ import type { ControlPolicyScope, ControlPolicyKind, ControlPolicyKey, ControlPo
   Row, Statement, PolicyConnection, ControlPolicyReadGuard } from "./control-policy-types.js";
 import { boundedJson, digest, epoch, exactlyOne, fail, identifier, policyKind, scopeKey } from "./control-policy-values.js";
 import { ControlPolicyReviews, controlPolicyReviewSchema } from "./control-policy-reviews.js";
+import { ControlHardBudgets, controlHardBudgetSchema } from "./control-hard-budgets.js";
+import { ControlEffectAdmissions, controlEffectAdmissionSchema } from "./control-effect-admissions.js";
 export type { ControlPolicyScope, ControlPolicyKind, ControlPolicyKey, ControlPolicyRevision,
   ControlPolicyPointer, ControlPolicyScopeSnapshot, ControlPolicyEvent, ControlPolicyCommit, ControlPolicyReadGuard } from "./control-policy-types.js";
 
@@ -17,7 +19,13 @@ export type { ControlPolicyScope, ControlPolicyKind, ControlPolicyKey, ControlPo
  * Both backends execute the same bounded statement batches atomically. */
 export class ControlPolicyRepository {
   readonly reviews: ControlPolicyReviews;
-  constructor(private readonly connection: PolicyConnection) { this.reviews = new ControlPolicyReviews(connection); }
+  readonly budgets: ControlHardBudgets;
+  readonly effects: ControlEffectAdmissions;
+  constructor(private readonly connection: PolicyConnection) {
+    this.reviews = new ControlPolicyReviews(connection);
+    this.budgets = new ControlHardBudgets(connection);
+    this.effects = new ControlEffectAdmissions(connection, this.budgets);
+  }
 
   async initialize(): Promise<string> {
     const t = (name: string) => this.connection.table(name);
@@ -52,6 +60,8 @@ export class ControlPolicyRepository {
           PRIMARY KEY (deployment_id, epoch), UNIQUE (deployment_id, event_id),
           FOREIGN KEY (deployment_id) REFERENCES ${t("deployments")}(deployment_id))` },
       ...controlPolicyReviewSchema(this.connection),
+      ...controlHardBudgetSchema(this.connection),
+      ...controlEffectAdmissionSchema(this.connection),
       { sql: `INSERT INTO ${t("identity")} (singleton, repository_id) VALUES (1, $1) ON CONFLICT (singleton) DO NOTHING`, values: [randomUUID()] },
       { sql: `SELECT repository_id FROM ${t("identity")} WHERE singleton = 1`, check: exactlyOne },
     ], "migration");
