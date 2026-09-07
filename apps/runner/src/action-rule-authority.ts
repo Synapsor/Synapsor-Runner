@@ -65,6 +65,12 @@ type ExistingActionRuleAuthorityV1 =
   | ActionRuleAuthorityDraftV1
   | ActionRuleAuthorityActivationV1;
 
+/** Validates stored revisions without activating, rebinding or refreshing them. */
+export function parseStoredActionRuleAuthority(value: unknown): ExistingActionRuleAuthorityV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidDraft();
+  return (value as { state?: unknown }).state === "active" ? parseActivation(value) : parseDraft(value);
+}
+
 export function buildActionRuleAuthorityDraft(input: {
   name: string;
   action_boundary_name: string;

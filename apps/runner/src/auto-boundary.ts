@@ -2244,6 +2244,25 @@ export function explorationBoundaryCandidateDigest(candidate: ExplorationBoundar
   return canonicalJsonDigest(boundaryAuthority(normalizeDependentAggregateAuthority(candidate)));
 }
 
+/** Storage validation, not a new review or an assertion of current source freshness. */
+export function assertStoredExplorationPolicy(
+  boundary: ExplorationBoundaryDraft | ActivatedExplorationBoundary,
+  lock: GenerationLock,
+): void {
+  assertGenerationLockFingerprint(lock, boundary.generation_lock_fingerprint);
+  if (boundary.activation === "disabled_unreviewed") {
+    const reviewed = reviewExplorationBoundaryCandidate(boundary, boundary);
+    // A transfer must not silently repair or minimize saved authority.
+    const { unresolved_decisions: _before, ...before } = boundary;
+    const { unresolved_decisions: _after, ...after } = reviewed.candidate;
+    if (canonicalJsonDigest(before) !== canonicalJsonDigest(after)) {
+      throw new Error("Stored Read policy requires normalization; review it before transferring authority.");
+    }
+  } else {
+    validateActivatedExplorationBoundary(boundary as ActivatedExplorationBoundary);
+  }
+}
+
 export function reviewExplorationBoundaryCandidate(
   draft: ExplorationBoundaryDraft,
   candidate: ExplorationBoundaryDraft,

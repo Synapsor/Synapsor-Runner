@@ -40,6 +40,7 @@ import { inspectMcpToolBoundary, toolsPreview } from "./mcp-runtime.js";
 import { mcp } from "./mcp-project.js";
 import { runPostActivationAskHandoff } from "./post-activation-ask.js";
 import { createOptionalActionRuleRuntimeServices } from "./semantic-action-runtime.js";
+import { decodeOperatorAuthority, encodeOperatorAuthority, validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
 
 const roots: string[] = [];
 const lock = `sha256:${"a".repeat(64)}` as const;
@@ -56,6 +57,29 @@ afterEach(async () => {
 });
 
 describe("semantic Action Rule authority persistence", () => {
+  it("transfers exact stored Action authority without changing rule identity, state or provenance", async () => {
+    const root = await temporaryRoot(); const boundary = activeReadBoundary();
+    await writeActiveReadSet(root, boundary);
+    const source = authoritySource(boundary.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: boundary.pack.name, read_boundary_digest: boundary.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }], reviews: [authorityReview()] });
+    await writeActionRuleAuthorityDraft(root, draft);
+    const active = await activateActionRuleAuthority({ projectRoot: root, name: draft.authority.name,
+      expected_digest: draft.digest, confirmation: `ACTIVATE ${draft.digest}`, actor: "original_reviewer" });
+    const records = [draft, active].map((authority) => encodeOperatorAuthority({ type: "action", authority }));
+    expect(records.map((record) => decodeOperatorAuthority(record))).toEqual([{ type: "action", authority: draft }, { type: "action", authority: active }]);
+    expect(records[0]!.authority_digest).toBe(records[1]!.authority_digest);
+    expect(records[0]!.revision_id).not.toBe(records[1]!.revision_id);
+    const selection = encodeOperatorAuthority({ type: "read_selection", selected_name: null });
+    // The Read dependency is revoked here. Migration preserves that unavailable
+    // state rather than inventing a replacement Read digest or removing the rule.
+    expect(() => validateOperatorPolicySnapshot({ revisions: [...records, selection], drafts: [records[0]!],
+      active: [records[1]!, selection], provenance: [] })).not.toThrow();
+    const tampered = structuredClone(active); tampered.authority.rules[0]!.rule.ttl_seconds++;
+    expect(() => encodeOperatorAuthority({ type: "action", authority: tampered })).toThrow();
+  });
+
   it("reuses verified compiled snapshots but observes changed files and Read revocation", async () => {
     const root = await temporaryRoot();
     const boundary = activeReadBoundary();
