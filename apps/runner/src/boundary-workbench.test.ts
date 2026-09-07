@@ -18,7 +18,7 @@ describe("Auto Boundary Workbench renderer", () => {
       const readPayload=async r=>r.payload; const handleSessionFailure=()=>false;
       ${script.slice(start, end)}
       ({post, binding:()=>authoringBinding});`, context) as { post(url: string, body: unknown): Promise<unknown>; binding(): unknown };
-    for (const route of ["preview", "activate", "regenerate", "workloads/analyze", "workloads/apply"]) {
+    for (const route of ["preview", "activate", "regenerate", "workloads/analyze", "workloads/apply", "review-relationship"]) {
       await api.post(`/api/boundary/${route}`, { candidate: { name: "reviewed" } });
       expect(sent.at(-1)!.body.authoring_binding).toEqual(initial);
     }

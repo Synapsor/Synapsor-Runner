@@ -2043,20 +2043,32 @@ async function handleRequest(input: {
     if (actor.length > 128 || /[\u0000-\u001f\u007f]/.test(actor)) {
       throw new Error("Relationship review requires a bounded human reviewer identity.");
     }
-    const draft = JSON.parse(await fs.readFile(
-      path.join(boundaryRoot, "exploration-boundary.draft.json"),
-      "utf8",
-    )) as ExplorationBoundaryDraft;
+    const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    assertWorkbenchReviewBinding(body, savedReview.authoring);
+    const draft = savedReview.draft;
+    const currentCandidate = savedReview.progress?.candidate ?? draft;
     const active = await loadActivatedExplorationBoundary(projectRoot, {
       digest: expectedActiveDigest as `sha256:${string}`,
     }).catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     });
-    if (!active || active.generation_lock_fingerprint !== draft.generation_lock_fingerprint) {
+    if (!active || active.generation_lock_fingerprint !== (savedReview.authoring
+      ? currentCandidate.generation_lock_fingerprint : draft.generation_lock_fingerprint)) {
       sendJson(response, 409, {
         ok: false,
         error: "The active boundary or its catalog proof changed after this refusal. Retry the analysis before reviewing a relationship.",
+      });
+      return;
+    }
+    if ((savedReview.authoring || savedReview.progress)
+      && explorationBoundaryCandidateDigest(currentCandidate) !== active.activation.digest) {
+      sendJson(response, 409, {
+        ok: false,
+        error: "This saved boundary has pending edits or is not the active boundary used by this analysis. "
+          + "Review those edits or select the matching saved boundary before adding this relationship. Your saved work is unchanged.",
+        authority_changed: false,
+        source_database_changed: false,
       });
       return;
     }
@@ -2079,7 +2091,7 @@ async function handleRequest(input: {
       });
       return;
     }
-    const existingProgress = await readBoundaryReviewProgress(projectRoot, draft);
+    const existingProgress = savedReview.progress;
     const activeCandidate: ExplorationBoundaryDraft = {
       schema_version: active.schema_version,
       activation: "disabled_unreviewed",
@@ -2157,7 +2169,7 @@ async function handleRequest(input: {
       actor,
       revision: (existingProgress?.revision ?? 0) + 1,
     });
-    await saveBoundaryReviewProgress(projectRoot, progress);
+    const authoringBinding = await saveSharedBoundaryReviewProgress(projectRoot, progress, savedReview.authoring);
     sendJson(response, 200, {
       ok: true,
       candidate: progress.candidate,
@@ -2165,6 +2177,7 @@ async function handleRequest(input: {
       confirmed_decisions: progress.confirmed_decisions,
       invalidated_decisions: progress.invalidated_decisions,
       revision: progress.revision,
+      ...(authoringBinding ? { authoring_binding: authoringBinding } : {}),
       relationship_review: {
         resource: resourceId,
         relationship: relationshipId,

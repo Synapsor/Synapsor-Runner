@@ -21,6 +21,7 @@ import {
 import { initializeGuidedProject } from "./guided-project.js";
 import {
   createBoundaryReviewProgress,
+  readBoundaryReviewProgress,
   saveBoundaryReviewProgress,
   startLocalUiServer,
 } from "./local-ui.js";
@@ -4857,6 +4858,22 @@ export default defineCapability({
         body: JSON.stringify({}),
       });
       expect(withoutCsrf.status).toBe(403);
+
+      const pending = await fetch(`${url}/api/boundary/review-relationship`, {
+        method: "POST", headers: { ...mutationHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ resource: "public.members", relationship: "members_team_id_fkey",
+          active_boundary_digest: active.activation.digest, actor: "relationship-reviewer@example.test",
+          confirmation: `REVIEW RELATIONSHIP ${proof.digest}` }),
+      });
+      expect(pending.status).toBe(409);
+      expect((await pending.json()).error).toContain("pending edits");
+      expect((await readBoundaryReviewProgress(tempDir, build.exploration_boundary))!.candidate_digest)
+        .toBe(staleProgress.candidate_digest);
+      // Only an explicit operator review may replace a different pending draft.
+      await saveBoundaryReviewProgress(tempDir, createBoundaryReviewProgress({
+        draft: build.exploration_boundary, candidate, confirmedDecisions: candidate.unresolved_decisions,
+        previous: staleProgress, revision: 2, actor: "relationship-reviewer@example.test",
+      }));
 
       const staged = await postJson(`${url}/api/boundary/review-relationship`, {
         "x-synapsor-ui-token": "relationship-review-token",
