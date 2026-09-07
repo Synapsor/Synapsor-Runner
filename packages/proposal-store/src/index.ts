@@ -122,7 +122,10 @@ export {
   type ControlPolicyScopeSnapshot,
   type ControlPolicyEvent,
   type ControlPolicyCommit,
+  type ControlPolicyReadGuard,
 } from "./control-policy-repository.js";
+export type { ControlPolicyReview, ControlPolicyReviewTarget, ControlPolicyReviewConfirmation,
+  ControlPolicyReviewReceipt } from "./control-policy-reviews.js";
 export {
   PostgresProposalRuntimeStore,
   PostgresWritebackIntentStore,

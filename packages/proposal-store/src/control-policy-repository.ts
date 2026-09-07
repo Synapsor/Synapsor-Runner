@@ -1,53 +1,23 @@
 import { randomUUID } from "node:crypto";
-import type { DatabaseSync, SQLInputValue } from "node:sqlite";
-import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/protocol";
+import type { DatabaseSync } from "node:sqlite";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { PostgresRuntimePool } from "./postgres-runtime-types.js";
 import { ProposalStoreError } from "./errors.js";
 
-export type ControlPolicyScope =
-  | { level: "operator" }
-  | { level: "tenant"; tenant_id: string }
-  | { level: "principal"; tenant_id: string; principal: string };
-export type ControlPolicyKind = "read" | "action" | "execution" | "parent" | "delegation" | "management";
-export type ControlPolicyKey = { scope: ControlPolicyScope; kind: ControlPolicyKind; name: string };
-export type ControlPolicyRevision = ControlPolicyKey & {
-  revision_id: string;
-  authority_digest: string;
-  content: unknown;
-  content_digest: string;
-};
-export type ControlPolicyPointer = ControlPolicyKey & { revision_id: string | null };
-export type ControlPolicyScopeSnapshot = {
-  epoch: number;
-  active: ControlPolicyRevision[];
-  drafts: ControlPolicyRevision[];
-};
-export type ControlPolicyEvent = {
-  event_id: string;
-  actor: string;
-  occurred_at: string;
-  receipt: unknown;
-};
-export type ControlPolicyCommit = {
-  deployment_id: string; expected_epoch: number;
-  revisions: ControlPolicyRevision[]; active: ControlPolicyPointer[];
-  drafts?: ControlPolicyPointer[]; event: ControlPolicyEvent;
-};
-
-type Row = Record<string, unknown>;
-type Statement = { sql: string; values?: SQLInputValue[]; check?: (rows: Row[]) => void };
-type PolicyConnection = {
-  table(name: string): string;
-  collation: string;
-  byteLength(expression: string): string;
-  execute(statements: Statement[], mode?: "read" | "write" | "migration"): Promise<Row[][]>;
-};
+import type { ControlPolicyScope, ControlPolicyKind, ControlPolicyKey, ControlPolicyRevision,
+  ControlPolicyPointer, ControlPolicyScopeSnapshot, ControlPolicyEvent, ControlPolicyCommit,
+  Row, Statement, PolicyConnection, ControlPolicyReadGuard } from "./control-policy-types.js";
+import { boundedJson, digest, epoch, exactlyOne, fail, identifier, policyKind, scopeKey } from "./control-policy-values.js";
+import { ControlPolicyReviews, controlPolicyReviewSchema } from "./control-policy-reviews.js";
+export type { ControlPolicyScope, ControlPolicyKind, ControlPolicyKey, ControlPolicyRevision,
+  ControlPolicyPointer, ControlPolicyScopeSnapshot, ControlPolicyEvent, ControlPolicyCommit, ControlPolicyReadGuard } from "./control-policy-types.js";
 
 /** Storage only, not an owner-facing authorization API. Its caller must validate
  * policy semantics and authenticate management rights before obtaining a scope.
  * Both backends execute the same bounded statement batches atomically. */
 export class ControlPolicyRepository {
-  constructor(private readonly connection: PolicyConnection) {}
+  readonly reviews: ControlPolicyReviews;
+  constructor(private readonly connection: PolicyConnection) { this.reviews = new ControlPolicyReviews(connection); }
 
   async initialize(): Promise<string> {
     const t = (name: string) => this.connection.table(name);
@@ -81,6 +51,7 @@ export class ControlPolicyRepository {
           actor TEXT NOT NULL, occurred_at TEXT NOT NULL, receipt_json TEXT NOT NULL,
           PRIMARY KEY (deployment_id, epoch), UNIQUE (deployment_id, event_id),
           FOREIGN KEY (deployment_id) REFERENCES ${t("deployments")}(deployment_id))` },
+      ...controlPolicyReviewSchema(this.connection),
       { sql: `INSERT INTO ${t("identity")} (singleton, repository_id) VALUES (1, $1) ON CONFLICT (singleton) DO NOTHING`, values: [randomUUID()] },
       { sql: `SELECT repository_id FROM ${t("identity")} WHERE singleton = 1`, check: exactlyOne },
     ], "migration");
@@ -188,7 +159,7 @@ export class ControlPolicyRepository {
    * are deliberately absent; immutable history remains separately available. */
   async scopeSnapshot(input: {
     deployment_id: string; scope: ControlPolicyScope; kinds: ControlPolicyKind[]; limit?: number; max_bytes?: number;
-  }): Promise<ControlPolicyScopeSnapshot> {
+  }, guard?: ControlPolicyReadGuard): Promise<ControlPolicyScopeSnapshot> {
     const limit = input.limit ?? 64;
     const maximumBytes = input.max_bytes ?? 128 * 1024 * 1024;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 64) fail("POLICY_LIST_LIMIT_INVALID");
@@ -203,10 +174,11 @@ export class ControlPolicyRepository {
         ORDER BY a.kind COLLATE ${this.connection.collation}, a.name COLLATE ${this.connection.collation}
         LIMIT $${values.length}`;
     let count = 0; let bytes = 0;
+    const guards = this.readGuardStatements(input.deployment_id, guard);
     const statements: Statement[] = [{
       sql: `SELECT epoch FROM ${this.connection.table("deployments")} WHERE deployment_id = $1`,
       values: [values[0]!], check: exactlyOne,
-    }, ...(["active", "drafts"] as const).map((state): Statement => ({
+    }, ...guards, ...(["active", "drafts"] as const).map((state): Statement => ({
       // Check sizes within this transaction before fetching or parsing bodies.
       sql: `SELECT ${this.connection.byteLength("r.content_json")} AS bytes ${source(state)}`,
       values,
@@ -219,7 +191,16 @@ export class ControlPolicyRepository {
       sql: `SELECT r.* ${source(state)}`, values,
     }))];
     const rows = await this.connection.execute(statements);
-    return { epoch: epoch(rows[0]![0]!.epoch), active: rows[3]!.map(decodeRevision), drafts: rows[4]!.map(decodeRevision) };
+    return { epoch: epoch(rows[0]![0]!.epoch), active: rows[3 + guards.length]!.map(decodeRevision), drafts: rows[4 + guards.length]!.map(decodeRevision) };
+  }
+
+  private readGuardStatements(deploymentId: string, guard?: ControlPolicyReadGuard): Statement[] {
+    if (!guard) return [];
+    if (!guard.keys.length || guard.keys.length > 8) fail("POLICY_READ_GUARD_INVALID");
+    const current: Array<ControlPolicyRevision | undefined> = [];
+    return [...guard.keys.map((key): Statement => ({ ...this.pointerStatement(deploymentId, key, "active"),
+      check: (rows) => { current.push(rows[0] ? decodeRevision(rows[0]) : undefined); },
+    })), { sql: "SELECT 1", check: () => guard.authorize(current) }];
   }
 
   private pointerStatement(deploymentId: string, key: ControlPolicyKey, state: "active" | "drafts"): Statement {
@@ -267,6 +248,37 @@ export class ControlPolicyRepository {
         input.before === undefined ? "" : identifier(input.before.revision_id), limit],
     }]);
     return rows[0]!.map((row) => ({ epoch: epoch(row.epoch), revision: decodeRevision(row) }));
+  }
+
+  /** Owner-service history for revisions and exact review decisions, with no
+   * unscoped event payloads. Each branch applies its key and limit in SQL. */
+  async policyHistory(input: { deployment_id: string; key: ControlPolicyKey; limit?: number;
+    before?: { epoch: number; revision_id: string } }, guard: ControlPolicyReadGuard) {
+    const limit = input.limit ?? 20;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail("POLICY_LIST_LIMIT_INVALID");
+    const values = [identifier(input.deployment_id), scopeKey(input.key.scope), policyKind(input.key.kind), identifier(input.key.name),
+      input.before ? epoch(input.before.epoch) : Number.MAX_SAFE_INTEGER, input.before ? identifier(input.before.revision_id) : "", limit + 1];
+    const collation = this.connection.collation;
+    const branch = (review: boolean) => {
+      const version = review ? "r.expected_epoch + 1" : "r.epoch";
+      return `SELECT ${version} AS epoch, r.revision_id, e.event_id, e.actor, e.occurred_at,
+          ${review ? "r.operation" : "'revision_created'"} AS operation
+        FROM ${this.connection.table(review ? "reviews" : "revisions")} r
+        JOIN ${this.connection.table("events")} e ON e.deployment_id = r.deployment_id
+          AND ${review ? "e.event_id = r.consumed_event_id" : "e.epoch = r.epoch"}
+        WHERE r.deployment_id = $1 AND r.scope_key = $2 AND r.kind = $3 AND r.name = $4
+          AND (${version} < $5 OR (${version} = $5 AND r.revision_id COLLATE ${collation} < $6))
+        ORDER BY ${review ? "r.expected_epoch" : "r.epoch"} DESC, r.revision_id COLLATE ${collation} DESC LIMIT $7`;
+    };
+    const rows = await this.connection.execute([...this.readGuardStatements(input.deployment_id, guard), {
+      sql: `SELECT * FROM (SELECT * FROM (${branch(false)}) versions UNION ALL SELECT * FROM (${branch(true)}) decisions) history
+        ORDER BY epoch DESC, revision_id COLLATE ${collation} DESC LIMIT $7`, values,
+    }]);
+    const page = rows.at(-1)!;
+    const items = page.slice(0, limit).map((row) => ({ epoch: epoch(row.epoch), revision_id: identifier(row.revision_id),
+      event_id: identifier(row.event_id), actor: identifier(row.actor), occurred_at: String(row.occurred_at), operation: String(row.operation) }));
+    const last = items.at(-1);
+    return { items, ...(page.length > limit && last ? { next: { epoch: last.epoch, revision_id: last.revision_id } } : {}) };
   }
 
   private changeStatements(input: ControlPolicyCommit): Statement[] {
@@ -337,6 +349,8 @@ export function sqliteControlPolicyRepository(db: DatabaseSync): ControlPolicyRe
   return new ControlPolicyRepository({
     table: (name) => `"control_policy_${name}"`,
     collation: "BINARY",
+    nowMs: "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)",
+    nowIso: "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
     byteLength: (expression) => `length(CAST(${expression} AS BLOB))`,
     async execute(statements, mode = "read") {
       // No await inside this transaction: another synchronous connection must
@@ -365,6 +379,8 @@ export function postgresControlPolicyRepository(pool: PostgresRuntimePool, schem
   return new ControlPolicyRepository({
     table: (name) => `"${schema}"."control_policy_${name}"`,
     collation: '"C"',
+    nowMs: "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT",
+    nowIso: `to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
     byteLength: (expression) => `octet_length(${expression})`,
     async execute(statements, mode = "read") {
       const client = await pool.connect();
@@ -398,41 +414,3 @@ function decodeRevision(row: Row): ControlPolicyRevision {
   return { scope, kind: policyKind(row.kind), name: identifier(row.name), revision_id: identifier(row.revision_id),
     authority_digest: digest(row.authority_digest), content_digest: digest(row.content_digest), content };
 }
-
-function scopeKey(scope: ControlPolicyScope): string {
-  if (!scope || typeof scope !== "object") fail("POLICY_SCOPE_INVALID");
-  const keys = Object.keys(scope).sort().join(",");
-  if (scope.level === "operator" && keys === "level") return canonicalJsonStringify(scope);
-  if (scope.level === "tenant" && keys === "level,tenant_id") {
-    identifier(scope.tenant_id); return canonicalJsonStringify(scope);
-  }
-  if (scope.level === "principal" && keys === "level,principal,tenant_id") {
-    identifier(scope.tenant_id); identifier(scope.principal); return canonicalJsonStringify(scope);
-  }
-  return fail("POLICY_SCOPE_INVALID");
-}
-
-function policyKind(value: unknown): ControlPolicyKind {
-  if (typeof value !== "string" || !["read", "action", "execution", "parent", "delegation", "management"].includes(value)) fail("POLICY_KIND_INVALID");
-  return value as ControlPolicyKind;
-}
-function identifier(value: unknown): string {
-  if (typeof value !== "string" || !value || value.length > 256 || value.trim() !== value || /[\u0000-\u001f\u007f]/u.test(value)) fail("POLICY_IDENTIFIER_INVALID");
-  return value;
-}
-function digest(value: unknown): string {
-  if (typeof value !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(value)) fail("POLICY_DIGEST_INVALID");
-  return value;
-}
-function epoch(value: unknown): number {
-  const number = typeof value === "number" ? value : typeof value === "string" && /^[0-9]+$/u.test(value) ? Number(value) : NaN;
-  if (!Number.isSafeInteger(number) || number < 0) fail("POLICY_EPOCH_INVALID");
-  return number;
-}
-function boundedJson(value: unknown, limit: number): string {
-  const json = canonicalJsonStringify(value);
-  if (Buffer.byteLength(json) > limit) fail("POLICY_CONTENT_TOO_LARGE");
-  return json;
-}
-function exactlyOne(rows: Row[]): void { if (rows.length !== 1) fail("POLICY_REPOSITORY_UNAVAILABLE"); }
-function fail(code: string): never { throw new ProposalStoreError(code, code); }
