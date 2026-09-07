@@ -1372,10 +1372,9 @@ async function handleRequest(input: {
       if (!Array.isArray(body.actions)) {
         throw new Error("Delegation setup requires an actions array, which may be empty.");
       }
-      const generatedBoundary = JSON.parse(await fs.readFile(
-        path.join(boundaryRoot, "exploration-boundary.draft.json"),
-        "utf8",
-      )) as ExplorationBoundaryDraft;
+      const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+      const generatedBoundary = savedReview.progress?.candidate ?? savedReview.draft;
+      const candidateDigest = explorationBoundaryCandidateDigest(generatedBoundary);
       const workload = await readReadWorkloadAnalysis({
         projectRoot,
         analysisId,
@@ -1383,6 +1382,11 @@ async function handleRequest(input: {
       });
       if (workload.state !== "reviewed" || !workload.review) {
         throw new Error("DELEGATION_READ_REVIEW_REQUIRED: save the exact disabled Read Boundary candidate first.");
+      }
+      if (workload.analysis.status !== "ready" || !workload.analysis.candidate_digest
+        || workload.review.analyzed_candidate_digest !== workload.analysis.candidate_digest
+        || workload.review.candidate_digest !== candidateDigest) {
+        throw new Error("DELEGATION_READ_REVIEW_CHANGED: this job's Read review does not match the selected saved candidate. Review the current draft before recording this job.");
       }
       const guidedStatus = await guidedActionStatus(projectRoot);
       const seenCapabilities = new Set<string>();
@@ -1400,6 +1404,7 @@ async function handleRequest(input: {
         const draft = guidedStatus.drafts.find((candidate) =>
           candidate.capability === capability
           && candidate.contract_digest === contractDigest
+          && candidate.boundary_digest === candidateDigest
           && candidate.boundary_name === generatedBoundary.pack.name);
         if (!draft) {
           throw new Error(`DELEGATION_ACTION_DRAFT_MISMATCH: ${capability} is not an exact disabled draft for ${generatedBoundary.pack.name}.`);
@@ -1432,9 +1437,31 @@ async function handleRequest(input: {
         actionDrafts,
         ...(modelAssist ? { modelAssist } : {}),
       });
+      // This is a historical job artifact, not an authority write. Other Action
+      // preparation may change the global epoch while this exact Read stays valid.
+      const assertCurrentRead = async () => {
+        const current = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+        if (current.progress?.boundary_id !== savedReview.progress?.boundary_id
+          || current.authoring?.repository_id !== savedReview.authoring?.repository_id
+          || current.authoring?.deployment_id !== savedReview.authoring?.deployment_id
+          || current.authoring?.project_id !== savedReview.authoring?.project_id
+          || explorationBoundaryCandidateDigest(current.progress?.candidate ?? current.draft) !== candidateDigest) {
+          throw new Error("DELEGATION_READ_REVIEW_CHANGED: the selected Read draft changed while recording this job. Reopen its current review before continuing.");
+        }
+      };
+      await assertCurrentRead();
       const stored = await writeDelegationDraft(projectRoot, delegation);
+      try { await assertCurrentRead(); }
+      catch {
+        sendJson(response, 503, { ok: false, code: "DELEGATION_REVIEW_REFRESH_REQUIRED", draft_saved: true,
+          error: "This disabled job record was saved, but its current Read review changed or could not be refreshed. Reopen the saved draft before continuing.",
+          delegation, stored, review_current: false, authority_granted: false, authority_changed: false,
+          source_query_executed: false, explore_budget_consumed: false, source_database_changed: false });
+        return;
+      }
       sendJson(response, 200, {
         ok: true,
+        review_current: true,
         delegation,
         summary: summarizeDelegation(delegation, {
           read_active: false,

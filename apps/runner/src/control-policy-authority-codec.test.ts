@@ -29,7 +29,7 @@ import { commitBoundaryRescan, prepareBoundaryRescan, readBoundaryRescanReport }
 import { commitBoundaryResourceReviewMutation, inspectBoundaryResourceReview, prepareBoundaryResourceReviewMutation } from "./boundary-review-mutation.js";
 import { applyManagedBoundaryReviewDecision, createBoundaryReviewProgress } from "./boundary-review-domain.js";
 import { readBoundaryReviewProgress, saveBoundaryReviewProgress } from "./boundary-review-persistence.js";
-import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { readProjectReadAuthoring, saveProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { boundaryActivateCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
 import { startLocalUiServer } from "./local-ui.js";
 import { analyzeReadWorkloadSet, type ReadWorkloadSet } from "./read-workload-assist.js";
@@ -37,6 +37,8 @@ import * as readWorkloads from "./read-workloads.js";
 import * as autoBoundary from "./auto-boundary.js";
 import * as mappingCatalog from "./job-mapping-catalog.js";
 import * as boundaryMutations from "./boundary-review-mutation.js";
+import * as guidedActions from "./guided-action.js";
+import * as delegationSetup from "./delegation-setup.js";
 import { createSavedBoundary, deleteSavedBoundary, discardOnlySavedBoundaryReview, renameSavedBoundary, switchSavedBoundary,
   resolveSavedBoundaryReviewAuthority, synchronizeBoundaryLibrary } from "./boundary-library.js";
 import { readRuntimeConfig } from "./cli-project.js";
@@ -894,6 +896,96 @@ for (const backend of ["sqlite", "postgres"] as const) {
           await expect(fs.stat(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json")))
             .rejects.toMatchObject({ code: "ENOENT" });
         } finally { await server.close(); refresh.mockRestore(); readSnapshot.mockRestore(); }
+      });
+    });
+
+    it.each(["current", "stale", "before_save", "after_save", "selection", "unrelated", "action_mismatch", "analysis_mismatch"] as const)(
+      "binds the saved Workbench job artifact to its exact Read dependency during %s", async (phase) => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture();
+        for (const [index, domain] of ["inventory", "university"].entries()) {
+          authoring.entries[index]!.catalog = readAuthoringCatalog(fixture(domain).build);
+        }
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare" });
+        const initial = await policies.current();
+        const selected = (await readProjectReadAuthoring(projectRoot))!.selected!;
+        const candidate = selected.progress.candidate;
+        const workload: ReadWorkloadSet = { schema_version: "synapsor.read-workload-set.v1", name: "stock_counts",
+          allowed: [{ id: "count_items", description: "How many stock items are there?", plan: {
+            kind: "aggregate", resource: "inventory.items", measures: [{ function: "count" }] } }], forbidden: [],
+          source: { kind: "operator_exact_plan" } };
+        const mapped = await readWorkloads.storeReadWorkloadAnalysis({ projectRoot, generatedBoundary: candidate,
+          source: workload.source, analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: candidate }) });
+        const review = await readWorkloads.recordReadWorkloadReview({ projectRoot, workload: mapped,
+          candidateDigest: selected.progress.candidate_digest, reviewRevision: selected.progress.revision });
+        if (phase === "analysis_mismatch") {
+          await fs.writeFile(path.join(projectRoot, ".synapsor/read-workloads", `${mapped.analysis_id}.review.json`),
+            JSON.stringify({ ...review, analyzed_candidate_digest: canonicalJsonDigest("different analyzed candidate") }));
+        }
+        const change = async (other = false) => {
+          const current = (await readProjectReadAuthoring(projectRoot))!;
+          const entry = other ? current.authoring.entries[1]! : current.selected!;
+          const next = structuredClone(entry.progress.candidate); next.budgets.max_top_n = 8;
+          entry.progress = createBoundaryReviewProgress({ draft: entry.draft, candidate: next, previous: entry.progress,
+            confirmedDecisions: next.unresolved_decisions, revision: entry.progress.revision + 1 });
+          await saveProjectReadAuthoring({ projectRoot, expected: current.bindings, authoring: current.authoring,
+            actor: "operator", operation: "edit_disabled_review" });
+        };
+        if (phase === "stale") await change();
+        const originalStatus = guidedActions.guidedActionStatus;
+        const status = vi.spyOn(guidedActions, "guidedActionStatus").mockImplementationOnce(async (root) => {
+          const result = await originalStatus(root);
+          if (phase === "before_save" || phase === "unrelated") await change(phase === "unrelated");
+          if (phase === "selection") {
+            const current = (await readProjectReadAuthoring(projectRoot))!;
+            await switchSavedBoundary({ projectRoot, draft: current.selected!.draft,
+              currentCandidate: current.selected!.progress.candidate, currentProgress: current.selected!.progress,
+              expectedAuthoring: current.bindings, name: "university_draft" });
+          }
+          if (phase === "action_mismatch") result.drafts = [{ capability: "inventory.adjust", boundary_name: candidate.pack.name,
+            boundary_digest: canonicalJsonDigest("a previous Read revision"), contract_digest: canonicalJsonDigest("reviewed action") } as never];
+          return result;
+        });
+        const originalSave = delegationSetup.writeDelegationDraft;
+        const save = vi.spyOn(delegationSetup, "writeDelegationDraft").mockImplementationOnce(async (root, draft) => {
+          const result = await originalSave(root, draft);
+          if (phase === "after_save") await change();
+          return result;
+        });
+        const server = await startLocalUiServer({ projectRoot, boundaryRoot: path.join(projectRoot, "synapsor/generated"),
+          configPath: path.join(projectRoot, "synapsor.runner.json"), storePath: path.join(projectRoot, "control.db"),
+          token: "job-artifact-token", csrfToken: "job-artifact-csrf" });
+        try {
+          const bootstrap = await fetch(server.url, { redirect: "manual" }); expect(bootstrap.status).toBe(303);
+          const headers = { cookie: bootstrap.headers.get("set-cookie")!.split(";", 1)[0]!,
+            "content-type": "application/json", "x-synapsor-csrf": "job-artifact-csrf" };
+          const response = await fetch(`http://${server.host}:${server.port}/api/boundary/delegations/record`, {
+            method: "POST", headers, body: JSON.stringify({ job_intent: "Count my stock items.", analysis_id: mapped.analysis_id,
+              action_intents: phase === "action_mismatch" ? ["Adjust stock."] : [],
+              actions: phase === "action_mismatch" ? [{ intent: "Adjust stock.", capability: "inventory.adjust",
+                contract_digest: canonicalJsonDigest("reviewed action") }] : [] }) });
+          const result = await response.json();
+          const success = phase === "current" || phase === "unrelated";
+          expect(response.status, JSON.stringify(result)).toBe(success ? 200 : phase === "after_save" ? 503 : 409);
+          expect(result.source_database_changed).toBe(false);
+          const saved = success || phase === "after_save";
+          expect(save.mock.calls.length).toBe(saved ? 1 : 0);
+          const records = await delegationSetup.listDelegationDrafts(projectRoot);
+          expect(records).toHaveLength(saved ? 1 : 0);
+          if (saved) {
+            expect(result.delegation.read.candidate_digest).toBe(selected.progress.candidate_digest);
+            expect(result.review_current).toBe(success);
+            expect(result.delegation.state).toBe("disabled");
+            expect(result.authority_granted).toBe(false);
+          }
+          if (phase === "after_save") expect(result).toMatchObject({ draft_saved: true, code: "DELEGATION_REVIEW_REFRESH_REQUIRED" });
+          if (phase === "unrelated") expect((await policies.current()).epoch).toBeGreaterThan(initial.epoch);
+          expect((await policies.current()).active.filter(({ policy }) => policy.type !== "read_authoring"))
+            .toEqual(initial.active.filter(({ policy }) => policy.type !== "read_authoring"));
+          await expect(fs.stat(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json")))
+            .rejects.toMatchObject({ code: "ENOENT" });
+        } finally { await server.close(); status.mockRestore(); save.mockRestore(); }
       });
     });
 
