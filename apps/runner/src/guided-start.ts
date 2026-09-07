@@ -99,6 +99,7 @@ import { ui } from "./ui-command.js";
 import { padTerminalBlock } from "./terminal-layout.js";
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { saveInitialGovernedBoundaryReview } from "./boundary-initial-review.js";
 import { openBoundProjectControlPolicies, openProjectControlPolicies } from "./control-policy-store.js";
 import {
   validateExploreTrustedScopeDefinition,
@@ -374,8 +375,11 @@ async function startAutoBoundary(
     };
   const verbose = args.includes("--verbose");
   if (verbose) writeGuidedOutput(formatProjectDetection(project));
-  const existingJourney = await readGuidedOnboardingState(project.root);
-  const managedBoundaryContext = existingJourney
+  const savedJourney = await readGuidedOnboardingState(project.root);
+  const initialAuthoring = await readProjectReadAuthoring(project.root);
+  const needsInitialReview = initialAuthoring && !initialAuthoring.selected;
+  const existingJourney = needsInitialReview ? undefined : savedJourney;
+  const managedBoundaryContext = existingJourney || needsInitialReview
     ? undefined
     : await loadManagedBoundaryProjectContext(project.root);
   const shouldRescan = args.includes("--rescan") || args.includes("--force");
@@ -394,7 +398,8 @@ async function startAutoBoundary(
   }
   if ((existingJourney || managedBoundaryContext) && !shouldRescan) {
     const context = managedBoundaryContext ?? await loadBoundaryReviewContext(project.root);
-    const reviewedSourceEnv = existingJourney?.source.environment_variable ?? context.lock.source_env;
+    const reviewedSourceEnv = context.bundle.mutation_bindings.authoring
+      ? context.lock.source_env : existingJourney?.source.environment_variable ?? context.lock.source_env;
     if (reviewedSourceEnv !== sourceEnv) {
       throw new Error(
         `This reviewed project uses ${reviewedSourceEnv}, not ${sourceEnv}. ` +
@@ -513,7 +518,8 @@ async function startAutoBoundary(
     const context = managedBoundaryContext ?? await loadBoundaryReviewContext(project.root);
     const savedJob = await readBoundaryAuthoringResumeState(project.root, boundaryAuthoringResumeBinding(context.bundle));
     const hasGuidedJob = savedJob.status !== "none";
-    const reviewedSourceEnv = existingJourney?.source.environment_variable ?? context.lock.source_env;
+    const reviewedSourceEnv = context.bundle.mutation_bindings.authoring
+      ? context.lock.source_env : existingJourney?.source.environment_variable ?? context.lock.source_env;
     if (reviewedSourceEnv !== sourceEnv) {
       throw new Error(
         `This reviewed project uses ${reviewedSourceEnv}, not ${sourceEnv}. `
@@ -577,7 +583,12 @@ async function startAutoBoundary(
       ...(existingJourney?.graduation_tip_suppressed ? ["--no-graduation-tip"] : []),
     ]);
   }
-  await preflightGuidedProjectInitialization(project.root);
+  if (!initialAuthoring) await preflightGuidedProjectInitialization(project.root);
+  const savedConfigPath = path.join(project.root, savedJourney?.artifacts.runner_config ?? "synapsor.runner.json");
+  const configuredContext = initialAuthoring && await fileExists(savedConfigPath)
+    ? await configuredExploreTrustedContext({ configPath: savedConfigPath, sourceEnv,
+      deploymentProfile: "staging", singleOrganization, requireConfiguredSource: true })
+    : undefined;
   if (verbose) {
     writeGuidedOutput("Inspecting the whole selected schema in an enforced read-only metadata transaction. No source rows are sampled.\n");
   } else {
@@ -614,7 +625,9 @@ async function startAutoBoundary(
     parsedEvidence: evidence.parsed,
     existingContracts: evidence.existingContracts,
     sourceEnv,
-    configuredTrustedContext: defaultLocalTrustedContextAuthority(singleOrganization),
+    configuredTrustedContext: configuredContext?.authority ?? defaultLocalTrustedContextAuthority(singleOrganization),
+    ...(configuredContext?.authority.principal_binding ? { overrides: seedConfiguredPrincipalBindingReview({ inspection,
+      principalBinding: configuredContext.authority.principal_binding, actor: "runner-config", decidedAt: configuredContext.decidedAt }) } : {}),
     inspectedSchema: optionalArg(args, "--schema"),
     ...(singleOrganization ? { singleOrganization: { organizationId: organizationId! } } : {}),
   };
@@ -636,6 +649,18 @@ async function startAutoBoundary(
     boundary: build.exploration_boundary,
     inspection,
   });
+  if (initialAuthoring) {
+    await saveInitialGovernedBoundaryReview({ projectRoot: project.root, build,
+      expectedAuthoring: initialAuthoring.bindings, actor: "local_operator" });
+    writeGuidedOutput("Metadata inspected. A disabled Boundary review is saved in the existing control store; active authority is unchanged.\n");
+    if (cliMode) return runBoundaryReview(["--project-root", project.root, "--access", "--job-first"], schemaInspector, activationHandoff);
+    if (args.includes("--no-open")) return 0;
+    const configPath = path.join(project.root, savedJourney?.artifacts.runner_config ?? "synapsor.runner.json");
+    const storePath = await guidedWorkbenchStorePath(project.root, configPath,
+      path.join(project.root, savedJourney?.artifacts.local_store ?? ".synapsor/local.db"));
+    return openWorkbench(["--open", "--boundary-root", path.join(project.root, "synapsor/generated"),
+      "--config", configPath, "--store", storePath]);
+  }
   let result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>> | undefined;
   let guided: Awaited<ReturnType<typeof initializeGuidedProject>>;
   try {
@@ -1054,11 +1079,13 @@ export async function boundaryCommand(
     }
     const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
     const existingJourney = await readGuidedOnboardingState(projectRoot);
+    const initialAuthoring = await readProjectReadAuthoring(projectRoot);
     const existingBoundaryRoot = path.join(
       projectRoot,
       existingJourney?.artifacts.boundary_root ?? "synapsor/generated",
     );
-    if (await fileExists(path.join(existingBoundaryRoot, "exploration-boundary.draft.json"))) {
+    if (initialAuthoring?.selected || (!initialAuthoring
+      && await fileExists(path.join(existingBoundaryRoot, "exploration-boundary.draft.json")))) {
       const authorityChangingFlags = [
         "--engine",
         "--schema",
@@ -1133,6 +1160,7 @@ export async function boundaryCommand(
           sourceEnv,
           deploymentProfile,
           singleOrganization,
+          requireConfiguredSource: initialAuthoring !== undefined,
         })
       : deploymentProfile !== "production"
         ? {
@@ -1179,6 +1207,19 @@ export async function boundaryCommand(
         : {}),
       ...(singleOrganization ? { singleOrganization: { organizationId: organizationId! } } : {}),
     });
+    if (initialAuthoring) {
+      const saved = await saveInitialGovernedBoundaryReview({ projectRoot, build,
+        expectedAuthoring: initialAuthoring.bindings, actor: "local_operator" });
+      const next = `${cliCommandName()} boundary review --project-root ${shellQuote(projectRoot)}`;
+      if (rest.includes("--json")) process.stdout.write(`${JSON.stringify({
+        ok: true, activation: "disabled_unreviewed", storage: "control_repository",
+        boundary_id: saved.progress.boundary_id, candidate_digest: saved.progress.candidate_digest,
+        review_revision: saved.progress.revision, authoring_binding: saved.authoring,
+        source_database_changed: false, active_authority_changed: false, next_action: next,
+      }, null, 2)}\n`);
+      else process.stdout.write(`Disabled Boundary review saved in the existing control store. Active authority and runtime configuration are unchanged.\nNext: ${next}\n`);
+      return 0;
+    }
     const shouldInitializeProject = deploymentProfile !== "production"
       && !existingJourney
       && !existingProject?.config_path;
@@ -1445,6 +1486,7 @@ async function configuredExploreTrustedContext(input: {
   sourceEnv: string;
   deploymentProfile: "development" | "staging" | "production";
   singleOrganization: boolean;
+  requireConfiguredSource?: boolean;
 }): Promise<{
   authority: ConfiguredTrustedContextAuthority;
   decidedAt: string;
@@ -1452,6 +1494,10 @@ async function configuredExploreTrustedContext(input: {
   const config = loadRuntimeConfigFromFile(input.configPath);
   const configuredSource = Object.values(config.sources ?? {}).find((source) =>
     source.read_url_env === input.sourceEnv);
+  if (!configuredSource && input.requireConfiguredSource) {
+    throw new Error(`The existing runtime configuration does not configure the requested source ${input.sourceEnv}. `
+      + "Use its configured source, or review a runtime configuration change before drafting this source. The saved review is unchanged.");
+  }
   if (!configuredSource || !config.trusted_context) return undefined;
   const context = config.trusted_context;
   const tenantBinding = context.tenant_binding?.trim();

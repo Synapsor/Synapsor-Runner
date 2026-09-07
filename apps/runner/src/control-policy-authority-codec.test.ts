@@ -31,7 +31,8 @@ import { applyManagedBoundaryReviewDecision, createBoundaryReviewProgress } from
 import { readBoundaryReviewProgress, saveBoundaryReviewProgress, saveInstantBoundaryReviewBaseline,
   saveInstantBoundaryEditBaseline } from "./boundary-review-persistence.js";
 import { activateInstantCliBoundary } from "./instant-cli-boundary.js";
-import { start } from "./guided-start.js";
+import { boundaryCommand, start } from "./guided-start.js";
+import { saveInitialGovernedBoundaryReview } from "./boundary-initial-review.js";
 import { readProjectReadAuthoring, saveProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { boundaryActivateCommand, boundaryAuthoringResumeBinding, loadBoundaryReviewContext } from "./boundary-commands.js";
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
@@ -461,7 +462,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
-    it.each(["disabled", "unrelated_active", "selected_active", "selected_changed", "guided_active", "metadata", "stale_export", "no_selection", "no_authoring",
+    it.each(["disabled", "unrelated_active", "selected_active", "selected_changed", "guided_active", "metadata", "stale_export", "no_authoring",
       "workbench", "wrong_store", "no_config", "no_config_cli", "bare", "deferred"])("resumes governed startup without generated exports: %s", async (mode) => {
       await useRepository(async ({ policies, projectRoot, config }) => {
         const authoring = mode === "metadata" ? metadataAuthoringFixture(projectRoot).authoring : readAuthoringFixture();
@@ -473,7 +474,6 @@ for (const backend of ["sqlite", "postgres"] as const) {
               candidate: source.candidate, confirmedDecisions: [], actor: "operator", revision: 1 }) };
           authoring.selected_boundary_id = authoring.entries[0]!.progress.boundary_id;
         }
-        if (mode === "no_selection") { authoring.entries = []; authoring.selected_boundary_id = null; }
         if (mode !== "no_authoring") {
           const current = await policies.current();
           await policies.commitReadAuthoring({ expected_epoch: current.epoch, expected_revision_id: null,
@@ -514,7 +514,6 @@ for (const backend of ["sqlite", "postgres"] as const) {
           const running = start(args, { interactive: true, schemaInspector: inspect,
             runBoundaryReview: review, runPostActivationHandoff: handoff, openWorkbench: workbench });
           if (mode === "no_authoring") await expect(running).rejects.toMatchObject({ code: "POLICY_READ_AUTHORING_MISSING" });
-          else if (mode === "no_selection") await expect(running).rejects.toThrow("No saved Read boundary is selected");
           else if (mode === "wrong_store") await expect(running).rejects.toMatchObject({ code: "POLICY_STORE_SELECTION_CHANGED" });
           else if (mode === "no_config") await expect(running).rejects.toThrow("Workbench needs the reviewed runtime configuration");
           else await expect(running).resolves.toBe(0);
@@ -541,7 +540,95 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
-    it.each([false, true])("resumes a stored rescan only when its exact selected Read is active: %s", async (selectedActive) => {
+    it.each(["cli", "draft", "coded_cli", "coded_draft", "configured_scope", "configured_scope_draft", "unconfigured_cli", "unconfigured_draft",
+      "inspection_race", "unsafe_role", "inspection_failure", "review_failure"])(
+      "publishes initial governed metadata only into an empty saved review: %s", async (mode) => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const before = await policies.current();
+        await policies.commitReadAuthoring({ expected_epoch: before.epoch, expected_revision_id: null,
+          authoring: { type: "read_authoring", selected_boundary_id: null, entries: [] },
+          actor: "operator", operation: "empty_review" });
+        const initial = (await readProjectReadAuthoring(projectRoot))!;
+        const source = mode.startsWith("coded") ? metadataAuthoringFixture(projectRoot) : fixture("inventory");
+        const inspection = structuredClone(source.inspection);
+        const competing = readAuthoringFixture();
+        let configBefore: string | undefined;
+        if (mode.startsWith("configured_scope") || mode.startsWith("unconfigured")) {
+          inspection.tables[0]!.columns.find((field) => field.name === "principal_id")!.name = "actor_uuid";
+          configBefore = JSON.stringify({ version: 1, mode: "read_only", capabilities: [],
+            trusted_context: { provider: "environment", tenant_binding: "tenant_id", principal_binding: "actor_uuid",
+              values: { tenant_id_env: "SYNAPSOR_TENANT_ID", principal_env: "CUSTOM_PRINCIPAL" } },
+            sources: { local_postgres: { engine: "postgres", read_url_env: "DATABASE_URL", read_only: true } },
+            generated_authority: { generation_lock_path: "./.synapsor/generation-lock.json", enforcement: "required" },
+          });
+          await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), configBefore);
+        }
+        if (mode === "unsafe_role") inspection.role_posture!.superuser = true;
+        const inspect = vi.fn(async () => {
+          if (mode === "inspection_race") await saveProjectReadAuthoring({ projectRoot, expected: initial.bindings,
+            authoring: competing, actor: "another_operator", operation: "other_initial_review" });
+          if (mode === "inspection_failure") throw new Error("test metadata connection unavailable");
+          return inspection;
+        });
+        const review = vi.fn(async () => { if (mode === "review_failure") throw new Error("test review UI unavailable"); return 0; });
+        const cwd = process.cwd(); const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+        await fs.mkdir(path.join(projectRoot, "synapsor/generated"), { recursive: true });
+        const legacyFile = path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json");
+        await fs.writeFile(legacyFile, "obsolete export must not be a generated draft");
+        process.chdir(projectRoot);
+        try {
+          const isDraft = mode.endsWith("draft");
+          const sourceEnv = mode.startsWith("unconfigured") ? "OTHER_DATABASE_URL" : "DATABASE_URL";
+          const running = isDraft
+            ? boundaryCommand(["draft", "--from-env", sourceEnv, "--schema", mode.startsWith("coded") ? "coded" : "inventory",
+              "--project-root", projectRoot, "--force", "--json"], inspect)
+            : start(["--from-env", sourceEnv, "--schema", mode.startsWith("coded") ? "coded" : "inventory", "--cli"], {
+              interactive: true, schemaInspector: inspect, runBoundaryReview: review,
+              reviewUnresolvedOrganizationScope: async () => ({ mode: "tenant" }),
+            });
+          if (mode.startsWith("unconfigured")) await expect(running).rejects.toThrow("does not configure the requested source OTHER_DATABASE_URL");
+          else if (mode === "inspection_race") await expect(running).rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+          else if (mode === "unsafe_role") await expect(running).rejects.toMatchObject({ code: "DATABASE_ROLE_UNSAFE" });
+          else if (mode === "inspection_failure") await expect(running).rejects.toThrow("metadata connection unavailable");
+          else if (mode === "review_failure") await expect(running).rejects.toThrow("test review UI unavailable");
+          else await expect(running).resolves.toBe(0);
+          if (mode.startsWith("unconfigured")) expect(inspect).not.toHaveBeenCalled();
+          else expect(inspect).toHaveBeenCalledOnce();
+          const saved = (await readProjectReadAuthoring(projectRoot))!;
+          if (mode === "inspection_race") expect(saved.authoring).toEqual(competing);
+          else if (["unsafe_role", "inspection_failure"].includes(mode) || mode.startsWith("unconfigured")) expect(saved).toEqual(initial);
+          else {
+            expect(saved.authoring.entries).toHaveLength(1);
+            expect(saved.selected!.progress.revision).toBe(1);
+            expect(saved.selected!.progress.confirmed_decisions).toEqual([]);
+            expect(saved.selected!.catalog!.review.resources[0]!.id).toBe(mode.startsWith("coded") ? "coded.x17" : "inventory.items");
+            expect(saved.selected!.stage).toBe(mode.startsWith("coded") ? "metadata_only" : undefined);
+            if (mode.startsWith("configured_scope")) {
+              expect(saved.selected!.candidate_lock.trusted_context_authority?.principal_binding).toBe("actor_uuid");
+              expect(saved.selected!.progress.candidate.trusted_context.principal_env).toBe("CUSTOM_PRINCIPAL");
+            }
+            await expect(saveInitialGovernedBoundaryReview({ projectRoot, build: source.build,
+              expectedAuthoring: initial.bindings, actor: "operator" })).rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
+            await expect(saveInitialGovernedBoundaryReview({ projectRoot, build: source.build,
+              expectedAuthoring: saved.bindings, actor: "operator" })).rejects.toThrow("saved Read review already exists");
+            expect(await readProjectReadAuthoring(projectRoot)).toEqual(saved);
+            if (isDraft) expect(output.mock.calls.flat().join("")).toContain('"storage": "control_repository"');
+            else expect(review).toHaveBeenCalledWith(["--project-root", projectRoot, "--access", "--job-first"], inspect, expect.any(Function));
+          }
+          const after = await policies.current();
+          expect(after.active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
+          if (mode.startsWith("coded")) expect(after.drafts).toEqual([]);
+          expect(await fs.readFile(legacyFile, "utf8")).toBe("obsolete export must not be a generated draft");
+          await expect(fs.stat(path.join(projectRoot, ".synapsor/local.db"))).rejects.toMatchObject({ code: "ENOENT" });
+          if (configBefore) expect(await fs.readFile(path.join(projectRoot, "synapsor.runner.json"), "utf8")).toBe(configBefore);
+          else await expect(fs.stat(path.join(projectRoot, "synapsor.runner.json"))).rejects.toMatchObject({ code: "ENOENT" });
+        } finally { process.chdir(cwd); output.mockRestore(); }
+      });
+    });
+
+    it.each([{ surface: "cli", selectedActive: false }, { surface: "cli", selectedActive: true },
+      { surface: "draft", selectedActive: false }, { surface: "draft", selectedActive: true }])(
+      "resumes a stored rescan only when its exact selected Read is active: $surface $selectedActive", async ({ surface, selectedActive }) => {
       await useRepository(async ({ policies, projectRoot }) => {
         const source = fixture(); const authoring = readAuthoringFixture();
         const first = authoring.entries[0]!;
@@ -559,12 +646,13 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const review = vi.fn(async () => 0), handoff = vi.fn(async () => 0);
         process.chdir(projectRoot);
         try {
-          await expect(start(["--from-env", "DATABASE_URL", "--cli", "--rescan"], {
+          const running = surface === "cli" ? start(["--from-env", "DATABASE_URL", "--cli", "--rescan"], {
             interactive: true, schemaInspector: inspect, runBoundaryReview: review, runPostActivationHandoff: handoff,
-          })).resolves.toBe(0);
+          }) : boundaryCommand(["draft", "--from-env", "DATABASE_URL", "--project-root", projectRoot, "--force"], inspect);
+          await expect(running).resolves.toBe(0);
           expect(inspect).toHaveBeenCalledOnce();
-          expect(handoff).toHaveBeenCalledTimes(selectedActive ? 1 : 0);
-          expect(review).toHaveBeenCalledTimes(selectedActive ? 0 : 1);
+          expect(handoff).toHaveBeenCalledTimes(surface === "cli" && selectedActive ? 1 : 0);
+          expect(review).toHaveBeenCalledTimes(surface === "cli" && !selectedActive ? 1 : 0);
           const after = await policies.current();
           expect(after.active.filter(({ policy }) => policy.type !== "read_authoring"))
             .toEqual(before.active.filter(({ policy }) => policy.type !== "read_authoring"));
