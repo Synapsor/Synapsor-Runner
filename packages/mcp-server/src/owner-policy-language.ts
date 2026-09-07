@@ -36,15 +36,32 @@ export const ownerFactSchema = z.object({
   literal_values: z.array(scalar).min(1).max(32).optional(),
 }).strict();
 
+export const ownerBudgetSchema = z.object({
+  meter: name, title: text, scope: z.enum(["tenant", "tenant_principal"]),
+  unit: z.string().regex(/^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/u),
+  // All values are already in reviewed integral units. Money uses ISO:minor;
+  // no implicit currency conversion, fees or refund accounting is supported.
+  scale: z.literal(1), maximum: z.number().int().nonnegative().safe(),
+  window_ms: z.number().int().positive().max(366 * 86_400_000),
+}).strict();
+export const ownerBudgetChargeSchema = z.discriminatedUnion("kind", [
+  z.object({ meter: name, kind: z.literal("effect_count") }).strict(),
+  z.object({ meter: name, kind: z.literal("effect_field"), field: name }).strict(),
+]);
+export type OwnerBudget = z.infer<typeof ownerBudgetSchema>;
+export type OwnerBudgetCharge = z.infer<typeof ownerBudgetChargeSchema>;
+
 export const ownerPolicyParentSchema = z.object({
   schema_version: z.literal("synapsor.owner-policy-parent.v1"),
   agents: z.array(name).min(1).max(64),
+  budgets: z.array(ownerBudgetSchema).min(1).max(8).optional(),
   outcomes: z.array(z.object({
     outcome: name,
     compiled_plan_digest: digest,
     facts: z.array(ownerFactSchema).min(1).max(32),
     require: ownerPredicateSchema.optional(),
     allow_automatic_approval: z.boolean(),
+    budget_charges: z.array(ownerBudgetChargeSchema).min(1).max(8).optional(),
   }).strict()).min(1).max(32),
 }).strict();
 export type OwnerPolicyParent = z.infer<typeof ownerPolicyParentSchema>;
@@ -53,6 +70,7 @@ export type OwnerPolicyFact = z.infer<typeof ownerFactSchema>;
 export const ownerPolicyDefinitionSchema = z.object({
   schema_version: z.literal("synapsor.owner-policy.v1"),
   agents: z.array(name).min(1).max(64),
+  budget_limits: z.array(z.object({ meter: name, maximum: z.number().int().nonnegative().safe() }).strict()).min(1).max(8).optional(),
   rules: z.array(z.object({
     outcome: name,
     require: ownerPredicateSchema,

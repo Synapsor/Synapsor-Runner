@@ -19,8 +19,14 @@ for (const backend of ["sqlite", "postgres"] as const) {
     beforeAll(() => { if (backend === "postgres") pool = new Pool({ connectionString: url, max: 4 }); });
     afterEach(() => { vi.restoreAllMocks(); for (const db of connections.splice(0)) db.close(); });
     afterAll(async () => { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } });
-    async function fixture(domain = "inventory", coded = false) {
+    async function fixture(domain = "inventory", coded = false, withBudget = false) {
       const f = ownerPolicyTestFixture(domain, coded), deployment = randomUUID();
+      if (withBudget) {
+        f.parent.budgets = [{ meter: "allocated_units", title: "Allocated units", scope: "tenant", unit: "units", scale: 1, maximum: 30, window_ms: 86_400_000 }];
+        f.parent.outcomes[0]!.budget_charges = [{ meter: "allocated_units", kind: "effect_field", field: f.amount }];
+        f.definition.budget_limits = [{ meter: "allocated_units", maximum: 25 }];
+        f.definition.agents = ["agent-a", "agent-b"];
+      }
       const db = backend === "sqlite" ? new DatabaseSync(":memory:") : undefined;
       if (db) { connections.push(db); db.exec("PRAGMA foreign_keys = ON"); }
       const repository = db ? sqliteControlPolicyRepository(db) : postgresControlPolicyRepository(pool, schema);
@@ -29,11 +35,12 @@ for (const backend of ["sqlite", "postgres"] as const) {
       const parentKey: ControlPolicyKey = { scope: { level: "operator" }, kind: "parent", name: "workload_policy" };
       const ownerKey: ControlPolicyKey = { scope: owner, kind: "delegation", name: "owner_rules" };
       const parentDocument: PolicyManagementParent = { schema_version: "synapsor.policy-management-parent.v1", managers: [], delegation: f.parent,
-        agent_owners: [{ agent: "agent-a", scope: owner }], runtime_delegations: [{ agent: "agent-a", delegator: "maya", owner,
-          policies: [{ scope: owner, name: ownerKey.name }], expires_at: new Date(Date.now() + 90_000).toISOString() }] };
+        agent_owners: f.definition.agents.map((agent) => ({ agent, scope: owner })), runtime_delegations: f.definition.agents.map((agent) => ({ agent, delegator: "maya", owner,
+          policies: [{ scope: owner, name: ownerKey.name }], expires_at: new Date(Date.now() + 90_000).toISOString() })) };
       const make = (key: ControlPolicyKey, content: unknown, authority_digest: string = canonicalJsonDigest(content)): ControlPolicyRevision => ({ ...key,
         revision_id: randomUUID(), content, content_digest: canonicalJsonDigest(content), authority_digest });
-      const parent = make(parentKey, parentDocument), compiledOwner = compileOwnerPolicy({ parent: { ...f.parent, agents: ["agent-a"] }, definition: f.definition, rules: [f.compiled] });
+      const scopedParent = { ...f.parent, agents: f.definition.agents };
+      const parent = make(parentKey, parentDocument), compiledOwner = compileOwnerPolicy({ parent: scopedParent, definition: f.definition, rules: [f.compiled] });
       const policy = make(ownerKey, { schema_version: "synapsor.managed-owner-policy.v1", parent_name: parentKey.name,
         parent_revision_id: parent.revision_id, parent_authority_digest: parent.authority_digest,
         definition: f.definition, compiled_digest: compiledOwner.digest }, compiledOwner.digest);
@@ -55,8 +62,8 @@ for (const backend of ["sqlite", "postgres"] as const) {
             { id: "owner", kind: "count", scope: "tenant_principal", capability: f.compiled.outcome, maximum: 3, window_seconds: 86_400 },
           ] }] }) });
       const adapter = { engine: "postgres" as const, load: vi.fn(async () => structuredClone(f.facts.bindings.request!.rows)) };
-      async function propose(quantity = 10, proposalId = `proposal_${randomUUID()}`) {
-        const context = await runtime.begin("private-bearer-test");
+      async function propose(quantity = 10, proposalId = `proposal_${randomUUID()}`, credential = "private-bearer-test") {
+        const context = await runtime.begin(credential);
         const decision = await evaluateSemanticActionEligibility({ registry, outcome: f.compiled.outcome, inputs: { quantity },
           subjects: [{ binding: "request", resource: f.resource, primary_key: { column: "id", value: "request-1" }, subject_ref_digest: canonicalJsonDigest("ref") }],
           trusted: f.facts.trusted, adapter, proposal_id: proposalId, trusted_context_digest: canonicalJsonDigest("trusted"),
@@ -80,7 +87,14 @@ for (const backend of ["sqlite", "postgres"] as const) {
       };
       const revoke = async () => repository.commit({ deployment_id: deployment, expected_epoch: (await repository.deployment(deployment))!.epoch,
         revisions: [], active: [{ ...ownerKey, revision_id: null }], event: event() });
-      return { ...f, repository, deployment, owner, actor, authenticate, options, runtime, registry, adapter, propose, execute, revoke, parentDocument };
+      const reviseBudget = async (maximum: number) => {
+        const definition = { ...f.definition, budget_limits: [{ meter: "allocated_units", maximum }] };
+        const compiled = compileOwnerPolicy({ parent: scopedParent, definition, rules: [f.compiled] });
+        const next = make(ownerKey, { ...policy.content as object, definition, compiled_digest: compiled.digest }, compiled.digest);
+        await repository.commit({ deployment_id: deployment, expected_epoch: (await repository.deployment(deployment))!.epoch,
+          revisions: [next], active: [next], event: event() });
+      };
+      return { ...f, repository, deployment, owner, actor, authenticate, options, runtime, registry, adapter, propose, execute, revoke, reviseBudget, parentDocument };
     }
 
     it.each([["inventory", false], ["university", true], ["support", false]])("binds %s exact effects and short-lived verified workload without storing tokens", async (domain, coded) => {
@@ -164,6 +178,40 @@ for (const backend of ["sqlite", "postgres"] as const) {
       const f = await fixture(), register = f.repository.runtimeProofs.register.bind(f.repository.runtimeProofs);
       vi.spyOn(f.repository.runtimeProofs, "register").mockImplementationOnce(async (input) => { await f.revoke(); return register(input); });
       await expect(f.propose()).rejects.toThrow("POLICY_REVISION_CONFLICT");
+    });
+    it("counts actual effects, preserves usage across owner cap edits, and blocks human-reviewed overspending", async () => {
+      const f = await fixture("inventory", false, true), account = { scope: { level: "tenant" as const, tenant_id: "acme" },
+        meter: "allocated_units", unit: "units", scale: 1, limit: 25, window_ms: 86_400_000 };
+      const first = await f.propose(15), attempt = f.execute(first.job);
+      expect(await f.repository.budgets.inspect({ deployment_id: f.deployment, account })).toEqual({ committed: 0, reserved: 0, available: 25 });
+      await attempt.verify();
+      await attempt.attempt.record({ state: "completed", receipt_digest: canonicalJsonDigest("first source effect") });
+      f.facts.bindings.request!.rows[0]!.category = "exception";
+      const second = await f.propose(15);
+      expect(second.decision.approval.path).toBe("human_review");
+      await expect(f.execute(second.job).verify()).rejects.toThrow("HARD_BUDGET_EXCEEDED");
+      await f.reviseBudget(30);
+      await expect(f.execute(second.job).verify()).rejects.toThrow("DELEGATION_CHANGED");
+      const renewed = await f.propose(15), next = f.execute(renewed.job);
+      await next.verify(); await next.attempt.record({ state: "completed", receipt_digest: canonicalJsonDigest("second source effect") });
+      expect(await f.repository.budgets.inspect({ deployment_id: f.deployment, account: { ...account, limit: 30 } })).toEqual({ committed: 30, reserved: 0, available: 0 });
+      await f.reviseBudget(10);
+      const lowered = await f.propose(1);
+      await expect(f.execute(lowered.job).verify()).rejects.toThrow("HARD_BUDGET_EXCEEDED");
+    });
+    it("shares reservations across authenticated agents and retains unknown effects without a new allowance", async () => {
+      const f = await fixture("university", true, true);
+      f.authenticate.mockImplementation(async (credential) => credential === "agent-b-token"
+        ? { ...f.actor, agent_id: "agent-b", run_id: "another-run", actor_digest: canonicalJsonDigest("verified-agent-b") } : structuredClone(f.actor));
+      const first = await f.propose(15), second = await f.propose(15, "second-agent-proposal", "agent-b-token");
+      const a = f.execute(first.job), b = f.execute(second.job), results = await Promise.allSettled([a.verify(), b.verify()]);
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      const winner = results[0]!.status === "fulfilled" ? a : b;
+      await winner.attempt.record({ state: "unknown", receipt_digest: canonicalJsonDigest("timeout") });
+      const third = await f.propose(15);
+      await expect(f.execute(third.job).verify()).rejects.toThrow("HARD_BUDGET_EXCEEDED");
+      const account = { scope: { level: "tenant" as const, tenant_id: "acme" }, meter: "allocated_units", unit: "units", scale: 1, limit: 25, window_ms: 86_400_000 };
+      expect(await f.repository.budgets.inspect({ deployment_id: f.deployment, account })).toEqual({ committed: 0, reserved: 15, available: 10 });
     });
   });
 }

@@ -72,6 +72,7 @@ export function createPolicyManagementService(options: {
     return { scope: key.scope, name: key.name, agents: definition.agents,
       actions: definition.rules.map((rule) => ({ outcome: rule.outcome, require: rule.require,
         approval: rule.approval, ...(rule.auto_approve_when ? { auto_approve_when: rule.auto_approve_when } : {}) })),
+      ...(definition.budget_limits ? { hard_budget_limits: definition.budget_limits, budget_consumption_preserved: true } : {}),
       operation, previous_definition: before ?? null, parent_requirements_preserved: true, source_database_changed: false };
   }
   function delegationForScope(parent: Parent) {
@@ -103,6 +104,7 @@ export function createPolicyManagementService(options: {
       const active = snapshot.active.find((value) => value.name === key.name), draft = snapshot.drafts.find((value) => value.name === key.name);
       return { epoch: snapshot.epoch, key, ...(active ? { active: view(active, parent) } : {}), ...(draft ? { draft: view(draft, parent) } : {}),
         agents: delegationForScope(parent).agents,
+        ...(parent.document.delegation.budgets ? { parent_hard_budgets: parent.document.delegation.budgets } : {}),
         vocabulary: parent.document.delegation.outcomes.map((outcome) => ({ outcome: outcome.outcome, automatic_approval_delegable: outcome.allow_automatic_approval,
           facts: outcome.facts.map(({ source: _privateSource, ...fact }) => fact) })) };
     },

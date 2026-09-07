@@ -4,6 +4,42 @@ import { ownerPolicyTestFixture } from "./owner-policy-test-fixture.js";
 import type { OwnerPredicate } from "./owner-policy-language.js";
 
 describe("typed owner delegation compiler", () => {
+  function budgetFixture() {
+    const f = ownerPolicyTestFixture("university", true);
+    f.parent.budgets = [{ meter: "shared_units", title: "Allocated units", scope: "tenant", unit: "units", scale: 1, maximum: 50, window_ms: 86_400_000 }];
+    f.parent.outcomes[0]!.budget_charges = [{ meter: "shared_units", kind: "effect_field", field: f.amount }];
+    f.definition.budget_limits = [{ meter: "shared_units", maximum: 25 }];
+    return f;
+  }
+  it("compiles a fixed verified effect charge and lets an owner adjust only their parent-bounded cap", () => {
+    const f = budgetFixture(), first = compileOwnerPolicy({ ...f, rules: [f.compiled] });
+    expect(first.budgets).toEqual([{ ...f.parent.budgets![0]!, maximum: 25 }]);
+    expect(first.rules[0]!.budget_charges).toEqual([{ meter: "shared_units", kind: "effect_field", field: "f09" }]);
+    f.definition.budget_limits![0]!.maximum = 40;
+    expect(compileOwnerPolicy({ ...f, rules: [f.compiled] }).budgets).toEqual([{ ...f.parent.budgets![0]!, maximum: 40 }]);
+    f.definition.budget_limits![0]!.maximum = 51;
+    expect(() => compileOwnerPolicy({ ...f, rules: [f.compiled] })).toThrow("OWNER_POLICY_PARENT_BUDGET_EXCEEDED");
+    f.definition.budget_limits![0] = { meter: "new_account", maximum: 1 };
+    expect(() => compileOwnerPolicy({ ...f, rules: [f.compiled] })).toThrow("OWNER_POLICY_PARENT_BUDGET_EXCEEDED");
+  });
+  it.each(["window_ms", "scope", "unit", "charge"])("does not let an owner change the parent budget %s", (field) => {
+    const f = budgetFixture();
+    const definition = { ...f.definition, budget_limits: [{ ...f.definition.budget_limits![0], [field]: "unreviewed" }] };
+    expect(() => compileOwnerPolicy({ ...f, definition, rules: [f.compiled] })).toThrow("OWNER_POLICY_INVALID");
+  });
+  it("rejects unverifiable charges, incompatible units, unused meters and duplicate charges", () => {
+    const f = budgetFixture(), compile = () => compileOwnerPolicy({ ...f, rules: [f.compiled] });
+    f.parent.outcomes[0]!.budget_charges = [{ meter: "shared_units", kind: "effect_field", field: "version" }];
+    expect(compile).toThrow("OWNER_POLICY_BUDGET_EFFECT_NOT_VERIFIED");
+    f.parent.outcomes[0]!.budget_charges = [{ meter: "shared_units", kind: "effect_count" }];
+    expect(compile).toThrow("OWNER_POLICY_BUDGET_UNIT_MISMATCH");
+    f.parent.budgets![0]!.unit = "effects";
+    expect(compile().rules[0]!.budget_charges).toEqual([{ meter: "shared_units", kind: "effect_count" }]);
+    f.parent.outcomes[0]!.budget_charges.push({ meter: "shared_units", kind: "effect_count" });
+    expect(compile).toThrow("OWNER_POLICY_DUPLICATE");
+    delete f.parent.outcomes[0]!.budget_charges;
+    expect(compile).toThrow("OWNER_POLICY_BUDGET_NOT_ENFORCED");
+  });
   it.each(["inventory", "university", "customer_support"])("keeps the reviewed %s action and parent requirements mandatory", (domain) => {
     const f = ownerPolicyTestFixture(domain, domain === "university"), original = structuredClone(f.compiled);
     const policy = compileOwnerPolicy({ ...f, rules: [f.compiled] });

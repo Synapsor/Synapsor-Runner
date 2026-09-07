@@ -3,7 +3,7 @@ import { compileActionRuleBooleanPredicate, evaluateActionRule, evaluateActionRu
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleBooleanExpressionV1, ActionRuleScalarExpressionV1, ActionRuleScalarTypeSpecV1 } from "@synapsor/spec";
 import { assertBoundedOwnerPolicyInput, ownerPolicyDefinitionSchema, ownerPolicyParentSchema,
-  type OwnerPolicyDefinition, type OwnerPolicyFact, type OwnerPolicyParent, type OwnerPredicate } from "./owner-policy-language.js";
+  type OwnerPolicyDefinition, type OwnerPolicyFact, type OwnerPolicyParent, type OwnerPredicate, type OwnerBudget, type OwnerBudgetCharge } from "./owner-policy-language.js";
 
 export class OwnerPolicyCompileError extends Error {
   constructor(readonly code: string, readonly fact?: string) { super(code); this.name = "OwnerPolicyCompileError"; }
@@ -12,12 +12,14 @@ export type CompiledOwnerPolicy = {
   definition: OwnerPolicyDefinition;
   parent_digest: string;
   digest: string;
+  budgets?: OwnerBudget[];
   rules: Array<{
     outcome: string;
     compiled_plan_digest: string;
     require: ActionRuleBooleanExpressionV1;
     approval: "inherit" | "human";
     auto_approve_when?: ActionRuleBooleanExpressionV1;
+    budget_charges?: OwnerBudgetCharge[];
   }>;
 };
 
@@ -28,6 +30,15 @@ export function compileOwnerPolicy(input: { parent: unknown; definition: unknown
   const parent = parsedParent.data, definition = parsedDefinition.data;
   unique(parent.agents); unique(parent.outcomes.map((rule) => rule.outcome));
   unique(definition.agents); unique(definition.rules.map((rule) => rule.outcome));
+  unique((parent.budgets ?? []).map((budget) => budget.meter));
+  unique((definition.budget_limits ?? []).map((budget) => budget.meter));
+  const budgets = new Map((parent.budgets ?? []).map((budget) => [budget.meter, { ...budget }]));
+  for (const limit of definition.budget_limits ?? []) {
+    const budget = budgets.get(limit.meter);
+    if (!budget || limit.maximum > budget.maximum) throw new OwnerPolicyCompileError("OWNER_POLICY_PARENT_BUDGET_EXCEEDED");
+    budget.maximum = limit.maximum;
+  }
+  const usedMeters = new Set<string>();
   for (const agent of definition.agents) if (!parent.agents.includes(agent)) throw new OwnerPolicyCompileError("OWNER_POLICY_AGENT_NOT_DELEGABLE");
   const available = new Map(input.rules.map((rule) => [rule.outcome, rule]));
   if (available.size !== input.rules.length) throw new OwnerPolicyCompileError("OWNER_POLICY_AMBIGUOUS_ACTION");
@@ -35,6 +46,20 @@ export function compileOwnerPolicy(input: { parent: unknown; definition: unknown
   for (const source of parent.outcomes) {
     const compiled = available.get(source.outcome);
     if (!compiled || compiled.compiled_plan_digest !== source.compiled_plan_digest) throw new OwnerPolicyCompileError("OWNER_POLICY_PARENT_CHANGED");
+    unique((source.budget_charges ?? []).map((charge) => charge.meter));
+    for (const charge of source.budget_charges ?? []) {
+      const budget = budgets.get(charge.meter);
+      if (!budget) throw new OwnerPolicyCompileError("OWNER_POLICY_BUDGET_NOT_DEFINED");
+      if (charge.kind === "effect_count") {
+        if (budget.unit !== "effects") throw new OwnerPolicyCompileError("OWNER_POLICY_BUDGET_UNIT_MISMATCH");
+      } else {
+        const field = compiled.effect_envelope.allowed_fields.find((entry) => entry.name === charge.field);
+        if (!field || !Object.hasOwn(compiled.rule.effect.set, charge.field)) throw new OwnerPolicyCompileError("OWNER_POLICY_BUDGET_EFFECT_NOT_VERIFIED");
+        const unit = field.type.kind === "integer" ? field.type.unit : field.type.kind === "money_minor" ? `${field.type.currency}:minor` : undefined;
+        if (unit !== budget.unit) throw new OwnerPolicyCompileError("OWNER_POLICY_BUDGET_UNIT_MISMATCH");
+      }
+      usedMeters.add(charge.meter);
+    }
     unique(source.facts.map((fact) => fact.name));
     const facts = new Map(source.facts.map((fact) => [fact.name, fact]));
     for (const fact of facts.values()) {
@@ -50,6 +75,7 @@ export function compileOwnerPolicy(input: { parent: unknown; definition: unknown
     if (source.require) compileActionRuleBooleanPredicate({ compiled, expression: translate(source.require, compiled, facts) });
     parents.set(source.outcome, { source, compiled, facts });
   }
+  if ([...budgets.keys()].some((meter) => !usedMeters.has(meter))) throw new OwnerPolicyCompileError("OWNER_POLICY_BUDGET_NOT_ENFORCED");
   const rules = definition.rules.map((rule): CompiledOwnerPolicy["rules"][number] => {
     const parentRule = parents.get(rule.outcome);
     if (!parentRule) throw new OwnerPolicyCompileError("OWNER_POLICY_OUTCOME_NOT_DELEGABLE");
@@ -60,9 +86,11 @@ export function compileOwnerPolicy(input: { parent: unknown; definition: unknown
     if (rule.approval === "human" && rule.auto_approve_when) throw new OwnerPolicyCompileError("OWNER_POLICY_CONTRADICTORY_APPROVAL");
     return { outcome: rule.outcome, compiled_plan_digest: compiled.compiled_plan_digest,
       require: { kind: "all", expressions: conditions }, approval: rule.approval,
-      ...(rule.auto_approve_when ? { auto_approve_when: compile(rule.auto_approve_when) } : {}) };
+      ...(rule.auto_approve_when ? { auto_approve_when: compile(rule.auto_approve_when) } : {}),
+      ...(source.budget_charges ? { budget_charges: source.budget_charges } : {}) };
   });
-  const body = { definition, parent_digest: canonicalJsonDigest(parent), rules };
+  const body = { definition, parent_digest: canonicalJsonDigest(parent), rules,
+    ...(budgets.size ? { budgets: [...budgets.values()] } : {}) };
   return { ...body, digest: canonicalJsonDigest(body) };
 }
 

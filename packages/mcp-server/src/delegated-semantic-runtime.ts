@@ -4,6 +4,7 @@ import { canonicalJsonDigest, delegationProofV1Schema, type DelegationProofV1, t
 import type { ControlPolicyRepository, ControlPolicyScope } from "@synapsor-runner/proposal-store";
 import { createEffectiveOwnerPolicyResolver, evaluateEffectiveOwnerPolicy, type EffectiveOwnerPolicy } from "./effective-owner-policy.js";
 import { OwnerRuntimeError, ownerRuntimeIdentitySchema, type OwnerRuntimeAuthenticator } from "./owner-runtime-identity.js";
+import { effectiveOwnerBudgetCharges } from "./effective-owner-budgets.js";
 
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
 const attestationSchema = z.object({
@@ -39,6 +40,7 @@ export function createDelegatedSemanticRuntime(options: RuntimeOptions & { authe
         const decision = evaluateEffectiveOwnerPolicy({ effective, compiled: input.activated.compiled,
           facts: input.facts, inputs: input.inputs, proposal_id: input.proposal_id });
         if (decision.result !== "allowed") throw new OwnerRuntimeError("DELEGATION_REQUEST_REFUSED");
+        effectiveOwnerBudgetCharges(effective, input.activated.compiled.outcome, input.evaluation.effect);
         const validUntil = Math.min(effective.valid_until_ms, Date.parse(input.verified_at) + input.activated.compiled.ttl_seconds * 1000,
           Date.parse(input.verified_at) + 900_000);
         const content = attestationSchema.parse({ schema_version: "synapsor.delegated-proposal-context.v1",
@@ -92,7 +94,9 @@ export function createDelegatedSemanticExecutor(options: RuntimeOptions) {
       }
       const target = { deployment_id: options.deployment_id, request_id: original.proposal_id, expected_epoch: effective.epoch,
         actor_digest: effective.actor.actor_digest, policy_chain_digest: effective.digest, effect_digest: record.effect_digest };
-      const prepared = await options.repository.effects.prepare({ ...target, expires_at_ms: Date.parse(record.valid_until) });
+      const accounts = effectiveOwnerBudgetCharges(effective, input.activated.compiled.outcome, input.evaluation.effect);
+      const prepared = await options.repository.effects.prepare({ ...target, expires_at_ms: Date.parse(record.valid_until),
+        ...(accounts.length ? { budget_accounts: accounts } : {}) });
       if (!prepared.nonce) throw new OwnerRuntimeError("DELEGATION_EFFECT_RECONCILIATION_REQUIRED");
       const admitted = await options.repository.effects.dispatch({ ...target, nonce: prepared.nonce });
       if (admitted.status !== "authorized") throw new OwnerRuntimeError("DELEGATION_EFFECT_RECONCILIATION_REQUIRED");
