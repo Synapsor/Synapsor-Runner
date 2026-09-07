@@ -50,6 +50,18 @@ export class ControlHardBudgets {
   constructor(private readonly c: PolicyConnection) {}
 
   async reserve(input: HardBudgetReservation): Promise<HardBudgetReceipt> {
+    const replay = new Error("existing reservation");
+    let existing: HardBudgetReceipt | undefined;
+    const statements = this.reservationStatements(input, (row) => { existing = receipt(row, "existing"); throw replay; });
+    try { await this.c.execute(statements, "write"); }
+    catch (error) { if (error === replay && existing) return existing; throw error; }
+    return { request_id: identifier(input.request_id), state: "reserved", status: "reserved", execution_authorized: false };
+  }
+
+  /** Internal same-connection composition with effect admission. It must run
+   * as ONE write transaction, never as independent statements. Existing holds
+   * may continue only for the same exact chain/effect and still-current cap. */
+  reservationStatements(input: HardBudgetReservation, onExisting?: (row: Row) => void): Statement[] {
     const deployment = identifier(input.deployment_id), request = identifier(input.request_id), effect = digest(input.effect_digest);
     const expected = epoch(input.expected_epoch), chain = digest(input.policy_chain_digest);
     if (!Array.isArray(input.accounts) || input.accounts.length < 1 || input.accounts.length > 8) fail("BUDGET_ACCOUNT_LIMIT");
@@ -58,19 +70,19 @@ export class ControlHardBudgets {
     if (new Set(accounts.map(accountId)).size !== accounts.length) fail("BUDGET_DUPLICATE_ACCOUNT");
     const payload = canonicalJsonDigest({ effect_digest: effect,
       accounts: accounts.map(({ limit: _limit, window_ms: _window, ...value }) => value) });
-    const replay = new Error("existing reservation");
-    let existing: HardBudgetReceipt | undefined;
     const statements: Statement[] = [this.lock(deployment, expected), {
       sql: `SELECT * FROM ${this.c.table("budget_requests")} WHERE deployment_id = $1 AND request_id = $2`, values: [deployment, request],
       check: (rows) => {
         if (!rows.length) return;
         if (rows[0]!.payload_digest !== payload || rows[0]!.effect_digest !== effect) fail("BUDGET_REQUEST_CONFLICT");
-        existing = receipt(rows[0]!, "existing"); throw replay;
+        onExisting?.(rows[0]!);
+        if (rows[0]!.state !== "reserved" || rows[0]!.policy_chain_digest !== chain) fail("EFFECT_BUDGET_NOT_RESERVED");
       },
     }, {
       sql: `INSERT INTO ${this.c.table("budget_requests")}
         (deployment_id, request_id, effect_digest, payload_digest, policy_chain_digest, authorization_epoch, account_count, state, reserved_at_ms)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'reserved', ${this.c.nowMs})`,
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'reserved', ${this.c.nowMs})
+        ON CONFLICT (deployment_id, request_id) DO NOTHING`,
       values: [deployment, request, effect, payload, chain, expected, accounts.length],
     }];
     for (const account of accounts) {
@@ -81,14 +93,13 @@ export class ControlHardBudgets {
         values: [...key, account.unit, account.scale],
       }, this.accountCheck(deployment, account), this.usage(deployment, account, (committed, reserved) => {
         if (account.amount > account.limit - committed - reserved) fail("HARD_BUDGET_EXCEEDED");
-      }), {
+      }, request), {
         sql: `INSERT INTO ${this.c.table("budget_entries")} (deployment_id, scope_key, meter, request_id, amount, window_ms, state)
-          VALUES ($1, $2, $3, $4, $5, $6, 'reserved')`, values: [...key, request, account.amount, account.window_ms],
+          VALUES ($1, $2, $3, $4, $5, $6, 'reserved')
+          ON CONFLICT (deployment_id, scope_key, meter, request_id) DO NOTHING`, values: [...key, request, account.amount, account.window_ms],
       });
     }
-    try { await this.c.execute(statements, "write"); }
-    catch (error) { if (error === replay && existing) return existing; throw error; }
-    return { request_id: request, state: "reserved", status: "reserved", execution_authorized: false };
+    return statements;
   }
 
   async inspect(input: { deployment_id: string; account: HardBudgetLimit }): Promise<{ committed: number; reserved: number; available: number }> {
@@ -147,14 +158,14 @@ export class ControlHardBudgets {
         if (rows.length !== 1 || rows[0]!.unit !== account.unit || epoch(rows[0]!.scale) !== account.scale) fail("BUDGET_UNIT_MISMATCH");
       } };
   }
-  private usage(deployment: string, account: NormalizedLimit, check: (committed: number, reserved: number) => void): Statement {
+  private usage(deployment: string, account: NormalizedLimit, check: (committed: number, reserved: number) => void, excludeRequest?: string): Statement {
     // A shorter new policy window cannot erase the reservation's original
     // consumption lifetime. Longer current windows still include old usage.
     return { sql: `SELECT state, COALESCE(SUM(amount), 0) AS amount FROM ${this.c.table("budget_entries")}
-        WHERE deployment_id = $1 AND scope_key = $2 AND meter = $3
+        WHERE deployment_id = $1 AND scope_key = $2 AND meter = $3${excludeRequest ? " AND request_id <> $5" : ""}
           AND (state IN ('reserved', 'unknown') OR (state = 'committed'
             AND settled_at_ms > ${this.c.nowMs} - CASE WHEN window_ms > $4 THEN window_ms ELSE $4 END)) GROUP BY state`,
-      values: [deployment, account.scope_key, account.meter, account.window_ms], check: (rows) => {
+      values: [deployment, account.scope_key, account.meter, account.window_ms, ...(excludeRequest ? [excludeRequest] : [])], check: (rows) => {
         const committed = rows.filter((row) => row.state === "committed").reduce((n, row) => n + epoch(row.amount), 0);
         const reserved = rows.filter((row) => row.state !== "committed").reduce((n, row) => n + epoch(row.amount), 0);
         if (!Number.isSafeInteger(committed + reserved)) fail("BUDGET_USAGE_OVERFLOW");

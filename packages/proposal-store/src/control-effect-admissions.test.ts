@@ -46,7 +46,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         return db.prepare(sql).all(Object.fromEntries(values.map((value, i) => [`$${i + 1}`, value])));
       };
       const table = backend === "postgres" ? `"${schema}"."control_policy_effect_admissions"` : "control_policy_effect_admissions";
-      return { repository, target, input, prepare, record, cancel, inspect, revoke, query, table, open };
+      return { repository, target, input, prepare, record, cancel, inspect, revoke, query, table, open, account };
     }
 
     it("issues exactly one dispatch grant across independent executors and recovery", async () => {
@@ -61,6 +61,60 @@ for (const backend of ["sqlite", "postgres"] as const) {
       const retry = await reopened.effects.prepare(f.input);
       expect(retry).toMatchObject({ dispatch_id: prepared.dispatch_id, state: "dispatched" }); expect(retry.nonce).toBeUndefined();
       expect(await reopened.effects.dispatch({ ...f.target, nonce: prepared.nonce! })).toMatchObject({ status: "not_authorized", state: "dispatched" });
+    });
+
+    it("prepares the exact shared-budget hold and admission atomically with idempotent recovery", async () => {
+      const f = await fixture(), account = { ...f.account, meter: "atomic-capacity", amount: 60 };
+      const input = { ...f.target, request_id: "atomic-job", expires_at_ms: Date.now() + 60_000, budget_accounts: [account] };
+      const first = await f.repository.effects.prepare(input), second = await f.open().repository.effects.prepare(input);
+      expect(second.dispatch_id).toBe(first.dispatch_id); expect(second.nonce).not.toBe(first.nonce);
+      expect(await f.repository.budgets.inspect({ deployment_id: f.target.deployment_id, account })).toEqual({ committed: 0, reserved: 60, available: 40 });
+      await expect(f.repository.effects.prepare({ ...input, budget_accounts: [{ ...account, amount: 61 }] })).rejects.toThrow("BUDGET_REQUEST_CONFLICT");
+      await expect(f.repository.effects.prepare({ ...input, budget_accounts: [{ ...account, limit: 59 }] })).rejects.toThrow("HARD_BUDGET_EXCEEDED");
+      expect(await f.repository.effects.dispatch({ ...input, nonce: second.nonce! })).toMatchObject({ status: "authorized" });
+      await f.repository.effects.record({ ...input, dispatch_id: second.dispatch_id, state: "completed", receipt_digest: canonicalJsonDigest("atomic source receipt") });
+      expect(await f.repository.budgets.inspect({ deployment_id: f.target.deployment_id, account })).toEqual({ committed: 60, reserved: 0, available: 40 });
+    });
+
+    it("two independently connected agents cannot prepare more shared capacity than permitted", async () => {
+      const f = await fixture(), account = { ...f.account, meter: "competing-capacity", amount: 60 };
+      const results = await Promise.allSettled([f.repository, f.open().repository].map((repository, i) => repository.effects.prepare({
+        ...f.target, request_id: `competing-${i}`, actor_digest: canonicalJsonDigest(`verified-agent-${i}`),
+        expires_at_ms: Date.now() + 60_000, budget_accounts: [account] })));
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(await f.repository.budgets.inspect({ deployment_id: f.target.deployment_id, account })).toEqual({ committed: 0, reserved: 60, available: 40 });
+      expect(await f.query(`SELECT request_id FROM ${f.table} WHERE deployment_id = $1`, [f.target.deployment_id])).toHaveLength(1);
+    });
+
+    it("rolls back every account when a later cap or effect insertion fails, preserving old holds", async () => {
+      const f = await fixture(), first = { ...f.account, meter: "first-capacity", amount: 60 }, last = { ...f.account, meter: "last-capacity", limit: 0, amount: 1 };
+      const input = { ...f.target, request_id: "will-fail", expires_at_ms: Date.now() + 60_000, budget_accounts: [first, last] };
+      await expect(f.repository.effects.prepare(input)).rejects.toThrow("HARD_BUDGET_EXCEEDED");
+      expect(await f.repository.budgets.inspect({ deployment_id: f.target.deployment_id, account: first })).toEqual({ committed: 0, reserved: 0, available: 100 });
+      if (backend === "postgres") await f.query(`ALTER TABLE ${f.table} ADD CONSTRAINT refuse_injected_effect CHECK (request_id <> 'will-fail')`);
+      else await f.query(`CREATE TRIGGER refuse_injected_effect BEFORE INSERT ON ${f.table} WHEN NEW.request_id = 'will-fail' BEGIN SELECT RAISE(ABORT, 'injected effect failure'); END`);
+      try {
+        await expect(f.repository.effects.prepare({ ...input, budget_accounts: [first] })).rejects.toThrow();
+        expect(await f.repository.budgets.inspect({ deployment_id: f.target.deployment_id, account: first })).toEqual({ committed: 0, reserved: 0, available: 100 });
+        expect(await f.inspect()).toEqual({ committed: 0, reserved: 60, available: 40 });
+        expect(await f.query(`SELECT request_id FROM ${f.table} WHERE deployment_id = $1`, [f.target.deployment_id])).toHaveLength(0);
+      } finally {
+        if (backend === "postgres") await f.query(`ALTER TABLE ${f.table} DROP CONSTRAINT refuse_injected_effect`);
+        else await f.query("DROP TRIGGER refuse_injected_effect");
+      }
+      const recovered = await f.repository.effects.prepare({ ...input, budget_accounts: [first] });
+      expect(recovered.state).toBe("prepared");
+    });
+
+    it("rejects stale epoch, conflicting units and expired preparation without leaving orphan reservations", async () => {
+      const f = await fixture(), account = { ...f.account, meter: "stale-capacity", amount: 60 };
+      const input = { ...f.target, request_id: "stale-job", expires_at_ms: Date.now() + 60_000, budget_accounts: [account] };
+      await expect(f.repository.effects.prepare({ ...input, expires_at_ms: 1 })).rejects.toThrow("EFFECT_ADMISSION_EXPIRED");
+      await expect(f.repository.effects.prepare({ ...input, budget_accounts: [{ ...f.account, amount: 1, unit: "other-units" }] })).rejects.toThrow("BUDGET_UNIT_MISMATCH");
+      await f.revoke();
+      await expect(f.repository.effects.prepare(input)).rejects.toThrow("POLICY_REVISION_CONFLICT");
+      expect(await f.repository.budgets.inspect({ deployment_id: f.target.deployment_id, account })).toEqual({ committed: 0, reserved: 0, available: 100 });
+      expect(await f.query(`SELECT request_id FROM ${f.table} WHERE deployment_id = $1`, [f.target.deployment_id])).toHaveLength(0);
     });
 
     it.each(["actor_digest", "policy_chain_digest", "effect_digest", "request_id", "deployment_id", "nonce"] as const)("refuses tampered %s without consuming the admission", async (field) => {

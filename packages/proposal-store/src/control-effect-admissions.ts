@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { PolicyConnection, Row, Statement } from "./control-policy-types.js";
 import { digest, epoch, fail, identifier } from "./control-policy-values.js";
-import type { ControlHardBudgets } from "./control-hard-budgets.js";
+import type { ControlHardBudgets, HardBudgetReservation } from "./control-hard-budgets.js";
 
 export type EffectAdmissionTarget = {
   deployment_id: string; request_id: string; expected_epoch: number;
@@ -59,9 +59,13 @@ export class ControlEffectAdmissions {
       ...(row.receipt_digest == null ? {} : { receipt_digest: digest(row.receipt_digest) }) };
   }
 
-  async prepare(input: EffectAdmissionTarget & { expires_at_ms: number; budget_request_id?: string }): Promise<PreparedEffectAdmission> {
+  async prepare(input: EffectAdmissionTarget & { expires_at_ms: number; budget_request_id?: string;
+    budget_accounts?: HardBudgetReservation["accounts"] }): Promise<PreparedEffectAdmission> {
     const target = normalize(input), expires = epoch(input.expires_at_ms);
-    const budget = input.budget_request_id === undefined ? null : identifier(input.budget_request_id);
+    if (input.budget_request_id !== undefined && input.budget_accounts !== undefined) fail("EFFECT_ADMISSION_INVALID");
+    const budget = input.budget_accounts === undefined
+      ? input.budget_request_id === undefined ? null : identifier(input.budget_request_id) : target.request_id;
+    const reservation = input.budget_accounts === undefined ? [] : this.budgets.reservationStatements({ ...target, accounts: input.budget_accounts });
     const nonce = randomBytes(32).toString("base64url"), nonceDigest = canonicalJsonDigest({ nonce });
     const replay = new Error("existing admission"); let existing: PreparedEffectAdmission | undefined;
     const values = targetValues(target);
@@ -78,7 +82,7 @@ export class ControlEffectAdmissions {
         const now = epoch(rows[0]?.now_ms);
         if (expires <= now || expires > now + 900_000) fail("EFFECT_ADMISSION_EXPIRED");
       },
-    }, ...(budget ? [this.budgetCheck(target, budget)] : []), {
+    }, ...reservation, ...(budget ? [this.budgetCheck(target, budget)] : []), {
       sql: `INSERT INTO ${this.c.table("effect_admissions")}
         (deployment_id, request_id, actor_digest, policy_chain_digest, effect_digest, dispatch_id, budget_request_id,
          prepared_epoch, expires_at_ms, nonce_digest, state)
