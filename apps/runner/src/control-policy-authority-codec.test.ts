@@ -2204,6 +2204,62 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
+    it.each(["new_failed", "same_failed", "lost_response", "unknown_receipt", "different_receipt"])(
+      "confirms execution publication from its exact transaction receipt: %s", async (mode) => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const source = fixture(), draft = actionFixture(source);
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        await activateActionRuleAuthority({ projectRoot, name: draft.authority.name, expected_digest: draft.digest,
+          confirmation: `ACTIVATE ${draft.digest}`, actor: "operator" });
+        const config = executionConfig(); delete config.supervised_worker;
+        config.action_rules!.project_root = "./";
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        const file = path.join(projectRoot, "synapsor.actions.runner.json");
+        await fs.writeFile(file, JSON.stringify(config));
+        const inspection = structuredClone(source.inspection);
+        inspection.current_user = "inventory_writer"; inspection.role_posture!.read_only = false;
+        inspection.role_posture!.writable_relations = ["inventory.items"];
+        inspection.tables[0]!.role_posture!.privileges.update = true;
+        const input = { projectRoot, outcome: "inventory.replenish", profile: "staging" as const, writeUrlEnv: "WRITER_URL",
+          env: { ...process.env, WRITER_URL: "postgresql://fixture.invalid/not-used" }, inspect: async () => inspection };
+        async function reviewedInput() {
+          const preview = await previewSemanticSupervisedExecution(input);
+          return { ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
+            expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
+            confirmation: semanticExecutionConfirmation(preview) };
+        }
+        if (mode === "same_failed") await enableSemanticSupervisedExecution(await reviewedInput());
+        const reviewed = await reviewedInput();
+        const before = await binding.repository.deployment(binding.deployment_id);
+        const commit = ControlPolicyRepository.prototype.commit;
+        const event = ControlPolicyRepository.prototype.event;
+        let intercepted = false;
+        const fault = vi.spyOn(ControlPolicyRepository.prototype, "commit").mockImplementation(async function (this: ControlPolicyRepository, change) {
+          if ((change.event.receipt as { operation?: string }).operation !== "enable_reviewed_execution") return commit.call(this, change);
+          intercepted = true;
+          if (mode !== "new_failed" && mode !== "same_failed") await commit.call(this, change);
+          throw new Error("Injected lost or failed publication response");
+        });
+        const lookup = vi.spyOn(ControlPolicyRepository.prototype, "event").mockImplementation(async function (this: ControlPolicyRepository, ...args) {
+          if (intercepted && mode === "unknown_receipt") throw new Error("Injected unavailable receipt lookup");
+          const result = await event.call(this, ...args);
+          return intercepted && mode === "different_receipt" && result ? { ...result, actor: "a_different_review" } : result;
+        });
+        try {
+          if (mode === "lost_response") await expect(enableSemanticSupervisedExecution(reviewed)).resolves.toBeDefined();
+          else await expect(enableSemanticSupervisedExecution(reviewed)).rejects.toThrow("POLICY_EXECUTION_COMMIT_UNCONFIRMED");
+        } finally { fault.mockRestore(); lookup.mockRestore(); }
+        expect(intercepted).toBe(true);
+        const after = await binding.repository.deployment(binding.deployment_id);
+        expect(after!.epoch).toBe(before!.epoch + (mode === "new_failed" || mode === "same_failed" ? 0 : 1));
+        // Uncertain saves never restore an older runtime config over a possibly
+        // committed authority. The export itself grants no execution authority.
+        const exported = JSON.parse(await fs.readFile(file, "utf8"));
+        expect(exported.supervised_worker.enabled).toBe(true);
+        expect((await readSemanticSupervisedExecutionState({ projectRoot })).enabled).toBe(mode !== "new_failed");
+      });
+    });
+
     it("refreshes execution in a long-running client between approved requests without claiming completion", async () => {
       await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
         const draft = actionFixture(fixture(), true);

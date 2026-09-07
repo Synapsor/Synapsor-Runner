@@ -441,25 +441,31 @@ async function publishReviewedExecutionConfigUnlocked(input: Parameters<typeof p
     // Publish new source bindings first: until the CAS, the old policy either
     // remains exact or refuses the changed binding. A worker export is ignored.
     await writePrivateTextAtomic(input.configPath, nextText);
+    const event = { event_id: randomUUID(), actor: "local_operator", occurred_at: new Date().toISOString(),
+      receipt: { operation: input.operation, action_boundary_digest: input.expectedActionDigest,
+        execution_revision: revision.revision_id, source_database_changed: false } };
     try {
       await commitImmutableControlPolicies(binding, { expected_epoch: review.epoch!, revisions: [revision],
         active: [{ ...OPERATOR_EXECUTION_POLICY_KEY, revision_id: revision.revision_id }], drafts: [],
-        event: { event_id: randomUUID(), actor: "local_operator", occurred_at: new Date().toISOString(),
-          receipt: { operation: input.operation, action_boundary_digest: input.expectedActionDigest,
-            execution_revision: revision.revision_id, source_database_changed: false } } });
+        event });
     } catch (error) {
-      // A lost response may follow a committed transaction. Never claim a
-      // filesystem rollback undid that authority, or overwrite a newer export.
-      let current;
-      try { current = await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY_KEY); }
-      catch { throw new Error("POLICY_EXECUTION_COMMIT_UNCONFIRMED: execution publication could not be confirmed; inspect the control store before retrying."); }
-      if (current?.revision_id === revision.revision_id) return;
-      if (await readOptionalText(input.configPath) === nextText) await writePrivateTextAtomic(input.configPath, previous);
-      throw error;
+      // The same revision may have been active before this attempt. Only this
+      // exact transaction receipt proves success. Absence is not a safe basis
+      // for rollback while a remote COMMIT might still be in flight.
+      let recorded;
+      try { recorded = await binding.repository.event(binding.deployment_id, event.event_id); }
+      catch (lookupError) { throw executionPublicationUnconfirmed(event.event_id, review.epoch!, lookupError); }
+      if (recorded && canonicalJsonDigest(recorded) === canonicalJsonDigest({ ...event, epoch: review.epoch! + 1 })) return;
+      throw executionPublicationUnconfirmed(event.event_id, review.epoch!, error);
     }
   } finally {
     await binding.close();
   }
+}
+
+function executionPublicationUnconfirmed(eventId: string, expectedEpoch: number, cause: unknown): Error {
+  return Object.assign(new Error("POLICY_EXECUTION_COMMIT_UNCONFIRMED: the execution save could not be confirmed. Runtime bindings may have changed; no rollback was attempted. Inspect execution authority and this transaction receipt before retrying.", { cause }),
+    { code: "POLICY_EXECUTION_COMMIT_UNCONFIRMED", event_id: eventId, expected_epoch: expectedEpoch });
 }
 
 export function semanticSupervisedExecutionConfig(input: {
