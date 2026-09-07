@@ -2593,7 +2593,7 @@ function validateActivatedExplorationBoundary(
   }
   if (active.organization_scope) {
     const normalized = singleOrganizationScope(active.organization_scope.organization_id);
-    if (JSON.stringify(normalized) !== JSON.stringify(active.organization_scope)) {
+    if (canonicalJsonDigest(normalized) !== canonicalJsonDigest(active.organization_scope)) {
       throw new Error("Activated exploration boundary has an invalid single-organization scope declaration.");
     }
   }
@@ -4303,7 +4303,7 @@ function assertBoundaryCandidateNarrowsDraft(
   if (candidate.reporting_timezone !== draft.reporting_timezone) {
     throw new Error("reporting_timezone cannot change during boundary review.");
   }
-  if (JSON.stringify(candidate.organization_scope ?? null) !== JSON.stringify(draft.organization_scope ?? null)) {
+  if (canonicalJsonDigest(candidate.organization_scope ?? null) !== canonicalJsonDigest(draft.organization_scope ?? null)) {
     throw new Error("organization_scope cannot change during boundary review.");
   }
   if (candidate.organization_scope) singleOrganizationScope(candidate.organization_scope.organization_id);
@@ -4315,7 +4315,7 @@ function assertBoundaryCandidateNarrowsDraft(
   if (candidate.reporting_timezone !== undefined && candidate.reporting_timezone !== "UTC") {
     throw new Error("Generated Scoped Explore boundaries currently support only the reviewed UTC reporting timezone.");
   }
-  if (JSON.stringify(candidate.trusted_context) !== JSON.stringify(draft.trusted_context)) {
+  if (canonicalJsonDigest(candidate.trusted_context) !== canonicalJsonDigest(draft.trusted_context)) {
     throw new Error("trusted_context cannot change during boundary review.");
   }
   assertBudgetsNarrow(draft.budgets, candidate.budgets);
@@ -4330,10 +4330,10 @@ function assertBoundaryCandidateNarrowsDraft(
     for (const field of ["schema", "table", "primary_key", "tenant_key", "principal_key"] as const) {
       if (resource[field] !== original[field]) throw new Error(`${resource.id} ${field} cannot change during review.`);
     }
-    if (JSON.stringify(resource.tenant_scope ?? null) !== JSON.stringify(original.tenant_scope ?? null)
-      || JSON.stringify(resource.shared_reference_scope ?? null)
-        !== JSON.stringify(original.shared_reference_scope ?? null)
-      || JSON.stringify(resource.principal_scope ?? null) !== JSON.stringify(original.principal_scope ?? null)) {
+    if (canonicalJsonDigest(resource.tenant_scope ?? null) !== canonicalJsonDigest(original.tenant_scope ?? null)
+      || canonicalJsonDigest(resource.shared_reference_scope ?? null)
+        !== canonicalJsonDigest(original.shared_reference_scope ?? null)
+      || canonicalJsonDigest(resource.principal_scope ?? null) !== canonicalJsonDigest(original.principal_scope ?? null)) {
       throw new Error(`${resource.id} trusted scope cannot change during boundary review.`);
     }
     assertReviewedResourceScope(
@@ -4342,18 +4342,18 @@ function assertBoundaryCandidateNarrowsDraft(
       Boolean(candidate.organization_scope),
       reviewedDerivedScopeHopLimit(candidate.budgets),
     );
-    if (JSON.stringify(resource.field_types) !== JSON.stringify(original.field_types)
-      || JSON.stringify(resource.rls_session ?? null) !== JSON.stringify(original.rls_session ?? null)) {
+    if (canonicalJsonDigest(resource.field_types) !== canonicalJsonDigest(original.field_types)
+      || canonicalJsonDigest(resource.rls_session ?? null) !== canonicalJsonDigest(original.rls_session ?? null)) {
       throw new Error(`${resource.id} field types and RLS session bindings cannot change during review.`);
     }
-    if (JSON.stringify({
-      label: resource.label,
-      description: resource.description,
-      field_metadata: resource.field_metadata,
-    }) !== JSON.stringify({
-      label: original.label,
-      description: original.description,
-      field_metadata: original.field_metadata,
+    if (canonicalJsonDigest({
+      ...(resource.label !== undefined ? { label: resource.label } : {}),
+      ...(resource.description !== undefined ? { description: resource.description } : {}),
+      ...(resource.field_metadata !== undefined ? { field_metadata: resource.field_metadata } : {}),
+    }) !== canonicalJsonDigest({
+      ...(original.label !== undefined ? { label: original.label } : {}),
+      ...(original.description !== undefined ? { description: original.description } : {}),
+      ...(original.field_metadata !== undefined ? { field_metadata: original.field_metadata } : {}),
     })) {
       throw new Error(`${resource.id} reviewed labels and descriptions must be changed through the reviewed metadata editor.`);
     }
@@ -4843,12 +4843,12 @@ function relationshipMatchesReviewedDraft(
   candidate: ExplorationRelationship,
 ): boolean {
   if (expected.unmatched_rows !== "review_required") {
-    return JSON.stringify(candidate) === JSON.stringify(expected);
+    return canonicalJsonDigest(candidate) === canonicalJsonDigest(expected);
   }
   if (candidate.unmatched_rows !== "exclude" && candidate.unmatched_rows !== "keep_null") return false;
-  const expectedRest = { ...expected, unmatched_rows: undefined };
-  const candidateRest = { ...candidate, unmatched_rows: undefined };
-  return JSON.stringify(candidateRest) === JSON.stringify(expectedRest);
+  const { unmatched_rows: _expectedUnmatched, ...expectedRest } = expected;
+  const { unmatched_rows: _candidateUnmatched, ...candidateRest } = candidate;
+  return canonicalJsonDigest(candidateRest) === canonicalJsonDigest(expectedRest);
 }
 
 export function requiredReviewDecisionsForCandidate(

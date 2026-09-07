@@ -157,6 +157,7 @@ import {
 import {
   commitReadWorkloadCandidate,
   prepareReadWorkloadCandidate,
+  ReadWorkloadReviewRecordError,
 } from "./read-workload-authoring.js";
 import {
   generateModelReadWorkload,
@@ -625,7 +626,7 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
       });
     } catch (error) {
       const code = (error as { code?: string }).code;
-      const staleReview = code === "POLICY_AUTHORING_REVIEW_CHANGED" || code === "POLICY_REVISION_CONFLICT";
+      const staleReview = isStaleWorkbenchReview(error);
       sendJson(response, staleReview ? 409 : 500, {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
@@ -1021,13 +1022,15 @@ async function handleRequest(input: {
       sendJson(response, 404, { ok: false, error: "Boundary Workbench is not enabled for this session." });
       return;
     }
-    const draft = JSON.parse(await fs.readFile(
-      path.join(boundaryRoot, "exploration-boundary.draft.json"),
-      "utf8",
-    )) as ExplorationBoundaryDraft;
+    const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    const draft = savedReview.progress?.candidate ?? savedReview.draft;
+    const workloads = await listReadWorkloadAnalyses({ projectRoot, generatedBoundary: draft });
+    assertWorkbenchReviewBinding({ authoring_binding: savedReview.authoring },
+      (await readWorkbenchBoundaryReview(projectRoot, boundaryRoot)).authoring);
     sendJson(response, 200, {
       ok: true,
-      workloads: await listReadWorkloadAnalyses({ projectRoot, generatedBoundary: draft }),
+      workloads,
+      ...(savedReview.authoring ? { authoring_binding: savedReview.authoring } : {}),
       plan_cards: buildReadWorkloadPlanCards(draft),
       starter_workload: workbenchReadWorkloadStarter(draft),
       structural_catalog: readWorkloadCatalog(draft),
@@ -1157,10 +1160,9 @@ async function handleRequest(input: {
     }
     try {
       const body = await readJsonBody(request);
-      const draft = JSON.parse(await fs.readFile(
-        path.join(boundaryRoot, "exploration-boundary.draft.json"),
-        "utf8",
-      )) as ExplorationBoundaryDraft;
+      const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+      assertWorkbenchReviewBinding(body, savedReview.authoring);
+      const draft = savedReview.progress?.candidate ?? savedReview.draft;
       let workload: ReadWorkloadView;
       if (body.mode === "cards") {
         if (!Array.isArray(body.selected_card_ids)
@@ -1244,9 +1246,13 @@ async function handleRequest(input: {
           schemaInspector,
         })
         : undefined;
+      assertWorkbenchReviewBinding({ authoring_binding: savedReview.authoring },
+        (await readWorkbenchBoundaryReview(projectRoot, boundaryRoot)).authoring);
+      if (preview) assertWorkbenchReviewBinding({ authoring_binding: savedReview.authoring }, preview.mutation.bindings.authoring);
       sendJson(response, workload.state === "ready" ? 200 : 409, {
         ok: workload.state === "ready",
         workload,
+        ...(savedReview.authoring ? { authoring_binding: savedReview.authoring } : {}),
         ...(preview ? {
           preview: {
             decision_digest: preview.mutation.decision_digest,
@@ -1258,7 +1264,7 @@ async function handleRequest(input: {
         } : {}),
       });
     } catch (error) {
-      sendJson(response, 400, workbenchReadWorkloadError(error));
+      sendJson(response, isStaleWorkbenchReview(error) ? 409 : 400, workbenchReadWorkloadError(error));
     }
     return;
   }
@@ -1277,10 +1283,9 @@ async function handleRequest(input: {
       const actor = requiredReviewText(body.actor, "reviewer identity");
       const reason = requiredReviewText(body.reason, "review reason");
       const decisionDigest = requiredReviewText(body.decision_digest, "workload decision digest");
-      const draft = JSON.parse(await fs.readFile(
-        path.join(boundaryRoot, "exploration-boundary.draft.json"),
-        "utf8",
-      )) as ExplorationBoundaryDraft;
+      const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+      assertWorkbenchReviewBinding(body, savedReview.authoring);
+      const draft = savedReview.progress?.candidate ?? savedReview.draft;
       const workload = await readReadWorkloadAnalysis({
         projectRoot,
         analysisId: requiredReviewText(body.analysis_id, "workload analysis id"),
@@ -1293,6 +1298,7 @@ async function handleRequest(input: {
         reason,
         schemaInspector,
       });
+      assertWorkbenchReviewBinding({ authoring_binding: savedReview.authoring }, preview.mutation.bindings.authoring);
       if (preview.mutation.decision_digest !== decisionDigest
         || body.confirmation !== `APPLY WORKLOAD ${decisionDigest}`) {
         sendJson(response, 409, {
@@ -1310,6 +1316,7 @@ async function handleRequest(input: {
         analysis_id: workload.analysis_id,
         candidate_digest: committed.candidate_digest,
         review_revision: committed.review_revision,
+        ...(committed.authoring_binding ? { authoring_binding: committed.authoring_binding } : {}),
         authority_activated: false,
         source_query_executed: false,
         explore_budget_consumed: false,
@@ -1317,7 +1324,7 @@ async function handleRequest(input: {
         next: "Review and activate this disabled read boundary, then continue to Action Assist if writes are needed.",
       });
     } catch (error) {
-      sendJson(response, 409, workbenchReadWorkloadError(error));
+      sendJson(response, error instanceof ReadWorkloadReviewRecordError ? 503 : 409, workbenchReadWorkloadError(error));
     }
     return;
   }
@@ -7380,6 +7387,9 @@ function workbenchReadWorkloadError(error: unknown): JsonRecord {
   return {
     ok: false,
     error: error instanceof Error ? error.message : "Boundary Assist could not analyze this workload.",
+    ...(error instanceof ReadWorkloadReviewRecordError ? {
+      code: error.code, draft_saved: true, ...error.saved,
+    } : {}),
     authority_changed: false,
     authority_activated: false,
     source_query_executed: false,
@@ -7466,6 +7476,11 @@ async function readWorkbenchBoundaryReview(projectRoot: string, boundaryRoot: st
 function assertWorkbenchReviewBinding(body: Record<string, unknown>, current: ReadAuthoringBindings | undefined): void {
   if (current) assertReadAuthoringBindings(body.authoring_binding as ReadAuthoringBindings | undefined, current);
   else if (body.authoring_binding) throw new Error("The saved review repository changed. Reload before editing.");
+}
+
+function isStaleWorkbenchReview(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "POLICY_AUTHORING_REVIEW_CHANGED" || code === "POLICY_REVISION_CONFLICT";
 }
 
 export async function readBoundaryReviewProgress(

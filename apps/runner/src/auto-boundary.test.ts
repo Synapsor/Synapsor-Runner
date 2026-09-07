@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { compileAgentDsl } from "@synapsor/dsl";
-import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -1212,7 +1212,7 @@ describe("Auto Boundary compiler", () => {
       })).rejects.toThrow(/nullable; choose whether unmatched rows are kept as null or excluded/i);
 
       const activateWith = async (choice: "keep_null" | "exclude") => {
-        const candidate = structuredClone(build.exploration_boundary);
+        const candidate = JSON.parse(canonicalJsonStringify(build.exploration_boundary)) as typeof build.exploration_boundary;
         for (const resource of candidate.pack.resources) {
           for (const relationship of resource.relationships) {
             if (relationship.unmatched_rows === "review_required") {
@@ -1364,6 +1364,11 @@ describe("Auto Boundary compiler", () => {
       ancestor_resource: "public.orders",
       ancestor_column: "tenant_id",
     });
+    const stored = JSON.parse(canonicalJsonStringify(reviewed.exploration_boundary)) as typeof reviewed.exploration_boundary;
+    expect(reviewExplorationBoundaryCandidate(reviewed.exploration_boundary, stored).digest)
+      .toBe(explorationBoundaryCandidateDigest(reviewed.exploration_boundary));
+    stored.pack.resources.find((resource) => resource.id === "public.order_items")!.tenant_scope!.ancestor_column = "id";
+    expect(() => reviewExplorationBoundaryCandidate(reviewed.exploration_boundary, stored)).toThrow("trusted scope cannot change");
     expect(reviewed.dsl).not.toContain("ON public.order_items");
     expect(reviewed.lock.protected_authority).not.toContain("public.order_items");
   });
@@ -1904,6 +1909,13 @@ describe("Auto Boundary compiler", () => {
       engine: "postgres",
       setting: "app.tenant_id",
     });
+
+    const changedRls = JSON.parse(canonicalJsonStringify(result.exploration_boundary)) as typeof result.exploration_boundary;
+    expect(reviewExplorationBoundaryCandidate(result.exploration_boundary, changedRls).digest)
+      .toBe(explorationBoundaryCandidateDigest(result.exploration_boundary));
+    changedRls.pack.resources[0]!.rls_session!.tenant_setting = "app.other_tenant";
+    expect(() => reviewExplorationBoundaryCandidate(result.exploration_boundary, changedRls))
+      .toThrow("field types and RLS session bindings cannot change");
 
     const mixed = churnInspection();
     const second = structuredClone(mixed.tables[0]!);
@@ -3088,6 +3100,25 @@ describe("Auto Boundary compiler", () => {
     }
   });
 
+  it.each(["staging", "production"] as const)("reviews canonical stored %s JSON without treating object key order as changed authority", (deploymentProfile) => {
+    const build = buildAutoBoundary({ inspection: churnInspection(), project: projectSummary("/workspace/app"),
+      sourceEnv: "DATABASE_URL", deploymentProfile,
+      ...(deploymentProfile === "production" ? { httpClaims: { tenantClaim: "org_id", principalClaim: "sub" } } : {}) });
+    const original = build.exploration_boundary;
+    const stored = JSON.parse(canonicalJsonStringify(original)) as typeof original;
+    expect(stored).toEqual(original);
+    expect(JSON.stringify(stored.trusted_context)).not.toBe(JSON.stringify(original.trusted_context));
+    expect(reviewExplorationBoundaryCandidate(original, stored).digest).toBe(explorationBoundaryCandidateDigest(original));
+    const changed = structuredClone(stored);
+    if (changed.trusted_context.provider === "environment") changed.trusted_context.principal_env = "OTHER_PRINCIPAL";
+    else changed.trusted_context.principal_claim = "other_principal";
+    expect(() => reviewExplorationBoundaryCandidate(original, changed)).toThrow("trusted_context cannot change");
+    const typeChanged = structuredClone(stored);
+    const field = Object.keys(typeChanged.pack.resources[0]!.field_types)[0]!;
+    typeChanged.pack.resources[0]!.field_types[field] = "forged_type";
+    expect(() => reviewExplorationBoundaryCandidate(original, typeChanged)).toThrow("field types and RLS session bindings cannot change");
+  });
+
   it("permits only coherent authority narrowing during bulk review", () => {
     const build = buildAutoBoundary({
       inspection: churnInspection(),
@@ -3201,6 +3232,9 @@ describe("Auto Boundary compiler", () => {
         acknowledgement: "all_rows_belong_to_one_organization",
       });
       expect(build.lock.organization_scope).toEqual(build.exploration_boundary.organization_scope);
+      const stored = JSON.parse(canonicalJsonStringify(build.exploration_boundary)) as typeof build.exploration_boundary;
+      expect(reviewExplorationBoundaryCandidate(build.exploration_boundary, stored).digest)
+        .toBe(explorationBoundaryCandidateDigest(build.exploration_boundary));
       expect(build.exploration_boundary.pack.resources).toHaveLength(1);
       expect(build.exploration_boundary.pack.resources[0]).not.toHaveProperty("tenant_key");
       expect(build.exploration_boundary.pack.resources[0]).not.toHaveProperty("tenant_scope");

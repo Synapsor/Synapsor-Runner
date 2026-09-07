@@ -18,6 +18,18 @@ export type ReadWorkloadCandidatePreview = {
   source_database_changed: false;
 };
 
+export class ReadWorkloadReviewRecordError extends Error {
+  readonly code = "READ_WORKLOAD_REVIEW_RECORD_UNAVAILABLE";
+  constructor(readonly saved: {
+    candidate_digest: `sha256:${string}`;
+    review_revision: number;
+    authoring_binding?: BoundaryReviewMutationBindings["authoring"];
+  }, cause: unknown) {
+    super("The disabled Read draft was saved, but its supplemental workload review record could not be written. "
+      + "Reopen the saved Boundary review to continue; no authority was activated and source data is unchanged.", { cause });
+  }
+}
+
 export async function prepareReadWorkloadCandidate(input: {
   projectRoot: string;
   workload: ReadWorkloadView;
@@ -63,6 +75,7 @@ export async function commitReadWorkloadCandidate(input: {
 }): Promise<{
   candidate_digest: `sha256:${string}`;
   review_revision: number;
+  authoring_binding?: BoundaryReviewMutationBindings["authoring"];
   review: ReadWorkloadReview;
   authority_activated: false;
   source_database_changed: false;
@@ -71,16 +84,24 @@ export async function commitReadWorkloadCandidate(input: {
     input.projectRoot,
     input.preview.mutation,
   );
-  const review = await recordReadWorkloadReview({
-    projectRoot: input.projectRoot,
-    workload: input.preview.workload,
-    candidateDigest: committed.candidate_digest,
-    reviewRevision: committed.review_revision,
-    ...(input.now ? { now: input.now } : {}),
-  });
+  let review: ReadWorkloadReview;
+  try {
+    review = await recordReadWorkloadReview({
+      projectRoot: input.projectRoot,
+      workload: input.preview.workload,
+      candidateDigest: committed.candidate_digest,
+      reviewRevision: committed.review_revision,
+      ...(input.now ? { now: input.now } : {}),
+    });
+  } catch (error) {
+    throw new ReadWorkloadReviewRecordError({ candidate_digest: committed.candidate_digest,
+      review_revision: committed.review_revision,
+      ...(committed.authoring_binding ? { authoring_binding: committed.authoring_binding } : {}) }, error);
+  }
   return {
     candidate_digest: committed.candidate_digest,
     review_revision: committed.review_revision,
+    ...(committed.authoring_binding ? { authoring_binding: committed.authoring_binding } : {}),
     review,
     authority_activated: false,
     source_database_changed: false,

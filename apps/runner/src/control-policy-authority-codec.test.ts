@@ -32,6 +32,8 @@ import { readBoundaryReviewProgress, saveBoundaryReviewProgress } from "./bounda
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { boundaryActivateCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
 import { startLocalUiServer } from "./local-ui.js";
+import { analyzeReadWorkloadSet, type ReadWorkloadSet } from "./read-workload-assist.js";
+import * as readWorkloads from "./read-workloads.js";
 import { createSavedBoundary, deleteSavedBoundary, discardOnlySavedBoundaryReview, renameSavedBoundary, switchSavedBoundary,
   resolveSavedBoundaryReviewAuthority, synchronizeBoundaryLibrary } from "./boundary-library.js";
 import { readRuntimeConfig } from "./cli-project.js";
@@ -688,6 +690,107 @@ for (const backend of ["sqlite", "postgres"] as const) {
           expect(retained.authoring.entries[0]!.progress.candidate).toEqual(result.candidate);
           await expect(fs.stat(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json")))
             .rejects.toMatchObject({ code: "ENOENT" });
+        } finally { await server.close(); }
+      });
+    });
+
+    it.each(["analyze", "model", "apply", "receipt"])("retains the selected saved Read revision through Workbench workload %s and recovery", async (phase) => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture();
+        for (const [index, domain] of ["inventory", "university"].entries()) {
+          authoring.entries[index]!.catalog = readAuthoringCatalog(fixture(domain).build);
+          authoring.entries[index]!.progress.review_overrides = fixture(domain).build.overrides;
+        }
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare" });
+        const initial = await policies.current();
+        let changeDuringInspection: (() => Promise<void>) | undefined;
+        let changeDuringModel: (() => Promise<void>) | undefined;
+        let modelCalls = 0;
+        const inspect = vi.fn(async () => {
+          const change = changeDuringInspection; changeDuringInspection = undefined;
+          await change?.(); return fixture().inspection;
+        });
+        const server = await startLocalUiServer({ projectRoot, boundaryRoot: path.join(projectRoot, "synapsor/generated"),
+          configPath: path.join(projectRoot, "synapsor.runner.json"), storePath: path.join(projectRoot, "control.db"),
+          token: "workload-review-token", csrfToken: "workload-csrf", schemaInspector: inspect,
+          readWorkloadSuggestion: async (input) => {
+            modelCalls += 1;
+            const change = changeDuringModel; changeDuringModel = undefined; await change?.();
+            const workload: ReadWorkloadSet = { schema_version: "synapsor.read-workload-set.v1", name: input.name,
+              allowed: [{ id: "count_items", description: "How many stock items are there?", plan: {
+                kind: "aggregate", resource: "inventory.items", measures: [{ function: "count" }] } }], forbidden: [],
+              source: { kind: "model", provider: input.provider, model: input.model } };
+            return { workload, analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
+              provider: input.provider, model: input.model, authority_granted: false, source_query_executed: false,
+              explore_budget_consumed: false, source_database_changed: false };
+          } });
+        try {
+          const base = `http://${server.host}:${server.port}`;
+          const bootstrap = await fetch(server.url, { redirect: "manual" }); expect(bootstrap.status).toBe(303);
+          const headers = { cookie: bootstrap.headers.get("set-cookie")!.split(";", 1)[0]!,
+            "content-type": "application/json", "x-synapsor-csrf": "workload-csrf" };
+          const get = async (route = "") => {
+            const response = await fetch(`${base}/api/boundary${route}`, { headers });
+            const payload = await response.json(); expect(response.status, JSON.stringify(payload)).toBe(200); return payload;
+          };
+          const post = (route: string, body: unknown) => fetch(`${base}/api/boundary/workloads/${route}`, { method: "POST", headers, body: JSON.stringify(body) });
+          const shown = await get(); const catalog = await get("/workloads");
+          expect(catalog.authoring_binding).toEqual(shown.authoring_binding);
+          expect(catalog.plan_cards.length).toBeGreaterThan(0);
+          const decision = { actor: "reviewer", reason: "Prepare reviewed stock counts." };
+          const body = { ...decision, ...(phase === "model" ? { mode: "model", provider: "openai", model: "gpt-5.6-terra",
+            egress_acknowledged: true, intent: { name: "stock_counts", allowed_questions: ["How many stock items are there?"], forbidden_questions: [] } }
+            : { mode: "cards", selected_card_ids: [catalog.plan_cards[0].id] }) };
+          for (const authoring_binding of [undefined, { ...shown.authoring_binding, epoch: 0 }]) {
+            const refused = await post("analyze", { ...body, authoring_binding }); expect(refused.status).toBe(409);
+          }
+          expect(inspect).not.toHaveBeenCalled(); expect(modelCalls).toBe(0);
+          const analyze = async (authoring_binding: unknown) => {
+            const response = await post("analyze", { ...body, authoring_binding });
+            const result = await response.json(); expect(response.status, JSON.stringify(result)).toBe(200); return result;
+          };
+          const mapped = await analyze(shown.authoring_binding);
+          expect(mapped.authoring_binding).toEqual(shown.authoring_binding);
+          expect(await policies.current()).toEqual(initial);
+          const applyBody = (mapping: typeof mapped) => ({ ...decision, analysis_id: mapping.workload.analysis_id,
+            decision_digest: mapping.preview.decision_digest, confirmation: `APPLY WORKLOAD ${mapping.preview.decision_digest}`,
+            authoring_binding: mapping.authoring_binding });
+          const change = async () => {
+            const current = (await readProjectReadAuthoring(projectRoot))!; const selected = current.selected!;
+            const candidate = structuredClone(selected.progress.candidate); candidate.budgets.max_top_n = 8;
+            await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: selected.draft, candidate,
+              previous: selected.progress, confirmedDecisions: candidate.unresolved_decisions, revision: selected.progress.revision + 1 }), current.bindings);
+          };
+          if (phase === "model") changeDuringModel = change; else changeDuringInspection = change;
+          const stale = await post(phase === "apply" ? "apply" : "analyze",
+            phase === "apply" ? applyBody(mapped) : { ...body, authoring_binding: shown.authoring_binding });
+          const staleBody = await stale.json(); expect(stale.status, JSON.stringify(staleBody)).toBe(409);
+          expect(staleBody.preview).toBeUndefined();
+          const current = await get(); expect(current.candidate.budgets.max_top_n).toBe(8);
+          const renewed = await analyze(current.authoring_binding);
+          const invalid = await post("apply", { ...applyBody(renewed), confirmation: "not confirmed" }); expect(invalid.status).toBe(409);
+          const receiptFault = phase === "receipt" ? vi.spyOn(readWorkloads, "recordReadWorkloadReview")
+            .mockRejectedValueOnce(new Error("write failed: private test diagnostic")) : undefined;
+          let result;
+          try {
+            const applied = await post("apply", applyBody(renewed));
+            result = await applied.json(); expect(applied.status, JSON.stringify(result)).toBe(phase === "receipt" ? 503 : 200);
+          } finally { receiptFault?.mockRestore(); }
+          if (phase === "receipt") {
+            expect(result).toMatchObject({ ok: false, draft_saved: true, code: "READ_WORKLOAD_REVIEW_RECORD_UNAVAILABLE" });
+            expect(result.error).toContain("disabled Read draft was saved");
+            expect(JSON.stringify(result)).not.toContain("private test diagnostic");
+          }
+          const after = await get();
+          expect(result.authoring_binding).toEqual(after.authoring_binding);
+          expect(result.candidate_digest).toBe(after.candidate_digest);
+          expect(result.review_revision).toBe(after.review_progress.revision);
+          expect(result.authority_activated).toBe(false); expect(result.source_database_changed).toBe(false);
+          const replay = await post("apply", applyBody(renewed)); expect(replay.status).toBe(409);
+          expect((await policies.current()).active.filter(({ policy }) => policy.type !== "read_authoring"))
+            .toEqual(initial.active.filter(({ policy }) => policy.type !== "read_authoring"));
+          expect((await readProjectReadAuthoring(projectRoot))!.authoring.entries[1]).toEqual(authoring.entries[1]);
         } finally { await server.close(); }
       });
     });
