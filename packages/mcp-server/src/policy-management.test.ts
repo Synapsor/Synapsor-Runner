@@ -8,6 +8,7 @@ import { sqliteControlPolicyRepository, postgresControlPolicyRepository, type Co
 import { createPolicyManagementJwtAuthenticator } from "./policy-management-identity.js";
 import { compileOwnerPolicy } from "./owner-policy-compiler.js";
 import { createPolicyManagementService } from "./policy-management.js";
+import type { PolicyManagementParent } from "./owner-policy-records.js";
 import { ownerPolicyTestFixture } from "./owner-policy-test-fixture.js";
 
 const secret = "disposable_policy_service_identity_key_32_bytes";
@@ -43,7 +44,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
       const repository = db ? sqliteControlPolicyRepository(db) : postgresControlPolicyRepository(tracked, schema);
       await repository.initialize();
       const deployment = randomUUID(), parentKey = { scope: { level: "operator" as const }, kind: "parent" as const, name: "self_service" };
-      const parentContent = { schema_version: "synapsor.policy-management-parent.v1", delegation: f.parent,
+      const parentContent: PolicyManagementParent = { schema_version: "synapsor.policy-management-parent.v1", delegation: f.parent,
         agent_owners: [{ agent: "agent-a", scope }, { agent: "agent-b", scope: beta }],
         managers: [{ subject: "maya-login", actor_kind: "human", tenant_id: "acme", scope: { mode: "personal" },
           permissions: ["inspect", "draft", "activate", "revoke", "audit"] },
@@ -115,6 +116,47 @@ for (const backend of ["sqlite", "postgres"] as const) {
       expect(f.queries.some((sql) => sql.includes("pointer_names"))).toBe(false);
       expect(f.resolveRules).toHaveBeenCalledTimes(1);
       await expect(f.service.list(f.ordinary, beta)).rejects.toThrow("POLICY_MANAGEMENT_FORBIDDEN");
+    });
+
+    it("lists only currently authorized reviewed owner scopes in bounded cursor pages", async () => {
+      const f = await fixture();
+      const delegationPage = vi.spyOn(f.repository, "scopePointerPage");
+      const tenantScope = { level: "tenant" as const, tenant_id: "acme" };
+      await f.replaceParent({ ...f.parentContent,
+        agent_owners: [...f.parentContent.agent_owners, { agent: "agent-a", scope: tenantScope }],
+        managers: [...f.parentContent.managers,
+          { subject: "tenant-admin", actor_kind: "human", tenant_id: "acme", scope: { mode: "exact", scope: tenantScope }, permissions: ["inspect"] },
+          { subject: "operator", actor_kind: "human", tenant_id: "acme", scope: { mode: "deployment" }, permissions: ["inspect", "draft", "audit"] }],
+      });
+      const tenantAdmin = await credential(false, { sub: "tenant-admin", principal: "tenant-admin", sid: "tenant-admin-session" });
+      const operator = await credential(false, { sub: "operator", principal: "operator", sid: "operator-session" });
+      const ordinary = await f.service.scopes(f.ordinary);
+      expect(ordinary).toMatchObject({ total: 1, scopes: [{ scope, label: "Principal: acme / maya", permissions: ["inspect", "draft", "audit"], agent_count: 1 }] });
+      expect((await f.service.scopes(tenantAdmin)).scopes).toEqual([{ scope: tenantScope, label: "Tenant: acme", permissions: ["inspect"], agent_count: 1 }]);
+
+      const first = await f.service.scopes(operator, { limit: 1 });
+      expect(first).toMatchObject({ total: 3 });
+      expect(first.scopes).toHaveLength(1);
+      expect(first.next).toMatch(/^ps_/u);
+      const second = await f.service.scopes(operator, { limit: 1, after: first.next });
+      expect(second.scopes).toHaveLength(1);
+      expect(second.scopes[0]!.scope).not.toEqual(first.scopes[0]!.scope);
+      expect(second.scopes[0]!.permissions).toEqual(["inspect", "draft", "audit"]);
+      const betaOnly = await f.service.scopes(operator, { query: "beta", limit: 1 });
+      expect(betaOnly).toMatchObject({ total: 1, scopes: [{ scope: beta, label: "Principal: beta / maya", agent_count: 1 }] });
+      await expect(f.service.scopes(operator, { query: "beta", after: first.next })).rejects.toThrow("POLICY_SCOPE_CURSOR_INVALID");
+      await expect(f.service.scopes(await credential(false, { sub: "ordinary-reader", sid: "reader-session" }))).rejects.toThrow("POLICY_MANAGEMENT_FORBIDDEN");
+      expect(delegationPage).not.toHaveBeenCalled();
+      await expect(f.service.scopes(operator, { limit: 0 })).rejects.toThrow();
+      await expect(f.service.scopes(operator, { limit: 21 })).rejects.toThrow();
+      await expect(f.service.scopes(operator, { query: "x".repeat(257) })).rejects.toThrow();
+
+      const current = (await f.repository.deployment(f.deployment))!;
+      await f.repository.commit({ deployment_id: f.deployment, expected_epoch: current.epoch, revisions: [], active: [], drafts: [],
+        event: { event_id: randomUUID(), actor: "operator", occurred_at: new Date().toISOString(), receipt: {} } });
+      await expect(f.service.scopes(operator, { limit: 1, after: second.next! })).rejects.toThrow("POLICY_PAGE_EPOCH_STALE");
+      await f.replaceParent({ ...f.parentContent, managers: [] });
+      await expect(f.service.scopes(operator, { limit: 1, after: second.next! })).rejects.toThrow("POLICY_MANAGEMENT_FORBIDDEN");
     });
 
     it("rediscovers an identical saved draft after a new session without creating another revision", async () => {

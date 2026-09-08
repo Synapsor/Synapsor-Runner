@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { CompiledActionRuleV1 } from "@synapsor-runner/action-rules";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ControlPolicyKey, ControlPolicyRepository, ControlPolicyRevision, ControlPolicyReview,
@@ -13,6 +13,13 @@ import { policyManagementParentSchema, managedDelegationSchema as delegationSche
 export { policyManagementParentSchema } from "./owner-policy-records.js";
 const name = z.string().regex(/^[A-Za-z_][A-Za-z0-9_.-]{0,127}$/u);
 type Parent = { revision: ControlPolicyRevision; document: z.infer<typeof policyManagementParentSchema>; scope: ControlPolicyScope };
+const scopePageInput = z.object({
+  query: z.string().max(256).optional(),
+  limit: z.number().int().min(1).max(20).optional(),
+  after: z.string().regex(/^ps_[A-Za-z0-9_-]{43}$/u).optional(),
+}).strict();
+type ScopeSelection = { scope: ControlPolicyScope; label: string; permissions: Array<"inspect" | "draft" | "audit">; agent_count: number };
+type ScopeCursor = { binding: string; epoch: number; identity: string; query: string; offset: number; expires_at: number };
 
 /** A trusted provider API, not an MCP tool or raw control-store API. Instantiate
  * for one configured deployment and parent. Authenticators and rule loading are
@@ -28,6 +35,7 @@ export function createPolicyManagementService(options: {
 }) {
   const repository = options.repository;
   const parentKey: ControlPolicyKey = { scope: { level: "operator" }, kind: "parent", name: name.parse(options.parent_name) };
+  const scopeCursors = new Map<string, ScopeCursor>();
 
   function authorizationGuard(identity: PolicyManagementIdentity, scope: ControlPolicyScope, permission: PolicyManagementPermission,
     accept?: (parent: Parent) => void): ControlPolicyReadGuard {
@@ -62,6 +70,48 @@ export function createPolicyManagementService(options: {
       authorizationGuard(identity, key.scope, permission, (value) => { parent = value; }));
     if (!parent) throw new PolicyManagementError("POLICY_SELF_SERVICE_DISABLED");
     return { identity, parent, snapshot };
+  }
+
+  function scopePermissions(identity: PolicyManagementIdentity, parent: Parent, scope: ControlPolicyScope) {
+    return (["inspect", "draft", "audit"] as const).filter((permission) => {
+      try { assertPolicyManagementRight(identity, parent.document.managers, scope, permission); return true; }
+      catch (error) {
+        if (error instanceof PolicyManagementError && error.code === "POLICY_MANAGEMENT_FORBIDDEN") return false;
+        throw error;
+      }
+    });
+  }
+  function scopeLabel(scope: ControlPolicyScope): string {
+    if (scope.level === "operator") return "Operator";
+    if (scope.level === "tenant") return `Tenant: ${scope.tenant_id}`;
+    return `Principal: ${scope.tenant_id} / ${scope.principal}`;
+  }
+  function normalizeScopeQuery(query: string | undefined): string {
+    return (query ?? "").normalize("NFKC").toLocaleLowerCase("en-US").trim().replace(/\s+/gu, " ");
+  }
+  function scopeId(scope: ControlPolicyScope): string { return canonicalJsonDigest(scope); }
+  function pageBinding(identity: PolicyManagementIdentity, parent: Parent, epoch: number, query: string): string {
+    return canonicalJsonDigest({ deployment_id: options.deployment_id, parent_revision_id: parent.revision.revision_id,
+      epoch, identity: identity.session_digest, query });
+  }
+  function isScopeMatch(item: ScopeSelection, query: string): boolean {
+    if (!query) return true;
+    return [item.label, item.scope.level, ...(item.scope.level === "operator" ? [] : [item.scope.tenant_id]),
+      ...(item.scope.level === "principal" ? [item.scope.principal] : [])]
+      .some((value) => value.normalize("NFKC").toLocaleLowerCase("en-US").includes(query));
+  }
+  function authorizedScopes(identity: PolicyManagementIdentity, parent: Parent): ScopeSelection[] {
+    const grouped = new Map<string, { scope: ControlPolicyScope; agents: Set<string> }>();
+    for (const owner of parent.document.agent_owners) {
+      const id = scopeId(owner.scope), current = grouped.get(id);
+      if (current) current.agents.add(owner.agent);
+      else grouped.set(id, { scope: owner.scope, agents: new Set([owner.agent]) });
+    }
+    const scopes = [...grouped.values()].map(({ scope, agents }) => ({ scope, agent_count: agents.size,
+      permissions: scopePermissions(identity, parent, scope) })).filter((item) => item.permissions.includes("inspect"))
+      .map((item) => ({ ...item, label: scopeLabel(item.scope) }));
+    if (!scopes.length) throw new PolicyManagementError("POLICY_MANAGEMENT_FORBIDDEN");
+    return scopes.sort((left, right) => scopeId(left.scope).localeCompare(scopeId(right.scope)));
   }
 
   function decode(revision: ControlPolicyRevision, parent: Parent): ManagedDelegation {
@@ -108,6 +158,44 @@ export function createPolicyManagementService(options: {
   }
 
   return {
+    async scopes(credential: string, input: { query?: string; limit?: number; after?: string } = {}) {
+      const request = scopePageInput.parse(input), identity = await authenticate(credential, false);
+      let parent: Parent | undefined, authorized: ScopeSelection[] | undefined;
+      const snapshot = await repository.exactPointerSnapshot({ deployment_id: options.deployment_id, key: parentKey, max_bytes: 1_048_576 }, {
+        keys: [parentKey], authorize(current) {
+          const revision = current[0];
+          if (!revision) throw new PolicyManagementError("POLICY_SELF_SERVICE_DISABLED");
+          assertBoundedOwnerPolicyInput(revision.content);
+          const document = policyManagementParentSchema.safeParse(revision.content);
+          if (!document.success) throw new PolicyManagementError("POLICY_MANAGEMENT_CONFIGURATION_INVALID");
+          parent = { revision, document: document.data, scope: parentKey.scope };
+          authorized = authorizedScopes(identity, parent);
+        },
+      });
+      if (!parent || !authorized) throw new PolicyManagementError("POLICY_SELF_SERVICE_DISABLED");
+      const query = normalizeScopeQuery(request.query);
+      const filtered = authorized.filter((item) => isScopeMatch(item, query));
+      const binding = pageBinding(identity, parent, snapshot.epoch, query);
+      const now = Date.now();
+      for (const [token, cursor] of scopeCursors) if (cursor.expires_at <= now) scopeCursors.delete(token);
+      let offset = 0;
+      if (request.after) {
+        const cursor = scopeCursors.get(request.after);
+        if (!cursor || cursor.identity !== identity.session_digest || cursor.query !== query) throw new PolicyManagementError("POLICY_SCOPE_CURSOR_INVALID");
+        if (cursor.epoch !== snapshot.epoch || cursor.binding !== binding) throw new PolicyManagementError("POLICY_PAGE_EPOCH_STALE");
+        offset = cursor.offset;
+        scopeCursors.delete(request.after);
+      }
+      const items = filtered.slice(offset, offset + (request.limit ?? 10));
+      const nextOffset = offset + items.length;
+      let next: string | undefined;
+      if (nextOffset < filtered.length) {
+        next = `ps_${randomBytes(32).toString("base64url")}`;
+        while (scopeCursors.size >= 128) scopeCursors.delete(scopeCursors.keys().next().value!);
+        scopeCursors.set(next, { binding, epoch: snapshot.epoch, identity: identity.session_digest, query, offset: nextOffset, expires_at: now + 300_000 });
+      }
+      return { epoch: snapshot.epoch, total: filtered.length, scopes: items, ...(next ? { next } : {}) };
+    },
     async audit(credential: string, input: { scope: ControlPolicyScope; name: string; limit?: number; before?: { epoch: number; revision_id: string } }) {
       const key = selectedKey(input.scope, input.name), identity = await options.assistant_authenticate(credential);
       if (identity.channel !== "assistant") throw new PolicyManagementError("POLICY_AUTHENTICATION_FAILED");

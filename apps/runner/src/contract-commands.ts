@@ -602,6 +602,10 @@ function reportObjectScope(tenant: string, value: string): { kind: "object"; ten
 
 
 export async function policyCommand(args: string[]): Promise<number> {
+  if (args[0] === "chat") {
+    const { ownerPolicyChat } = await import("./owner-policy-chat.js");
+    return ownerPolicyChat(args.slice(1));
+  }
   if (args[0] === "storage" || args[0] === "delegation") {
     const { ownerPolicyCommand } = await import("./owner-policy-commands.js");
     return ownerPolicyCommand(args);

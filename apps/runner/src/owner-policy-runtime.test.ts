@@ -10,10 +10,13 @@ import { ProposalStore, type ControlPolicyKey, type ControlPolicyRevision } from
 import { ownerPolicyTestFixture } from "../../../packages/mcp-server/src/owner-policy-test-fixture.js";
 import type { PolicyManagementParent } from "../../../packages/mcp-server/src/owner-policy-records.js";
 import * as actionAuthority from "./action-rule-authority.js";
+import * as sourceRuntime from "./scoped-explore-boundary-set.js";
+import * as sourceActions from "./semantic-action-runtime.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
 import { migrateProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
 import { inspectMcpToolBoundary, mcpServeHttp, mcpServeStreamableHttp } from "./mcp-runtime.js";
 import { createOptionalOwnerPolicyRuntime } from "./owner-policy-runtime.js";
+import { ownerPolicyChat } from "./owner-policy-chat.js";
 import { tryAsk } from "./try-ask.js";
 
 const roots: string[] = [];
@@ -251,6 +254,71 @@ async function expectOwnerSettingsOnlyGateway(
 }
 
 describe("governed owner-policy runtime sidecar", () => {
+  it("lists only authorized owners, binds explicit selection into consent, and rechecks revoked management rights", async () => {
+    const f = await fixture();
+    const personal = (await f.create())!;
+    expect((await personal.scopes()).scopes.every((entry) => entry.scope.level !== "operator" && entry.scope.tenant_id === "acme")).toBe(true);
+    const selectedScope = { level: "principal" as const, tenant_id: "beta", principal: "maya" };
+    const selected = (await createOptionalOwnerPolicyRuntime({ projectRoot: f.root, config: f.config,
+      store: f.store, env: f.env, selectedScope }))!;
+    await expect(selected.contextDigest()).rejects.toMatchObject({ code: "POLICY_MANAGEMENT_FORBIDDEN" });
+    await f.replaceParent([...f.parentDocument.managers, { subject: "maya-login", actor_kind: "human", tenant_id: "acme",
+      scope: { mode: "exact", scope: selectedScope }, permissions: ["inspect", "draft", "activate"] }]);
+    expect((await personal.scopes()).scopes).toContainEqual(expect.objectContaining({ scope: selectedScope }));
+    expect(await selected.contextDigest()).not.toBe(await personal.contextDigest());
+    selectedScope.tenant_id = "mutated-after-selection";
+    expect(await summary(selected)).toMatchObject({ scope: "beta / maya / Agent rules", draft: null });
+    await saveDraft(selected, f.policyFixture.definition);
+    expect(await summary(personal)).toMatchObject({ draft: null });
+    const review = await selected.review.prepare();
+    await f.replaceParent(f.parentDocument.managers);
+    await expect(review.confirm()).rejects.toMatchObject({ code: "POLICY_MANAGEMENT_FORBIDDEN" });
+    await expect(summary(selected)).rejects.toMatchObject({ code: "POLICY_MANAGEMENT_FORBIDDEN" });
+  }, 20_000);
+
+  it("never constructs a source-data runtime for trusted owner selection or accepts operator scope", async () => {
+    const f = await fixture();
+    const configPath = path.join(f.root, "synapsor.runner.json");
+    await saveOwnerManagementConfig(f, "synapsor.runner.json");
+    const read = vi.spyOn(sourceRuntime, "createScopedExploreBoundarySetRuntime").mockRejectedValue(new Error("Source must not be opened"));
+    const actions = vi.spyOn(sourceActions, "createOptionalActionRuleRuntimeServices").mockRejectedValue(new Error("Source must not be opened"));
+    const gateway = await createWorkbenchAskMcpGateway({ configPath, storePath: f.controlPath, projectRoot: f.root,
+      env: f.env, ownerPolicyScope: { level: "tenant", tenant_id: "acme" } });
+    try {
+      expect(gateway.ownerSettingsOnly).toBe(true);
+      expect((await gateway.listTools()).map((tool) => tool.name)).toEqual([
+        "app.describe_actions", "app.describe_data", "app.explore_data", "app.request_change",
+      ]);
+      await expect(gateway.callTool("app.explore_data", { policy_view: "agent_rules", section: "summary" }))
+        .resolves.toMatchObject({ ok: true, value: { scope: "acme / shared account / Agent rules" } });
+      await expect(gateway.callTool("app.describe_data", {})).resolves.toMatchObject({ ok: false });
+    } finally { await gateway.close(); }
+    await expect(createOptionalOwnerPolicyRuntime({ projectRoot: f.root, config: f.config, store: f.store,
+      env: f.env, selectedScope: { level: "operator" } })).rejects.toMatchObject({ code: "POLICY_MANAGEMENT_FORBIDDEN" });
+    expect(read).not.toHaveBeenCalled();
+    expect(actions).not.toHaveBeenCalled();
+  }, 20_000);
+
+  it("launches existing Ask from the authenticated owner picker with one scoped session and no provider call on cancel", async () => {
+    const f = await fixture();
+    const configPath = path.join(f.root, "synapsor.runner.json");
+    await saveOwnerManagementConfig(f, "synapsor.runner.json");
+    const runChat = vi.fn(async () => 0), writes: string[] = [];
+    const choices = ["scope:0", "cancel"];
+    const io = { columns: () => 100, read: async () => undefined, write: (value: string) => { writes.push(value); },
+      choose: vi.fn(async () => choices.shift()) };
+    const args = ["--config", configPath, "--model", "gpt-owner-settings-test"];
+    expect(await ownerPolicyChat(args, { env: f.env, io, runChat })).toBe(0);
+    expect(runChat).toHaveBeenCalledOnce();
+    expect(runChat).toHaveBeenCalledWith(expect.arrayContaining(["--provider", "openai", "--config", configPath]),
+      expect.objectContaining({ env: f.env, ownerPolicyScope: expect.objectContaining({ tenant_id: "acme" }) }));
+    expect(io.choose).toHaveBeenCalledWith(expect.objectContaining({ options: expect.not.arrayContaining([
+      expect.objectContaining({ label: expect.stringContaining("beta") }),
+    ]) }));
+    expect(await ownerPolicyChat(args, { env: f.env, io, runChat })).toBe(0);
+    expect(runChat).toHaveBeenCalledOnce();
+  }, 20_000);
+
   it("has no effect when absent and fails closed for unmigrated or shadow SQLite stores", async () => {
     const f = await fixture({ migrate: false });
     const absent = { ...f.config, action_rules: { project_root: f.root } } as RuntimeConfig;

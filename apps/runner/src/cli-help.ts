@@ -325,6 +325,7 @@ signature verification makes an export tamper-evident; it does not make a local
 SQLite ledger immutable compliance storage.
 `,
     policy: `Usage:
+  ${cmd} policy chat --config ./synapsor.runner.json [--provider openai|anthropic|openai_compatible] [--model <name>]
   ${cmd} policy storage --config ./synapsor.runner.json [--project-root .] [--store ./.synapsor/local.db]
   ${cmd} policy delegation --config ./synapsor.runner.json --name <parent-name> --input ./owner-delegation.json [--project-root .]
   ${cmd} policy recommend --contract ./synapsor.contract.json --config ./synapsor.runner.json --tenant <tenant> --capability <name> --policy <name> --store ./.synapsor/local.db
@@ -335,6 +336,9 @@ SQLite ledger immutable compliance storage.
   ${cmd} policy recommendations export <ptr_id> --tenant <tenant> --contract ./synapsor.contract.json --out ./synapsor.contract.recommended.json --actor <operator> --yes --store ./.synapsor/local.db
 
 Owner delegation is optional, not required for ordinary DB onboarding.
+chat selects one authenticated, authorized owner's settings and starts a fresh
+model conversation over the same four tools. It does not grant source access
+or send other owners' policies. OpenAI defaults to gpt-5.6-terra.
 storage previews existing authority and asks before making the configured
 control store authoritative; it preserves grants and disabled drafts.
 delegation separately reviews operator-owned management roles, agent bindings

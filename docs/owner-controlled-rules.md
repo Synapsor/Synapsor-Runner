@@ -98,6 +98,26 @@ Start local Ask or the existing stdio MCP integration. Owner management is
 currently a local Ask/stdio prototype. HTTP serving explicitly refuses this
 configuration rather than silently exposing a different authority surface.
 
+An authorized operator or account administrator can select an owner before
+starting the same model-assisted chat:
+
+```bash
+runner policy chat --config ./synapsor.runner.json
+```
+
+The picker lists only explicitly authorized scopes, with bounded search and
+paging. A sole authorized owner opens directly. Identically named people in
+different accounts remain distinct. Inspection-only grants are labeled;
+they cannot save or activate edits. Revoked grants take effect on subsequent
+calls, including a pending confirmation.
+
+Each selection starts a fresh settings-only conversation. It neither carries
+another owner's chat history nor opens their source records. Selecting an
+owner changes the management context, not the authenticated data identity.
+Only the selected scope is disclosed to the provider after the normal model
+permission review. Changing rules still uses the same four tools and the
+separate exact human confirmation described below.
+
 ## Edit From The Same Client
 
 The tool names stay fixed:

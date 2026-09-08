@@ -71,9 +71,12 @@ import {
 } from "./terminal-ask-defaults.js";
 import { askIntentCheckModesForBoundaries } from "./ask-intent-preferences.js";
 import type { ActionModelSuggestionSession } from "./action-tui.js";
+import type { ControlPolicyScope } from "@synapsor-runner/proposal-store";
 
 export type TryAskDependencies = {
   env?: NodeJS.ProcessEnv;
+  /** Selected by an authenticated local policy-management UI, never model arguments. */
+  ownerPolicyScope?: ControlPolicyScope;
   gatewayFactory?: typeof createWorkbenchAskMcpGateway;
   providerDependencies?: AskProviderDependencies;
   profileResolver?: typeof resolveAskDeploymentProfile;
@@ -112,7 +115,9 @@ export async function tryAsk(
   dependencies: TryAskDependencies = {},
 ): Promise<number> {
   const env = dependencies.env ?? process.env;
-  const gatewayFactory = dependencies.gatewayFactory ?? createWorkbenchAskMcpGateway;
+  const createGateway = dependencies.gatewayFactory ?? createWorkbenchAskMcpGateway;
+  const gatewayFactory: typeof createWorkbenchAskMcpGateway = (input) => createGateway({ ...input,
+    ...(dependencies.ownerPolicyScope ? { ownerPolicyScope: dependencies.ownerPolicyScope } : {}) });
   const profileResolver = dependencies.profileResolver ?? resolveAskDeploymentProfile;
   assertKnownOptions(
     args,

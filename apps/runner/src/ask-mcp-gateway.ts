@@ -3,7 +3,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
+import type { ControlPolicyScope, ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { createProjectRuntimeStore } from "./control-policy-store.js";
 import { createOptionalOwnerPolicyRuntime, type LocalOwnerPolicyReview } from "./owner-policy-runtime.js";
 import { readRuntimeConfig } from "./cli-project.js";
@@ -72,6 +72,7 @@ export async function createWorkbenchAskMcpGateway(input: {
   projectRoot: string;
   env: NodeJS.ProcessEnv;
   mode?: "auto" | "authoring" | "runtime";
+  ownerPolicyScope?: ControlPolicyScope;
 }): Promise<AskToolGateway> {
   const surfaces: ConnectedMcpSurface[] = [];
   try {
@@ -302,6 +303,7 @@ async function connectAuthoringSurface(input: {
   storePath: string;
   projectRoot: string;
   env: NodeJS.ProcessEnv;
+  ownerPolicyScope?: ControlPolicyScope;
 }): Promise<ConnectedMcpSurface | undefined> {
   let runtime: ScopedExploreBoundarySetRuntime | undefined;
   let subjectStore: ProposalRuntimeStore | undefined;
@@ -313,13 +315,15 @@ async function connectAuthoringSurface(input: {
       env: input.env, storePath: input.storePath });
     const owner = selectedConfig ? await createOptionalOwnerPolicyRuntime({
       projectRoot: input.projectRoot, config: selectedConfig, env: input.env, store: subjectStore,
+      selectedScope: input.ownerPolicyScope,
     }) : undefined;
+    if (input.ownerPolicyScope && !owner) throw new AskError("POLICY_SELF_SERVICE_DISABLED", "Owner-rule editing is not enabled for this connection.", 409);
     const ownerBinding = owner ? await owner.contextDigest() : undefined;
-    const semantic = actionConfig
+    const semantic = actionConfig && !input.ownerPolicyScope
       ? await createOptionalActionRuleRuntimeServices({ projectRoot: input.projectRoot, config: actionConfig,
           env: input.env, store: subjectStore })
       : undefined;
-    try {
+    if (!input.ownerPolicyScope) try {
       runtime = await createScopedExploreBoundarySetRuntime({
       projectRoot: input.projectRoot,
       transport: "loopback_workbench",
