@@ -327,7 +327,8 @@ SQLite ledger immutable compliance storage.
     policy: `Usage:
   ${cmd} policy chat --config ./synapsor.runner.json [--provider openai|anthropic|openai_compatible] [--model <name>]
   ${cmd} policy storage --config ./synapsor.runner.json [--project-root .] [--store ./.synapsor/local.db]
-  ${cmd} policy delegation --config ./synapsor.runner.json --name <parent-name> --input ./owner-delegation.json [--project-root .]
+  ${cmd} policy delegation --config ./synapsor.runner.json [--name <parent-name>] [--project-root .]
+  ${cmd} policy delegation --config ./synapsor.runner.json --name <parent-name> --input ./owner-delegation.json
   ${cmd} policy recommend --contract ./synapsor.contract.json --config ./synapsor.runner.json --tenant <tenant> --capability <name> --policy <name> --store ./.synapsor/local.db
   ${cmd} policy recommendations list --tenant <tenant> --store ./.synapsor/local.db [--capability <name>] [--policy <name>] [--status pending_review|approved|rejected|exported]
   ${cmd} policy recommendations show <ptr_id> --tenant <tenant> --store ./.synapsor/local.db
@@ -336,6 +337,8 @@ SQLite ledger immutable compliance storage.
   ${cmd} policy recommendations export <ptr_id> --tenant <tenant> --contract ./synapsor.contract.json --out ./synapsor.contract.recommended.json --actor <operator> --yes --store ./.synapsor/local.db
 
 Owner delegation is optional, not required for ordinary DB onboarding.
+delegation opens model-assisted setup; --input retains exact manual setup.
+Owner and workload bindings are reviewed locally, not chosen by the model.
 chat selects one authenticated, authorized owner's settings and starts a fresh
 model conversation over the same four tools. It does not grant source access
 or send other owners' policies. OpenAI defaults to gpt-5.6-terra.

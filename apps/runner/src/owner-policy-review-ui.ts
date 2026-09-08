@@ -127,3 +127,5 @@ function predicate(value: unknown, depth = 0): string {
   if (!operator || (condition.kind !== "compare" && condition.kind !== "compare_facts")) throw new Error("Invalid reviewed predicate");
   return `${text(condition.fact)} ${operator} ${condition.kind === "compare_facts" ? text(condition.other_fact) : text(JSON.stringify(condition.value))}`;
 }
+
+export { predicate as renderOwnerRulePredicate };

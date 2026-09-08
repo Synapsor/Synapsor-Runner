@@ -71,6 +71,9 @@ describe("trusted local operator delegation review", () => {
 
   it("refuses tampered, copied, cancelled and superseded review objects", async () => {
     const f = await fixture();
+    const context = await f.review.context("inventory_owner_rules");
+    expect(context.current).toBeNull();
+    expect(context.rules[0]?.compiled_plan_digest).toBe(f.source.compiled.compiled_plan_digest);
     const prepared = await f.review.prepare("inventory_owner_rules", f.parent);
     await expect(f.review.confirm(structuredClone(prepared))).rejects.toMatchObject({ code: "POLICY_PARENT_REVIEW_STALE" });
     prepared.after.managers[0]!.permissions.push("revoke");
@@ -82,6 +85,8 @@ describe("trusted local operator delegation review", () => {
     const current = await f.review.prepare("inventory_owner_rules", f.parent);
     await f.review.confirm(current);
     await expect(f.review.confirm(stale)).rejects.toMatchObject({ code: "POLICY_PARENT_REVIEW_STALE" });
+    await expect(f.review.prepare("inventory_owner_rules", f.parent, context.epoch))
+      .rejects.toMatchObject({ code: "POLICY_PARENT_REVIEW_STALE" });
   }, 20_000);
 
   it("revalidates current Actions at confirmation and never enables writes or child policies", async () => {

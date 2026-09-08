@@ -57,8 +57,14 @@ export function createOperatorParentReview(input: {
       key: keyFor(name), max_bytes: 1_048_576 });
   };
   return {
-    async prepare(name: string, proposed: unknown): Promise<OperatorParentReview> {
+    async context(name: string) {
       const snapshot = await current(name);
+      const rules = (await loadRules({ dependency_check: "report" })).registry.rules.map((entry) => entry.compiled);
+      return { epoch: snapshot.epoch, current: snapshot.active ? policyManagementParentSchema.parse(snapshot.active.content) : null, rules };
+    },
+    async prepare(name: string, proposed: unknown, expectedEpoch?: number): Promise<OperatorParentReview> {
+      const snapshot = await current(name);
+      if (expectedEpoch !== undefined && snapshot.epoch !== expectedEpoch) fail("POLICY_PARENT_REVIEW_STALE");
       const after = await validate(proposed);
       const before = snapshot.active ? policyManagementParentSchema.parse(snapshot.active.content) : null;
       const body = { name, expected_epoch: snapshot.epoch, before_revision: snapshot.active?.revision_id ?? null,

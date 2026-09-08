@@ -30,8 +30,21 @@ Parent delegation is a separate operator decision:
 
 ```bash
 runner policy delegation --config ./synapsor.runner.json \
-  --name customer_agent_rules --input ./owner-delegation.json
+  --name customer_agent_rules
 ```
+
+This opens the same model-guided conversation used for Boundary authoring.
+For a new parent, identify the personal or shared-account owner, authorized
+human sign-in subject and agent workload from your trusted backend. These
+bindings are collected locally and cannot be changed by the drafting model.
+For an existing parent, the saved bindings are retained without asking again.
+Describe the customizable conditions and mandatory restrictions in ordinary
+language; inspect exact details or ask follow-up questions before the separate
+operator confirmation. Selecting this optional setup does not enable it.
+
+The client handoff also offers this path under **More options**. It is not a
+required step for ordinary database onboarding. Exact manual configuration
+remains available with `--input ./owner-delegation.json`.
 
 The document uses `synapsor.policy-management-parent.v1`. Its sections are:
 

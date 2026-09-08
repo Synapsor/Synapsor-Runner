@@ -12,7 +12,8 @@ import { readRuntimeConfig, runnerConfigPath } from "./cli-project.js";
 import { readJsonFileWithLocation } from "./cli-files.js";
 import { openProjectControlPolicies } from "./control-policy-store.js";
 import { previewProjectControlPolicyMigration, migrateProjectControlPoliciesFromProject } from "./control-policy-project-migration.js";
-import { createOperatorParentReview, type OperatorParentReview } from "./owner-policy-parent-review.js";
+import { createOperatorParentReview } from "./owner-policy-parent-review.js";
+import { parentReviewLines } from "./owner-policy-parent-summary.js";
 import { renderTerminalJson } from "./terminal-syntax.js";
 import { terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
 
@@ -42,6 +43,14 @@ export async function ownerPolicyCommand(args: string[], dependencies: {
   const storePath = path.resolve(optionalArg(rest, "--store") ?? path.resolve(projectRoot, config.storage?.sqlite_path ?? ".synapsor/local.db"));
   const env = dependencies.env ?? process.env;
   const actor = `local:${os.userInfo().username}`;
+  if (mode === "delegation" && !optionalArg(rest, "--input")) {
+    const { runOperatorParentChat } = await import("./owner-policy-parent-chat.js");
+    return runOperatorParentChat({ projectRoot, config, configPath, storePath,
+      name: optionalArg(rest, "--name") ?? config.action_rules?.owner_management?.parent_name ?? "agent_rules",
+      env, actor, recheckConfig: async () => {
+        if (canonicalJsonDigest(await loadConfig()) !== canonicalJsonDigest(config)) throw new Error("Runner configuration changed. Review again; no parent change was confirmed.");
+      } }, { io: dependencies.io });
+  }
   const terminal = dependencies.io ? undefined : createTerminalAnalyticsShellIo({ slashCommands: false });
   const io = dependencies.io ?? terminal!;
   const write = (lines: string[]) => io.write(lines.flatMap((line) => wrapStyledTerminalLine(safeTerminalText(line), terminalContentWidth(io.columns()))).join("\n") + "\n");
@@ -116,22 +125,6 @@ async function confirm(io: OwnerPolicyReviewIo, label: string, details: unknown)
     io.write("Configuration left unchanged. No authority was granted.\n");
     return false;
   }
-}
-
-function parentReviewLines(review: OperatorParentReview): string[] {
-  const scope = (value: { level: string; tenant_id?: string; principal?: string }) => value.level === "operator" ? "deployment"
-    : [value.tenant_id, value.principal].filter(Boolean).join(" / ");
-  return ["Review owner delegation", `Parent: ${review.name}`,
-    ...(review.before ? ["Replacing this parent requires its existing owner policies to be revalidated before further effects."] : []),
-    "Who may manage rules:",
-    ...review.after.managers.map((grant) => `  ${grant.subject} (${grant.actor_kind}, ${grant.tenant_id}): ${grant.permissions.join(", ")} for ${grant.scope.mode === "exact" ? scope(grant.scope.scope) : grant.scope.mode === "personal" ? "their own authenticated personal scope" : "ALL owners in this deployment"}`),
-    "Agent owners:", ...review.after.agent_owners.map((entry) => `  ${scope(entry.scope)}: ${entry.agent}`),
-    "Delegable behaviors:", ...review.after.delegation.outcomes.map((entry) =>
-      `  ${entry.outcome}: ${entry.facts.map((fact) => fact.title).join(", ")}; ${entry.allow_automatic_approval ? "parent approval rules may be inherited" : "human review required"}`),
-    `Runtime bindings: ${review.after.runtime_delegations?.length ?? 0}. Missing bindings grant no agent authority.`,
-    ...((review.after.delegation.budgets?.length ?? 0) ? ["Hard shared allowances and their measured effects are included in exact configuration; existing spent/reserved allowance is not reset."] : []),
-    "Inspect exact configuration for field operators, bounds, runtime associations, changes from the prior parent and hard allowances.",
-    "Source Read, Action, owner approval and execution remain independent safeguards."];
 }
 
 function storageDescription(config: RuntimeConfig, storePath: string): string {

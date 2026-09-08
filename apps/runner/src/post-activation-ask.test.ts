@@ -19,6 +19,23 @@ import { ProviderCredentialInputCancelledError } from "./secret-input.js";
 import * as managedLauncher from "./managed-mcp-project.js";
 
 describe("post-activation Ask handoff", () => {
+  it.each(["success", "failure"])("keeps optional owner setup separate from ordinary client and source authority (%s)", async (result) => {
+    const output: string[] = [];
+    const runOwnerRuleSetup = vi.fn(async () => { if (result === "failure") throw new Error("Owner sign-in needs configuration"); });
+    const runBoundaryReview = vi.fn(), runAsk = vi.fn(), runMcpInstall = vi.fn();
+    const chooseRoute = vi.fn(async () => "later" as const);
+    expect(await choosePostActivationAskSelection({ chooseRoute: async () => "owner-rules" })).toEqual({ route: "owner-rules" });
+    expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", selection: { route: "owner-rules" } }, {
+      env: {}, runOwnerRuleSetup, runBoundaryReview, runAsk, runMcpInstall, chooseRoute,
+      stdout: { write: (value) => { output.push(String(value)); return true; } }, stderr: { write: () => true },
+    })).toBe(0);
+    expect(runOwnerRuleSetup).toHaveBeenCalledExactlyOnceWith("/tmp/not-created-project");
+    expect(chooseRoute).toHaveBeenCalledOnce();
+    expect(runBoundaryReview).not.toHaveBeenCalled();
+    expect(runAsk).not.toHaveBeenCalled();
+    expect(runMcpInstall).not.toHaveBeenCalled();
+    if (result === "failure") expect(output.join("")).toContain("Client setup remains available");
+  });
   it.each(["success", "failure"])("continues execution setup without redrafting or losing client choices (%s)", async (result) => {
     const output: string[] = [];
     const runExecutionReview = vi.fn(async () => { if (result === "failure") throw new Error("Execution config needs repair"); });

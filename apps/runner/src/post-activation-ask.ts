@@ -41,6 +41,7 @@ export type PostActivationAskRoute =
   | "mcp-http"
   | "edit-rules"
   | "manual-editor"
+  | "owner-rules"
   | "execution-setup"
   | "later";
 
@@ -75,6 +76,9 @@ export type PostActivationAskSelection =
       route: "manual-editor";
     }
   | {
+      route: "owner-rules";
+    }
+  | {
       route: "execution-setup";
     };
 
@@ -97,6 +101,7 @@ export type PostActivationAskDependencies = {
   confirmWorkerStart?: (context: string[]) => Promise<boolean | undefined>;
   runWorker?: (args: string[]) => Promise<number>;
   runBoundaryReview?: (args: string[]) => Promise<number>;
+  runOwnerRuleSetup?: (projectRoot: string) => Promise<void>;
   runExecutionReview?: (projectRoot: string) => Promise<void>;
   runAsk?: (
     args: string[],
@@ -180,6 +185,11 @@ const routeOptions: RouteOption[] = [
     label: "Manual Boundary editor",
     detail: "Review tables, fields and exact access controls",
   },
+  {
+    id: "owner-rules",
+    label: "Owner-customizable agent rules (optional)",
+    detail: "Review who can customize agent behavior; keep source access and execution separate",
+  },
 ];
 
 export async function runPostActivationAskHandoff(
@@ -243,6 +253,32 @@ export async function runPostActivationAskHandoff(
     return 0;
   }
   const route = selection.route;
+
+  if (route === "owner-rules") {
+    try {
+      if (dependencies.runOwnerRuleSetup) await dependencies.runOwnerRuleSetup(input.projectRoot);
+      else {
+        const { ownerPolicyCommand } = await import("./owner-policy-commands.js");
+        const { readRuntimeConfig } = await import("./cli-project.js");
+        const { openProjectControlPolicies } = await import("./control-policy-store.js");
+        const configPath = path.join(input.projectRoot, "synapsor.runner.json");
+        const args = ["--config", configPath, "--project-root", input.projectRoot];
+        // Preview and confirm migration separately; selecting this optional
+        // entry is not consent to change the authoritative policy store.
+        await ownerPolicyCommand(["storage", ...args], { env });
+        const config = await readRuntimeConfig(configPath, { env });
+        const storePath = path.resolve(input.projectRoot, config.storage?.sqlite_path ?? ".synapsor/local.db");
+        const binding = await openProjectControlPolicies({ projectRoot: input.projectRoot, config, storePath, env });
+        if (binding) {
+          await binding.close();
+          await ownerPolicyCommand(["delegation", ...args], { env });
+        }
+      }
+    } catch (error) {
+      write(`Optional owner-rule setup could not finish: ${safeErrorMessage(error)}\nClient setup remains available. Inspect current delegation before retrying; no source change was requested.\n\n`);
+    }
+    return runPostActivationAskHandoff({ ...input, selection: undefined, autoStartConfiguredProvider: false }, dependencies);
+  }
 
   if (route === "execution-setup") {
     try {
@@ -560,6 +596,7 @@ export function formatPostActivationAskSelection(
   if (selection.route === "mcp-http") return "Production HTTP MCP";
   if (selection.route === "edit-rules") return "Edit rules with model";
   if (selection.route === "manual-editor") return "Manual Boundary editor";
+  if (selection.route === "owner-rules") return "Owner-customizable agent rules";
   if (selection.route === "execution-setup") return "Execution setup";
   if (selection.route === "later") return "Choose later";
   if (selection.route === "openai") return `OpenAI / ${selection.model}`;
@@ -597,7 +634,7 @@ export async function choosePostActivationAskSelection(
       if (!client) continue;
       return { route, client };
     }
-    if (route === "mcp-http" || route === "later" || route === "edit-rules" || route === "manual-editor" || route === "execution-setup") return { route };
+    if (route === "mcp-http" || route === "later" || route === "edit-rules" || route === "manual-editor" || route === "execution-setup" || route === "owner-rules") return { route };
     if (route === "openai") {
       const model = await prompt("OpenAI model", DEFAULT_TERMINAL_OPENAI_ASK_MODEL);
       if (model === undefined) continue;

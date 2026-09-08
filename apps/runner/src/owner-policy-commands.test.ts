@@ -106,12 +106,12 @@ describe("optional local owner-delegation operator commands", () => {
     } finally { await binding?.close(); }
   }, 20_000);
 
-  it("requires explicit parent input and an already-reviewed store; it never migrates implicitly", async () => {
+  it("requires an already-reviewed store for model or exact parent setup; it never migrates implicitly", async () => {
     const { io } = ui([]);
-    await expect(ownerPolicyCommand(["delegation"], { io })).rejects.toThrow("requires --input");
+    vi.spyOn(store, "openProjectControlPolicies").mockResolvedValue(undefined);
+    await expect(ownerPolicyCommand(["delegation"], { io })).rejects.toThrow("First run policy storage");
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-owner-command-")); roots.push(root);
     const file = path.join(root, "parent.json"); await fs.writeFile(file, "{}", { mode: 0o600 });
-    vi.spyOn(store, "openProjectControlPolicies").mockResolvedValue(undefined);
     const prepare = vi.spyOn(parentReview, "createOperatorParentReview");
     await expect(ownerPolicyCommand(["delegation", "--input", file, "--name", "parent"], { io })).rejects.toThrow("First run policy storage");
     expect(prepare).not.toHaveBeenCalled();

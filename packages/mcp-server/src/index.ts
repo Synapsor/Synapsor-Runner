@@ -112,6 +112,8 @@ export { createJwtVerifier } from "./jwt-auth.js";
 export { createOwnerRuntimeJwtAuthenticator, OwnerRuntimeError } from "./owner-runtime-identity.js";
 export { createDelegatedSemanticRuntime, createDelegatedSemanticExecutor, type DelegatedRequestContext } from "./delegated-semantic-runtime.js";
 export { createPolicyManagementService } from "./policy-management.js";
+export { ownerPolicyParentModelJsonSchema, ownerPolicyParentModelResultSchema,
+  type OwnerPolicyParentModelResult } from "./owner-policy-parent-model-schema.js";
 export { validateOwnerPolicyParent } from "./owner-policy-compiler.js";
 export { policyManagementParentSchema, type PolicyManagementParent } from "./owner-policy-records.js";
 export { assertBoundedOwnerPolicyInput } from "./owner-policy-language.js";
