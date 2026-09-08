@@ -289,7 +289,7 @@ async function applyAdmittedJob(args: string[], configPath?: string, runtimeConf
   if (intentAuthority.store) config.writebackIntentStore = intentAuthority.store;
   let result: WritebackResult;
   try {
-    result = await adapters[job.engine].apply(job, config);
+    result = await applyRuntimeDatabaseJob({ job, runnerConfig: config, runtimeConfig, configPath, adapter: adapters[job.engine] });
     localStore?.recordExecutionReceipt(toExecutionReceipt(job, result, config.dryRun));
   } finally {
     await intentAuthority.close();
@@ -420,3 +420,4 @@ async function applyAllApproved(args: string[]): Promise<number> {
   }
   return summary.skipped > 0 ? 1 : 0;
 }
+import { applyRuntimeDatabaseJob } from "./delegated-writeback.js";

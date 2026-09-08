@@ -101,6 +101,32 @@
           "not": { "pattern": "://|[\\u0000-\\u001f\\u007f]" }
         },
         "subject_reference_hmac_key_env": { "$ref": "#/$defs/env_name" },
+        "owner_delegation": {
+          "description": "Local agent workload binding to current operator and owner policy authority in the governed control store. Does not activate that authority.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parent_name", "credential_env", "authentication"],
+          "properties": {
+            "parent_name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$" },
+            "credential_env": { "$ref": "#/$defs/env_name" },
+            "authentication": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "issuer", "audience"],
+              "properties": {
+                "provider": { "enum": ["jwt_hs256", "jwt_asymmetric"] },
+                "issuer": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "audience": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "secret_env": { "$ref": "#/$defs/env_name" },
+                "public_key_env": { "$ref": "#/$defs/env_name" }
+              },
+              "oneOf": [
+                { "properties": { "provider": { "const": "jwt_hs256" } }, "required": ["secret_env"], "not": { "required": ["public_key_env"] } },
+                { "properties": { "provider": { "const": "jwt_asymmetric" } }, "required": ["public_key_env"], "not": { "required": ["secret_env"] } }
+              ]
+            }
+          }
+        },
         "subject_reference_namespace": {
           "type": "string",
           "minLength": 1,

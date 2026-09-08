@@ -189,4 +189,27 @@ describe("control policy repository storage foundation", () => {
     await expect(policies.listActive({ deployment_id: "deployment-one", scope: operator, kind: "action" }))
       .rejects.toMatchObject({ code: "POLICY_CONTENT_MISMATCH" });
   });
+
+  it("pages one guarded scope in a stable epoch and checks bodies before decoding them", async () => {
+    const { policies } = store(); await policies.initialize();
+    const revisions = ["alpha", "bravo", "charlie"].map((name) => ({ ...revision(`v-${name}`, operator, { name }), name }));
+    await policies.importDeployment(imported(revisions));
+    const guard = { keys: [key()], authorize: () => undefined };
+    const first = await policies.scopePointerPage({ deployment_id: "deployment-one", scope: operator, kind: "action", limit: 2 }, guard);
+    expect(first.items.map((item) => item.name)).toEqual(["alpha", "bravo"]);
+    expect(first.next).toEqual({ name: "bravo", epoch: 1 });
+    const second = await policies.scopePointerPage({ deployment_id: "deployment-one", scope: operator, kind: "action", limit: 2, after: first.next }, guard);
+    expect(second.items.map((item) => item.name)).toEqual(["charlie"]);
+    await expect(policies.scopePointerPage({ deployment_id: "deployment-one", scope: operator, kind: "action", limit: 1, max_bytes: 1 }, guard))
+      .rejects.toMatchObject({ code: "POLICY_SNAPSHOT_TOO_LARGE" });
+    await policies.commit({ deployment_id: "deployment-one", expected_epoch: 1, revisions: [], active: [], event: event("advance-page-epoch") });
+    await expect(policies.scopePointerPage({ deployment_id: "deployment-one", scope: operator, kind: "action", after: first.next }, guard))
+      .rejects.toMatchObject({ code: "POLICY_PAGE_EPOCH_STALE" });
+    await policies.commit({ deployment_id: "deployment-one", expected_epoch: 2, revisions: [], active: [
+      { ...key(), name: "alpha", revision_id: null }, { ...key(), name: "bravo", revision_id: null },
+    ], event: event("revoke-earlier-pointers") });
+    const afterRevocations = await policies.scopePointerPage({ deployment_id: "deployment-one", scope: operator, kind: "action", limit: 1 }, guard);
+    expect(afterRevocations).toMatchObject({ epoch: 3, items: [{ name: "charlie" }] });
+    expect(afterRevocations.next).toBeUndefined();
+  });
 });

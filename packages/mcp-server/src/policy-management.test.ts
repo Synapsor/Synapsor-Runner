@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { sqliteControlPolicyRepository, postgresControlPolicyRepository, type ControlPolicyRevision, type PostgresRuntimePool } from "@synapsor-runner/proposal-store";
 import { createPolicyManagementJwtAuthenticator } from "./policy-management-identity.js";
+import { compileOwnerPolicy } from "./owner-policy-compiler.js";
 import { createPolicyManagementService } from "./policy-management.js";
 import { ownerPolicyTestFixture } from "./owner-policy-test-fixture.js";
 
@@ -65,7 +66,26 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const next = parent(content), current = (await repository.deployment(deployment))!;
         await repository.commit({ deployment_id: deployment, expected_epoch: current.epoch, revisions: [next], active: [{ ...parentKey, revision_id: next.revision_id }], event: event() });
       };
-      return { ...f, db, repository, service, deployment, ordinary, human, propose, replaceParent, parentContent, parentKey, resolveRules, queries };
+      const addDelegations = async (count: number) => {
+        const currentParent = (await repository.active(deployment, parentKey))!;
+        const compiledDelegation = compileOwnerPolicy({ parent: f.parent, definition: f.definition, rules: [f.compiled] });
+        const names = Array.from({ length: count }, (_, index) => `policy_${String(index).padStart(3, "0")}`);
+        for (const batch of [names.slice(0, 64), names.slice(64)]) {
+          if (!batch.length) continue;
+          const revisions = batch.map((policyName): ControlPolicyRevision => {
+            const content = { schema_version: "synapsor.managed-owner-policy.v1" as const, parent_name: parentKey.name,
+              parent_revision_id: currentParent.revision_id, parent_authority_digest: currentParent.authority_digest,
+              definition: f.definition, compiled_digest: compiledDelegation.digest };
+            return { scope, kind: "delegation", name: policyName, revision_id: randomUUID(), content,
+              content_digest: canonicalJsonDigest(content), authority_digest: compiledDelegation.digest };
+          });
+          const current = (await repository.deployment(deployment))!;
+          await repository.commit({ deployment_id: deployment, expected_epoch: current.epoch, revisions, active: [],
+            drafts: revisions.map(({ scope, kind, name, revision_id }) => ({ scope, kind, name, revision_id })), event: event() });
+        }
+        return names;
+      };
+      return { ...f, db, repository, service, deployment, ordinary, human, propose, replaceParent, addDelegations, parentContent, parentKey, resolveRules, queries };
     }
 
     it("drafts, reviews, activates, edits and retries through the same scoped service without changing source data", async () => {
@@ -90,11 +110,33 @@ for (const backend of ["sqlite", "postgres"] as const) {
       await f.propose();
       const prepare = f.db ? vi.spyOn(f.db, "prepare") : undefined;
       f.queries.length = 0;
-      await expect(f.service.list(await credential(false, { sub: "ordinary-reader", roles: ["owner", "admin"] }), scope)).rejects.toThrow("POLICY_MANAGEMENT_FORBIDDEN");
-      if (prepare) expect(prepare.mock.calls.map(([sql]) => sql).some((sql) => sql.includes("octet_length") || sql.includes("ORDER BY a.kind"))).toBe(false);
-      expect(f.queries.some((sql) => sql.includes("octet_length") || sql.includes("ORDER BY a.kind"))).toBe(false);
+      await expect(f.service.browse(await credential(false, { sub: "ordinary-reader", roles: ["owner", "admin"] }), { scope })).rejects.toThrow("POLICY_MANAGEMENT_FORBIDDEN");
+      if (prepare) expect(prepare.mock.calls.map(([sql]) => sql).some((sql) => sql.includes("pointer_names"))).toBe(false);
+      expect(f.queries.some((sql) => sql.includes("pointer_names"))).toBe(false);
       expect(f.resolveRules).toHaveBeenCalledTimes(1);
       await expect(f.service.list(f.ordinary, beta)).rejects.toThrow("POLICY_MANAGEMENT_FORBIDDEN");
+    });
+
+    it("browses only an authorized owner scope in bounded stable pages and keeps detail independent of unrelated pointers", async () => {
+      const f = await fixture(), names = await f.addDelegations(65);
+      const first = await f.service.browse(f.ordinary, { scope, limit: 32 });
+      expect(first.epoch).toBe(3);
+      expect(first.items.map((item) => item.name)).toEqual(names.slice(0, 32));
+      expect(first.next).toEqual({ name: names[31], epoch: 3 });
+      expect(JSON.stringify(first)).not.toMatch(/definition|compiled_digest|parent_authority_digest|source/u);
+      const second = await f.service.browse(f.ordinary, { scope, limit: 32, after: first.next });
+      expect(second.items.map((item) => item.name)).toEqual(names.slice(32, 64));
+      const third = await f.service.browse(f.ordinary, { scope, limit: 32, after: second.next });
+      expect(third.items.map((item) => item.name)).toEqual(names.slice(64));
+      expect(third.next).toBeUndefined();
+      expect((await f.service.detail(f.ordinary, scope, names[64]!)).draft?.revision_id).toBeDefined();
+      const betaCredential = await credential(false, { tenant_id: "beta" });
+      expect((await f.service.browse(betaCredential, { scope: beta })).items).toEqual([]);
+      await expect(f.service.browse(f.ordinary, { scope: beta })).rejects.toThrow("POLICY_MANAGEMENT_FORBIDDEN");
+      const current = (await f.repository.deployment(f.deployment))!;
+      await f.repository.commit({ deployment_id: f.deployment, expected_epoch: current.epoch, revisions: [], active: [],
+        event: { event_id: randomUUID(), actor: "operator", occurred_at: new Date().toISOString(), receipt: {} } });
+      await expect(f.service.browse(f.ordinary, { scope, after: first.next })).rejects.toThrow("POLICY_PAGE_EPOCH_STALE");
     });
 
     it("keeps two tenants with the same principal separate and prevents adopting the other owner's agent", async () => {
@@ -176,6 +218,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
       await f.repository.commit({ deployment_id: f.deployment, expected_epoch: 2, revisions: [changed], active: [], drafts: [{ ...key, revision_id: changed.revision_id }],
         event: { event_id: randomUUID(), actor: "operator", occurred_at: new Date().toISOString(), receipt: {} } });
       await expect(f.propose(3)).rejects.toThrow("POLICY_NAME_OWNED_BY_DIFFERENT_PARENT");
+      await expect(f.service.browse(f.ordinary, { scope })).rejects.toThrow("POLICY_NAME_OWNED_BY_DIFFERENT_PARENT");
       expect((await f.repository.draft(f.deployment, key))?.revision_id).toBe(changed.revision_id);
       expect(await f.repository.revision(f.deployment, key, draft.revision_id)).toEqual(saved);
     });

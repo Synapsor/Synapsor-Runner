@@ -25,6 +25,10 @@ import {
   type TrustedContext,
   type CatalogAuthorization,
   ScopedCatalogSession,
+  createDelegatedSemanticRuntime,
+  createOwnerRuntimeJwtAuthenticator,
+  OwnerRuntimeError,
+  type DelegatedRequestContext,
 } from "@synapsor-runner/mcp-server";
 import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import {
@@ -142,7 +146,7 @@ async function createAdmittedReadActionServices(input: ActionRuleRuntimeServiceI
       },
     }, projectRoot);
   } catch (error) {
-    if (isControlPolicyFailure(error)) throw error;
+    if (isControlPolicyFailure(error) || input.config.action_rules?.owner_delegation) throw error;
     onUnavailable?.(error);
     return undefined;
   }
@@ -182,25 +186,78 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
   const { key, deployment_scope: deploymentScope, workflow_session_id: workflowSessionId } = await actionReferenceContext(input, projectRoot);
   const loadAuthority = authorityLoader;
   const registry = async () => (await loadAuthority()).registry;
-  const subjectReferences = createSubjectReferenceService({
+  const env = input.env ?? process.env;
+  const delegationConfig = input.config.action_rules?.owner_delegation;
+  if (delegationConfig && !policyStore) throw new OwnerRuntimeError("DELEGATION_POLICY_STORE_REQUIRED");
+  const delegatedRuntime = delegationConfig && policyStore ? createDelegatedSemanticRuntime({
+    repository: policyStore.repository, deployment_id: policyStore.deployment_id, parent_name: delegationConfig.parent_name,
+    authenticate: createOwnerRuntimeJwtAuthenticator(delegationConfig.authentication, env),
+    resolveRules: async () => (await registry()).rules.map((rule) => rule.compiled),
+  }) : undefined;
+  const beginDelegation = async () => {
+    await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+    return delegatedRuntime?.begin(environmentValue(env, delegationConfig!.credential_env) ?? "");
+  };
+  const baseReferences = createSubjectReferenceService({
     store: input.store,
     registry,
     key,
   });
-  const env = input.env ?? process.env;
+  const referencesFor = async (context: DelegatedRequestContext) => {
+    const current = await registry();
+    await context.assertCurrent();
+    return createSubjectReferenceService({ store: input.store, key,
+      registry: { ...current, rules: current.rules.filter((rule) => context.authorization.allowed_outcomes.includes(rule.compiled.outcome)) } });
+  };
+  const boundReferenceContext = (context: DelegatedRequestContext, request: Parameters<SubjectReferenceService["issue"]>[0]
+    | Parameters<SubjectReferenceService["claim"]>[0]) => {
+    const expected = subjectReferenceScopeFingerprints({ key, deployment_scope: deploymentScope, source_id: request.source_id,
+      tenant: context.trusted_context.tenant_id, principal: context.trusted_context.principal });
+    if (request.tenant_scope_fingerprint !== expected.tenant_scope_fingerprint
+      || request.principal_scope_fingerprint !== expected.principal_scope_fingerprint) throw new OwnerRuntimeError("DELEGATION_IDENTITY_MISMATCH");
+    return { ...request, workflow_session_id: context.workflowSessionId(request.workflow_session_id) };
+  };
+  const subjectReferences: SubjectReferenceService = delegatedRuntime ? {
+    observationRequirement: async (resource) => {
+      const context = (await beginDelegation())!;
+      return (await referencesFor(context)).observationRequirement(resource);
+    },
+    issue: async (request) => {
+      const context = (await beginDelegation())!;
+      const bound = boundReferenceContext(context, request);
+      const result = await (await referencesFor(context)).issue({ ...request, workflow_session_id: bound.workflow_session_id });
+      await context.assertCurrent();
+      return result;
+    },
+    claim: async (request) => {
+      const context = (await beginDelegation())!;
+      const bound = boundReferenceContext(context, request);
+      const result = await (await referencesFor(context)).claim({ ...request, workflow_session_id: bound.workflow_session_id });
+      await context.assertCurrent();
+      return result;
+    },
+  } : baseReferences;
   const factSessionFactory = input.factSessionFactory ?? openSemanticFactSession;
   const semanticActions = createSemanticActionRuntime({
     store: input.store,
     registry,
     subjectReferences,
+    delegationRequired: Boolean(delegatedRuntime),
     catalogSession: input.catalogSession,
-    resolveCatalogAuthorization: input.resolveCatalogAuthorization ?? ((currentRegistry) => {
+    resolveCatalogAuthorization: async (currentRegistry) => {
       const first = currentRegistry.rules[0];
-      const context = resolveTrustedContext(input.config, env,
+      const sourceContext = () => resolveTrustedContext(input.config, env,
         first ? semanticContextCapability(first) : undefined, input.trustedContext);
-      return { scope_key: canonicalJsonDigest({ deployment: deploymentScope, session: workflowSessionId, context }),
-        revision: "deployment_authority" };
-    }),
+      const existing = input.resolveCatalogAuthorization ? await input.resolveCatalogAuthorization() : {
+        scope_key: canonicalJsonDigest({ deployment: deploymentScope, session: workflowSessionId, context: sourceContext() }), revision: "deployment_authority" };
+      const delegated = await beginDelegation();
+      if (!delegated) return existing;
+      assertDelegatedIdentity(delegated, sourceContext());
+      const grant = delegated.authorization;
+      return { scope_key: canonicalJsonDigest({ base: existing.scope_key, delegated: grant.scope_key }),
+        revision: canonicalJsonDigest({ base: existing.revision, delegated: grant.revision }),
+        allowed_outcomes: grant.allowed_outcomes.filter((outcome) => !existing.allowed_outcomes || existing.allowed_outcomes.includes(outcome)) };
+    },
     unavailableOutcomes: async () => (await loadAuthority()).unavailable_outcomes ?? [],
     onProposalReady: async ({ proposal, activated }) => {
       if (proposal.state === "applied") {
@@ -222,6 +279,11 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
           return { execution: "held", source_database_changed: false };
         }
         await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+        const delegated = await beginDelegation();
+        if (delegated) {
+          if (proposal.change_set.schema_version !== "synapsor.change-set.v4") throw new OwnerRuntimeError("DELEGATION_PROOF_REQUIRED");
+          await delegated.checkExisting(proposal.proposal_id, proposal.change_set.semantic_authority);
+        }
         await input.store.enqueueWorkerProposal({
           proposal_id: proposal.proposal_id,
           execution_mode: "supervised_worker",
@@ -235,6 +297,7 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
       }
     },
     resolveContext: async (expected) => {
+      const delegated = await beginDelegation();
       const loaded = await loadAuthority();
       if (loaded.unavailable_outcomes?.includes(expected.compiled.outcome)) {
         throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "This outcome requires operator review of its Read dependency.");
@@ -247,6 +310,7 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
         semanticContextCapability(current),
         input.trustedContext,
       );
+      if (delegated) assertDelegatedIdentity(delegated, trustedContext);
       const scope = subjectReferenceScopeFingerprints({
         key,
         deployment_scope: deploymentScope,
@@ -271,6 +335,7 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
           workflow_session_id: workflowSessionId,
         },
         fact_loader: factSession.fact_loader,
+        ...(delegated ? { delegation: delegated } : {}),
         close: factSession.close,
       };
     },
@@ -283,6 +348,12 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
     deployment_scope: deploymentScope,
     workflow_session_id: workflowSessionId,
   }, projectRoot);
+}
+
+function assertDelegatedIdentity(delegated: DelegatedRequestContext, context: TrustedContext): void {
+  if (delegated.trusted_context.tenant_id !== context.tenant_id || delegated.trusted_context.principal !== context.principal) {
+    throw new OwnerRuntimeError("DELEGATION_IDENTITY_MISMATCH");
+  }
 }
 
 async function canonicalActionInput(input: ActionRuleRuntimeServiceInput, root: string): Promise<ActionRuleRuntimeServiceInput> {

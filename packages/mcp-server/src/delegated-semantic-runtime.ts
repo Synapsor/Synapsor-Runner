@@ -17,7 +17,9 @@ type Attestation = z.infer<typeof attestationSchema>;
 type RuntimeOptions = { repository: ControlPolicyRepository; deployment_id: string; parent_name: string;
   resolveRules: () => Promise<CompiledActionRuleV1[]> };
 export type DelegatedRequestContext = {
+  trusted_context: { tenant_id: string; principal: string };
   authorization: { scope_key: string; revision: string; allowed_outcomes: string[] };
+  assertCurrent(): Promise<void>;
   workflowSessionId(session: string): string;
   checkProposal: SemanticProposalDelegationCheck;
   checkExisting(proposal_id: string, authority: SemanticAuthorityV1): Promise<void>;
@@ -33,6 +35,8 @@ export function createDelegatedSemanticRuntime(options: RuntimeOptions & { authe
     const initial = await resolver.resolve(credential);
     const current = () => resolver.assertCurrent(credential, initial);
     return {
+      trusted_context: { tenant_id: initial.actor.tenant_id, principal: initial.actor.principal },
+      assertCurrent: async () => { await current(); },
       authorization: { scope_key: initial.actor.actor_digest, revision: initial.digest, allowed_outcomes: [...initial.allowed_outcomes] },
       workflowSessionId(session) { return canonicalJsonDigest({ session, actor: initial.actor.actor_digest, policy: initial.digest }); },
       async checkProposal(input) {
@@ -102,7 +106,7 @@ export function createDelegatedSemanticExecutor(options: RuntimeOptions) {
       if (admitted.status !== "authorized") throw new OwnerRuntimeError("DELEGATION_EFFECT_RECONCILIATION_REQUIRED");
       dispatchId = admitted.dispatch_id;
     };
-    return { check, assertCurrent: async () => { await current(); },
+    return { check, wasDispatched: () => dispatchId !== undefined, assertCurrent: async () => { await current(); },
       async record(input: { state: "completed" | "no_effect" | "unknown"; receipt_digest: string }) {
         if (!dispatchId) {
           const proof = original.semantic_authority.proof.delegation;

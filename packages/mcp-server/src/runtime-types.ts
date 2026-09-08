@@ -313,6 +313,19 @@ export type RuntimeActionRulesConfig = {
   subject_reference_hmac_key_env?: string;
   /** Stable deployment namespace shared by the paired Read and Action runtimes. */
   subject_reference_namespace?: string;
+  /** Operator-selected local workload binding. Owner policies live in the
+   * governed control store, not in this client configuration. */
+  owner_delegation?: {
+    parent_name: string;
+    credential_env: string;
+    authentication: {
+      provider: "jwt_hs256" | "jwt_asymmetric";
+      issuer: string;
+      audience: string;
+      secret_env?: string;
+      public_key_env?: string;
+    };
+  };
 };
 
 export type RuntimeActionBoundaryReference = RuntimeActionBoundaryV1;

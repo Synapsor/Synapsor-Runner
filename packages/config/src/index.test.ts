@@ -212,6 +212,29 @@ describe("runner capability config validation", () => {
     }
   });
 
+  it("validates explicit workload policy bindings without accepting identity or signing material", () => {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+    const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "schemas/synapsor.runner.schema.json"), "utf8"));
+    const schemaValidate = new Ajv2020({ strict: false, allErrors: true }).compile(schema);
+    const owner_delegation = { parent_name: "workload_policy", credential_env: "WORKLOAD_TOKEN",
+      authentication: { provider: "jwt_hs256", issuer: "trusted-backend", audience: "agent-runtime", secret_env: "WORKLOAD_KEY" } };
+    const configured = (value: unknown) => ({ ...structuredClone(safeConfig), action_rules: { project_root: ".", owner_delegation: value } });
+    for (const value of [owner_delegation, { ...owner_delegation, authentication: {
+      provider: "jwt_asymmetric", issuer: "trusted-backend", audience: "agent-runtime", public_key_env: "WORKLOAD_PUBLIC_KEY" } }]) {
+      expect(validateRunnerCapabilityConfig(configured(value))).toMatchObject({ ok: true });
+      expect(schemaValidate(configured(value)), JSON.stringify(schemaValidate.errors)).toBe(true);
+    }
+    for (const value of [null, { ...owner_delegation, tenant_id: "from-model" }, { ...owner_delegation, parent_name: "../other" },
+      { ...owner_delegation, authentication: { ...owner_delegation.authentication, secret: "raw material" } },
+      { ...owner_delegation, authentication: { ...owner_delegation.authentication, public_key_env: "SECOND_KEY" } },
+      { ...owner_delegation, authentication: { ...owner_delegation.authentication, issuer: "" } },
+      { ...owner_delegation, credential_env: "" }]) {
+      expect(validateRunnerCapabilityConfig(configured(value)).ok).toBe(false);
+      expect(schemaValidate(configured(value))).toBe(false);
+    }
+    expect(validateRunnerCapabilityConfig(configured({ ...owner_delegation, credential_env: "WORKLOAD_KEY" })).ok).toBe(false);
+  });
+
   it("accepts only explicit local required generation-lock enforcement", () => {
     const generated = {
       ...structuredClone(safeConfig),

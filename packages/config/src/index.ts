@@ -76,6 +76,7 @@ const PRODUCTION_EXPLORE_TENANT_LIMIT_KEYS = new Set([
   "max_response_cells_per_response",
 ]);
 const ACTION_RULES_KEYS = new Set([
+  "owner_delegation",
   "project_root",
   "legacy_tools",
   "subject_reference_hmac_key_env",
@@ -411,6 +412,28 @@ function validateActionRules(
     return;
   }
   if (strict) checkUnknownKeys(value, ACTION_RULES_KEYS, "$.action_rules", errors);
+  if (value.owner_delegation !== undefined) {
+    const delegation = value.owner_delegation;
+    const issue = () => errors.push({ path: "$.action_rules.owner_delegation", code: "OWNER_DELEGATION_INVALID",
+      message: "Owner delegation requires an exact parent, workload credential environment name, and dedicated JWT issuer/audience with one verification-key environment name." });
+    if (!isRecord(delegation)) issue();
+    else {
+      checkUnknownKeys(delegation, new Set(["parent_name", "credential_env", "authentication"]), "$.action_rules.owner_delegation", errors);
+      if (typeof delegation.parent_name !== "string" || !/^[A-Za-z_][A-Za-z0-9_.-]{0,127}$/.test(delegation.parent_name)
+        || !isEnvName(delegation.credential_env)) issue();
+      const auth = delegation.authentication;
+      if (!isRecord(auth)) issue();
+      else {
+        checkUnknownKeys(auth, new Set(["provider", "issuer", "audience", "secret_env", "public_key_env"]), "$.action_rules.owner_delegation.authentication", errors);
+        if (![auth.issuer, auth.audience].every((v) => typeof v === "string" && v.length > 0 && v.length <= 256 && v === v.trim() && !/[\u0000-\u001f\u007f]/.test(v))) issue();
+        if (auth.provider === "jwt_hs256") {
+          if (!isEnvName(auth.secret_env) || auth.public_key_env !== undefined || auth.secret_env === delegation.credential_env) issue();
+        } else if (auth.provider === "jwt_asymmetric") {
+          if (!isEnvName(auth.public_key_env) || auth.secret_env !== undefined || auth.public_key_env === delegation.credential_env) issue();
+        } else issue();
+      }
+    }
+  }
   if (value.legacy_tools !== undefined && value.legacy_tools !== "enabled" && value.legacy_tools !== "disabled") {
     errors.push({ path: "$.action_rules.legacy_tools", code: "ACTION_RULES_LEGACY_TOOLS_INVALID", message: "legacy_tools must be enabled or disabled; fixed Action tools are the default." });
   }

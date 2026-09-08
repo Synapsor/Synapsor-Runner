@@ -109,6 +109,8 @@ export type {
   AnalyticsCatalogV1,
 } from "./analytics-catalog.js";
 export { createJwtVerifier } from "./jwt-auth.js";
+export { createOwnerRuntimeJwtAuthenticator, OwnerRuntimeError } from "./owner-runtime-identity.js";
+export { createDelegatedSemanticRuntime, createDelegatedSemanticExecutor, type DelegatedRequestContext } from "./delegated-semantic-runtime.js";
 export type { JwtAlgorithm, JwtVerifier, JwtVerificationConfig, VerifiedJwt } from "./jwt-auth.js";
 export { sessionAuthVerifier, verifySessionJwt } from "./http-security.js";
 export {

@@ -169,6 +169,104 @@ export class ControlPolicyRepository {
     })) };
   }
 
+  /** Reads one exact pointer pair after the caller's guard has authorized the
+   * snapshot. Management callers use this instead of expanding a whole scope. */
+  async exactPointerSnapshot(input: {
+    deployment_id: string; key: ControlPolicyKey; max_bytes?: number;
+  }, guard?: ControlPolicyReadGuard): Promise<{
+    epoch: number; active?: ControlPolicyRevision; draft?: ControlPolicyRevision;
+  }> {
+    const maximumBytes = input.max_bytes ?? 1_048_576;
+    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1 || maximumBytes > 1_048_576) fail("POLICY_SNAPSHOT_BYTES_INVALID");
+    const guards = this.readGuardStatements(input.deployment_id, guard);
+    const states = ["active", "drafts"] as const;
+    const sizeStatement = (state: typeof states[number]): Statement => ({
+      sql: `SELECT ${this.connection.byteLength("r.content_json")} AS bytes FROM ${this.connection.table(state)} a
+        JOIN ${this.connection.table("revisions")} r ON r.deployment_id = a.deployment_id AND r.revision_id = a.revision_id
+          AND r.scope_key = a.scope_key AND r.kind = a.kind AND r.name = a.name
+        WHERE a.deployment_id = $1 AND a.scope_key = $2 AND a.kind = $3 AND a.name = $4`,
+      values: [identifier(input.deployment_id), scopeKey(input.key.scope), policyKind(input.key.kind), identifier(input.key.name)],
+    });
+    let bytes = 0;
+    const statements: Statement[] = [{
+      sql: `SELECT epoch FROM ${this.connection.table("deployments")} WHERE deployment_id = $1`,
+      values: [identifier(input.deployment_id)], check: exactlyOne,
+    }, ...guards, ...states.map((state) => ({ ...sizeStatement(state), check: (rows: Row[]) => {
+      if (rows.length > 1) fail("POLICY_SNAPSHOT_TOO_LARGE");
+      bytes += rows.reduce((sum, row) => sum + epoch(row.bytes), 0);
+      if (bytes > maximumBytes) fail("POLICY_SNAPSHOT_TOO_LARGE");
+    } })), ...states.map((state) => this.pointerStatement(input.deployment_id, input.key, state))];
+    const rows = await this.connection.execute(statements);
+    const offset = 1 + guards.length + states.length;
+    return { epoch: epoch(rows[0]![0]!.epoch),
+      ...(rows[offset]![0] ? { active: decodeRevision(rows[offset]![0]!) } : {}),
+      ...(rows[offset + 1]![0] ? { draft: decodeRevision(rows[offset + 1]![0]!) } : {}) };
+  }
+
+  /** Returns a single kind's active/draft pointers in deterministic keyset
+   * order. The cursor is pinned to the deployment epoch so a later page can
+   * never silently combine authority from two snapshots. Bodies are size
+   * checked before any JSON is decoded. */
+  async scopePointerPage(input: {
+    deployment_id: string; scope: ControlPolicyScope; kind: ControlPolicyKind;
+    after?: { name: string; epoch: number }; limit?: number; max_bytes?: number;
+  }, guard?: ControlPolicyReadGuard): Promise<{
+    epoch: number; items: Array<{ name: string; active?: ControlPolicyRevision; draft?: ControlPolicyRevision }>;
+    next?: { name: string; epoch: number };
+  }> {
+    const limit = input.limit ?? 20;
+    const maximumBytes = input.max_bytes ?? 1_048_576;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 32) fail("POLICY_LIST_LIMIT_INVALID");
+    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1 || maximumBytes > 1_048_576) fail("POLICY_SNAPSHOT_BYTES_INVALID");
+    const after = input.after ? { name: identifier(input.after.name), epoch: epoch(input.after.epoch) } : undefined;
+    const values = [identifier(input.deployment_id), scopeKey(input.scope), policyKind(input.kind), after?.name ?? "", limit + 1];
+    const names = `WITH pointer_names AS (
+        SELECT name FROM (
+          SELECT name FROM ${this.connection.table("active")} WHERE deployment_id = $1 AND scope_key = $2 AND kind = $3 AND revision_id IS NOT NULL AND name COLLATE ${this.connection.collation} > $4
+          UNION
+          SELECT name FROM ${this.connection.table("drafts")} WHERE deployment_id = $1 AND scope_key = $2 AND kind = $3 AND revision_id IS NOT NULL AND name COLLATE ${this.connection.collation} > $4
+        ) pointers ORDER BY name COLLATE ${this.connection.collation} LIMIT $5
+      )`;
+    const selected = (state: "active" | "drafts", columns: string) => `SELECT '${state}' AS pointer_state, r.name AS pointer_name${columns} FROM pointer_names p
+        JOIN ${this.connection.table(state)} a ON a.deployment_id = $1 AND a.scope_key = $2 AND a.kind = $3 AND a.name = p.name
+        JOIN ${this.connection.table("revisions")} r ON r.deployment_id = a.deployment_id AND r.revision_id = a.revision_id
+          AND r.scope_key = a.scope_key AND r.kind = a.kind AND r.name = a.name`;
+    const guards = this.readGuardStatements(input.deployment_id, guard);
+    let bytes = 0;
+    const statements: Statement[] = [{
+      sql: `SELECT epoch FROM ${this.connection.table("deployments")} WHERE deployment_id = $1`, values: [values[0]!],
+      check: (rows) => { exactlyOne(rows); const current = epoch(rows[0]!.epoch); if (after && current !== after.epoch) fail("POLICY_PAGE_EPOCH_STALE"); },
+    }, ...guards, {
+      sql: `${names} ${selected("active", `, ${this.connection.byteLength("r.content_json")} AS bytes`)} UNION ALL ${selected("drafts", `, ${this.connection.byteLength("r.content_json")} AS bytes`)}`,
+      values, check: (rows) => {
+        if (rows.length > (limit + 1) * 2) fail("POLICY_SNAPSHOT_TOO_LARGE");
+        bytes = rows.reduce((sum, row) => sum + epoch(row.bytes), 0);
+        if (bytes > maximumBytes) fail("POLICY_SNAPSHOT_TOO_LARGE");
+      },
+    }, {
+      sql: `${names} SELECT * FROM (${selected("active", ", r.*")} UNION ALL ${selected("drafts", ", r.*")}) pointer_rows
+        ORDER BY pointer_name COLLATE ${this.connection.collation}, pointer_state`,
+      values,
+    }];
+    const rows = await this.connection.execute(statements);
+    const currentEpoch = epoch(rows[0]![0]!.epoch);
+    const body = rows.at(-1)!;
+    const byName = new Map<string, { name: string; active?: ControlPolicyRevision; draft?: ControlPolicyRevision }>();
+    for (const row of body) {
+      const pointerName = identifier(row.pointer_name);
+      const item = byName.get(pointerName) ?? { name: pointerName };
+      if (row.pointer_state === "active") item.active = decodeRevision(row);
+      else if (row.pointer_state === "drafts") item.draft = decodeRevision(row);
+      else fail("POLICY_POINTER_STATE_INVALID");
+      byName.set(pointerName, item);
+    }
+    const selectedItems = [...byName.values()];
+    const items = selectedItems.slice(0, limit);
+    const last = items.at(-1);
+    return { epoch: currentEpoch, items,
+      ...(selectedItems.length > limit && last ? { next: { name: last.name, epoch: currentEpoch } } : {}) };
+  }
+
   /** A complete, bounded scope view for trusted policy services. Overflow is a
    * refusal, not a truncated authority set. Null pointers are revocations and
    * are deliberately absent; immutable history remains separately available. */

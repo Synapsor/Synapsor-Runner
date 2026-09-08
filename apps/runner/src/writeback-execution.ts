@@ -42,6 +42,7 @@ import { verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-id
 import { loadActiveActionRuleAuthority } from "./action-rule-authority.js";
 import { semanticContextCapability } from "./semantic-action-runtime.js";
 import { hashReceipt, runnerReceiptConfig, toExecutionReceipt, writebackDatabaseScope, writebackTimeoutMs } from "./writeback-domain.js";
+import { applyRuntimeDatabaseJob } from "./delegated-writeback.js";
 
 const handlerReceiptStatuses = new Set(["applied", "already_applied", "conflict", "failed"]);
 
@@ -85,7 +86,8 @@ async function applyAdmittedSqlJob(job: unknown, configPath: string, storePath: 
   if (config.receipts?.authority === "runner_ledger" && !intentAuthority.store) throw new Error("runner_ledger receipt authority requires --store or an authoritative shared runtime store");
   if (intentAuthority.store) config.writebackIntentStore = intentAuthority.store;
   try {
-    const result = await adapters[parsedJob.engine].apply(parsedJob, config);
+    const result = await applyRuntimeDatabaseJob({ job: parsedJob, runnerConfig: config, runtimeConfig, configPath,
+      adapter: adapters[parsedJob.engine], env });
     store?.recordExecutionReceipt(toExecutionReceipt(parsedJob, result, config.dryRun));
     return result;
   } finally {
