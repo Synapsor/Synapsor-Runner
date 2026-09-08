@@ -1,10 +1,24 @@
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { explorationBoundaryCandidateDigest, generationLockSharedFactsDigest,
+import { explorationBoundaryCandidateDigest, generationLockSharedFactsDigest, loadGenerationLockSnapshot,
   type ExplorationBoundaryDraft, type GenerationLock } from "./auto-boundary.js";
 import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
 import { buildActionRuleAuthorityDraft, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
+
+/** Read minimization can replace authoring evidence without changing source
+ * authority. Rebind from each catalog's exact saved snapshot, not a caller's
+ * latest UI context, and still reject schema, role or identity changes. */
+export async function buildActionCatalogForSavedReadRevision(input: {
+  projectRoot: string; catalog: ActionRuleCatalogV1; nextBoundary: ExplorationBoundaryDraft; inspection: SchemaInspection;
+}) {
+  const retainedCatalog = input.catalog.generation_lock_fingerprint === input.nextBoundary.generation_lock_fingerprint
+    ? input.catalog : rebindActionCatalogForReadPolicyRevision({ catalog: input.catalog,
+      previousLock: await loadGenerationLockSnapshot(input.projectRoot, input.catalog.generation_lock_fingerprint),
+      nextLock: await loadGenerationLockSnapshot(input.projectRoot, input.nextBoundary.generation_lock_fingerprint),
+      nextBoundary: input.nextBoundary });
+  return buildActionRuleAuthoringCatalog({ boundary: input.nextBoundary, inspection: input.inspection, retainedCatalog });
+}
 
 export function rebindActionCatalogForReadPolicyRevision(input: {
   catalog: ActionRuleCatalogV1;

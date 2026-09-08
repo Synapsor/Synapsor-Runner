@@ -87,5 +87,8 @@ export async function readOperatorExecutionConfig(input: {
 }
 
 function fail(code: string): never {
-  throw Object.assign(new Error(`${code}: reviewed execution policy is unavailable; no execution is authorized.`), { code });
+  throw Object.assign(new Error(`${code}: reviewed execution policy is unavailable; no execution is authorized.`
+    + (code === "POLICY_EXECUTION_BINDING_CHANGED"
+      ? " If only owner sign-in settings changed, run policy connection --config <this-runtime-config> to review the exact binding. Unrelated changes require restoring or reviewing their configuration; do not edit policy-store hashes."
+      : "")), { code });
 }

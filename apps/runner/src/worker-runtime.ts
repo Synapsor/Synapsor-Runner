@@ -554,6 +554,25 @@ export async function claimSupervisedWorkerItem(
 }
 
 
+function resolveSupervisedWorkerIdentity(config: RuntimeConfig, selected: string | undefined, capability?: string): string {
+  const policies = supervisedWorkerPolicies(config).filter((policy) => policy.mode === "supervised_worker"
+    && (!capability || supervisedWorkerPolicyName(policy) === capability));
+  const identities = [...new Set(policies.flatMap((policy) => policy.worker_identity ? [policy.worker_identity] : []))].sort();
+  if (selected !== undefined) {
+    if (policies.length && !policies.some((policy) => !policy.worker_identity || policy.worker_identity === selected)) {
+      throw workerPolicyError("SUPERVISED_WORKER_IDENTITY_MISMATCH",
+        `Worker identity does not match the selected execution policies. Restart with --worker-id set to a reviewed identity (${identities.join(", ")}); use --capability to select an outcome. No proposal was claimed.`);
+    }
+    return selected;
+  }
+  if (identities.length > 1) {
+    throw workerPolicyError("SUPERVISED_WORKER_IDENTITY_AMBIGUOUS",
+      `Selected execution policies require different worker identities (${identities.join(", ")}). Select an outcome with --capability or a reviewed --worker-id. No proposal was claimed.`);
+  }
+  return identities[0] ?? `worker_${process.pid}`;
+}
+
+
 async function workerRun(args: string[]): Promise<number> {
   if (!args.includes("--yes")) throw new Error("worker run requires --yes because it applies approved proposals");
   const configPath = runnerConfigPath(args);
@@ -571,11 +590,17 @@ async function workerRun(args: string[]): Promise<number> {
       return 0;
     }
   }
+  const capability = optionalArg(args, "--capability");
+  const selectedWorkerId = optionalArg(args, "--worker-id") ?? process.env.SYNAPSOR_RUNNER_ID;
+  const workerId = supervised ? resolveSupervisedWorkerIdentity(config, selectedWorkerId, capability)
+    : selectedWorkerId ?? `worker_${process.pid}`;
+  // Pin the startup identity across shared-store bridge batches as well.
+  const boundArgs = optionalArg(args, "--worker-id") === undefined ? [...args, "--worker-id", workerId] : args;
   if (config && runtimeStoreBridgeRequired(args, config)) {
     if (!args.includes("--once") && !args.includes("--drain")) {
-      return workerRunSharedRuntimeStoreDaemon(args, config);
+      return workerRunSharedRuntimeStoreDaemon(boundArgs, config);
     }
-    return withSharedPostgresRuntimeStoreBridge(args, config, "worker run", (bridgeStorePath) => workerRun(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+    return withSharedPostgresRuntimeStoreBridge(args, config, "worker run", (bridgeStorePath) => workerRun(argsWithRuntimeStoreBridge(boundArgs, bridgeStorePath)));
   }
   assertNoRuntimeStoreForLocalMutation(config, "worker run", args);
   const storePath = resolvedRuntimeStorePath(args, configPath, config.storage?.sqlite_path);
@@ -584,9 +609,8 @@ async function workerRun(args: string[]): Promise<number> {
     if (!args.includes("--once") && !args.includes("--drain")) {
       throw new Error("shared Postgres ledger mirror for worker run requires --once or --drain. Use storage.shared_postgres.mode=runtime_store for long-running shared worker loops.");
     }
-    return withSharedPostgresLedgerMirror(args, storePath, "worker run", () => workerRun(withoutSharedPostgresLedgerMirror(args)), config);
+    return withSharedPostgresLedgerMirror(args, storePath, "worker run", () => workerRun(withoutSharedPostgresLedgerMirror(boundArgs)), config);
   }
-  const workerId = optionalArg(args, "--worker-id") ?? process.env.SYNAPSOR_RUNNER_ID ?? `worker_${process.pid}`;
   const maxAttempts = positiveIntOption(args, "--max-attempts", 5, 1, 100);
   const retryBaseMs = positiveIntOption(args, "--retry-base-ms", 1000, 1, 3_600_000);
   const retryMaxMs = positiveIntOption(args, "--retry-max-ms", 60_000, retryBaseMs, 86_400_000);
@@ -594,7 +618,6 @@ async function workerRun(args: string[]): Promise<number> {
   const pollMs = positiveIntOption(args, "--poll-ms", 5000, 10, 3_600_000);
   const once = args.includes("--once");
   const drain = args.includes("--drain");
-  const capability = optionalArg(args, "--capability");
   const tenant = optionalArg(args, "--tenant");
   const startupStore = new ProposalStore(storePath);
   try {
@@ -634,6 +657,7 @@ async function workerRun(args: string[]): Promise<number> {
         if (executionBindingDigest(current) !== executionBindingDigest(config)) {
           throw workerPolicyError("WORKER_RUNTIME_BINDING_CHANGED", "Runtime bindings changed; restart the worker after review. No further proposal was claimed.");
         }
+        if (current.supervised_worker?.enabled) resolveSupervisedWorkerIdentity(current, workerId, capability);
         return current;
       };
       const queueConfig = supervised ? await currentExecutionConfig() : config;

@@ -107,23 +107,90 @@ describe("post-activation Ask handoff", () => {
     expect(promptWithDefault).not.toHaveBeenCalled();
   });
 
-  it.each(["decline", "pass", "fail", "exception"])("checks client launch only with permission and reports actual status (%s)", async (mode) => {
+  it.each(["decline", "cancel", "pass", "fail", "exception"])("checks client launch only with permission and reports actual status (%s)", async (mode) => {
     const writes: string[] = [];
+    const failed = mode === "fail" || mode === "exception";
+    const approved = mode !== "decline" && mode !== "cancel";
+    const runMcpInstall = vi.fn(async () => 0), runAsk = vi.fn(), runBoundaryReview = vi.fn(), runWorker = vi.fn();
     const checkClientLaunch = vi.fn(async () => {
-      if (mode === "exception") throw new Error("Launch timed out");
-      return { ok: mode === "pass", messages: ["Command could not expose the reviewed tool catalog."] };
+      if (mode === "exception") throw new Error("npm error code ETARGET password=never-display-this");
+      return { ok: mode === "pass", messages: ["Unexpected tools: postgres://user:never-display-this@host/db"] };
     });
-    const code = await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", includeActions: false,
+    const code = await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created project", includeActions: false,
       selection: { route: "mcp-client", client: "claude-code" } }, {
-      runMcpInstall: async () => 0, confirmLaunchCheck: async () => mode !== "decline", checkClientLaunch,
+      env: {}, readRuntimeIdentity: async () => "unavailable", readRuntimeBindings: async () => [],
+      runMcpInstall, runAsk, runBoundaryReview, runWorker,
+      confirmLaunchCheck: async () => mode === "cancel" ? undefined : approved, checkClientLaunch,
       stdout: { write: (value) => { writes.push(String(value)); return true; } },
     });
-    expect(code).toBe(0);
-    expect(checkClientLaunch).toHaveBeenCalledTimes(mode === "decline" ? 0 : 1);
+    expect(code).toBe(failed ? 1 : 0);
+    expect(runMcpInstall).toHaveBeenCalledExactlyOnceWith([
+      "install", "claude-code", "--project", "--authoring", "--project-root", "/tmp/not-created project",
+    ]);
+    expect(checkClientLaunch).toHaveBeenCalledTimes(approved ? 1 : 0);
+    if (approved) expect(checkClientLaunch).toHaveBeenCalledWith("/tmp/not-created project", "claude-code");
+    expect(runAsk).not.toHaveBeenCalled();
+    expect(runBoundaryReview).not.toHaveBeenCalled();
+    expect(runWorker).not.toHaveBeenCalled();
     expect(writes.join("")).toContain(mode === "pass" ? "verified MCP handshake and tool catalog; test connection closed"
-      : mode === "decline" ? "configured; launch not checked" : "configured; connection check failed");
-    expect(writes.join("")).toContain("LOCAL STDIO MCP CONFIGURED");
+      : !approved ? "configured; launch not checked" : "saved; NOT CONNECTED; connection check failed");
+    if (failed) {
+      expect(writes.join("")).toContain("CLIENT CONFIGURATION SAVED; NOT CONNECTED");
+      expect(writes.join("")).toContain("Read, Action and execution permissions are unchanged");
+      expect(writes.join("")).toContain("mcp status claude-code --project --project-root '/tmp/not-created project' --check-launch");
+      expect(writes.join("")).not.toMatch(/launches Runner|Launch the client|LOCAL STDIO MCP CONFIGURED|mcp install|--yes|--include-actions/);
+    } else {
+      expect(writes.join("")).toContain("LOCAL STDIO MCP CONFIGURED");
+      expect(writes.join("")).not.toContain("NOT CONNECTED");
+    }
+    if (mode === "exception") expect(writes.join("")).toContain("ETARGET: The configured package version is unavailable");
+    expect(writes.join("")).not.toContain("never-display-this");
     expect(writes.join("")).not.toContain("LOCAL STDIO MCP READY");
+  });
+
+  it.each([
+    { throws: false, consent: false, workerCode: 0 },
+    { throws: true, consent: undefined, workerCode: 0 },
+    { throws: false, consent: true, workerCode: 0 },
+    { throws: true, consent: true, workerCode: 0 },
+    { throws: false, consent: true, workerCode: 7 },
+  ])("keeps a failed client check failed after a separate worker choice (%j)", async ({ throws, consent, workerCode }) => {
+    const writes: string[] = [];
+    const runMcpInstall = vi.fn(async () => 0), runAsk = vi.fn(), runBoundaryReview = vi.fn();
+    const runWorker = vi.fn(async () => workerCode), confirmWorkerStart = vi.fn(async (_context: string[]) => consent);
+    const checkClientLaunch = vi.fn(async () => {
+      if (throws) throw new Error("POLICY_EXECUTION_BINDING_CHANGED private-details");
+      return { ok: false, messages: [] };
+    });
+    const code = await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", includeActions: true,
+      selection: { route: "mcp-client", client: "cursor" } }, {
+      env: { WRITER_URL: "private-writer" }, readRuntimeIdentity: async () => "local_environment",
+      readRuntimeBindings: async () => [], runMcpInstall, runAsk, runBoundaryReview,
+      confirmLaunchCheck: async () => true, checkClientLaunch, confirmWorkerStart, runWorker,
+      readExecutionState: async () => ({ enabled: true, config_path: "synapsor.actions.runner.json", policies: [{
+        outcome: "stockroom.correct_quantity", write_url_env: "WRITER_URL", action_boundary_digest: `sha256:${"a".repeat(64)}`,
+        mode: "supervised_worker", concurrency: 1, queue_limit: 100, lease_seconds: 300, max_attempts: 5,
+        proposal_ttl_seconds: 3600, rate_limit: { executions: 10, window_seconds: 60 },
+      }] }),
+      stdout: { write: (value) => { writes.push(String(value)); return true; } },
+    });
+    expect(code).toBe(consent && workerCode !== 0 ? workerCode : 1);
+    expect(runMcpInstall).toHaveBeenCalledOnce();
+    expect(checkClientLaunch).toHaveBeenCalledOnce();
+    expect(confirmWorkerStart).toHaveBeenCalledOnce();
+    const context = confirmWorkerStart.mock.calls[0]![0] as string[];
+    expect(context.join("\n")).toContain("already-approved requests independently");
+    expect(context.join("\n")).toContain("does not repair or verify the client connection");
+    expect(context.join("\n")).not.toContain("Open the MCP client");
+    expect(runWorker).toHaveBeenCalledTimes(consent ? 1 : 0);
+    if (consent) expect(runWorker).toHaveBeenCalledExactlyOnceWith([
+      "run", "--supervised", "--yes", "--config", "/tmp/not-created-project/synapsor.actions.runner.json",
+    ]);
+    expect(runAsk).not.toHaveBeenCalled();
+    expect(runBoundaryReview).not.toHaveBeenCalled();
+    expect(writes.join("")).toContain("mcp status cursor --project --project-root /tmp/not-created-project --check-launch --include-actions");
+    expect(writes.join("")).not.toMatch(/launches Runner|LOCAL STDIO MCP CONFIGURED|private-details|private-writer|mcp install/);
+    if (throws) expect(writes.join("")).toContain("POLICY_EXECUTION_BINDING_CHANGED");
   });
 
   it("routes production authority to the authenticated HTTP handoff without installing local stdio", async () => {

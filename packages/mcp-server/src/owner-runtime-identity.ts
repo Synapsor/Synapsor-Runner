@@ -19,7 +19,9 @@ export class OwnerRuntimeError extends Error {
 export function createOwnerRuntimeJwtAuthenticator(config: JwtVerificationConfig & { issuer: string; audience: string },
   env: NodeJS.ProcessEnv): OwnerRuntimeAuthenticator {
   if (!config.issuer?.trim() || !config.audience?.trim()) throw new OwnerRuntimeError("DELEGATION_AUTH_CONFIGURATION_INVALID");
-  const verify = createJwtVerifier({ ...config, clock_skew_seconds: 0 }, env);
+  // Owner configuration selects a fixed protocol; explicit API allowlists still narrow it.
+  const verify = createJwtVerifier({ ...config, clock_skew_seconds: 0,
+    algorithms: config.algorithms ?? (config.provider === "jwt_asymmetric" ? ["RS256", "ES256"] : ["HS256"]) }, env);
   return async (credential) => {
     try {
       if (typeof credential !== "string" || credential.length > 16_384) throw new Error("Invalid credential");

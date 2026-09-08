@@ -663,6 +663,22 @@ async function fetchStdioMcpTools(commandText: string, timeoutMs: number): Promi
 }
 
 
+export function formatMcpLaunchFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
+  // Classify before truncation and expose only fixed diagnostics, never child stderr or environment values.
+  if (code === "ETARGET" || /\bETARGET\b|No matching version found/i.test(message)) {
+    return "ETARGET: The configured package version is unavailable from the registry. Check the configured launcher and package version before retrying.";
+  }
+  if (code === "POLICY_EXECUTION_BINDING_CHANGED" || /\bPOLICY_EXECUTION_BINDING_CHANGED\b/.test(message)) {
+    return "POLICY_EXECUTION_BINDING_CHANGED: Runner refused changed execution bindings. Use the operator's reviewed connection setup; do not edit stored authority or bypass this guard.";
+  }
+  if (code === "ENOENT") return "ENOENT: The configured launcher executable or working directory was not found. Check the saved command and project location.";
+  if (code === "EACCES") return "EACCES: The configured launcher could not be executed. Check its executable and directory permissions.";
+  if (/timed out/i.test(message)) return "MCP_LAUNCH_TIMEOUT: The configured command did not finish the MCP handshake and tool catalog check before the timeout.";
+  return "MCP_LAUNCH_CHECK_FAILED: The configured command did not complete the reviewed MCP handshake and tool catalog check. Inspect the saved client entry and retry its launch check.";
+}
+
 export async function fetchStdioMcpToolsCommand(command: string, commandArgs: string[], timeoutMs: number, cwd?: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, commandArgs, {
@@ -700,7 +716,7 @@ export async function fetchStdioMcpToolsCommand(command: string, commandArgs: st
       clearTimeout(timeout);
       const response = parseJsonRpcResponse(stdout, 2);
       if (!response) {
-        reject(new Error(`mcp audit stdio tools/list response not found${stderr ? `: ${stderr.slice(0, 240)}` : ""}`));
+        reject(new Error(formatMcpLaunchFailure(stderr)));
         return;
       }
       resolve(response);

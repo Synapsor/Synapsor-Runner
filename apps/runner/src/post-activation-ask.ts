@@ -23,6 +23,7 @@ import { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
 import { guidedActionStatus } from "./guided-action.js";
 import { loadActiveActionRuleAuthority } from "./action-rule-authority.js";
 import { mcp, managedMcpProjectStatusReport } from "./mcp-project.js";
+import { formatMcpLaunchFailure } from "./mcp-audit.js";
 import { managedMcpProjectStatus, resolveManagedMcpLauncher } from "./managed-mcp-project.js";
 import { readPausedExecutionSetup, type SavedExecutionSetup } from "./semantic-execution-setup.js";
 import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
@@ -379,25 +380,40 @@ export async function runPostActivationAskHandoff(
         });
       }))();
       let connection = "configured; launch not checked";
+      let connectionFailed = false;
       if (approvedCheck) {
         try {
           const checked = await (dependencies.checkClientLaunch ?? checkConfiguredClientLaunch)(input.projectRoot, selection.client);
-          connection = checked.ok ? "verified MCP handshake and tool catalog; test connection closed" : "configured; connection check failed";
-          if (!checked.ok) write(`${checked.messages.join("\n")}\n`);
+          connectionFailed = !checked.ok;
+          if (checked.ok) connection = "verified MCP handshake and tool catalog; test connection closed";
+          else write(`Connection check: ${formatMcpLaunchFailure(checked.messages.join("\n"))}\n`);
         } catch (error) {
-          connection = "configured; connection check failed";
-          write(`Connection check: ${safeErrorMessage(error)}\n`);
+          connectionFailed = true;
+          write(`Connection check: ${formatMcpLaunchFailure(error)}\n`);
         }
       }
+      if (connectionFailed) connection = "saved; NOT CONNECTED; connection check failed";
       write(`Client connection: ${connection}.\n`);
-      write(formatMcpClientHandoff(
-        input.projectRoot,
-        selection.client,
-        includeActions,
-        runtimeBindings,
-        runtimeIdentity,
-        runtimeBindings.filter((binding) => env[binding.environment]?.trim()).map((binding) => binding.environment),
-      ));
+      if (connectionFailed) {
+        write([
+          "CLIENT CONFIGURATION SAVED; NOT CONNECTED",
+          `${managedMcpClientLabel(selection.client)} did not pass the configured Runner connection check. Do not treat client claims as saved requests or completed work.`,
+          "Client configuration is preserved. Read, Action and execution permissions are unchanged; this probe made no model request, source query, proposal or write.",
+          "Inspect the configured launcher and resolve the reported failure, then retry the explicit launch check:",
+          `  ${cliCommandName()} mcp status ${selection.client} --project --project-root ${shellToken(input.projectRoot)} --check-launch${includeActions ? " --include-actions" : ""}`,
+          "No client reinstall or new activation was performed by this check.",
+          "",
+        ].join("\n"));
+      } else {
+        write(formatMcpClientHandoff(
+          input.projectRoot,
+          selection.client,
+          includeActions,
+          runtimeBindings,
+          runtimeIdentity,
+          runtimeBindings.filter((binding) => env[binding.environment]?.trim()).map((binding) => binding.environment),
+        ));
+      }
       if (includeActions) {
         const execution = await (dependencies.readExecutionState ?? readSemanticSupervisedExecutionState)({ projectRoot: input.projectRoot });
         write(`Client mode: ${execution.enabled ? "execution configured; worker health not checked" : "proposal-only; automatic database updates are off"}. Completion requires a successful execution receipt.\n`);
@@ -414,9 +430,12 @@ export async function runPostActivationAskHandoff(
           } else {
             const context = [
               `Client connection: ${connection}.`,
+              ...(connectionFailed ? ["A worker can process already-approved requests independently; starting it does not repair or verify the client connection."] : []),
               `Process approved requests for: ${execution.policies.map((policy) => policy.outcome).join(", ")}.`,
               "This can write source rows for approved requests. The worker checks current authority, eligibility, writer posture and conflict guards before execution.",
-              "Run in this terminal until Ctrl-C. Open the MCP client in another terminal; setup will not create a background daemon.",
+              connectionFailed
+                ? "Run in this terminal until Ctrl-C; setup will not create a background daemon. The client connection still needs repair."
+                : "Run in this terminal until Ctrl-C. Open the MCP client in another terminal; setup will not create a background daemon.",
             ];
             const start = await (dependencies.confirmWorkerStart ?? (async (lines: string[]) => {
               if (!process.stdin.isTTY || !stdout.isTTY) return false;
@@ -427,13 +446,14 @@ export async function runPostActivationAskHandoff(
               const runWorker = dependencies.runWorker ?? (async (args: string[]) => (await import("./worker-runtime.js")).workerCommand(args));
               const code = await runWorker(["run", "--supervised", "--yes", "--config", path.resolve(input.projectRoot, execution.config_path)]);
               write("This worker has stopped. Client configuration and execution permissions remain saved; automatic processing needs a running worker.\n");
-              return code;
+              if (connectionFailed) write("Client configuration is still saved but NOT CONNECTED; the failed connection check has not been retried.\n");
+              return code !== 0 ? code : connectionFailed ? 1 : 0;
             }
             write(`Worker not started by setup. Next: ${cliCommandName()} worker run --supervised --yes --config ${shellToken(path.resolve(input.projectRoot, execution.config_path))}\n`);
           }
         }
       }
-      return 0;
+      return connectionFailed ? 1 : 0;
     } catch (error) {
       if (clientConfigured) {
         stderr.write(`Client configuration is saved. Execution setup could not finish: ${safeErrorMessage(error)}\n`

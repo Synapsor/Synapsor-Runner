@@ -19,7 +19,7 @@ import {
 import crypto from "node:crypto";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { explicitActionExecutionIntent } from "./action-execution-intent.js";
-import { prepareActionRuleReadRevision, rebindActionCatalogForReadPolicyRevision } from "./action-rule-read-revision.js";
+import { prepareActionRuleReadRevision, rebindActionCatalogForReadPolicyRevision, buildActionCatalogForSavedReadRevision } from "./action-rule-read-revision.js";
 import { assertJointApprovalLimitsPreserved } from "./action-policy-scope.js";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -6625,7 +6625,6 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   }
   const bindSemanticActionToRead = async (
     reviewedRead: ExplorationBoundaryDraft,
-    previousGenerationLock?: GenerationLock,
   ): Promise<CompiledActionRuleModelDraftV1> => {
     if (!semanticActionCatalog || !semanticActionModelDraft) {
       throw new Error("ACTION_RULE_MODEL_DRAFT_INCOMPLETE: no validated semantic Action draft is available.");
@@ -6638,7 +6637,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     if (replacement && replacement.authority.catalog.generation_lock_fingerprint !== reviewedRead.generation_lock_fingerprint) {
       replacement = prepareActionRuleReadRevision({ existing: replacement,
         previousLock: await loadGenerationLockSnapshot(input.projectRoot, replacement.authority.catalog.generation_lock_fingerprint),
-        nextLock: context.lock, nextBoundary: reviewedRead, inspection: actionInspection! });
+        nextLock: await loadGenerationLockSnapshot(input.projectRoot, reviewedRead.generation_lock_fingerprint),
+        nextBoundary: reviewedRead, inspection: actionInspection! });
     }
     const prepared: Array<{ entry: typeof entries[number]; catalog: BuiltActionRuleAuthoringCatalogV1; compiled: CompiledActionRuleModelDraftV1 }> = [];
     let latestCompiled: CompiledActionRuleModelDraftV1 | undefined;
@@ -6647,19 +6647,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     // only to support an Action target. Retain their already reviewed private
     // catalog authority while rebinding the Action draft to the exact final
     // Read revision. This must not make the Action-only resource model-readable.
-    const retainedCatalog = previousGenerationLock
-      ? rebindActionCatalogForReadPolicyRevision({
-          catalog: entry.catalog.catalog,
-          previousLock: previousGenerationLock,
-          nextLock: context.lock,
-          nextBoundary: reviewedRead,
-        })
-      : entry.catalog.catalog;
-    const catalog = buildActionRuleAuthoringCatalog({
-      boundary: reviewedRead,
-      inspection: actionInspection!,
-      retainedCatalog,
-    });
+    const catalog = await buildActionCatalogForSavedReadRevision({ projectRoot: input.projectRoot,
+      catalog: entry.catalog.catalog, nextBoundary: reviewedRead, inspection: actionInspection! });
     const compiled = compileActionRuleModelDraft({
       draft: entry.result.compiled.draft,
       builtCatalog: catalog,
@@ -7172,7 +7161,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             analysis_digest: revised.workload.analysis_digest,
           };
           if (semanticActionModelDraft && semanticActionCatalog) {
-            await bindSemanticActionToRead(mappingBoundary, previousGenerationLock);
+            await bindSemanticActionToRead(mappingBoundary);
           }
           await persistConfirmedInterpretation();
           await writeCurrentDelegationDraft();
@@ -7508,8 +7497,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       const passages = clientItems.flatMap((item) => item.passages);
       await chat.streamModel([
         `Your client needs to ${[...new Set(passages.flatMap((passage) => passage.application_obligations ?? []))]
-          .map((duty) => duty === "customer_selection" ? "capture which offer or record the customer chose"
-            : "show accurate request status and effective dates").join(" and ")}.`,
+          .map((duty) => duty === "customer_selection" ? "capture the user's selected record and requested change"
+            : "show whether the request is awaiting review, approved, waiting for execution, blocked, or completed with a receipt").join(" and ")}.`,
         "Will your client handle this? Assignment is not verification; test the integration before customer use. Runner keeps enforcing the database rules.",
       ]);
       const choice = await input.session.chooseOption("CLIENT INTEGRATION RESPONSIBILITIES", [

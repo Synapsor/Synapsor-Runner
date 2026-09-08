@@ -39,6 +39,26 @@ function request(input: TestDraftInput) {
 }
 
 describe("operator parent model drafting", () => {
+  it("lets the operator correct an unactivated approval choice without treating it as the parent ceiling", async () => {
+    const x = fixture();
+    const candidate = structuredClone(x.current);
+    candidate.delegation.outcomes[0]!.allow_automatic_approval = false;
+    const next = structuredClone(x.f.parent);
+    next.outcomes[0]!.allow_automatic_approval = true;
+    const requestJson = vi.fn(async (_request: unknown) => response({ state: "candidate", delegation: next,
+      summary: "Eligible requests may inherit the existing Action approval policy; all compiled checks remain mandatory." }));
+    const result = await request({ session: { dependencies: { requestJson } }, currentParent: candidate, activeParent: null,
+      identityBindings: x.bindings, catalog: x.catalog, compiledRules: [x.f.compiled],
+      operatorMessage: "Correct this unactivated draft: permit routine requests to inherit the Action approval policy." });
+    expect(result).toMatchObject({ state: "candidate", authority_granted: false, correction_used: false });
+    expect(result.state === "candidate" && result.parent.delegation.outcomes[0]!.allow_automatic_approval).toBe(true);
+    expect(candidate.delegation.outcomes[0]!.allow_automatic_approval).toBe(false);
+    const prompt = JSON.stringify(requestJson.mock.calls[0]![0]);
+    expect(prompt).toContain("Editable candidate delegation");
+    expect(prompt).toContain("Currently activated delegation: null");
+    expect(prompt).toContain("not an immutable parent ceiling");
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
   it("builds a bounded catalog from compiler facts with raw identifiers for ambiguous fields", () => {
     const f = ownerPolicyTestFixture("inventory", true);
     const catalog = buildOperatorParentCatalog([f.compiled]);

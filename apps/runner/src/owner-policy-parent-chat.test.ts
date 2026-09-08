@@ -63,7 +63,7 @@ describe("model-assisted operator delegation", () => {
     expect(f.service.prepare).toHaveBeenCalledWith("parent", f.parent, 10);
     expect(f.service.confirm).toHaveBeenCalledOnce();
     expect(f.chooseOption).toHaveBeenCalledWith("REVIEW OWNER DELEGATION", expect.any(Array), expect.objectContaining({
-      context: expect.arrayContaining(["    Always required: valid_until > current_time"]),
+      context: expect.arrayContaining([expect.stringMatching(/^Always required\s+valid_until > current_time$/u)]),
     }));
     expect(f.input.recheckConfig).toHaveBeenCalledOnce();
     expect(f.chat.checkpoint).toHaveBeenCalledWith("Owner delegation saved", expect.arrayContaining([

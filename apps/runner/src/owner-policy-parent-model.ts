@@ -89,6 +89,7 @@ export async function draftOperatorParentPolicy(input: {
   session: BoundaryJobPlanningSession;
   operatorMessage: string;
   currentParent: PolicyManagementParent | null;
+  activeParent?: PolicyManagementParent | null;
   identityBindings: TrustedParentIdentityBindings;
   catalog?: ParentDelegationCatalog;
   compiledRules: CompiledActionRuleV1[];
@@ -99,8 +100,10 @@ export async function draftOperatorParentPolicy(input: {
   const operatorMessage = boundedText(input.operatorMessage, "Operator message", MAX_MESSAGE);
   const bindings = structuredClone(input.identityBindings);
   const current = input.currentParent === null ? null : structuredClone(input.currentParent);
+  const active = input.activeParent === undefined ? current : structuredClone(input.activeParent);
   const catalog = normalizeCatalog(input.catalog ?? buildOperatorParentCatalog(input.compiledRules, current), input.compiledRules);
   assertCurrentBindings(current, bindings);
+  assertCurrentBindings(active, bindings);
   const prior = current?.delegation ?? null;
   const allowedAgents = [...new Set(bindings.agent_owners.map((entry) => entry.agent))].sort();
   const tools: AskToolDefinition[] = [{
@@ -112,7 +115,7 @@ export async function draftOperatorParentPolicy(input: {
   const authorityDigest = askToolSurfaceDigest(tools);
   const configuration = providerConfiguration(input.session, authorityDigest, input.egressAcknowledged, input.env);
   const history = structuredClone(modelAuthoringHistory(input.session.conversation, input.session));
-  const stableDigest = canonicalJsonDigest({ catalog, prior, bindings });
+  const stableDigest = canonicalJsonDigest({ catalog, prior, active, bindings });
   let resolution: ParentModelDraft | undefined;
   let pendingResolution: ParentModelDraft | undefined;
   let issue = "PARENT_MODEL_DRAFT_REFUSED";
@@ -131,7 +134,7 @@ export async function draftOperatorParentPolicy(input: {
           pendingResolution = { state: "clarification", question: boundedText(result.question, "Clarification", 600), correction_used: correctionAttempt,
             authority_granted: false, source_database_changed: false };
         } else {
-          const parent = assembleParent(result.delegation, bindings, current, catalog, input.compiledRules);
+          const parent = assembleParent(result.delegation, bindings, active, catalog, input.compiledRules);
           pendingResolution = { state: "candidate", parent, summary: boundedText(result.summary, "Candidate summary", 1_200), correction_used: correctionAttempt,
             authority_granted: false, source_database_changed: false };
         }
@@ -147,13 +150,15 @@ export async function draftOperatorParentPolicy(input: {
     "Draft one optional operator parent delegation for separate trusted human review.",
     `Operator request: ${JSON.stringify(operatorMessage)}`,
     `Verified Action catalog: ${JSON.stringify(catalog)}`,
-    `Current delegation: ${JSON.stringify(prior)}`,
+    `Editable candidate delegation: ${JSON.stringify(prior)}`,
+    `Currently activated delegation: ${JSON.stringify(active?.delegation ?? null)}`,
+    "The current conversation is with the deployment operator, not a delegated owner. An unactivated candidate is editable, not an immutable parent ceiling. Correct its approval choice or unwanted candidate-only restriction when requested; do not make the operator restart. Catalog allow_automatic_approval is the starting setting, not a prohibition on an operator-reviewed change. Allowing inheritance never bypasses the compiled Action approval conditions or limits.",
     `Allowed delegable agent IDs: ${JSON.stringify(allowedAgents)}`,
     "Return exactly one structured tool result. You may change only delegation: delegable agents, outcomes, verified facts, predicates, approval posture, and bounded budgets.",
     "Use only the listed allowed agent IDs. Never create manager grants, owner-scope bindings, runtime bindings, credentials, identities, activation, a review approval, execution, writeback, SQL, or source changes. Those bindings are trusted local input and are not shown to you.",
     "Every compiled Action Rule eligibility check remains mandatory at runtime. An owner parent only adds restrictions; it never replaces or repeats compiled checks. Keeping an existing compiled availability, scope, or eligibility check requires no parent fact, predicate, or clarification. Ask only about an additional parent restriction the operator actually requests.",
     "Use only exact outcome names, compiled digests, fact names, sources, types, effect-envelope fields, and operators from the verified catalog. Facts marked ambiguous_label are verified but intentionally have only a raw qualified identifier; ask one concise human clarification before assigning a business title. If an operator request needs an unavailable business condition, ask one concise clarification instead of inventing a fact or bound.",
-    "On a revision retain every existing delegated agent and every existing budget meter. Preserve reviewed fact titles and operator sets by default; an operator may explicitly label an ambiguous raw identifier for root review. Do not silently remove caps or agents. This remains an untrusted candidate and grants no authority.",
+    "On a revision retain every activated delegated agent and every activated budget meter. Preserve candidate settings unless the operator asks to correct them. Preserve reviewed fact titles and operator sets by default; an operator may explicitly label an ambiguous raw identifier for root review. Do not silently remove caps or agents. This remains an untrusted candidate and grants no authority.",
     "Supported parent budget operations are effect_count and effect_field only. A budget is a positive bounded local window in reviewed integral units: effect_count uses unit effects; effect_field uses an exact allowed effect field with its reviewed integer or money-minor unit. Drafting starts with no runtime effect, reservation, or budget consumption; runtime evaluates only these reviewed effects after separate human review. No source query or execution occurs here.",
     `Call ${DRAFT_PARENT_TOOL} exactly once.`,
   ].join("\n");
@@ -161,7 +166,7 @@ export async function draftOperatorParentPolicy(input: {
     signal: input.signal ?? new AbortController().signal, dependencies: input.session.dependencies, authorityDigest,
     providerSystemPrompt: "Produce one bounded operator parent delegation candidate through the required tool. Never invent verified facts, identity bindings, activation, or source-write authority.",
     skipRunnerQuestionContext: true, requiredInitialToolName: DRAFT_PARENT_TOOL, completeAfterRequiredTool: true,
-    authorityGuard: () => canonicalJsonDigest({ catalog, prior, bindings }) === stableDigest ? authorityDigest : canonicalJsonDigest({ stale: true }),
+    authorityGuard: () => canonicalJsonDigest({ catalog, prior, active, bindings }) === stableDigest ? authorityDigest : canonicalJsonDigest({ stale: true }),
   });
   try {
     for (let attempt = 0; attempt < 2 && !resolution; attempt++) {
@@ -175,7 +180,7 @@ export async function draftOperatorParentPolicy(input: {
           baseQuestion,
         ].join("\n"));
         if (pendingResolution) {
-          if (canonicalJsonDigest({ catalog, prior, bindings }) !== stableDigest) {
+          if (canonicalJsonDigest({ catalog, prior, active, bindings }) !== stableDigest) {
             throw new OwnerPolicyParentModelError("PARENT_MODEL_AUTHORITY_STALE");
           }
           resolution = pendingResolution;

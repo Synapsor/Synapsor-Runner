@@ -147,7 +147,7 @@ export async function mcpServe(args: string[]): Promise<number> {
     const modelAuthorityMetadata = explicitConfigPath || await fileExists(configPath)
       ? await readModelAuthorityMetadataMode(configPath)
       : "semantic";
-    const config = await fileExists(configPath) ? await readRuntimeConfig(configPath) : undefined;
+    const config = await readLocalExploreRuntimeConfig(projectRoot, configPath);
     if (config) {
       await serveLocalExploreStdio({ projectRoot, config, modelAuthorityMetadata });
     } else {
@@ -994,6 +994,22 @@ async function serveLocalExploreStdio(input: {
   } finally {
     await Promise.resolve(store.close()).catch(() => undefined);
   }
+}
+
+/** The unified local entry has always selected the generated Action companion.
+ * Select it before execution admission: after migration the Read launch file
+ * is not the runtime binding of the stored worker policy. Never fall back from
+ * an invalid Action binding to an ungoverned Read export. */
+export async function readLocalExploreRuntimeConfig(projectRoot: string,
+  primaryPath = path.join(projectRoot, "synapsor.runner.json"), env?: NodeJS.ProcessEnv): Promise<RuntimeConfig | undefined> {
+  const actionPath = path.join(projectRoot, "synapsor.actions.runner.json");
+  const selected = await fileExists(actionPath) ? actionPath : primaryPath;
+  if (!await fileExists(selected)) return undefined;
+  const config = await readRuntimeConfig(selected, { env });
+  if (config.action_rules && await fs.realpath(config.action_rules.project_root) !== await fs.realpath(projectRoot)) {
+    throw new Error("POLICY_RUNTIME_PROJECT_CHANGED: the local Action configuration belongs to another project; review its connection before starting MCP.");
+  }
+  return config;
 }
 
 const reportedOptionalActionSubjectFailures = new Set<string>();

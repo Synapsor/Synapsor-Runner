@@ -1,10 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
+import { Pool } from "pg";
 import {
   compileActionRule,
   createActionRuleAuthority,
   evaluateSemanticActionEligibility,
+  type ActionRuleFactLoaderAdapterV1,
   type ActionRuleCatalogV1,
 } from "@synapsor-runner/action-rules";
 import {
@@ -12,6 +15,7 @@ import {
   type RuntimeConfig,
 } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
+import { createPostgresActionRuleFactLoader } from "@synapsor-runner/postgres";
 import {
   canonicalJsonDigest,
   parseWritebackJob,
@@ -27,7 +31,7 @@ import type {
   DerivedEffectEnvelopeSpecV1,
   RuleVerificationBoundarySpecV1,
 } from "@synapsor/spec";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivatedExplorationBoundary } from "./auto-boundary.js";
 import {
   activateActionRuleAuthority,
@@ -43,6 +47,7 @@ import {
 import {
   claimSupervisedWorkerItem,
   enqueueApprovedForSupervisedWorker,
+  workerCommand,
 } from "./worker-runtime.js";
 import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
 
@@ -57,7 +62,131 @@ const stateType: ActionRuleScalarTypeSpecV1 = {
 };
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
+});
+
+// Programmatic reviewed-authority fixture, not an onboarding/CLI authoring test.
+// Proposal facts, approval ledger, worker command, source apply and receipts are real.
+describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic worker identity and trusted context", () => {
+  async function fixture(run: (f: {
+    runWorker: (extra?: string[]) => Promise<number>;
+    rows: () => Promise<unknown[]>;
+    ledger: () => { proposal: ReturnType<ProposalStore["getProposal"]>; queue: ReturnType<ProposalStore["getWorkerQueueItem"]>;
+      receipts: ReturnType<ProposalStore["receipts"]> };
+    config: RuntimeConfig; configPath: string;
+    changeVersion: () => Promise<void>;
+  }) => Promise<void>) {
+    const pool = new Pool({ connectionString: process.env.SYNAPSOR_TEST_POSTGRES_URL, max: 3, connectionTimeoutMillis: 3_000 });
+    const schema = `worker_context_${randomBytes(6).toString("hex")}`;
+    try {
+      await pool.query(`CREATE SCHEMA "${schema}"`);
+      await pool.query(`CREATE TABLE "${schema}".preferences (
+        preference_id text PRIMARY KEY, account_id text NOT NULL, principal_id text NOT NULL,
+        status text NOT NULL, version integer NOT NULL)`);
+      await pool.query(`INSERT INTO "${schema}".preferences VALUES
+        ('pref_1', 'acct_1', 'customer_1', 'active', 4),
+        ('foreign', 'acct_2', 'customer_2', 'active', 4)`);
+      vi.stubEnv("DATABASE_URL", process.env.SYNAPSOR_TEST_POSTGRES_URL);
+      vi.stubEnv("SYNAPSOR_DATABASE_WRITE_URL", process.env.SYNAPSOR_TEST_POSTGRES_URL);
+      vi.stubEnv("TEST_WORKER_TENANT", "acct_1");
+      vi.stubEnv("TEST_WORKER_PRINCIPAL", "customer_1");
+      vi.stubEnv("SYNAPSOR_RUNNER_ID", undefined);
+      const client = await pool.connect();
+      let f;
+      try {
+        await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+        f = await writebackFixture({ schema, environmentContext: true, factLoader: createPostgresActionRuleFactLoader(client) });
+      } finally {
+        await client.query("ROLLBACK");
+        client.release();
+      }
+      const authority = await loadActiveActionRuleAuthority(f.root);
+      const config = semanticWorkerConfig(f.config, authority.registry.rules[0]!.action_boundary_digest);
+      config.supervised_worker!.outcomes![0]!.worker_identity = "semantic_action_worker";
+      expect(config.contexts).toBeUndefined();
+      expect(authority.registry.rules[0]!.compiled.context).toBe("trusted_context");
+      await fs.writeFile(f.configPath, JSON.stringify(config));
+      const queueStore = new ProposalStore(f.storePath);
+      try { await enqueueApprovedForSupervisedWorker(queueStore, config, f.configPath, {}); }
+      finally { queueStore.close(); }
+      await run({ config, configPath: f.configPath,
+        runWorker: (extra = []) => workerCommand(["run", "--supervised", "--once", "--yes", "--batch-quiet",
+          "--config", f.configPath, "--store", f.storePath, ...extra]),
+        rows: async () => (await pool.query(`SELECT * FROM "${schema}".preferences ORDER BY preference_id`)).rows,
+        changeVersion: async () => { await pool.query(`UPDATE "${schema}".preferences SET version = version + 1 WHERE preference_id = 'pref_1'`); },
+        ledger: () => {
+          const store = new ProposalStore(f.storePath);
+          try { return { proposal: store.getProposal(f.job.proposal_id), queue: store.getWorkerQueueItem(f.job.proposal_id),
+            receipts: store.receipts(f.job.proposal_id) }; }
+          finally { store.close(); }
+        },
+      });
+    } finally {
+      try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); }
+      finally { await pool.end(); }
+    }
+  }
+
+  it("applies with generated defaults, persists one receipt and never repeats the effect", async () => fixture(async (f) => {
+    const before = await f.rows();
+    expect(f.ledger().queue).toMatchObject({ status: "queued", attempts: 0 });
+    await expect(f.runWorker(["--worker-id", "wrong_worker"])).rejects.toMatchObject({ code: "SUPERVISED_WORKER_IDENTITY_MISMATCH" });
+    expect(f.ledger().queue).toMatchObject({ status: "queued", attempts: 0 });
+    expect(await f.rows()).toEqual(before);
+    expect(await f.runWorker()).toBe(0);
+    expect(await f.rows()).toEqual([before[0], { preference_id: "pref_1", account_id: "acct_1", principal_id: "customer_1", status: "paused", version: 5 }]);
+    const applied = f.ledger();
+    expect(applied.proposal?.state).toBe("applied");
+    expect(applied.queue).toMatchObject({ status: "completed", terminal_outcome: "applied", attempts: 1 });
+    expect(applied.receipts).toHaveLength(1);
+    expect(applied.receipts[0]!.receipt).toMatchObject({ status: "applied", rows_affected: 1, source_database_mutated: true });
+    const rows = await f.rows();
+    expect(await f.runWorker()).toBe(0);
+    expect(await f.rows()).toEqual(rows);
+    expect(f.ledger()).toEqual(applied);
+  }), 30_000);
+
+  it.each(["TEST_WORKER_TENANT", "TEST_WORKER_PRINCIPAL"])("blocks a different trusted %s without source writes", async (name) => fixture(async (f) => {
+    const before = await f.rows();
+    vi.stubEnv(name, "foreign_identity");
+    expect(await f.runWorker()).toBe(0);
+    expect(await f.rows()).toEqual(before);
+    expect(f.ledger().queue).toMatchObject({ status: "blocked", attempts: 1 });
+    expect(f.ledger().receipts).toEqual([]);
+  }), 30_000);
+
+  it("preserves the exact missing-binding code in the worker queue instead of a generic execution error", async () => fixture(async (f) => {
+    const before = await f.rows();
+    vi.stubEnv("TEST_WORKER_PRINCIPAL", undefined);
+    expect(await f.runWorker()).toBe(0);
+    expect(f.ledger().queue).toMatchObject({ status: "blocked", attempts: 1, last_error_code: "TRUSTED_BINDING_MISSING" });
+    expect(f.ledger().receipts).toEqual([]);
+    expect(await f.rows()).toEqual(before);
+  }), 30_000);
+
+  it("refuses a conflicting named session context before claiming, without top-level fallback", async () => fixture(async (f) => {
+    const before = await f.rows();
+    f.config.contexts = { trusted_context: { provider: "http_claims" } };
+    f.config.session_auth = { provider: "jwt_hs256", secret_env: "TEST_WORKER_SESSION_SECRET",
+      issuer: "test-backend", audience: "test-runner" };
+    await fs.writeFile(f.configPath, JSON.stringify(f.config));
+    await expect(f.runWorker()).rejects.toThrow(/TRUSTED_CONTEXT_PROVIDER_CONFLICT/);
+    expect(f.ledger().queue).toMatchObject({ status: "queued", attempts: 0 });
+    expect(f.ledger().receipts).toEqual([]);
+    expect(await f.rows()).toEqual(before);
+  }), 30_000);
+
+  it("refuses stale approved facts without an additional source change", async () => fixture(async (f) => {
+    await f.changeVersion();
+    const before = await f.rows();
+    expect(await f.runWorker()).toBe(0);
+    expect(await f.rows()).toEqual(before);
+    const after = f.ledger();
+    expect(after.proposal?.state).not.toBe("applied");
+    expect(after.receipts).toHaveLength(1);
+    expect(after.receipts[0]!.receipt).toMatchObject({ rows_affected: 0, source_database_mutated: false });
+  }), 30_000);
 });
 
 describe("semantic writeback authority orchestration", () => {
@@ -383,12 +512,15 @@ function semanticWorkerConfig(
 async function writebackFixture(options: {
   automaticApproval?: boolean;
   requiredApprovals?: number;
+  schema?: string;
+  environmentContext?: boolean;
+  factLoader?: ActionRuleFactLoaderAdapterV1;
 } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-semantic-writeback-"));
   roots.push(root);
-  const readBoundary = activeReadBoundary();
+  const readBoundary = activeReadBoundary(options.environmentContext);
   await writeActiveReadSet(root, readBoundary);
-  const source = authoritySource();
+  const source = authoritySource(options.schema);
   const approvalClass = {
     name: "billing.standard_change",
     mode: "policy" as const,
@@ -448,7 +580,7 @@ async function writebackFixture(options: {
   });
   const loaded = await loadActiveActionRuleAuthority(root);
   const verifiedAt = new Date().toISOString();
-  const factLoader = {
+  const factLoader = options.factLoader ?? {
     engine: "postgres" as const,
     async load() {
       return [{
@@ -465,7 +597,7 @@ async function writebackFixture(options: {
     outcome: source.rule.outcome,
     subjects: [{
       binding: "preference",
-      resource: "billing.preferences",
+      resource: source.catalog.resources[0]!.name,
       primary_key: { column: "preference_id", value: "pref_1" },
       subject_ref_digest: canonicalJsonDigest({ subject_ref: "pref_1" }),
     }],
@@ -479,7 +611,7 @@ async function writebackFixture(options: {
   if (decision.result !== "eligible") throw new Error("Expected the semantic writeback fixture to be eligible.");
   const changeSet = buildDerivedChangeSet({
     decision,
-    context: { tenant_id: "acct_1", principal: "customer_1", provenance: "static_dev" },
+    context: { tenant_id: "acct_1", principal: "customer_1", provenance: options.environmentContext ? "environment" : "static_dev" },
     proposalId: "wrp_pause_pref_1",
     createdAt: verifiedAt,
     evidenceBundleId: "ev_pause_pref_1",
@@ -528,7 +660,9 @@ async function writebackFixture(options: {
         receipts: { authority: "runner_ledger" },
       },
     },
-    trusted_context: {
+    trusted_context: options.environmentContext ? {
+      provider: "environment", values: { tenant_id_env: "TEST_WORKER_TENANT", principal_env: "TEST_WORKER_PRINCIPAL" },
+    } : {
       provider: "static_dev",
       values: { tenant_id: "acct_1", principal: "customer_1" },
     },
@@ -537,7 +671,7 @@ async function writebackFixture(options: {
       kind: "read",
       source: "local_postgres",
       target: {
-        schema: "billing",
+        schema: source.catalog.resources[0]!.schema,
         table: "preferences",
         primary_key: "preference_id",
         tenant_key: "account_id",
@@ -554,7 +688,7 @@ async function writebackFixture(options: {
   return { root, config, configPath, storePath, job, factLoader };
 }
 
-function authoritySource(): {
+function authoritySource(schema = "billing"): {
   catalog: ActionRuleCatalogV1;
   verification: RuleVerificationBoundarySpecV1;
   envelope: DerivedEffectEnvelopeSpecV1;
@@ -571,10 +705,10 @@ function authoritySource(): {
     schema_version: "synapsor.action-rule-catalog.v1",
     generation_lock_fingerprint: generationLock,
     resources: [{
-      name: "billing.preferences",
+      name: `${schema}.preferences`,
       source: "local_postgres",
       engine: "postgres",
-      schema: "billing",
+      schema,
       table: "preferences",
       primary_key: "preference_id",
       tenant_key: "account_id",
@@ -592,7 +726,7 @@ function authoritySource(): {
     generation_lock_fingerprint: generationLock,
     resources: [{
       binding: "preference",
-      resource: "billing.preferences",
+      resource: `${schema}.preferences`,
       source: { kind: "subject_ref" },
       primary_key: "preference_id",
       version_field: "version",
@@ -611,7 +745,7 @@ function authoritySource(): {
     name: "billing.pause_effect",
     source: "local_postgres",
     operation: "update",
-    target_resource: "billing.preferences",
+    target_resource: `${schema}.preferences`,
     target_binding: "preference",
     primary_key: "preference_id",
     tenant_key: "account_id",
@@ -631,7 +765,7 @@ function authoritySource(): {
     source: "local_postgres",
     verification_boundary_ref: verification.name,
     effect_envelope_ref: envelope.name,
-    subjects: [{ binding: "preference", resource: "billing.preferences", input: "opaque_subject_ref" }],
+    subjects: [{ binding: "preference", resource: `${schema}.preferences`, input: "opaque_subject_ref" }],
     require: {
       kind: "compare",
       operator: "eq",
@@ -641,7 +775,7 @@ function authoritySource(): {
     derive: {},
     effect: {
       operation: "update",
-      target_resource: "billing.preferences",
+      target_resource: `${schema}.preferences`,
       target_binding: "preference",
       set: { status: { kind: "literal", value: "paused", value_type: stateType } },
     },
@@ -757,7 +891,7 @@ function writerPostureTable(
   };
 }
 
-function activeReadBoundary(): ActivatedExplorationBoundary {
+function activeReadBoundary(environmentContext = false): ActivatedExplorationBoundary {
   const authority = {
     schema_version: "synapsor.exploration-boundary.v1",
     activation: "reviewed" as const,
@@ -765,7 +899,9 @@ function activeReadBoundary(): ActivatedExplorationBoundary {
     source: "local_postgres",
     compiler_version: "test",
     spec_version: "test",
-    trusted_context: {
+    trusted_context: environmentContext ? {
+      provider: "environment" as const, tenant_env: "TEST_WORKER_TENANT", principal_env: "TEST_WORKER_PRINCIPAL",
+    } : {
       provider: "static_dev" as const,
       tenant_id: "acct_1",
       principal: "customer_1",

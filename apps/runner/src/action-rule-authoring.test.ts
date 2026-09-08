@@ -1,9 +1,12 @@
 import type { SchemaInspection, TableInfo } from "@synapsor-runner/schema-inspector";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
-import { buildAutoBoundary } from "./auto-boundary.js";
+import { buildAutoBoundary, persistGenerationLockSnapshot } from "./auto-boundary.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { rebindActionCatalogForReadPolicyRevision } from "./action-rule-read-revision.js";
+import { rebindActionCatalogForReadPolicyRevision, buildActionCatalogForSavedReadRevision } from "./action-rule-read-revision.js";
 import {
   actionRuleTypeForColumn,
   buildActionRuleAuthoringCatalog,
@@ -12,6 +15,29 @@ import {
 const lock = `sha256:${"a".repeat(64)}` as const;
 
 describe("Action Rule authoring catalog", () => {
+  it.each(["evidence", "schema", "role", "context", "missing_snapshot"])("binds final Read minimization through exact saved evidence without a wizard restart (%s)", async (change) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-action-evidence-rebind-"));
+    try {
+      const source = inspection();
+      const build = buildAutoBoundary({ inspection: source, sourceEnv: "DATABASE_URL", inspectedSchema: "support",
+        project: { root, package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+      const catalog = buildActionRuleAuthoringCatalog({ boundary: build.exploration_boundary, inspection: source }).catalog;
+      const nextLock = { ...structuredClone(build.lock), evidence_fingerprint: canonicalJsonDigest("new authoring evidence only") };
+      if (change === "schema") nextLock.schema_fingerprint = canonicalJsonDigest("other schema");
+      if (change === "role") nextLock.role_posture_fingerprint = canonicalJsonDigest("other role");
+      if (change === "context") nextLock.trusted_context_fingerprint = canonicalJsonDigest("other identity source");
+      const nextBoundary = { ...structuredClone(build.exploration_boundary), generation_lock_fingerprint: canonicalJsonDigest(nextLock) };
+      if (change !== "missing_snapshot") await persistGenerationLockSnapshot(root, catalog.generation_lock_fingerprint, build.lock);
+      await persistGenerationLockSnapshot(root, nextBoundary.generation_lock_fingerprint, nextLock);
+      const original = structuredClone(catalog);
+      const result = buildActionCatalogForSavedReadRevision({ projectRoot: root, catalog, nextBoundary, inspection: source });
+      if (change === "evidence") {
+        expect((await result).catalog).toEqual({ ...original, generation_lock_fingerprint: nextBoundary.generation_lock_fingerprint });
+      } else await expect(result).rejects.toThrow();
+      expect(catalog).toEqual(original);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toThrow();
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it.each(["labels", "schema", "role", "context", "missing_snapshot"])("rebinds only a proven Read-policy generation change (%s)", (change) => {
     const source = inspection();
     const build = buildAutoBoundary({ inspection: source, sourceEnv: "DATABASE_URL", inspectedSchema: "support",

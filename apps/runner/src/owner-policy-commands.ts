@@ -23,6 +23,7 @@ export async function ownerPolicyCommand(args: string[], dependencies: {
   io?: OwnerPolicyReviewIo; env?: NodeJS.ProcessEnv;
 } = {}): Promise<number> {
   const [mode, ...rest] = args;
+  if (mode === "connection") return ownerConnectionCommand(rest, dependencies);
   if (mode !== "storage" && mode !== "delegation") throw new Error("policy requires storage or delegation for owner-rule setup.");
   assertKnownOptions(rest, new Set(["--config", "--project-root", "--store", "--input", "--name"]), `policy ${mode}`);
   const configPath = runnerConfigPath(rest);
@@ -96,14 +97,14 @@ export async function ownerPolicyCommand(args: string[], dependencies: {
     try {
       const service = createOperatorParentReview({ projectRoot, binding, config, actor });
       const review = await service.prepare(name, document);
-      write(parentReviewLines(review));
+      write(parentReviewLines(review, io.columns()));
       if (!await confirm(io, "Enable these exact owner-management and agent bindings", review)) { service.cancel(review); return 0; }
       await recheckConfig();
       const result = await service.confirm(review);
       write([result.changed ? "Owner delegation configuration activated." : "This exact owner delegation configuration is already active.",
         "Owners can draft only within these permissions. Their policies still need separate authenticated human review.",
         "Source changes require current Read, Action, owner and execution authority; this setup does not execute anything.",
-        "Next: configure the backend-issued assistant and human-review credentials, then use local Ask or stdio MCP."]);
+        "Next: run policy connection with your backend's sign-in configuration, then use local Ask or stdio MCP."]);
       return 0;
     } finally { await binding.close(); }
   } finally { terminal?.close(); }
@@ -129,4 +130,52 @@ async function confirm(io: OwnerPolicyReviewIo, label: string, details: unknown)
 
 function storageDescription(config: RuntimeConfig, storePath: string): string {
   return config.storage?.shared_postgres?.mode === "runtime_store" ? "configured PostgreSQL control store (not the source database)" : storePath;
+}
+
+async function ownerConnectionCommand(args: string[], dependencies: { io?: OwnerPolicyReviewIo; env?: NodeJS.ProcessEnv }): Promise<number> {
+  assertKnownOptions(args, new Set(["--config", "--project-root", "--store", "--input", "--previous-config"]), "policy connection");
+  const configPath = path.resolve(runnerConfigPath(args));
+  const raw = await readJsonFileWithLocation<RuntimeConfig>(configPath, "Runner config");
+  const resolved = resolveRuntimeConfig(raw, path.dirname(configPath));
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? resolved.action_rules?.project_root ?? path.dirname(configPath));
+  const file = optionalArg(args, "--input");
+  let connections: unknown;
+  if (file) {
+    if ((await fs.stat(file)).size > 65_536) throw new Error("Owner sign-in configuration exceeds the 64 KiB limit. Use environment-variable names, never credential values.");
+    const contents = await fs.readFile(file, "utf8");
+    if (Buffer.byteLength(contents) > 65_536) throw new Error("Owner sign-in configuration changed beyond the review limit.");
+    connections = JSON.parse(contents);
+  }
+  const { prepareOwnerConnectionReview } = await import("./owner-policy-connection.js");
+  const prepared = await prepareOwnerConnectionReview({ projectRoot, configPath, connections,
+    previousConfigPath: optionalArg(args, "--previous-config"), storePath: optionalArg(args, "--store"),
+    env: dependencies.env, actor: `local:${os.userInfo().username}` });
+  const terminal = dependencies.io ? undefined : createTerminalAnalyticsShellIo({ slashCommands: false });
+  const io = dependencies.io ?? terminal!;
+  const write = (lines: string[]) => io.write(lines.flatMap((line) => wrapStyledTerminalLine(safeTerminalText(line), terminalContentWidth(io.columns()))).join("\n") + "\n");
+  try {
+    const review = prepared.review, management = review.after.owner_management, workload = review.after.owner_delegation;
+    write(["Review owner sign-ins", ...(review.recovery ? ["The previous execution binding is verified. Only owner sign-in settings changed."] : []),
+      ...(management ? [`Owner chat: ${management.parent_name} / ${management.policy_name} (${management.scope})`,
+        `Assistant: ${management.authentication.issuer} -> ${management.authentication.audience}; token from ${management.credential_env}`,
+        `Separate human review: ${management.human_review.audience}; token from ${management.human_review.credential_env}`] : []),
+      ...(workload ? [`Agent execution sign-in: ${workload.parent_name}; ${workload.authentication.audience}; token from ${workload.credential_env}`]
+        : ["Agent execution sign-in: not configured here. Owner chat alone does not bind source requests to an owner policy."]),
+      "Backend-issued identities and the active parent still control scope. No token or signing-key value is requested.",
+      "Read boundaries, business rules, approval limits and saved drafts stay unchanged."]);
+    if (!await confirm(io, "Use these exact owner sign-in bindings", review)) return 0;
+    if (review.execution_enabled) {
+      write(["Review existing execution with changed sign-ins",
+        "The existing execution policy is enabled. Its writer, effects, limits and identity guards are unchanged.",
+        "A new immutable execution revision will bind that same policy to these reviewed sign-ins.",
+        "Requests still require current Read, Action and applicable owner authority. This confirmation does not execute a request.",
+        "Declining leaves both the runtime file and stored execution authority unchanged."]);
+      if (!await confirm(io, "Bind existing execution to these exact reviewed sign-ins", review)) return 0;
+    }
+    await prepared.confirm({ connectionDigest: review.digest, ...(review.execution_enabled ? { executionDigest: review.digest } : {}) });
+    write(["Owner sign-in configuration reviewed and saved.",
+      "Configured, not authenticated: start local Ask or stdio MCP with backend-issued credentials, then verify the saved owner revision.",
+      "Owner edits remain disabled until separately authenticated human review. No source row changed."]);
+    return 0;
+  } finally { terminal?.close(); await prepared.close(); }
 }

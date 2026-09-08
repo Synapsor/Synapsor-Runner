@@ -71,7 +71,7 @@ export async function runOperatorParentChat(input: Input, dependencies: {
       if (message === undefined) return 0;
       if (!message.trim()) continue;
       const result = await chat.progress("Reviewing delegable business rules", () => (dependencies.draft ?? draftOperatorParentPolicy)({
-        session: model, operatorMessage: message, currentParent: current, identityBindings: identities,
+        session: model, operatorMessage: message, currentParent: current, activeParent: context.current, identityBindings: identities,
         catalog, compiledRules: context.rules, egressAcknowledged: true, env: input.env,
       })).catch((error: unknown) => {
         const raw = (error as { code?: unknown })?.code;
@@ -107,7 +107,7 @@ export async function runOperatorParentChat(input: Input, dependencies: {
         { value: "revise", label: "Ask a question or change the rules" },
         { value: "details", label: "Inspect exact bindings, rules and changes" },
         { value: "cancel", label: "Leave authority unchanged" },
-        ], { initialValue: "cancel", requireExplicitSelection: true, context: parentReviewLines(review) });
+        ], { initialValue: "cancel", requireExplicitSelection: true, context: parentReviewLines(review, chat.session.terminalColumns) });
         if (decision === "details") {
           const lines = renderTerminalJson(review, false).split("\n");
           if (chat.session.showReviewDetails) await chat.session.showReviewDetails("Exact parent delegation revision", lines);
@@ -121,7 +121,7 @@ export async function runOperatorParentChat(input: Input, dependencies: {
           "Owner edits still require authenticated human activation. Source access and execution are unchanged.",
           input.config.action_rules?.owner_management
             ? `Next: policy chat --config ${input.configPath} opens authorized owner settings.`
-            : "Owner chat is not connected yet. Configure its backend-issued assistant and separate human-review sign-ins before use; see docs/owner-controlled-rules.md.",
+            : "Owner chat is not connected yet. Use policy connection to review backend-issued assistant and separate human-review sign-ins; see docs/owner-controlled-rules.md.",
         ], "success");
         return 0;
       }

@@ -58,7 +58,9 @@ export function createPolicyManagementJwtAuthenticator(
   env: NodeJS.ProcessEnv,
 ): PolicyManagementAuthenticator {
   if (!config.issuer?.trim() || !config.audience?.trim()) throw new PolicyManagementError("POLICY_AUTH_CONFIGURATION_INVALID");
-  const verifier = createJwtVerifier({ ...config, clock_skew_seconds: 0 }, env);
+  // Owner configuration selects a fixed protocol; explicit API allowlists still narrow it.
+  const verifier = createJwtVerifier({ ...config, clock_skew_seconds: 0,
+    algorithms: config.algorithms ?? (config.provider === "jwt_asymmetric" ? ["RS256", "ES256"] : ["HS256"]) }, env);
   return async (credential) => {
     try {
       if (typeof credential !== "string" || credential.length > 16 * 1024) throw new Error("Invalid credential");
