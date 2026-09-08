@@ -21,6 +21,52 @@ type LocatedPolicyDuration = ExplicitPolicyDuration & {
   end: number;
 };
 
+/** A narrow preservation check, not a general natural-language policy parser. */
+export function explicitJointApprovalLimits(messages: readonly string[]): ExplicitPolicyLimit[] {
+  let required: ExplicitPolicyLimit[] = [];
+  for (const value of messages) {
+    for (const sentence of value.split(/(?<=[.!?])\s+|\n/u)) {
+      if (!/\b(?:automatic|auto[- ]?)\s*approvals?\b/iu.test(sentence)) continue;
+      const group = /\b(?:across|between|for)\s+(?:both|all|(?:the\s+)?(?:two|three|four|five|six|seven|eight))\s+actions\b|\b(?:both|all|(?:the\s+)?(?:two|three|four|five|six|seven|eight))\s+actions\s+share\b/iu;
+      if (!group.test(sentence)) continue;
+      if (/\b(?:not|never)\s+(?:(?:be\s+)?shared\s+)?(?:across|between)\b|\b(?:do\s+not|don't|never)\s+(?:share|pool)\b/iu.test(sentence)) {
+        if (!/\?\s*$/u.test(sentence)) required = [];
+        continue;
+      }
+      const durations = explicitPolicyDurations(sentence);
+      if (durations.length !== 1) continue;
+      const number = "(\\d+|one|two|three|four|five|six|seven|eight|nine|ten)";
+      const overall = sentence.match(new RegExp(`\\b${number}\\s+(?:(?:automatic|auto[- ]?)\\s*approvals?\\s+)?overall\\b`, "iu"));
+      const scoped = [...sentence.matchAll(new RegExp(`\\b${number}\\s+(per\\s+(?:(?:trusted|customer)\\s+)?(?:account|tenant|organization|principal|agent|operator|user))\\b`, "giu"))];
+      const maximum = overall ? parseCountNumber(overall[1]!) : undefined;
+      if (!maximum) continue;
+      const limits: ExplicitPolicyLimit[] = [{ kind: "count", scope: "boundary", maximum,
+        window_seconds: durations[0]!.seconds, phrase: JSON.stringify(sentence.trim()) }];
+      for (const match of scoped) {
+        const scope = explicitTrustedPolicyScope(match[2]!);
+        const count = parseCountNumber(match[1]!);
+        if (scope && count) limits.push({ kind: "count", scope: scope.scope, maximum: count,
+          window_seconds: durations[0]!.seconds, phrase: JSON.stringify(sentence.trim()) });
+      }
+      if (limits.length > 1) required = limits;
+    }
+  }
+  return required;
+}
+
+export function assertJointApprovalLimitsPreserved(messages: readonly string[], approval: {
+  mode: string;
+  shared_limits: ReadonlyArray<{ kind: string; scope: string; maximum: number; window_seconds: number; capability?: string }>;
+}): void {
+  if (approval.mode !== "policy") return;
+  for (const required of explicitJointApprovalLimits(messages)) {
+    if (!approval.shared_limits.some((limit) => limit.kind === required.kind && limit.scope === required.scope
+      && limit.maximum === required.maximum && limit.window_seconds === required.window_seconds && limit.capability === undefined)) {
+      throw new Error(`ACTION_RULE_DRAFT_INVALID: the operator requested JOINT automatic approval limits across the actions, not separate counters. Preserve ${required.scope} count ${required.maximum} / ${required.window_seconds}s with NO capability filter. Keep eligibility, human fallback and execution unchanged; repair this draft without asking the operator to repeat the rule.`);
+    }
+  }
+}
+
 export function explicitTrustedPolicyScope(value: string): ExplicitTrustedPolicyScope | undefined {
   const answer = value.replace(
     /\b(?:not|instead\s+of|rather\s+than)\s+(?:per\s+)?(?:(?:trusted|customer)\s+)?(?:target\s+)?(?:account|tenant|org|organization|organisation|agent|operator|principal|user|customer|row|record|object)\b/gi,

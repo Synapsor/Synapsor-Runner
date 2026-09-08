@@ -719,7 +719,7 @@ function normalizeReviews(
       }),
     };
   }).sort((left, right) => left.outcome.localeCompare(right.outcome));
-  if (canonicalJsonStringify(reviews.map((review) => review.outcome)) !== canonicalJsonStringify(outcomes)) {
+  if (canonicalJsonStringify(reviews.map((review) => review.outcome).sort()) !== canonicalJsonStringify(outcomes)) {
     throw invalid();
   }
   return reviews;

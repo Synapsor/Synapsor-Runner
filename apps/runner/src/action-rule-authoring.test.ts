@@ -1,6 +1,9 @@
 import type { SchemaInspection, TableInfo } from "@synapsor-runner/schema-inspector";
 import { describe, expect, it } from "vitest";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { buildAutoBoundary } from "./auto-boundary.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { rebindActionCatalogForReadPolicyRevision } from "./action-rule-read-revision.js";
 import {
   actionRuleTypeForColumn,
   buildActionRuleAuthoringCatalog,
@@ -9,6 +12,24 @@ import {
 const lock = `sha256:${"a".repeat(64)}` as const;
 
 describe("Action Rule authoring catalog", () => {
+  it.each(["labels", "schema", "role", "context", "missing_snapshot"])("rebinds only a proven Read-policy generation change (%s)", (change) => {
+    const source = inspection();
+    const build = buildAutoBoundary({ inspection: source, sourceEnv: "DATABASE_URL", inspectedSchema: "support",
+      project: { root: "/tmp/read-revision-catalog-test", package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+    const previousLock = structuredClone(build.lock);
+    const nextLock = { ...structuredClone(previousLock), reviewed_overrides_digest: canonicalJsonDigest("reviewed label") };
+    if (change === "schema") nextLock.schema_fingerprint = canonicalJsonDigest("changed schema");
+    if (change === "role") nextLock.role_posture_fingerprint = canonicalJsonDigest("changed role");
+    if (change === "context") nextLock.trusted_context_fingerprint = canonicalJsonDigest("changed identity binding");
+    const nextBoundary = { ...structuredClone(build.exploration_boundary), generation_lock_fingerprint: canonicalJsonDigest(nextLock) };
+    const catalog = buildActionRuleAuthoringCatalog({ boundary: build.exploration_boundary, inspection: source }).catalog;
+    const original = structuredClone(catalog);
+    if (change === "missing_snapshot") previousLock.reviewed_overrides_digest = canonicalJsonDigest("not this prior revision");
+    const rebind = () => rebindActionCatalogForReadPolicyRevision({ catalog, previousLock, nextLock, nextBoundary });
+    if (change === "labels") expect(rebind()).toEqual({ ...original, generation_lock_fingerprint: nextBoundary.generation_lock_fingerprint });
+    else expect(rebind).toThrow("ACTION_RULE_REVISION_STALE");
+    expect(catalog).toEqual(original);
+  });
   it("retains every component of an inspected composite key without changing Read exposure", () => {
     const source = inspection();
     const fk = source.tables[1]!.foreign_keys[0]!;

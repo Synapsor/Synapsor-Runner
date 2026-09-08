@@ -12,6 +12,34 @@ import {
 } from "./read-boundary-revision-model.js";
 
 describe("model-assisted Read Boundary field exposure revisions", () => {
+  it.each(["metadata", "access", "limit"])("keeps a vocabulary repair metadata-only (%s)", async (attempt) => {
+    const draft = boundary(), before = structuredClone(draft);
+    let calls = 0;
+    const requestJson = vi.fn(async (request) => {
+      calls++;
+      expect(JSON.stringify(request)).toContain("vocabulary-only");
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "vocabulary",
+        name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{ resource: "public.orders",
+          ...(attempt === "access" && calls === 1 ? { field_exposure: [{ field: "status", exposure: "runner_only" }] } : {}),
+          settings: { field_metadata: [{ field: "status", label: "Order lifecycle", description: "The operator identified the order lifecycle status." }],
+            ...(attempt === "limit" && calls === 1 ? { max_rows: 20 } : {}),
+          },
+        }] }),
+      }] } };
+    });
+    const result = await generateModelReadBoundaryRevision({ instruction: "Name the order lifecycle status using the supplied meaning.",
+      vocabularyOnly: true, provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: draft,
+      egressAcknowledged: true, dependencies: { requestJson } });
+    expect(result.changes).toEqual([]);
+    expect(result.policy_changes).toEqual([{ resource: "public.orders", settings: { field_metadata: [
+      { field: "status", label: "Order lifecycle", description: "The operator identified the order lifecycle status." },
+    ] } }]);
+    expect(result.correction_used).toBe(attempt !== "metadata");
+    expect(calls).toBe(attempt === "metadata" ? 1 : 2);
+    expect(draft).toEqual(before);
+    expect(result.authority_granted).toBe(false);
+  });
+
   it.each([true, false])("advertises valid exposure combinations and precisely corrects an irrelevant operation option (recovers: %s)", async (recovers) => {
     const draft = boundary(), before = structuredClone(draft);
     let calls = 0;

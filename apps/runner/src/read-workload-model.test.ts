@@ -30,6 +30,66 @@ function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malforme
 }
 
 describe("model-assisted Read workload mapping", () => {
+  it("reuses a coded field meaning from the original operator job without another question or metadata mutation", async () => {
+    const boundary = opaqueGeneratedBoundary();
+    boundary.pack.resources[0]!.label = "Orders";
+    const before = structuredClone(boundary);
+    const quote = "col_2 means the order lifecycle status";
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "known_meaning",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read order lifecycle",
+        plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
+        operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: quote }],
+      }),
+    }] } }));
+    const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
+    const result = await generateModelReadWorkload({ name: "known_meaning", allowedQuestions: ["Read order lifecycle"],
+      operatorNamingContext: `Read my own orders. ${quote}. Do not change any source rows.`, provider: "openai", model: "gpt-5.6-terra",
+      generatedBoundary: boundary, egressAcknowledged: true, env: { OPENAI_API_KEY: "test-key" }, deferNarration: true,
+      dependencies: { requestJson }, clarificationHandler });
+    expect(result.analysis.status).toBe("ready");
+    expect(result.authority_granted).toBe(false);
+    expect(clarificationHandler).not.toHaveBeenCalled();
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(boundary).toEqual(before);
+  });
+
+  it.each(["fabricated_quote", "unknown_field", "withheld_field", "ambiguous_leaf", "identifier_prefix"])(
+    "refuses invalid operator naming evidence before accepting a plan: %s", async (kind) => {
+      const boundary = opaqueGeneratedBoundary();
+      boundary.pack.resources[0]!.label = "Orders";
+      if (kind === "ambiguous_leaf") boundary.pack.resources.push({ ...structuredClone(boundary.pack.resources[0]!), id: "public.other", table: "other" });
+      if (kind === "withheld_field") boundary.pack.resources[0]!.model_withheld_fields = ["col_2"];
+      const quote = "col_2 means the lifecycle status";
+      const args = { allowed: [{ id: "orders", description: "Read order lifecycle", plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
+        operator_meanings: [{ resource: "public.tbl_7", field: kind === "unknown_field" ? "absent" : "col_2",
+          operator_quote: kind === "identifier_prefix" ? "col_2_private means the lifecycle status" : quote }] };
+      const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "bad_meaning",
+        name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } }));
+      const result = await generateModelReadWorkload({ name: "bad_meaning", allowedQuestions: ["Read order lifecycle"],
+        operatorNamingContext: kind === "fabricated_quote" ? "Only read my orders" : kind === "identifier_prefix" ? args.operator_meanings[0]!.operator_quote : quote,
+        provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
+        env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson } }).catch((error) => error);
+      expect(result).toBeInstanceOf(ReadWorkloadDraftError);
+      expect(result.diagnostics.some((entry: { code: string }) => entry.code === "READ_WORKLOAD_NAMING_EVIDENCE_INVALID")).toBe(true);
+      expect(requestJson).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("does not treat an explained resource name as an explanation of every coded field", async () => {
+    const boundary = opaqueGeneratedBoundary();
+    const quote = "public.tbl_7 contains customer orders";
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "table_meaning",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read order lifecycle",
+        plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
+        operator_meanings: [{ resource: "public.tbl_7", operator_quote: quote }],
+      }) }] } }));
+    const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
+    await generateModelReadWorkload({ name: "table_meaning", allowedQuestions: [quote], provider: "openai", model: "gpt-5.6-terra",
+      generatedBoundary: boundary, egressAcknowledged: true, env: { OPENAI_API_KEY: "test-key" }, deferNarration: true,
+      dependencies: { requestJson }, clarificationHandler }).catch(() => undefined);
+    expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ resource: "public.tbl_7", field: "col_2" }));
+  });
+
   it("keeps a long original job while requesting concise schema-compatible plan descriptions", async () => {
     const job = "Help customers read their account, bills, services, support history, and eligible plan offers. ".repeat(4).trim();
     expect(job.length).toBeGreaterThan(280);

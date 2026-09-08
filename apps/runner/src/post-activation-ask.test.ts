@@ -19,6 +19,39 @@ import { ProviderCredentialInputCancelledError } from "./secret-input.js";
 import * as managedLauncher from "./managed-mcp-project.js";
 
 describe("post-activation Ask handoff", () => {
+  it.each([false, true])("does not repeat unchanged execution status when returning from setup (changed=%s)", async (changed) => {
+    const boundary = await import("./boundary-commands.js");
+    const resume = await import("./boundary-authoring-resume.js");
+    const readiness = await import("./authoring-client-readiness.js");
+    const authority = await import("./action-rule-authority.js");
+    const output: string[] = [];
+    let revision = "first", selectionCount = 0;
+    const mocks = [
+      vi.spyOn(boundary, "loadBoundaryReviewContext").mockResolvedValue({ bundle: {} } as never),
+      vi.spyOn(boundary, "boundaryAuthoringResumeBinding").mockReturnValue({} as never),
+      vi.spyOn(resume, "readBoundaryAuthoringResumeState").mockResolvedValue({ status: "ready", value: {
+        stage: "client_setup", client_handoff: { action_digest: "reviewed" },
+      } } as never),
+      vi.spyOn(readiness, "clientHandoffMatchesActiveAuthority").mockResolvedValue(true),
+      vi.spyOn(readiness, "pendingClientResponsibilities").mockResolvedValue([]),
+      vi.spyOn(authority, "loadActiveActionRuleAuthority").mockImplementation(async () => ({ authority: {
+        action_boundary: { digest: revision }, rules: [{ rule: { outcome: "stock.alert" },
+          effect_envelope: { writeback: { mode: "direct_sql", supervised_worker: "allowed" } } }],
+      } }) as never),
+    ];
+    try {
+      const code = await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project" }, {
+        env: {}, readExecutionState: async () => ({ enabled: false, policies: [], config_path: "unused" }),
+        chooseRoute: async () => selectionCount++ === 0 ? "execution-setup" : "later",
+        runExecutionReview: async () => { if (changed) revision = "second"; },
+        stdout: { write: (value) => { output.push(String(value)); return true; } }, stderr: { write: () => true },
+      });
+      expect(code).toBe(0);
+      expect(output.join("").match(/Read and change requests are active\./gu)).toHaveLength(changed ? 2 : 1);
+      expect(selectionCount).toBe(2);
+    } finally { for (const mock of mocks) mock.mockRestore(); }
+  });
+
   it.each(["success", "failure"])("keeps optional owner setup separate from ordinary client and source authority (%s)", async (result) => {
     const output: string[] = [];
     const runOwnerRuleSetup = vi.fn(async () => { if (result === "failure") throw new Error("Owner sign-in needs configuration"); });

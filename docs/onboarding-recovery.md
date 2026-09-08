@@ -75,6 +75,30 @@ Retained clarification turns keep the model's question and the operator's
 answer in their original roles after resume and retry. Ordinary conversation
 turns remain unchanged; a generated repair is never relabeled as a user request.
 
+Already supplied explanations of coded fields are retained as quoted operator
+evidence. Unknown or ambiguously named fields still require clarification;
+the model cannot invent a quote or use a hidden field as naming evidence.
+Before review, missing labels can be repaired without changing field access,
+operations, exclusions or business rules. Every dependent Action is compiled
+against the proposed Read revision before it is saved. Metadata-only generation
+changes can be rebound from the exact saved snapshots; schema, role or trusted
+context changes cannot. All affected outcomes are prepared before replacing
+the disabled Action bundle, so a later outcome cannot leave a mixed dependency.
+
+Automatic-approval limits explicitly shared across actions remain shared in
+each applicable policy. Decomposing a job must not create a fresh allowance
+per action. A saved mismatch can reopen just the approval limits while
+preserving eligibility, effects, reviewer, execution intent and outcome names.
+The operator still reviews the changed revision. A later explicit correction
+can replace the original shared-limit instruction; asking a question about it
+does not change that instruction.
+
+Incomplete structured submissions are the model's responsibility, not a request
+for the operator to supply JSON components. Runner gives a bounded internal
+correction and, if the model still cannot finish, retains the draft with a
+specific failure and retry/model-selection path. This does not guarantee that
+every local model can complete a supported business task.
+
 The conversation asks one short business question without repeating the saved
 action policy. Exact reasoning remains in `/details`. An unavailable explanation
 does not discard the question or disable deterministic inspection.

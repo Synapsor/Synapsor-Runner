@@ -63,6 +63,36 @@ afterEach(async () => {
 });
 
 describe("semantic Action Rule authority persistence", () => {
+  it("adds a third mixed-punctuation outcome without mistaking review ordering for an invalid authority", async () => {
+    const root = await temporaryRoot();
+    const boundary = activeReadBoundary();
+    await writeActiveReadSet(root, boundary);
+    const source = authoritySource(boundary.activation.digest);
+    const names = ["warehouse.notification_preference.change", "warehouse.stock_item_reorder_threshold.change", "warehouse.stock_item.available_stock_units.change"];
+    const draftFor = (outcomes: string[]) => buildActionRuleAuthorityDraft({
+      name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: outcomes.map((outcome) => ({ read_boundary_name: boundary.pack.name, read_boundary_digest: boundary.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: { ...source.rule, name: outcome, outcome } })),
+      reviews: outcomes.map((outcome) => ({ ...authorityReview(), outcome })),
+    });
+    const first = draftFor(names.slice(0, 2));
+    await writeActionRuleAuthorityDraft(root, first);
+    const active = await activateActionRuleAuthority({ projectRoot: root, name: first.authority.name,
+      expected_digest: first.digest, confirmation: `ACTIVATE ${first.digest}`, actor: "reviewer" });
+    const replacement = mergeActionRuleAuthorityDraft({ existing: active, incoming: draftFor(names.slice(2)) });
+    await writeActionRuleAuthorityDraft(root, replacement);
+    expect((await readActionRuleAuthorityActivation(root))?.digest).toBe(active.digest);
+    expect((await readActionRuleAuthorityDraft(root, replacement.authority.name))?.reviews.map((review) => review.outcome).sort()).toEqual([...names].sort());
+    await activateActionRuleAuthority({ projectRoot: root, name: replacement.authority.name,
+      expected_digest: replacement.digest, confirmation: `ACTIVATE ${replacement.digest}`, actor: "reviewer" });
+    expect((await loadActiveActionRuleAuthority(root)).registry.rules.map((entry) => entry.compiled.outcome).sort()).toEqual([...names].sort());
+    for (const reviews of [replacement.reviews.slice(1), [...replacement.reviews, replacement.reviews[0]!],
+      replacement.reviews.map((review, index) => index === 0 ? { ...review, outcome: "warehouse.unreviewed_action" } : review)]) {
+      await expect(writeActionRuleAuthorityDraft(root, { ...replacement, reviews })).rejects.toThrow("ACTION_RULE_DRAFT_INVALID");
+    }
+    expect((await readActionRuleAuthorityActivation(root))?.digest).toBe(replacement.digest);
+  });
+
   it("transfers exact stored Action authority without changing rule identity, state or provenance", async () => {
     const root = await temporaryRoot(); const boundary = activeReadBoundary();
     await writeActiveReadSet(root, boundary);

@@ -202,6 +202,8 @@ export async function runPostActivationAskHandoff(
     sessionTokenBudget?: number;
     maxOutputTokens?: number;
     selection?: PostActivationAskSelection;
+    /** Ephemeral presentation state for returns within this client handoff. */
+    displayedExecutionReview?: string;
   },
   dependencies: PostActivationAskDependencies = {},
 ): Promise<number> {
@@ -214,6 +216,7 @@ export async function runPostActivationAskHandoff(
   );
   const theme = terminalTheme(stdout.isTTY === true && !("NO_COLOR" in env));
   let executionReviewPending = false;
+  let executionReviewKey: string | undefined;
   let guidedClientSetup = false;
   let paused: SavedExecutionSetup | undefined;
   let responsibilities: string[] = [];
@@ -228,10 +231,12 @@ export async function runPostActivationAskHandoff(
       if (current && saved.value.client_handoff?.action_digest) {
         const active = await loadActiveActionRuleAuthority(input.projectRoot);
         const execution = await (dependencies.readExecutionState ?? readSemanticSupervisedExecutionState)({ projectRoot: input.projectRoot });
-        executionReviewPending = active.authority.rules.some((entry) => entry.effect_envelope.writeback.mode === "direct_sql"
+        const pending = active.authority.rules.filter((entry) => entry.effect_envelope.writeback.mode === "direct_sql"
           && entry.effect_envelope.writeback.supervised_worker === "allowed"
           && !(execution.enabled && execution.policies.some((policy) => policy.outcome === entry.rule.outcome
             && policy.action_boundary_digest === active.authority.action_boundary.digest)));
+        executionReviewPending = pending.length > 0;
+        executionReviewKey = JSON.stringify([active.authority.action_boundary.digest, pending.map((entry) => entry.rule.outcome).sort()]);
         if (executionReviewPending) paused = await readPausedExecutionSetup(input.projectRoot, active.authority.action_boundary.digest);
       }
       responsibilities = await pendingClientResponsibilities(input.projectRoot, saved.value);
@@ -244,7 +249,10 @@ export async function runPostActivationAskHandoff(
   const configuredSelection = input.autoStartConfiguredProvider && !executionReviewPending
     ? soleConfiguredHostedSelection(env)
     : undefined;
-  if (executionReviewPending && !input.selection) write("Read and change requests are active. Some outcomes still need execution review; existing execution settings are unchanged. You can connect a client now or resume execution setup.\n");
+  if (executionReviewPending && !input.selection && input.displayedExecutionReview !== executionReviewKey) {
+    write("Read and change requests are active. Some outcomes still need execution review; existing execution settings are unchanged. You can connect a client now or resume execution setup.\n");
+    input = { ...input, displayedExecutionReview: executionReviewKey };
+  }
   const selection = input.selection
     ?? configuredSelection
     ?? await choosePostActivationAskSelection(dependencies, guidedClientSetup || executionReviewPending ? "mcp-client" : undefined);

@@ -67,6 +67,10 @@ export async function generateModelReadBoundaryRevision(input: {
   boundary: ExplorationBoundaryDraft;
   /** A guided privacy review may reduce disclosure, never grant new Read access. */
   privacyOnly?: boolean;
+  /** Resolve reviewed labels/descriptions without any access or policy change. */
+  vocabularyOnly?: boolean;
+  /** Original operator job, separate from the short revision instruction. */
+  operatorNamingContext?: string;
   env?: NodeJS.ProcessEnv;
   apiKey?: string;
   apiKeyEnv?: string;
@@ -82,6 +86,8 @@ export async function generateModelReadBoundaryRevision(input: {
   signal?: AbortSignal;
 }): Promise<ModelReadBoundaryRevisionResult> {
   const instruction = boundedText(input.instruction, "Read Boundary revision", 2_000);
+  const operatorNamingContext = input.operatorNamingContext
+    ? boundedText(input.operatorNamingContext, "Original operator naming context", 4_000) : undefined;
   const catalog = readBoundaryRevisionCatalog(input.boundary);
   const serializedCatalog = JSON.stringify(catalog);
   if (Buffer.byteLength(serializedCatalog) > 96 * 1024) {
@@ -150,6 +156,7 @@ export async function generateModelReadBoundaryRevision(input: {
       }
       try {
         const parsed = parseRevision(args, catalog);
+        if (input.vocabularyOnly) assertVocabularyOnlyReadRevision(parsed);
         // Correction repairs an invalid candidate; it must not "succeed" by
         // silently dropping an already submitted Runner-only privacy decision.
         for (const [key, expected] of privateDecisions) {
@@ -202,6 +209,8 @@ export async function generateModelReadBoundaryRevision(input: {
     "model_and_runner permits reviewed model access; runner_only with model_operations none keeps private Runner access but removes model filters, sorting, grouping and measures; kept_out removes every read operation. Raw withholding alone is NOT full privacy.",
     "For fields already readable, runner_only can remove model disclosure while preserving existing private selection. Preserve kept_out fields: tenant/principal filtering, opaque reference identity and private Action verification do not require granting Read selection. A field's internal role is not a reason to add Read access.",
     ...(input.privacyOnly ? ["This is a privacy-only refinement: no new raw return, private row selection, model analysis, or removal of existing exclusions is permitted. Omit unrelated fields and settings. If a business request needs additional access, explain that separately instead of bundling it into this privacy correction."] : []),
+    ...(input.vocabularyOnly ? ["This is vocabulary-only: submit no field exposure changes and only metadata or field_metadata settings. Retain every Read operation, exclusion, scope, limit, Action rule, approval and execution setting. Reuse meanings already stated by the operator; ask one business question only if a required meaning is actually missing. Do not guess business meanings from coded identifiers."] : []),
+    ...(operatorNamingContext ? [`Original operator job (naming evidence, not new authority): ${JSON.stringify(operatorNamingContext)}`] : []),
     "Never make a trusted tenant or principal scope field model_and_runner. Never infer a wider request than the operator stated.",
     "Submit only requested changes. field_exposure changes visibility; settings changes exact reviewed policy. Operation lists replace the whole current list, so preserve unmentioned fields. Budget settings apply boundary-wide, not just to the named table. Use catalog ceilings.",
     "A business clarification may confirm existing access. When the exact desired state already matches, return status=already_satisfied with resource_changes naming every field state you checked. Runner verifies each state without changing authority. Never invent an access change to avoid an empty diff. For partially satisfied requests, use status=revision and include the remaining changes plus already-correct field states; do not drop unresolved requirements.",
@@ -527,6 +536,15 @@ function parseRevision(
     policy_changes: policyChanges,
     ...(optionalText(value.summary, "summary", 500) ? { summary: optionalText(value.summary, "summary", 500)! } : {}),
   };
+}
+
+export function assertVocabularyOnlyReadRevision(
+  revision: Pick<ModelReadBoundaryRevisionResult, "changes" | "policy_changes">,
+): void {
+  if (revision.changes.length || revision.policy_changes?.some((entry) => Object.keys(entry.settings)
+    .some((key) => key !== "metadata" && key !== "field_metadata"))) {
+    throw new Error("Vocabulary-only review accepts labels and descriptions only. Keep every field exposure, operation, relationship, limit and scope unchanged.");
+  }
 }
 
 function assertPrivacyOnlyRevision(

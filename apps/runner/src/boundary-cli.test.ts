@@ -6067,6 +6067,44 @@ describe("boundary operator-plane CLI", () => {
       const finalReadDigest = explorationBoundaryCandidateDigest((await loadBoundaryReviewContext(root)).candidate);
       expect(multiple?.authority.rules.every((entry) => entry.read_boundary_digest === finalReadDigest)).toBe(true);
       if (posture === "proposal_only") {
+        let vocabularyReviewCount = 0;
+        const vocabularySession: BoundaryReviewInteractiveSession = { ...resumedSession,
+          promptText: async () => "Label visit status as Visit lifecycle. Keep every action and its approval settings unchanged.",
+          chooseOption: async (title) => {
+            if (title === "START BOUNDARY DRAFTING") return "resume";
+            if (title === "ACTIVATE READ BOUNDARY") return vocabularyReviewCount++ === 0 ? "revise_model" : "finish";
+            throw new Error(`Unexpected vocabulary revision menu: ${title}`);
+          },
+        };
+        const vocabularyChat = testBoundaryAuthoringChat(vocabularySession);
+        vi.spyOn(vocabularyChat, "streamCheckpoint");
+        let vocabularyLabel = "Visit lifecycle";
+        const vocabularyGenerator: typeof generateModelReadBoundaryRevision = async (input) => generateModelReadBoundaryRevision({
+          ...input, dependencies: { requestJson: async () => ({ status: 200,
+            body: { output: [{ type: "function_call", call_id: "labels", name: "runner__submit_read_boundary_revision",
+              arguments: JSON.stringify({ resource_changes: [{ resource: "public.service_visits",
+                settings: { field_metadata: [{ field: "status", label: vocabularyLabel }] } }] }) }] } }) },
+        });
+        await boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
+          vocabularySession, undefined, { startWithAgentJob: true,
+            modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
+            modelAuthoringNarrator: revisionNarrator, actionProjectInspector: async () => inspection,
+            modelReadBoundaryRevisionGenerator: vocabularyGenerator, boundaryAuthoringChatFactory: () => vocabularyChat });
+        const labelledRead = (await loadBoundaryReviewContext(root)).candidate;
+        const labelledActions = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+        expect(vocabularyChat.streamCheckpoint).not.toHaveBeenCalledWith("Read revision not saved", expect.anything(), expect.anything());
+        expect(labelledRead.generation_lock_fingerprint).not.toBe(multiple!.authority.catalog.generation_lock_fingerprint);
+        expect(labelledActions!.authority.rules).toHaveLength(3);
+        expect(labelledActions!.authority.approval_classes).toEqual(multiple!.authority.approval_classes);
+        for (const entry of labelledActions!.authority.rules) {
+          const previous = multiple!.authority.rules.find((rule) => rule.rule.outcome === entry.rule.outcome)!;
+          expect(entry.rule).toEqual(previous.rule);
+          expect(entry.effect_envelope).toEqual(previous.effect_envelope);
+          expect(entry.verification_boundary).toEqual({ ...previous.verification_boundary,
+            generation_lock_fingerprint: labelledRead.generation_lock_fingerprint });
+          expect(entry.read_boundary_digest).toBe(explorationBoundaryCandidateDigest(labelledRead));
+        }
+        await expect(fs.access(path.join(root, ".synapsor/action-rules/active.json"))).rejects.toMatchObject({ code: "ENOENT" });
         const splitIntents = ["Complete a scheduled-visit follow-up.", "Send valid exceptions to a reviewer.", "Refuse invalid follow-ups."];
         const splitPlanner = vi.fn(async () => ({ ...await multiPlanner(), action_intent: splitIntents[0]!, action_intents: splitIntents }));
         let pauseSecond = true;
@@ -6136,6 +6174,27 @@ describe("boundary operator-plane CLI", () => {
           expect.arrayContaining([expect.stringContaining("Human-review quorum:")]), "normal");
         expect(splitContexts.join("\n")).toContain("execution review (prepared, not enabled; worker required)");
         await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+
+        vocabularyReviewCount = 0;
+        vocabularyLabel = "Reviewed visit lifecycle";
+        await boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
+          vocabularySession, undefined, { startWithAgentJob: true,
+            modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
+            modelAuthoringNarrator: async (input) => {
+              if (input.validatedFacts.some((fact) => fact.startsWith("Runner validated and saved"))) {
+                throw new Error("Model narration unavailable after the revision was persisted.");
+              }
+              return revisionNarrator(input);
+            }, actionProjectInspector: async () => inspection,
+            modelReadBoundaryRevisionGenerator: vocabularyGenerator, boundaryAuthoringChatFactory: () => vocabularyChat });
+        const savedRead = (await loadBoundaryReviewContext(root)).candidate;
+        const savedActions = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+        expect(savedActions!.authority.rules.map((entry) => entry.rule)).toEqual(single!.authority.rules.map((entry) => entry.rule));
+        expect(savedActions!.authority.approval_classes).toEqual(single!.authority.approval_classes);
+        expect(savedActions!.authority.rules.every((entry) => entry.read_boundary_digest === explorationBoundaryCandidateDigest(savedRead))).toBe(true);
+        expect(vocabularyChat.streamCheckpoint).toHaveBeenCalledWith("Read revision saved; review needs recovery",
+          expect.arrayContaining([expect.stringContaining("The disabled Read revision was saved, but its review did not finish.")]), "warning");
+        expect(vi.mocked(vocabularyChat.streamCheckpoint).mock.calls.flat(2).join("\n")).not.toContain("the prior Action draft is retained");
       }
     } finally {
       await fs.rm(root, { recursive: true, force: true });

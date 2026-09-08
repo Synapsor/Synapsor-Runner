@@ -41,6 +41,8 @@ import {
 } from "./action-rule-draft.js";
 import {
   explicitPolicyLimits,
+  assertJointApprovalLimitsPreserved,
+  explicitJointApprovalLimits,
   explicitPolicyDurations,
   explicitTrustedPolicyScopes,
   formatPolicyDuration,
@@ -180,6 +182,10 @@ export class ActionAuthoringReadOnlyRequest extends Error {
 export type ModelActionRuleDraftInput = {
   session: ActionRuleModelSession;
   intent: string;
+  /** Original whole job, before decomposition into individual action intents. */
+  operatorJob?: string;
+  /** Mechanical repair of an already saved draft, not permission to redesign it. */
+  approvalLimitsOnly?: boolean;
   builtCatalog: BuiltActionRuleAuthoringCatalogV1;
   readBoundary: ExplorationBoundaryDraft;
   readBoundaryDigest: `sha256:${string}`;
@@ -205,6 +211,7 @@ export type ModelActionRuleDraftInput = {
 /** The model edits disabled components; only the compiler can mark a draft ready. */
 export async function generateModelActionRuleDraft(input: ModelActionRuleDraftInput): Promise<ModelActionRuleDraftResult> {
   const intent = boundedText(input.intent, "Action Rule intent", 2_000);
+  const operatorJob = input.operatorJob ? boundedText(input.operatorJob, "Operator job", 4_000) : intent;
   let context: ActionRuleModelPreparedContext = {
     builtCatalog: input.builtCatalog, readBoundary: input.readBoundary, readBoundaryDigest: input.readBoundaryDigest,
   };
@@ -360,7 +367,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           if (input.reservedOutcomes?.includes(draft.outcome) && baseline?.outcome !== draft.outcome) {
             return phaseRefusal("ACTION_OUTCOME_COLLISION: this outcome already has a prepared draft. If the operator is clarifying that SAME action, call runner.reopen_prepared_action with its exact digest, then revise only requested fields. A genuinely different action cannot claim this outcome. Never ask the operator to invent an internal name or repeat the job.");
           }
-          assertExplicitApprovalIntentPreserved(intent, draft.approval);
+          assertJointApprovalLimitsPreserved([operatorJob, ...operatorMessages], draft.approval);
+          assertExplicitApprovalIntentPreserved(intent, draft.approval, explicitJointApprovalLimits([operatorJob, ...operatorMessages]).length > 0);
+          if (input.approvalLimitsOnly) assertOnlyApprovalLimitsChanged(baseline, draft);
           assertActionExecutionIntentPreserved([intent, ...operatorMessages], draft.effect.writeback);
           const result = compileActionRuleModelDraft({ draft, ...context });
           if (initial && !reopenedDraft && ACTION_RULE_PHASES.every((phase) => canonicalJsonDigest(initial![phase]) === canonicalJsonDigest(submissions[phase]))) {
@@ -422,6 +431,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     ...ACTION_RULE_PHASES.map((phase) => `${phase} component rules: ${phaseInstruction(phase)}`),
   ].join("\n");
   let operatorMessage = intent;
+  let mechanicalResponseRepairs = 0;
+  let mechanicalResponseFeedback: string | undefined;
   const history: import("./model-ask.js").AskHistoryTurn[] = [];
   // Autonomous work is bounded by runAskProviderTurn; deliberate human follow-ups are not a retry budget.
   while (true) {
@@ -437,7 +448,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       },
       history: input.session.conversation ? modelAuthoringHistory(input.session.conversation, input.session) : history.slice(-16),
       question: [
-        `Original operator job: ${JSON.stringify(intent)}`,
+        `Original operator job (preserve shared policy across actions): ${JSON.stringify(operatorJob)}`,
+        `Current action intent: ${JSON.stringify(intent)}`,
         `Current normalized structural catalog: ${serializeAuthoringCatalog(context.builtCatalog)}`,
         `Current disabled draft: ${JSON.stringify(snapshot())}`,
         `Reserved outcomes (creation cannot overwrite): ${JSON.stringify(input.reservedOutcomes ?? [])}`,
@@ -445,6 +457,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         `Pending business intents (zero-based indexes): ${JSON.stringify(pendingIntents.map((intent, index) => ({ index, intent })))}`,
         `Operator message: ${JSON.stringify(operatorMessage)}`,
         `Earlier business answers for this exact outcome: ${JSON.stringify(operatorMessages)}`,
+        ...(mechanicalResponseFeedback ? [`Runner validation feedback (not a new operator decision): ${mechanicalResponseFeedback}`] : []),
       ].join("\n"),
       providerSystemPrompt: system, skipRunnerQuestionContext: true,
       conversationalAuthoring: true,
@@ -461,6 +474,18 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       ...(usage ? { usage } : {}),
       ...(initial && baseline ? { revision: { outcome: baseline.outcome, changed_phases: ACTION_RULE_PHASES.filter((phase) => canonicalJsonDigest(initial![phase]) !== canonicalJsonDigest(submissions[phase])), ...(reopenedDraft ? { reopened_draft: reopenedDraft } : {}) } } : {}),
     };
+    if (isIncompleteToolSubmissionResponse(response)) {
+      if (mechanicalResponseRepairs >= 2) {
+        throw new Error("ACTION_RULE_MODEL_DRAFT_INCOMPLETE: the model did not finish its structured draft after two internal corrections. Saved drafts are retained. Retry with this model or choose another; no authority or source data changed.");
+      }
+      mechanicalResponseRepairs += 1;
+      correctionUsed = true;
+      mechanicalResponseFeedback = runnerResolvedMechanicalGuidance(response);
+      await saveCheckpoint();
+      continue;
+    }
+    mechanicalResponseRepairs = 0;
+    mechanicalResponseFeedback = undefined;
     if (!input.askClarification) throw new Error(`ACTION_RULE_MODEL_CLARIFICATION_REQUIRED: ${response}`);
     const answer = await input.askClarification(response);
     if (answer === undefined) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
@@ -566,7 +591,9 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
   let lastCompileError: unknown;
   for (let repairCount = 0; repairCount <= MAX_FINAL_COMPILER_REPAIRS; repairCount += 1) {
     try {
-      assertExplicitApprovalIntentPreserved(intent, draft.approval);
+      assertJointApprovalLimitsPreserved([input.operatorJob ?? intent], draft.approval);
+      assertExplicitApprovalIntentPreserved(intent, draft.approval, explicitJointApprovalLimits([input.operatorJob ?? intent]).length > 0);
+      if (input.approvalLimitsOnly) assertOnlyApprovalLimitsChanged(existingDraft, draft);
       assertActionExecutionIntentPreserved([intent], draft.effect.writeback);
       compiled = compileActionRuleModelDraft({
         draft,
@@ -664,14 +691,25 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
   };
 }
 
+function assertOnlyApprovalLimitsChanged(baseline: ActionRuleModelDraftV1 | undefined, next: ActionRuleModelDraftV1): void {
+  const withoutLimitsAndNarration = (draft: ActionRuleModelDraftV1) => {
+    const { review: _review, ...program } = draft;
+    return { ...program, approval: { ...program.approval, shared_limits: [] } };
+  };
+  if (!baseline || canonicalJsonDigest(withoutLimitsAndNarration(baseline)) !== canonicalJsonDigest(withoutLimitsAndNarration(next))) {
+    throw new Error("ACTION_RULE_DRAFT_INVALID: this repair may change only approval.shared_limits and its review explanation. Restore every other component from the saved baseline.");
+  }
+}
+
 function assertExplicitApprovalIntentPreserved(
   intent: string,
   approval: ApprovalSubmission,
+  joint = false,
 ): void {
   if (approval.mode !== "policy") return;
   const limits = approval.shared_limits;
   const missingScope = explicitTrustedPolicyScopes(intent).find((required) =>
-    !limits.some((limit) => limit.scope === required.scope));
+    !limits.some((limit) => limit.scope === required.scope || joint && required.scope === "capability" && limit.scope === "boundary"));
   if (missingScope) {
     throw new Error(
       `ACTION_RULE_DRAFT_INVALID: approval.shared_limits must preserve the operator's explicit ${missingScope.scope} accounting (${missingScope.phrase}); repair the model draft from the existing intent without asking the operator to repeat it.`,
@@ -686,7 +724,7 @@ function assertExplicitApprovalIntentPreserved(
   }
   const missingLimit = explicitPolicyLimits(intent).find((required) =>
     !limits.some((limit) => limit.kind === required.kind
-      && limit.scope === required.scope
+      && (limit.scope === required.scope || joint && required.scope === "capability" && limit.scope === "boundary")
       && limit.maximum === required.maximum
       && limit.window_seconds === required.window_seconds));
   if (missingLimit) {
@@ -1121,6 +1159,7 @@ async function runFocusedPhase(input: {
   const question = [
     phaseInstruction(input.phase),
     `Operator intent: ${JSON.stringify(input.intent)}`,
+    ...(input.input.operatorJob ? [`Original whole operator job: ${JSON.stringify(input.input.operatorJob)}`] : []),
     `Current normalized structural catalog: ${input.serializedCatalog}`,
     `Already validated phase drafts: ${JSON.stringify(previous)}`,
     ...(input.operatorClarifications?.length
@@ -1393,7 +1432,8 @@ function phaseTool(
         auto_approve_when: compatibleFlatEnvelope
           ? { type: "object" }
           : { $ref: "#/$defs/boolean_expression" },
-        required_role: { type: "string" },
+        required_role: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_.:-]{0,159}$",
+          description: "Internal label for the operator's business reviewer role. Derive warehouse_manager from warehouse manager; this does not authenticate or authorize a reviewer." },
         required_approvals: { type: "integer", minimum: 1, maximum: 16 },
         shared_limits: {
           type: "array", maxItems: 16,
@@ -1704,10 +1744,12 @@ function phaseInstruction(phase: PhaseName): string {
       "Draft approval independently from eligibility. Default to human unless the operator explicitly supplied complete automatic criteria and rolling limits. Approval never grants apply authority.",
       "For policy mode, required_approvals is the distinct-human fallback quorum when the automatic predicate misses, is unknown, or a rolling limit trips. A successful exact policy match remains one policy decision; changing the fallback quorum must not remove or alter automatic criteria, reviewer role, or shared limits unless the operator explicitly requests those changes too.",
       "required_role is a control-store reviewer-role label, not a database field or verification binding. Approval history and rolling-limit accounting live in Runner's separate control store; never ask the operator to locate either in source metadata.",
+      "If the operator already supplied the business reviewer (for example warehouse manager), derive a valid internal required_role label (warehouse_manager). Do not demand a pre-existing coded label. Preserve an existing exact role on unrelated revisions. This labels a requirement, not an authenticated reviewer or a permission grant; reviewer authorization remains a separate control-store check. Ask who should review only when that business decision is missing.",
       "Every automatic-approval count or total is an elapsed rolling window from 60 seconds through 365 days. Preserve exact operator durations such as 15 days as 1296000 window_seconds; never round to a menu preset. Lifetime, all-time, and non-resetting counters are unsupported in this revision: say so once and ask for one rolling replacement instead of repeating the same question or approximating it.",
-      "Policy mode requires exactly two circuit-breaker classes: one count scoped to boundary or capability, plus one count scoped to tenant, tenant_principal, or tenant_object. Any one trusted-scope form is sufficient. A tenant_principal limit already protects trusted tenant scope, so do not ask for or invent a redundant tenant-only limit.",
+      "Policy mode requires at least two circuit-breaker classes: one count scoped to boundary or capability, plus one count scoped to tenant, tenant_principal, or tenant_object. Any one trusted-scope form is sufficient. A tenant_principal limit already protects trusted tenant scope, so do not ask for or invent a redundant tenant-only limit.",
       "Scope wording is exact: 'same customer account', 'same organization', or 'per tenant' means tenant; 'same signed-in person', 'per principal', or 'per user within a tenant' means tenant_principal; 'same exact target row/object/subscription' means tenant_object; 'for this action' or an overall outcome total means capability. Bare 'per customer' is ambiguous between an account and a person, so ask one concise business-facing clarification instead of guessing. Preserve the operator's exact maximum and rolling duration.",
       "The optional shared-limit capability field means the exact semantic outcome, not the rule name or approval class. Copy it only from the already validated Rule draft outcome. Runner will bind any submitted value back to that exact outcome before compilation.",
+      "For a joint limit across the actions in this job, use scope=boundary for the overall count and tenant/tenant_principal/tenant_object for the trusted count, OMITTING capability on BOTH. A capability filter would incorrectly give each action its own allowance. Preserve the whole job's joint limits in every applicable automatic policy; never replace them with per-action limits during decomposition or revision. Existing unrelated per-action restrictions stay unless explicitly revised.",
       "For human review use exactly: {\"status\":\"draft\",\"class_name\":\"area.human_review\",\"mode\":\"human\",\"required_role\":\"reviewer\",\"required_approvals\":1,\"shared_limits\":[]} and omit auto_approve_when.",
     ].join(" ");
   }
@@ -1950,7 +1992,16 @@ function phaseRefusal(message: string) {
   };
 }
 
+function isIncompleteToolSubmissionResponse(response: string): boolean {
+  const normalized = response.toLocaleLowerCase("en-US").replace(/[`*_-]+/gu, " ");
+  return [
+    /\b(?:draft|components?)\b.{0,100}\b(?:missing|needed|incomplete)\b.{0,160}\b(?:effect|rule|approval|verification)\b/u,
+    /\b(?:submit|provide|supply)\b.{0,120}\b(?:effect|rule|approval|verification)\b.{0,100}\b(?:components?|tools?|json)\b/u,
+  ].some((pattern) => pattern.test(normalized));
+}
+
 function isRunnerResolvedMechanicalQuestion(question: string): boolean {
+  if (isIncompleteToolSubmissionResponse(question)) return true;
   const normalized = question.toLocaleLowerCase("en-US").replace(/[_-]+/gu, " ");
   return [
     /\b(?:primary|foreign|dedup(?:lication)?|conflict)\s+(?:key|column|field)\b/u,
@@ -1969,6 +2020,7 @@ function isRunnerResolvedMechanicalQuestion(question: string): boolean {
     /\b(?:which|what)\b.{0,160}\b(?:verification\s+)?bindings?\b.{0,220}\b(?:rolling|automatic)[ -]approval\s+(?:counts?|limits?)\b/u,
     /\b(?:rolling|automatic)[ -]approval\s+(?:counts?|limits?)\b.{0,220}\b(?:verification\s+)?bindings?\b/u,
     /\b(?:reviewer|required)\s*[- ]?role\b.{0,100}\b(?:field|binding|resource|source|table|column)\b/u,
+    /\b(?:reviewer|approver|approval|required)\s+role\s+(?:identifier|name|label|code)\b/u,
     /\bapproval\s+(?:source|role)\s+(?:field|binding|resource|table|column)\b/u,
     /\b(?:reviewer|approver)\b.{0,160}\b(?:verification|bindings?|fields?|sources?|resources?|tables?|columns?|relationships?|trusted scope)\b/u,
     /\b(?:verification|bindings?|fields?|sources?|resources?|tables?|columns?|relationships?|trusted scope)\b.{0,160}\b(?:reviewer|approver)\b/u,
@@ -1989,6 +2041,8 @@ function isRunnerResolvedMechanicalQuestion(question: string): boolean {
 function runnerResolvedMechanicalGuidance(question: string): string {
   return [
     `Rejected mechanical clarification: ${JSON.stringify(question)}`,
+    "Missing verification, effect, rule or approval components are your tool-submission work, not a question for the operator. Submit the missing components with the available draft tools, then call runner.validate_action_draft. Inspect runner.inspect_action_draft if needed; reuse the current business answers. Ask only for a genuinely unspecified business decision.",
+    "When the operator has named a business reviewer such as warehouse manager, serialize it as a concise valid required_role label such as warehouse_manager. An established coded label is not a prerequisite for drafting. This labels the intended reviewer only; actual reviewer identity and authorization must still be established separately before approval. Preserve an existing exact role label unless the operator requests a different business reviewer. If the business reviewer itself is unspecified, ask who should review, not for an internal label.",
     "Runner owns and resolves primary/foreign keys, version and conflict guards, trusted tenant/principal scope, RLS bindings, relationship joins, deterministic source-field expression bindings, lock order, transaction posture, SQL, approval-ledger storage, credentials, canonical digests, and internal dotted authority names from the normalized catalog. Derive source-backed effect values from exact fields in the accepted Verification draft; do not ask the operator to name an expression or binding. Reviewer roles are control-store labels, and approval state is control-store policy; neither is a source field or Verification binding. Never use source status to represent automatic versus human approval. If a source business value such as a newly inserted row's status is genuinely ambiguous, ask only which reviewed business value should be stored. Derive concise dot-qualified rule, outcome, effect, Verification Boundary, approval-class, and reviewer-role names from the exact target and requested effect; do not ask the operator to name or locate them. If the question is only about proposal or rule TTL, use the reviewed authoring default of 300 seconds unless the operator intent already specified another value.",
     "Use the exact catalog and already validated phase drafts. Do not invent or request a concrete identity value.",
   ].join(" ");

@@ -267,6 +267,127 @@ describe("composed semantic Action runtime", () => {
     }
   });
 
+  it("shares Action Boundary automatic-approval limits across outcomes and tenants", async () => {
+    const store = new ProposalStore();
+    const authority = authorityFixture("active", { automaticApproval: true, sharedApprovalLimits: true });
+    const [firstOutcome, secondOutcome] = authority.registry.rules.map((rule) => rule.compiled.outcome);
+    const servicesByTenant = new Map<string, Awaited<ReturnType<typeof createOptionalActionRuleRuntimeServices>>>();
+
+    const servicesFor = async (tenant: string) => {
+      const existing = servicesByTenant.get(tenant);
+      if (existing) return existing;
+      const services = (await createOptionalActionRuleRuntimeServices({
+        projectRoot,
+        config: {
+          ...config,
+          trusted_context: { provider: "static_dev", values: { tenant_id: tenant, principal: "customer_maya" } },
+        },
+        store,
+        key,
+        deployment_scope: "acme.billing.staging",
+        workflow_session_id: `workflow_${tenant}`,
+        authorityLoader: async () => authority,
+        factSessionFactory: async () => ({
+          fact_loader: {
+            engine: "postgres",
+            load: async (query) => {
+              const identity = query.predicates.find((predicate) =>
+                predicate.operation === "eq" && predicate.column === "preference_id");
+              const id = identity?.operation === "eq" ? String(identity.value) : "";
+              return [{
+                preference_id: id,
+                account_id: tenant,
+                principal_id: "customer_maya",
+                status: id.startsWith("ineligible-") ? "paused" : "active",
+                version: 1,
+              }];
+            },
+          },
+          close: async () => undefined,
+        }),
+      }))!;
+      servicesByTenant.set(tenant, services);
+      return services;
+    };
+
+    const request = async (tenant: string, outcome: string, id: string) => {
+      const services = await servicesFor(tenant);
+      const activated = authority.registry.rules.find((rule) => rule.compiled.outcome === outcome)!;
+      const scope = subjectReferenceScopeFingerprints({
+        key,
+        deployment_scope: "acme.billing.staging",
+        source_id: activated.compiled.source,
+        tenant,
+        principal: "customer_maya",
+      });
+      const [subject] = await services.subjectReferences.issue({
+        source_id: activated.compiled.source,
+        read_boundary_digest: activated.read_boundary_digest,
+        generation_lock_fingerprint: activated.compiled.generation_lock_fingerprint,
+        ...scope,
+        workflow_session_id: services.workflow_session_id,
+        resource: "billing.preferences",
+        evidence_bundle_id: `ev_${tenant}_${id}`,
+        observations: [{ row_index: 0, primary_key_value: id, observed_version_value: 1 }],
+      });
+      const args = { outcome, subject_refs: { preference: subject!.ref } };
+      return { args, services, result: services.semanticActions.callTool(REQUEST_CHANGE_TOOL, args) };
+    };
+
+    try {
+      expect(authority.registry.approval_classes).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          name: "billing.notification_change",
+          shared_limits: [
+            { id: "billing_notification_boundary_24h", kind: "count", scope: "boundary", maximum: 10, window_seconds: 86_400 },
+            { id: "billing_notification_tenant_24h", kind: "count", scope: "tenant", maximum: 3, window_seconds: 86_400 },
+          ],
+        }),
+        expect.objectContaining({
+          name: "billing.stock_change",
+          shared_limits: [
+            { id: "billing_stock_boundary_24h", kind: "count", scope: "boundary", maximum: 10, window_seconds: 86_400 },
+            { id: "billing_stock_tenant_24h", kind: "count", scope: "tenant", maximum: 3, window_seconds: 86_400 },
+          ],
+        }),
+      ]));
+
+      const first = await request("acct_northstar", firstOutcome!, "northstar-1");
+      await expect(first.result).resolves.toMatchObject({ proposal: { status: "approved" } });
+      await expect(first.services.semanticActions.callTool(REQUEST_CHANGE_TOOL, first.args))
+        .resolves.toMatchObject({ request_disposition: "already_recorded", proposal: { status: "approved" } });
+      expect((await store.listProposals()).filter((proposal) => proposal.state === "approved")).toHaveLength(1);
+
+      for (const [outcome, id] of [[secondOutcome!, "northstar-2"], [firstOutcome!, "northstar-3"]] as const) {
+        await expect((await request("acct_northstar", outcome, id)).result)
+          .resolves.toMatchObject({ proposal: { status: "approved" } });
+      }
+      await expect((await request("acct_northstar", secondOutcome!, "northstar-4")).result)
+        .resolves.toMatchObject({ proposal: { status: "pending_review" } });
+
+      await expect((await request("acct_other", firstOutcome!, "other-1")).result)
+        .resolves.toMatchObject({ proposal: { status: "approved" } });
+
+      for (const [tenant, count] of [["acct_other", 2], ["acct_third", 3], ["acct_fourth", 1]] as const) {
+        for (let index = 0; index < count; index += 1) {
+          const outcome = index % 2 === 0 ? secondOutcome! : firstOutcome!;
+          await expect((await request(tenant, outcome, `${tenant}-${index + 2}`)).result)
+            .resolves.toMatchObject({ proposal: { status: "approved" } });
+        }
+      }
+      await expect((await request("acct_fourth", secondOutcome!, "fourth-2")).result)
+        .resolves.toMatchObject({ proposal: { status: "pending_review" } });
+
+      await expect((await request("acct_fifth", firstOutcome!, "ineligible-fifth-1")).result)
+        .rejects.toMatchObject({ code: "SEMANTIC_ACTION_NOT_ELIGIBLE" });
+      const proposals = await store.listProposals();
+      expect(proposals.filter((proposal) => proposal.state === "approved")).toHaveLength(10);
+      expect(proposals.filter((proposal) => proposal.state === "pending_review")).toHaveLength(2);
+    } finally {
+      store.close();
+    }
+  });
+
   it("uses the configured production key and deployment namespace", async () => {
     const store = new ProposalStore();
     const authority = authorityFixture("active");
@@ -514,7 +635,7 @@ describe("composed semantic Action runtime", () => {
 
 function authorityFixture(
   requiredStatus: "active" | "paused",
-  options: { singleOrganization?: string; automaticApproval?: boolean; requiredApprovals?: number } = {},
+  options: { singleOrganization?: string; automaticApproval?: boolean; requiredApprovals?: number; sharedApprovalLimits?: boolean } = {},
 ): LoadedActiveActionRuleAuthorityV1 {
   const stringId = { kind: "string", max_length: 64, comparison: "exact" } as const;
   const statusType: ActionRuleScalarTypeSpecV1 = {
@@ -594,7 +715,9 @@ function authorityFixture(
     max_rows: 1,
     allowed_fields: [{ name: "status", type: statusType, values: ["paused"] }],
     version_advance: { column: "version", strategy: "integer_increment" },
-    approval_classes: ["billing.standard_change"],
+    approval_classes: options.sharedApprovalLimits
+      ? ["billing.stock_change", "billing.notification_change"]
+      : ["billing.standard_change"],
     writeback: { mode: "direct_sql", supervised_worker: "allowed" },
   };
   const rule: ActionRuleSpecV1 = {
@@ -619,47 +742,70 @@ function authorityFixture(
       target_binding: "preference",
       set: { status: { kind: "literal", value: "paused", value_type: statusType } },
     },
-    approval_class: "billing.standard_change",
+    approval_class: options.sharedApprovalLimits ? "billing.stock_change" : "billing.standard_change",
     ttl_seconds: 300,
   };
+  const rules = options.sharedApprovalLimits
+    ? [rule, {
+      ...structuredClone(rule),
+      name: "billing.pause_digest_notifications",
+      outcome: "billing.pause_digest_notifications",
+      approval_class: "billing.notification_change",
+    }]
+    : [rule];
+  const sharedLimits = (prefix: string) => options.sharedApprovalLimits
+    ? [{ id: `${prefix}_boundary_24h`, kind: "count" as const, scope: "boundary" as const, maximum: 10, window_seconds: 86_400 }, {
+      id: `${prefix}_tenant_24h`, kind: "count" as const, scope: "tenant" as const, maximum: 3, window_seconds: 86_400,
+    }]
+    : [{
+      id: "billing_pause_action_24h",
+      kind: "count" as const,
+      scope: "capability" as const,
+      maximum: 10,
+      window_seconds: 86_400,
+      capability: rule.outcome,
+    }, {
+      id: "billing_pause_customer_24h",
+      kind: "count" as const,
+      scope: "tenant_principal" as const,
+      maximum: 3,
+      window_seconds: 86_400,
+      capability: rule.outcome,
+    }];
+  const approvalClasses = options.sharedApprovalLimits
+    ? rules.map((entry) => ({
+      name: entry.approval_class,
+      mode: "policy" as const,
+      rules: [{ outcome: entry.outcome, auto_approve_when: structuredClone(entry.require) }],
+      required_role: "billing_reviewer",
+      required_approvals: options.requiredApprovals ?? 1,
+      shared_limits: sharedLimits(`billing_${entry.approval_class === "billing.stock_change" ? "stock" : "notification"}`),
+    }))
+    : [{
+      name: "billing.standard_change",
+      mode: "policy" as const,
+      rules: rules.map((entry) => ({ outcome: entry.outcome, auto_approve_when: structuredClone(entry.require) })),
+      required_role: "billing_reviewer",
+      required_approvals: options.requiredApprovals ?? 1,
+      shared_limits: sharedLimits("billing_pause"),
+    }];
   const loaded = createActionRuleAuthority({
     name: "billing_active_rules",
     action_boundary_name: "billing.actions",
     catalog,
     ...(options.automaticApproval
       ? {
-          approval_classes: [{
-            name: "billing.standard_change",
-            mode: "policy" as const,
-            rules: [{ outcome: rule.outcome, auto_approve_when: structuredClone(rule.require) }],
-            required_role: "billing_reviewer",
-            required_approvals: options.requiredApprovals ?? 1,
-            shared_limits: [{
-              id: "billing_pause_action_24h",
-              kind: "count" as const,
-              scope: "capability" as const,
-              maximum: 10,
-              window_seconds: 86_400,
-              capability: rule.outcome,
-            }, {
-              id: "billing_pause_customer_24h",
-              kind: "count" as const,
-              scope: "tenant_principal" as const,
-              maximum: 3,
-              window_seconds: 86_400,
-              capability: rule.outcome,
-            }],
-          }],
+          approval_classes: approvalClasses,
         }
       : {}),
-    rules: [{
+    rules: rules.map((entry) => ({
       read_boundary_name: "reviewed_billing",
       read_boundary_digest: readBoundary,
       verification_boundary: verification,
       effect_envelope: envelope,
-      rule,
+      rule: entry,
       activated_at: "2026-09-03T06:00:00.000Z",
-    }],
+    })),
   });
   return {
     ...loaded,

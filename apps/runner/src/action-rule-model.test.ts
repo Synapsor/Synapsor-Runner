@@ -67,6 +67,74 @@ describe("conversational Action authoring tools", () => {
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
 
+  it("repairs per-action counters using the original multi-action job without repeating the business question", async () => {
+    const original = "Across both actions allow at most 10 automatic approvals overall and at most 3 per account in a rolling 24-hour period.";
+    const policy = { ...payloadFor("runner.submit_approval_policy_draft"), mode: "policy", auto_approve_when: eligiblePredicate(),
+      shared_limits: [{ id: "joint_overall", kind: "count", scope: "boundary", maximum: 10, window_seconds: 86400 },
+        { id: "joint_account", kind: "count", scope: "tenant", maximum: 3, window_seconds: 86400 }] };
+    const wrong = { ...policy, shared_limits: policy.shared_limits.map((limit) => ({ ...limit, capability: "billing.pause_account" })) };
+    const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft", wrong), call("runner.validate_action_draft", {}),
+      call("runner.submit_approval_policy_draft", policy), call("runner.validate_action_draft", {}), say("Both actions use one shared allowance.")];
+    const requests: string[] = [];
+    const askClarification = vi.fn(async () => undefined);
+    const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), operatorJob: original, askClarification });
+    expect(requests.join("\n")).toContain(original);
+    expect(requests.join("\n")).toContain("JOINT automatic approval limits");
+    expect(result.compiled.approval_class.shared_limits).toEqual(policy.shared_limits);
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(steps).toEqual([]);
+  });
+
+  it("repairs an incomplete tool submission internally instead of asking the operator to submit draft components", async () => {
+    const missing = "The draft is missing the `effect`, `rule`, and `approval` components. Please submit these through the corresponding tools to complete the action rule.";
+    const steps = [say(missing), call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("The disabled draft is ready for review.")];
+    const requests: string[] = [];
+    const askClarification = vi.fn(async () => { throw new Error("Mechanical work reached the operator"); });
+    const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), askClarification });
+    expect(requests.join("\n")).toContain("Runner validation feedback");
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(result.state).toBe("ready");
+    expect(result.correction_used).toBe(true);
+    expect(result.clarification_count).toBe(0);
+    expect(steps).toEqual([]);
+  });
+
+  it("bounds repeated incomplete tool submissions without a human clarification loop", async () => {
+    const requestJson = vi.fn(async () => say("The draft components still needed are effect, rule, and approval. Submit the corresponding tools."));
+    const askClarification = vi.fn(async () => { throw new Error("Mechanical work reached the operator"); });
+    await expect(converseActionRuleDraft({ ...requestInput(requestJson), askClarification }))
+      .rejects.toThrow("ACTION_RULE_MODEL_DRAFT_INCOMPLETE");
+    expect(requestJson).toHaveBeenCalledTimes(3);
+    expect(askClarification).not.toHaveBeenCalled();
+  });
+
+  it("keeps a joint-limit repair from changing the reviewer or other saved components", async () => {
+    const baseline = policyModelDraft();
+    const limits = [{ id: "joint_overall", kind: "count", scope: "boundary", maximum: 10, window_seconds: 86400 },
+      { id: "joint_account", kind: "count", scope: "tenant", maximum: 3, window_seconds: 86400 }];
+    const approval = { status: "draft", ...baseline.approval, shared_limits: limits };
+    const steps = [call("runner.submit_approval_policy_draft", { ...approval, required_role: "another_reviewer", changed_fields: ["shared_limits", "required_role"] }),
+      call("runner.validate_action_draft", {}), call("runner.submit_approval_policy_draft", { ...approval, changed_fields: ["shared_limits", "required_role"] }),
+      call("runner.validate_action_draft", {}), say("The joint limits are repaired; the remaining policy is unchanged.")];
+    const requests: string[] = [];
+    const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), existingDraft: baseline, approvalLimitsOnly: true, intent: "Repair only the shared approval counters.",
+    operatorJob: "Across both actions allow at most 10 automatic approvals overall and 3 per account in a rolling 24-hour period." });
+    expect(requests.join("\n")).toContain("may change only approval.shared_limits");
+    expect(result.compiled.draft).toMatchObject({ effect: baseline.effect, require: baseline.require, verification: baseline.verification,
+      approval: { ...baseline.approval, shared_limits: limits } });
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(steps).toEqual([]);
+  });
+
   it.each([false, true])("streams business questions but defers a compiled recap only when policy review owns the turn (%s)", async (deferCompletionMessage) => {
     const question = "Who should review valid requests?";
     const recap = "The disabled pause draft is prepared for review.";
@@ -2125,7 +2193,12 @@ describe("model-guided Action Rule authoring", () => {
     expect(result.correction_used).toBe(true);
   });
 
-  it("keeps reviewer roles and approval sources in Runner's control plane", async () => {
+  it.each([
+    "What validated Verification binding and exact field represent the required billing reviewer?",
+    "What is the fixed reviewer-role label for a warehouse manager (for example, warehouse_manager)?",
+    "What fixed reviewed reviewer-role label should represent a human warehouse manager?",
+    "Runner requires a fixed control-store reviewer-role label; please provide the established label.",
+  ])("keeps reviewer role mechanics in Runner's control plane: %s", async (question) => {
     const calls: string[] = [];
     const requestBodies: string[] = [];
     let approvalCalls = 0;
@@ -2133,7 +2206,7 @@ describe("model-guided Action Rule authoring", () => {
       if (name.endsWith("submit_approval_policy_draft") && approvalCalls++ === 0) {
         return {
           status: "clarification",
-          question: "What validated Verification binding and exact field represent the required billing reviewer?",
+          question,
         };
       }
       return undefined;
