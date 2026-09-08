@@ -1,0 +1,529 @@
+{
+  "context": {
+    "ok": true,
+    "outcome": {
+      "type": "success"
+    },
+    "boundary_digest": "sha256:5287efe2e2ce4ba9e1d12cb6e686a1c91c9cc852104ffdb8d7cba3073c42a349",
+    "pack": "reviewed_staging",
+    "reporting_timezone": {
+      "name": "UTC",
+      "authority_bound": true
+    },
+    "relative_time_windows": {
+      "available": true,
+      "reporting_timezone": "UTC",
+      "windows": [
+        "today",
+        "yesterday",
+        "last_7_days",
+        "last_30_days",
+        "last_90_days",
+        "this_week",
+        "previous_week",
+        "this_month",
+        "previous_month",
+        "this_quarter",
+        "previous_quarter",
+        "this_year",
+        "day_to_date",
+        "week_to_date",
+        "month_to_date",
+        "quarter_to_date",
+        "year_to_date"
+      ],
+      "comparison_partners": [
+        "preceding_period",
+        "same_period_last_year"
+      ],
+      "range_semantics": "half-open [start, end)",
+      "week_starts_on": "Monday",
+      "model_supplied_date_arithmetic": false
+    },
+    "vocabulary_policy": {
+      "reviewed_metadata_is_semantic_only": true,
+      "exact_ids_required_in_plans": true,
+      "opaque_identifier_behavior": "do_not_guess; ask the operator to add a reviewed label or description",
+      "coded_value_behavior": "do_not_infer_business_meaning_from_codes; use exact codes only when the question names them or reviewed metadata explains them"
+    },
+    "raw_sql_available": false,
+    "source_rows_available_before_activation": false,
+    "boundary_name": "reviewed_staging",
+    "active_boundary_set_digest": "sha256:f8a63a8dfaf0b19a9fabea619d408249b88dd1dc75b5f186a7630b8a4ad41536"
+  },
+  "resource": {
+    "id": "telecom.invoices",
+    "vocabulary": {
+      "status": "ready",
+      "model_facing_fields": 10,
+      "fields_with_labels": 0,
+      "fields_with_descriptions": 0,
+      "fields_with_reviewed_vocabulary": 0,
+      "opaque_resource_without_vocabulary": false,
+      "opaque_fields_without_vocabulary": [],
+      "coded_fields_without_vocabulary": []
+    },
+    "primary_key": "invoice_id",
+    "fields": [
+      {
+        "id": "invoice_id",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": false,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "invoice_number",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "period_start",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "period_end",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "due_date",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "subtotal_cents",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "taxes_cents",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "adjustments_cents",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "total_cents",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "balance_cents",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "status",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      }
+    ],
+    "field_egress": {
+      "invoice_id": {
+        "model_egress": "visible"
+      },
+      "invoice_number": {
+        "model_egress": "visible"
+      },
+      "period_start": {
+        "model_egress": "visible"
+      },
+      "period_end": {
+        "model_egress": "visible"
+      },
+      "due_date": {
+        "model_egress": "visible"
+      },
+      "subtotal_cents": {
+        "model_egress": "visible"
+      },
+      "taxes_cents": {
+        "model_egress": "visible"
+      },
+      "adjustments_cents": {
+        "model_egress": "visible"
+      },
+      "total_cents": {
+        "model_egress": "visible"
+      },
+      "balance_cents": {
+        "model_egress": "visible"
+      },
+      "status": {
+        "model_egress": "visible"
+      }
+    },
+    "selectable_fields": [
+      "invoice_number",
+      "period_start",
+      "period_end",
+      "due_date",
+      "subtotal_cents",
+      "taxes_cents",
+      "adjustments_cents",
+      "total_cents",
+      "balance_cents",
+      "status"
+    ],
+    "filterable_fields": [],
+    "filter_operators": {},
+    "sortable_fields": [],
+    "groupable_fields": [],
+    "aggregate_measures": [],
+    "aggregate_measure_functions": {},
+    "presence_measure_fields": [],
+    "presence_measure_functions": [],
+    "derived_measures": [],
+    "numeric_bands": [],
+    "auto_bands": [],
+    "count_distinct_fields": [],
+    "time_bucket_fields": {},
+    "relative_time_window_fields": [],
+    "time_coverage": {},
+    "field_types": {
+      "invoice_id": "uuid",
+      "invoice_number": "text",
+      "period_start": "date",
+      "period_end": "date",
+      "due_date": "date",
+      "subtotal_cents": "integer",
+      "taxes_cents": "integer",
+      "adjustments_cents": "integer",
+      "total_cents": "integer",
+      "balance_cents": "integer",
+      "status": "USER-DEFINED"
+    },
+    "field_enums": {},
+    "kept_out_field_count": 1,
+    "relationships": [
+      {
+        "id": "invoices_account_id_fkey",
+        "activation": "review_required",
+        "operator_review_required": true,
+        "target_resource": "telecom.accounts",
+        "vocabulary": {
+          "status": "ready",
+          "model_facing_fields": 6,
+          "fields_with_labels": 0,
+          "fields_with_descriptions": 0,
+          "fields_with_reviewed_vocabulary": 0,
+          "opaque_resource_without_vocabulary": false,
+          "opaque_fields_without_vocabulary": [],
+          "coded_fields_without_vocabulary": []
+        },
+        "cardinality": "many_to_one",
+        "counted_entity": "invoice_id",
+        "path_depth": 1,
+        "path": {
+          "resources": [
+            "telecom.invoices",
+            "telecom.accounts"
+          ],
+          "via_columns": [
+            [
+              "account_id"
+            ]
+          ]
+        },
+        "nullable": false,
+        "unmatched_rows": "exclude",
+        "structural_evidence": [
+          {
+            "constraint_name": "invoices_account_id_fkey",
+            "source_resource": "telecom.invoices",
+            "target_resource": "telecom.accounts",
+            "source_columns": [
+              "account_id"
+            ],
+            "target_columns": [
+              "account_id"
+            ],
+            "target_uniqueness": {
+              "kind": "primary_key",
+              "name": "telecom.accounts.primary_key",
+              "columns": [
+                "account_id"
+              ]
+            },
+            "nullable": false,
+            "cardinality": "many_to_one"
+          }
+        ],
+        "field_egress": {
+          "account_name": {
+            "model_egress": "visible"
+          },
+          "account_kind": {
+            "model_egress": "visible"
+          },
+          "status": {
+            "model_egress": "visible"
+          },
+          "billing_cycle_day": {
+            "model_egress": "visible"
+          },
+          "country_code": {
+            "model_egress": "visible"
+          },
+          "currency_code": {
+            "model_egress": "visible"
+          }
+        },
+        "fields": [
+          {
+            "id": "account_name",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          },
+          {
+            "id": "account_kind",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          },
+          {
+            "id": "status",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          },
+          {
+            "id": "billing_cycle_day",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          },
+          {
+            "id": "country_code",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          },
+          {
+            "id": "currency_code",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          }
+        ],
+        "filterable_fields": [],
+        "filter_operators": {},
+        "groupable_fields": [],
+        "aggregate_measures": [],
+        "aggregate_measure_functions": {},
+        "presence_measure_fields": [],
+        "presence_measure_functions": [],
+        "derived_measures": [],
+        "count_distinct_fields": [],
+        "time_bucket_fields": {},
+        "relative_time_window_fields": [],
+        "field_types": {
+          "account_name": "text",
+          "account_kind": "USER-DEFINED",
+          "status": "USER-DEFINED",
+          "billing_cycle_day": "smallint",
+          "country_code": "character",
+          "currency_code": "character"
+        },
+        "field_enums": {}
+      }
+    ],
+    "minimum_cohort_size": 5,
+    "maximum_rows": 50,
+    "maximum_groups": 25,
+    "suggested_questions": [
+      {
+        "text": "How many reviewed invoices records are available?",
+        "measure": {
+          "function": "count"
+        }
+      }
+    ],
+    "boundary_name": "reviewed_staging"
+  }
+}

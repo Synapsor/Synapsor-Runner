@@ -67,6 +67,45 @@ describe("conversational Action authoring tools", () => {
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
 
+  it("authors public discovery vocabulary through the same bounded rule tool", async () => {
+    const discovery = { title: "Pause billing", summary: "Request a temporary billing pause with human review.",
+      aliases: ["pause my account", "temporary billing pause"] };
+    const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+      call("runner.submit_action_rule_draft", { ...payloadFor("runner.submit_action_rule_draft"), discovery }),
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("The disabled billing pause is ready for review.")];
+    const requests: string[] = [];
+    const result = await converseActionRuleDraft(requestInput(async (request) => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }));
+    expect(result.compiled.draft.discovery).toEqual(discovery);
+    expect(result.compiled.rule["x-runner-discovery"]).toEqual(discovery);
+    expect(requests[0]).toContain("Public client catalog wording");
+    expect(requests[0]).toContain("ordinary business phrases");
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(steps).toEqual([]);
+  });
+
+  it.each([false, true])("changes discovery only with a declared revision scope (%s)", async (editDiscovery) => {
+    const baseline = policyModelDraft();
+    baseline.discovery = { title: "Pause billing", summary: "A temporary billing pause.", aliases: ["pause billing"] };
+    const changed = { ...baseline.discovery, aliases: ["pause my account"] };
+    const steps = [call("runner.submit_action_rule_draft", { ...payloadFor("runner.submit_action_rule_draft"),
+      discovery: changed, review: { ...baseline.review, then: "Set the account status to paused." },
+      changed_fields: editDiscovery ? ["discovery"] : ["review.then"] }),
+      call("runner.validate_action_draft", {}), say("The same disabled rule remains ready for review.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async () => steps.shift()!), existingDraft: baseline,
+      intent: editDiscovery ? "Let clients find this by pause my account. Keep all rules unchanged." : "Update only the effect description to say Set the account status to paused. Keep client wording and all rules unchanged." });
+    expect(result.compiled.draft.discovery).toEqual(editDiscovery ? changed : baseline.discovery);
+    expect(result.compiled.draft.require).toEqual(baseline.require);
+    expect(result.compiled.draft.approval).toEqual(baseline.approval);
+    expect(result.compiled.draft.effect).toEqual(baseline.effect);
+    expect(result.compiled.draft.outcome).toBe(baseline.outcome);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(steps).toEqual([]);
+  });
+
   it("repairs per-action counters using the original multi-action job without repeating the business question", async () => {
     const original = "Across both actions allow at most 10 automatic approvals overall and at most 3 per account in a rolling 24-hour period.";
     const policy = { ...payloadFor("runner.submit_approval_policy_draft"), mode: "policy", auto_approve_when: eligiblePredicate(),

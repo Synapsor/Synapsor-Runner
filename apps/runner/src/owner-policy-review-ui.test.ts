@@ -20,13 +20,13 @@ function reviewSummary() {
             { kind: "is_present", fact: "customer.account_id" },
           ],
         },
-        approval: "human",
+        approval: "inherit",
         auto_approve_when: { kind: "one_of", fact: "customer.tier", values: ["gold", "platinum"] },
       },
       {
         outcome: "invoice.send_reminder",
         require: { kind: "not", condition: { kind: "compare", fact: "invoice.status", operator: "eq", value: "paid" } },
-        approval: "inherit",
+        approval: "human",
       },
     ],
     hard_budget_limits: [
@@ -224,11 +224,10 @@ describe("owner policy review UI", () => {
     const rendered = renderOwnerRuleReview(reviewSummary()).join("\n");
 
     expect(rendered).toContain("Required: (refund.amount_cents <= 5000 AND customer.account_id is present)");
-    expect(rendered).toContain("Additional automatic-approval condition: customer.tier is one of \"gold\", \"platinum\"");
+    expect(rendered).toContain("To defer to the Action approval policy: customer.tier is one of \"gold\", \"platinum\"; otherwise human review required");
     expect(rendered).toContain("Previously required: refund.amount_cents <= 1000");
     expect(rendered).toContain("Approval: human review required");
-    expect(rendered).toContain("Previous approval: parent rules");
-    expect(rendered).toContain("Previous automatic-approval condition: customer.tier is one of \"platinum\"");
+    expect(rendered).toContain("Previous conditional deferral: customer.tier is one of \"platinum\"; otherwise human review required");
     expect(rendered).toContain("invoice.send_reminder (new)");
     expect(rendered).toContain("Removed permission: export.customer_list");
     expect(rendered).toContain("Applies to: billing-agent, support-agent");

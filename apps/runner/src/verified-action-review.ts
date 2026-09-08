@@ -13,9 +13,12 @@ import type {
 } from "./boundary-cli-picker.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
+import { actionRuleDiscoveryMetadata } from "@synapsor-runner/action-rules";
 import { redactCliErrorMessage } from "./cli-logging.js";
-import { clearPausedExecutionSetup, executionSetupProblem, savePausedExecutionSetup, type ExecutionSetupProblem } from "./semantic-execution-setup.js";
+import { clearPausedExecutionSetup, executionSetupProblem, savePausedExecutionSetup, SemanticWriterPostureError, type ExecutionSetupProblem } from "./semantic-execution-setup.js";
+import { exportWriterProvisioning, type WriterProvisioningPlan } from "./writer-provisioning.js";
 import {
+  verifySemanticExecutionReadPosture,
   activateSemanticActionRuntime,
   disableSemanticSupervisedExecution,
   enableSemanticSupervisedExecution,
@@ -375,36 +378,53 @@ export async function reviewSemanticSupervisedExecution(input: {
     if (result?.tone !== "danger" || !input.session.chooseOption) return result;
     const problem = result.problem ?? executionSetupProblem(new Error(result.lines.join("\n")));
     const publication = problem.publication_state !== undefined;
-    const detailsTitle = publication ? "Execution save recovery" : "Writer requirements";
+    const revalidation = problem.code === "SEMANTIC_ACTION_READ_REVIEW_REQUIRED";
+    const detailsTitle = publication ? "Execution save recovery" : revalidation ? "Saved job revalidation" : "Writer requirements";
     input.session.rememberDetails?.(detailsTitle, problem.details);
-    const recovery = await input.session.chooseOption(publication ? "Execution save needs recovery" : "Execution needs a deployment fix", [
-      { value: "retry", label: publication ? "Recover the saved attempt and reopen review" : "Recheck the writer and continue setup",
-        detail: publication ? "Check the exact saved receipt without replaying activation or executing a request." : "Correct the grants externally, or choose another configured credential. This does not execute a request." },
-      { value: "details", label: publication ? "Inspect the saved recovery details" : "Inspect the exact writer requirements" },
-      { value: "pause", label: "Save and pause execution setup", detail: publication ? "Preserve the recovery record. Pausing does not disable existing execution." : "Read and proposal authority stay active; automatic completion stays off." },
-    ], { initialValue: "pause", context: [problem.summary, `Diagnostic: ${problem.code}.`] });
-    if (recovery === "retry") continue;
-    if (recovery === "details") {
+    let recovery: string | undefined;
+    for (;;) {
+      recovery = await input.session.chooseOption(publication ? "Execution save needs recovery" : "Execution needs a deployment fix", [
+        ...(result.provisioning ? [{ value: "export", label: "Prepare a dedicated writer handoff",
+          detail: "Export exact grants and inspected policy/trigger evidence for an administrator. No database permissions change." }] : []),
+        { value: "retry", label: publication ? "Recover the saved attempt and reopen review" : revalidation ? "Recheck after saved-job revalidation" : "Recheck the writer and continue setup",
+          detail: publication ? "Check the exact saved receipt without replaying activation or executing a request." : "After repair, verify the new configured connection. No request executes." },
+        { value: "details", label: publication ? "Inspect the saved recovery details" : revalidation ? "Show how to revalidate this saved job" : "Inspect the exact writer requirements" },
+        { value: "pause", label: "Save and pause execution setup", detail: publication ? "Preserve the recovery record. Pausing does not disable existing execution."
+          : revalidation ? "Keep the rules and authority records; resume the same job to review the changed database contract."
+            : "Preserve the existing activation records. This check enables no execution and runs no request." },
+      ], { initialValue: result.provisioning ? "export" : "pause", displayContext: true, context: [problem.summary, `Diagnostic: ${problem.code}.`] });
+      if (recovery === "export" && result.provisioning) {
+        try {
+          const directory = await exportWriterProvisioning(input.projectRoot, result.provisioning);
+          const lines = [`Administrator handoff: ${directory}`, "Review README.md, requirements.json and grants.sql with your database administrator.",
+            "The new role starts NOLOGIN. Scoped policies and helper access still need review; do not reuse or revoke the shared writer.",
+            "If RLS changes, resume the same start command with --rescan and revalidate the saved Read/Action job. This export changes no authority or database."];
+          problem.details.push("", ...lines);
+          input.session.rememberDetails?.(detailsTitle, problem.details);
+          await input.session.showReviewDetails?.("Dedicated writer handoff saved", lines);
+        } catch (error) {
+          await input.session.showReviewDetails?.("Writer handoff was not exported", [redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+            "The pending review and database are unchanged. Exact requirements remain available."]);
+        }
+        continue;
+      }
+      if (recovery !== "details") break;
       await input.session.showReviewDetails?.(detailsTitle, problem.details);
-      // Inspection does not repeat the provider/role request or discard the pending failure.
-      const next = await input.session.chooseOption("Continue execution setup", [
-        { value: "retry", label: publication ? "Recover the saved attempt" : "Recheck the writer" },
-        { value: "pause", label: "Save and pause execution setup" },
-      ], { initialValue: "pause" });
-      if (next === "retry") continue;
     }
+    if (recovery === "retry") continue;
     await savePausedExecutionSetup(input.projectRoot, { action_digest: input.active.authority.action_boundary.digest,
       outcome: input.outcome, problem });
     if (publication) return { tone: "warning", title: "Execution review paused.", lines: [problem.summary,
       "Existing execution authority was not disabled. The recovery record is preserved; no source request ran during setup."],
       footer: "Resume execution review with the same start command to recover this exact save." };
-    return { tone: "success", title: "Execution setup paused.",
-      lines: ["Read and reviewed change requests remain available; automatic database updates are off."],
-      footer: "Resume execution setup with the same start command after repairing the write connection. Saved writer requirements remain available." };
+    return { tone: "warning", title: "Execution setup paused.",
+      lines: [problem.summary, "Read and proposal activation records are preserved. Automatic completion for this setup remains unfinished."],
+      footer: revalidation ? "Resume the same start command with --rescan and choose Revalidate the saved job against changed database. Do not reset or re-enter the job."
+        : "Resume execution setup with the same start command after repairing the write connection. Saved writer requirements remain available." };
   }
 }
 
-async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof reviewSemanticSupervisedExecution>[0]): Promise<(BoundaryAccessNotice & { problem?: ExecutionSetupProblem }) | undefined> {
+async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof reviewSemanticSupervisedExecution>[0]): Promise<(BoundaryAccessNotice & { problem?: ExecutionSetupProblem; provisioning?: WriterProvisioningPlan }) | undefined> {
   const env = input.env ?? process.env;
   let writeUrlEnv = "SYNAPSOR_DATABASE_WRITE_URL";
   let configured = Boolean(env[writeUrlEnv]?.trim());
@@ -443,9 +463,12 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
       ...(input.env ? { env: input.env } : {}),
       ...(input.inspectDatabaseFn ? { inspect: input.inspectDatabaseFn } : {}),
     });
+    await verifySemanticExecutionReadPosture({ projectRoot: input.projectRoot, outcome: input.outcome,
+      activeReads: input.activeReads, env: input.env, inspect: input.inspectDatabaseFn });
   } catch (error) {
     const problem = executionSetupProblem(error);
-    return { tone: "danger", title: problem.publication_state ? "Execution save needs recovery." : "Execution was not enabled.", lines: [problem.summary], problem };
+    return { tone: "danger", title: problem.publication_state ? "Execution save needs recovery." : "Execution was not enabled.", lines: [problem.summary], problem,
+      ...(error instanceof SemanticWriterPostureError && error.provisioning ? { provisioning: error.provisioning } : {}) };
   }
   const confirmed = await (input.session.confirmActivation ?? input.session.confirm)(
     `Enable supervised source execution for ${input.outcome}?`,
@@ -594,8 +617,14 @@ function verifiedActionAuthorityDetails(
     const review = byOutcome.get(rule.outcome);
     const source = value.authority.rules.find((candidate) => candidate.rule.outcome === rule.outcome);
     const approval = value.authority.approval_classes.find((candidate) => candidate.name === rule.approval_class);
+    const discovery = source?.rule["x-runner-discovery"] === undefined ? undefined : actionRuleDiscoveryMetadata(source.rule);
     lines.push(
       `OUTCOME  ${rule.outcome}`,
+      ...(discovery ? [
+        `CLIENT   ${discovery.title}`,
+        `SUMMARY  ${discovery.summary}`,
+        `SEARCH   ${discovery.aliases.join(", ") || "No additional search phrases"}`,
+      ] : []),
       `WHEN     ${review?.when ?? "See canonical rule below."}`,
       `THEN     ${review?.then ?? `${rule.operation.toUpperCase()} ${rule.target_resource}`}`,
       `REFUSE   ${review ? joinReviewClauses(review.refused) : "Any failed or unknown eligibility check"}`,

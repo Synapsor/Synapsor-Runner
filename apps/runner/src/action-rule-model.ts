@@ -86,6 +86,7 @@ type RuleSubmission = {
   name: string;
   outcome: string;
   inputs?: ActionRuleModelDraftV1["inputs"];
+  discovery?: ActionRuleModelDraftV1["discovery"];
   require: ActionRuleBooleanExpressionV1;
   derive: Record<string, ActionRuleScalarExpressionV1>;
   ttl_seconds: number;
@@ -99,6 +100,7 @@ type PhaseName = "verification" | "effect" | "rule" | "approval";
 const ACTION_RULE_PHASES = ["verification", "effect", "rule", "approval"] as const;
 type RevisionField =
   | "inputs"
+  | "discovery"
   | "resources"
   | "allowed_fields"
   | "set"
@@ -1370,6 +1372,15 @@ function phaseTool(
       ["name", "outcome", "require", "derive", "ttl_seconds", "review"],
       {
         name: qualifiedNameSchema(), outcome: qualifiedNameSchema(),
+        discovery: {
+          type: "object", additionalProperties: false, required: ["title", "summary", "aliases"],
+          description: "Public client catalog wording, reviewed with this rule. Use only established business meaning; never private facts or identity values. Does not grant eligibility.",
+          properties: {
+            title: { type: "string", minLength: 1, maxLength: 160 },
+            summary: { type: "string", minLength: 1, maxLength: 400 },
+            aliases: { type: "array", maxItems: 16, items: { type: "string", minLength: 1, maxLength: 80 } },
+          },
+        },
         inputs: {
           type: "array", maxItems: 32,
           items: {
@@ -1735,7 +1746,8 @@ function phaseInstruction(phase: PhaseName): string {
     ].join(" ");
     case "rule": return [
       "Draft only the exact deterministic WHEN predicate, named derived values, TTL, and concise review examples. Use ttl_seconds=300 when the operator did not explicitly specify another lifetime. Literal value_type must copy the exact catalog scalar type. Null or missing meaning must be explicit; ask rather than guess.",
-      "Use these top-level draft keys: status, name, outcome, optional inputs, require, derive, ttl_seconds, review. Review must contain when, then, refused, human_review, and at least two examples. Declare bounded caller business inputs here and use kind=input expressions; never turn those inputs into trusted identity or raw row identifiers.",
+      "Use these top-level draft keys: status, name, outcome, optional inputs, optional discovery, require, derive, ttl_seconds, review. Review must contain when, then, refused, human_review, and at least two examples. Declare bounded caller business inputs here and use kind=input expressions; never turn those inputs into trusted identity or raw row identifiers.",
+      "Supply discovery title, summary and a few ordinary business phrases as aliases so a client can find this outcome without knowing database names. Use the operator's established business meaning and reviewed public metadata only; do not invent a broader service, expose private verification facts/identity values, or claim listed requests are eligible or completed. Preserve discovery on unrelated edits. Discovery wording is reviewed in the exact rule revision, not a new MCP tool.",
       "name and outcome are concise dot-qualified identifiers such as support.request_refund; never use prose or proposal_only as an identifier.",
       "Every field and exists binding must exactly match one binding in the already validated Verification draft. Never invent generic aliases such as subject, target, row, or item.",
       "require is only the typed boolean AST. Build comparisons from exact field expressions and typed literals; do not copy placeholder identifiers, put review text or examples inside require, or submit expression strings.",
@@ -1795,10 +1807,12 @@ function parsePhaseSubmission(
   if (phase === "rule") {
     if (!isRecord(value.require) || !isRecord(value.derive) || !isRecord(value.review)) throw new Error("rule predicate, derivation, and review are required.");
     if (value.inputs !== undefined && !Array.isArray(value.inputs)) throw new Error("inputs must be the array of reviewed typed business inputs.");
+    if (value.discovery !== undefined && !isRecord(value.discovery)) throw new Error("discovery must contain a reviewed title, summary and aliases.");
     return { state: "submitted", submission: {
       name: boundedText(value.name, "rule name", 256),
       outcome: boundedText(value.outcome, "outcome", 256),
       ...(value.inputs === undefined ? {} : { inputs: structuredClone(value.inputs) as ActionRuleModelDraftV1["inputs"] }),
+      ...(value.discovery === undefined ? {} : { discovery: structuredClone(value.discovery) as ActionRuleModelDraftV1["discovery"] }),
       require: structuredClone(value.require) as ActionRuleBooleanExpressionV1,
       derive: structuredClone(value.derive) as Record<string, ActionRuleScalarExpressionV1>,
       ttl_seconds: boundedInteger(value.ttl_seconds, 30, 3_600, "rule ttl_seconds"),
@@ -1835,6 +1849,7 @@ function assembleDraft(submissions: Partial<Record<PhaseName, PhaseSubmission>>)
     name: rule.name,
     outcome: rule.outcome,
     ...(rule.inputs ? { inputs: structuredClone(rule.inputs) } : {}),
+    ...(rule.discovery === undefined ? {} : { discovery: structuredClone(rule.discovery) }),
     verification,
     effect,
     require: rule.require,
@@ -1855,6 +1870,7 @@ function phaseSubmissionsFromDraft(
       name: draft.name,
       outcome: draft.outcome,
       ...(draft.inputs ? { inputs: structuredClone(draft.inputs) } : {}),
+      ...(draft.discovery === undefined ? {} : { discovery: structuredClone(draft.discovery) }),
       require: structuredClone(draft.require),
       derive: structuredClone(draft.derive),
       ttl_seconds: draft.ttl_seconds,
@@ -1870,6 +1886,7 @@ function revisionFieldsForPhase(phase: PhaseName): RevisionField[] {
   if (phase === "rule") {
     return [
       "inputs",
+      "discovery",
       "require",
       "derive",
       "ttl_seconds",
@@ -1934,6 +1951,10 @@ function mergeRevisionSubmission(input: {
     if (input.changedFields.includes("inputs")) {
       if (candidate.inputs === undefined) delete current.inputs;
       else current.inputs = structuredClone(candidate.inputs);
+    }
+    if (input.changedFields.includes("discovery")) {
+      if (candidate.discovery === undefined) delete current.discovery;
+      else current.discovery = structuredClone(candidate.discovery);
     }
     if (input.changedFields.includes("require")) current.require = structuredClone(candidate.require);
     if (input.changedFields.includes("derive")) current.derive = structuredClone(candidate.derive);

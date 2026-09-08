@@ -48,6 +48,9 @@ describe("typed owner delegation compiler", () => {
     expect(evaluate(21)).toMatchObject({ result: "refused" });
     f.facts.bindings.request!.rows[0]!.category = "exception";
     expect(evaluate(10)).toEqual({ result: "allowed", approval: "human" });
+    delete f.facts.bindings.request!.rows[0]!.category;
+    expect(evaluate(10)).toMatchObject({ result: "unknown" });
+    f.facts.bindings.request!.rows[0]!.category = "routine";
     f.facts.bindings.request!.rows[0]!.available = false;
     expect(evaluate(10)).toMatchObject({ result: "refused" });
     f.facts.bindings.request!.rows[0]!.available = true;
@@ -96,7 +99,11 @@ describe("typed owner delegation compiler", () => {
     expect(() => compileOwnerPolicy({ parent: f.parent, definition, rules: [f.compiled] })).toThrow();
   });
 
-  it("keeps owner approval narrower than the parent and prevents selecting another reviewer", () => {
+  it("keeps owner approval narrower than the parent, rejects human plus a conditional gate, and does not treat inherit as automatic approval", () => {
+    const inherited = ownerPolicyTestFixture();
+    const inheritedPolicy = compileOwnerPolicy({ ...inherited, rules: [inherited.compiled] });
+    expect(evaluateOwnerPolicy({ ...inherited, policy: inheritedPolicy, acting_agent: "agent-a", inputs: { quantity: 10 }, proposal_id: "proposal-1" }))
+      .toEqual({ result: "allowed", approval: "inherit" });
     const f = ownerPolicyTestFixture(); f.parent.outcomes[0]!.allow_automatic_approval = false;
     expect(() => compileOwnerPolicy({ ...f, rules: [f.compiled] })).toThrow("OWNER_POLICY_HUMAN_APPROVAL_REQUIRED");
     f.definition.rules[0]!.approval = "human";

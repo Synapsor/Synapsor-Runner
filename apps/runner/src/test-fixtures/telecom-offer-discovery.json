@@ -1,0 +1,535 @@
+{
+  "schema_version": "synapsor.private-raw-described-runtime-fixture.v1",
+  "request": {
+    "boundary": "reviewed_staging",
+    "resource": "telecom.plan_change_offers",
+    "include_time_coverage": false
+  },
+  "context": {
+    "ok": true,
+    "outcome": {
+      "type": "success"
+    },
+    "boundary_digest": "sha256:c047e6c9af6803ce266aec4e4363845dea98e565d21b513c60dba4ca72bff190",
+    "pack": "reviewed_staging",
+    "reporting_timezone": {
+      "name": "UTC",
+      "authority_bound": true
+    },
+    "relative_time_windows": {
+      "available": true,
+      "reporting_timezone": "UTC",
+      "windows": [
+        "today",
+        "yesterday",
+        "last_7_days",
+        "last_30_days",
+        "last_90_days",
+        "this_week",
+        "previous_week",
+        "this_month",
+        "previous_month",
+        "this_quarter",
+        "previous_quarter",
+        "this_year",
+        "day_to_date",
+        "week_to_date",
+        "month_to_date",
+        "quarter_to_date",
+        "year_to_date"
+      ],
+      "comparison_partners": [
+        "preceding_period",
+        "same_period_last_year"
+      ],
+      "range_semantics": "half-open [start, end)",
+      "week_starts_on": "Monday",
+      "model_supplied_date_arithmetic": false
+    },
+    "vocabulary_policy": {
+      "reviewed_metadata_is_semantic_only": true,
+      "exact_ids_required_in_plans": true,
+      "opaque_identifier_behavior": "do_not_guess; ask the operator to add a reviewed label or description",
+      "coded_value_behavior": "do_not_infer_business_meaning_from_codes; use exact codes only when the question names them or reviewed metadata explains them"
+    },
+    "raw_sql_available": false,
+    "source_rows_available_before_activation": false,
+    "boundary_name": "reviewed_staging",
+    "active_boundary_set_digest": "sha256:5e6733269d6e1c926a3dfb8be0a2e83552e943a09a2f8e14c8309ade7bf2f09d"
+  },
+  "resource": {
+    "id": "telecom.plan_change_offers",
+    "vocabulary": {
+      "status": "ready",
+      "model_facing_fields": 10,
+      "fields_with_labels": 0,
+      "fields_with_descriptions": 0,
+      "fields_with_reviewed_vocabulary": 0,
+      "opaque_resource_without_vocabulary": false,
+      "opaque_fields_without_vocabulary": [],
+      "coded_fields_without_vocabulary": []
+    },
+    "primary_key": "plan_offer_id",
+    "fields": [
+      {
+        "id": "plan_offer_id",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": false,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "target_plan_display_name",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "target_base_monthly_cents",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "target_included_lines",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "target_data_policy",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "target_international_day_pass",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "target_effective_from",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "status",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "customer_explanation",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "valid_from",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      },
+      {
+        "id": "expires_at",
+        "plan_reference": "exact_id_only",
+        "semantic_status": "descriptive_identifier",
+        "operations": {
+          "return_value": true,
+          "model_egress": "visible",
+          "filter_operators": [],
+          "sortable": false,
+          "groupable": false,
+          "aggregate_functions": [],
+          "presence_functions": [],
+          "count_distinct": false,
+          "time_buckets": []
+        }
+      }
+    ],
+    "field_egress": {
+      "plan_offer_id": {
+        "model_egress": "visible"
+      },
+      "target_plan_display_name": {
+        "model_egress": "visible"
+      },
+      "target_base_monthly_cents": {
+        "model_egress": "visible"
+      },
+      "target_included_lines": {
+        "model_egress": "visible"
+      },
+      "target_data_policy": {
+        "model_egress": "visible"
+      },
+      "target_international_day_pass": {
+        "model_egress": "visible"
+      },
+      "target_effective_from": {
+        "model_egress": "visible"
+      },
+      "status": {
+        "model_egress": "visible"
+      },
+      "customer_explanation": {
+        "model_egress": "visible"
+      },
+      "valid_from": {
+        "model_egress": "visible"
+      },
+      "expires_at": {
+        "model_egress": "visible"
+      }
+    },
+    "selectable_fields": [
+      "target_plan_display_name",
+      "target_base_monthly_cents",
+      "target_included_lines",
+      "target_data_policy",
+      "target_international_day_pass",
+      "target_effective_from",
+      "status",
+      "customer_explanation",
+      "valid_from",
+      "expires_at"
+    ],
+    "filterable_fields": [],
+    "filter_operators": {},
+    "sortable_fields": [],
+    "groupable_fields": [],
+    "aggregate_measures": [],
+    "aggregate_measure_functions": {},
+    "presence_measure_fields": [],
+    "presence_measure_functions": [],
+    "derived_measures": [],
+    "numeric_bands": [],
+    "auto_bands": [],
+    "count_distinct_fields": [],
+    "time_bucket_fields": {},
+    "relative_time_window_fields": [],
+    "time_coverage": {},
+    "field_types": {
+      "plan_offer_id": "uuid",
+      "target_plan_display_name": "text",
+      "target_base_monthly_cents": "integer",
+      "target_included_lines": "smallint",
+      "target_data_policy": "text",
+      "target_international_day_pass": "boolean",
+      "target_effective_from": "date",
+      "status": "USER-DEFINED",
+      "customer_explanation": "text",
+      "valid_from": "timestamp with time zone",
+      "expires_at": "timestamp with time zone"
+    },
+    "field_enums": {},
+    "kept_out_field_count": 1,
+    "relationships": [
+      {
+        "id": "plan_change_offers_account_id_fkey",
+        "activation": "review_required",
+        "operator_review_required": true,
+        "target_resource": "telecom.accounts",
+        "vocabulary": {
+          "status": "ready",
+          "model_facing_fields": 6,
+          "fields_with_labels": 0,
+          "fields_with_descriptions": 0,
+          "fields_with_reviewed_vocabulary": 0,
+          "opaque_resource_without_vocabulary": false,
+          "opaque_fields_without_vocabulary": [],
+          "coded_fields_without_vocabulary": []
+        },
+        "cardinality": "many_to_one",
+        "counted_entity": "plan_offer_id",
+        "path_depth": 1,
+        "path": {
+          "resources": [
+            "telecom.plan_change_offers",
+            "telecom.accounts"
+          ],
+          "via_columns": [
+            [
+              "account_id"
+            ]
+          ]
+        },
+        "nullable": false,
+        "unmatched_rows": "exclude",
+        "structural_evidence": [
+          {
+            "constraint_name": "plan_change_offers_account_id_fkey",
+            "source_resource": "telecom.plan_change_offers",
+            "target_resource": "telecom.accounts",
+            "source_columns": [
+              "account_id"
+            ],
+            "target_columns": [
+              "account_id"
+            ],
+            "target_uniqueness": {
+              "kind": "primary_key",
+              "name": "telecom.accounts.primary_key",
+              "columns": [
+                "account_id"
+              ]
+            },
+            "nullable": false,
+            "cardinality": "many_to_one"
+          }
+        ],
+        "field_egress": {
+          "account_name": {
+            "model_egress": "visible"
+          },
+          "account_kind": {
+            "model_egress": "visible"
+          },
+          "status": {
+            "model_egress": "visible"
+          },
+          "billing_cycle_day": {
+            "model_egress": "visible"
+          },
+          "country_code": {
+            "model_egress": "visible"
+          },
+          "currency_code": {
+            "model_egress": "visible"
+          }
+        },
+        "fields": [
+          {
+            "id": "account_name",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          },
+          {
+            "id": "account_kind",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          },
+          {
+            "id": "status",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          },
+          {
+            "id": "billing_cycle_day",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          },
+          {
+            "id": "country_code",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          },
+          {
+            "id": "currency_code",
+            "plan_reference": "exact_id_only",
+            "semantic_status": "descriptive_identifier",
+            "operations": {
+              "return_value": false,
+              "model_egress": "visible",
+              "filter_operators": [],
+              "sortable": false,
+              "groupable": false,
+              "aggregate_functions": [],
+              "presence_functions": [],
+              "count_distinct": false,
+              "time_buckets": []
+            }
+          }
+        ],
+        "filterable_fields": [],
+        "filter_operators": {},
+        "groupable_fields": [],
+        "aggregate_measures": [],
+        "aggregate_measure_functions": {},
+        "presence_measure_fields": [],
+        "presence_measure_functions": [],
+        "derived_measures": [],
+        "count_distinct_fields": [],
+        "time_bucket_fields": {},
+        "relative_time_window_fields": [],
+        "field_types": {
+          "account_name": "text",
+          "account_kind": "USER-DEFINED",
+          "status": "USER-DEFINED",
+          "billing_cycle_day": "smallint",
+          "country_code": "character",
+          "currency_code": "character"
+        },
+        "field_enums": {}
+      }
+    ],
+    "minimum_cohort_size": 5,
+    "maximum_rows": 50,
+    "maximum_groups": 25,
+    "suggested_questions": [
+      {
+        "text": "How many reviewed plan change offers records are available?",
+        "measure": {
+          "function": "count"
+        }
+      }
+    ],
+    "boundary_name": "reviewed_staging"
+  }
+}

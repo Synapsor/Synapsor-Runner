@@ -126,6 +126,22 @@ describe("post-activation Ask handoff", () => {
     expect(writes.join("")).not.toContain("LOCAL STDIO MCP READY");
   });
 
+  it("routes production authority to the authenticated HTTP handoff without installing local stdio", async () => {
+    const output: string[] = [];
+    const runMcpInstall = vi.fn(async () => 0);
+    await expect(runPostActivationAskHandoff({
+      projectRoot: "/tmp/reviewed-production-project",
+      selection: { route: "mcp-client", client: "claude-code" },
+    }, {
+      readRuntimeIdentity: async () => "production_authentication",
+      runMcpInstall,
+      stdout: { write: (value) => { output.push(String(value)); return true; } },
+    })).resolves.toBe(0);
+    expect(runMcpInstall).not.toHaveBeenCalled();
+    expect(output.join("")).toContain("Local stdio MCP was not installed");
+    expect(output.join("")).toContain("Production HTTP MCP");
+  });
+
   it.each(["missing_writer", "decline", "start", "worker_failure", "configuration_failure"])("keeps worker lifecycle explicit after client configuration (%s)", async (mode) => {
     const writes: string[] = [];
     const confirmWorkerStart = vi.fn(async () => mode === "start" || mode === "worker_failure");
@@ -601,16 +617,41 @@ describe("post-activation Ask handoff", () => {
     );
     expect(scopedHandoff).toContain("export SYNAPSOR_TENANT_ID='<tenant>'");
     expect(scopedHandoff).toContain("export SYNAPSOR_PRINCIPAL='<principal>'");
-    expect(scopedHandoff).toContain("Before live customer calls");
+    expect(scopedHandoff).toContain("Local test identity still needed");
     expect(scopedHandoff).toContain("four fixed tools");
     expect(scopedHandoff.split("\n").length).toBeLessThanOrEqual(10);
+    expect(scopedHandoff).not.toContain("Connection diagnostics");
+    expect(formatMcpClientHandoff(
+      "/tmp/reviewed-project",
+      "claude-code",
+      true,
+      [],
+      "production_authentication",
+    )).toContain("Production identity comes from the reviewed authenticated session");
     expect(formatMcpClientHandoff("/tmp/reviewed-project", "claude-code", false)).toContain("change requests remain refused");
     expect(formatHttpMcpHandoff("/tmp/reviewed-project"))
       .toContain("mcp serve --transport streamable-http --production-explore");
     expect(formatHttpMcpHandoff("/tmp/reviewed-project"))
+      .toContain("Read-only endpoint: this transport does not yet serve Action requests or owner settings");
+    expect(formatHttpMcpHandoff("/tmp/reviewed-project"))
       .toContain("mcp client-config --client claude-code --transport streamable-http");
     expect(formatHttpMcpHandoff("/tmp/reviewed-project"))
       .not.toMatch(/Bearer\s+[A-Za-z0-9_-]/u);
+  });
+
+  it("does not ask to replace already configured local identity bindings", () => {
+    const bindings = [{ role: "tenant" as const, environment: "TENANT_CONTEXT" },
+      { role: "principal" as const, environment: "PERSON_CONTEXT" }];
+    const partial = formatMcpClientHandoff("/tmp/test-project", "claude-code", true, bindings,
+      "local_environment", ["TENANT_CONTEXT"]);
+    expect(partial).not.toContain("export TENANT_CONTEXT");
+    expect(partial).toContain("export PERSON_CONTEXT='<principal>'");
+    const ready = formatMcpClientHandoff("/tmp/test-project", "claude-code", true, bindings,
+      "local_environment", ["TENANT_CONTEXT", "PERSON_CONTEXT"]);
+    expect(ready).not.toContain("export ");
+    expect(ready).toContain("values stay private");
+    expect(ready).toContain("not authenticated or proven by the MCP handshake");
+    expect(ready).toContain("Other terminals or already-running clients");
   });
 
   it("requires an explicit local MCP client choice", async () => {

@@ -127,6 +127,71 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
       .rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
   });
 
+  it("derives public fact types and enum values from the compiled rule without disclosing private source mappings", async () => {
+    const f = await fixture();
+    const described = await f.tools.callTool("app.describe_actions", view);
+    expect(described).toMatchObject({ actions: [{ rule_contract: { approval: {
+      allowed_values: ["inherit", "human"],
+      human: expect.stringContaining("human review"),
+      inherit: expect.stringContaining("does not approve"),
+      auto_approve_when: expect.stringContaining("non-match or unknown requires human review"),
+      vocabulary_values: expect.stringContaining("literal_values when present"),
+    } }, conditional_narrowing_example: {
+      outcome: f.compiled.outcome, approval: "inherit",
+      auto_approve_when: { kind: "one_of", fact: "request_category", values: ["routine"] },
+    } }] });
+    const page = await f.tools.callTool("app.explore_data", { ...view, section: "vocabulary", limit: 20 });
+    const category = (page.resources as Array<Record<string, unknown>>).find((entry) => entry.record_kind === "fact" && entry.name === "request_category");
+    expect(category).toMatchObject({ value_type: "string", allowed_values: ["routine", "exception"] });
+    const serialized = JSON.stringify(page.resources);
+    expect(serialized).not.toContain('"source"');
+    expect(serialized).not.toContain('"binding"');
+    expect(serialized).not.toContain('"field"');
+    expect(serialized).not.toContain('"f09"');
+
+    const narrowed = structuredClone(f.content);
+    narrowed.delegation.outcomes[0]!.facts.find((fact) => fact.name === "request_category")!.literal_values = ["routine"];
+    await f.replaceParent(narrowed);
+    const narrowedPage = await f.tools.callTool("app.explore_data", { ...view, section: "vocabulary", limit: 20 });
+    const narrowedCategory = (narrowedPage.resources as Array<Record<string, unknown>>).find((entry) => entry.record_kind === "fact" && entry.name === "request_category");
+    expect(narrowedCategory).toMatchObject({ literal_values: ["routine"], allowed_values: ["routine"] });
+  });
+
+  it("uses a numeric allowlisted value for the conditional example and omits an unusable one", async () => {
+    const f = await fixture();
+    const narrowed = structuredClone(f.content);
+    const facts = narrowed.delegation.outcomes[0]!.facts;
+    facts.find((fact) => fact.name === "request_category")!.operators = ["eq"];
+    facts.find((fact) => fact.name === "requested_units")!.literal_values = [8, 1];
+    await f.replaceParent(narrowed);
+    await expect(f.tools.callTool("app.describe_actions", view)).resolves.toMatchObject({ actions: [{ conditional_narrowing_example: {
+      auto_approve_when: { kind: "compare", fact: "requested_units", operator: "lte", value: 8 },
+    } }] });
+
+    const unusable = structuredClone(narrowed);
+    unusable.delegation.outcomes[0]!.facts.find((fact) => fact.name === "requested_units")!.literal_values = [51];
+    await f.replaceParent(unusable);
+    const described = await f.tools.callTool("app.describe_actions", view) as { actions: Array<Record<string, unknown>> };
+    expect(described.actions[0]).not.toHaveProperty("conditional_narrowing_example");
+  });
+
+  it("fails closed when the saved parent fact cannot be resolved to a supported compiled scalar", async () => {
+    const f = await fixture();
+    const unknownSource = structuredClone(f.content);
+    unknownSource.delegation.outcomes[0]!.facts[0]!.source = { kind: "field", binding: "request", field: "missing" };
+    await f.replaceParent(unknownSource);
+    await expect(f.tools.callTool("app.explore_data", { ...view, section: "vocabulary", limit: 20 }))
+      .rejects.toMatchObject({ code: "POLICY_DELEGATION_PARENT_CHANGED" });
+
+    const unknownType = await fixture();
+    const category = unknownType.compiled.bindings.find((binding) => binding.binding === "request")!.verification;
+    if (category.cardinality !== "one") throw new Error("Expected one-row request binding.");
+    const field = category.fields.find((value) => value.name === "category")!;
+    field.type = { kind: "unknown" } as never;
+    await expect(unknownType.summary()).resolves.toMatchObject({ can_edit: true });
+    await expect(unknownType.tools.callTool("app.describe_actions", view)).rejects.toMatchObject({ code: "POLICY_DELEGATION_PARENT_CHANGED" });
+  });
+
   it("preserves a saved draft when human UI fails and preserves the parent on invalid or expired edits", async () => {
     const f = await fixture(), initial = await f.summary();
     await expect(f.request(initial.control_ref, { ...f.definition, agents: ["unreviewed-agent"] })).rejects.toMatchObject({ code: "OWNER_POLICY_AGENT_NOT_DELEGABLE" });

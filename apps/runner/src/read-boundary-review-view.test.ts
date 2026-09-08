@@ -169,11 +169,12 @@ describe("progressive Read authority review", () => {
     expect(reviewSectionLines(diff).join("\n")).not.toContain("Conflict/version guard remains");
   });
 
-  it.each([52, 80, 100, 160, 240])("keeps logical decision lines for width-aware transcript rendering at %i columns", (width) => {
+  it.each([52, 80, 100, 160, 240])("renders complete concise decision facts at %i columns", (width) => {
     const lines = ["Automatic completion: execution review pending; not enabled.", "Information: account details and offered plans.", "Scope: signed-in customer's account only."];
     const rendered = formatReadActivationDecisionSummary(lines, width);
-    expect(rendered.join(" ").replace(/\s+/gu, " ")).toBe(lines.join(" "));
-    expect(rendered).toEqual(lines);
+    expect(rendered.join(" ").replace(/:/gu, "").replace(/\s+/gu, " ")).toBe(lines.join(" ").replace(/:/gu, ""));
+    expect(rendered.every((line) => line.length <= width)).toBe(true);
+    if (width < 72) expect(rendered).toContain("Automatic completion:");
     expect(rendered.filter((line) => line.startsWith("+"))).toHaveLength(0);
   });
 });

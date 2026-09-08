@@ -133,7 +133,7 @@ export function createSemanticActionRuntime(input: {
           throw new McpRuntimeError("CATALOG_CURSOR_INVALID", "Reviewed authority changed during discovery. Restart discovery with the current authorized catalog.");
         }
         return catalogSession.describe({ index: cachedCatalog.index, binding, request,
-          legacy: Object.keys(args).length === 0, key: "actions", context: actionCatalogContext() });
+          legacy: Object.keys(args).length === 0, key: "actions", context: actionCatalogContext(Boolean(request.detail)) });
       }
       if (name !== REQUEST_CHANGE_TOOL) {
         throw new McpRuntimeError("MCP_TOOL_NOT_FOUND", "The requested Synapsor Action tool is not available.");
@@ -287,7 +287,7 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
     {
       name: DESCRIBE_ACTIONS_TOOL,
       title: "Describe reviewed actions",
-      description: "Search reviewed actions with query/limit/cursor, or use outcome alone for the complete request contract. Search returns bounded summaries; an empty call retains a bounded compatibility page of full contracts. Browse or search a shortlist, inspect the chosen outcome, then request it. Availability is not eligibility. No source rows are read and no authority is granted.",
+      description: "Search reviewed actions with query/limit/cursor, or use outcome alone for the complete request contract. Limit is a maximum; byte-bounded pages may contain fewer entries. Follow next_cursor until null. Search returns bounded summaries; an empty call retains a bounded compatibility page of full contracts. Browse or search a shortlist, inspect the chosen outcome, then request it. Availability is not eligibility. No source rows are read and no authority is granted.",
       kind: "action_catalog",
       input_schema: { query: { type: "string", required: false }, limit: { type: "number", required: false },
         cursor: { type: "string", required: false }, outcome: { type: "string", required: false } },
@@ -326,12 +326,12 @@ function describeAction(registry: RuntimeActionRuleRegistryV1, activated: Activa
   return actionRuleDiscoveryContract(activated.compiled, resolveActivatedApprovalClass(registry, activated.compiled.outcome).mode, availability);
 }
 
-function actionCatalogContext(): Record<string, unknown> {
+function actionCatalogContext(exactDetail = false): Record<string, unknown> {
   return {
-    request_shape: {
+    ...(!exactDetail ? { request_shape: {
       outcome: "<one listed outcome>",
       subject_refs: { "<binding from the selected action's request_shape>": "obj_<opaque reference>" },
-    },
+    } } : {}),
     request_guidance: "Use the selected action's request_shape and reviewed inputs, not another outcome's subjects. Listed availability is not customer eligibility.",
     authority: {
       proposal_only: true,
@@ -339,6 +339,8 @@ function actionCatalogContext(): Record<string, unknown> {
       model_can_supply_trusted_scope: false,
       approval_and_apply_are_separate: true,
     },
+    execution_status: { enablement: "not_reported_by_discovery", worker_liveness: "unknown",
+      guidance: "request_change never writes source data. This does not establish whether a separate execution worker is enabled. Approval is not completion; only a successful execution receipt establishes completion." },
     source_database_changed: false,
   };
 }

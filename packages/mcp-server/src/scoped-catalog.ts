@@ -102,6 +102,8 @@ export class ScopedCatalogSession {
     detailValue?: Record<string, unknown>;
     /** Account for the actual model projection before choosing a page size. */
     measureResponse?: (value: Record<string, unknown>) => number;
+    /** Use the disclosed entry representation, not an unprojected operator record. */
+    measureDetail?: (value: Record<string, unknown>) => number;
   }): Record<string, unknown> {
     const { request, index } = input;
     const measure = input.measureResponse ?? catalogResponseBytes;
@@ -139,7 +141,7 @@ export class ScopedCatalogSession {
       ...input.context, ok: true, catalog_version: "synapsor.scoped-catalog.v2",
       [input.key]: values, next_cursor: null,
       discovery: { mode: request.detail ? "detail" : page.legacy ? "bounded_compatibility" : "summary",
-        eligibility: "not_checked", empty_search: query ? "no_matches_to_this_query" : undefined,
+        eligibility: "not_checked", ...(query && !page.ids.length ? { empty_search: "no_matches_to_this_query" } : {}),
         next_step: "Search or browse a shortlist, request exact details, then use the selected contract. Discovery grants no authority." },
       source_database_changed: false,
     });
@@ -149,15 +151,17 @@ export class ScopedCatalogSession {
       if (!entry) throw catalogError("CATALOG_CURSOR_INVALID", "The catalog changed; restart discovery.");
       const value = structuredClone(request.detail && input.detailValue
         ? input.detailValue : request.detail || page.legacy ? entry.detail() : entry.value);
-      if (Buffer.byteLength(JSON.stringify(value)) > CATALOG_LIMITS.detailBytes) {
-        throw catalogError("CATALOG_CONTRACT_TOO_LARGE", "The complete reviewed contract exceeds the supported disclosure limit. Operator revision is required; no constraints were truncated.");
+      const detailBytes = input.measureDetail?.(value) ?? Buffer.byteLength(JSON.stringify(value));
+      if (detailBytes > CATALOG_LIMITS.detailBytes) {
+        throw catalogContractSizeError("entry", detailBytes, CATALOG_LIMITS.detailBytes);
       }
       values.push(value);
       // Include cursor-dependent presentation before pagination. Never split
       // or truncate an executable contract to fit the transport envelope.
-      if (measure({ ...body(), next_cursor: `cur_${"a".repeat(43)}` }) > CATALOG_LIMITS.responseBytes) {
+      const responseBytes = measure({ ...body(), next_cursor: request.detail ? null : `cur_${"a".repeat(43)}` });
+      if (responseBytes > CATALOG_LIMITS.responseBytes) {
         values.pop();
-        if (!values.length) throw catalogError("CATALOG_CONTRACT_TOO_LARGE", "The complete reviewed entry does not fit the disclosure limit.");
+        if (!values.length) throw catalogContractSizeError("response", responseBytes, CATALOG_LIMITS.responseBytes);
         break;
       }
       offset++;
@@ -169,7 +173,7 @@ export class ScopedCatalogSession {
       result.next_cursor = next;
     }
     const size = measure(result);
-    if (size > CATALOG_LIMITS.responseBytes) throw catalogError("CATALOG_CONTRACT_TOO_LARGE", "The complete reviewed response exceeds the disclosure limit; no constraints were truncated.");
+    if (size > CATALOG_LIMITS.responseBytes) throw catalogContractSizeError("response", size, CATALOG_LIMITS.responseBytes);
     if (this.records + values.length > CATALOG_LIMITS.sessionRecords || this.bytes + size > CATALOG_LIMITS.sessionBytes) throw budgetError();
     this.records += values.length;
     this.bytes += size;
@@ -184,6 +188,14 @@ export class ScopedCatalogSession {
 
   /** Operator/test instrumentation; not a model-visible cross-scope count. */
   lastWork = { visited: 0, returned: 0, bytes: 0 };
+}
+
+export function catalogContractSizeError(kind: "entry" | "response", measured: number, limit: number): McpRuntimeError {
+  return new McpRuntimeError("CATALOG_CONTRACT_TOO_LARGE",
+    `The complete reviewed contract does not fit the ${kind} disclosure limit (${measured} bytes; maximum ${limit}). `
+    + "No constraints were truncated. Repeating the lookup or changing the page size will not help. "
+    + "Ask the operator to open Boundary review, inspect Discovery compatibility, and revise this resource's reviewed metadata or scope; then review and activate the replacement. Do not guess permissions.",
+    { kind, measured_bytes: measured, limit_bytes: limit, retryable: false, recovery: "operator_boundary_review" });
 }
 
 function terms(text: string): string[] { return text.normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []; }

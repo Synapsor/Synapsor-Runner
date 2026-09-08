@@ -62,6 +62,7 @@
     "examples/runner-fleet/**",
     "examples/support-plan-credit/**",
     "examples/support-billing-agent/**",
+    "examples/telecom-writer-repair/**",
     "fixtures/**",
     "schemas/**",
     "recipes/**/*.json",

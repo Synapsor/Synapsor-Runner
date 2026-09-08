@@ -200,6 +200,8 @@ type BoundaryChoicePromptOptions = BoundaryPromptOptions & {
   reviewOnly?: boolean;
   /** The concise deterministic decision is already presented. Narrate only on request. */
   explainOnRequest?: boolean;
+  /** Keep a prerequisite/blocker visible in the choice, not only in /details. */
+  displayContext?: boolean;
   initialValue?: string;
   requireExplicitSelection?: boolean;
 };

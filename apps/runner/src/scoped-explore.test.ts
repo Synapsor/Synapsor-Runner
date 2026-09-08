@@ -19,6 +19,7 @@ import {
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
+  readDiscoveryCompatibility,
   writeAutoBoundaryArtifacts,
   type ActivatedExplorationBoundary,
   type ReviewedMetadataDecision,
@@ -51,6 +52,76 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
+  it.each([true, false])("uses runtime disk relationships rather than a divergent supplied review (disk link=%s)", async (diskLink) => {
+    const fixture = await activatedFixture(undefined, relationshipInspection());
+    const activePath = path.join(fixture.root, ".synapsor/exploration-boundaries.active.json");
+    const before = await fs.readFile(activePath, "utf8");
+    let prepared: ReturnType<typeof buildAutoBoundary> | undefined;
+    let selected: ExplorationBoundaryDraft | undefined;
+    let inspection = relationshipInspection();
+    for (let count = 4; count <= 24; count++) {
+      inspection = relationshipInspection();
+      const target = inspection.tables.find((table) => table.name === "regions")!;
+      const fields: Record<string, ReviewedMetadataDecision> = {};
+      for (let index = 0; index < count; index++) {
+        const field = `service_fee_${index}`;
+        target.columns.push(column(field, "integer"));
+        target.suggestions.default_visible_columns.push(field);
+        fields[field] = { description: "Reviewed regional service amount. ".repeat(7), actor: "owner@example.test",
+          reason: "Review exact fixture metadata.", decided_at: "2026-09-08T00:00:00.000Z" };
+      }
+      prepared = buildAutoBoundary({ inspection, sourceEnv: "DATABASE_URL",
+        project: { root: fixture.root, package_manager: "pnpm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] },
+        overrides: { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: { "public.regions": { field_metadata: fields } } } });
+      selected = structuredClone(prepared.exploration_boundary);
+      selected.pack.resources.forEach((resource) => { resource.relationships = []; });
+      const digest = explorationBoundaryCandidateDigest(selected);
+      if (!readDiscoveryCompatibility(selected, digest, selected).length
+        && readDiscoveryCompatibility(selected, digest, prepared.exploration_boundary).length) break;
+      selected = undefined;
+    }
+    expect(selected).toBeDefined();
+    const candidate = selected!, digest = explorationBoundaryCandidateDigest(candidate);
+    await fs.writeFile(path.join(fixture.root, "synapsor/generated/exploration-boundary.draft.json"),
+      JSON.stringify(diskLink ? prepared!.exploration_boundary : candidate));
+    const activation = activateExplorationBoundary({ projectRoot: fixture.root, candidate,
+      reviewDraft: diskLink ? candidate : prepared!.exploration_boundary,
+      generationLock: prepared!.lock, expectedDigest: digest, actor: "reviewer@example.test",
+      confirmation: `ACTIVATE ${digest}`, confirmedDecisions: candidate.unresolved_decisions, currentInspection: inspection,
+    });
+    if (diskLink) {
+      await expect(activation).rejects.toThrow(/Discovery compatibility/u);
+      expect(await fs.readFile(activePath, "utf8")).toBe(before);
+    } else {
+      await expect(activation).resolves.toHaveProperty("activation.digest", digest);
+    }
+  });
+
+  it("refuses an unrepresentable replacement before changing active Read authority", async () => {
+    const fixture = await activatedFixture();
+    const activePath = path.join(fixture.root, ".synapsor/exploration-boundaries.active.json");
+    const before = await fs.readFile(activePath, "utf8");
+    const inspection = churnInspection();
+    const fields: Record<string, ReviewedMetadataDecision> = {};
+    for (let index = 0; index < 24; index++) {
+      const field = `fee_${index}`;
+      inspection.tables[0]!.columns.push(column(field, "integer"));
+      inspection.tables[0]!.suggestions.default_visible_columns.push(field);
+      fields[field] = { description: "Reviewed business amount. ".repeat(10), actor: "owner@example.test",
+        reason: "Exact explanatory metadata for this fixture.", decided_at: "2026-09-08T00:00:00.000Z" };
+    }
+    const build = buildAutoBoundary({ inspection, sourceEnv: "DATABASE_URL",
+      project: { root: fixture.root, package_manager: "pnpm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] },
+      overrides: { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: { "public.subscriptions": { field_metadata: fields } } } });
+    const candidate = build.exploration_boundary, digest = explorationBoundaryCandidateDigest(candidate);
+    await expect(activateExplorationBoundary({ projectRoot: fixture.root, candidate, expectedDigest: digest,
+      reviewDraft: candidate, generationLock: build.lock,
+      actor: "reviewer@example.test", confirmation: `ACTIVATE ${digest}`,
+      confirmedDecisions: candidate.unresolved_decisions, currentInspection: inspection,
+    })).rejects.toThrow(/Discovery compatibility/u);
+    expect(await fs.readFile(activePath, "utf8")).toBe(before);
+  });
+
   it("holds the MCP lifecycle through model projection and refuses calls after close", async () => {
     const fixture = await activatedFixture();
     const runtime = await createScopedExploreBoundarySetRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
@@ -179,6 +250,11 @@ describe("Scoped Explore", () => {
       await client.connect(clientTransport);
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
       expect(names).toEqual(["app.describe_actions", "app.describe_data", "app.explore_data", "app.request_change"]);
+      for (const name of ["app.describe_actions", "app.describe_data"]) {
+        const tool = (await client.listTools()).tools.find((entry) => entry.name === name)!;
+        expect(tool.description).toContain("Limit is a maximum; byte-bounded pages may contain fewer entries.");
+        expect(tool.description).toContain("Follow next_cursor until null.");
+      }
       const actionSchema = (await client.listTools()).tools.find((tool) => tool.name === "app.describe_actions")!.inputSchema;
       expect(actionSchema.properties).toHaveProperty("query");
       expect(actionSchema.properties).toHaveProperty("cursor");
@@ -389,7 +465,6 @@ describe("Scoped Explore", () => {
               fields: expect.arrayContaining([expect.objectContaining({
                 id: "total amount",
                 semantic_status: "descriptive_identifier",
-                operations: expect.objectContaining({ return_value: true }),
               })]),
             }],
           });
@@ -3892,13 +3967,17 @@ describe("Scoped Explore", () => {
         ...description, catalog_version: "synapsor.scoped-catalog.v2",
       }, true) as any;
       const compactResource = compact.resources[0];
-      expect(compact.vocabulary_policy).toEqual(focusedProjection.vocabulary_policy);
+      expect(compact.vocabulary_policy).toEqual({
+        ...focusedProjection.vocabulary_policy,
+        opaque_identifier_behavior: "do_not_guess; request reviewed vocabulary",
+        coded_value_behavior: "do_not_infer; use exact codes named by the question or explained in reviewed metadata",
+      });
       expect(compactResource.valid_plan_examples).toEqual(focusedProjection.resources[0].valid_plan_examples);
       expect(compactResource).not.toHaveProperty("valid_plan_example");
       expect(compactResource.vocabulary).not.toHaveProperty("fields_with_labels");
       expect(compactResource.vocabulary.status).toBe(focusedProjection.resources[0].vocabulary.status);
       for (const field of focusedProjection.resources[0].fields) {
-        const { plan_reference: _duplicateGlobalRule, ...completeField } = field;
+        const { plan_reference: _duplicateGlobalRule, operations: _duplicateOperations, allowed_values: _duplicateValues, ...completeField } = field;
         expect(compactResource.fields.find((candidate: { id: string }) => candidate.id === field.id)).toEqual(completeField);
       }
       expect(compactResource.filter_operators).toEqual(focusedProjection.resources[0].filter_operators);
@@ -3963,7 +4042,7 @@ describe("Scoped Explore", () => {
           expect(Buffer.byteLength(JSON.stringify(described))).toBeLessThanOrEqual(16_384);
           expect(described.structuredContent).toMatchObject({
             vocabulary_policy: {
-              coded_value_behavior: expect.stringContaining("do_not_infer_business_meaning"),
+              coded_value_behavior: "do_not_infer; use exact codes named by the question or explained in reviewed metadata",
             },
             resources: [{
               vocabulary: {
@@ -3973,8 +4052,8 @@ describe("Scoped Explore", () => {
               fields: expect.arrayContaining([expect.objectContaining({
                 id: "ph_code",
                 semantic_status: "coded_values",
-                allowed_values: ["P1", "P2", "P3"],
               })]),
+              field_enums: { ph_code: ["P1", "P2", "P3"] },
               valid_plan_examples: { aggregate: expect.not.objectContaining({ dimensions: expect.anything() }) },
             }],
           });

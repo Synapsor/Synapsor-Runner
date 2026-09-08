@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { SupervisedWriterPostureAssessment } from "./worker-policy.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
+import type { WriterProvisioningPlan } from "./writer-provisioning.js";
 
 export type ExecutionSetupProblem = { code: string; summary: string; details: string[];
   publication_state?: "unconfirmed" | "committed" | "cancelled" };
@@ -19,11 +20,12 @@ const safeProblem = (problem: ExecutionSetupProblem): ExecutionSetupProblem => (
 export class SemanticWriterPostureError extends Error {
   readonly code = "SEMANTIC_ACTION_WRITER_POSTURE_INVALID";
   readonly problem: ExecutionSetupProblem;
-  constructor(assessment: SupervisedWriterPostureAssessment, writerEnv: string) {
+  constructor(assessment: SupervisedWriterPostureAssessment, writerEnv: string, readonly provisioning?: WriterProvisioningPlan) {
     const missing = assessment.relation_issues?.filter((issue) => issue.issue === "missing") ?? [];
     const extra = assessment.relation_issues?.filter((issue) => issue.issue !== "missing") ?? [];
+    const locking = assessment.reasons.some((reason) => reason === "writer_row_lock_privilege_missing" || reason === "writer_row_lock_rls_policy_missing");
     const summary = `The configured writer does not match this action: ${missing.length && extra.length ? "missing and extra access detected"
-      : missing.length ? "required access is missing" : extra.length ? "extra access detected" : "role safety checks failed"}. Automatic updates remain off.`;
+      : missing.length ? "required access is missing" : extra.length ? "extra access detected" : "role safety checks failed"}.${locking ? " Private row-lock permissions are missing." : ""} Use a dedicated writer for this reviewed action. Execution was not enabled by this check.`;
     super(`SEMANTIC_ACTION_WRITER_POSTURE_INVALID: ${summary}`);
     this.problem = { code: this.code, summary, details: [
       `Code: ${this.code}`, `Checked connection: ${writerEnv} (value hidden)`,
@@ -61,12 +63,14 @@ export function executionSetupProblem(error: unknown): ExecutionSetupProblem {
     return safeProblem({ code, publication_state: state, summary, details: [`Code: ${code}`, ...message.split(/\r?\n/u),
       "Pausing this review does not disable existing execution authority. No source request was executed by this setup step."] });
   }
-  const summary = code === "SEMANTIC_ACTION_WRITER_URL_MISSING"
+  const summary = code === "SEMANTIC_ACTION_READ_REVIEW_REQUIRED"
+    ? "The database access contract changed. Resume the saved job to revalidate its Read/Action dependencies before execution; no new job or reset is needed."
+    : code === "SEMANTIC_ACTION_WRITER_URL_MISSING"
     ? "The separate write connection is not configured. Set its environment variable, then recheck."
     : code === "SEMANTIC_ACTION_WRITER_POSTURE_INVALID"
       ? "The configured writer failed its permission checks. Inspect the saved requirements before rechecking."
       : `Execution verification could not finish (${code}). Inspect the diagnostic before retrying.`;
-  return safeProblem({ code, summary, details: [`Code: ${code}`, ...message.split(/\r?\n/u), "Read and proposal authority are unchanged. Automatic updates remain off."] });
+  return safeProblem({ code, summary, details: [`Code: ${code}`, ...message.split(/\r?\n/u), "Saved authority records are unchanged. This check enabled no execution and ran no source request."] });
 }
 
 const savedSchema = z.object({ version: z.literal(1), action_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/u),

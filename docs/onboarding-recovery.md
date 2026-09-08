@@ -154,6 +154,32 @@ history is context, not evidence that the new structure passed validation.
 Retaining the same business rules must still review the changed Read revision
 and rebuild dependent Actions against current structural facts. Missing private
 resources or unsupported relationships remain blockers, not implicit grants.
+
+## Dedicated Writer Repair
+
+Execution checks name missing or excess writer access in the primary review.
+Choose **Prepare a dedicated writer handoff** to export exact relation and
+column grants plus inspected RLS/trigger evidence into a private local directory.
+Runner executes no database administration. An administrator must review scoped
+policies, helper access, triggers and authentication; the generated role starts
+NOLOGIN. Existing shared roles must not be widened or revoked as a shortcut.
+
+The packaged `examples/telecom-writer-repair` recipe prepares the supported
+tutorial plan-switch writer from that export and refuses a different effect.
+It verifies the fixture's policies and helper definitions before provisioning.
+Other schemas still need their own administrator-reviewed scope configuration.
+
+After a repair that changes RLS, resume the same project with
+`start --from-env DATABASE_URL --schema telecom --cli --rescan` (use the actual
+reviewed schema for another database). Choose **Revalidate the saved job against
+changed database**. Ordinary `start` retains the old inspection; it does not
+silently rescan. The job and policy remain saved, but the changed metadata and
+dependent authority require fresh review. Exact writer verification alone is
+not proof that a previously reviewed Read contract is current.
+
+After verification, execution consent, the worker, client connection and trusted
+identity tests remain separate. Approval is not completion; only a successful
+guarded source execution with a receipt is a completed change.
 Existing authority is not overwritten merely because a revalidation started.
 An invalid resume digest or a different selected Boundary is not rebased.
 

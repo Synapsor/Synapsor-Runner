@@ -336,6 +336,25 @@ describe("managed MCP project command surface", () => {
       ],
     });
   });
+
+  it("labels a local reviewed MCP surface without implying operator authority", async () => {
+    const root = await projectFixture();
+    const output: string[] = [];
+    await installManagedMcpProject({ client: "claude-code", projectRoot: root, authoring: true });
+    const write = vi.spyOn(process.stdout, "write").mockImplementation((value) => {
+      output.push(String(value));
+      return true;
+    });
+    try {
+      await expect(mcp(["status", "claude-code", "--project", "--project-root", root])).resolves.toBe(0);
+    } finally {
+      write.mockRestore();
+    }
+    const text = output.join("");
+    expect(text).toContain("Runtime surface: reviewed local MCP (operator controls excluded)");
+    expect(text).toContain("Operator powers");
+    expect(text).not.toContain("Mode: authoring");
+  });
 });
 
 async function projectFixture(): Promise<string> {

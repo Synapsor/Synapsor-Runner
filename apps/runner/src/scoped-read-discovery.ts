@@ -1,5 +1,5 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { CATALOG_LIMITS, McpRuntimeError, ScopedCatalogIndex, ScopedCatalogSession, catalogResponseBytes } from "@synapsor-runner/mcp-server";
+import { CATALOG_LIMITS, McpRuntimeError, ScopedCatalogIndex, ScopedCatalogSession, catalogResponseBytes, catalogContractSizeError } from "@synapsor-runner/mcp-server";
 import type { ScopedExploreRuntime } from "./scoped-explore.js";
 import { resolveActiveExploreTarget, type ScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 
@@ -68,11 +68,15 @@ export function createScopedReadDiscovery(
       throw new McpRuntimeError("CATALOG_CURSOR_INVALID", "Reviewed authority changed during discovery. Restart discovery with the current authorized catalog.");
     }
     const result = session.describe({ index, binding, key: "resources", detailValue, context,
+      measureDetail: (value) => Buffer.byteLength(JSON.stringify((projectResponse({
+        ...context, ok: true, catalog_version: "synapsor.scoped-catalog.v2", resources: [value],
+      }, Boolean(detail)).resources as unknown[])[0])),
       measureResponse: (value) => catalogResponseBytes(projectResponse(value, Boolean(detail)), "compact"),
       request: { ...(detail ? { detail } : {}), ...(request.query === undefined ? {} : { query: request.query }),
         ...(request.cursor === undefined ? {} : { cursor: request.cursor }), ...(request.limit === undefined ? {} : { limit: request.limit }) } });
     if ("requireCurrentAuthority" in runtime) await runtime.requireCurrentAuthority?.();
-    if (catalogResponseBytes(projectResponse(result, Boolean(detail)), "compact") > CATALOG_LIMITS.responseBytes) throw new McpRuntimeError("CATALOG_CONTRACT_TOO_LARGE", "The exact Read contract exceeds the disclosure limit; operator revision is required. No constraints were truncated.");
+    const bytes = catalogResponseBytes(projectResponse(result, Boolean(detail)), "compact");
+    if (bytes > CATALOG_LIMITS.responseBytes) throw catalogContractSizeError("response", bytes, CATALOG_LIMITS.responseBytes);
     return result;
   };
 }

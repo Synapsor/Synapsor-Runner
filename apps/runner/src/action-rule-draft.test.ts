@@ -3,6 +3,7 @@ import type {
 } from "@synapsor-runner/action-rules";
 import type { ActionRuleScalarExpressionV1, ActionRuleScalarTypeSpecV1 } from "@synapsor/spec";
 import { describe, expect, it } from "vitest";
+import { createSemanticActionRuntime } from "@synapsor-runner/mcp-server";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
 import {
@@ -25,6 +26,59 @@ const statusType: ActionRuleScalarTypeSpecV1 = {
 };
 
 describe("model-authored Action Rule draft compilation", () => {
+  it("refreshes business search from a reviewed draft without changing tool schemas or touching source state", async () => {
+    const compile = (candidate: ActionRuleModelDraftV1) => compileActionRuleModelDraft({ draft: candidate,
+      builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest });
+    let registry = compile(draft()).loaded.registry;
+    const noSourceAccess = new Proxy({}, { get() { throw new Error("Discovery must not use a source or proposal service"); } }) as never;
+    const runtime = createSemanticActionRuntime({ registry: () => registry, store: noSourceAccess, subjectReferences: noSourceAccess,
+      resolveContext: async () => { throw new Error("Discovery must not resolve source facts"); },
+      resolveCatalogAuthorization: () => ({ scope_key: "reviewed-test-scope", revision: "same-scope" }),
+    });
+    const tools = runtime.listTools();
+    const query = { query: "temporary billing pause" };
+    expect(await runtime.callTool("app.describe_actions", query)).toMatchObject({ actions: [] });
+    const revised = draft();
+    revised.discovery = { title: "Pause billing", summary: "Pause an eligible account with billing review.", aliases: [query.query] };
+    registry = compile(revised).loaded.registry;
+    expect(await runtime.callTool("app.describe_actions", query)).toMatchObject({
+      actions: [{ outcome: revised.outcome, description: revised.discovery.title, eligibility: "not_checked" }],
+    });
+    expect(runtime.listTools()).toEqual(tools);
+  });
+
+  it.each([false, true])("round-trips reviewed discovery vocabulary without changing executable policy (aliases=%s)", (includeAliases) => {
+    const input = { builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest,
+      activatedAt: "2026-09-03T01:00:00.000Z" };
+    const original = compileActionRuleModelDraft({ ...input, draft: draft() });
+    const proposed = draft();
+    proposed.discovery = { title: "Pause billing", summary: "Request a temporary account pause with billing review.",
+      ...(includeAliases ? { aliases: ["pause my account", "temporary billing pause"] } : {}) };
+    const revised = compileActionRuleModelDraft({ ...input, draft: proposed });
+    expect(revised.rule["x-runner-discovery"]).toEqual(proposed.discovery);
+    expect(revised.rule.require).toEqual(original.rule.require);
+    expect(revised.rule.effect).toEqual(original.rule.effect);
+    expect(revised.verification_boundary).toEqual(original.verification_boundary);
+    expect(revised.effect_envelope).toEqual(original.effect_envelope);
+    expect(revised.approval_class).toEqual(original.approval_class);
+    expect(revised.loaded.authority.digest).not.toBe(original.loaded.authority.digest);
+    expect(actionRuleModelDraftFromAuthority({ authority: revised.loaded.authority,
+      outcome: proposed.outcome, review: proposed.review }).discovery).toEqual(proposed.discovery);
+    expect(actionRuleModelDraftFromAuthority({ authority: original.loaded.authority,
+      outcome: proposed.outcome, review: proposed.review })).not.toHaveProperty("discovery");
+  });
+
+  it.each([
+    { title: "x".repeat(161), summary: "Pause billing.", aliases: [] },
+    { title: "Pause", summary: "Pause billing.", aliases: Array(17).fill("billing") },
+    { title: "Pause", summary: "Pause billing.", aliases: ["bad\u001b[31m"] },
+    { title: "Pause", summary: "Pause billing.", aliases: [], eligibility: true },
+  ])("refuses invalid public discovery metadata without silently truncating it", (discovery) => {
+    const proposed = { ...draft(), discovery };
+    expect(() => compileActionRuleModelDraft({ draft: proposed, builtCatalog: builtCatalog(),
+      readBoundary: boundary(), readBoundaryDigest: readDigest })).toThrow(/discovery/i);
+  });
+
   it.each([false, true])("refuses caller-supplied private conflict versions without relying on input names (derived=%s)", (derived) => {
     const attempted = draft();
     attempted.inputs = [{ name: "customer_choice", description: "A value.", type: { kind: "integer" }, minimum: 0, maximum: 100 }];

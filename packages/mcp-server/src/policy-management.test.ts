@@ -242,6 +242,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
       await expect(f.service.confirmReview(f.human, revoke)).resolves.toMatchObject({ status: "committed", epoch: 6 });
       const state = await f.service.detail(f.ordinary, scope, "my_agent_rules");
       expect(state.active).toBeUndefined(); expect(state.draft?.revision_id).toBe(next.revision_id);
+      expect(state).toMatchObject({ vocabulary_status: "unavailable", vocabulary: [] });
       await expect(f.service.confirmReview(f.human, active)).resolves.toMatchObject({ status: "already_committed", epoch: 3 });
       expect((await f.service.detail(f.ordinary, scope, "my_agent_rules")).active).toBeUndefined();
     });

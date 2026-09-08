@@ -44,6 +44,7 @@ export type ActionRuleModelDraftV1 = {
   schema_version: typeof ACTION_RULE_MODEL_DRAFT_VERSION;
   name: string;
   outcome: string;
+  discovery?: { title: string; summary: string; aliases?: string[] };
   inputs?: ActionRuleInputSpecV1[];
   verification: {
     name: string;
@@ -127,6 +128,9 @@ export function actionRuleModelDraftFromAuthority(input: {
     ...(source.rule.inputs ? { inputs: structuredClone(source.rule.inputs) } : {}),
     name: source.rule.name,
     outcome: source.rule.outcome,
+    ...(source.rule["x-runner-discovery"] === undefined ? {} : {
+      discovery: structuredClone(source.rule["x-runner-discovery"]) as ActionRuleModelDraftV1["discovery"],
+    }),
     verification: {
       name: source.verification_boundary.name,
       resources: source.verification_boundary.resources.map((resource) => ({
@@ -416,6 +420,7 @@ export function compileActionRuleModelDraft(input: {
     schema_version: "synapsor.action-rule.v1",
     name: safeRuleName(draft.name, "Action Rule"),
     outcome: safeRuleName(draft.outcome, "Action outcome"),
+    ...(draft.discovery === undefined ? {} : { "x-runner-discovery": structuredClone(draft.discovery) }),
     context: "trusted_context",
     source: envelope.source,
     verification_boundary_ref: verificationBoundary.name,

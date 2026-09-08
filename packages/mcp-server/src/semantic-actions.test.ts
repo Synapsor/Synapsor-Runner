@@ -402,7 +402,9 @@ describe("fixed semantic Action MCP", () => {
       expect(JSON.stringify(first)).not.toMatch(/billing.pause_6|north\/maya|sha256:|auto_approve_when/u);
       expect(first.actions).toEqual(expect.arrayContaining([expect.objectContaining({ eligibility: "not_checked" })]));
       expect((first.actions as Array<Record<string, unknown>>)[0]).not.toHaveProperty("inputs");
-      expect(await runtime.callTool(DESCRIBE_ACTIONS_TOOL, { outcome: "billing.pause_0" })).toMatchObject({ actions: [{
+      const exact = await runtime.callTool(DESCRIBE_ACTIONS_TOOL, { outcome: "billing.pause_0" });
+      expect(exact).not.toHaveProperty("request_shape");
+      expect(exact).toMatchObject({ execution_status: { enablement: "not_reported_by_discovery", worker_liveness: "unknown" }, actions: [{
         inputs: [{ name: "notification_state", required: true, type: { enum: ["active", "paused"] } }],
         request_shape: { outcome: "billing.pause_0", subject_refs: { preference: "obj_<opaque reference>" } },
       }] });

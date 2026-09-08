@@ -76,11 +76,11 @@ export function renderOwnerRuleReview(value: unknown): string[] {
     lines.push(`${text(rule.outcome)}${prior ? "" : " (new)"}`,
       `  Required: ${predicate(rule.require)}`,
       `  Approval: ${rule.approval === "human" ? "human review required" : "parent approval rules still apply"}`);
-    if (rule.auto_approve_when) lines.push(`  Additional automatic-approval condition: ${predicate(rule.auto_approve_when)}`);
+    if (rule.auto_approve_when) lines.push(`  To defer to the Action approval policy: ${predicate(rule.auto_approve_when)}; otherwise human review required`);
     if (prior && JSON.stringify(prior.require) !== JSON.stringify(rule.require)) lines.push(`  Previously required: ${predicate(prior.require)}`);
     if (prior && prior.approval !== rule.approval) lines.push(`  Previous approval: ${prior.approval === "human" ? "human review required" : "parent rules"}`);
     if (prior?.auto_approve_when && JSON.stringify(prior.auto_approve_when) !== JSON.stringify(rule.auto_approve_when)) {
-      lines.push(`  Previous automatic-approval condition: ${predicate(prior.auto_approve_when)}`);
+      lines.push(`  Previous conditional deferral: ${predicate(prior.auto_approve_when)}; otherwise human review required`);
     }
   }
   for (const [outcome] of priorRules) if (!nextRules.has(outcome)) lines.push(`Removed permission: ${outcome}`);

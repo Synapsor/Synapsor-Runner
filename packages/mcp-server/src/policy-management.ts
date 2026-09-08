@@ -5,7 +5,7 @@ import type { ControlPolicyKey, ControlPolicyRepository, ControlPolicyRevision, 
   ControlPolicyReviewConfirmation, ControlPolicyScope, ControlPolicyReadGuard } from "@synapsor-runner/proposal-store";
 import { z } from "zod";
 import { compileOwnerPolicy } from "./owner-policy-compiler.js";
-import { assertBoundedOwnerPolicyInput, type OwnerPolicyDefinition } from "./owner-policy-language.js";
+import { assertBoundedOwnerPolicyInput, type OwnerPolicyDefinition, type OwnerPolicyFact, type OwnerPolicyParent } from "./owner-policy-language.js";
 import { assertPolicyManagementRight, PolicyManagementError, policyOwnerScopeSchema,
   type PolicyManagementAuthenticator, type PolicyManagementIdentity, type PolicyManagementPermission } from "./policy-management-identity.js";
 
@@ -147,6 +147,60 @@ export function createPolicyManagementService(options: {
   function delegationForScope(parent: Parent) {
     return delegationForOwner(parent.document, parent.scope);
   }
+  function factType(rule: CompiledActionRuleV1, fact: OwnerPolicyFact) {
+    const source = fact.source;
+    if (source.kind === "trusted") return { kind: "timestamp" } as const;
+    if (source.kind === "input") return rule.rule.inputs?.find((input) => input.name === source.name)?.type;
+    if (source.kind === "derived") return rule.derived_types[source.name];
+    const binding = rule.bindings.find((value) => value.binding === source.binding);
+    return binding?.verification.cardinality === "one"
+      ? binding.verification.fields.find((field) => field.name === source.field)?.type
+      : undefined;
+  }
+  function publicFact(fact: OwnerPolicyFact, rule: CompiledActionRuleV1) {
+    const type = factType(rule, fact);
+    if (!type) throw new PolicyManagementError("POLICY_DELEGATION_PARENT_CHANGED");
+    const base = { name: fact.name, title: fact.title, operators: [...fact.operators], value_type: type.kind };
+    const values = fact.literal_values;
+    const literalValues = values ? { literal_values: [...values] } : {};
+    switch (type.kind) {
+      case "boolean":
+        if (fact.literal_range || values?.some((value) => typeof value !== "boolean")) throw new PolicyManagementError("POLICY_DELEGATION_PARENT_CHANGED");
+        return { ...base, ...literalValues };
+      case "integer": case "money_minor":
+        if (values?.some((value) => typeof value !== "number" || !Number.isSafeInteger(value))) throw new PolicyManagementError("POLICY_DELEGATION_PARENT_CHANGED");
+        return { ...base, ...(fact.literal_range ? { literal_range: { ...fact.literal_range } } : {}), ...literalValues };
+      case "string": {
+        if (fact.literal_range || values?.some((value) => typeof value !== "string" || value.length > type.max_length || (type.enum && !type.enum.includes(value)))) {
+          throw new PolicyManagementError("POLICY_DELEGATION_PARENT_CHANGED");
+        }
+        const allowed = type.enum ? type.enum.filter((value) => !values || values.includes(value)) : values;
+        return { ...base, ...literalValues, ...(type.enum ? { allowed_values: allowed } : {}) };
+      }
+      case "date": case "timestamp":
+        if (fact.literal_range || values?.some((value) => typeof value !== "string")) throw new PolicyManagementError("POLICY_DELEGATION_PARENT_CHANGED");
+        return { ...base, ...literalValues };
+      default: throw new PolicyManagementError("POLICY_DELEGATION_PARENT_CHANGED");
+    }
+  }
+  function vocabulary(parent: OwnerPolicyParent, rules: CompiledActionRuleV1[]) {
+    return parent.outcomes.map((outcome) => {
+      const matches = rules.filter((rule) => rule.outcome === outcome.outcome && rule.compiled_plan_digest === outcome.compiled_plan_digest);
+      if (matches.length !== 1) throw new PolicyManagementError("POLICY_DELEGATION_PARENT_CHANGED");
+      return { outcome: outcome.outcome, automatic_approval_delegable: outcome.allow_automatic_approval,
+        ...(outcome.require ? { parent_require: outcome.require } : {}),
+        facts: outcome.facts.map((fact) => publicFact(fact, matches[0]!)) };
+    });
+  }
+  async function currentVocabulary(parent: OwnerPolicyParent) {
+    try { return { state: "current" as const, entries: vocabulary(parent, await options.resolveRules()) }; }
+    catch (error) {
+      if (error instanceof PolicyManagementError && error.code === "POLICY_DELEGATION_PARENT_CHANGED") {
+        return { state: "unavailable" as const, entries: [] };
+      }
+      throw error;
+    }
+  }
   async function compileExisting(revision: ControlPolicyRevision, parent: Parent) {
     const document = decode(revision, parent);
     if (document.parent_revision_id !== parent.revision.revision_id || document.parent_authority_digest !== parent.revision.authority_digest) {
@@ -224,13 +278,12 @@ export function createPolicyManagementService(options: {
         try { assertPolicyManagementRight(identity, parent.document.managers, key.scope, permission); return true; }
         catch (error) { if (error instanceof PolicyManagementError && error.code === "POLICY_MANAGEMENT_FORBIDDEN") return false; throw error; }
       });
+      const reviewedVocabulary = await currentVocabulary(parent.document.delegation);
       return { epoch: snapshot.epoch, key, ...(active ? { active: view(active, parent) } : {}), ...(draft ? { draft: view(draft, parent) } : {}),
         permissions,
         agents: delegationForScope(parent).agents,
         ...(parent.document.delegation.budgets ? { parent_hard_budgets: parent.document.delegation.budgets } : {}),
-        vocabulary: parent.document.delegation.outcomes.map((outcome) => ({ outcome: outcome.outcome, automatic_approval_delegable: outcome.allow_automatic_approval,
-          ...(outcome.require ? { parent_require: outcome.require } : {}),
-          facts: outcome.facts.map(({ source: _privateSource, ...fact }) => fact) })) };
+        vocabulary_status: reviewedVocabulary.state, vocabulary: reviewedVocabulary.entries };
     },
     async propose(credential: string, input: { scope: ControlPolicyScope; name: string; expected_epoch: number; definition: unknown }) {
       const key = selectedKey(input.scope, input.name), { identity, parent, snapshot } = await loadExact(credential, key, "draft");

@@ -333,6 +333,7 @@ const releaseAssets = [
   ["examples/runner-fleet", "examples/runner-fleet"],
   ["examples/support-plan-credit", "examples/support-plan-credit"],
   ["examples/support-billing-agent", "examples/support-billing-agent"],
+  ["examples/telecom-writer-repair", "examples/telecom-writer-repair"],
   ["packages/dsl/examples/bounded-set-multi-term.synapsor.sql", "fixtures/dsl/bounded-set-multi-term.synapsor.sql"],
   ["packages/dsl/examples/aggregate-read.synapsor.sql", "fixtures/dsl/aggregate-read.synapsor.sql"],
   ["fixtures", "fixtures"],

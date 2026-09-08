@@ -503,6 +503,11 @@ export function createBoundaryAuthoringChat(input: {
           : theme.key;
     const facts = meaningfulContext(lines);
     const factStyle = (line: string, index: number) => {
+      if (["READ REVIEW SUMMARY", "ACTION REVIEW", "Verified Action Boundary active"].includes(title)) {
+        const label = line.match(/^(\S.{0,38}?)( {2,}|:)(.*)$/u);
+        if (label) return `${/^(?:Privacy|UNMET)/u.test(label[1]!) ? theme.warning(label[1]!) : theme.key(label[1]!)}${label[2]}${theme.value(label[3]!)}`;
+        return theme.value(line);
+      }
       if (/^\|\s*DECISION\s*\|/u.test(line)) return theme.bold(line);
       if (/^\|\s*(?:Privacy decision|UNMET REQUEST|Automatic completion)\s*\|/u.test(line)) return theme.warning(line);
       if (/^\|/u.test(line)) return line;
@@ -1107,6 +1112,7 @@ export function createBoundaryAuthoringChat(input: {
         ? permissionQuestion(prompt)
         : prompt,
       initialValue: options.defaultValue === true ? "yes" : "no",
+      ...(/^Activate verified Action Boundary\b/u.test(prompt) ? { explainOnRequest: true } : {}),
       options: [
         {
           value: "yes",
@@ -1123,7 +1129,7 @@ export function createBoundaryAuthoringChat(input: {
       ],
     } satisfies ChoiceInput;
     const selected = permission
-      ? await choosePermission(choice, permissionContext)
+      ? await choosePermission(choice, permissionContext, /^Activate verified Action Boundary\b/u.test(prompt) ? "ACTION REVIEW" : undefined)
       : await chooseReviewedDecision(choice);
     return selected === undefined ? undefined : selected === "yes";
   };
@@ -1168,6 +1174,7 @@ export function createBoundaryAuthoringChat(input: {
         title: permission && !options?.reviewOnly ? "PERMISSION REQUIRED" : title,
         message: permission && !options?.reviewOnly
           ? permissionQuestion(title)
+          : options?.displayContext && options.context?.length ? meaningfulContext(options.context).join(" ")
           : "Choose one path. The highlighted choice is not applied until you press Enter.",
         options: choices,
         ...(options?.initialValue ? { initialValue: options.initialValue } : {}),

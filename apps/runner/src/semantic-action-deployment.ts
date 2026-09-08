@@ -26,9 +26,11 @@ import {
   type ActionRuleAuthorityDraftV1,
 } from "./action-rule-authority.js";
 import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
-import { loadActivatedExplorationBoundaries, type ActivatedExplorationBoundary } from "./auto-boundary.js";
+import { compareGenerationLock, loadGenerationLockForActivatedBoundary, generationLockRemediation,
+  loadActivatedExplorationBoundaries, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { bindSemanticReadScope } from "./semantic-action-read-scope.js";
 import { SemanticWriterPostureError } from "./semantic-execution-setup.js";
+import { writerProvisioningPlan } from "./writer-provisioning.js";
 import { encodeOperatorExecutionPolicy, readOperatorExecutionConfig } from "./control-policy-execution.js";
 import { OPERATOR_EXECUTION_POLICY_KEY } from "./control-policy-record.js";
 import { openBoundProjectControlPolicies, openProjectControlPolicies,
@@ -291,7 +293,8 @@ export async function previewSemanticSupervisedExecution(input: {
     inspection,
   );
   if (!assessment.ok) {
-    throw new SemanticWriterPostureError(assessment, writeUrlEnv);
+    throw new SemanticWriterPostureError(assessment, writeUrlEnv, writerProvisioningPlan({ assessment, inspection,
+      outcome: input.outcome, actionDigest: active.authority.action_boundary.digest, writerEnv: writeUrlEnv }));
   }
   await validateRuntimeConfig(nextConfig, configPath);
   return {
@@ -353,6 +356,26 @@ export function semanticExecutionConfirmation(
   preview: Pick<SemanticSupervisedExecutionPreview, "outcome" | "action_boundary_digest" | "writer_posture_fingerprint">,
 ): string {
   return `ENABLE SUPERVISED ${preview.outcome} ${preview.action_boundary_digest} ${preview.writer_posture_fingerprint}`;
+}
+
+/** Metadata-only readiness check after writer repair, before guided execution consent. */
+export async function verifySemanticExecutionReadPosture(input: {
+  projectRoot: string; outcome: string; activeReads: ActivatedExplorationBoundary[];
+  env?: NodeJS.ProcessEnv; inspect?: typeof inspectDatabase;
+}): Promise<void> {
+  const active = await executionReviewActionAuthority(input.projectRoot, input.env, { outcome: input.outcome });
+  const rule = active.registry.rules.find((entry) => entry.compiled.outcome === input.outcome)!;
+  const read = input.activeReads.find((entry) => entry.pack.name === rule.read_boundary_name
+    && entry.activation.digest === rule.read_boundary_digest);
+  if (!read) throw new Error("SEMANTIC_ACTION_READ_REVIEW_REQUIRED: The exact dependent Read revision is no longer active. Resume the saved job to review its dependencies.");
+  const binding = await openBoundProjectControlPolicies(input.projectRoot, input.env);
+  let lock;
+  try { lock = await loadGenerationLockForActivatedBoundary(input.projectRoot, read, binding); }
+  finally { await binding?.close(); }
+  const inspection = await (input.inspect ?? inspectDatabase)({ engine: lock.engine,
+    databaseUrlEnv: lock.source_env, ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}), env: input.env ?? process.env });
+  const comparison = compareGenerationLock(lock, inspection);
+  if (!comparison.current) throw new Error(`SEMANTIC_ACTION_READ_REVIEW_REQUIRED: ${comparison.changes.join("; ")}.\n${generationLockRemediation(lock)}\nResume the saved job to revalidate the same business rules, then review Read, Action and execution separately. Do not reset the project.`);
 }
 
 export async function readSemanticSupervisedExecutionState(input: {

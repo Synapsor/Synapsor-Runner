@@ -21,6 +21,6 @@ export function automaticApprovalBusinessSummary(compiled: { approval_class: Pic
   }
   return [...windows].map(([seconds, items]) => {
     const period = seconds % 3600 === 0 ? `${seconds / 3600} hours` : seconds % 60 === 0 ? `${seconds / 60} minutes` : `${seconds} seconds`;
-    return `Up to ${items.join(" and ")} in any rolling ${period}`;
+    return `At most ${items.join(" and ")} in any rolling ${period}`;
   }).join("; ");
 }

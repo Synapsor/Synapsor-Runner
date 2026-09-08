@@ -59,6 +59,7 @@ const stateType: ActionRuleScalarTypeSpecV1 = {
 };
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
@@ -786,6 +787,7 @@ describe("semantic Action Rule authority persistence", () => {
   });
 
   it("keeps proposal activation and supervised execution as two separate TUI confirmations", async () => {
+    vi.spyOn(semanticDeployment, "verifySemanticExecutionReadPosture").mockResolvedValue(undefined);
     const root = await temporaryRoot();
     const readBoundary = activeReadBoundary();
     await writeActiveReadSet(root, readBoundary);
@@ -848,6 +850,7 @@ describe("semantic Action Rule authority persistence", () => {
   });
 
   it.each(["unconfirmed", "committed", "cancelled"] as const)("keeps the execution review truthful after a %s save and pause", async (state) => {
+    vi.spyOn(semanticDeployment, "verifySemanticExecutionReadPosture").mockResolvedValue(undefined);
     const root = await temporaryRoot(), read = activeReadBoundary();
     await writeActiveReadSet(root, read);
     const source = authoritySource(read.activation.digest);

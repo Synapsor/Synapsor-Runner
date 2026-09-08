@@ -59,6 +59,13 @@ import {
   reviewedAnalysisRelationshipHopLimit,
   reviewedDerivedScopeHopLimit,
   reviewedRankedGroupLimit,
+  describeExplorationBoundaryMetadata,
+  reviewedNumericAggregateFunctions,
+  isSequentialDerivedMeasureShape,
+  inactiveReviewableRelationships,
+  MINIMUM_DISPERSION_COHORT_SIZE,
+  type ReviewedTimeCoverage,
+  readOptionalExplorationDraft,
   resourceAuthorityDependencyFingerprint,
   rolePostureFingerprint,
   type ActivatedExplorationBoundary,
@@ -156,8 +163,7 @@ const PRESENCE_MEASURE_FUNCTIONS = new Set<AggregateMeasureFunction>([
   "non_null_count",
   "completion_rate",
 ]);
-const LEGACY_NUMERIC_AGGREGATE_FUNCTIONS = ["sum", "avg"] as const;
-export const MINIMUM_DISPERSION_COHORT_SIZE = 5;
+export { MINIMUM_DISPERSION_COHORT_SIZE } from "./auto-boundary.js";
 export const MINIMUM_AUTO_BAND_COHORT_SIZE = 5;
 
 export type ExploreFilter = {
@@ -1544,20 +1550,6 @@ export function assertPreparedExplorePlanAuthority(
   );
 }
 
-async function readOptionalExplorationDraft(
-  projectRoot: string,
-): Promise<ExplorationBoundaryDraft | undefined> {
-  try {
-    return JSON.parse(await fs.readFile(
-      path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"),
-      "utf8",
-    )) as ExplorationBoundaryDraft;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-}
-
 function enrichReviewableRelationshipError(
   error: unknown,
   input: unknown,
@@ -2016,9 +2008,7 @@ function validateAggregatePlan(
     if (CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(fn as AggregateMeasureFunction)
       && (!field
         || !target.aggregate_measures.includes(field)
-        || !reviewedNumericAggregateFunctions(target, field).includes(
-          fn as Exclude<AggregateMeasureFunction, "count" | "count_distinct">,
-        ))) {
+        || !reviewedNumericAggregateFunctions(target, field).some((reviewed) => reviewed === fn))) {
       throw fieldError(target, field ?? "(missing)", fn);
     }
     if (PRESENCE_MEASURE_FUNCTIONS.has(fn as AggregateMeasureFunction)
@@ -3468,21 +3458,6 @@ function isRankedAggregatePlan(plan: AggregateExplorePlan, resource: BoundaryRes
     });
 }
 
-function reviewedNumericAggregateFunctions(
-  resource: BoundaryResource,
-  field: string,
-): readonly Exclude<AggregateMeasureFunction, "count" | "count_distinct">[] {
-  const reviewed = resource.aggregate_measure_functions?.[field];
-  if (reviewed) {
-    return reviewed.every((fn) => EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS.includes(fn))
-      ? reviewed
-      : [];
-  }
-  return resource.aggregate_measure_functions
-    ? []
-    : LEGACY_NUMERIC_AGGREGATE_FUNCTIONS;
-}
-
 function reviewedDerivedMeasure(
   resource: BoundaryResource,
   name: string,
@@ -3886,8 +3861,9 @@ function describeExploreResult(input: {
   };
 }
 
-function describeBoundary(
-  boundary: ActivatedExplorationBoundary,
+/** Pure metadata presentation; accepting a draft here grants no runtime authority. */
+export function describeBoundary(
+  boundary: ActivatedExplorationBoundary | ExplorationBoundaryDraft,
   input: { resource?: string; cursor?: number; limit?: number },
   reviewableBoundary?: ExplorationBoundaryDraft,
   timeCoverage: ReviewedTimeCoverage = {},
@@ -3895,321 +3871,20 @@ function describeBoundary(
   const limit = input.limit === undefined ? 8 : positiveInteger(input.limit, "describe limit");
   if (limit > 10) throw planError("app.describe_data limit cannot exceed 10 resources");
   const cursor = input.cursor === undefined ? 0 : nonnegativeInteger(input.cursor, "describe cursor");
-  const selected = input.resource
-    ? [requestedResource(boundary, input.resource)]
-    : boundary.pack.resources.slice(cursor, cursor + limit);
-  return {
-    ok: true,
-    outcome: { type: "success" },
-    boundary_digest: boundary.activation.digest,
-    pack: boundary.pack.name,
-    ...(boundary.organization_scope ? {
-      organization_scope: {
-        mode: "single_organization",
-        tenant_filter: "not_applicable",
-        organization_identity: "fixed_outside_model_arguments",
-      },
-    } : {}),
-    reporting_timezone: {
-      name: boundary.reporting_timezone ?? "database_session",
-      authority_bound: Boolean(boundary.reporting_timezone),
-    },
-    relative_time_windows: {
-      available: boundary.reporting_timezone === "UTC",
-      reporting_timezone: boundary.reporting_timezone === "UTC" ? "UTC" : null,
-      windows: boundary.reporting_timezone === "UTC" ? [...RELATIVE_TIME_WINDOWS] : [],
-      comparison_partners: boundary.reporting_timezone === "UTC"
-        ? [...RELATIVE_TIME_COMPARISONS]
-        : [],
-      range_semantics: "half-open [start, end)",
-      week_starts_on: "Monday",
-      model_supplied_date_arithmetic: false,
-    },
-    vocabulary_policy: {
-      reviewed_metadata_is_semantic_only: true,
-      exact_ids_required_in_plans: true,
-      opaque_identifier_behavior: "do_not_guess; ask the operator to add a reviewed label or description",
-      coded_value_behavior: "do_not_infer_business_meaning_from_codes; use exact codes only when the question names them or reviewed metadata explains them",
-    },
-    resources: selected.map((resource) => {
-      const reviewableRelationships = inactiveReviewableRelationships(resource, boundary, reviewableBoundary);
-      const reviewedFields = unique([
-        resource.primary_key,
-        ...resource.selectable_fields,
-        ...Object.keys(resource.filterable_fields),
-        ...resource.sortable_fields,
-        ...resource.groupable_fields,
-        ...resource.aggregate_measures,
-        ...(resource.presence_measure_fields ?? []),
-        ...resource.count_distinct_fields,
-        ...Object.keys(resource.time_bucket_fields),
-      ]);
-      const describedFields = reviewedFields.filter((field) =>
-        !resource.kept_out_fields.includes(field));
-      const fieldLabels = Object.fromEntries(
-        describedFields.map((field) => [field, reviewedFieldLabel(resource, field)]),
-      );
-      const modelWithheld = new Set(resource.model_withheld_fields ?? []);
-      const vocabulary = exploreVocabularyCoverage(resource);
-      return {
-        id: resource.id,
-        ...(resource.label ? { label: resource.label } : {}),
-        ...(resource.description ? { description: resource.description } : {}),
-        vocabulary,
-        primary_key: resource.primary_key,
-        fields: describedFields.map((field) => describeReviewedFieldGrammar(
-          resource,
-          field,
-          modelWithheld,
-        )),
-        field_egress: Object.fromEntries(reviewedFields.map((field) => [
-          field,
-          { model_egress: modelWithheld.has(field) ? "withheld" : "visible" },
-        ])),
-        selectable_fields: resource.selectable_fields,
-        filterable_fields: Object.keys(resource.filterable_fields),
-        filter_operators: resource.filterable_fields,
-        sortable_fields: resource.sortable_fields,
-        groupable_fields: resource.groupable_fields,
-        aggregate_measures: resource.aggregate_measures,
-        aggregate_measure_functions: Object.fromEntries(resource.aggregate_measures.map((field) => [
-          field,
-          reviewedNumericAggregateFunctions(resource, field),
-        ])),
-        presence_measure_fields: resource.presence_measure_fields ?? [],
-        presence_measure_functions: resource.presence_measure_fields?.length
-          ? ["null_count", "non_null_count", "completion_rate"]
-          : [],
-        derived_measures: (resource.derived_measures ?? []).map((measure) =>
-          describeReviewedDerivedMeasure(measure, resource.minimum_cohort_size)),
-        numeric_bands: (resource.numeric_bands ?? []).map((band) => ({
-          name: band.name,
-          label: band.label,
-          field: band.field,
-          relationship: band.relationship ?? null,
-          edges: [...band.edges],
-          bucket_labels: [...band.bucket_labels],
-        })),
-        auto_bands: (resource.auto_bands ?? []).map((policy) => ({
-          field: policy.field,
-          methods: [...policy.methods],
-          min_buckets: policy.min_buckets,
-          max_buckets: policy.max_buckets,
-          min_bucket_width: policy.min_bucket_width ?? null,
-          label_style: policy.label_style,
-          label_round_to: policy.label_round_to ?? null,
-          model_selects: ["field", "method", "buckets"],
-          raw_edges_returned: false,
-        })),
-        count_distinct_fields: resource.count_distinct_fields,
-        time_bucket_fields: resource.time_bucket_fields,
-        relative_time_window_fields: boundary.reporting_timezone === "UTC"
-          ? Object.keys(resource.time_bucket_fields).sort()
-          : [],
-        time_coverage: timeCoverage[resource.id] ?? {},
-        field_types: Object.fromEntries(reviewedFields.map((field) => [field, resource.field_types[field]])),
-        field_enums: Object.fromEntries(reviewedFields
-          .filter((field) => !modelWithheld.has(field) && resource.field_enums[field]?.length)
-          .map((field) => [field, resource.field_enums[field]])),
-        kept_out_field_count: resource.kept_out_fields.length,
-        relationships: [
-          ...resource.relationships.map((relationship) => ({ relationship, activation: "active" as const })),
-          ...reviewableRelationships.map((relationship) => ({
-            relationship,
-            activation: "review_required" as const,
-          })),
-        ].map(({ relationship, activation }) => {
-          const target = resourceFor(boundary, relationship.target_resource);
-          const relationshipLinks = relationship.proof?.links ?? [];
-          const pathResources = relationshipLinks.length
-            ? [relationshipLinks[0]!.source_resource, ...relationshipLinks.map((link) =>
-                link.target_resource)]
-            : [resource.id, relationship.target_resource];
-          const pathViaColumns = relationshipLinks.length
-            ? relationshipLinks.map((link) => [...link.source_columns])
-            : [[...relationship.local_columns]];
-          const targetFields = unique([
-            ...target.selectable_fields,
-            ...Object.keys(target.filterable_fields),
-            ...target.groupable_fields,
-            ...target.aggregate_measures,
-            ...(target.presence_measure_fields ?? []),
-            ...target.count_distinct_fields,
-            ...Object.keys(target.time_bucket_fields),
-          ]);
-          const targetModelWithheld = new Set(target.model_withheld_fields ?? []);
-          const describedTargetFields = targetFields.filter((field) =>
-            !target.kept_out_fields.includes(field));
-          const targetVocabulary = exploreVocabularyCoverage(target);
-          return {
-            id: relationship.id,
-            activation,
-            operator_review_required: activation === "review_required",
-            target_resource: relationship.target_resource,
-            ...(target.label ? { target_label: target.label } : {}),
-            ...(target.description ? { target_description: target.description } : {}),
-            vocabulary: targetVocabulary,
-            cardinality: relationship.cardinality,
-            counted_entity: relationship.counted_entity,
-            path_depth: relationship.path_depth ?? 1,
-            path: {
-              resources: pathResources,
-              via_columns: pathViaColumns,
-            },
-            nullable: relationship.nullable ?? false,
-            unmatched_rows: relationship.unmatched_rows ?? "exclude",
-            structural_evidence: relationship.proof?.links.map((link) => ({
-              constraint_name: link.constraint_name,
-              source_resource: link.source_resource,
-              target_resource: link.target_resource,
-              source_columns: link.source_columns,
-              target_columns: link.target_columns,
-              target_uniqueness: link.target_uniqueness,
-              nullable: link.nullable,
-              cardinality: link.cardinality,
-            })) ?? [],
-            field_egress: Object.fromEntries(targetFields.map((field) => [
-              field,
-              { model_egress: targetModelWithheld.has(field) ? "withheld" : "visible" },
-            ])),
-            fields: describedTargetFields.map((field) => describeReviewedFieldGrammar(
-              target,
-              field,
-              targetModelWithheld,
-              true,
-            )),
-            filterable_fields: Object.keys(target.filterable_fields),
-            filter_operators: target.filterable_fields,
-            groupable_fields: target.groupable_fields,
-            aggregate_measures: target.aggregate_measures,
-            aggregate_measure_functions: Object.fromEntries(target.aggregate_measures.map((field) => [
-              field,
-              reviewedNumericAggregateFunctions(target, field),
-            ])),
-            presence_measure_fields: target.presence_measure_fields ?? [],
-            presence_measure_functions: target.presence_measure_fields?.length
-              ? ["null_count", "non_null_count", "completion_rate"]
-              : [],
-            derived_measures: (target.derived_measures ?? []).map((measure) =>
-              describeReviewedDerivedMeasure(measure, target.minimum_cohort_size)),
-            count_distinct_fields: target.count_distinct_fields,
-            time_bucket_fields: target.time_bucket_fields,
-            relative_time_window_fields: boundary.reporting_timezone === "UTC"
-              ? Object.keys(target.time_bucket_fields).sort()
-              : [],
-            field_types: Object.fromEntries(targetFields.map((field) => [field, target.field_types[field]])),
-            field_enums: Object.fromEntries(targetFields
-              .filter((field) => !targetModelWithheld.has(field) && target.field_enums[field]?.length)
-              .map((field) => [field, target.field_enums[field]])),
-          };
-        }),
-        minimum_cohort_size: resource.minimum_cohort_size,
-        ...(resource.minimum_cohort_overridden ? { minimum_cohort_overridden: true } : {}),
-        maximum_rows: boundary.budgets.max_rows,
-        maximum_groups: Math.min(boundary.budgets.max_groups, boundary.budgets.max_top_n),
-        suggested_questions: suggestedAggregateQuestions(
-          resource,
-          fieldLabels,
-          boundary,
-          reviewableRelationships,
-        ),
-      };
-    }),
-    next_cursor: input.resource || cursor + selected.length >= boundary.pack.resources.length ? null : cursor + selected.length,
-    raw_sql_available: false,
-    source_rows_available_before_activation: false,
-  };
-}
-
-function describeReviewedFieldGrammar(
-  resource: BoundaryResource,
-  field: string,
-  modelWithheld: Set<string>,
-  throughRelationship = false,
-): Record<string, unknown> {
-  const aggregateFunctions = resource.aggregate_measures.includes(field)
-    ? reviewedNumericAggregateFunctions(resource, field)
-    : [];
-  const presenceFunctions = (resource.presence_measure_fields ?? []).includes(field)
-    ? ["null_count", "non_null_count", "completion_rate"]
-    : [];
-  return {
-    id: field,
-    plan_reference: "exact_id_only",
-    semantic_status: exploreFieldSemanticStatus(resource, field),
-    ...(resource.field_metadata?.[field]?.label
-      ? { label: resource.field_metadata[field]!.label }
-      : {}),
-    ...(resource.field_metadata?.[field]?.description
-      ? { description: resource.field_metadata[field]!.description }
-      : {}),
-    operations: {
-      return_value: !throughRelationship && resource.selectable_fields.includes(field),
-      model_egress: modelWithheld.has(field) ? "withheld" : "visible",
-      filter_operators: [...(resource.filterable_fields[field] ?? [])],
-      sortable: !throughRelationship && resource.sortable_fields.includes(field),
-      groupable: resource.groupable_fields.includes(field),
-      aggregate_functions: aggregateFunctions,
-      presence_functions: presenceFunctions,
-      count_distinct: resource.count_distinct_fields.includes(field),
-      time_buckets: [...(resource.time_bucket_fields[field] ?? [])],
-    },
-    ...(!modelWithheld.has(field) && resource.field_enums[field]?.length
-      ? { allowed_values: [...resource.field_enums[field]!] }
-      : {}),
-  };
-}
-
-function describeReviewedDerivedMeasure(
-  measure: ExplorationDerivedMeasure,
-  minimumCohortSize: number,
-): Record<string, unknown> {
-  const common = {
-    name: measure.name,
-    label: measure.label,
-    shape: measure.shape,
-    effective_minimum_cohort_size: Math.max(
-      minimumCohortSize,
-      MINIMUM_DISPERSION_COHORT_SIZE,
-    ),
-  };
-  if ("child_resource" in measure) {
-    return {
-      ...common,
-      calculation_stage: "scoped child count aggregated over reviewed parent cohorts",
-      child_resource: measure.child_resource,
-      relationship: measure.relationship,
-      parent_contributor_floor: "applied before release",
-      raw_child_rows_returned: false,
-    };
+  const selected = input.resource ? [requestedResource(boundary, input.resource)] : boundary.pack.resources.slice(cursor, cursor + limit);
+  const result = describeExplorationBoundaryMetadata(boundary, selected, reviewableBoundary, timeCoverage);
+  result.next_cursor = input.resource || cursor + selected.length >= boundary.pack.resources.length ? null : cursor + selected.length;
+  if (typeof boundary.activation === "object") {
+    for (const entry of result.resources as Record<string, unknown>[]) {
+      const resource = selected.find((candidate) => candidate.id === entry.id)!;
+      const fields = entry.fields as Record<string, unknown>[];
+      const labels = Object.fromEntries(fields.map((field) => [String(field.id), reviewedFieldLabel(resource, String(field.id))]));
+      entry.suggested_questions = suggestedAggregateQuestions(resource, labels, boundary as ActivatedExplorationBoundary,
+        inactiveReviewableRelationships(resource, boundary, reviewableBoundary));
+    }
   }
-  if (!("base_measure" in measure)) {
-    return {
-      ...common,
-      calculation_stage: "after cohort validation",
-      null_behavior: "null when the reviewed denominator is zero or null",
-    };
-  }
-  const sequential = isSequentialDerivedMeasureShape(measure.shape);
-  return {
-    ...common,
-    calculation_stage: "after small-group suppression",
-    required_grain: sequential
-      ? "one reviewed ordered time_bucket; dimensions are optional partitions"
-      : "one or more reviewed dimensions and no time_bucket",
-    ...(sequential ? { records_without_reviewed_time: "omitted" } : {}),
-    ...(measure.shape === "rank" ? { fixed_direction: measure.direction } : {}),
-    ...(measure.shape === "moving_average" ? { fixed_window_size: measure.window_size } : {}),
-    suppressed_groups_included: false,
-  };
+  return result;
 }
-
-type ReviewedTimeCoverage = Record<string, Record<string, {
-  status: "available" | "empty" | "withheld_below_minimum_cohort" | "unavailable";
-  start_date?: string;
-  end_date?: string;
-  reporting_timezone?: "UTC" | "database_session";
-}>>;
 
 async function loadReviewedTimeCoverage(input: {
   prepared: PreparedExplore;
@@ -4292,33 +3967,6 @@ function reviewedDate(value: unknown): string | undefined {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString().slice(0, 10) : undefined;
 }
 
-function inactiveReviewableRelationships(
-  resource: BoundaryResource,
-  boundary: ActivatedExplorationBoundary,
-  draft?: ExplorationBoundaryDraft,
-): BoundaryResource["relationships"] {
-  if (!draft) return [];
-  const activeIds = new Set(resource.relationships.map((relationship) => relationship.id));
-  const activeResources = new Set(boundary.pack.resources.map((candidate) => candidate.id));
-  const draftResource = draft.pack.resources.find((candidate) => candidate.id === resource.id);
-  return (draftResource?.relationships ?? [])
-    .filter((relationship) =>
-      !activeIds.has(relationship.id)
-      && activeResources.has(relationship.target_resource)
-      && relationship.proof?.source === "database_catalog"
-      && canonicalJsonDigest(relationship.proof.links) === relationship.proof.digest
-      && relationship.proof.links.length >= 1
-      && relationship.proof.links.length <= 3
-      && relationship.proof.links.every((link) =>
-        activeResources.has(link.source_resource)
-        && activeResources.has(link.target_resource)
-        && link.cardinality === "many_to_one"
-        && link.max_fan_out === 1
-        && link.target_uniqueness.columns.length === link.target_columns.length
-        && link.target_uniqueness.columns.every((field, index) => field === link.target_columns[index])))
-    .sort((left, right) =>
-      (left.path_depth ?? 1) - (right.path_depth ?? 1) || left.id.localeCompare(right.id));
-}
 
 function suggestedAggregateQuestions(
   resource: BoundaryResource,
@@ -6108,14 +5756,14 @@ function relationshipAuthoritiesForPlan(
   ])).values()];
 }
 
-function requestedResource(boundary: ActivatedExplorationBoundary, value: unknown): BoundaryResource {
+function requestedResource(boundary: Pick<ActivatedExplorationBoundary, "pack">, value: unknown): BoundaryResource {
   const id = requiredString(value, "resource");
   const resource = boundary.pack.resources.find((candidate) => candidate.id === id);
   if (!resource) throw new ScopedExploreError("EXPLORE_RESOURCE_FORBIDDEN", `Resource ${id} is not in the activated authoring pack.`);
   return resource;
 }
 
-function resourceFor(boundary: ActivatedExplorationBoundary, id: string): BoundaryResource {
+function resourceFor(boundary: Pick<ActivatedExplorationBoundary, "pack">, id: string): BoundaryResource {
   const resource = boundary.pack.resources.find((candidate) => candidate.id === id);
   if (!resource) throw new ScopedExploreError("EXPLORE_RESOURCE_FORBIDDEN", `Resource ${id} is not activated.`);
   return resource;
@@ -6577,13 +6225,6 @@ function assertKeys(value: Record<string, unknown>, allowed: string[], label: st
 
 function isScalar(value: unknown): value is Scalar {
   return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
-}
-
-function isSequentialDerivedMeasureShape(shape: string): boolean {
-  return shape === "running_total"
-    || shape === "lag_absolute_change"
-    || shape === "lag_percentage_change"
-    || shape === "moving_average";
 }
 
 function unique<T>(values: T[]): T[] {

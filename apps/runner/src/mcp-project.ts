@@ -107,6 +107,7 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
         `${definition.displayName} install refused because no active reviewed Read Boundary was found`,
       );
     }
+    assertLocalMcpBoundaryProfile(activeBoundaries, definition.displayName);
     toolNames = ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"];
   } else {
     const absoluteConfig = path.resolve(projectRoot, configPath);
@@ -125,6 +126,7 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
           `${definition.displayName} install refused because no active reviewed Read Boundary was found`,
         );
       }
+      assertLocalMcpBoundaryProfile(activeBoundaries, definition.displayName);
     }
   }
   const preview = await previewManagedMcpProjectInstall({
@@ -241,11 +243,18 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
       : `${definition.displayName} project MCP entry installed at ${path.relative(projectRoot, installed.previews[0]!.paths.destination)}.\n`);
     const backups = installed.backup ? [installed.backup] : [];
     for (const backup of backups) writeReview(`Backup: ${backup}\n`);
-    writeReview(
-      `${definition.reloadInstruction}, then run \`synapsor-runner mcp status ${client} --project${includeActions ? " --include-actions" : ""}\` to verify the reviewed tool boundary.\n`,
-    );
+    writeReview(`${definition.reloadInstruction}.\n`);
   }
   return 0;
+}
+
+function assertLocalMcpBoundaryProfile(
+  boundaries: Awaited<ReturnType<typeof loadActivatedExplorationBoundaries>>,
+  clientName: string,
+): void {
+  if (boundaries.some((boundary) => boundary.deployment_profile === "production")) {
+    throw new Error(`${clientName} local stdio install refused because the active Read Boundary requires production authentication. Configure Production HTTP MCP instead; no client file changed.`);
+  }
 }
 
 
@@ -463,6 +472,8 @@ function managedMcpProjectLifecycleReport(
     entry: preview.paths.serverName,
     action: preview.action,
     mode: authoring ? "authoring" : "runtime",
+    runtime_surface: authoring ? "reviewed_local_mcp" : "configured_runtime_mcp",
+    operator_controls_exposed: false,
     destination: path.relative(preview.paths.projectRoot, preview.paths.destination),
     config: authoring ? null : preview.paths.configArgument,
     store: authoring ? null : preview.paths.storeArgument,
@@ -499,13 +510,13 @@ function formatManagedMcpProjectPreview(report: Record<string, unknown>): string
   const clientName = String(report.client_name);
   return [
     `${clientName} project MCP ${String(report.action)} preview`,
-    `Mode: ${String(report.mode)}`,
+    `Runtime surface: ${managedMcpRuntimeSurface(String(report.mode))}`,
     `Destination: ${String(report.destination)}`,
     ...(report.mode === "authoring"
       ? ["Project root: .", "Transport: local stdio only"]
       : [`Runner config: ${String(report.config)}`, `Runner store: ${String(report.store)}`]),
     `Model-facing tools: ${tools || "none"}`,
-    "Approval, apply, revert, policy, credentials, and trusted identity stay outside MCP.",
+    "Operator powers (approval, apply, revert, policy, credentials, and trusted identity) stay outside MCP.",
     `Other ${clientName} MCP servers and project settings are preserved.`,
     "",
   ].join("\n");
@@ -525,7 +536,7 @@ function formatManagedMcpProjectSetPreview(report: Record<string, unknown>): str
       ...(runtime.role === "action" ? [`  Runner config: ${String(runtime.config)}`] : []),
     ]),
     "Trusted tenant and principal values come from the client process environment; they are not stored in the client config.",
-    "Approval, apply, revert, policy editing, credentials, SQL, and boundary activation stay outside MCP.",
+    "Operator powers (approval, apply, revert, policy editing, credentials, SQL, and boundary activation) stay outside MCP.",
     `Other ${clientName} MCP servers and project settings are preserved.`,
     "",
   ].join("\n");
@@ -546,12 +557,12 @@ function formatManagedMcpProjectStatus(report: {
   return [
     `${report.client_name} project MCP: ${report.state}`,
     report.message,
-    `Mode: ${report.mode}`,
+    `Runtime surface: ${managedMcpRuntimeSurface(report.mode)}`,
     `Destination: ${report.destination}`,
     ...(report.mode === "authoring" ? ["Project root: ."] : [`Runner config: ${report.config}`]),
     `Model-facing tools: ${report.tools.join(", ") || "none"}`,
     `Launch: ${report.launch.message}`,
-    "Approval, apply, revert, policy, credentials, and trusted identity are not model-facing.",
+    "Operator powers (approval, apply, revert, policy, credentials, and trusted identity) are not model-facing.",
     "",
   ].join("\n");
 }
@@ -571,7 +582,13 @@ function formatManagedMcpProjectSetStatus(report: {
       `  Launch: ${runtime.launch.message}`,
     ]),
     "Trusted tenant and principal values are inherited at launch and are not stored in the client config.",
-    "Approval, apply, revert, policy editing, credentials, SQL, and boundary activation are not model-facing.",
+    "Operator powers (approval, apply, revert, policy editing, credentials, SQL, and boundary activation) are not model-facing.",
     "",
   ].join("\n");
+}
+
+function managedMcpRuntimeSurface(mode: string): string {
+  return mode === "authoring"
+    ? "reviewed local MCP (operator controls excluded)"
+    : "configured MCP (operator controls excluded)";
 }

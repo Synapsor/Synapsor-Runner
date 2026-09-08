@@ -4151,13 +4151,14 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("revalidates a saved job when the model says reuse, instead of clearing its pending review", async () => {
+  it("revalidates a saved review without model replanning or clearing its pending review", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-revalidate-reuse-"));
     const inspection = actionTargetInspection();
     const build = buildAutoBoundary({ inspection, project: { root, package_manager: "npm", frameworks: ["node"],
       schema_inputs: [], database_env_names: ["DATABASE_URL"] }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
     const prompts: string[] = [];
     const modelReadWorkloadGenerator = vi.fn();
+    const modelBoundaryJobPlanner = vi.fn(async () => { throw new Error("A schema repair must not reinterpret the saved business job."); });
     const confirmActivation = vi.fn(async () => false);
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => undefined, editFieldTiers: async () => undefined,
@@ -4180,12 +4181,12 @@ describe("boundary operator-plane CLI", () => {
       await expect(boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"],
         async () => inspection, session, undefined, {
           startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
-          modelBoundaryJobPlanner: async () => ({ state: "planned", read_mode: "reuse", action_mode: "none",
-            summary: "Keep the current Read rules.", correction_used: false, authority_granted: false, source_database_changed: false }),
+          modelBoundaryJobPlanner,
           modelReadWorkloadGenerator, modelAuthoringNarrator: async () => "Review the reconciled Read revision; nothing is active.",
           boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(session),
         })).resolves.toBe(0);
       expect(modelReadWorkloadGenerator).not.toHaveBeenCalled();
+      expect(modelBoundaryJobPlanner).not.toHaveBeenCalled();
       expect(confirmActivation.mock.calls.length + prompts.filter((title) => title === "ACTIVATE READ BOUNDARY").length).toBeGreaterThan(0);
       await expect(fs.access(path.join(root, ".synapsor/boundary-authoring/resume.json"))).resolves.toBeUndefined();
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -4674,7 +4675,7 @@ describe("boundary operator-plane CLI", () => {
       inspectedSchema: "public",
     });
     const modelBoundaryJobPlanner = vi.fn()
-      .mockRejectedValueOnce(new Error("BOUNDARY_JOB_PLAN_INVALID: status must be planned or clarification."))
+      .mockRejectedValueOnce(new Error("AUTHORING_CONTEXT_UNAVAILABLE: saved source could not be loaded."))
       .mockResolvedValueOnce({
         state: "planned" as const,
         read_mode: "none" as const,
@@ -4692,9 +4693,11 @@ describe("boundary operator-plane CLI", () => {
         if (prompt.includes("What job are you giving this agent?")) return "Keep the current reviewed Boundary unchanged.";
         throw new Error(`Unexpected planning-retry text prompt: ${prompt}`);
       },
-      chooseOption: async (title, options) => {
+      chooseOption: async (title, options, config) => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "BOUNDARY JOB PLANNING DID NOT COMPLETE") {
+          expect(config?.context?.join("\n")).toContain("AUTHORING_CONTEXT_UNAVAILABLE");
+          expect(config?.context?.join("\n")).not.toContain("did not complete a valid job plan");
           recoveryOptions.push(...options.map((option) => option.value));
           return "retry";
         }
@@ -5383,7 +5386,7 @@ describe("boundary operator-plane CLI", () => {
             expect(options.some((option) => option.value === "activate")).toBe(false);
             expect(choiceOptions?.initialValue).toBe("resolve");
             expect(choiceOptions?.reviewOnly).toBe(true);
-            expect(choiceOptions?.context?.join("\n"), JSON.stringify(vi.mocked(semanticChat.rememberDetails).mock.calls)).toContain("Activation is unavailable");
+            expect(choiceOptions?.context?.join(" ").replace(/\s+/gu, " "), JSON.stringify(vi.mocked(semanticChat.rememberDetails).mock.calls)).toContain("Activation is unavailable");
             if (coverageFailure) return rulesMenuVisits++ === 0 ? "rules" : "finish";
             if (failedReadCorrection) {
               expect(coverageRequests).toHaveLength(2);
@@ -5413,9 +5416,9 @@ describe("boundary operator-plane CLI", () => {
           return "retry";
         }
         if (title === "ACTIVATE READ BOUNDARY") {
-          const review = choiceOptions?.context?.join("\n") ?? "";
+          const review = choiceOptions?.context?.join(" ").replace(/\s+/gu, " ") ?? "";
           expect(review).toContain("Read review -> Action review");
-          expect(review).toContain("Grants: reads only");
+          expect(review).toContain("read access only");
           expect(review).not.toContain("Action 1:"); // Action rules have their own explicit next review.
           if (posture === "repair_on_resume" || writeback === "supervised") expect(review).toContain("prepared, not enabled; worker required");
           expect(review).not.toMatch(/\+\d+ more|small-group minimum|fields per|1000 queries/u);
@@ -5848,7 +5851,7 @@ describe("boundary operator-plane CLI", () => {
           if (title === "START BOUNDARY DRAFTING") return "resume";
           if (title === "ACTIVATE READ BOUNDARY") {
             if (posture === "repair_on_resume") {
-              expect(options?.context?.join("\n")).toContain("execution review (prepared, not enabled; worker required)");
+              expect(options?.context?.join(" ").replace(/\s+/gu, " ")).toContain("execution review (prepared, not enabled; worker required)");
               expect(choices.some((choice) => choice.value === "prepare_execution")).toBe(false);
               executionPrepared = true;
             }
@@ -6172,7 +6175,7 @@ describe("boundary operator-plane CLI", () => {
         expect(savedResume.action.completed_outcomes).toEqual(["maintenance.same_followup"]);
         expect(splitChats[1]!.streamCheckpoint).toHaveBeenCalledWith("One Action draft; policy clarification incorporated",
           expect.arrayContaining([expect.stringContaining("Human-review quorum:")]), "normal");
-        expect(splitContexts.join("\n")).toContain("execution review (prepared, not enabled; worker required)");
+        expect(splitContexts.join(" ").replace(/\s+/gu, " ")).toContain("execution review (prepared, not enabled; worker required)");
         await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
 
         vocabularyReviewCount = 0;
@@ -7361,8 +7364,8 @@ describe("boundary operator-plane CLI", () => {
       candidateBefore = JSON.stringify(before.candidate);
       const summary = formatReadActivationBusinessSummary(before.bundle).join("\n");
       expect(summary).toContain("service visits");
-      expect(summary).toContain("Scope decision:");
-      expect(summary).toContain("Excluded:");
+      expect(summary).toContain("Who:");
+      expect(summary).toContain("Kept private:");
       expect(summary).not.toMatch(/relationships|scheduled_at|tenant_id|fingerprint|\+\d+ more/u);
       expect(summary.split("\n").length).toBeLessThanOrEqual(6);
       const acknowledged = structuredClone(before.bundle);

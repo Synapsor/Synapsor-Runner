@@ -98,6 +98,7 @@ export type PostActivationAskDependencies = {
   checkClientLaunch?: (projectRoot: string, client: ManagedMcpProjectClient) => Promise<{ ok: boolean; messages: string[] }>;
   readExecutionState?: typeof readSemanticSupervisedExecutionState;
   readRuntimeBindings?: typeof reviewedRuntimeBindingNames;
+  readRuntimeIdentity?: typeof reviewedRuntimeIdentity;
   confirmWorkerStart?: (context: string[]) => Promise<boolean | undefined>;
   runWorker?: (args: string[]) => Promise<number>;
   runBoundaryReview?: (args: string[]) => Promise<number>;
@@ -347,6 +348,13 @@ export async function runPostActivationAskHandoff(
       "These are assigned, not verified. The connection check tests transport and tools only.", ""].join("\n"));
     const includeActions = input.includeActions
       ?? await (dependencies.hasActiveActions ?? hasActiveActionRuntime)(input.projectRoot);
+    const runtimeIdentity = await (dependencies.readRuntimeIdentity ?? reviewedRuntimeIdentity)(input.projectRoot)
+      .catch(() => "unavailable" as const);
+    if (runtimeIdentity === "production_authentication") {
+      write("Local stdio MCP was not installed because this active boundary requires production authentication. Configure the reviewed Production HTTP MCP path instead; no client configuration changed.\n");
+      write(formatHttpMcpHandoff(input.projectRoot));
+      return 0;
+    }
     const installArgs = [
       "install", selection.client,
       "--project", "--authoring",
@@ -387,6 +395,8 @@ export async function runPostActivationAskHandoff(
         selection.client,
         includeActions,
         runtimeBindings,
+        runtimeIdentity,
+        runtimeBindings.filter((binding) => env[binding.environment]?.trim()).map((binding) => binding.environment),
       ));
       if (includeActions) {
         const execution = await (dependencies.readExecutionState ?? readSemanticSupervisedExecutionState)({ projectRoot: input.projectRoot });
@@ -677,28 +687,34 @@ export function formatMcpClientHandoff(
   client: ManagedMcpProjectClient,
   includeActions: boolean,
   runtimeBindings: ReviewedRuntimeBinding[] = [],
+  runtimeIdentity: ReviewedRuntimeIdentity = runtimeBindings.length ? "local_environment" : "unavailable",
+  configuredBindings: readonly string[] = [],
 ): string {
-  const cmd = cliCommandName();
   const root = shellToken(projectRoot);
   const launch = client === "claude-code"
     ? "claude"
     : client === "cursor"
       ? `cursor ${root}`
       : `code ${root}`;
+  const missingBindings = runtimeBindings.filter((binding) => !configuredBindings.includes(binding.environment));
   return [
     "LOCAL STDIO MCP CONFIGURED",
     `${managedMcpClientLabel(client)} launches Runner with the four fixed tools. Do not start a separate MCP server.`,
     ...(!includeActions ? ["Read only: no Action is active; change requests remain refused."] : []),
-    ...(runtimeBindings.length
-      ? [
-          "Before live customer calls, set trusted test identity and open the client:",
-          ...runtimeBindings.map((binding) =>
+    ...(runtimeIdentity === "production_authentication"
+      ? ["Production identity comes from the reviewed authenticated session. Do not copy fixture values or accept identity from a client prompt or model."]
+      : runtimeBindings.length
+      ? missingBindings.length ? [
+          "Local test identity still needed: use the account/person from your application fixture or trusted authentication setup. Runner cannot choose these from a database URL.",
+          "Provide only the missing reviewed bindings in this terminal before opening the client:",
+          ...missingBindings.map((binding) =>
             `  export ${binding.environment}='<${binding.role}>'`),
         ]
-      : ["Start or restart the client from the trusted runtime environment required by this reviewed boundary."]),
+        : ["Local test identity is configured in this terminal; values stay private. Launch the client here. Other terminals or already-running clients need their own trusted environment.",
+            "Identity values are configured, not authenticated or proven by the MCP handshake; every tool use still enforces the reviewed scope."]
+      : ["Start or restart the client from the trusted runtime environment required by this reviewed boundary. Identity is not supplied by the model or client config."]),
     `  cd ${root}`,
     `  ${launch}`,
-    `Connection diagnostics: ${cmd} mcp status ${client} --project${includeActions ? " --include-actions" : ""} --check-launch`,
     "",
   ].join("\n");
 }
@@ -715,6 +731,8 @@ type ReviewedRuntimeBinding = {
   role: "tenant" | "principal";
   environment: string;
 };
+
+type ReviewedRuntimeIdentity = "local_environment" | "production_authentication" | "unavailable";
 
 async function reviewedRuntimeBindingNames(projectRoot: string): Promise<ReviewedRuntimeBinding[]> {
   const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
@@ -736,6 +754,20 @@ async function reviewedRuntimeBindingNames(projectRoot: string): Promise<Reviewe
     }
   }
   return [...values.values()];
+}
+
+async function reviewedRuntimeIdentity(projectRoot: string): Promise<ReviewedRuntimeIdentity> {
+  const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
+  if (boundaries.length === 0) return "unavailable";
+  if (boundaries.every((boundary) => boundary.deployment_profile === "production"
+    && boundary.trusted_context.provider === "http_claims")) {
+    return "production_authentication";
+  }
+  if (boundaries.every((boundary) => boundary.deployment_profile !== "production"
+    && boundary.trusted_context.provider === "environment")) {
+    return "local_environment";
+  }
+  return "unavailable";
 }
 
 export async function hasActiveActionRuntime(
@@ -768,6 +800,7 @@ export function formatHttpMcpHandoff(projectRoot: string): string {
   const root = shellToken(projectRoot);
   return [
     "PRODUCTION HTTP MCP",
+    "Read-only endpoint: this transport does not yet serve Action requests or owner settings. It is not an automatic-update integration.",
     "Production HTTP needs operator-owned identity-provider, TLS, and shared PostgreSQL accounting inputs.",
     "Runner verifies OAuth/JWT access tokens; it never issues, refreshes, prints, or stores token values.",
     "",

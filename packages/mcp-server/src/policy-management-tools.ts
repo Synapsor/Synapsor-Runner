@@ -48,6 +48,32 @@ export type PolicyManagementToolContext = {
 type Handle = { binding: string; epoch: number; expires: number; detail: Detail;
   request?: { digest: string; result: Promise<Record<string, unknown>>; saved_epoch?: number } };
 
+function conditionalNarrowingExample(detail: Detail) {
+  for (const outcome of detail.vocabulary) {
+    if (!outcome.automatic_approval_delegable) continue;
+    for (const fact of outcome.facts) {
+      const values = "allowed_values" in fact ? fact.allowed_values : undefined;
+      if (fact.operators.includes("one_of") && fact.value_type === "string" && values?.length) {
+        return { outcome: outcome.outcome, approval: "inherit", auto_approve_when: { kind: "one_of", fact: fact.name, values: [values[0]!] } };
+      }
+    }
+    for (const fact of outcome.facts) {
+      const range = "literal_range" in fact ? fact.literal_range : undefined;
+      if (fact.operators.includes("lte") && (fact.value_type === "integer" || fact.value_type === "money_minor") && range) {
+        const values = "literal_values" in fact ? fact.literal_values : undefined;
+        const value = values
+          ? values.find((candidate) => typeof candidate === "number" && Number.isSafeInteger(candidate)
+            && candidate >= range.minimum && candidate <= range.maximum)
+          : range.maximum;
+        if (value !== undefined) {
+          return { outcome: outcome.outcome, approval: "inherit", auto_approve_when: { kind: "compare", fact: fact.name, operator: "lte", value } };
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
 /** An explicitly installed virtual-resource provider behind the existing four
  * tools. It never calls a source executor and exposes no confirmation method. */
 export function createPolicyManagementTools(options: {
@@ -157,21 +183,36 @@ export function createPolicyManagementTools(options: {
       if (tool === "app.describe_actions" && !detail.permissions.includes("draft")) {
         return bounded({ ...base(current.scope_label), actions: [], management_access: "inspect_only" });
       }
+      if (tool === "app.describe_actions" && detail.vocabulary_status !== "current") {
+        failure("POLICY_DELEGATION_PARENT_CHANGED", "The reviewed Action vocabulary is no longer current. Inspect existing settings or revoke them; no revision can be drafted.");
+      }
       if (tool === "app.describe_actions") return bounded({ ...base(current.scope_label), actions: [{
         outcome: POLICY_REVISION_OUTCOME, title: "Revise agent rules", status: "requires_current_management_permission",
         description: "Prepare a disabled revision of this owner's rules. Parent restrictions and shared consumption remain enforced; human activation is separate.",
         request: { policy_view: POLICY_VIEW, outcome: POLICY_REVISION_OUTCOME, control_ref: "Use the pol_ reference from the settings summary",
           definition: { schema_version: "synapsor.owner-policy.v1", agents: "Reviewed agent names from the summary",
             rules: "Complete intended rules using the reviewed vocabulary", budget_limits: "Optional smaller caps for existing reviewed meters" } },
-        rule_contract: { outcome: "Reviewed outcome", require: "Typed predicate", approval: ["inherit", "human"], auto_approve_when: "Optional typed predicate" },
+        rule_contract: { outcome: "Reviewed outcome", require: "Typed predicate", approval: {
+          allowed_values: ["inherit", "human"],
+          human: "Always requires human review; omit auto_approve_when.",
+          inherit: "Defers to the current Action approval policy; it does not approve or execute.",
+          auto_approve_when: "Only with inherit: a match defers to the Action policy; a non-match or unknown requires human review.",
+          vocabulary_values: "Use literal_values when present; allowed_values are reviewed compiled enum values after parent limits.",
+        } },
         predicates: ["all: conditions[]", "any: conditions[]", "not: condition", "compare: fact, operator, value",
           "compare_facts: fact, operator, other_fact", "one_of: fact, values[]", "is_present: fact"],
         comparisons: ["eq", "neq", "lt", "lte", "gt", "gte"],
-        predicate_example: { kind: "compare", fact: "Use a reviewed fact name", operator: "lte", value: 10 },
+        ...(() => {
+          const example = conditionalNarrowingExample(detail);
+          return example ? { conditional_narrowing_example: example } : {};
+        })(),
         eligibility: "not_checked", activation_exposed: false,
       }] });
       if (tool === "app.explore_data") {
         const request = explore.parse(parsed.data);
+        if (request.section === "vocabulary" && detail.vocabulary_status !== "current") {
+          failure("POLICY_DELEGATION_PARENT_CHANGED", "The reviewed Action vocabulary is no longer current. Inspect existing settings or revoke them; no vocabulary is disclosed.");
+        }
         if (request.section === "summary") {
           if (request.cursor || request.limit) failure("ARGUMENT_INVALID", "The settings summary has no pages. Page the rules, vocabulary or budgets instead.");
           return bounded({ ...base(current.scope_label), control_ref: reference(binding, detail, current.expires_at_ms),
@@ -205,11 +246,14 @@ export function createPolicyManagementTools(options: {
             next_step: "This is the prior saved-draft receipt. Settings or permissions changed afterward; inspect the current settings to continue review." } } : {}) });
       }
       if (handle.epoch !== detail.epoch) failure("POLICY_REVISION_CONFLICT", "Settings or parent permissions changed. Inspect the current revision before submitting an edit.");
-      const result = submit(ctx, handle, definition.data).catch((error: unknown) => {
-        if (handle.request?.digest === digest) delete handle.request;
-        throw error;
-      });
+      let resolveResult!: (value: Record<string, unknown>) => void;
+      let rejectResult!: (reason: unknown) => void;
+      const result = new Promise<Record<string, unknown>>((resolve, reject) => { resolveResult = resolve; rejectResult = reject; });
       handle.request = { digest, result };
+      void submit(ctx, handle, definition.data).then(resolveResult, (error: unknown) => {
+        if (handle.request?.digest === digest) delete handle.request;
+        rejectResult(error);
+      });
       return bounded(await result);
     },
   };

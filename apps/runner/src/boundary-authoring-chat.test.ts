@@ -55,6 +55,29 @@ function memoryIo(input: {
 }
 
 describe("Boundary authoring chat", () => {
+  it("keeps the concrete writer blocker on the primary recovery menu without model narration", async () => {
+    const memory = memoryIo({ choices: ["pause"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const guide = vi.fn(); chat.setPermissionGuide!(guide);
+    await chat.session.chooseOption!("Execution needs a deployment fix", [{ value: "pause", label: "Save and pause" }], {
+      displayContext: true, context: ["Writer has extra access and lacks private row-lock permissions.", "Use a dedicated writer; authority records are preserved."],
+    });
+    expect(memory.choices[0]!.message).toContain("lacks private row-lock permissions");
+    expect(memory.choices[0]!.message).toContain("Use a dedicated writer");
+    expect(memory.choices[0]!.message).not.toContain("\n");
+    expect(guide).not.toHaveBeenCalled(); chat.close();
+  });
+  it("renders exact Action facts once and leaves explanation optional", async () => {
+    const memory = memoryIo({ choices: ["no"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const guide = vi.fn(); chat.setPermissionGuide!(guide);
+    await chat.session.confirmActivation!("Activate verified Action Boundary sample?", {
+      context: ["Action  plan.change", "Limits  At most 10 overall and 3 per account in any rolling 24 hours"],
+    });
+    expect(guide).not.toHaveBeenCalled();
+    expect(memory.writes.join("").match(/At most 10 overall/gu)).toHaveLength(1);
+    expect(memory.choices[0]!.labels).toContain("Ask the model before deciding"); chat.close();
+  });
   it.each([false, true])("opens named privacy evidence directly and keeps the pending gate after explanation failure=%s", async (fail) => {
     const memory = memoryIo({ reads: ["Which field was flagged? Don't change anything."],
       choices: ["__ask_boundary_model__", "privacy_details", "finish"] });

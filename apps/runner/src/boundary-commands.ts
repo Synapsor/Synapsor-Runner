@@ -256,8 +256,11 @@ import {
 } from "./read-boundary-revision-model.js";
 import { parseReadPolicySettings } from "./read-boundary-policy-revision.js";
 import { readBoundaryReviewSections, readRevisionDiff, reviewSectionLines, loadReadReviewDiff, saveReadReviewDiff, type ReviewSection } from "./read-boundary-review-view.js";
+import { readDiscoveryCompatibility, readOptionalExplorationDraft } from "./auto-boundary.js";
+import { readDiscoveryConcernLines } from "./read-discovery-compatibility.js";
 import { readPrivacyReview, readPrivacySummary, readPrivacyExplanationFacts, type ReadPrivacyReview } from "./read-boundary-privacy-review.js";
 import { automaticApprovalBusinessSummary } from "./authoring-business-review.js";
+import { renderReviewFacts } from "./review-facts.js";
 import { newPolicySourceSession, loadPolicySources, activePolicySource, savePolicySources, bindPolicyCoverage, recordReadInterpretation, confirmedReadFieldMeanings } from "./authoring-policy-source.js";
 import { BoundaryJobPlanningError, planningDiagnosticLines, saveBoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
 import { installPolicySourceCommands } from "./authoring-policy-source-ui.js";
@@ -3422,7 +3425,10 @@ function boundaryJobPlanningFailureReason(error: unknown): string {
   if (error instanceof Error && /^BOUNDARY_JOB_PLAN_INVALID:/iu.test(error.message)) {
     return "The model response did not match Runner's typed Read/Action planning contract.";
   }
-  return "The model request did not complete one valid typed Read/Action job plan.";
+  if (error instanceof Error) {
+    return `Runner could not finish the planning step: ${redactCliErrorMessage(error.message).slice(0, 700)}`;
+  }
+  return "Runner could not finish the planning step. No new draft was saved.";
 }
 
 async function promptBoundaryJobPlanningFallback(input: {
@@ -3437,7 +3443,7 @@ async function promptBoundaryJobPlanningFallback(input: {
     ? "The model still needs a business clarification before it can separate Read and Action work."
     : boundaryJobPlanningFailureReason(input.failure);
   const context = [
-    `${boundaryModelLabel(input.model)} did not complete a valid job plan${input.failure instanceof BoundaryJobPlanningError && input.failure.diagnostic.attempts.length > 1 ? " after one correction" : ""}.`,
+    `Boundary planning with ${boundaryModelLabel(input.model)} could not finish${input.failure instanceof BoundaryJobPlanningError && input.failure.diagnostic.attempts.length > 1 ? " after one correction" : ""}.`,
     reason,
     ...(input.unresolvedQuestion ? [`Unresolved question: ${input.unresolvedQuestion}`] : []),
     "Runner discarded the response before staging a mapping catalog or changing a Boundary draft.",
@@ -4773,6 +4779,17 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     let planningModel = preselectedMappingSession!;
     let additionalAttemptUsed = false;
     while (true) {
+      // Completed drafting has an exact local contract. A schema/role repair
+      // requires revalidation of that contract, not another interpretation.
+      if (revalidateSavedJob && resumeSelected && loadedResume.status === "stale"
+        && ["authority_review", "client_setup"].includes(loadedResume.value.stage)) {
+        jobPlan = {
+          state: "planned", read_mode: "reuse", action_mode: "reuse",
+          summary: "Revalidate the saved business rules against the changed database.",
+          correction_used: false, authority_granted: false, source_database_changed: false,
+        };
+        break;
+      }
       const planningSession = boundaryAuthoringModelSession(planningModel, input.authoringChat);
       let clarificationAnswer: string | undefined;
       let planningFailure: unknown;
@@ -7642,6 +7659,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ? ["UNMET REQUEST: automatic completion is not configured. This draft would only propose changes. Choose Prepare requested automatic execution to retain the rules and prepare a separate execution review."]
             : []),
           `Next: Read review${semanticActionDrafts.length || actionDrafts.length ? " -> Action review" : ""}${automatic.length || missing.length ? ` -> execution review (${missing.length ? "configuration missing" : "prepared, not enabled; worker required"})` : ""} -> client setup.`,
+          ...(automatic.length || missing.length ? [`Still needed: ${process.env.SYNAPSOR_DATABASE_WRITE_URL?.trim()
+            ? "Write connection configured; exact permissions not yet verified."
+            : "The default write connection is not configured; choose a configured writer during execution setup."} Automatic completion also requires trusted runtime identity and a running worker; neither is proved by this Read review.`] : []),
         ];
       },
       executionPreparationNeeded: () => unmetExecutionEntries().length > 0,
@@ -7720,9 +7740,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         context: [
           ...(revisionReview.length ? ["REVIEWED REPLACEMENT", ...revisionReview, ""] : []),
           ...semanticActionDrafts.flatMap((entry) => [
-            ...semanticActionActivationReviewLines(entry.result.compiled),
-            ...(entry.result.compiled.approval_class.mode === "policy"
-              ? [`${automaticApprovalBusinessSummary(entry.result.compiled, context.candidate)}. Other valid requests go to ${entry.result.compiled.approval_class.required_role.replaceAll("_", " ")}. Invalid requests are refused.`] : []),
+            ...semanticActionActivationReviewLines(entry.result.compiled, context.candidate,
+              terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2),
           ]),
           "This gate activates proposal authority only. It does not approve, apply, or write source data.",
           "/details shows the exact immutable authority and digest.",
@@ -7737,10 +7756,12 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         actor: localInteractiveActor(),
       });
       semanticActionActivation = activated.activation;
-      if (!exactActiveAction) await input.authoringChat?.streamCheckpoint("Verified Action Boundary active", [
-        `${semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome).join(", ")} · proposal authority only`,
-        "Approval and apply remain separate · source unchanged",
-      ], "success");
+      if (!exactActiveAction) await input.authoringChat?.streamCheckpoint("Verified Action Boundary active", renderReviewFacts([
+        ...semanticActionDrafts.map((entry): [string, string] => ["Action", `${entry.result.compiled.rule.outcome.split(".").at(-1)!.replaceAll("_", " ")} (${entry.result.compiled.rule.outcome})`]),
+        ["Authority granted", "Submit reviewed proposals only (proposal authority only)"],
+        ["Database execution", "Not enabled by this activation; separate execution review follows"],
+        ["Customer data", "Unchanged"],
+      ], terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2), "success");
       for (const entry of semanticActionDrafts.filter((candidate) => candidate.result.compiled.effect_envelope.writeback.mode === "direct_sql")) {
         const compiled = entry.result.compiled;
         const activeReads = await loadActivatedExplorationBoundaries(input.projectRoot);
@@ -8925,6 +8946,9 @@ function semanticActionRevisionDiffLines(
     if (before !== after) changes.push(`${label}: ${before} -> ${after}`);
   };
   if (changed.has("rule")) {
+    add("Client title", previous.discovery?.title ?? "Default outcome label", next.draft.discovery?.title ?? "Default outcome label");
+    add("Client description", previous.discovery?.summary ?? "Default outcome description", next.draft.discovery?.summary ?? "Default outcome description");
+    add("Client search phrases", previous.discovery?.aliases?.join(", ") || "None", next.draft.discovery?.aliases?.join(", ") || "None");
     add("WHEN", previous.review.when, next.review.when);
     add("THEN", previous.review.then, next.review.then);
     add("Refuse", joinActionRuleReviewClauses(previous.review.refused), joinActionRuleReviewClauses(next.review.refused));
@@ -9030,6 +9054,12 @@ function semanticActionReviewLines(compiled: CompiledActionRuleModelDraftV1): st
   return [
     `Outcome: ${compiled.rule.outcome}`,
     `Agent request: this outcome plus ${compiled.rule.subjects.length} opaque subject reference${compiled.rule.subjects.length === 1 ? "" : "s"}; no patch or trusted scope`,
+    ...(compiled.draft.discovery ? [
+      `Client title: ${compiled.draft.discovery.title}`,
+      `Client description: ${compiled.draft.discovery.summary}`,
+      `Client search phrases: ${compiled.draft.discovery.aliases?.join(", ") || "None"}`,
+      "Client wording is public discovery metadata, not proof of this customer's eligibility.",
+    ] : []),
     `Privately verifies: ${privateFacts.join("; ")}`,
     `WHEN: ${compiled.review.when}`,
     `THEN: ${compiled.review.then}`,
@@ -9058,7 +9088,7 @@ function semanticActionNarrationFacts(compiled: CompiledActionRuleModelDraftV1):
   ];
 }
 
-function semanticActionActivationReviewLines(compiled: CompiledActionRuleModelDraftV1): string[] {
+function semanticActionActivationReviewLines(compiled: CompiledActionRuleModelDraftV1, read: ExplorationBoundaryDraft, width: number): string[] {
   const approvalRule = compiled.approval_class.rules.find((rule) => rule.outcome === compiled.rule.outcome);
   const humanReview = `${compiled.approval_class.required_approvals} distinct ${compiled.approval_class.required_role} ${compiled.approval_class.required_approvals === 1 ? "approval" : "approvals"}`;
   const approval = compiled.approval_class.mode === "policy" && approvalRule?.auto_approve_when
@@ -9067,13 +9097,13 @@ function semanticActionActivationReviewLines(compiled: CompiledActionRuleModelDr
       : `Automatic when ${actionRuleBooleanSummary(approvalRule.auto_approve_when)}; otherwise ${humanReview}`
     : `Human review: ${humanReview}`;
   const limits = compiled.approval_class.shared_limits.length
-    ? compiled.approval_class.shared_limits.map(actionRuleSharedLimitSummary).join("; ")
+    ? automaticApprovalBusinessSummary(compiled, read)
     : "No automatic-approval limit; automatic approval is unavailable";
   return [
-    ...renderBoundaryMapTable(
-      ["Decision", "Exact reviewed behavior"],
+    ...renderReviewFacts(
       [
         ["Outcome", compiled.rule.outcome],
+        ...(compiled.draft.discovery ? [["Client menu", compiled.draft.discovery.title] as [string, string]] : []),
         ["Agent sends", `Outcome + ${compiled.rule.subjects.length} opaque subject${compiled.rule.subjects.length === 1 ? "" : "s"}`],
         ["WHEN", compiled.review.when],
         ["THEN", compiled.review.then],
@@ -9084,7 +9114,7 @@ function semanticActionActivationReviewLines(compiled: CompiledActionRuleModelDr
           ? "Proposal only"
           : "Supervised execution eligible, but separately disabled"],
       ],
-      { widths: [18, 62], rowSeparators: false },
+      width,
     ),
     "Runner privately reloads reviewed facts and derives the exact effect; the agent supplies no patch, scope, SQL, approval, or apply command.",
   ];
@@ -11014,7 +11044,12 @@ async function confirmAndActivateFocusedBoundary(input: {
   const readiness = await input.reviewOptions?.readiness?.();
   const privacy = input.reviewOptions?.privacyEvidence?.(context.candidate)
     ?? readPrivacyReview({ boundary: context.candidate, confirmedMeanings: input.reviewOptions?.confirmedFieldMeanings?.(context.bundle.candidate_digest) });
+  const discoveryConcerns = readDiscoveryCompatibility(context.candidate, context.bundle.candidate_digest,
+    await readOptionalExplorationDraft(input.projectRoot));
+  const discoveryLines = readDiscoveryConcernLines(discoveryConcerns);
+  activationContext.push(...(discoveryLines.length ? ["", ...discoveryLines] : ["Discovery compatibility: complete resource contracts fit the bounded MCP response."]));
   const conversationReviewContext = formatReadActivationDecisionSummary([
+    ...(discoveryConcerns.length ? ["Discovery compatibility: some exact resource contracts exceed the supported size. Revise this saved draft before activation; exact details list the affected resources and sizes."] : []),
     ...(readiness?.summary ?? await input.reviewOptions?.rulesSummary?.() ?? []),
     ...(input.reviewOptions?.sequenceSummary?.() ?? ["Sequence: this decision grants Read access only. Action approval and source execution require separate reviews."]),
     ...formatReadActivationBusinessSummary(context.bundle, undefined, privacy),
@@ -11095,7 +11130,7 @@ async function confirmAndActivateFocusedBoundary(input: {
       let choice = await input.session.chooseOption(
         readiness && !readiness.ready ? "FINISH BOUNDARY REVIEW" : replacingActive ? "REPLACE ACTIVE READ BOUNDARY" : "ACTIVATE READ BOUNDARY",
         [
-          ...(readiness && !readiness.ready ? [{ value: "resolve", label: readiness.privacy ? "Resolve required privacy decision with the model" : "Resolve required decisions with the model",
+          ...(discoveryConcerns.length ? [] : readiness && !readiness.ready ? [{ value: "resolve", label: readiness.privacy ? "Resolve required privacy decision with the model" : "Resolve required decisions with the model",
             detail: "Continue this saved draft; no activation is available while its requirements are unresolved." }] : [{
             value: "activate",
             label: replacingActive
@@ -11125,6 +11160,8 @@ async function confirmAndActivateFocusedBoundary(input: {
             : []),
           ...(privacy.findings.some((finding) => finding.status !== "business_meaning_checked") ? [{ value: "privacy_details", label: "Inspect privacy findings",
             detail: "See each unresolved field and exact evidence directly; no model request or draft change." }] : []),
+          ...(discoveryConcerns.length ? [{ value: "discovery_details", label: "Inspect Discovery compatibility",
+            detail: "Exact resource sizes, supported limits and recovery; no model request or authority change." }] : []),
           {
             value: "details",
             label: "View exact Read Boundary details",
@@ -11175,6 +11212,10 @@ async function confirmAndActivateFocusedBoundary(input: {
         await input.session.showReviewDetails?.(section.title, section.lines);
         continue;
       }
+      if (choice === "discovery_details") {
+        await input.session.showReviewDetails?.("Discovery compatibility", discoveryLines);
+        continue;
+      }
       if (choice === "details") {
         if (input.session.showReviewDetails) await input.session.showReviewDetails("Exact Read Boundary review", activationContext);
         else {
@@ -11210,6 +11251,7 @@ async function confirmAndActivateFocusedBoundary(input: {
         continue;
       }
       accepted = choice === "activate";
+      if (accepted && discoveryConcerns.length) continue;
       reviewDisposition = choice === "manual_editor" ? "manual_editor" : "finish";
       saveReviewedDisabled = choice === "finish";
       decided = true;
@@ -11678,26 +11720,35 @@ export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle
   const sharedCount = resources.filter((resource) => resource.shared_reference_scope).length;
   const unscopedCount = resources.filter((resource) => !resource.shared_reference_scope && !hasReviewedPrincipalScope(resource)).length;
   const readable = resources.map((resource) => resource.label ?? resource.id.split(".").at(-1)!.replaceAll("_", " "));
+  const privateCount = resources.reduce((count, resource) => count + (resource.model_withheld_fields?.length ?? 0), 0);
   return [
     bundle.candidate.organization_scope
-      ? "Scope decision: whole-organization access, not one customer's information."
+      ? "Who: whole-organization access, not one customer's information."
       : unscopedCount === 0 && resources.length > sharedCount
-        ? "Whose information: only this customer's records within their account; identity comes from the trusted session, never agent arguments."
+        ? "Who: only this customer's permitted records within their account; identity comes from the trusted session, never agent arguments."
         : resources.length === sharedCount
-          ? "Whose information: reviewed shared references, not customer-private records."
-          : `Scope decision: account isolation is enforced, but ${unscopedCount} non-shared resource(s) lack individual customer filtering. Inspect exact scope before activation.`,
-    `Readable information: ${readable.length <= 4 ? readable.join(", ") : `${readable.slice(0, 3).join(", ")} and ${readable.length - 3} other reviewed record types. Exact details names all ${readable.length}`}.`,
+          ? "Who: reviewed shared references, not customer-private records."
+          : `Who: account isolation is enforced, but ${unscopedCount} non-shared resource(s) lack individual customer filtering. Inspect exact scope before activation.`,
+    `Can read: ${readable.join(", ")}.`,
+    `Kept private: ${privateCount} Runner-only fields; ${excluded.length} excluded from Read. View exact Read Boundary details names every field and operation.`,
     ...readPrivacySummary(privacy ?? readPrivacyReview({ boundary: bundle.candidate, confirmedMeanings })),
     ...(sharedCount ? [`Shared references: ${sharedCount} reviewed resource(s) are intentionally common across accounts; inspect exact scope.`] : []),
-    `Excluded: ${excluded.length} fields unavailable to Read. Exact details lists every field and restriction.`,
-    "Grants: reads only. Approval and execution are separate decisions.",
+    "This approval: read access only. It approves no request and executes no database change.",
   ];
 }
 
-export function formatReadActivationDecisionSummary(lines: string[], _columns: number): string[] {
-  // Keep logical sentences for the transcript's width-aware renderer and the
-  // model context. Pre-wrapping here causes double wrapping and split facts.
-  return lines;
+export function formatReadActivationDecisionSummary(lines: string[], columns: number): string[] {
+  const pending = lines.filter((line) => /^(?:Client integration still unverified|Next|Sequence|Still needed):/u.test(line));
+  const facts = lines.filter((line) => !pending.includes(line));
+  if (pending.length) facts.push(`Still needed: ${pending.map((line) => line.slice(line.indexOf(":") + 1).trim()).join(" ")}`);
+  const rows: Array<[string, string]> = [];
+  const notes: string[] = [];
+  for (const line of facts) {
+    const colon = line.indexOf(":");
+    if (colon > 0 && colon < 40) rows.push([line.slice(0, colon), line.slice(colon + 1).trim()]);
+    else notes.push(line);
+  }
+  return [...renderReviewFacts(rows, columns - 2), ...notes.flatMap((line) => wrapStyledTerminalLine(line, columns - 2))];
 }
 
 export function formatBoundaryChatReviewSummary(

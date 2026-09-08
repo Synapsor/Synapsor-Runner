@@ -14,6 +14,14 @@ const call = (session: ScopedCatalogSession, index: ScopedCatalogIndex, request 
   session.describe({ index, binding, request, key: "actions" });
 
 describe("scoped indexed catalog", () => {
+  it("reports empty search only for a genuinely empty filtered result, never for hits or browsing", () => {
+    const index = new ScopedCatalogIndex(entries(4));
+    const session = new ScopedCatalogSession();
+    expect(call(session, index, { query: "restock" }).discovery).not.toHaveProperty("empty_search");
+    expect(call(session, index).discovery).not.toHaveProperty("empty_search");
+    expect(call(session, index, { query: "unavailable phrase" }).discovery).toHaveProperty("empty_search", "no_matches_to_this_query");
+  });
+
   it("indexes 8000 authorized records; exact lookup and selective lexical search do not scan the catalog", () => {
     const started = performance.now();
     const index = new ScopedCatalogIndex(entries(8_000));
@@ -84,7 +92,16 @@ describe("scoped indexed catalog", () => {
     const wireTooLarge = new ScopedCatalogIndex([{ ...records[0]!, detail: () => ({ inputs: "x".repeat(10_000) }) }]);
     expect(() => call(session, wireTooLarge, { detail: records[0]!.id })).toThrowError(/does not fit/u);
     const tooLarge = new ScopedCatalogIndex([{ ...records[0]!, detail: () => ({ inputs: "x".repeat(16384) }) }]);
-    expect(() => call(session, tooLarge, { detail: records[0]!.id })).toThrowError(/no constraints were truncated/u);
+    expect(() => call(session, tooLarge, { detail: records[0]!.id })).toThrowError(/no constraints were truncated/iu);
+    try { call(session, wireTooLarge, { detail: records[0]!.id }); }
+    catch (error) {
+      expect(error).toMatchObject({ code: "CATALOG_CONTRACT_TOO_LARGE", details: {
+        kind: "response", measured_bytes: expect.any(Number), limit_bytes: 16384,
+        retryable: false, recovery: "operator_boundary_review",
+      } });
+      expect((error as Error).message).toContain("changing the page size will not help");
+      expect((error as Error).message).toContain("Discovery compatibility");
+    }
   });
 
   it("budgets session discovery across revisions, not just a page", () => {

@@ -45,7 +45,7 @@ describe("exact-revision privacy explanation evidence", () => {
       { id: "customer", scope: "tenant" as const, kind: "count" as const, maximum: 3, window_seconds: 86400 },
       { id: "all", scope: "capability" as const, kind: "count" as const, maximum: 10, window_seconds: 86400 },
     ] } };
-    expect(automaticApprovalBusinessSummary(action, boundary)).toBe("Up to 10 automatic approvals for this outcome overall and 3 automatic approvals per trusted group in any rolling 24 hours");
+    expect(automaticApprovalBusinessSummary(action, boundary)).toBe("At most 10 automatic approvals for this outcome overall and 3 automatic approvals per trusted group in any rolling 24 hours");
     const root = structuredClone(boundary.pack.resources[0]!);
     root.primary_key = "account_id"; root.id = "telecom.accounts"; root.table = "accounts"; root.label = "Customer accounts";
     boundary.pack.resources.push(root);

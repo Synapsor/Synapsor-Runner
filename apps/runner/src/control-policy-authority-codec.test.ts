@@ -62,7 +62,7 @@ import { verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-id
 import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, withSharedPostgresRuntimeStoreReadBridge } from "./store-shared.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
 import { activateSemanticActionRuntime, disableSemanticSupervisedExecution, enableSemanticSupervisedExecution,
-  previewSemanticSupervisedExecution, readSemanticSupervisedExecutionState, recoverSemanticActionRuntime, semanticExecutionConfirmation } from "./semantic-action-deployment.js";
+  previewSemanticSupervisedExecution, readSemanticSupervisedExecutionState, recoverSemanticActionRuntime, semanticExecutionConfirmation, verifySemanticExecutionReadPosture } from "./semantic-action-deployment.js";
 import { activateActionRuleAuthority, buildActionRuleAuthorityDraft, createActiveActionRuleAuthorityLoader,
   deactivateActionRuleAuthority, listActionRuleAuthorityDrafts, loadActiveActionRuleAuthority, readActionRuleAuthorityActivation,
   readActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, type ActionRuleAuthorityActivationV1 } from "./action-rule-authority.js";
@@ -2440,6 +2440,27 @@ for (const backend of ["sqlite", "postgres"] as const) {
             await expect(fs.stat(wrongStore)).rejects.toMatchObject({ code: "ENOENT" });
           }
         } finally { inspect.mockRestore(); }
+      });
+    });
+
+    it("requires saved-job revalidation after a writer policy changes the reviewed database contract", async () => {
+      await useRepository(async ({ projectRoot }) => {
+        const source = fixture(), draft = actionFixture(source);
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        await activateActionRuleAuthority({ projectRoot, name: draft.authority.name, expected_digest: draft.digest,
+          confirmation: `ACTIVATE ${draft.digest}`, actor: "operator" });
+        const reads = await loadActivatedExplorationBoundaries(projectRoot);
+        const before = JSON.stringify(await readActionRuleAuthorityActivation(projectRoot));
+        const inspection = structuredClone(source.inspection);
+        const inspect = vi.fn(async () => inspection);
+        const input = { projectRoot, outcome: "inventory.replenish", activeReads: reads, inspect };
+        await expect(verifySemanticExecutionReadPosture(input)).resolves.toBeUndefined();
+        expect(inspect).toHaveBeenCalledWith(expect.objectContaining({ databaseUrlEnv: source.build.lock.source_env }));
+        inspection.tables[0]!.row_level_security_policies = [ ...(inspection.tables[0]!.row_level_security_policies ?? []),
+          { name: "new_dedicated_writer_policy", command: "UPDATE", permissive: true, roles: ["new_writer"], using_expression: "tenant_id = current_setting('app.tenant_id')::uuid" } ];
+        await expect(verifySemanticExecutionReadPosture(input)).rejects.toThrow("SEMANTIC_ACTION_READ_REVIEW_REQUIRED");
+        await expect(verifySemanticExecutionReadPosture(input)).rejects.toThrow("Do not reset the project");
+        expect(JSON.stringify(await readActionRuleAuthorityActivation(projectRoot))).toBe(before);
       });
     });
 
