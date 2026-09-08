@@ -201,9 +201,11 @@ export async function tryAsk(
       mode: "authoring",
     });
     const tools = await initialGateway.listTools();
+    const ownerReviewEnabled = Boolean(initialGateway.ownerPolicyReview);
+    const ownerSettingsOnly = initialGateway.ownerSettingsOnly === true;
     assertAnalyticsTools(tools.map((tool) => tool.name));
     const profile = await profileResolver(projectRoot);
-    if (profile !== "development" && profile !== "staging") {
+    if (!ownerSettingsOnly && profile !== "development" && profile !== "staging") {
       throw new AskError(
         "ASK_AUTHORING_UNAVAILABLE",
         NO_REVIEWED_ANALYTICS_ACCESS_MESSAGE,
@@ -212,6 +214,7 @@ export async function tryAsk(
     }
     let authority = await computeAskAuthority({
       tools,
+      ownerManagementBinding: initialGateway.ownerManagementBinding,
       configPath,
       projectRoot,
       profile,
@@ -242,6 +245,8 @@ export async function tryAsk(
     pastedSecret = undefined;
     await requireEgressConsent({
       args,
+      ownerSettings: ownerReviewEnabled,
+      ownerSettingsOnly,
       configuration,
       provider,
       model,
@@ -265,6 +270,7 @@ export async function tryAsk(
         assertAnalyticsTools(currentTools.map((tool) => tool.name));
         const currentAuthority = await computeAskAuthority({
           tools: currentTools,
+          ownerManagementBinding: gateway.ownerManagementBinding,
           configPath,
           projectRoot,
           profile,
@@ -305,6 +311,7 @@ export async function tryAsk(
       assertAnalyticsTools(currentTools.map((tool) => tool.name));
       const currentAuthority = await computeAskAuthority({
         tools: currentTools,
+        ownerManagementBinding: gateway.ownerManagementBinding,
         configPath,
         projectRoot,
         profile,
@@ -423,6 +430,18 @@ export async function tryAsk(
       const activateProtected = dependencies.activateProtected ?? activateProtectedQuery;
       const uiFactory = dependencies.uiServerFactory ?? startLocalUiServer;
       const shellExit = await runAnalyticsShell({
+      ownerSettingsOnly,
+      ...(ownerReviewEnabled ? { ownerPolicyReview: { prepare: async () => {
+        const reviewGateway = await gatewayFactory({ configPath, storePath, projectRoot, env, mode: "authoring" });
+        try {
+          if (!reviewGateway.ownerPolicyReview) throw new AskError("POLICY_SELF_SERVICE_DISABLED", "Owner-rule review is no longer enabled.", 409);
+          const prepared = await reviewGateway.ownerPolicyReview.prepare();
+          return { summary: prepared.summary,
+            confirm: async () => { try { return await prepared.confirm(); } finally { await reviewGateway.close(); } },
+            cancel: () => { try { prepared.cancel(); } finally { void reviewGateway.close(); } },
+          };
+        } catch (error) { await reviewGateway.close(); throw error; }
+      } } } : {}),
       projectRoot,
       configPath,
       storePath,
@@ -543,6 +562,7 @@ export async function tryAsk(
           assertAnalyticsTools(previewTools.map((tool) => tool.name));
           const previewAuthority = await computeAskAuthority({
             tools: previewTools,
+            ownerManagementBinding: gateway.ownerManagementBinding,
             configPath,
             projectRoot,
             profile,
@@ -563,6 +583,7 @@ export async function tryAsk(
           assertAnalyticsTools(recheckedTools.map((tool) => tool.name));
           const recheckedAuthority = await computeAskAuthority({
             tools: recheckedTools,
+            ownerManagementBinding: gateway.ownerManagementBinding,
             configPath,
             projectRoot,
             profile,
@@ -830,7 +851,7 @@ async function revalidateCliAskAuthority(input: {
   configPath: string;
   storePath: string;
   projectRoot: string;
-  profile: "development" | "staging";
+  profile: Awaited<ReturnType<typeof resolveAskDeploymentProfile>>;
   env: NodeJS.ProcessEnv;
   gatewayFactory: typeof createWorkbenchAskMcpGateway;
 }): Promise<`sha256:${string}`> {
@@ -850,6 +871,7 @@ async function revalidateCliAskAuthority(input: {
     }
     return (await computeAskAuthority({
       tools,
+      ownerManagementBinding: gateway.ownerManagementBinding,
       configPath: input.configPath,
       projectRoot: input.projectRoot,
       profile: input.profile,
@@ -861,6 +883,8 @@ async function revalidateCliAskAuthority(input: {
 }
 
 async function requireEgressConsent(input: {
+  ownerSettings?: boolean;
+  ownerSettingsOnly?: boolean;
   args: string[];
   configuration: ReturnType<WorkbenchAskSession["configure"]>;
   provider: AskProvider;
@@ -886,6 +910,8 @@ async function requireEgressConsent(input: {
       sessionTokenBudget: input.configuration.session_token_budget,
       maxOutputTokens: input.configuration.max_output_tokens,
       tools: input.tools,
+      ownerSettings: input.ownerSettings,
+      ownerSettingsOnly: input.ownerSettingsOnly,
     };
     writeInteractiveStdout(formatProviderEgressReview(
       review,
@@ -913,6 +939,8 @@ async function requireEgressConsent(input: {
 }
 
 export function formatProviderEgressReview(input: {
+  ownerSettings?: boolean;
+  ownerSettingsOnly?: boolean;
   provider: string;
   model: string;
   endpointOrigin: string;
@@ -923,7 +951,10 @@ export function formatProviderEgressReview(input: {
   const theme = terminalTheme(color);
   return [
     theme.title("Provider egress review"),
-    `  ${theme.key(input.provider)} will receive your question and only data allowed by the active reviewed boundaries.`,
+    input.ownerSettingsOnly
+      ? `  ${theme.key(input.provider)} will receive your question and authenticated agent settings, permitted rule vocabulary, and draft summaries. Source data is unavailable.`
+      : `  ${theme.key(input.provider)} will receive your question and only data allowed by the active reviewed boundaries.`,
+    ...(input.ownerSettings ? ["  Scoped agent settings and disabled rule revisions may be discussed. Human-review credentials and confirmation challenges are never sent."] : []),
     `  Model: ${theme.key(input.model)}`,
     `  Endpoint: ${theme.scope(input.endpointOrigin)}`,
     ...(input.requestTimeoutSeconds === undefined
@@ -935,8 +966,10 @@ export function formatProviderEgressReview(input: {
     `  Provider output limit: ${input.maxOutputTokens === undefined
       ? theme.key("automatic provider-call defaults")
       : theme.key(`${input.maxOutputTokens.toLocaleString("en-US")} tokens per call`)}`,
-    "  Model-withheld and kept-out raw values are never sent.",
-    "  Trusted scope stays fixed outside model arguments; its raw column value is sent only when reviewed as Model + Runner.",
+    ...(input.ownerSettingsOnly ? ["  The verified sign-in selects the owner; the model cannot choose another owner's scope."] : [
+      "  Model-withheld and kept-out raw values are never sent.",
+      "  Trusted scope stays fixed outside model arguments; its raw column value is sent only when reviewed as Model + Runner.",
+    ]),
     "  The model cannot activate, approve, apply, or change this authority.",
     "",
   ].join("\n");

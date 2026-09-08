@@ -77,6 +77,7 @@ const PRODUCTION_EXPLORE_TENANT_LIMIT_KEYS = new Set([
 ]);
 const ACTION_RULES_KEYS = new Set([
   "owner_delegation",
+  "owner_management",
   "project_root",
   "legacy_tools",
   "subject_reference_hmac_key_env",
@@ -430,6 +431,38 @@ function validateActionRules(
           if (!isEnvName(auth.secret_env) || auth.public_key_env !== undefined || auth.secret_env === delegation.credential_env) issue();
         } else if (auth.provider === "jwt_asymmetric") {
           if (!isEnvName(auth.public_key_env) || auth.secret_env !== undefined || auth.public_key_env === delegation.credential_env) issue();
+        } else issue();
+      }
+    }
+  }
+  if (value.owner_management !== undefined) {
+    const management = value.owner_management;
+    const issue = () => errors.push({ path: "$.action_rules.owner_management", code: "OWNER_MANAGEMENT_INVALID",
+      message: "Owner management only selects trusted backend scope from verified JWT claims; it requires exact parent/policy names, separated assistant and human credentials/audiences, and one dedicated JWT verification-key environment name." });
+    if (!isRecord(management)) issue();
+    else {
+      checkUnknownKeys(management, new Set(["parent_name", "policy_name", "scope", "credential_env", "authentication", "human_review"]), "$.action_rules.owner_management", errors);
+      if (!isSafeOwnerManagementName(management.parent_name)
+        || !isSafeOwnerManagementName(management.policy_name)
+        || (management.scope !== "personal" && management.scope !== "tenant")
+        || !isEnvName(management.credential_env)) issue();
+
+      const auth = management.authentication;
+      const humanReview = management.human_review;
+      if (!isRecord(auth) || !isRecord(humanReview)) issue();
+      else {
+        checkUnknownKeys(auth, new Set(["provider", "issuer", "audience", "secret_env", "public_key_env"]), "$.action_rules.owner_management.authentication", errors);
+        checkUnknownKeys(humanReview, new Set(["credential_env", "audience"]), "$.action_rules.owner_management.human_review", errors);
+        if (!isExactJwtString(auth.issuer) || !isExactJwtString(auth.audience)
+          || !isEnvName(humanReview.credential_env) || !isExactJwtString(humanReview.audience)
+          || humanReview.credential_env === management.credential_env
+          || humanReview.audience === auth.audience) issue();
+        if (auth.provider === "jwt_hs256") {
+          if (!isEnvName(auth.secret_env) || auth.public_key_env !== undefined
+            || auth.secret_env === management.credential_env || auth.secret_env === humanReview.credential_env) issue();
+        } else if (auth.provider === "jwt_asymmetric") {
+          if (!isEnvName(auth.public_key_env) || auth.secret_env !== undefined
+            || auth.public_key_env === management.credential_env || auth.public_key_env === humanReview.credential_env) issue();
         } else issue();
       }
     }
@@ -3511,6 +3544,15 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isEnvName(value: unknown): value is string {
   return typeof value === "string" && /^[A-Z_][A-Z0-9_]*$/.test(value);
+}
+
+function isSafeOwnerManagementName(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_.-]{0,127}$/.test(value);
+}
+
+function isExactJwtString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 256
+    && value === value.trim() && !/[\u0000-\u001f\u007f]/.test(value);
 }
 
 function isSafeIdentifier(value: unknown): value is string {

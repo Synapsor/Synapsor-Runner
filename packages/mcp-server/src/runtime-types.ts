@@ -326,6 +326,29 @@ export type RuntimeActionRulesConfig = {
       public_key_env?: string;
     };
   };
+  /** Selects trusted backend owner-management scope from verified JWT claims.
+   * This configuration does not grant management rights. */
+  owner_management?: {
+    parent_name: string;
+    policy_name: string;
+    scope: "personal" | "tenant";
+    /** Assistant workload credential; distinct from human_review.credential_env. */
+    credential_env: string;
+    authentication: {
+      provider: "jwt_hs256" | "jwt_asymmetric";
+      issuer: string;
+      /** Assistant workload JWT audience. */
+      audience: string;
+      secret_env?: string;
+      public_key_env?: string;
+    };
+    human_review: {
+      /** Human-review credential; distinct from the assistant workload credential. */
+      credential_env: string;
+      /** Human-review JWT audience; distinct from the assistant workload audience. */
+      audience: string;
+    };
+  };
 };
 
 export type RuntimeActionBoundaryReference = RuntimeActionBoundaryV1;

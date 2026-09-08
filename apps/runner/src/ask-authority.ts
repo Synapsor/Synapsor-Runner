@@ -221,6 +221,7 @@ export async function computeAskAuthority(input: {
   projectRoot: string;
   profile: AskDeploymentProfile;
   mode: AskMode;
+  ownerManagementBinding?: `sha256:${string}`;
 }): Promise<AskAuthority> {
   const activeBoundaries = await optionalActiveBoundaries(input.projectRoot);
   const activeBoundaryDigests = activeBoundaries
@@ -235,7 +236,8 @@ export async function computeAskAuthority(input: {
         .sort((left, right) => left.name.localeCompare(right.name)),
     })
     : undefined;
-  if (input.mode === "authoring" && !activeBoundarySetDigest) {
+  if (input.mode === "authoring" && !activeBoundarySetDigest
+    && !(input.ownerManagementBinding && ownerSettingsOnlySurface(input.tools))) {
     throw new AskError(
       "ASK_AUTHORING_AUTHORITY_UNAVAILABLE",
       "Authoring Ask requires an active reviewed Scoped Explore digest.",
@@ -268,6 +270,7 @@ export async function computeAskAuthority(input: {
       runtime_config_digest: runtimeConfigDigest,
       active_boundary_set_digest: activeBoundarySetDigest ?? null,
       active_boundary_digests: activeBoundaryDigests,
+      ...(input.ownerManagementBinding ? { owner_management_binding: input.ownerManagementBinding } : {}),
     }),
     mode: input.mode,
     tool_surface_digest: toolSurfaceDigest,
@@ -276,6 +279,20 @@ export async function computeAskAuthority(input: {
     ...(activeBoundarySetDigest ? { active_boundary_set_digest: activeBoundarySetDigest } : {}),
     ...(activeBoundaryDigests.length ? { active_boundary_digests: activeBoundaryDigests } : {}),
   };
+}
+
+function ownerSettingsOnlySurface(tools: AskToolDefinition[]): boolean {
+  const allowed: Record<string, string[]> = {
+    "app.describe_data": ["policy_view"], "app.describe_actions": ["policy_view"],
+    "app.explore_data": ["policy_view", "section", "limit", "cursor"],
+    "app.request_change": ["policy_view", "outcome", "control_ref", "definition"],
+  };
+  return tools.length === 4 && new Set(tools.map((tool) => tool.name)).size === 4 && tools.every((tool) => {
+    const schema = tool.input_schema, properties = record(schema.properties), discriminator = record(properties.policy_view);
+    return allowed[tool.name] && tool.metadata?.["synapsor/owner-settings-only"] === true
+      && schema.additionalProperties === false && Array.isArray(schema.required) && schema.required.includes("policy_view")
+      && discriminator.const === "agent_rules" && Object.keys(properties).every((key) => allowed[tool.name]!.includes(key));
+  });
 }
 
 async function optionalActiveBoundaries(

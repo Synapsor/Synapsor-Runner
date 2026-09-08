@@ -54,6 +54,7 @@ export function createPolicyManagementTools(options: {
   service: Service;
   resolveContext: () => Promise<PolicyManagementToolContext>;
   publishReview: (input: { scope: ControlPolicyScope; name: string; expected_epoch: number; revision_id: string }) => Promise<string>;
+  review_instruction?: string;
   clock?: () => number;
 }) {
   const clock = options.clock ?? Date.now;
@@ -135,7 +136,7 @@ export function createPolicyManagementTools(options: {
       active_authority_preserved: true, budget_consumption_preserved: true,
       review: { state: continuation ? "human_review_pending" : "human_review_connection_unavailable",
         ...(continuation ? { continuation } : {}),
-        next_step: continuation ? "Open this revision in the authenticated settings review. Only a human can activate it."
+        next_step: continuation ? options.review_instruction ?? "Open this revision in the authenticated settings review. Only a human can activate it."
           : "The disabled revision is saved. Reopen the authenticated settings review to inspect and authorize it; nothing was activated." } };
   }
   const provider = {

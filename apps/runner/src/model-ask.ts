@@ -146,6 +146,10 @@ export type AskToolCallResult = {
 
 export type AskToolGateway = {
   mode?: "authoring" | "runtime";
+  /** Trusted local human interface; never serialized into tool metadata. */
+  ownerPolicyReview?: import("./owner-policy-runtime.js").LocalOwnerPolicyReview;
+  ownerManagementBinding?: `sha256:${string}`;
+  ownerSettingsOnly?: boolean;
   listTools(): Promise<AskToolDefinition[]> | AskToolDefinition[];
   callTool(name: string, args: Record<string, unknown>): Promise<AskToolCallResult>;
   describeOperatorMetadata?(args: Record<string, unknown>): Promise<AskToolCallResult>;
@@ -1441,11 +1445,12 @@ async function runOpenAiCompatibleTurn(input: {
       }
       const canonicalName = input.prepared.canonicalByProvider.get(call.name);
       const directArguments = safeToolArguments(call.arguments);
-      const intentCheck = canonicalName === "app.explore_data"
+      const sourceExplore = canonicalName === "app.explore_data" && !Object.hasOwn(directArguments, "policy_view");
+      const intentCheck = sourceExplore
         ? await resolveAskIntentCheck(input.gateway, directArguments)
         : undefined;
       if (input.configuration.provider === "openai_compatible"
-        && canonicalName === "app.explore_data"
+        && sourceExplore
         && !localDirectCatalogTrace
         && !traces.some((trace) =>
           trace.tool === "app.describe_data"
@@ -1535,7 +1540,7 @@ async function runOpenAiCompatibleTurn(input: {
         }
       }
       if (input.configuration.provider !== "openai_compatible"
-        && canonicalName === "app.explore_data") {
+        && sourceExplore) {
         const intentRefusal = await explorePlanIntentRefusal({
           question: input.question,
           traces: localDirectCatalogTrace ? [...traces, localDirectCatalogTrace] : traces,
@@ -2204,10 +2209,11 @@ async function runAnthropicTurn(input: {
       const name = safeProviderIdentifier(call.name, "tool name");
       const args = safeToolArguments(call.input);
       const canonicalName = input.prepared.canonicalByProvider.get(name);
-      const intentCheck = canonicalName === "app.explore_data"
+      const sourceExplore = canonicalName === "app.explore_data" && !Object.hasOwn(args, "policy_view");
+      const intentCheck = sourceExplore
         ? await resolveAskIntentCheck(input.gateway, args)
         : undefined;
-      if (canonicalName === "app.explore_data") {
+      if (sourceExplore) {
         const intentRefusal = await explorePlanIntentRefusal({
           question: input.question,
           traces,
@@ -6118,11 +6124,11 @@ function requiresExploreAfterCatalog(
     return false;
   }
   const catalogSucceeded = traces.some((trace) =>
-    trace.tool === "app.describe_data" && trace.status === "ok");
+    trace.tool === "app.describe_data" && trace.status === "ok" && !Object.hasOwn(trace.arguments, "policy_view"));
   if (!catalogSucceeded) return false;
   let latestCatalogIndex = -1;
   traces.forEach((trace, index) => {
-    if (trace.tool === "app.describe_data" && trace.status === "ok") {
+    if (trace.tool === "app.describe_data" && trace.status === "ok" && !Object.hasOwn(trace.arguments, "policy_view")) {
       latestCatalogIndex = index;
     }
   });
@@ -6422,6 +6428,7 @@ function askSystemPrompt(): string {
   return [
     "You are the optional local client for Synapsor Runner.",
     "Answer application-data questions only through the provided reviewed tools.",
+    "When the provided tools explicitly support policy_view: agent_rules, help the user inspect or revise their own permitted agent settings using that route in the same four tools. First inspect summary, current rules, vocabulary and relevant budgets. Preserve unchanged rules, agents and limits; submit one complete disabled revision. Ask only for missing business decisions, not owner IDs or Runner internals. Source-data plan instructions below do not apply to this virtual settings route. Never mix settings and source-data arguments. A draft receipt is not activation: tell the user to use /review-rules in local Ask for separate human review. Never request, receive, or pass human-review credentials or confirmation nonces through tools or chat.",
     "Never ask the user for an Explore boundary name. Call app.describe_data without a boundary selector to discover the compact active resource index. Its output is metadata only and never answers a data question. If next_cursor is not null and the current page does not match the question, continue app.describe_data with that exact cursor until a matching resource is found or next_cursor is null; do not declare data unavailable from a partial catalog. Request one exact resource for focused relationship details only when needed, then call app.explore_data for values.",
     "Never treat a tenant, organization, account, customer, or principal named in the user's question as a boundary name or as trusted scope input.",
     "Tenant and principal scope are injected and enforced by Runner outside model arguments; never ask the user to supply them for a data plan and never send them in tool arguments.",

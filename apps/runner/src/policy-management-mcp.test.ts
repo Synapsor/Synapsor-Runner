@@ -9,11 +9,11 @@ import { sqliteControlPolicyRepository, type ControlPolicyRevision } from "@syna
 import { createPolicyManagementService, createPolicyManagementTools, createPolicyReviewContinuationService } from "@synapsor-runner/mcp-server";
 import { createPolicyManagementJwtAuthenticator } from "../../../packages/mcp-server/src/policy-management-identity.js";
 import { ownerPolicyTestFixture } from "../../../packages/mcp-server/src/owner-policy-test-fixture.js";
-import { createScopedExploreMcpServer } from "./authoring-mcp.js";
+import { createScopedExploreMcpServer, createOwnerSettingsMcpServer } from "./authoring-mcp.js";
 import type { ScopedExploreRuntime } from "./scoped-explore.js";
 
 describe("owner settings through the existing MCP server", () => {
-  it("keeps four tools, separates two owners and hands the exact disabled revision to authenticated human review", async () => {
+  it.each([false, true])("keeps four tools, isolates owners and hands off exact human review (settings only: %s)", async (settingsOnly) => {
     const db = new DatabaseSync(":memory:");
     const clients: Client[] = [], servers: ReturnType<typeof createScopedExploreMcpServer>[] = [];
     try {
@@ -50,7 +50,7 @@ describe("owner settings through the existing MCP server", () => {
         const tools = createPolicyManagementTools({ service, resolveContext: async () => ({ credential: jwt, scope: scope(tenant),
           policy_name: "my_agent_rules", scope_label: `${tenant} / Maya / Agent rules`, session_id: "mcp-session", expires_at_ms: Date.now() + 300_000 }),
           publishReview: async (target) => review.publish(target).handle });
-        const server = createScopedExploreMcpServer(runtime, { policyManagement: tools }); servers.push(server);
+        const server = settingsOnly ? createOwnerSettingsMcpServer(tools) : createScopedExploreMcpServer(runtime, { policyManagement: tools }); servers.push(server);
         const client = new Client({ name: `settings-${tenant}`, version: "1" }); clients.push(client);
         const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(b); await client.connect(a);
         return client;
@@ -60,7 +60,11 @@ describe("owner settings through the existing MCP server", () => {
       const listed = (await acme.listTools()).tools;
       expect(listed.map((tool) => tool.name).sort()).toEqual(names);
       for (const tool of listed) expect(tool.inputSchema.properties).toHaveProperty("policy_view");
-      expect(listed.find((tool) => tool.name === "app.describe_actions")!.inputSchema.properties).toHaveProperty("query");
+      if (!settingsOnly) expect(listed.find((tool) => tool.name === "app.describe_actions")!.inputSchema.properties).toHaveProperty("query");
+      else for (const tool of listed) {
+        expect(tool.inputSchema.required).toContain("policy_view");
+        expect(tool._meta).toMatchObject({ "synapsor/owner-settings-only": true });
+      }
       const call = async (client: Client, name: string, args: Record<string, unknown>) => client.callTool({ name, arguments: args });
       const view = { policy_view: "agent_rules" };
       expect((await call(acme, "app.describe_data", view)).structuredContent).toMatchObject({ resources: [{ id: "runner.agent_rules" }], source: "runner_control_plane" });

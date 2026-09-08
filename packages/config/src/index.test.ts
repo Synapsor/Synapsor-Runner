@@ -235,6 +235,64 @@ describe("runner capability config validation", () => {
     expect(validateRunnerCapabilityConfig(configured({ ...owner_delegation, credential_env: "WORKLOAD_KEY" })).ok).toBe(false);
   });
 
+  it("validates owner-management scope bindings without granting identity or rights", () => {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+    const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "schemas/synapsor.runner.schema.json"), "utf8"));
+    const schemaValidate = new Ajv2020({ strict: false, allErrors: true }).compile(schema);
+    const owner_management = {
+      parent_name: "trusted_owner_backend",
+      policy_name: "personal_data_requests",
+      scope: "personal",
+      credential_env: "ASSISTANT_OWNER_TOKEN",
+      authentication: {
+        provider: "jwt_hs256",
+        issuer: "https://identity.example.test",
+        audience: "synapsor-owner-assistant",
+        secret_env: "ASSISTANT_OWNER_JWT_KEY",
+      },
+      human_review: {
+        credential_env: "HUMAN_OWNER_TOKEN",
+        audience: "synapsor-owner-review",
+      },
+    };
+    const configured = (value: unknown) => ({ ...structuredClone(safeConfig), action_rules: { project_root: ".", owner_management: value } });
+
+    expect(validateRunnerCapabilityConfig({ ...structuredClone(safeConfig), action_rules: { project_root: "." } })).toMatchObject({ ok: true, errors: [] });
+    expect(validateRunnerCapabilityConfig(configured(owner_management))).toMatchObject({ ok: true, errors: [] });
+    expect(schemaValidate(configured(owner_management)), JSON.stringify(schemaValidate.errors)).toBe(true);
+
+    const asymmetric: any = structuredClone(owner_management);
+    asymmetric.scope = "tenant";
+    asymmetric.authentication = {
+      provider: "jwt_asymmetric",
+      issuer: "https://identity.example.test",
+      audience: "synapsor-owner-assistant",
+      public_key_env: "ASSISTANT_OWNER_JWT_PUBLIC_KEY",
+    };
+    expect(validateRunnerCapabilityConfig(configured(asymmetric))).toMatchObject({ ok: true, errors: [] });
+    expect(schemaValidate(configured(asymmetric)), JSON.stringify(schemaValidate.errors)).toBe(true);
+
+    for (const value of [
+      null,
+      { ...owner_management, scope: "organization" },
+      { ...owner_management, tenant_id: "from-model" },
+      { ...owner_management, authentication: { ...owner_management.authentication, public_key_env: "SECOND_KEY" } },
+      { ...owner_management, authentication: { ...owner_management.authentication, secret: "raw signing material" } },
+      { ...owner_management, human_review: { ...owner_management.human_review, principal_id: "from-model" } },
+    ]) {
+      expect(validateRunnerCapabilityConfig(configured(value)).ok).toBe(false);
+      expect(schemaValidate(configured(value))).toBe(false);
+    }
+    for (const value of [
+      { ...owner_management, human_review: { ...owner_management.human_review, credential_env: "ASSISTANT_OWNER_TOKEN" } },
+      { ...owner_management, human_review: { ...owner_management.human_review, audience: "synapsor-owner-assistant" } },
+      { ...owner_management, authentication: { ...owner_management.authentication, secret_env: "ASSISTANT_OWNER_TOKEN" } },
+      { ...owner_management, authentication: { ...owner_management.authentication, secret_env: "HUMAN_OWNER_TOKEN" } },
+    ]) {
+      expect(validateRunnerCapabilityConfig(configured(value))).toMatchObject({ ok: false });
+    }
+  });
+
   it("accepts only explicit local required generation-lock enforcement", () => {
     const generated = {
       ...structuredClone(safeConfig),

@@ -5,6 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { createProjectRuntimeStore } from "./control-policy-store.js";
+import { createOptionalOwnerPolicyRuntime, type LocalOwnerPolicyReview } from "./owner-policy-runtime.js";
 import { readRuntimeConfig } from "./cli-project.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import {
@@ -17,6 +18,7 @@ import {
 } from "@synapsor-runner/mcp-server";
 import {
   createScopedExploreMcpServer,
+  createOwnerSettingsMcpServer,
 } from "./authoring-mcp.js";
 import {
   NO_REVIEWED_ANALYTICS_ACCESS_MESSAGE,
@@ -47,6 +49,9 @@ type ConnectedMcpSurface = {
   localPresentation: TrustedLocalToolPresentationChannel;
   closeRuntime: () => Promise<void>;
   tools: AskToolDefinition[];
+  ownerPolicyReview?: LocalOwnerPolicyReview;
+  ownerManagementBinding?: `sha256:${string}`;
+  ownerSettingsOnly?: boolean;
   projectResultForModel?: (
     tool: string,
     args: Record<string, unknown>,
@@ -83,8 +88,8 @@ export async function createWorkbenchAskMcpGateway(input: {
         );
       }
       surfaces.push(authoring);
-      assertExactAuthoringSurface(authoring.tools);
-      const semanticActions = await connectSemanticActionSurface(input);
+      assertExactAuthoringSurface(authoring.tools, Boolean(authoring.ownerPolicyReview));
+      const semanticActions = authoring.ownerPolicyReview ? undefined : await connectSemanticActionSurface(input);
       if (semanticActions) {
         assertExactSemanticActionSurface(semanticActions.tools);
         surfaces.push(semanticActions);
@@ -110,6 +115,9 @@ export async function createWorkbenchAskMcpGateway(input: {
     let closed = false;
     return {
       mode: selectedMode,
+      ...(surfaces[0]?.ownerPolicyReview ? { ownerPolicyReview: surfaces[0].ownerPolicyReview } : {}),
+      ...(surfaces[0]?.ownerManagementBinding ? { ownerManagementBinding: surfaces[0].ownerManagementBinding,
+        ownerSettingsOnly: surfaces[0].ownerSettingsOnly } : {}),
       listTools: () => toolSurface,
       callTool: async (name, args) => {
         const surface = surfaceByTool.get(name);
@@ -303,11 +311,16 @@ async function connectAuthoringSurface(input: {
     const selectedConfig = actionConfig ?? await authoringStoreConfig(input.configPath);
     subjectStore = await createProjectRuntimeStore({ projectRoot: input.projectRoot, config: selectedConfig ?? {} as RuntimeConfig,
       env: input.env, storePath: input.storePath });
+    const owner = selectedConfig ? await createOptionalOwnerPolicyRuntime({
+      projectRoot: input.projectRoot, config: selectedConfig, env: input.env, store: subjectStore,
+    }) : undefined;
+    const ownerBinding = owner ? await owner.contextDigest() : undefined;
     const semantic = actionConfig
       ? await createOptionalActionRuleRuntimeServices({ projectRoot: input.projectRoot, config: actionConfig,
           env: input.env, store: subjectStore })
       : undefined;
-    runtime = await createScopedExploreBoundarySetRuntime({
+    try {
+      runtime = await createScopedExploreBoundarySetRuntime({
       projectRoot: input.projectRoot,
       transport: "loopback_workbench",
       env: input.env,
@@ -321,25 +334,37 @@ async function connectAuthoringSurface(input: {
           },
         }
         : {}),
-    });
+      });
+    } catch (error) {
+      if (!owner || !(error instanceof ScopedExploreError) || error.code !== "EXPLORE_DISABLED") throw error;
+    }
     const localPresentation = new TrustedLocalToolPresentationChannel();
-    const server = createScopedExploreMcpServer(runtime, { localPresentation });
+    const server = runtime ? createScopedExploreMcpServer(runtime, { localPresentation,
+      ...(owner ? { policyManagement: owner.tools, semanticActions: semantic?.semanticActions } : {}),
+    }) : createOwnerSettingsMcpServer(owner!.tools);
     const surface = await connectSurface(
       "authoring",
       server,
       localPresentation,
       async () => {
-        await runtime!.close();
+        await runtime?.close();
         await subjectStore?.close();
       },
     );
+    if (owner) {
+      surface.ownerPolicyReview = owner.review;
+      surface.ownerManagementBinding = ownerBinding;
+      surface.ownerSettingsOnly = !runtime;
+    }
     surface.projectResultForModel = (tool, args, result) =>
-      runtime!.projectResultForModel({
+      owner?.tools.handles(args) || !runtime ? { value: result, withheld: false } : runtime.projectResultForModel({
         tool,
         arguments: args,
         result,
       });
     surface.describeOperatorMetadata = async (args) => {
+      if (owner?.tools.handles(args)) return owner.tools.callTool("app.describe_data", args);
+      if (!runtime) throw new AskError("ASK_AUTHORING_UNAVAILABLE", "Source Read authority is disabled. Agent settings remain available.", 409);
       const described = await runtime!.describe({
         ...(typeof args.boundary === "string" ? { boundary: args.boundary } : {}),
         ...(typeof args.resource === "string" ? { resource: args.resource } : {}),
@@ -428,13 +453,23 @@ async function connectSemanticActionSurface(input: {
 }
 
 async function optionalActionRuntimeConfig(
-  input: { projectRoot: string; storePath: string; env: NodeJS.ProcessEnv },
+  input: { projectRoot: string; storePath: string; env: NodeJS.ProcessEnv; configPath?: string },
 ): Promise<RuntimeConfig | undefined> {
   const configPath = path.join(path.resolve(input.projectRoot), "synapsor.actions.runner.json");
   try {
     await fs.access(configPath);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      const primary = input.configPath ?? path.join(path.resolve(input.projectRoot), "synapsor.runner.json");
+      const content = await fs.readFile(primary, "utf8").catch((readError: NodeJS.ErrnoException) => {
+        if (readError.code === "ENOENT") return undefined;
+        throw readError;
+      });
+      if (content === undefined) return undefined;
+      const parsed: unknown = JSON.parse(content);
+      if (!isRecord(parsed) || !parsed.action_rules) return undefined;
+      return readRuntimeConfig(primary, input);
+    }
     throw error;
   }
   return readRuntimeConfig(configPath, input);
@@ -566,8 +601,10 @@ function assertExactSemanticActionSurface(tools: AskToolDefinition[]): void {
   }
 }
 
-function assertExactAuthoringSurface(tools: AskToolDefinition[]): void {
-  const expected = ["app.describe_data", "app.explore_data"];
+function assertExactAuthoringSurface(tools: AskToolDefinition[], ownerManagement = false): void {
+  const expected = ownerManagement
+    ? ["app.describe_actions", "app.describe_data", "app.explore_data", "app.request_change"]
+    : ["app.describe_data", "app.explore_data"];
   const actual = tools.map((tool) => tool.name).sort();
   if (actual.length !== expected.length
     || actual.some((name, index) => name !== expected[index])) {

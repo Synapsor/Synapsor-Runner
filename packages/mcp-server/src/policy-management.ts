@@ -86,11 +86,12 @@ export function createPolicyManagementService(options: {
   function selectedKey(scope: ControlPolicyScope, policyName: string): ControlPolicyKey {
     return { scope: policyOwnerScopeSchema.parse(scope), kind: "delegation", name: name.parse(policyName) };
   }
-  function summary(key: ControlPolicyKey, definition: OwnerPolicyDefinition, operation: "activate" | "revoke", before?: OwnerPolicyDefinition) {
+  function summary(key: ControlPolicyKey, definition: OwnerPolicyDefinition, operation: "activate" | "revoke", before?: OwnerPolicyDefinition, parent?: Parent) {
     return { scope: key.scope, name: key.name, agents: definition.agents,
       actions: definition.rules.map((rule) => ({ outcome: rule.outcome, require: rule.require,
         approval: rule.approval, ...(rule.auto_approve_when ? { auto_approve_when: rule.auto_approve_when } : {}) })),
       ...(definition.budget_limits ? { hard_budget_limits: definition.budget_limits, budget_consumption_preserved: true } : {}),
+      ...(parent?.document.delegation.budgets ? { parent_budget_contracts: parent.document.delegation.budgets } : {}),
       operation, previous_definition: before ?? null, parent_requirements_preserved: true, source_database_changed: false };
   }
   function delegationForScope(parent: Parent) {
@@ -183,7 +184,7 @@ export function createPolicyManagementService(options: {
       if (revision?.revision_id !== input.revision_id) throw new PolicyManagementError("POLICY_REVIEW_REVISION_CHANGED");
       const definition = input.operation === "activate" ? (await compileExisting(revision, parent)).definition : decode(revision, parent).definition;
       const previous = snapshot.active;
-      const reviewSummary = summary(key, definition, input.operation, previous ? decode(previous, parent).definition : undefined);
+      const reviewSummary = summary(key, definition, input.operation, previous ? decode(previous, parent).definition : undefined, parent);
       const ttl = Math.min(300_000, identity.expires_at_ms - Date.now());
       if (ttl <= 0) throw new PolicyManagementError("POLICY_AUTHENTICATION_FAILED");
       const prepared = await repository.reviews.prepare({ deployment_id: options.deployment_id, key, revision_id: revision.revision_id,
@@ -204,7 +205,7 @@ export function createPolicyManagementService(options: {
         if (!revision || revision.revision_id !== review.revision_id) throw new PolicyManagementError("POLICY_REVIEW_REVISION_CHANGED");
         const definition = review.operation === "activate" ? (await compileExisting(revision, parent)).definition : decode(revision, parent).definition;
         const previous = snapshot.active;
-        if (canonicalJsonDigest(summary(review.key, definition, review.operation, previous ? decode(previous, parent).definition : undefined)) !== review.summary_digest) {
+        if (canonicalJsonDigest(summary(review.key, definition, review.operation, previous ? decode(previous, parent).definition : undefined, parent)) !== review.summary_digest) {
           throw new PolicyManagementError("POLICY_REVIEW_INVALID");
         }
       }

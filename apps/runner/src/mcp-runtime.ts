@@ -1,5 +1,6 @@
 import { createDefaultRuntimeStore, createMcpRuntime, createSynapsorMcpServer, DESCRIBE_ACTIONS_TOOL, describeIsolationAssurance, modelAuthorityMetadataMode, preflightGeneratedAuthority, REQUEST_CHANGE_TOOL, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpSessionFactory, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import { borrowRuntimeControlPolicies, createProjectRuntimeStore } from "./control-policy-store.js";
+import { createOptionalOwnerPolicyRuntime } from "./owner-policy-runtime.js";
 import { projectRuntimeOperations } from "./project-runtime-admission.js";
 import {
   ProposalStore
@@ -45,7 +46,7 @@ import {
 const EXPLORE_TOOL_NAMES = ["app.describe_data", "app.explore_data"] as const;
 const SEMANTIC_ACTION_TOOL_NAMES = [DESCRIBE_ACTIONS_TOOL, REQUEST_CHANGE_TOOL] as const;
 type ExploreSurfaceMode = "local" | "production";
-type McpToolSurface = "capabilities" | "semantic_actions" | "local_explore" | "production_explore";
+type McpToolSurface = "capabilities" | "semantic_actions" | "local_explore" | "production_explore" | "owner_settings";
 
 type CompanionActionToolSurface = {
   ok: boolean;
@@ -187,6 +188,16 @@ export async function mcpServe(args: string[]): Promise<number> {
     });
     return 0;
   }
+  if (config.action_rules?.owner_management && !readOnly) {
+    assertLocalExplorePresentation(args);
+    const projectRoot = path.resolve(config.action_rules.project_root);
+    const selected = path.resolve(projectRoot, config.storage?.sqlite_path ?? ".synapsor/local.db");
+    if (optionalArg(args, "--store") && path.resolve(optionalArg(args, "--store")!) !== selected) {
+      throw new Error("Owner settings must use the project's configured control store; remove the different --store override.");
+    }
+    await serveLocalExploreStdio({ projectRoot, config, modelAuthorityMetadata: modelAuthorityMetadataMode(config) });
+    return 0;
+  }
   if (isLocalExploreOnlyConfig(config)) {
     throw new Error(
       `No active reviewed development/staging boundary is available beside ${configPath}. `
@@ -238,6 +249,7 @@ export async function mcpServeHttp(args: string[]): Promise<number> {
   const baseConfig = await readRuntimeConfig(configPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   assertProductionExploreTransport(config, configPath, "http");
+  assertOwnerManagementLocalTransport(config, readOnly);
   process.stderr.write([
     "Warning: mcp serve-http is a legacy JSON-RPC bridge, not spec MCP Streamable HTTP.",
     `For OpenAI Agents SDK or standard HTTP MCP clients, use: ${cliCommandName()} mcp serve --transport streamable-http`,
@@ -297,6 +309,7 @@ export async function mcpServeStreamableHttp(args: string[]): Promise<number> {
   const baseConfig = await readRuntimeConfig(configPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   const productionExplore = productionExploreServeMode(args, config);
+  assertOwnerManagementLocalTransport(config, readOnly);
   if (productionExplore) assertProductionExplorePresentation(args);
   let productionPosture: ProductionExploreStartupReport | undefined;
   if (productionExplore) {
@@ -937,6 +950,12 @@ export function productionExploreSessionFactory(
   return factory;
 }
 
+function assertOwnerManagementLocalTransport(config: RuntimeConfig, readOnly: boolean): void {
+  if (config.action_rules?.owner_management && !readOnly) {
+    throw new Error("Owner-rule management currently requires local stdio MCP or local Ask with its separate human review. Use --transport stdio; HTTP cannot silently omit the configured settings authority.");
+  }
+}
+
 async function serveLocalExploreStdio(input: {
   projectRoot: string;
   config: RuntimeConfig;
@@ -954,10 +973,14 @@ async function serveLocalExploreStdio(input: {
       env: process.env,
       store,
     }, reportOptionalActionSubjectFailure);
+    const owner = input.disableActions ? undefined : await createOptionalOwnerPolicyRuntime({
+      projectRoot: input.projectRoot, config: actionConfig, env: process.env, store,
+    });
     await serveScopedExploreStdio({
       projectRoot: input.projectRoot,
       modelAuthorityMetadata: input.modelAuthorityMetadata,
       store,
+      policyManagement: owner?.tools,
       ...(semantic ? { semanticActions: semantic.semanticActions } : {}),
       ...(semantic
         ? {
@@ -1849,6 +1872,7 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
   }
   const parsed = await readRuntimeConfig(configPath);
   const productionExplore = parsed.production_explore?.enabled === true;
+  const ownerSettings = !productionExplore && Boolean(parsed.action_rules?.owner_management);
   const productionExploreActive = productionExplore && await hasActiveProductionExploreBoundary(parsed, configPath);
   const localExplore = !productionExplore
     && (parsed.capabilities?.length ?? 0) === 0
@@ -1860,6 +1884,8 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
   const semanticActions = semanticAuthority !== undefined;
   const surface: McpToolSurface = productionExplore
     ? "production_explore"
+    : ownerSettings
+      ? "owner_settings"
     : localExplore
       ? "local_explore"
       : semanticActions
@@ -1867,8 +1893,20 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
         : "capabilities";
   const capabilitySurface = surface === "capabilities" || surface === "semantic_actions";
   const aliasMode = capabilitySurface ? requestedAliasMode : "canonical";
-  const runtime = createMcpRuntime(parsed, { storePath });
+  const ownerStorePath = ownerSettings ? path.resolve(parsed.action_rules!.project_root, parsed.storage?.sqlite_path ?? ".synapsor/local.db") : undefined;
+  if (ownerSettings && optionalArg(args, "--store") && path.resolve(storePath) !== ownerStorePath) {
+    throw new Error("Owner settings must use the project's configured control store; remove the different --store override.");
+  }
+  const ownerStore = ownerSettings ? await createProjectRuntimeStore({ projectRoot: parsed.action_rules!.project_root,
+    config: parsed, env: process.env, storePath: ownerStorePath! }) : undefined;
+  let runtime: ReturnType<typeof createMcpRuntime> | undefined;
   try {
+    runtime = createMcpRuntime(parsed, ownerStore ? { store: ownerStore } : { storePath });
+    if (ownerStore) {
+      const owner = await createOptionalOwnerPolicyRuntime({ projectRoot: parsed.action_rules!.project_root,
+        config: parsed, env: process.env, store: ownerStore });
+      await owner!.contextDigest();
+    }
     const tools = capabilitySurface ? runtime.listTools() : [];
     const autoApprovalDisabled = parsed.approvals?.disable_auto_approval === true;
     const approvalPolicies = capabilitySurface ? approvalPolicySummaries(parsed) : [];
@@ -1904,8 +1942,8 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
         ]
       : surface === "capabilities"
         ? configuredExposures
-      : (localExplore || productionExploreActive)
-        ? [...EXPLORE_TOOL_NAMES, ...(localExplore ? SEMANTIC_ACTION_TOOL_NAMES : [])].map((name) => ({
+      : (ownerSettings || localExplore || productionExploreActive)
+        ? [...EXPLORE_TOOL_NAMES, ...(ownerSettings || localExplore ? SEMANTIC_ACTION_TOOL_NAMES : [])].map((name) => ({
           canonicalName: name,
           exposedName: name,
           isAlias: false,
@@ -1915,6 +1953,11 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
     const names = exposures.map((item) => item.exposedName);
     const serialized = JSON.stringify(tools);
     const checks = [
+      ...(ownerSettings ? [{ name: "owner settings authenticated", ok: true,
+        detail: "Current management grants checked against the configured control store; drafts require separate human activation." },
+      { name: "source authority reported separately", ok: true,
+        detail: localExplore ? "Reviewed source Read authority is active; owner settings do not expand it."
+          : "Source Read authority is disabled. The four tools serve only scoped agent settings; no source query or effect is available." }] : []),
       {
         name: "model-facing tools present",
         ok: names.length > 0,
@@ -1930,14 +1973,14 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];
     const ok = checks.every((check) => check.ok);
-    const companionActionSurface = surface === "semantic_actions"
+    const companionActionSurface = surface === "semantic_actions" || ownerSettings
       ? undefined
       : await inspectCompanionActionToolSurface({ configPath, storePath });
     return {
       ok,
       surface,
       configPath,
-      storePath,
+      storePath: ownerStorePath ?? storePath,
       aliasMode,
       names,
       exposures,
@@ -1951,7 +1994,7 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
       checks,
     };
   } finally {
-    await runtime.close();
+    try { await runtime?.close(); } finally { await ownerStore?.close(); }
   }
 }
 
@@ -2045,7 +2088,7 @@ function formatToolsPreview(input: {
     : ["  - (none)"];
   const lines = [
     `Synapsor tools preview: ${input.ok ? "ok" : "failed"}`,
-    `Surface: ${input.surface === "production_explore" ? "production Explore" : input.surface === "local_explore" ? "local reviewed Explore" : input.surface === "semantic_actions" ? "verified semantic Actions" : "reviewed capabilities"}`,
+    `Surface: ${input.surface === "owner_settings" ? "local authenticated agent settings" : input.surface === "production_explore" ? "production Explore" : input.surface === "local_explore" ? "local reviewed Explore" : input.surface === "semantic_actions" ? "verified semantic Actions" : "reviewed capabilities"}`,
     `Config: ${input.configPath}`,
     `Store: ${input.storePath}`,
     `Alias mode: ${input.aliasMode}`,
@@ -2054,7 +2097,8 @@ function formatToolsPreview(input: {
     ...(input.governance.authority_mode === "cloud_linked"
       ? [`Queue proposals while Cloud is unavailable: ${input.governance.queue_when_unavailable ? "yes" : "no"}`]
       : []),
-    `auto-approval: ${input.autoApprovalDisabled ? "disabled" : "enabled"}`,
+    input.surface === "owner_settings" ? "Rule activation: separate human review, never the model"
+      : `auto-approval: ${input.autoApprovalDisabled ? "disabled" : "enabled"}`,
     `graduated trust: ${input.graduatedTrust.enabled ? input.graduatedTrust.kill_switch ? "enabled, kill switch active" : `enabled (${input.graduatedTrust.criteria} reviewed criteria)` : "disabled"}; operator-only, never MCP-facing`,
     "",
     "Tenant isolation:",
@@ -2068,12 +2112,16 @@ function formatToolsPreview(input: {
     "Exposed to MCP:",
     ...exposedLines,
     "",
-    input.surface === "semantic_actions"
+    input.surface === "owner_settings" ? "Agent-rule authority:"
+      : input.surface === "semantic_actions"
       ? "Verified Action Boundary:"
       : input.surface === "capabilities"
         ? "Reviewed capability boundary:"
         : "Reviewed Explore boundary:",
-    ...(input.surface === "capabilities" || input.surface === "semantic_actions"
+    ...(input.surface === "owner_settings"
+      ? ["  - only authenticated owner settings; source authority is reported separately below",
+        "  - describe changes in local Ask; /review-rules opens the saved draft for human confirmation"]
+      : input.surface === "capabilities" || input.surface === "semantic_actions"
       ? formatToolPreviewCapabilityDetails(input.capabilityDetails)
       : [input.names.length > 0
         ? "  - exact active boundary authority; use /catalog or app.describe_data for reviewed resources"

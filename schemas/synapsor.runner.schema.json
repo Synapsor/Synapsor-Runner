@@ -127,6 +127,43 @@
             }
           }
         },
+        "owner_management": {
+          "description": "Selects trusted backend owner-management scope from verified JWT claims. It does not grant management rights.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parent_name", "policy_name", "scope", "credential_env", "authentication", "human_review"],
+          "properties": {
+            "parent_name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$" },
+            "policy_name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$" },
+            "scope": { "enum": ["personal", "tenant"] },
+            "credential_env": { "$ref": "#/$defs/env_name" },
+            "authentication": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "issuer", "audience"],
+              "properties": {
+                "provider": { "enum": ["jwt_hs256", "jwt_asymmetric"] },
+                "issuer": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f\\u007f]+$" },
+                "audience": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f\\u007f]+$" },
+                "secret_env": { "$ref": "#/$defs/env_name" },
+                "public_key_env": { "$ref": "#/$defs/env_name" }
+              },
+              "oneOf": [
+                { "properties": { "provider": { "const": "jwt_hs256" } }, "required": ["secret_env"], "not": { "required": ["public_key_env"] } },
+                { "properties": { "provider": { "const": "jwt_asymmetric" } }, "required": ["public_key_env"], "not": { "required": ["secret_env"] } }
+              ]
+            },
+            "human_review": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["credential_env", "audience"],
+              "properties": {
+                "credential_env": { "$ref": "#/$defs/env_name" },
+                "audience": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f\\u007f]+$" }
+              }
+            }
+          }
+        },
         "subject_reference_namespace": {
           "type": "string",
           "minLength": 1,

@@ -2,6 +2,8 @@ import readlineCore from "node:readline";
 import readline from "node:readline/promises";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { reviewOwnerRules } from "./owner-policy-review-ui.js";
+import type { LocalOwnerPolicyReview } from "./owner-policy-runtime.js";
 import type {
   Readable,
   Writable,
@@ -79,6 +81,7 @@ const COMMANDS = [
   "/attempts",
   "/access",
   "/actions",
+  "/review-rules",
   "/access-workbench",
   "/refresh-access",
   "/limits",
@@ -96,6 +99,7 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/attempts": "Inspect refused model attempts",
   "/access": "Add or edit reviewed boundaries",
   "/actions": "Create Safe Actions and review proposals",
+  "/review-rules": "Review a saved owner-rule draft with separate human authorization",
   "/access-workbench": "Open the visual access editor",
   "/refresh-access": "Use access activated outside this shell",
   "/limits": "Show or change this Ask session's token limits",
@@ -628,6 +632,8 @@ export type AnalyticsShellIo = {
 };
 
 export type AnalyticsShellInput = {
+  ownerPolicyReview?: LocalOwnerPolicyReview;
+  ownerSettingsOnly?: boolean;
   projectRoot?: string;
   configPath?: string;
   storePath?: string;
@@ -727,6 +733,7 @@ export async function runAnalyticsShell(
     input.io.write("\nPress Ctrl+C again or Ctrl+D to exit.\n");
   });
   input.io.write(renderAnalyticsShellBanner({
+    ownerSettingsOnly: input.ownerSettingsOnly,
     providerLabel: input.providerLabel,
     modelLabel: input.modelLabel,
     boundaryLabel: input.boundaryLabel,
@@ -828,6 +835,7 @@ export async function runAnalyticsShell(
 }
 
 export function renderAnalyticsShellBanner(input: {
+  ownerSettingsOnly?: boolean;
   providerLabel: string;
   modelLabel?: string;
   boundaryLabel?: string;
@@ -845,10 +853,12 @@ export function renderAnalyticsShellBanner(input: {
   const boundaryOnly = input.askIntentChecks?.filter((entry) => entry.mode === "boundary_only") ?? [];
   return [
     theme.title("Synapsor Analytics"),
-    theme.success(`Scoped Explore active - read-only ${safeTerminalText(input.profileLabel)} access`),
+    input.ownerSettingsOnly ? theme.title("Agent settings - source Read authority is disabled")
+      : theme.success(`Scoped Explore active - read-only ${safeTerminalText(input.profileLabel)} access`),
     `Provider: ${theme.key(safeTerminalText(input.providerLabel))}`,
     ...(input.modelLabel ? [`Model: ${theme.key(safeTerminalText(input.modelLabel))}`] : []),
-    `Reviewed access: ${theme.scope(safeTerminalText(input.boundaryLabel ?? "active boundary"))} ${theme.dim(`(${tableCount})`)}`,
+    input.ownerSettingsOnly ? "Inspect or draft your permitted agent rules; /review-rules opens separate human authorization."
+      : `Reviewed access: ${theme.scope(safeTerminalText(input.boundaryLabel ?? "active boundary"))} ${theme.dim(`(${tableCount})`)}`,
     ...(boundaryOnly.length > 0
       ? [
         theme.warning(
@@ -1709,6 +1719,7 @@ async function handleShellCommand(
       "  /attempts                    Show refused attempts from the latest answer",
       "  /access                      Add or edit reviewed boundaries",
       "  /actions                     Create Safe Actions and review proposal lifecycles",
+      ...(input.ownerPolicyReview ? ["  /review-rules                Review and authorize your saved agent-rule draft"] : []),
       "  /access-workbench            Open the visual access editor",
       "  /refresh-access              Use access activated in Workbench or another terminal",
       "  /limits                      Show this Ask session's token usage and limits",
@@ -1854,6 +1865,11 @@ async function handleShellCommand(
       "",
     ].join("\n"));
     return "actions";
+  }
+  if (line === "/review-rules") {
+    if (!input.ownerPolicyReview) input.io.write("Owner-rule editing is not enabled for this connection. Active permissions are unchanged.\n\n");
+    else await reviewOwnerRules(input.io, input.ownerPolicyReview);
+    return "continue";
   }
   if (line === "/access-workbench" || line === "/access workbench") {
     if (!input.openAccessEditor) {

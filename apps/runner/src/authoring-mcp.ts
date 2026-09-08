@@ -15,6 +15,7 @@ import {
   CATALOG_LIMITS,
   catalogResponseBytes,
   withPolicyManagementInput,
+  policyManagementToolInputSchema,
   type PolicyManagementTools,
 } from "@synapsor-runner/mcp-server";
 import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
@@ -750,6 +751,7 @@ export async function serveScopedExploreStdio(options: {
   env?: NodeJS.ProcessEnv;
   store?: ProposalRuntimeStore;
   semanticActions?: SemanticActionRuntime;
+  policyManagement?: PolicyManagementTools;
   subjectReferences?: {
     service: SubjectReferenceService;
     workflow_session_id: string;
@@ -758,7 +760,9 @@ export async function serveScopedExploreStdio(options: {
   stdout?: Writable;
   modelAuthorityMetadata?: ModelAuthorityMetadataMode;
 }): Promise<void> {
-  const runtime = await createScopedExploreBoundarySetRuntime({
+  let runtime: ScopedExploreBoundarySetRuntime | undefined;
+  try {
+    runtime = await createScopedExploreBoundarySetRuntime({
     projectRoot: options.projectRoot,
     transport: "stdio",
     env: options.env,
@@ -766,19 +770,24 @@ export async function serveScopedExploreStdio(options: {
     ...(options.subjectReferences ? { subjectReferences: options.subjectReferences } : {}),
     modelAuthorityMetadata: options.modelAuthorityMetadata ?? "semantic",
     deferTrustedScope: true,
-  });
-  const server = createScopedExploreMcpServer(runtime, {
+    });
+  } catch (error) {
+    if (!options.policyManagement || !(error instanceof ScopedExploreError) || error.code !== "EXPLORE_DISABLED") throw error;
+  }
+  const server = runtime ? createScopedExploreMcpServer(runtime, {
     semanticActions: options.semanticActions ?? createInactiveSemanticActionRuntime(),
-  });
+    policyManagement: options.policyManagement,
+  }) : createOwnerSettingsMcpServer(options.policyManagement!);
   const input = options.stdin ?? process.stdin;
   const transport = new StdioServerTransport(input, options.stdout ?? process.stdout);
   try {
     await server.connect(transport);
   } catch (error) {
-    await runtime.close();
+    await runtime?.close();
     throw error;
   }
-  process.stderr.write("Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.\n");
+  process.stderr.write(runtime ? "Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.\n"
+    : "Synapsor agent settings MCP ready. Source Read authority remains disabled.\n");
   await new Promise<void>((resolve) => {
     const previousOnClose = transport.onclose;
     let closing = false;
@@ -789,7 +798,7 @@ export async function serveScopedExploreStdio(options: {
       input.off("close", close);
       process.off("SIGINT", close);
       process.off("SIGTERM", close);
-      void Promise.allSettled([server.close(), runtime.close()]).finally(resolve);
+      void Promise.allSettled([server.close(), runtime?.close()]).finally(resolve);
     };
     transport.onclose = () => {
       previousOnClose?.();
@@ -800,6 +809,20 @@ export async function serveScopedExploreStdio(options: {
     process.once("SIGINT", close);
     process.once("SIGTERM", close);
   });
+}
+
+/** Owner settings remain reviewable without granting source Read authority. */
+export function createOwnerSettingsMcpServer(provider: PolicyManagementTools): McpServer {
+  const server = new McpServer({ name: "synapsor-owner-settings", version: runnerPackage.version });
+  for (const name of ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"]) {
+    server.registerTool(name, {
+      description: "Authenticated agent-rule settings only. Use policy_view: agent_rules. Discover current rules and delegable vocabulary before proposing a disabled revision. Source-data access is unavailable; a separate human review activates settings.",
+      inputSchema: policyManagementToolInputSchema(name),
+      annotations: { readOnlyHint: name !== "app.request_change", destructiveHint: false },
+      _meta: { "synapsor/owner-settings-only": true },
+    }, (args) => toolResult(() => provider.callTool(name, args)));
+  }
+  return server;
 }
 
 function isBoundarySetRuntime(

@@ -39,6 +39,7 @@ export type AskAccessGuidance = {
 export async function readReviewedAskAccessSummary(
   gateway: AskToolGateway,
 ): Promise<ReviewedAskAccessSummary> {
+  if (gateway.ownerSettingsOnly) return { table_count: 0, resources: [], suggestions: ["Show my agent rules and what I can change."] };
   const resources: ReviewedAskResourceSummary[] = [];
   let cursor: number | undefined;
   for (let page = 0; page < 100; page += 1) {
