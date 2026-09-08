@@ -33,6 +33,9 @@ your database, then read deeper concepts.
   activated business outcome while Runner privately verifies authoritative
   facts and derives the only permitted one-row effect behind the fixed
   `app.request_change` tool.
+- [Owner-Controlled Agent Rules](owner-controlled-rules.md): optional local
+  owner delegation, scoped settings edits through the same four tools, and
+  separately authenticated human review.
 - [Workbench Ask With Your Model](workbench-ask.md): preview browser UI for
   optional local OpenAI, Anthropic, and custom-provider chat over the exact
   reviewed tool surface, with direct-egress consent, session-only credentials,

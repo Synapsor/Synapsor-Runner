@@ -325,12 +325,23 @@ signature verification makes an export tamper-evident; it does not make a local
 SQLite ledger immutable compliance storage.
 `,
     policy: `Usage:
+  ${cmd} policy storage --config ./synapsor.runner.json [--project-root .] [--store ./.synapsor/local.db]
+  ${cmd} policy delegation --config ./synapsor.runner.json --name <parent-name> --input ./owner-delegation.json [--project-root .]
   ${cmd} policy recommend --contract ./synapsor.contract.json --config ./synapsor.runner.json --tenant <tenant> --capability <name> --policy <name> --store ./.synapsor/local.db
   ${cmd} policy recommendations list --tenant <tenant> --store ./.synapsor/local.db [--capability <name>] [--policy <name>] [--status pending_review|approved|rejected|exported]
   ${cmd} policy recommendations show <ptr_id> --tenant <tenant> --store ./.synapsor/local.db
   ${cmd} policy recommendations approve <ptr_id> --tenant <tenant> --config ./synapsor.runner.json --reason <text> --yes --store ./.synapsor/local.db
   ${cmd} policy recommendations reject <ptr_id> --tenant <tenant> --config ./synapsor.runner.json --reason <text> --yes --store ./.synapsor/local.db
   ${cmd} policy recommendations export <ptr_id> --tenant <tenant> --contract ./synapsor.contract.json --out ./synapsor.contract.recommended.json --actor <operator> --yes --store ./.synapsor/local.db
+
+Owner delegation is optional, not required for ordinary DB onboarding.
+storage previews existing authority and asks before making the configured
+control store authoritative; it preserves grants and disabled drafts.
+delegation separately reviews operator-owned management roles, agent bindings
+and typed limits against current Action authority. Model tools cannot perform
+this operator confirmation. Local Ask/stdio owners draft through the same four
+tools; /review-rules uses a separate authenticated human-review credential.
+Neither setup command writes source data. See docs/owner-controlled-rules.md.
 
 Graduated trust is disabled by default. It evaluates scoped, human-reviewed
 history and can create a pending recommendation; it never auto-approves,

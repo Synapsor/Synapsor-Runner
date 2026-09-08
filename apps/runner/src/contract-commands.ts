@@ -602,6 +602,10 @@ function reportObjectScope(tenant: string, value: string): { kind: "object"; ten
 
 
 export async function policyCommand(args: string[]): Promise<number> {
+  if (args[0] === "storage" || args[0] === "delegation") {
+    const { ownerPolicyCommand } = await import("./owner-policy-commands.js");
+    return ownerPolicyCommand(args);
+  }
   const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   if (config && runtimeStoreBridgeRequired(args, config)) {

@@ -23,14 +23,23 @@ export type CompiledOwnerPolicy = {
   }>;
 };
 
+type ResolvedParentRule = { source: OwnerPolicyParent["outcomes"][number]; compiled: CompiledActionRuleV1; facts: Map<string, OwnerPolicyFact> };
+
+/** Validate operator delegation authority independently of any child draft. */
+export function validateOwnerPolicyParent(input: { parent: unknown; rules: CompiledActionRuleV1[] }): OwnerPolicyParent {
+  assertBoundedOwnerPolicyInput(input.parent);
+  const parsed = ownerPolicyParentSchema.safeParse(input.parent);
+  if (!parsed.success) throw new OwnerPolicyCompileError("OWNER_POLICY_INVALID");
+  resolveParentRules(parsed.data, input.rules);
+  return parsed.data;
+}
+
 export function compileOwnerPolicy(input: { parent: unknown; definition: unknown; rules: CompiledActionRuleV1[] }): CompiledOwnerPolicy {
   assertBoundedOwnerPolicyInput(input.parent); assertBoundedOwnerPolicyInput(input.definition);
   const parsedParent = ownerPolicyParentSchema.safeParse(input.parent), parsedDefinition = ownerPolicyDefinitionSchema.safeParse(input.definition);
   if (!parsedParent.success || !parsedDefinition.success) throw new OwnerPolicyCompileError("OWNER_POLICY_INVALID");
   const parent = parsedParent.data, definition = parsedDefinition.data;
-  unique(parent.agents); unique(parent.outcomes.map((rule) => rule.outcome));
   unique(definition.agents); unique(definition.rules.map((rule) => rule.outcome));
-  unique((parent.budgets ?? []).map((budget) => budget.meter));
   unique((definition.budget_limits ?? []).map((budget) => budget.meter));
   const budgets = new Map((parent.budgets ?? []).map((budget) => [budget.meter, { ...budget }]));
   for (const limit of definition.budget_limits ?? []) {
@@ -38,11 +47,34 @@ export function compileOwnerPolicy(input: { parent: unknown; definition: unknown
     if (!budget || limit.maximum > budget.maximum) throw new OwnerPolicyCompileError("OWNER_POLICY_PARENT_BUDGET_EXCEEDED");
     budget.maximum = limit.maximum;
   }
-  const usedMeters = new Set<string>();
   for (const agent of definition.agents) if (!parent.agents.includes(agent)) throw new OwnerPolicyCompileError("OWNER_POLICY_AGENT_NOT_DELEGABLE");
-  const available = new Map(input.rules.map((rule) => [rule.outcome, rule]));
-  if (available.size !== input.rules.length) throw new OwnerPolicyCompileError("OWNER_POLICY_AMBIGUOUS_ACTION");
-  const parents = new Map<string, { source: OwnerPolicyParent["outcomes"][number]; compiled: CompiledActionRuleV1; facts: Map<string, OwnerPolicyFact> }>();
+  const parents = resolveParentRules(parent, input.rules);
+  const rules = definition.rules.map((rule): CompiledOwnerPolicy["rules"][number] => {
+    const parentRule = parents.get(rule.outcome);
+    if (!parentRule) throw new OwnerPolicyCompileError("OWNER_POLICY_OUTCOME_NOT_DELEGABLE");
+    const { compiled, facts, source } = parentRule;
+    const compile = (predicate: OwnerPredicate) => compileActionRuleBooleanPredicate({ compiled, expression: translate(predicate, compiled, facts) });
+    const conditions = [compile(rule.require), ...(source.require ? [compile(source.require)] : [])];
+    if (rule.approval === "inherit" && !source.allow_automatic_approval) throw new OwnerPolicyCompileError("OWNER_POLICY_HUMAN_APPROVAL_REQUIRED");
+    if (rule.approval === "human" && rule.auto_approve_when) throw new OwnerPolicyCompileError("OWNER_POLICY_CONTRADICTORY_APPROVAL");
+    return { outcome: rule.outcome, compiled_plan_digest: compiled.compiled_plan_digest,
+      require: { kind: "all", expressions: conditions }, approval: rule.approval,
+      ...(rule.auto_approve_when ? { auto_approve_when: compile(rule.auto_approve_when) } : {}),
+      ...(source.budget_charges ? { budget_charges: source.budget_charges } : {}) };
+  });
+  const body = { definition, parent_digest: canonicalJsonDigest(parent), rules,
+    ...(budgets.size ? { budgets: [...budgets.values()] } : {}) };
+  return { ...body, digest: canonicalJsonDigest(body) };
+}
+
+function resolveParentRules(parent: OwnerPolicyParent, rules: CompiledActionRuleV1[]): Map<string, ResolvedParentRule> {
+  unique(parent.agents); unique(parent.outcomes.map((rule) => rule.outcome));
+  unique((parent.budgets ?? []).map((budget) => budget.meter));
+  const budgets = new Map((parent.budgets ?? []).map((budget) => [budget.meter, budget]));
+  const usedMeters = new Set<string>();
+  const available = new Map(rules.map((rule) => [rule.outcome, rule]));
+  if (available.size !== rules.length) throw new OwnerPolicyCompileError("OWNER_POLICY_AMBIGUOUS_ACTION");
+  const parents = new Map<string, ResolvedParentRule>();
   for (const source of parent.outcomes) {
     const compiled = available.get(source.outcome);
     if (!compiled || compiled.compiled_plan_digest !== source.compiled_plan_digest) throw new OwnerPolicyCompileError("OWNER_POLICY_PARENT_CHANGED");
@@ -76,22 +108,7 @@ export function compileOwnerPolicy(input: { parent: unknown; definition: unknown
     parents.set(source.outcome, { source, compiled, facts });
   }
   if ([...budgets.keys()].some((meter) => !usedMeters.has(meter))) throw new OwnerPolicyCompileError("OWNER_POLICY_BUDGET_NOT_ENFORCED");
-  const rules = definition.rules.map((rule): CompiledOwnerPolicy["rules"][number] => {
-    const parentRule = parents.get(rule.outcome);
-    if (!parentRule) throw new OwnerPolicyCompileError("OWNER_POLICY_OUTCOME_NOT_DELEGABLE");
-    const { compiled, facts, source } = parentRule;
-    const compile = (predicate: OwnerPredicate) => compileActionRuleBooleanPredicate({ compiled, expression: translate(predicate, compiled, facts) });
-    const conditions = [compile(rule.require), ...(source.require ? [compile(source.require)] : [])];
-    if (rule.approval === "inherit" && !source.allow_automatic_approval) throw new OwnerPolicyCompileError("OWNER_POLICY_HUMAN_APPROVAL_REQUIRED");
-    if (rule.approval === "human" && rule.auto_approve_when) throw new OwnerPolicyCompileError("OWNER_POLICY_CONTRADICTORY_APPROVAL");
-    return { outcome: rule.outcome, compiled_plan_digest: compiled.compiled_plan_digest,
-      require: { kind: "all", expressions: conditions }, approval: rule.approval,
-      ...(rule.auto_approve_when ? { auto_approve_when: compile(rule.auto_approve_when) } : {}),
-      ...(source.budget_charges ? { budget_charges: source.budget_charges } : {}) };
-  });
-  const body = { definition, parent_digest: canonicalJsonDigest(parent), rules,
-    ...(budgets.size ? { budgets: [...budgets.values()] } : {}) };
-  return { ...body, digest: canonicalJsonDigest(body) };
+  return parents;
 }
 
 /** Adds owner checks to, never replaces, base eligibility. A passing result is
