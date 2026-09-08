@@ -129,12 +129,18 @@ export function createPolicyManagementService(options: {
         drafts: snapshot.drafts.map((value) => view(value, parent)) };
     },
     async detail(credential: string, scope: ControlPolicyScope, policyName: string) {
-      const key = selectedKey(scope, policyName), { parent, snapshot } = await loadExact(credential, key, "inspect");
+      const key = selectedKey(scope, policyName), { identity, parent, snapshot } = await loadExact(credential, key, "inspect");
       const { active, draft } = snapshot;
+      const permissions = (["inspect", "draft", "audit"] as const).filter((permission) => {
+        try { assertPolicyManagementRight(identity, parent.document.managers, key.scope, permission); return true; }
+        catch (error) { if (error instanceof PolicyManagementError && error.code === "POLICY_MANAGEMENT_FORBIDDEN") return false; throw error; }
+      });
       return { epoch: snapshot.epoch, key, ...(active ? { active: view(active, parent) } : {}), ...(draft ? { draft: view(draft, parent) } : {}),
+        permissions,
         agents: delegationForScope(parent).agents,
         ...(parent.document.delegation.budgets ? { parent_hard_budgets: parent.document.delegation.budgets } : {}),
         vocabulary: parent.document.delegation.outcomes.map((outcome) => ({ outcome: outcome.outcome, automatic_approval_delegable: outcome.allow_automatic_approval,
+          ...(outcome.require ? { parent_require: outcome.require } : {}),
           facts: outcome.facts.map(({ source: _privateSource, ...fact }) => fact) })) };
     },
     async propose(credential: string, input: { scope: ControlPolicyScope; name: string; expected_epoch: number; definition: unknown }) {
@@ -147,6 +153,16 @@ export function createPolicyManagementService(options: {
       const content: ManagedDelegation = { schema_version: "synapsor.managed-owner-policy.v1", parent_name: parentKey.name,
         parent_revision_id: parent.revision.revision_id, parent_authority_digest: parent.revision.authority_digest,
         definition: compiled.definition, compiled_digest: compiled.digest };
+      // A new authenticated session may rediscover a saved draft after a lost
+      // response. Identical validated content is a receipt, not another revision.
+      if (snapshot.draft?.content_digest === canonicalJsonDigest(content)) {
+        assertPolicyManagementRight(identity, parent.document.managers, key.scope, "draft");
+        const current = await loadExact(credential, key, "draft");
+        exactEpoch(snapshot.epoch, current.snapshot.epoch);
+        return { epoch: snapshot.epoch, revision_id: snapshot.draft.revision_id,
+          summary: summary(key, compiled.definition, "activate"), authority_changed: false, source_database_changed: false,
+          status: "draft_saved" as const, replay: true };
+      }
       const revision: ControlPolicyRevision = { ...key, revision_id: randomUUID(), content,
         content_digest: canonicalJsonDigest(content), authority_digest: compiled.digest };
       assertPolicyManagementRight(identity, parent.document.managers, key.scope, "draft");

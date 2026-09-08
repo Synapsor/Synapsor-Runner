@@ -6,9 +6,7 @@ export function semanticActionInputSchema(name: string) {
     query: z.string().max(256).optional(),
     limit: z.number().int().min(1).max(20).optional(),
     cursor: z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u).optional(),
-  }).strict().refine((args) => args.outcome === undefined
-    || args.query === undefined && args.limit === undefined && args.cursor === undefined,
-  "Use outcome alone for exact detail, or query/limit/cursor for listing.");
+  }).strict().describe("Use outcome alone for exact detail, or query/limit/cursor for listing.");
   if (name !== "app.request_change") throw new Error("Unknown semantic Action tool.");
   return z.object({
     outcome: z.string().regex(/^[A-Za-z_][A-Za-z0-9_.:-]{0,255}$/u),

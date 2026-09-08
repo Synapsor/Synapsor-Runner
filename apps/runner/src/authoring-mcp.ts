@@ -14,6 +14,8 @@ import {
   type SubjectReferenceService,
   CATALOG_LIMITS,
   catalogResponseBytes,
+  withPolicyManagementInput,
+  type PolicyManagementTools,
 } from "@synapsor-runner/mcp-server";
 import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { z } from "zod";
@@ -80,6 +82,7 @@ export function createScopedExploreMcpServer(
     mode?: "local_authoring" | "production_http";
     localPresentation?: LocalToolPresentationSink;
     semanticActions?: SemanticActionRuntime;
+    policyManagement?: PolicyManagementTools;
   } = {},
 ): McpServer {
   const production = options.mode === "production_http";
@@ -232,16 +235,22 @@ export function createScopedExploreMcpServer(
     { name: production ? "synapsor-runner-production-explore" : "synapsor-runner-authoring", version: runnerPackage.version },
     { capabilities: { tools: {} } },
   );
-  if (options.semanticActions) {
-    const actions = options.semanticActions;
+  const policyManagement = options.policyManagement;
+  const settingsHint = policyManagement ? " For your own agent settings, use policy_view: agent_rules instead of source-data arguments; app.explore_data section summary provides its current typed control reference." : "";
+  if (options.semanticActions || policyManagement) {
+    const actions = options.semanticActions ?? createInactiveSemanticActionRuntime();
     for (const tool of actions.listTools()) {
+      const sourceSchema = semanticActionInputSchema(tool.name);
       server.registerTool(tool.name, {
-        title: tool.title, description: tool.description,
-        inputSchema: semanticActionInputSchema(tool.name),
+        title: tool.title, description: tool.description + settingsHint,
+        inputSchema: policyManagement ? withPolicyManagementInput(sourceSchema, tool.name) : sourceSchema,
         annotations: { readOnlyHint: tool.name === "app.describe_actions", destructiveHint: false, idempotentHint: true, openWorldHint: false },
       }, async (args: Record<string, unknown>, extra: { _meta?: Record<string, unknown> }) => toolResult(async () => {
+        if (policyManagement?.handles(args)) return policyManagement.callTool(tool.name, args);
+        const source = sourceSchema.safeParse(args);
+        if (!source.success) throw new McpRuntimeError("ARGUMENT_INVALID", "Use one complete source Action contract, or the separately enabled agent-rules view; do not mix them.");
         if (isBoundarySetRuntime(runtime)) await runtime.requireTrustedScope?.();
-        return actions.callTool(tool.name, args);
+        return actions.callTool(tool.name, source.data);
       }, undefined, {
         requestMeta: extra._meta, localPresentation: options.localPresentation,
         authorityMetadata: runtime.model_authority_metadata ?? "semantic",
@@ -251,19 +260,17 @@ export function createScopedExploreMcpServer(
   }
   const discoverReads = createScopedReadDiscovery(runtime, (result, detail) =>
     projectDescribeDataForModel(result, detail, runtime.model_authority_metadata ?? "semantic"));
+  const describeInput = z.object({
+    boundary: optionalBoundarySelector,
+    resource: optionalResourceSelector,
+    query: optionalModelArgument(z.string().max(256)),
+    cursor: optionalModelArgument(z.union([z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u), z.literal(0)]).transform((value) => value === 0 ? undefined : value)),
+    limit: z.preprocess((value) => value === 0 ? undefined : value, optionalModelArgument(z.number().int().positive().max(20))),
+  }).strict();
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
-    description: "Metadata only; no source rows. Search reviewed resources with query, limit and the opaque returned cursor. Empty input returns a bounded shortlist. Use resource with optional boundary, without search/pagination arguments, for a complete focused contract. Copy exact ids into app.explore_data for values. Search matches are not row eligibility.",
-    inputSchema: z.object({
-      boundary: optionalBoundarySelector,
-      resource: optionalResourceSelector,
-      query: optionalModelArgument(z.string().max(256)),
-      cursor: optionalModelArgument(z.union([z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u), z.literal(0)]).transform((value) => value === 0 ? undefined : value)),
-      limit: z.preprocess(
-        (value) => value === 0 ? undefined : value,
-        optionalModelArgument(z.number().int().positive().max(20)),
-      ),
-    }).strict(),
+    description: "Metadata only; no source rows. Search reviewed resources with query, limit and the opaque returned cursor. Empty input returns a bounded shortlist. Use resource with optional boundary, without search/pagination arguments, for a complete focused contract. Copy exact ids into app.explore_data for values. Search matches are not row eligibility." + settingsHint,
+    inputSchema: policyManagement ? withPolicyManagementInput(describeInput, SCOPED_EXPLORE_DESCRIBE_TOOL) : describeInput,
     outputSchema: scopedExploreDescribeToolOutputSchema,
     annotations: {
       readOnlyHint: true,
@@ -279,15 +286,22 @@ export function createScopedExploreMcpServer(
       "synapsor.approval_tool": false,
       "synapsor.commit_tool": false,
     },
-  }, async (input, extra) => toolResult(
-    async () => discoverReads({
-        ...(input.boundary ? { boundary: input.boundary } : {}),
-        ...(input.resource ? { resource: input.resource } : {}),
-        ...(input.query === undefined ? {} : { query: input.query }),
-        ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
-        ...(input.limit === undefined ? {} : { limit: input.limit }),
-      }),
+  }, async (input: Record<string, unknown>, extra: { _meta?: Record<string, unknown> }) => toolResult(
+    async () => {
+      if (policyManagement?.handles(input)) return policyManagement.callTool(SCOPED_EXPLORE_DESCRIBE_TOOL, input);
+      const parsed = describeInput.safeParse(input);
+      if (!parsed.success) throw new McpRuntimeError("ARGUMENT_INVALID", "Use source discovery arguments or the agent-rules view, not a mixture.");
+      const source = parsed.data;
+      return discoverReads({
+        ...(source.boundary ? { boundary: source.boundary } : {}),
+        ...(source.resource ? { resource: source.resource } : {}),
+        ...(source.query === undefined ? {} : { query: source.query }),
+        ...(source.cursor === undefined ? {} : { cursor: source.cursor }),
+        ...(source.limit === undefined ? {} : { limit: source.limit }),
+      });
+    },
     (result) => {
+      if (policyManagement?.handles(input)) return { value: result, withheld: false };
       const authorityMetadata = runtime.model_authority_metadata ?? "semantic";
       const authority = projectAuthorityMetadataForModel(result, authorityMetadata);
       const value = projectDescribeDataForModel(
@@ -313,8 +327,8 @@ export function createScopedExploreMcpServer(
   ));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
     title: "Explore reviewed data",
-    description: exploreToolDescription(production, automaticBandsReviewed),
-    inputSchema: exploreDiscoveryInput,
+    description: exploreToolDescription(production, automaticBandsReviewed) + settingsHint,
+    inputSchema: policyManagement ? withPolicyManagementInput(exploreDiscoveryInput, SCOPED_EXPLORE_QUERY_TOOL) : exploreDiscoveryInput,
     outputSchema: scopedExploreQueryToolOutputSchema,
     annotations: {
       readOnlyHint: true,
@@ -331,7 +345,12 @@ export function createScopedExploreMcpServer(
       "synapsor.approval_tool": false,
       "synapsor.commit_tool": false,
     },
-  }, async (discoveryInput, extra) => {
+  }, async (discoveryInput: Record<string, unknown>, extra: { _meta?: Record<string, unknown> }) => {
+    if (policyManagement?.handles(discoveryInput)) return toolResult(
+      () => policyManagement.callTool(SCOPED_EXPLORE_QUERY_TOOL, discoveryInput), undefined,
+      { requestMeta: extra._meta, localPresentation: options.localPresentation,
+        authorityMetadata: runtime.model_authority_metadata ?? "semantic", withOperation: runtime.withOperation },
+    );
     let boundary: string | undefined;
     let parsedPlan: z.infer<typeof plan> | undefined;
     return toolResult(

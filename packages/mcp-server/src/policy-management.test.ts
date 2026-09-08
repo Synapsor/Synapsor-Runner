@@ -117,6 +117,21 @@ for (const backend of ["sqlite", "postgres"] as const) {
       await expect(f.service.list(f.ordinary, beta)).rejects.toThrow("POLICY_MANAGEMENT_FORBIDDEN");
     });
 
+    it("rediscovers an identical saved draft after a new session without creating another revision", async () => {
+      const f = await fixture(), draft = await f.propose();
+      const fresh = await credential(false, { sid: "reconnected-assistant-session" });
+      const same = await f.service.propose(fresh, { scope, name: "my_agent_rules", expected_epoch: draft.epoch, definition: f.definition });
+      expect(same).toMatchObject({ epoch: draft.epoch, revision_id: draft.revision_id, replay: true, authority_changed: false });
+      expect((await f.repository.deployment(f.deployment))?.epoch).toBe(draft.epoch);
+      const detail = await f.service.detail(fresh, scope, "my_agent_rules");
+      expect(detail.permissions).toEqual(["inspect", "draft", "audit"]);
+      expect(detail.vocabulary[0]?.parent_require).toEqual(f.parent.outcomes[0]?.require);
+      f.resolveRules.mockImplementationOnce(async () => { await f.replaceParent({ ...f.parentContent, managers: [] }); return [f.compiled]; });
+      await expect(f.service.propose(fresh, { scope, name: "my_agent_rules", expected_epoch: draft.epoch, definition: f.definition }))
+        .rejects.toThrow("POLICY_MANAGEMENT_FORBIDDEN");
+      expect((await f.repository.draft(f.deployment, { scope, kind: "delegation", name: "my_agent_rules" }))?.revision_id).toBe(draft.revision_id);
+    });
+
     it("browses only an authorized owner scope in bounded stable pages and keeps detail independent of unrelated pointers", async () => {
       const f = await fixture(), names = await f.addDelegations(65);
       const first = await f.service.browse(f.ordinary, { scope, limit: 32 });

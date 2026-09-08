@@ -179,6 +179,11 @@ describe("Scoped Explore", () => {
       await client.connect(clientTransport);
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
       expect(names).toEqual(["app.describe_actions", "app.describe_data", "app.explore_data", "app.request_change"]);
+      const actionSchema = (await client.listTools()).tools.find((tool) => tool.name === "app.describe_actions")!.inputSchema;
+      expect(actionSchema.properties).toHaveProperty("query");
+      expect(actionSchema.properties).toHaveProperty("cursor");
+      expect(actionSchema.properties).toHaveProperty("limit");
+      expect((await client.callTool({ name: "app.describe_actions", arguments: { outcome: "some.action", query: "mixed" } })).isError).toBe(true);
       expect((await client.callTool({ name: "app.describe_actions", arguments: {} })).structuredContent).toMatchObject({ actions: [] });
       const args = { outcome: "customer.update_preference", subject_refs: { customer: `obj_${"a".repeat(40)}` }, inputs: { ceiling: 2500 } };
       const denied = await client.callTool({ name: "app.request_change", arguments: args });
