@@ -72,13 +72,22 @@ export function createDelegatedSemanticRuntime(options: RuntimeOptions & { authe
  * One-use dispatch is additional to, never a substitute for, ordinary approval,
  * source freshness, exact-effect checks and the source executor's receipt. */
 export function createDelegatedSemanticExecutor(options: RuntimeOptions) {
-  return { forJob(job: NormalizedWritebackJobV5) {
+  return { forJob(job: NormalizedWritebackJobV5, sourceScope?: { mode: "postgres_rls"; tenantId: string; principal: string }) {
     // Capture an immutable execution attempt. A caller cannot swap the target
     // between re-verification and receipt accounting.
-    const original = structuredClone(job), jobDigest = canonicalJsonDigest(original);
+    const original = structuredClone(job), jobDigest = canonicalJsonDigest(original), scope = structuredClone(sourceScope);
     let dispatchId: string | undefined;
     async function current() {
-      const tenant = original.target.tenant_guard?.value, principal = original.target.principal_scope?.value;
+      // RLS can enforce an owner without a physical principal column. Only the
+      // approved proposal's captured source transaction scope supplies that owner;
+      // never discover it through an unscoped proof lookup or worker credentials.
+      const tenant = original.target.tenant_guard?.value, physicalPrincipal = original.target.principal_scope?.value;
+      if (scope !== undefined && (original.engine !== "postgres" || scope.mode !== "postgres_rls"
+          || typeof scope.tenantId !== "string" || !scope.tenantId || typeof scope.principal !== "string" || !scope.principal
+          || tenant !== scope.tenantId || (physicalPrincipal !== undefined && physicalPrincipal !== scope.principal))) {
+        throw new OwnerRuntimeError("DELEGATION_SOURCE_SCOPE_UNSUPPORTED");
+      }
+      const principal = scope === undefined ? physicalPrincipal : scope.principal;
       if (typeof tenant !== "string" || typeof principal !== "string") throw new OwnerRuntimeError("DELEGATION_SOURCE_SCOPE_UNSUPPORTED");
       const record = await readAttestation(options, original.proposal_id, original.semantic_authority,
         { level: "principal", tenant_id: tenant, principal });
@@ -90,8 +99,12 @@ export function createDelegatedSemanticExecutor(options: RuntimeOptions) {
     const check: SemanticExecutionDelegationCheck = async (input) => {
       if (canonicalJsonDigest(input.job) !== jobDigest) throw new OwnerRuntimeError("DELEGATION_JOB_CHANGED");
       const { effective, record } = await current();
+      // Supply the RLS identity only to owner evaluation, without changing
+      // general Action facts, source dependency digests or an existing principal.
+      const facts = scope !== undefined && input.facts.trusted.principal === undefined
+        ? { ...input.facts, trusted: { ...input.facts.trusted, principal: scope.principal } } : input.facts;
       const decision = evaluateEffectiveOwnerPolicy({ effective, compiled: input.activated.compiled,
-        facts: input.facts, inputs: input.inputs, proposal_id: original.proposal_id });
+        facts, inputs: input.inputs, proposal_id: original.proposal_id });
       if (decision.result !== "allowed" || input.evaluation.effect.effect_digest !== record.effect_digest
           || (decision.approval === "human" && original.semantic_authority.proof.approval_path !== "human_review")) {
         throw new OwnerRuntimeError("DELEGATION_REQUEST_REFUSED");
@@ -134,6 +147,7 @@ async function readAttestation(options: RuntimeOptions, proposalId: string, auth
     scope, content_digest: proof.binding_digest });
   const record = attestationSchema.parse(stored.content);
   if (record.deployment_id !== options.deployment_id || record.parent_name !== options.parent_name || record.proposal_id !== proposalId
+      || canonicalJsonDigest(ownerScope(record.actor)) !== canonicalJsonDigest(scope)
       || stored.expires_at_ms !== Date.parse(record.valid_until) || canonicalJsonDigest(proofFor(record)) !== canonicalJsonDigest(proof)
       || record.compiled_plan_digest !== authority.proof.compiled_plan_digest || record.effect_digest !== authority.effect.effect_digest
       || record.inputs_digest !== canonicalJsonDigest(authority.business_inputs ?? {})

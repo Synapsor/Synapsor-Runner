@@ -78,7 +78,8 @@ async function workerStatus(args: string[]): Promise<number> {
         .sort()[0] ?? null,
     };
     if (args.includes("--json")) {
-      process.stdout.write(`${JSON.stringify({ worker_control: control, worker_health: "unknown", summary, worker_queue: items }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ worker_control: control, worker_health: "unknown", summary,
+        worker_queue: items.map((item) => ({ ...item, recovery: workerFailureRecovery(item.last_error_code, item.status) })) }, null, 2)}\n`);
     } else {
       process.stdout.write(`Supervised execution: ${control.mode} (control revision ${control.revision})\n`);
       process.stdout.write("Worker health: unknown. Queue state and lease counts do not prove that a worker process is running.\n");
@@ -94,6 +95,8 @@ async function workerStatus(args: string[]): Promise<number> {
           + `${item.lease_owner ? ` lease=${item.lease_owner} until=${item.lease_expires_at}` : ""}`
           + `${item.last_error_code ? ` error=${item.last_error_code}` : ""}\n`,
         );
+        const recovery = workerFailureRecovery(item.last_error_code, item.status);
+        if (recovery) process.stdout.write(`  Next: ${recovery}\n`);
       }
     }
     return 0;
@@ -305,7 +308,8 @@ async function workerDeadLetterShow(args: string[]): Promise<number> {
     const item = store.getWorkerQueueItem(proposalId);
     if (!item) throw new Error(`worker queue item not found for ${proposalId}`);
     const proposal = requireLocalProposal(store, proposalId);
-    const payload = { worker_queue: item, proposal, receipts: store.receipts(proposalId), events: store.events(proposalId) };
+    const recovery = workerFailureRecovery(item.last_error_code, item.status);
+    const payload = { worker_queue: item, proposal, receipts: store.receipts(proposalId), events: store.events(proposalId), recovery };
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else process.stdout.write([
       `${item.status.toUpperCase()} ${item.proposal_id}`,
@@ -314,6 +318,7 @@ async function workerDeadLetterShow(args: string[]): Promise<number> {
       `Proposal state: ${proposal.state}`,
       `Receipts retained: ${payload.receipts.length}`,
       `Events retained: ${payload.events.length}`,
+      ...(recovery ? [`Next: ${recovery}`] : []),
       "",
     ].join("\n"));
     return 0;
@@ -741,6 +746,7 @@ async function workerRun(args: string[]): Promise<number> {
               proposal_id: item.proposal_id,
               worker_id: workerId,
               error_code: receipt?.safe_error_code ?? "RECONCILIATION_REQUIRED",
+              recovery: workerFailureRecovery(receipt?.safe_error_code ?? "RECONCILIATION_REQUIRED", "reconciliation_required"),
               attempt: item.attempts,
             });
           } else if (proposal.state === "failed") {
@@ -821,6 +827,7 @@ function finishWorkerFailure(
       proposal_id: item.proposal_id,
       worker_id: workerId,
       error_code: errorCode,
+      recovery: workerFailureRecovery(errorCode, "reconciliation_required"),
       attempt: item.attempts,
     });
     return;
@@ -838,11 +845,13 @@ function finishWorkerFailure(
         proposal_id: item.proposal_id,
         worker_id: workerId,
         error_code: errorCode,
+        recovery: workerFailureRecovery(errorCode),
         attempt: item.attempts,
       });
     } else {
       store.deadLetterWorkerItem({ proposalId: item.proposal_id, workerId, errorCode, leaseId });
-      operationalLog("error", "worker_item_dead_lettered", { proposal_id: item.proposal_id, worker_id: workerId, error_code: errorCode, attempt: item.attempts });
+      operationalLog("error", "worker_item_dead_lettered", { proposal_id: item.proposal_id, worker_id: workerId,
+        error_code: errorCode, recovery: workerFailureRecovery(errorCode), attempt: item.attempts });
     }
     return;
   }
@@ -864,7 +873,44 @@ function finishWorkerFailure(
 }
 
 
-function isRetryableWritebackCode(code: string, mode: WorkerQueueItem["execution_mode"] = "legacy"): boolean {
+export function workerFailureRecovery(code: string | null | undefined, state?: WorkerQueueItem["status"]): string | undefined {
+  if (state === "reconciliation_required" || code === "OUTCOME_UNKNOWN" || code === "RECONCILIATION_REQUIRED"
+    || code === "RECEIPT_OUTCOME_UNKNOWN" || code === "DELEGATION_EFFECT_RECONCILIATION_REQUIRED") {
+    return "Reconcile the exact proposal's dispatch record, durable receipt and source outcome with a verified operator. Do not retry or requeue; completion is not proven.";
+  }
+  // Exact public codes only. Never include the exception message, proof or identity in recovery/log fields.
+  switch (code) {
+    case "DELEGATION_JOB_CHANGED":
+    case "DELEGATION_CHANGED":
+    case "DELEGATION_PARENT_CHANGED":
+      return "Delegated authority or the sealed job changed. Review current authority and create a fresh request; do not retry this proposal.";
+    case "DELEGATION_SOURCE_SCOPE_UNSUPPORTED":
+      return "Source scope could not be verified. Check the approved proposal and reviewed source-scope configuration; do not change worker identity or widen grants.";
+    case "DELEGATION_PROOF_REQUIRED":
+    case "DELEGATION_PROOF_INVALID":
+    case "DELEGATION_CONFIGURATION_INVALID":
+      return "Verify the approved proposal and reviewed delegation configuration. Obtain valid proof through a fresh authorized request; do not inject worker identity or requeue this proposal.";
+    case "DELEGATION_AUTHENTICATION_FAILED":
+      return "Verify the approved proposal and reviewed authentication configuration. Use a fresh authenticated request, not a worker identity override; do not retry this proposal.";
+    case "RUNTIME_PROOF_EXPIRED":
+      return "Stored runtime proof expired. Create a fresh authenticated request under current reviewed authority; do not reuse this proposal or override worker identity.";
+    case "RUNTIME_PROOF_UNAVAILABLE":
+    case "RUNTIME_PROOF_INTEGRITY_INVALID":
+      return "Verify the approved proposal's reviewed delegation binding and stored proof integrity. Do not retry or requeue this proposal, inject identity, or edit proof records.";
+    case "DELEGATION_REQUEST_REFUSED":
+    case "DELEGATION_NOT_AVAILABLE":
+      return "Review current parent/owner authority and current eligibility. Submit a fresh request only when authorized; do not requeue this proposal or widen grants.";
+    case "DELEGATION_BUDGET_UNAVAILABLE":
+    case "DELEGATION_BUDGET_CHARGE_NOT_PROVEN":
+    case "DELEGATION_BUDGET_INCOMPATIBLE":
+    case "DELEGATION_BUDGET_LIMIT":
+      return "Verify reviewed parent/owner budget definitions and exact effect charges. Do not raise caps or blindly retry; this code alone does not establish that a budget window is exhausted.";
+    default:
+      return undefined;
+  }
+}
+
+export function isRetryableWritebackCode(code: string, mode: WorkerQueueItem["execution_mode"] = "legacy"): boolean {
   if (mode === "supervised_worker") {
     return /^(DATABASE_UNAVAILABLE|TEMPORARILY_UNAVAILABLE|TRANSACTION_FAILED|IDEMPOTENCY_RECEIPT_IN_PROGRESS)$/.test(code);
   }

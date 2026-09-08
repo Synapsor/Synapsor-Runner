@@ -1,4 +1,4 @@
-import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { EXPLORATION_PRESENCE_MEASURE_FUNCTIONS, type ExplorationBoundaryDraft, type ExplorationDerivedBaseMeasure } from "./auto-boundary.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -46,6 +46,54 @@ export function fieldPermissions(resource: Resource, field: string) {
   return { raw: selection && !resource.model_withheld_fields?.includes(field), selection, excluded,
     withheld: resource.model_withheld_fields?.includes(field) ?? false,
     analysis: reviewedModelAnalysisOperations(resource, field) };
+}
+
+function reviewedMeasureReference(measure: ExplorationDerivedBaseMeasure): string {
+  return "field" in measure
+    ? `${measure.function}(${measure.relationship ? `relationship ${JSON.stringify(measure.relationship)}, ` : ""}field ${JSON.stringify(measure.field)})`
+    : "count()";
+}
+
+// Keep logical facts unwrapped; the existing read-only pager reflows on resize.
+function resourcePermissionOverview(resource: Resource): string[] {
+  const fields = Object.keys(resource.field_types).sort();
+  return [
+    `Complete field permissions: ${fields.length} fields. Raw exposure and analysis grants are independent.`,
+    ...fields.flatMap((field) => {
+      const permissions = fieldPermissions(resource, field), label = resource.field_metadata?.[field]?.label;
+      return ["", `Field: ${field}${label ? ` (${label})` : ""}`,
+        `Raw access: ${fieldAccess(resource, field)}`,
+        `Runner row selection: ${permissions.selection ? "yes" : "no"}`,
+        `Model-invocable analysis: ${permissions.analysis.join(", ") || "none"}`,
+        ...(permissions.analysis.includes("presence") ? [`Presence functions: ${EXPLORATION_PRESENCE_MEASURE_FUNCTIONS.join(", ")}`] : []),
+        `Reviewed value allowlist: ${resource.field_enums[field]?.map((value) => JSON.stringify(value)).join(", ") || "none"}`,
+      ];
+    }),
+    "", "REVIEWED ANALYSIS DEFINITIONS",
+    ...((resource.derived_measures?.length ?? 0) ? resource.derived_measures!.flatMap((measure) => [
+      `Derived measure: ${measure.name} (${measure.label})`, `Shape: ${measure.shape}`,
+      ...("numerator" in measure ? [`Numerator: ${reviewedMeasureReference(measure.numerator)}`,
+        `Denominator: ${reviewedMeasureReference(measure.denominator)}`, `Null policy: ${measure.null_policy}`] : []),
+      ...("base_measure" in measure ? [`Base measure: ${reviewedMeasureReference(measure.base_measure)}`,
+        ...(measure.direction !== undefined ? [`Direction: ${measure.direction}`] : []),
+        ...(measure.window_size !== undefined ? [`Window size: ${measure.window_size}`] : [])] : []),
+      ...("child_resource" in measure ? [`Child resource: ${measure.child_resource}`, `Relationship: ${measure.relationship}`] : []),
+      "",
+    ]) : ["Derived measures: none"]),
+    ...((resource.numeric_bands?.length ?? 0) ? resource.numeric_bands!.flatMap((band) => [
+      `Numeric band: ${band.name} (${band.label})`,
+      `Field reference: ${band.relationship ? `relationship ${JSON.stringify(band.relationship)}, ` : ""}field ${JSON.stringify(band.field)}`,
+      `Edges: ${band.edges.join(", ")}`, `Bucket labels: ${band.bucket_labels.map((label) => JSON.stringify(label)).join(", ")}`, "",
+    ]) : ["Numeric bands: none"]),
+    ...((resource.auto_bands?.length ?? 0) ? resource.auto_bands!.flatMap((band) => [
+      `Auto band field: ${band.field}`, `Methods: ${band.methods.join(", ")}`,
+      `Bucket count: ${band.min_buckets} to ${band.max_buckets}`,
+      ...(band.min_bucket_width !== undefined ? [`Minimum bucket width: ${band.min_bucket_width}`] : []),
+      `Label style: ${band.label_style}`,
+      ...(band.label_round_to !== undefined ? [`Label rounding: ${band.label_round_to}`] : []), "",
+    ]) : ["Auto bands: none"]),
+    `End of ${resource.id}: all ${fields.length} fields and reviewed analysis definitions shown.`,
+  ];
 }
 
 export function findReviewSection(sections: ReviewSection[], id: string): ReviewSection | undefined {
@@ -171,7 +219,7 @@ export function readBoundaryReviewSections(input: {
       `${Object.keys(resource.field_types).filter((field) => fieldAccess(resource, field) === access).length} ${access.toLowerCase()}`);
     return { id: resource.id, title: `${resource.label ? `${resource.label} (${resource.id})` : resource.id} | ${counts.join(" / ")}`,
       lines: [counts.join(" | "), ...(resource.description ? [resource.description] : []),
-        "Raw access and model analysis are separate. Select a field for its exact operations and rationale."],
+        ...resourcePermissionOverview(resource)],
       children: [
         ...fields.map((field): ReviewSection => {
           const ops = reviewedModelAnalysisOperations(resource, field.id);
@@ -215,7 +263,10 @@ export function readBoundaryReviewSections(input: {
       ...privacy.findings.flatMap((finding) => ["", ...readPrivacyFindingLines(finding)]),
       `Exact fingerprint: ${input.digest}`,
     ] },
-    { id: "resources", title: `Resources and fields (${resources.length})`, lines: ["Select a resource, then a field. All raw access and model analysis grants are shown separately."], children: resources },
+    { id: "resources", title: `Resources and fields (${resources.length})`, lines: [
+      `Complete field permissions for all ${resources.length} reviewed resources. Labels do not grant access.`,
+      ...resources.flatMap((resource) => ["", resource.title, ...resource.lines]),
+    ], children: resources },
     input.changes ?? { id: "changes", title: "Changes only", lines: ["No prior revision comparison is attached to this review. Current exact authority remains available under Resources and Raw JSON."] },
     { id: "scope", title: "Scope, limits and fingerprint", lines: [
       "Read relationships serve customer queries; zero Read links does not mean private Action verification has no links.",

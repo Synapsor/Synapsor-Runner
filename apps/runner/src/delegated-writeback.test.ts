@@ -2,11 +2,11 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActionRuleApprovalClasses, createActionRuleRegistry, evaluateSemanticActionEligibility } from "@synapsor-runner/action-rules";
-import { canonicalJsonDigest, type NormalizedWritebackJobV5 } from "@synapsor-runner/protocol";
+import { compileActionRule, createActionRuleApprovalClasses, createActionRuleRegistry, evaluateSemanticActionEligibility } from "@synapsor-runner/action-rules";
+import { canonicalJsonDigest, eligibilityProofDigest, type NormalizedWritebackJobV5 } from "@synapsor-runner/protocol";
 import { createDelegatedSemanticRuntime, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { postgresControlPolicyRepository, sqliteControlPolicyRepository, type ControlPolicyKey, type ControlPolicyRevision } from "@synapsor-runner/proposal-store";
-import { createPostgresActionRuleFactLoader, applyPostgresJob } from "@synapsor-runner/postgres";
+import { createPostgresActionRuleFactLoader, applyPostgresJob, bindPostgresRlsScope, postgresReceiptMigrationForConfig } from "../../../packages/postgres/src/index.js";
 import type { ApplyAdapter, RunnerConfig } from "@synapsor-runner/worker-core";
 import { ownerPolicyTestFixture } from "../../../packages/mcp-server/src/owner-policy-test-fixture.js";
 import { compileOwnerPolicy } from "../../../packages/mcp-server/src/owner-policy-compiler.js";
@@ -17,6 +17,11 @@ import { createActiveActionRuleAuthorityLoader } from "./action-rule-authority.j
 
 vi.mock("./control-policy-store.js", () => ({ openBoundProjectControlPolicies: vi.fn(), assertProjectControlPolicyBinding: vi.fn() }));
 vi.mock("./action-rule-authority.js", () => ({ createActiveActionRuleAuthorityLoader: vi.fn() }));
+// Exercise the current executor source without rebuilding workspace packages.
+vi.mock("@synapsor-runner/mcp-server", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@synapsor-runner/mcp-server")>(),
+  ...await import("../../../packages/mcp-server/src/delegated-semantic-runtime.js"),
+}));
 const url = process.env.SYNAPSOR_TEST_POSTGRES_URL;
 afterEach(() => vi.resetAllMocks());
 
@@ -25,24 +30,39 @@ afterEach(() => vi.resetAllMocks());
 // are real; every physical source/control schema belongs to this test.
 for (const backend of ["sqlite", "postgres"] as const) {
   describe.skipIf(!url)(`delegated database execution: ${backend} control`, () => {
-    async function fixture(run: (f: Awaited<ReturnType<typeof setup>>) => Promise<void>, coded = false) {
-      const f = await setup(coded);
+    async function fixture(run: (f: Awaited<ReturnType<typeof setup>>) => Promise<void>, coded = false, rls = false) {
+      const f = await setup(coded, rls);
       try { await run(f); } finally {
         f.db?.close();
-        try { await f.pool.query(`DROP SCHEMA IF EXISTS "${f.schema}" CASCADE; DROP SCHEMA IF EXISTS "${f.controlSchema}" CASCADE`); }
+        await f.sourcePool?.end();
+        try {
+          await f.pool.query(`DROP SCHEMA IF EXISTS "${f.schema}" CASCADE; DROP SCHEMA IF EXISTS "${f.controlSchema}" CASCADE`);
+          if (f.sourceRole) await f.pool.query(`DROP ROLE "${f.sourceRole}"`);
+        }
         finally { await f.pool.end(); }
       }
     }
-    async function setup(coded: boolean) {
+    async function setup(coded: boolean, rls: boolean) {
       const schema = `source_del_${randomBytes(6).toString("hex")}`, controlSchema = `control_del_${randomBytes(6).toString("hex")}`;
       const f = ownerPolicyTestFixture(schema, coded), pool = new Pool({ connectionString: url, max: 6 });
+      if (rls) {
+        const resource = structuredClone(f.compiled.target_resource), boundary = structuredClone(f.compiled.verification_boundary), envelope = structuredClone(f.compiled.effect_envelope);
+        delete resource.principal_scope_key;
+        resource.fields = resource.fields.filter((field) => field.name !== "principal_id");
+        boundary.resources[0]!.fields = resource.fields;
+        boundary.resources[0]!.scope = { mode: "columns", tenant_field: "tenant_id" };
+        delete envelope.principal_scope_key;
+        f.compiled = compileActionRule({ rule: f.compiled.rule, verification_boundary: boundary, effect_envelope: envelope,
+          catalog: { schema_version: "synapsor.action-rule-catalog.v1", generation_lock_fingerprint: f.compiled.generation_lock_fingerprint, resources: [resource], relationships: [] } });
+        f.parent.outcomes[0]!.compiled_plan_digest = f.compiled.compiled_plan_digest;
+      }
       const table = f.compiled.target_resource.table;
       await pool.query(`CREATE SCHEMA "${schema}"; CREATE TABLE "${schema}"."${table}" (
-        id text PRIMARY KEY, tenant_id text NOT NULL, principal_id text NOT NULL, version integer NOT NULL,
+        id text PRIMARY KEY, tenant_id text NOT NULL, ${rls ? "" : "principal_id text NOT NULL,"} version integer NOT NULL,
         "${f.amount}" integer NOT NULL, available boolean NOT NULL, category text NOT NULL, expires_at timestamptz NOT NULL)`);
       await pool.query(`INSERT INTO "${schema}"."${table}" VALUES
-        ('request-1','acme','maya',1,5,true,'routine','2030-01-01'),
-        ('request-2','acme','maya',1,5,true,'routine','2030-01-01')`);
+        ('request-1','acme',${rls ? "" : "'maya',"}1,5,true,'routine','2030-01-01'),
+        ('request-2','acme',${rls ? "" : "'maya',"}1,5,true,'routine','2030-01-01')`);
       const db = backend === "sqlite" ? new DatabaseSync(":memory:") : undefined;
       db?.exec("PRAGMA foreign_keys = ON");
       const repository = db ? sqliteControlPolicyRepository(db) : postgresControlPolicyRepository(pool, controlSchema);
@@ -77,7 +97,8 @@ for (const backend of ["sqlite", "postgres"] as const) {
             { id: "overall", kind: "count", scope: "capability", capability: f.compiled.outcome, maximum: 10, window_seconds: 86_400 },
             { id: "owner", kind: "count", scope: "tenant_principal", capability: f.compiled.outcome, maximum: 3, window_seconds: 86_400 },
           ] }] }) });
-      vi.mocked(openBoundProjectControlPolicies).mockResolvedValue({ repository, deployment_id: deployment, repository_id: "test-repo", project_id: deployment, close: async () => undefined });
+      const binding = { repository, deployment_id: deployment, repository_id: "test-repo", project_id: deployment, close: async () => undefined };
+      vi.mocked(openBoundProjectControlPolicies).mockResolvedValue(binding);
       vi.mocked(assertProjectControlPolicyBinding).mockResolvedValue();
       vi.mocked(createActiveActionRuleAuthorityLoader).mockReturnValue(async () => ({ registry }) as never);
       const runtimeConfig: RuntimeConfig = { version: 1, mode: "review", action_rules: { project_root: ".", owner_delegation: {
@@ -85,17 +106,48 @@ for (const backend of ["sqlite", "postgres"] as const) {
       const runnerConfig: RunnerConfig = { controlPlaneUrl: "http://localhost", runnerToken: "not-used", runnerId: "test-executor", sourceId: "local_postgres",
         databaseUrl: url!, engine: "postgres", pollIntervalMs: 1000, statementTimeoutMs: 5000, logLevel: "error", dryRun: false, stateDir: "/unused",
         receipts: { authority: "source_db", provisioning: "auto_migrate", schema, table: "receipts" } };
+      const sourceRole = rls ? `rls_del_${randomBytes(6).toString("hex")}` : undefined;
+      let sourcePool: Pool | undefined;
+      if (sourceRole) {
+        await pool.query(`CREATE ROLE "${sourceRole}" NOLOGIN NOSUPERUSER NOBYPASSRLS;
+          CREATE TABLE "${schema}".request_owners (request_id text PRIMARY KEY, tenant_id text NOT NULL, principal text NOT NULL);
+          INSERT INTO "${schema}".request_owners VALUES ('request-1','acme','maya'), ('request-2','acme','maya'),
+            ('other-owner','acme','other'), ('other-tenant','other','maya');
+          INSERT INTO "${schema}"."${table}" VALUES ('other-owner','acme',1,5,true,'routine','2030-01-01'),
+            ('other-tenant','other',1,5,true,'routine','2030-01-01');
+          ALTER TABLE "${schema}"."${table}" ENABLE ROW LEVEL SECURITY;
+          ALTER TABLE "${schema}"."${table}" FORCE ROW LEVEL SECURITY;
+          CREATE POLICY scoped_owner ON "${schema}"."${table}" FOR ALL TO "${sourceRole}"
+            USING (tenant_id = current_setting('app.tenant_id', true) AND EXISTS (
+              SELECT 1 FROM "${schema}".request_owners o WHERE o.request_id = id
+                AND o.tenant_id = current_setting('app.tenant_id', true) AND o.principal = current_setting('app.principal_id', true)))
+            WITH CHECK (tenant_id = current_setting('app.tenant_id', true) AND EXISTS (
+              SELECT 1 FROM "${schema}".request_owners o WHERE o.request_id = id
+                AND o.tenant_id = current_setting('app.tenant_id', true) AND o.principal = current_setting('app.principal_id', true)));
+          GRANT USAGE ON SCHEMA "${schema}" TO "${sourceRole}";
+          GRANT SELECT, UPDATE ON "${schema}"."${table}" TO "${sourceRole}";
+          GRANT SELECT ON "${schema}".request_owners TO "${sourceRole}"`);
+        await pool.query(postgresReceiptMigrationForConfig(runnerConfig));
+        await pool.query(`GRANT SELECT, INSERT, UPDATE ON "${schema}".receipts TO "${sourceRole}"`);
+        const scopedUrl = new URL(url!);
+        scopedUrl.searchParams.set("options", `-c role=${sourceRole}`);
+        runnerConfig.databaseUrl = scopedUrl.toString();
+        runnerConfig.receipts!.provisioning = "precreated";
+        runnerConfig.databaseScope = { mode: "postgres_rls", tenantSetting: "app.tenant_id", principalSetting: "app.principal_id", tenantId: "acme", principal: "maya" };
+        sourcePool = new Pool({ connectionString: runnerConfig.databaseUrl, max: 2 });
+      }
       const adapter: ApplyAdapter = { doctor: async () => ({ ok: true, details: {} }), apply: applyPostgresJob };
       async function propose(id = "request-1", quantity = 15) {
         const context = await runtime.begin("verified-backend-test"), proposalId = `proposal_${randomUUID()}`;
-        const client = await pool.connect();
+        const client = await (sourcePool ?? pool).connect();
         let decision;
         try {
           await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+          if (runnerConfig.databaseScope) await bindPostgresRlsScope(client, runnerConfig.databaseScope);
           decision = await evaluateSemanticActionEligibility({ registry, outcome: f.compiled.outcome, inputs: { quantity },
             subjects: [{ binding: "request", resource: f.resource, primary_key: { column: "id", value: id }, subject_ref_digest: canonicalJsonDigest(id) }],
             trusted: { tenant: "acme", principal: "maya", transaction_time: new Date().toISOString() },
-            adapter: createPostgresActionRuleFactLoader(client), proposal_id: proposalId, trusted_context_digest: canonicalJsonDigest("trusted"),
+            adapter: createPostgresActionRuleFactLoader(client, runnerConfig.databaseScope), proposal_id: proposalId, trusted_context_digest: canonicalJsonDigest("trusted"),
             evidence_provenance_digest: canonicalJsonDigest("evidence"), check_delegation: context.checkProposal });
         } finally { await client.query("ROLLBACK"); client.release(); }
         if (decision.result !== "eligible") throw new Error("Test proposal refused");
@@ -104,8 +156,8 @@ for (const backend of ["sqlite", "postgres"] as const) {
         return { protocol_version: "5.0", job_id: `job_${proposalId}`, proposal_id: proposalId,
           approval_id: canonicalJsonDigest("trusted-approval"), proposal_hash: canonicalJsonDigest(proposalId), source_id: effect.source, engine: "postgres", operation: effect.operation,
           target: { schema, table, primary_key: effect.primary_key, tenant_guard: effect.tenant_guard,
-            principal_scope: { schema_version: "synapsor.principal-scope.v1", column: "principal_id", binding: "principal", provider: "environment",
-              value: "maya", value_fingerprint: canonicalJsonDigest("maya") } },
+            ...(effect.principal_scope ? { principal_scope: { schema_version: "synapsor.principal-scope.v1" as const, column: "principal_id", binding: "principal" as const, provider: "environment" as const,
+              value: "maya", value_fingerprint: canonicalJsonDigest("maya") } } : {}) },
           allowed_columns: effect.allowed_columns, patch: effect.set, conflict_guard: { kind: "version_column", column: "version", expected_value: version },
           version_advance: effect.version_advance, semantic_authority: decision.semantic_authority,
           idempotency_key: `semantic:${proposalId}`, lease_expires_at: new Date(Date.now() + 120_000).toISOString(), attempt_count: 1 } satisfies NormalizedWritebackJobV5;
@@ -116,8 +168,86 @@ for (const backend of ["sqlite", "postgres"] as const) {
         meter: "units", unit: "units", scale: 1, limit: 25, window_ms: 86_400_000 } });
       const revoke = async () => repository.commit({ deployment_id: deployment, expected_epoch: (await repository.deployment(deployment))!.epoch,
         revisions: [], active: [{ ...ownerKey, revision_id: null }], event: event() });
-      return { ...f, pool, db, schema, controlSchema, repository, deployment, propose, execute, usage, revoke, adapter, runnerConfig };
+      return { ...f, pool, db, schema, controlSchema, repository, deployment, propose, execute, usage, revoke, adapter, runnerConfig, sourcePool, sourceRole, binding };
     }
+
+    it("applies an RLS-only effect once and preserves cross-owner/tenant rows and revoked queued work", async () => fixture(async (f) => {
+      const job = await f.propose(), queued = await f.propose("request-2", 5);
+      expect(job.target).not.toHaveProperty("principal_scope");
+      await expect(f.propose("other-owner", 5)).rejects.toThrow();
+      await expect(f.propose("other-tenant", 5)).rejects.toThrow();
+      const get = vi.spyOn(f.repository.runtimeProofs, "get");
+      expect(await f.execute(job)).toMatchObject({ status: "applied", affected_rows: 1,
+        semantic_verification: { effect_digest: job.semantic_authority.effect.effect_digest, proof_digest: job.semantic_authority.proof.proof_digest } });
+      expect(get).toHaveBeenCalledWith({ deployment_id: f.deployment, proposal_id: job.proposal_id,
+        scope: { level: "principal", tenant_id: "acme", principal: "maya" }, content_digest: job.semantic_authority.proof.delegation!.binding_digest });
+      await f.revoke();
+      expect(await f.execute(queued)).toMatchObject({ status: "failed", affected_rows: 0 });
+      expect(await f.execute(job)).toMatchObject({ status: "already_applied", affected_rows: 0 });
+      expect(await f.usage()).toMatchObject({ committed: 15, reserved: 0 });
+      expect((await f.pool.query(`SELECT id, "${f.amount}" AS units, version FROM "${f.schema}"."${f.compiled.target_resource.table}" ORDER BY id`)).rows)
+        .toEqual([{ id: "other-owner", units: 5, version: 1 }, { id: "other-tenant", units: 5, version: 1 },
+          { id: "request-1", units: 15, version: 2 }, { id: "request-2", units: 5, version: 1 }]);
+    }, false, true));
+
+    it("captures the same RLS scope for verifier and adapter before awaiting the control store", async () => fixture(async (f) => {
+      const job = await f.propose(), config = { ...f.runnerConfig, databaseScope: structuredClone(f.runnerConfig.databaseScope) };
+      const originalScope = config.databaseScope!, expectedScope = structuredClone(originalScope);
+      let release!: () => void, entered!: () => void;
+      const held = new Promise<void>((resolve) => { release = resolve; }), opening = new Promise<void>((resolve) => { entered = resolve; });
+      vi.mocked(openBoundProjectControlPolicies).mockImplementationOnce(async () => { entered(); await held; return f.binding; });
+      const adapter: ApplyAdapter = { ...f.adapter, apply: async (j, c) => {
+        expect(c.databaseScope).toEqual(expectedScope);
+        expect(c.databaseScope).not.toBe(originalScope);
+        originalScope.principal = "swapped-again-inside-adapter";
+        return f.adapter.apply(j, c);
+      } };
+      const pending = f.execute(job, adapter, config);
+      await opening;
+      originalScope.principal = "other-owner";
+      originalScope.tenantId = "other-tenant";
+      originalScope.principalSetting = "app.wrong_principal";
+      config.databaseScope = { ...originalScope };
+      config.dryRun = true;
+      release();
+      expect(await pending).toMatchObject({ status: "applied", affected_rows: 1 });
+      expect(await f.usage()).toMatchObject({ committed: 15, reserved: 0 });
+      expect((await f.pool.query(`SELECT "${f.amount}" AS units, version FROM "${f.schema}"."${f.compiled.target_resource.table}" WHERE id='request-1'`)).rows)
+        .toEqual([{ units: 15, version: 2 }]);
+    }, false, true));
+
+    it("refuses missing/mismatched RLS scope and a different owner even when RLS permits that owner to read the row", async () => fixture(async (f) => {
+      const job = await f.propose(), get = vi.spyOn(f.repository.runtimeProofs, "get"), prepare = vi.spyOn(f.repository.effects, "prepare");
+      expect(await f.execute(job, f.adapter, { ...f.runnerConfig, databaseScope: undefined })).toMatchObject({ status: "failed", affected_rows: 0 });
+      expect(await f.execute(job, f.adapter, { ...f.runnerConfig, databaseScope: { ...f.runnerConfig.databaseScope!, tenantId: "other" } }))
+        .toMatchObject({ status: "failed", affected_rows: 0 });
+      expect(get).not.toHaveBeenCalled();
+      await f.pool.query(`UPDATE "${f.schema}".request_owners SET principal='other' WHERE request_id='request-1'`);
+      expect(await f.execute(job, f.adapter, { ...f.runnerConfig, databaseScope: { ...f.runnerConfig.databaseScope!, principal: "other" } }))
+        .toMatchObject({ status: "failed", affected_rows: 0 });
+      expect(get).toHaveBeenCalledExactlyOnceWith({ deployment_id: f.deployment, proposal_id: job.proposal_id,
+        scope: { level: "principal", tenant_id: "acme", principal: "other" }, content_digest: job.semantic_authority.proof.delegation!.binding_digest });
+      expect(prepare).not.toHaveBeenCalled();
+      expect(await f.usage()).toMatchObject({ committed: 0, reserved: 0 });
+      expect((await f.pool.query(`SELECT version FROM "${f.schema}"."${f.compiled.target_resource.table}" WHERE id='request-1'`)).rows).toEqual([{ version: 1 }]);
+    }, false, true));
+
+    it("does not admit stale RLS facts or a tampered proof", async () => fixture(async (f) => {
+      const job = await f.propose(), prepare = vi.spyOn(f.repository.effects, "prepare");
+      await f.pool.query(`UPDATE "${f.schema}"."${f.compiled.target_resource.table}" SET version=2 WHERE id='request-1'`);
+      expect(await f.execute(job)).toMatchObject({ status: "failed", affected_rows: 0 });
+      await f.pool.query(`UPDATE "${f.schema}"."${f.compiled.target_resource.table}" SET version=1 WHERE id='request-1'`);
+      const altered = structuredClone(job);
+      altered.semantic_authority.proof.delegation!.actor_digest = canonicalJsonDigest("another workload");
+      await expect(f.execute(altered)).rejects.toThrow("eligibility proof digest mismatch");
+      const { proof_digest: _digest, ...unsigned } = altered.semantic_authority.proof;
+      altered.semantic_authority.proof.proof_digest = eligibilityProofDigest(unsigned);
+      expect(await f.execute(altered)).toMatchObject({ status: "failed", affected_rows: 0 });
+      expect(prepare).not.toHaveBeenCalled();
+      expect(await f.usage()).toMatchObject({ committed: 0, reserved: 0 });
+      expect((await f.pool.query(`SELECT "${f.amount}" AS units, version FROM "${f.schema}"."${f.compiled.target_resource.table}" WHERE id='request-1'`)).rows)
+        .toEqual([{ units: 5, version: 1 }]);
+    }, false, true));
 
     it("settles actual source receipts once and reconciles replay after revocation", async () => fixture(async (f) => {
       const job = await f.propose();

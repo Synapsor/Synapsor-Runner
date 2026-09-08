@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createActionRuleApprovalClasses, createActionRuleRegistry, createSemanticActionVerifier, evaluateSemanticActionEligibility } from "@synapsor-runner/action-rules";
+import { compileActionRule, createActionRuleApprovalClasses, createActionRuleRegistry, createSemanticActionVerifier, evaluateSemanticActionEligibility } from "@synapsor-runner/action-rules";
 import { canonicalJsonDigest, type NormalizedWritebackJobV5 } from "@synapsor-runner/protocol";
 import { postgresControlPolicyRepository, sqliteControlPolicyRepository, type ControlPolicyKey, type ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 import { createDelegatedSemanticExecutor, createDelegatedSemanticRuntime } from "./delegated-semantic-runtime.js";
@@ -19,8 +19,20 @@ for (const backend of ["sqlite", "postgres"] as const) {
     beforeAll(() => { if (backend === "postgres") pool = new Pool({ connectionString: url, max: 4 }); });
     afterEach(() => { vi.restoreAllMocks(); for (const db of connections.splice(0)) db.close(); });
     afterAll(async () => { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } });
-    async function fixture(domain = "inventory", coded = false, withBudget = false) {
+    async function fixture(domain = "inventory", coded = false, withBudget = false, rls = false) {
       const f = ownerPolicyTestFixture(domain, coded), deployment = randomUUID();
+      if (rls) {
+        const resource = structuredClone(f.compiled.target_resource), boundary = structuredClone(f.compiled.verification_boundary), envelope = structuredClone(f.compiled.effect_envelope);
+        delete resource.principal_scope_key;
+        resource.fields = resource.fields.filter((field) => field.name !== "principal_id");
+        boundary.resources[0]!.fields = resource.fields;
+        boundary.resources[0]!.scope = { mode: "columns", tenant_field: "tenant_id" };
+        delete envelope.principal_scope_key;
+        f.compiled = compileActionRule({ rule: f.compiled.rule, verification_boundary: boundary, effect_envelope: envelope,
+          catalog: { schema_version: "synapsor.action-rule-catalog.v1", generation_lock_fingerprint: f.compiled.generation_lock_fingerprint, resources: [resource], relationships: [] } });
+        f.parent.outcomes[0]!.compiled_plan_digest = f.compiled.compiled_plan_digest;
+        delete f.facts.bindings.request!.rows[0]!.principal_id;
+      }
       if (withBudget) {
         f.parent.budgets = [{ meter: "allocated_units", title: "Allocated units", scope: "tenant", unit: "units", scale: 1, maximum: 30, window_ms: 86_400_000 }];
         f.parent.outcomes[0]!.budget_charges = [{ meter: "allocated_units", kind: "effect_field", field: f.amount }];
@@ -73,16 +85,16 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const job: NormalizedWritebackJobV5 = { protocol_version: "5.0", job_id: `job_${proposalId}`, proposal_id: proposalId,
           approval_id: canonicalJsonDigest("approval"), proposal_hash: canonicalJsonDigest("proposal"), source_id: effect.source, engine: "postgres", operation: effect.operation,
           target: { schema: effect.schema, table: effect.table, primary_key: effect.primary_key, tenant_guard: effect.tenant_guard,
-            principal_scope: { schema_version: "synapsor.principal-scope.v1", column: effect.principal_scope!.column, binding: "principal", provider: "environment",
-              value: effect.principal_scope!.value, value_fingerprint: canonicalJsonDigest("maya") } },
+            ...(effect.principal_scope ? { principal_scope: { schema_version: "synapsor.principal-scope.v1" as const, column: effect.principal_scope.column, binding: "principal" as const, provider: "environment" as const,
+              value: effect.principal_scope.value, value_fingerprint: canonicalJsonDigest("maya") } } : {}) },
           allowed_columns: effect.allowed_columns, patch: effect.set, conflict_guard: { kind: "version_column", column: "version", expected_value: 1 },
           version_advance: effect.version_advance, semantic_authority: decision.semantic_authority,
           idempotency_key: `semantic:${proposalId}`, lease_expires_at: new Date(Date.now() + 120_000).toISOString(), attempt_count: 1 };
         return { job, decision, context };
       }
       const executor = createDelegatedSemanticExecutor(options);
-      const execute = (job: NormalizedWritebackJobV5) => {
-        const attempt = executor.forJob(job), verifier = createSemanticActionVerifier({ registry, check_delegation: attempt.check });
+      const execute = (job: NormalizedWritebackJobV5, scope?: { mode: "postgres_rls"; tenantId: string; principal: string }) => {
+        const attempt = executor.forJob(job, scope), verifier = createSemanticActionVerifier({ registry, check_delegation: attempt.check });
         return { attempt, verify: () => verifier({ job, factLoader: adapter }) };
       };
       const revoke = async () => repository.commit({ deployment_id: deployment, expected_epoch: (await repository.deployment(deployment))!.epoch,
@@ -96,6 +108,90 @@ for (const backend of ["sqlite", "postgres"] as const) {
       };
       return { ...f, repository, deployment, owner, actor, authenticate, options, runtime, registry, adapter, propose, execute, revoke, reviseBudget, parentDocument };
     }
+
+    it("reverifies an RLS-only target using the exact trusted source owner scope", async () => {
+      const f = await fixture("telecom", false, false, true), { job } = await f.propose();
+      expect(job.target).not.toHaveProperty("principal_scope");
+      const get = vi.spyOn(f.repository.runtimeProofs, "get");
+      const { attempt, verify } = f.execute(job, { mode: "postgres_rls", tenantId: "acme", principal: "maya" });
+      expect(await verify()).toMatchObject({ status: "reverified", effect_digest: job.semantic_authority.effect.effect_digest });
+      expect(get).toHaveBeenCalledExactlyOnceWith({ deployment_id: f.deployment, proposal_id: job.proposal_id,
+        scope: f.owner, content_digest: job.semantic_authority.proof.delegation!.binding_digest });
+      expect(attempt.wasDispatched()).toBe(true);
+    });
+
+    it.each([
+      ["missing", undefined],
+      ["different tenant", { mode: "postgres_rls", tenantId: "other", principal: "maya" }],
+      ["empty principal", { mode: "postgres_rls", tenantId: "acme", principal: "" }],
+      ["untrusted mode", { mode: "application", tenantId: "acme", principal: "maya" }],
+    ])("refuses %s RLS scope before any proof lookup", async (_name, scope) => {
+      const f = await fixture("telecom", false, false, true), { job } = await f.propose();
+      const get = vi.spyOn(f.repository.runtimeProofs, "get"), prepare = vi.spyOn(f.repository.effects, "prepare");
+      await expect(f.execute(job, scope as never).verify()).rejects.toThrow("DELEGATION_SOURCE_SCOPE_UNSUPPORTED");
+      expect(get).not.toHaveBeenCalled(); expect(prepare).not.toHaveBeenCalled();
+    });
+
+    it("does not discover another owner's proof or mask a transient store failure", async () => {
+      const f = await fixture("telecom", false, false, true), { job } = await f.propose();
+      const get = vi.spyOn(f.repository.runtimeProofs, "get"), prepare = vi.spyOn(f.repository.effects, "prepare");
+      await expect(f.execute(job, { mode: "postgres_rls", tenantId: "acme", principal: "other-owner" }).verify())
+        .rejects.toThrow("RUNTIME_PROOF_UNAVAILABLE");
+      expect(get).toHaveBeenCalledExactlyOnceWith({ deployment_id: f.deployment, proposal_id: job.proposal_id,
+        scope: { ...f.owner, principal: "other-owner" }, content_digest: job.semantic_authority.proof.delegation!.binding_digest });
+      const transient = new Error("test database temporarily unavailable");
+      get.mockRejectedValueOnce(transient);
+      await expect(f.execute(job, { mode: "postgres_rls", tenantId: "acme", principal: "maya" }).verify()).rejects.toBe(transient);
+      expect(prepare).not.toHaveBeenCalled();
+    });
+
+    it("captures source scope per attempt and does not repair a mismatched captured scope", async () => {
+      const f = await fixture("telecom", false, false, true), { job } = await f.propose();
+      const scope = { mode: "postgres_rls" as const, tenantId: "acme", principal: "maya" };
+      const first = f.execute(job, scope);
+      scope.tenantId = "other"; scope.principal = "other-owner";
+      const mismatched = f.execute(job, scope);
+      scope.tenantId = "acme"; scope.principal = "maya";
+      await expect(mismatched.verify()).rejects.toThrow("DELEGATION_SOURCE_SCOPE_UNSUPPORTED");
+      expect(await first.verify()).toMatchObject({ status: "reverified" });
+      expect(first.attempt.wasDispatched()).toBe(true);
+    });
+
+    it("requires a supplied transaction scope to match an existing physical principal", async () => {
+      const f = await fixture(), { job } = await f.propose(), get = vi.spyOn(f.repository.runtimeProofs, "get");
+      await expect(f.execute(job, { mode: "postgres_rls", tenantId: "acme", principal: "other-owner" }).verify())
+        .rejects.toThrow("DELEGATION_SOURCE_SCOPE_UNSUPPORTED");
+      expect(get).not.toHaveBeenCalled();
+      expect(await f.execute(job).verify()).toMatchObject({ status: "reverified" });
+    });
+
+    it("rejects even a correctly hashed attestation filed under a different source owner", async () => {
+      const f = await fixture("telecom", false, false, true), { job } = await f.propose();
+      const proof = job.semantic_authority.proof.delegation!;
+      const stored = await f.repository.runtimeProofs.get({ deployment_id: f.deployment, proposal_id: job.proposal_id,
+        scope: f.owner, content_digest: proof.binding_digest });
+      job.proposal_id = `misfiled_${randomUUID()}`;
+      const content = { ...stored.content as object, proposal_id: job.proposal_id };
+      proof.binding_digest = canonicalJsonDigest(content);
+      await f.repository.runtimeProofs.register({ ...stored, proposal_id: job.proposal_id, content, content_digest: proof.binding_digest,
+        scope: { ...f.owner, principal: "other-owner" }, expected_epoch: (await f.repository.deployment(f.deployment))!.epoch });
+      await expect(f.execute(job, { mode: "postgres_rls", tenantId: "acme", principal: "other-owner" }).attempt.assertCurrent())
+        .rejects.toThrow("DELEGATION_PROOF_INVALID");
+    });
+
+    it("keeps RLS proposals subject to source freshness, proof integrity and current revocation", async () => {
+      const f = await fixture("telecom", false, false, true), { job } = await f.propose();
+      const scope = { mode: "postgres_rls" as const, tenantId: "acme", principal: "maya" }, prepare = vi.spyOn(f.repository.effects, "prepare");
+      f.facts.bindings.request!.rows[0]!.version = 2;
+      await expect(f.execute(job, scope).verify()).rejects.toThrow("no longer prove");
+      f.facts.bindings.request!.rows[0]!.version = 1;
+      const altered = structuredClone(job);
+      altered.semantic_authority.proof.delegation!.actor_digest = canonicalJsonDigest("different actor");
+      await expect(f.execute(altered, scope).attempt.assertCurrent()).rejects.toThrow("DELEGATION_PROOF_INVALID");
+      await f.revoke();
+      await expect(f.execute(job, scope).verify()).rejects.toThrow("DELEGATION_NOT_AVAILABLE");
+      expect(prepare).not.toHaveBeenCalled();
+    });
 
     it.each([["inventory", false], ["university", true], ["support", false]])("binds %s exact effects and short-lived verified workload without storing tokens", async (domain, coded) => {
       const f = await fixture(String(domain), Boolean(coded)), { job, context, decision } = await f.propose();

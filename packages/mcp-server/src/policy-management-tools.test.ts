@@ -75,9 +75,12 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
     expect(initial).toMatchObject({ active: null, draft: null, agents_available: ["agent-a"] });
     expect(initial.control_ref).toMatch(/^pol_/u);
     const results = await Promise.all([f.request(initial.control_ref), f.request(initial.control_ref)]);
-    expect(results[0]).toMatchObject({ status: "draft_saved", authority_changed: false, source_database_changed: false,
+    for (const result of results) expect(result).toMatchObject({ status: "draft_saved", authority_changed: false, source_database_changed: false,
       review: { state: "human_review_pending" } });
-    expect(results[1]).toMatchObject({ replay: true });
+    // PostgreSQL requests can finish their initial permission reads in either order.
+    expect(results.filter((result) => result.replay === true)).toHaveLength(1);
+    expect(results.filter((result) => result.replay === undefined)).toHaveLength(1);
+    expect(results[0]!.review).toEqual(results[1]!.review);
     expect(f.publishReview).toHaveBeenCalledTimes(1);
     expect((await f.repository.deployment(f.deployment))?.epoch).toBe(2);
     const saved = await f.service.detail(await token(), scope, "my_agent_rules");
@@ -86,6 +89,34 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
     expect(transcript).not.toMatch(/nonce|session_digest|compiled_digest|parent_authority_digest|tenant_id|"principal"/u);
     expect(f.tools.handles({ plan: { resource: "app.requests" } })).toBe(false);
     await expect(f.tools.callTool("app.activate_policy", view)).rejects.toMatchObject({ code: "TOOL_NOT_FOUND" });
+  });
+
+  it("returns a replay to an earlier request whose permission read finishes last", async () => {
+    const f = await fixture(), initial = await f.summary();
+    const detail = f.service.detail.bind(f.service);
+    let release!: () => void, entered!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const reading = new Promise<void>((resolve) => { entered = resolve; });
+    const read = vi.spyOn(f.service, "detail").mockImplementationOnce(async (...args) => {
+      const snapshot = await detail(...args);
+      entered(); await held; return snapshot;
+    });
+    const first = f.request(initial.control_ref);
+    try {
+      await reading;
+      const second = await f.request(initial.control_ref);
+      expect(second).toMatchObject({ status: "draft_saved", authority_changed: false, source_database_changed: false });
+      expect(second).not.toHaveProperty("replay");
+      release();
+      const delayed = await first;
+      expect(delayed).toMatchObject({ status: "draft_saved", replay: true, authority_changed: false, source_database_changed: false });
+      expect(delayed.review).toEqual(second.review);
+      expect(f.publishReview).toHaveBeenCalledOnce();
+      expect((await f.repository.deployment(f.deployment))?.epoch).toBe(2);
+      const saved = await detail(await token(), scope, "my_agent_rules");
+      expect(saved.active).toBeUndefined();
+      expect(saved.draft?.definition).toEqual(f.definition);
+    } finally { release(); await first.catch(() => undefined); read.mockRestore(); }
   });
 
   it("isolates two owners named maya and rejects cross-session, source-object and forged scope arguments", async () => {

@@ -17,6 +17,10 @@ export async function applyRuntimeDatabaseJob(input: {
 }): Promise<WritebackResult> {
   const selected = input.runtimeConfig?.action_rules?.owner_delegation;
   if (!selected) return input.adapter.apply(input.job, input.runnerConfig);
+  // Snapshot before opening the store: delegation and the source transaction
+  // must use the same approved-proposal scope even if the caller mutates config.
+  const runnerConfig = { ...input.runnerConfig, databaseScope: structuredClone(input.runnerConfig.databaseScope) };
+  const parentName = selected.parent_name;
   const job = parseWritebackJob(input.job);
   if (job.protocol_version !== "5.0" || !job.semantic_authority.proof.delegation) throw new OwnerRuntimeError("DELEGATION_PROOF_REQUIRED");
   const configuredRoot = input.runtimeConfig?.action_rules?.project_root;
@@ -30,7 +34,7 @@ export async function applyRuntimeDatabaseJob(input: {
     return (await read({ dependency_check: "report" })).registry;
   };
   const attempt = createDelegatedSemanticExecutor({ repository: binding.repository, deployment_id: binding.deployment_id,
-    parent_name: selected.parent_name, resolveRules: async () => (await registry()).rules.map((rule) => rule.compiled) }).forJob(job);
+    parent_name: parentName, resolveRules: async () => (await registry()).rules.map((rule) => rule.compiled) }).forJob(job, runnerConfig.databaseScope);
   const verifier = createSemanticActionVerifier({ registry, check_delegation: attempt.check });
   const account = async (state: "completed" | "no_effect" | "unknown", receipt: string) => {
     try { await attempt.record({ state, receipt_digest: receipt }); }
@@ -42,8 +46,8 @@ export async function applyRuntimeDatabaseJob(input: {
     }
   };
   try {
-    const result = parseWritebackResult(await input.adapter.apply(job, { ...input.runnerConfig, semanticActionVerifier: verifier }));
-    if (input.runnerConfig.dryRun) return result;
+    const result = parseWritebackResult(await input.adapter.apply(job, { ...runnerConfig, semanticActionVerifier: verifier }));
+    if (runnerConfig.dryRun) return result;
     if (result.protocol_version !== "5.0" || result.job_id !== job.job_id || result.operation !== job.operation) {
       throw new OwnerRuntimeError("DELEGATION_SOURCE_RECEIPT_INVALID");
     }
@@ -57,7 +61,7 @@ export async function applyRuntimeDatabaseJob(input: {
     }
     return result;
   } catch (error) {
-    if (attempt.wasDispatched() && !input.runnerConfig.dryRun) await account("unknown", canonicalJsonDigest({
+    if (attempt.wasDispatched() && !runnerConfig.dryRun) await account("unknown", canonicalJsonDigest({
       job: canonicalJsonDigest(job), status: "source_outcome_unknown" }));
     throw error;
   } finally {

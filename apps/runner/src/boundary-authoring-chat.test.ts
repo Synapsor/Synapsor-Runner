@@ -4,6 +4,10 @@ import {
 } from "./boundary-authoring-chat.js";
 import type { AnalyticsShellIo } from "./analytics-shell.js";
 import { AskError } from "./model-ask.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { readBoundaryReviewSections } from "./read-boundary-review-view.js";
+import { terminalTheme } from "./boundary-cli-picker.js";
 
 function memoryIo(input: {
   reads?: Array<string | undefined>;
@@ -157,6 +161,88 @@ describe("Boundary authoring chat", () => {
     await chat.session.showReviewDetails!("Exact field", [line]);
     expect(review.mock.calls[0]![1]).toContain(line.trim());
     chat.close();
+  });
+  it("opens real complete field permissions in one pager after exactly three forward selections", async () => {
+    const boundary: ExplorationBoundaryDraft = { schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed",
+      deployment_profile: "staging", source: "local_postgres", compiler_version: "1.8.0", spec_version: "1.11.0",
+      trusted_context: { provider: "environment", tenant_env: "PRIVATE_TENANT_ENV", principal_env: "PRIVATE_PRINCIPAL_ENV" },
+      generation_lock_fingerprint: `sha256:${"a".repeat(64)}`, role_posture_fingerprint: `sha256:${"b".repeat(64)}`,
+      budgets: structuredClone(DEFAULT_REVIEWED_EXPLORATION_BUDGETS), unresolved_decisions: [], pack: { name: "stockroom", resources: [
+        { id: "stockroom.items", label: "Stockroom items", schema: "stockroom", table: "items", primary_key: "item_id",
+          tenant_key: "tenant_id", principal_key: "principal_id",
+          field_types: { item_id: "uuid", tenant_id: "uuid", principal_id: "uuid", c7: "integer", quantity: "integer", category: "text", product_name: "text", version: "integer" },
+          field_metadata: { c7: { label: "Internal replenishment score" } },
+          field_enums: { category: ["routine", "special-review", ...Array.from({ length: 25 }, (_, index) => `CLASS_${index}`)] },
+          selectable_fields: ["c7", "quantity", "category", "product_name"], kept_out_fields: ["tenant_id", "principal_id"], model_withheld_fields: ["c7"],
+          filterable_fields: { c7: ["lte"], category: ["eq", "in"] }, sortable_fields: ["c7"], groupable_fields: ["category"],
+          aggregate_measures: ["c7"], aggregate_measure_functions: { c7: ["avg"] }, count_distinct_fields: ["c7"],
+          time_bucket_fields: {}, relationships: [], minimum_cohort_size: 5, suppression_aware_totals: true },
+        { id: "stockroom.locations", schema: "stockroom", table: "locations", primary_key: "location_id", tenant_key: "tenant_id",
+          field_types: { location_id: "uuid", location_name: "text", tenant_id: "uuid" }, field_enums: {},
+          selectable_fields: ["location_name"], kept_out_fields: ["tenant_id"], filterable_fields: {}, sortable_fields: [], groupable_fields: [],
+          aggregate_measures: [], count_distinct_fields: [], time_bucket_fields: {}, relationships: [], minimum_cohort_size: 5, suppression_aware_totals: true },
+      ] } };
+    const digest = canonicalJsonDigest(boundary), original = structuredClone(boundary);
+    const sections = readBoundaryReviewSections({ boundary, digest });
+    const resourcesIndex = sections.findIndex((section) => section.id === "resources"), resources = sections[resourcesIndex]!;
+    const forwardSelections = ["details", `section:${resourcesIndex}`, "section:0"];
+    const memory = memoryIo({ choices: [...forwardSelections, "back", "back", "finish"], columns: 52 });
+    const forwardMenus: typeof memory.choices = [];
+    const review = vi.fn(async (_title: string, _lines: string[], _returnTo?: string) => {
+      forwardMenus.push(...structuredClone(memory.choices));
+      expect(memory.choices).toHaveLength(3);
+      expect(boundary).toEqual(original);
+      expect(canonicalJsonDigest(boundary)).toBe(digest);
+    });
+    memory.io.review = review;
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: true });
+    const guide = vi.fn(async () => "Model must not run for inspection"), recordPolicy = vi.fn(async () => undefined);
+    chat.setPermissionGuide!(guide);
+    chat.setSourceAnswerRecorder!(recordPolicy);
+    const exact = { title: "Exact Read Boundary review", lines: JSON.stringify(boundary, null, 2).split("\n"), sections };
+    const beforeExact = structuredClone(exact);
+    try {
+      expect(await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
+        { value: "activate", label: "Activate this exact Read Boundary" },
+        { value: "details", label: "View exact Read Boundary details" },
+        { value: "finish", label: "Leave disabled" },
+      ], { initialValue: "finish", explainOnRequest: true, context: [`Pending reviewed revision: ${digest}`], exactDetails: exact })).toBe("finish");
+      expect(forwardSelections).toHaveLength(3);
+      expect(forwardMenus.map((choice) => choice.title)).toEqual(["PERMISSION REQUIRED", exact.title, resources.title]);
+      expect(forwardMenus[0]!.labels).toContain("View exact Read Boundary details");
+      expect(forwardMenus[1]!.labels).toContain(resources.title);
+      expect(forwardMenus[2]!.labels).toEqual(["Overview", ...resources.children!.map((resource) => resource.title), "Return"]);
+      expect(review).toHaveBeenCalledOnce();
+      expect(review.mock.calls[0]![0]).toBe("EXACT REVIEW - READ ONLY");
+      expect(review.mock.calls[0]![2]).toBe(`${resources.title} menu`);
+      const styled = review.mock.calls[0]![1], plain = styled.map((line) => line.replace(/\u001b\[[0-9;]*m/gu, ""));
+      expect(plain).toEqual(["Overview", ...resources.lines, "", "No model request, authority change, source query, or source write occurred."]);
+      for (const resource of boundary.pack.resources) {
+        for (const field of Object.keys(resource.field_types)) {
+          expect(plain.some((line) => line === `Field: ${field}` || line.startsWith(`Field: ${field} (`))).toBe(true);
+          expect(resources.children!.find((section) => section.id === resource.id)!.children!.some((section) => section.id === field)).toBe(true);
+        }
+      }
+      expect(plain).toContain("Field: c7 (Internal replenishment score)");
+      expect(plain).toContain("Model-invocable analysis: filter:lte, sort, measure:avg, distinct");
+      const allowlist = plain.find((line) => line.startsWith("Reviewed value allowlist:") && line.includes('"routine"'))!;
+      for (const value of boundary.pack.resources[0]!.field_enums.category!) expect(allowlist).toContain(JSON.stringify(value));
+      const theme = terminalTheme(true, { brand: true });
+      for (const [access, style] of [["MODEL RAW", theme.visible], ["RUNNER ONLY", theme.runnerOnly],
+        ["KEPT OUT", theme.keptOut], ["NO RAW RETURN", theme.dim]] as const) {
+        expect(styled).toContain(`${theme.dim("Raw access:")} ${style(access)}`);
+        expect(style(access)).toMatch(/\u001b\[/u);
+      }
+      expect(memory.choices).toHaveLength(6);
+      expect(memory.choices.at(-1)).toEqual(memory.choices[0]);
+      expect(memory.prompts).toEqual([]);
+      expect(guide).not.toHaveBeenCalled(); expect(recordPolicy).not.toHaveBeenCalled();
+      expect(memory.writes.join("")).not.toMatch(/Field:|Model-invocable analysis:/u);
+      expect(memory.writes.join("") + plain.join("\n")).not.toMatch(/"schema_version"|"generation_lock_fingerprint"|PRIVATE_TENANT_ENV|PRIVATE_PRINCIPAL_ENV/u);
+      expect(exact).toEqual(beforeExact);
+      expect(boundary).toEqual(original);
+      expect(canonicalJsonDigest(boundary)).toBe(digest);
+    } finally { chat.close(); }
   });
   it("browses resources and diagnostics without dumping JSON or changing the pending decision", async () => {
     const memory = memoryIo({ choices: ["details", "section:0", "section:1", "back", "section:2", "back", "activate"] });

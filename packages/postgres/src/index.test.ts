@@ -257,6 +257,45 @@ describe("postgres semantic Action adapter conformance", () => {
     expect(client.sqlLog).toContain("ROLLBACK");
   });
 
+  it.each([
+    "DELEGATION_SOURCE_SCOPE_UNSUPPORTED", "DELEGATION_JOB_CHANGED", "DELEGATION_PROOF_REQUIRED",
+    "DELEGATION_PROOF_INVALID", "DELEGATION_CHANGED", "DELEGATION_PARENT_CHANGED",
+    "DELEGATION_REQUEST_REFUSED", "DELEGATION_NOT_AVAILABLE", "DELEGATION_CONFIGURATION_INVALID",
+    "DELEGATION_AUTHENTICATION_FAILED", "DELEGATION_BUDGET_UNAVAILABLE", "DELEGATION_BUDGET_CHARGE_NOT_PROVEN",
+    "DELEGATION_BUDGET_INCOMPATIBLE", "DELEGATION_BUDGET_LIMIT", "DELEGATION_EFFECT_RECONCILIATION_REQUIRED",
+    "RUNTIME_PROOF_UNAVAILABLE", "RUNTIME_PROOF_EXPIRED", "RUNTIME_PROOF_INTEGRITY_INVALID",
+  ])("preserves the exact %s refusal without disclosing context or mutating rows", async (code) => {
+    const vector = createSemanticAdapterConformanceVector("postgres");
+    const client = new SemanticPostgresClient();
+    const result = await applyPostgresJobWithClient(vector.job, {
+      ...config, receipts: { authority: "runner_ledger" as const },
+      writebackIntentStore: new SemanticPostgresIntentStore(),
+      semanticActionVerifier: async () => { throw Object.assign(new Error("private diagnostic content"), { code }); },
+    }, client);
+    expect(result).toMatchObject({ status: "failed", error_code: code, affected_rows: 0 });
+    expect(JSON.stringify(result)).not.toContain("private diagnostic content");
+    expect(client.updateCount).toBe(0);
+    expect(client.sqlLog).toContain("ROLLBACK");
+    expect(client.sqlLog).not.toContain("COMMIT");
+  });
+
+  it.each([
+    { code: "DELEGATION_PRIVATE_SECRET", message: "private diagnostic content" },
+    { code: "untrusted", message: "DELEGATION_PROOF_INVALID private diagnostic content" },
+  ])("does not promote arbitrary delegation messages or codes into diagnostics", async (error) => {
+    const vector = createSemanticAdapterConformanceVector("postgres");
+    const client = new SemanticPostgresClient();
+    const result = await applyPostgresJobWithClient(vector.job, {
+      ...config, receipts: { authority: "runner_ledger" as const },
+      writebackIntentStore: new SemanticPostgresIntentStore(),
+      semanticActionVerifier: async () => { throw Object.assign(new Error(error.message), { code: error.code }); },
+    }, client);
+    expect(result).toMatchObject({ status: "failed", error_code: "TRANSACTION_FAILED", affected_rows: 0 });
+    expect(JSON.stringify(result)).not.toContain("private diagnostic content");
+    expect(client.updateCount).toBe(0);
+    expect(client.sqlLog).toContain("ROLLBACK");
+  });
+
   it("marks a lost semantic COMMIT acknowledgement for reconciliation", async () => {
     const vector = createSemanticAdapterConformanceVector("postgres");
     const store = new SemanticPostgresIntentStore();

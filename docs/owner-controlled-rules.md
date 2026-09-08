@@ -211,6 +211,13 @@ current scope, freshness, version and exact-effect checks. Approval is not
 execution. Only a successful durable source receipt establishes completion;
 this feature is not an external payments service or a cross-system transaction.
 
+For PostgreSQL RLS sources, the execution identity comes from the approved
+proposal's recorded trusted context. A physical principal column is not
+required when the reviewed database policy enforces that scope. Runner binds
+the same scope to the source transaction and the immutable delegation proof;
+missing or inconsistent context is refused. Changing the worker's environment
+or broadening database grants is not a recovery for a scope or proof refusal.
+
 Read/Action/execution authority, owner management, authenticated workload
 binding and worker readiness are separate prerequisites. Enabling owner
 management alone does not grant source reads, approve operational requests,
