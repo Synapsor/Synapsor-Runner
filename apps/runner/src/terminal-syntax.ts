@@ -245,7 +245,7 @@ function renderTerminalSyntaxFrame(
   const bodyValueSafe = safeTerminalText(bodyValue);
   const metadata = (options.metadata ?? []).map(safeTerminalText);
   const safeTitle = safeTerminalText(options.title);
-  const availableWidth = Math.max(24, Math.min(100, (options.columns ?? 100) - 2));
+  const availableWidth = Math.max(24, (options.columns ?? 100) - 2);
   const naturalWidth = Math.max(
     24,
     safeTitle.length + 6,

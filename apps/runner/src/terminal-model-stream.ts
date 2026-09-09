@@ -1,4 +1,5 @@
 import { stripVTControlCharacters as stripTerminalAnsi } from "node:util";
+import { createTerminalProseReflow } from "./terminal-prose.js";
 
 /** Incremental prose renderer. Tool arguments must never be passed to this surface. */
 export function createTerminalModelStream(input: {
@@ -78,8 +79,9 @@ export function createTerminalModelStream(input: {
     }
     if (final) flushWord();
   };
+  const prose = createTerminalProseReflow((text) => { pending += text; consume(false); });
   return {
-    push(text: string) { pending += text; consume(false); },
-    finish() { consume(true); if (column) newline(); },
+    push(text: string) { prose.push(text); },
+    finish() { prose.finish(); consume(true); if (column) newline(); },
   };
 }

@@ -17,6 +17,7 @@ import {
 } from "./terminal-layout.js";
 import { renderTerminalSynapsorDslFrame } from "./terminal-syntax.js";
 import { createTerminalModelStream } from "./terminal-model-stream.js";
+import { reflowTerminalProse } from "./terminal-prose.js";
 import { authoringExplanationFailure, type AuthoringExplanationFailure } from "./authoring-explanation-failure.js";
 import type { ReviewSection } from "./read-boundary-review-view.js";
 
@@ -126,7 +127,7 @@ function renderInlineModelMarkdown(
     /(^|\s)\?+\s*(?=(?:\*\*)?\p{Lu}[^?\n]*\?)/gu,
     "$1",
   );
-  value = value.replace(/\?+\s*\*\*([^*\n]+\?)\*\*/gu, "**$1**");
+  value = value.replace(/\?+\*\*([^*\n]+\?)\*\*/gu, "**$1**");
   let rendered = "";
   let plain = "";
   const flush = () => {
@@ -176,7 +177,7 @@ function renderInlineModelMarkdown(
 }
 
 function normalizeModelDisplayLines(lines: string[]): string[] {
-  return lines.flatMap((line) => line
+  return reflowTerminalProse(lines.join("\n")
     // Some providers flatten a multi-line question into question-mark
     // separators. Restore only the known candidate/answer labels so prose
     // questions and business punctuation retain their original meaning.
@@ -192,7 +193,7 @@ function normalizeModelDisplayLines(lines: string[]): string[] {
       /([\p{L}\p{N}_)])\?+(?=Answer\s+with\b)/giu,
       "$1\n",
     )
-    .split("\n"));
+  ).split("\n");
 }
 
 function terminalOutputChunks(

@@ -116,6 +116,14 @@ describe("terminal syntax rendering", () => {
     expect(stripAnsi(colored)).toBe(plain);
   });
 
+  it.each([80, 160, 220])("lets exact artifacts use available width at %s columns", (columns) => {
+    const value = { description: "Reviewed customer information and private verification fields. ".repeat(6) };
+    const frame = renderTerminalJsonFrame(value, { title: "Exact review", columns, color: true });
+    const lines = stripAnsi(frame).split("\n");
+    expect(new Set(lines.map((line) => line.length))).toEqual(new Set([columns - 2]));
+    expect(lines[0]!.length).toBe(columns - 2);
+  });
+
   it("styles tool identifiers and evidence facts without changing their text", () => {
     const tool = renderTerminalToolName("app.explore_data", true);
     expect(tool).toContain("\u001b[36mapp\u001b[0m");

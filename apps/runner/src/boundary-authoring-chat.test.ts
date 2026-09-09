@@ -542,6 +542,39 @@ describe("Boundary authoring chat", () => {
     expect(lines.filter((line) => line.includes("validated telecom draft"))).toHaveLength(1);
   });
 
+  it.each(["buffered", "streamed"])("reflows the reported soft-broken greeting across the live width (%s)", async (mode) => {
+    let columns = 220;
+    const memory = memoryIo({ columns: () => columns });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const greeting = "I am ready to help draft reviewed boundaries while Runner validates each decision.\n"
+      + "What should this agent be able to read or propose?";
+    const render = async () => {
+      if (mode === "buffered") await chat.streamModel(greeting.split("\n"));
+      else {
+        for (const text of [greeting.split("\n")[0]!, "\nWh", "at should this agent ", "be able to read or propose?"]) {
+          chat.providerStream({ phase: "text_delta", operator_text: true, text });
+        }
+        chat.providerStream({ phase: "completed", operator_text: true });
+        await chat.streamModel(greeting.split("\n"));
+      }
+    };
+    try {
+      memory.writes.length = 0;
+      await render();
+      const wide = memory.writes.join("").split("\n").filter(Boolean);
+      expect(wide).toHaveLength(1);
+      expect(wide[0]).toContain(greeting.replace("\n", " "));
+      expect(wide[0]!.length).toBeGreaterThan(120);
+      columns = 60;
+      memory.writes.length = 0;
+      await render();
+      const narrow = memory.writes.join("").split("\n").filter(Boolean);
+      expect(narrow.length).toBeGreaterThan(2);
+      expect(narrow.every((line) => line.length <= 60)).toBe(true);
+      expect(narrow.every((line) => /^ {9}\S/u.test(line))).toBe(true);
+    } finally { chat.close(); }
+  });
+
   it("renders adjacent provider fragments as one model turn until the operator responds", async () => {
     const memory = memoryIo({ reads: ["Use version."] });
     const chat = createBoundaryAuthoringChat({
@@ -808,7 +841,7 @@ describe("Boundary authoring chat", () => {
 
     expect(answer).toBe("between five minutes and two hours");
     expect(memory.writes.join("")).toContain("model> What is the smallest and largest duration");
-    expect(memory.writes.join("")).toContain("hard proposal range for INSERT support.follow_up_tasks");
+    expect(memory.writes.join("").replace(/\s+/gu, " ")).toContain("hard proposal range for INSERT support.follow_up_tasks");
     expect(memory.writes.join("")).not.toContain("runner> SET PROPOSAL RANGE");
     expect(memory.writes.join("")).not.toContain("runner> Action: INSERT");
     expect(memory.setStatus).toHaveBeenCalledWith("Interpreting the reviewed range");
@@ -863,7 +896,7 @@ describe("Boundary authoring chat", () => {
     expect(answer).toBe("yes");
     const transcript = memory.writes.join("");
     expect(transcript).toContain("model> I interpreted that as estimated_minutes: 5 through 120.");
-    expect(transcript).toContain("Press Enter to use it, or tell me what should change.");
+    expect(transcript.replace(/\s+/gu, " ")).toContain("Press Enter to use it, or tell me what should change.");
     expect(transcript).not.toContain("✓ Runner verified");
     expect(transcript).not.toContain("runner> Operator answer:");
     expect(transcript).not.toContain("runner> CONFIRM PROPOSAL RANGE");
@@ -1107,13 +1140,14 @@ describe("Boundary authoring chat", () => {
     ]);
 
     const transcript = memory.writes.join("");
-    const plain = transcript.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
+    const plain = transcript.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "").replace(/\s+/gu, " ");
     expect(plain).toContain("The disabled proposal constrains amount; review it before continuing.");
     expect(plain).toContain("Reviewed proposal");
     expect(plain).toContain("- amount stays between the reviewed bounds");
     expect(plain).toContain("The stale-row guard is selected. Which column detects stale proposals?");
     expect(plain).not.toContain("??Which column");
     expect(plain).toContain("These are possible mappings. Which candidate");
+    expect(plain).toContain("identifies the authenticated owner? What is the smallest");
     expect(plain).not.toContain("??Which candidate");
     expect(plain).not.toContain("## Reviewed proposal");
     expect(plain).toContain("Escaped **markers** remain literal.");
