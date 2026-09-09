@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import dns from "node:dns/promises";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -923,6 +924,65 @@ describe("Workbench BYOM Ask", () => {
     if (remainsEmpty) await expect(run).rejects.toMatchObject({ code: "ASK_AUTHORING_NARRATION_MISSING" });
     else expect((await run).answer).toBe("Which code means paused?");
     expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["openai_compatible", "anthropic"] as const)("fences %s tools before and after awaited work on caller cancellation", async (provider) => {
+    const reviewTools = [{ name: "runner.inspect_draft", description: "Inspect disabled metadata", input_schema: { type: "object", properties: {} } }];
+    const authorityDigest = askToolSurfaceDigest(reviewTools);
+    const configuration = resolveAskProviderConfiguration({ provider, model: "fixture", api_key: "test-key",
+      ...(provider === "openai_compatible" ? { base_url: "http://127.0.0.1:11434/v1" } : {}),
+      authority_digest: authorityDigest, egress_acknowledged: true }, {}, new Date());
+    const response = provider === "anthropic" ? { status: 200, body: { content: [{ type: "tool_use", id: "inspect", name: "runner__inspect_draft", input: {} }], stop_reason: "tool_use" } }
+      : openAiToolCall("inspect", "runner__inspect_draft", {});
+    for (const phase of ["before", "during"] as const) {
+      const controller = new AbortController();
+      let entered!: () => void, release!: () => void, settled = false;
+      const called = new Promise<void>((resolve) => { entered = resolve; }), held = new Promise<void>((resolve) => { release = resolve; });
+      const callTool = vi.fn(async () => { entered(); await held; return { ok: true, value: { ready: true } }; });
+      const requestJson = vi.fn(async () => response);
+      const running = runAskProviderTurn({ configuration, tools: reviewTools, authorityDigest, question: "Inspect the disabled draft", history: [],
+        gateway: { mode: "authoring", listTools: () => reviewTools, callTool, close: async () => undefined },
+        signal: new AbortController().signal, conversationalAuthoring: true,
+        dependencies: { signal: controller.signal, requestJson, onProgress: (event) => {
+          if (phase === "before" && event.phase === "tool") controller.abort();
+        } },
+      }).finally(() => { settled = true; });
+      const refused = expect(running).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      if (phase === "during") {
+        await called; controller.abort();
+        await Promise.resolve(); expect(settled).toBe(false);
+        release();
+      }
+      await refused;
+      expect(callTool).toHaveBeenCalledTimes(phase === "during" ? 1 : 0);
+      expect(requestJson).toHaveBeenCalledOnce();
+    }
+  });
+
+  it.each(["explicit", "dependency"] as const)("honors the %s signal and discards late provider output without a tool or retry", async (cancelledSignal) => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const configuration = resolveAskProviderConfiguration({ provider: "openai_compatible", model: "fixture", base_url: "http://127.0.0.1:11434/v1",
+      authority_digest: authorityDigest, egress_acknowledged: true }, {}, new Date());
+    const explicit = new AbortController(), dependency = new AbortController();
+    let release!: () => void, entered!: () => void, settled = false;
+    const held = new Promise<void>((resolve) => { release = resolve; }), started = new Promise<void>((resolve) => { entered = resolve; });
+    const gateway = testGateway();
+    const requestJson = vi.fn(async ({ signal }: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      entered(); await held;
+      expect(signal.aborted).toBe(true);
+      return openAiToolCall("late", "app__explore_data", { plan: { kind: "aggregate" } });
+    });
+    const running = runAskProviderTurn({ configuration, tools, authorityDigest, gateway: gateway.gateway, question: "Read reviewed data", history: [],
+      signal: explicit.signal, dependencies: { signal: dependency.signal, requestJson } }).finally(() => { settled = true; });
+    const refused = expect(running).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    await started;
+    (cancelledSignal === "explicit" ? explicit : dependency).abort();
+    await Promise.resolve(); expect(settled).toBe(false);
+    release(); await refused;
+    expect(gateway.calls).toEqual([]); expect(requestJson).toHaveBeenCalledOnce();
+    await expect(runAskProviderTurn({ configuration, tools, authorityDigest, gateway: gateway.gateway, question: "Never start", history: [],
+      signal: explicit.signal, dependencies: { signal: dependency.signal, requestJson } })).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    expect(requestJson).toHaveBeenCalledOnce();
   });
 
   it("serializes retained clarification history as assistant then user", async () => {
@@ -8322,6 +8382,36 @@ describe("Workbench BYOM Ask", () => {
       authority_digest: authorityDigest,
       egress_acknowledged: true,
     }, {}, new Date())).toThrowError(expect.objectContaining({ code: "ASK_REMOTE_HTTPS_REQUIRED" }));
+  });
+
+  it("cancels during destination resolution without opening or sending a provider request", async () => {
+    const received = vi.fn((_request, response) => response.end('{"ok":true}'));
+    const server = createServer(received);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    let release!: () => void;
+    const originalLookup = dns.lookup;
+    const lookup = vi.spyOn(dns, "lookup").mockImplementationOnce(async (...args: Parameters<typeof dns.lookup>) => {
+      await new Promise<void>((resolve) => { release = resolve; });
+      return originalLookup(...args);
+    });
+    const controller = new AbortController();
+    try {
+      const pending = secureAskJsonRequest({
+        endpoint: new URL(`http://localhost:${port}/v1/chat/completions`),
+        scope: "custom_loopback", headers: {}, body: {}, signal: controller.signal, timeoutMs: 1_000,
+      });
+      const result = expect(pending).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      expect(lookup).toHaveBeenCalledOnce();
+      controller.abort();
+      release();
+      await result;
+      expect(received).not.toHaveBeenCalled();
+    } finally {
+      release?.();
+      lookup.mockRestore();
+    }
   });
 
   it("posts to a pinned loopback destination and refuses redirects", async () => {

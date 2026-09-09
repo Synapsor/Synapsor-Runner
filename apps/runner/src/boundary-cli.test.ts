@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as boundaryReviewMutations from "./boundary-review-mutation.js";
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { loadPolicySources, activePolicySource } from "./authoring-policy-source.js";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
@@ -5044,7 +5045,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised", "repair_on_resume", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+  it.each(["proposal_only", "supervised", "repair_on_resume", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
     const coverageFailure = posture === "coverage_failure";
     const partialConfirmation = posture === "partial_confirmation";
     const manualGuidedRetryNoop = posture === "guided_privacy_manual_retry_noop";
@@ -5055,10 +5056,57 @@ describe("boundary operator-plane CLI", () => {
     const confirmedCurrent = posture === "confirmed_current" || partialConfirmation || manualGuidedRetryNoop;
     const clarifiedPrivacy = posture === "clarified_privacy" || confirmedCurrent || mechanicalRead || manualGuidedRetry;
     const applicationClarification = posture === "application_clarification";
-    const policyText = posture === "policy_text" || (clarifiedPrivacy && !manualGuidedRetry) || applicationClarification || coverageFailure;
+    const policyText = posture === "policy_text" || (clarifiedPrivacy && !manualGuidedRetry) || applicationClarification || coverageFailure || posture === "cancel_coverage";
     const writeback = posture === "supervised" || posture === "privacy_retry" ? "supervised" : "proposal_only";
     const guidedPrivacy = posture === "guided_privacy" || posture === "decline_privacy";
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-semantic-action-"));
+    const cancellation = new AbortController();
+    const dependencyCancellation = new AbortController();
+    const snapshot = async () => ({
+      resume: await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"),
+      candidate: (await loadBoundaryReviewContext(root)).bundle.candidate_digest,
+      action: await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"),
+    });
+    let beforeCancellation: Awaited<ReturnType<typeof snapshot>> | undefined;
+    const cancelDrafting = async () => {
+      beforeCancellation = await snapshot();
+      (posture === "cancel_action_scope_dependency" ? dependencyCancellation : cancellation).abort();
+      await Promise.resolve();
+    };
+    const cancelScope = posture === "cancel_read_scope_preview" || posture === "cancel_action_scope_preview"
+      || posture === "cancel_action_scope_dependency" || posture === "cancel_action_scope_commit";
+    let scopePreview: Awaited<ReturnType<typeof prepareBoundaryReviewMutationBatch>> | undefined;
+    let scopeCommits = 0, scopeCommitCompleted = false;
+    if (cancelScope) {
+      const prepare = boundaryReviewMutations.prepareBoundaryReviewMutationBatch;
+      const commit = boundaryReviewMutations.commitBoundaryReviewMutationBatch;
+      vi.spyOn(boundaryReviewMutations, "prepareBoundaryReviewMutationBatch").mockImplementation(async (...args) => {
+        const target = posture === "cancel_read_scope_preview" ? "public.service_visits" : "public.maintenance_requests";
+        if ((posture !== "cancel_read_scope_preview" && semanticActionAttempt === 0)
+          || !args[1].some((request) => request.resource_id === target
+            && request.reason === "The reviewed job explicitly requires authenticated user/owner row isolation.")) return prepare(...args);
+        const before = await snapshot();
+        const preview = await prepare(...args);
+        expect(await snapshot()).toEqual(before);
+        scopePreview = preview;
+        if (posture !== "cancel_action_scope_commit") {
+          await cancelDrafting();
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          expect(scopeCommits).toBe(0);
+        }
+        return preview;
+      });
+      vi.spyOn(boundaryReviewMutations, "commitBoundaryReviewMutationBatch").mockImplementation(async (...args) => {
+        if (args[1] !== scopePreview) return commit(...args);
+        scopeCommits++;
+        if (posture === "cancel_action_scope_commit") beforeCancellation = await snapshot();
+        const pending = commit(...args);
+        if (posture === "cancel_action_scope_commit") cancellation.abort();
+        const result = await pending;
+        scopeCommitCompleted = true;
+        return result;
+      });
+    }
     let sourceHandler: ((command: string, argument: string) => Promise<boolean>) | undefined;
     const sourceText = applicationClarification ? "The application captures the customer's selected visit.\nRequire one maintenance reviewer. Do not execute changes."
       : confirmedCurrent ? "Customers may see business status; internal eligibility state stays private.\nRequire one maintenance reviewer. Do not execute changes."
@@ -5091,6 +5139,7 @@ describe("boundary operator-plane CLI", () => {
       action_strategy: "rule_derived" as const,
       read_intent: operatorJob,
       action_intent: operatorJob,
+      ...(posture === "cancel_action" ? { action_intents: [operatorJob, "Propose a separate routine follow-up."] } : {}),
       summary: "Draft one reviewed Read Boundary and one verified Action outcome.",
       correction_used: false,
       authority_granted: false as const,
@@ -5126,7 +5175,7 @@ describe("boundary operator-plane CLI", () => {
     ): Promise<ModelActionRuleDraftResult> => {
       semanticActionAttempt += 1;
       if (posture === "read_only_pivot") throw new ActionAuthoringReadOnlyRequest("The operator withdrew the pending action and requested Read review only.");
-      if (semanticActionAttempt === 1) {
+      if (semanticActionAttempt === 1 && posture !== "cancel_action") {
         throw new Error(
           "ACTION_RULE_MODEL_DRAFT_INVALID: Derived UPDATE requires one exact subject target binding.",
         );
@@ -5240,13 +5289,11 @@ describe("boundary operator-plane CLI", () => {
           ],
         },
       };
+      const compiled = compileActionRuleModelDraft({ draft, ...prepared, activatedAt: "2026-09-03T12:00:00.000Z" });
+      if (posture === "cancel_action") await cancelDrafting();
       return {
         state: "ready",
-        compiled: compileActionRuleModelDraft({
-          draft,
-          ...prepared,
-          activatedAt: "2026-09-03T12:00:00.000Z",
-        }),
+        compiled,
         provider: input.session.provider,
         model: input.session.model,
         correction_used: false,
@@ -5357,6 +5404,7 @@ describe("boundary operator-plane CLI", () => {
         throw new Error(`Unexpected semantic Action text prompt: ${prompt}`);
       },
       chooseOption: async (title, options, choiceOptions) => {
+        if (cancellation.signal.aborted || dependencyCancellation.signal.aborted) throw new Error(`Unexpected post-cancellation menu: ${title}`);
         if (posture === "read_only_pivot" && title === "ACTIVATE READ BOUNDARY") {
           readActivationReviewCount++;
           return "finish";
@@ -5449,7 +5497,9 @@ describe("boundary operator-plane CLI", () => {
       ? `It bounds automatic approval while proposals outside the limit remain reviewable. ${clarificationQuestion}`
       : narration.responseStyle === "clarification" ? "Should customers see the visit status, or should it stay internal?"
       : "The exact disabled drafts are ready for review.");
-    const semanticChat = testBoundaryAuthoringChat(session);
+    const semanticChat = { ...testBoundaryAuthoringChat(session), signal: cancellation.signal };
+    semanticChat.streamCheckpoint = vi.fn(async () => undefined);
+    semanticChat.progress = vi.fn(async (_message, operation) => operation());
     const readOperator = vi.fn()
       .mockResolvedValueOnce("Why does Runner need this limit?")
       .mockResolvedValueOnce("At most ten proposals in a rolling 24 hours.");
@@ -5479,8 +5529,13 @@ describe("boundary operator-plane CLI", () => {
             provider: "openai",
             model: "gpt-test",
             apiKey: "session-secret",
+            ...(posture === "cancel_action_scope_dependency" ? { dependencies: { signal: dependencyCancellation.signal } } : {}),
             ...(policyText ? { dependencies: { requestJson: async (request: Parameters<NonNullable<import("./model-ask.js").AskProviderDependencies["requestJson"]>>[0]) => {
               coverageRequests.push(JSON.stringify(request.body));
+              if (posture === "cancel_coverage") {
+                await cancelDrafting();
+                throw new Error("ASK_REQUIRED_TOOL_NOT_CALLED");
+              }
               if (coverageFailure) throw new Error("COVERAGE_TEST_PROVIDER_UNAVAILABLE");
               if (applicationClarification) return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
                 arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: "needs_decision",
@@ -5524,6 +5579,60 @@ describe("boundary operator-plane CLI", () => {
           boundaryAuthoringChatFactory: () => semanticChat,
         },
       )).resolves.toBe(0);
+
+      if (cancelScope) {
+        expect(scopePreview).toBeDefined();
+        expect(scopePreview!.source_database_changed).toBe(false);
+        expect(cancellation.signal.aborted).toBe(posture !== "cancel_action_scope_dependency");
+        expect(dependencyCancellation.signal.aborted).toBe(posture === "cancel_action_scope_dependency");
+        expect(beforeCancellation).toBeDefined();
+        const after = await snapshot();
+        if (posture === "cancel_action_scope_commit") {
+          expect(scopeCommits).toBe(1);
+          expect(scopeCommitCompleted).toBe(true);
+          expect(after.candidate).not.toBe(beforeCancellation!.candidate);
+          expect(after.resume).toBe(beforeCancellation!.resume);
+          expect(after.action).toEqual(beforeCancellation!.action);
+          expect(after.candidate).toBe(scopePreview!.candidate_digest);
+        } else {
+          expect(scopeCommits).toBe(0);
+          expect(scopeCommitCompleted).toBe(false);
+          expect(after).toEqual(beforeCancellation);
+        }
+        expect(semanticChat.streamCheckpoint).toHaveBeenLastCalledWith("Boundary conversation paused.",
+          ["Existing authority is unchanged by interruption; saved steps are retained."], "warning");
+        expect(semanticChat.close).toHaveBeenCalledOnce();
+        expect(modelActionRuleGenerator).toHaveBeenCalledTimes(posture === "cancel_read_scope_preview" ? 0 : 2);
+        expect(semanticRecoveryChoices).toHaveLength(posture === "cancel_read_scope_preview" ? 0 : 1);
+        expect(modelReadBoundaryRevisionGenerator).not.toHaveBeenCalled();
+        expect(legacyActionGenerator).not.toHaveBeenCalled();
+        expect(legacyActionReview).not.toHaveBeenCalled();
+        expect(readActivationReviewCount).toBe(0);
+        await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+        return;
+      }
+
+      if (posture === "cancel_action" || posture === "cancel_coverage") {
+        expect(beforeCancellation).toBeDefined();
+        expect(await snapshot()).toEqual(beforeCancellation);
+        expect(semanticChat.streamCheckpoint).toHaveBeenLastCalledWith("Boundary conversation paused.",
+          ["Existing authority is unchanged by interruption; saved steps are retained."], "warning");
+        expect(semanticChat.close).toHaveBeenCalledOnce();
+        expect(modelActionRuleGenerator).toHaveBeenCalledTimes(posture === "cancel_action" ? 1 : 2);
+        expect(semanticRecoveryChoices).toHaveLength(posture === "cancel_action" ? 0 : 1);
+        expect(coverageRequests).toHaveLength(posture === "cancel_coverage" ? 1 : 0);
+        expect(modelReadBoundaryRevisionGenerator).not.toHaveBeenCalled();
+        expect(legacyActionGenerator).not.toHaveBeenCalled();
+        expect(legacyActionReview).not.toHaveBeenCalled();
+        expect(readActivationReviewCount).toBe(0);
+        expect(beforeCancellation?.action === undefined).toBe(posture === "cancel_action");
+        if (posture === "cancel_action") {
+          expect(vi.mocked(semanticChat.progress).mock.calls.map(([message]) => message)).toContain("Preparing action 1 of 2");
+          expect(modelActionRuleGenerator.mock.calls[0]?.[0].pendingIntents).toHaveLength(2);
+        }
+        await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+        return;
+      }
 
       if (posture === "read_only_pivot") {
         expect(readActivationReviewCount).toBe(1);

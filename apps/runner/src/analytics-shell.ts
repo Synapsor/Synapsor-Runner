@@ -1105,6 +1105,7 @@ export function createTerminalAnalyticsShellIo(input: {
   const recognizedCommands = input.slashSuggestions?.map((entry) => entry.completion ?? entry.label)
     ?? COMMANDS;
   let interrupt: (() => void) | undefined;
+  let questionCancellation: AbortController | undefined;
   const rl = readline.createInterface({
     input: readable,
     output: writable,
@@ -1120,7 +1121,10 @@ export function createTerminalAnalyticsShellIo(input: {
       return [matches.length ? matches : recognizedAction ? [] : recognizedCommands, line];
     },
   });
-  rl.on("SIGINT", () => interrupt?.());
+  rl.on("SIGINT", () => {
+    if (questionCancellation) questionCancellation.abort();
+    else interrupt?.();
+  });
   let closed = false;
   let questionActive = false;
   let activePrompt = "";
@@ -1211,7 +1215,10 @@ export function createTerminalAnalyticsShellIo(input: {
     redrawInputSurface(menu);
   };
   const onKeypress = (_text: string, key: { name?: string; ctrl?: boolean }) => {
-    if (!questionActive) return;
+    if (!questionActive) {
+      if (key.name === "escape") interrupt?.();
+      return;
+    }
     if (key.name === "return" || key.name === "enter"
       || (key.ctrl && (key.name === "c" || key.name === "d"))) {
       clearSlashMenuWhileEditing();
@@ -1383,7 +1390,7 @@ export function createTerminalAnalyticsShellIo(input: {
     const elapsedMs = Date.now() - (statusStartedAt ?? Date.now());
     const elapsed = formatTransientStatusElapsed(elapsedMs);
     const bullet = statusColor && Math.floor(elapsedMs / 600) % 2 === 1 ? "◦" : "•";
-    const core = `${bullet} Working (${elapsed} • esc to interrupt)`;
+    const core = `${bullet} Working (${elapsed}${interrupt ? " • esc to interrupt" : ""})`;
     const width = terminalContentWidth(terminalColumns());
     const contextWidth = width - Array.from(core).length - 3;
     const plain = contextWidth >= 4
@@ -1412,7 +1419,8 @@ export function createTerminalAnalyticsShellIo(input: {
         escapeEnabled = allowEscape;
         escapeSubmitted = false;
         questionActive = true;
-        const answerPromise = rl.question(activePrompt);
+        questionCancellation = new AbortController();
+        const answerPromise = rl.question(activePrompt, { signal: questionCancellation.signal });
         reserveBottomPadding(rl.getCursorPos().cols);
         const answer = await answerPromise;
         const escaped = escapeSubmitted;
@@ -1429,6 +1437,8 @@ export function createTerminalAnalyticsShellIo(input: {
         escapeSubmitted = false;
         activePrompt = "";
         return undefined;
+      } finally {
+        questionCancellation = undefined;
       }
   };
   const readConversation = async (prompt: string, options?: { literal?: boolean }): Promise<string | undefined> => {

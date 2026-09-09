@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createSemanticActionRuntime } from "@synapsor-runner/mcp-server";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
+import { policyCoverageDraft } from "./authoring-policy-evidence.js";
 import {
   ACTION_RULE_MODEL_DRAFT_VERSION,
   actionRuleModelDraftFromAuthority,
@@ -26,6 +27,28 @@ const statusType: ActionRuleScalarTypeSpecV1 = {
 };
 
 describe("model-authored Action Rule draft compilation", () => {
+  it.each(["proposal_only", "supervised"] as const)("supplies compiled version advancement to policy review without inventing execution authority (%s)", (writeback) => {
+    const proposed = draft();
+    proposed.effect.writeback = writeback;
+    const compiled = compileActionRuleModelDraft({ draft: proposed, builtCatalog: builtCatalog(),
+      readBoundary: boundary(), readBoundaryDigest: readDigest });
+    const before = structuredClone(compiled);
+    const evidence = policyCoverageDraft({ read: boundary(), decisions: [], actions: [compiled] });
+    const action = evidence.runner_evidence.actions[compiled.rule.outcome]!;
+    expect(action.effect).toMatchObject({ fields: ["status"],
+      version_advance: { column: "version", strategy: "integer_increment" },
+      source_fields_modified: ["status", "version"] });
+    expect(action.execution.configured_mode).toBe(writeback === "supervised" ? "direct_sql" : "none");
+    expect(action.execution.activation).toBe("separate_operator_review");
+    expect(action.effect.unrelated_fields).toContain("source_fields_modified");
+    expect(compiled).toEqual(before);
+    expect(evidence.read.pack.resources[0]!.selectable_fields).toEqual(["status"]);
+    // Absent compiled advancement must not be inferred from a conflict column.
+    delete compiled.effect_envelope.version_advance;
+    const missing = policyCoverageDraft({ read: boundary(), decisions: [], actions: [compiled] })
+      .runner_evidence.actions[compiled.rule.outcome]!;
+    expect(missing.effect).toMatchObject({ version_advance: null, source_fields_modified: ["status"] });
+  });
   it("refreshes business search from a reviewed draft without changing tool schemas or touching source state", async () => {
     const compile = (candidate: ActionRuleModelDraftV1) => compileActionRuleModelDraft({ draft: candidate,
       builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest });

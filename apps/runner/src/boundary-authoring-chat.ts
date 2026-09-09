@@ -11,7 +11,7 @@ import {
   type BoundaryPromptChoice,
   type BoundaryReviewInteractiveSession,
 } from "./boundary-cli-picker.js";
-import type { AskProviderStreamEvent } from "./model-ask.js";
+import { AskError, type AskProviderStreamEvent } from "./model-ask.js";
 import {
   wrapStyledTerminalLine,
 } from "./terminal-layout.js";
@@ -38,6 +38,7 @@ export type BoundaryAuthoringPermissionGuide = (
 ) => Promise<string | undefined>;
 
 export type BoundaryAuthoringChat = {
+  readonly signal?: AbortSignal;
   session: BoundaryReviewInteractiveSession;
   actionPrompter: ActionControlPrompter;
   setModel(label: string): void;
@@ -358,6 +359,17 @@ export function createBoundaryAuthoringChat(input: {
     ?? (input.io ? 0 : io.isTerminal?.() === true ? DEFAULT_TRANSCRIPT_STREAM_DELAY_MS : 0);
   let modelLabel = input.modelLabel;
   let closed = false;
+  let progressMessage: string | undefined;
+  const providerStatus = (message: string) => io.setStatus?.(progressMessage ? `${progressMessage} · ${message}` : message);
+  const cancellation = new AbortController();
+  const assertNotCancelled = () => {
+    if (cancellation.signal.aborted) throw new AskError("ASK_CANCELLED", "Boundary conversation paused.", 499);
+  };
+  const removeInterrupt = io.onInterrupt(() => {
+    if (closed || cancellation.signal.aborted) return;
+    cancellation.abort();
+    io.setStatus?.("Cancelling; waiting for current work to stop...");
+  });
   let streamedCharacters = 0;
   let lastProviderStatusCharacters = 0;
   let latestDetails: { title: string; lines: string[] } | undefined;
@@ -473,6 +485,7 @@ export function createBoundaryAuthoringChat(input: {
         bold: theme.bold, code: theme.value,
         write: (chunk) => {
           livePending = livePending.then(async () => {
+            if (cancellation.signal.aborted) return;
             io.clearStatus?.();
             writeTranscript(chunk);
             if (io.isTerminal?.() === true && streamLineDelayMs > 0) {
@@ -819,6 +832,7 @@ export function createBoundaryAuthoringChat(input: {
     io.clearStatus?.();
     let sourceChanged = false;
     while (true) {
+      assertNotCancelled();
       const prompt = `${theme.focus("you>")} ${defaultValue && !sourceChanged ? `${theme.dim(`[${defaultValue}]`)} ` : ""}`;
       const answer = io.readConversation
         ? await io.readConversation(prompt)
@@ -906,6 +920,7 @@ export function createBoundaryAuthoringChat(input: {
   const choose = async (choice: ChoiceInput): Promise<string | undefined> => {
     finishLiveResponse();
     await livePending;
+    assertNotCancelled();
     const available = choice.options.filter((option) => !option.disabled);
     if (!available.length) return undefined;
     const unavailable = choice.options.filter((option) => option.disabled);
@@ -1282,6 +1297,7 @@ export function createBoundaryAuthoringChat(input: {
   writeTranscript(intro.join("\n"));
 
   return {
+    signal: cancellation.signal,
     session,
     actionPrompter,
     setModel: (label) => {
@@ -1306,6 +1322,7 @@ export function createBoundaryAuthoringChat(input: {
     rememberDetails,
     showDetails,
     providerStream: (event) => {
+      if (cancellation.signal.aborted) return;
       if (event.operator_text && event.phase === "text_delta" && event.text) {
         appendLiveText(event.text);
         return;
@@ -1317,42 +1334,52 @@ export function createBoundaryAuthoringChat(input: {
       if (event.phase === "started") {
         streamedCharacters = 0;
         lastProviderStatusCharacters = 0;
-        io.setStatus?.(`${modelLabel ?? "Selected model"} is drafting...`);
+        providerStatus(`${modelLabel ?? "Selected model"} is drafting...`);
         return;
       }
       if (event.phase === "tool_started") {
-        io.setStatus?.(`${modelLabel ?? "Selected model"} is building a structured draft for Runner validation...`);
+        providerStatus(`${modelLabel ?? "Selected model"} is building a structured draft for Runner validation...`);
         return;
       }
       if (event.phase === "text_delta" || event.phase === "tool_delta") {
         streamedCharacters += event.characters ?? 0;
         if (streamedCharacters - lastProviderStatusCharacters < 48) return;
         lastProviderStatusCharacters = streamedCharacters;
-        io.setStatus?.(
+        providerStatus(
           `${modelLabel ?? "Selected model"} is responding... ${streamedCharacters.toLocaleString("en-US")} characters received; Runner has not accepted them`,
         );
         return;
       }
-      io.setStatus?.("Runner is validating the complete streamed draft...");
+      providerStatus("Runner is validating the complete streamed draft...");
     },
     progress: async <T>(message: string, operation: () => Promise<T>) => {
+      assertNotCancelled();
+      const previousMessage = progressMessage;
+      progressMessage = message;
       io.setStatus?.(message);
       try {
         const result = await operation();
+        assertNotCancelled();
         finishLiveResponse();
         await livePending;
-        io.clearStatus?.();
+        assertNotCancelled();
         return result;
       } catch (error) {
         finishLiveResponse();
         await livePending;
-        io.clearStatus?.();
+        assertNotCancelled();
         throw error;
+      } finally {
+        progressMessage = previousMessage;
+        if (previousMessage && !cancellation.signal.aborted) io.setStatus?.(previousMessage);
+        else io.clearStatus?.();
       }
     },
     close: () => {
       if (closed) return;
       closed = true;
+      removeInterrupt();
+      cancellation.abort();
       io.close();
     },
   };

@@ -264,6 +264,8 @@ export type AskProviderStreamEvent = {
 };
 
 export type AskProviderDependencies = {
+  /** Trusted caller lifetime, independent of each provider turn's own signal. */
+  signal?: AbortSignal;
   requestJson?: (input: ProviderHttpInput) => Promise<ProviderHttpResult>;
   now?: () => Date;
   onProgress?: (event: {
@@ -639,11 +641,40 @@ export async function runAskProviderTurn(input: {
     );
   }
   const prepared = prepareProviderTools(input.tools, input.allowToolFreeAuthoringResponse === true);
-  const requestJson = input.dependencies?.requestJson ?? secureAskJsonRequest;
+  const signal = input.dependencies?.signal
+    ? AbortSignal.any([input.signal, input.dependencies.signal]) : input.signal;
+  // Await cleanup even when a dependency ignores abort; never accept its late
+  // response or start another tool/turn after the caller has paused.
+  const checked = async <T>(operation: () => Promise<T>): Promise<T> => {
+    assertAskNotCancelled(signal);
+    try {
+      const result = await operation();
+      assertAskNotCancelled(signal);
+      return result;
+    } catch (error) {
+      assertAskNotCancelled(signal);
+      throw error;
+    }
+  };
+  const request = input.dependencies?.requestJson ?? secureAskJsonRequest;
+  const requestJson: NonNullable<AskProviderDependencies["requestJson"]> = (requestInput) => checked(() => request({ ...requestInput, signal }));
+  const gateway: AskToolGateway = {
+    get mode() { return input.gateway.mode; },
+    get ownerPolicyReview() { return input.gateway.ownerPolicyReview; },
+    get ownerManagementBinding() { return input.gateway.ownerManagementBinding; },
+    get ownerSettingsOnly() { return input.gateway.ownerSettingsOnly; },
+    listTools: () => input.gateway.listTools(),
+    close: () => input.gateway.close(),
+    callTool: (name, args) => checked(() => input.gateway.callTool(name, args)),
+    ...(input.gateway.describeOperatorMetadata ? { describeOperatorMetadata: input.gateway.describeOperatorMetadata.bind(input.gateway) } : {}),
+    ...(input.gateway.resolveAskIntentCheck ? { resolveAskIntentCheck: input.gateway.resolveAskIntentCheck.bind(input.gateway) } : {}),
+  };
   const currentUtcDate = (input.dependencies?.now?.() ?? new Date()).toISOString().slice(0, 10);
-  return input.configuration.provider === "anthropic"
+  return checked(() => input.configuration.provider === "anthropic"
     ? runAnthropicTurn({
         ...input,
+        signal,
+        gateway,
         prepared,
         requestJson,
         currentUtcDate,
@@ -652,15 +683,18 @@ export async function runAskProviderTurn(input: {
       })
     : runOpenAiCompatibleTurn({
         ...input,
+        signal,
+        gateway,
         prepared,
         requestJson,
         currentUtcDate,
         onProgress: input.dependencies?.onProgress,
         onStream: input.dependencies?.onStream,
-      });
+      }));
 }
 
 export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<ProviderHttpResult> {
+  assertAskNotCancelled(input.signal);
   const serialized = JSON.stringify(input.stream
     ? { ...input.body, stream: true }
     : input.body);
@@ -668,6 +702,7 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
     throw new AskError("ASK_PROVIDER_REQUEST_TOO_LARGE", "The provider request exceeded the bounded Ask request size.");
   }
   const destination = await resolveAskDestination(input.endpoint, input.scope);
+  assertAskNotCancelled(input.signal);
   const transport = input.endpoint.protocol === "https:" ? https : http;
   const timeoutMs = boundedInteger(
     input.timeoutMs ?? DEFAULT_REMOTE_TIMEOUT_SECONDS * 1_000,
@@ -753,6 +788,10 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
     request.setTimeout(timeoutMs, () => request.destroy(new AskError("ASK_PROVIDER_TIMEOUT", "The provider did not respond within the Ask timeout.", 504)));
     request.on("error", finishReject);
     request.on("close", () => input.signal.removeEventListener("abort", abort));
+    if (input.signal.aborted) {
+      abort();
+      return;
+    }
     request.end(serialized);
   });
 }

@@ -2966,6 +2966,7 @@ function boundaryAuthoringProviderDependencies(
   if (!chat) return dependencies;
   return {
     ...dependencies,
+    ...(chat.signal ? { signal: dependencies?.signal ? AbortSignal.any([dependencies.signal, chat.signal]) : chat.signal } : {}),
     onStream: (event) => {
       dependencies?.onStream?.(event);
       chat.providerStream(event);
@@ -3756,6 +3757,12 @@ async function reviewJobPrincipalScopeForResources(input: {
   modelInterpreter?: typeof interpretPrincipalScopeAnswer;
   authoringChat?: BoundaryAuthoringChat;
 }): Promise<{ state: "ready"; changed: boolean } | { state: "paused"; resources: string[] }> {
+  const assertRunning = () => {
+    if (input.authoringChat?.signal?.aborted || input.modelSession?.dependencies?.signal?.aborted) {
+      throw new AskError("ASK_CANCELLED", "Boundary conversation paused.", 499);
+    }
+  };
+  assertRunning();
   if (!jobRequestsPrincipalIsolation(input.jobIntent)) {
     return { state: "ready", changed: false };
   }
@@ -3788,6 +3795,7 @@ async function reviewJobPrincipalScopeForResources(input: {
   for (let pass = 0; pass < 4; pass += 1) {
     const views = await Promise.all(resourceIds.map((resourceId) =>
       inspectBoundaryResourceReview(input.projectRoot, resourceId)));
+    assertRunning();
     const unresolved = views.filter((view) => !hasReviewedJobPrincipalScope(view));
     if (!unresolved.length) {
       reportSavedDecisions();
@@ -3952,6 +3960,7 @@ async function reviewJobPrincipalScopeForResources(input: {
     }
     const actor = localInteractiveActor();
     const reason = "The reviewed job explicitly requires authenticated user/owner row isolation.";
+    assertRunning();
     const preview = await prepareBoundaryReviewMutationBatch(
       input.projectRoot,
       decisions.map(({ resourceId, scope }): BoundaryResourceReviewRequest => ({
@@ -3966,7 +3975,10 @@ async function reviewJobPrincipalScopeForResources(input: {
       })),
       input.schemaInspector,
     );
+    assertRunning();
+    // Once started, the atomic commit must finish before cancellation unwinds.
     const committed = await commitBoundaryReviewMutationBatch(input.projectRoot, preview);
+    assertRunning();
     changed = true;
     savedDecisions.push(...decisions);
     savedReviewRevision = committed.review_revision;
@@ -4036,6 +4048,12 @@ type ReadBoundaryReviewOptions = {
   resolveRequirements?: () => Promise<void>;
 };
 
+function boundaryAuthoringCancelled(error: unknown, chat?: BoundaryAuthoringChat): boolean {
+  return chat?.signal?.aborted === true
+    || error instanceof AskError && error.code === "ASK_CANCELLED"
+    || error instanceof Error && error.message === "ACTION_RULE_MODEL_DRAFT_CANCELLED";
+}
+
 async function interactiveReadWorkloadAssist(
   input: InteractiveReadWorkloadAssistInput,
 ): Promise<BoundaryAssistOutcome> {
@@ -4060,6 +4078,13 @@ async function interactiveReadWorkloadAssist(
       currentModel,
       ...(authoringChat ? { authoringChat } : {}),
     });
+  } catch (error) {
+    if (!boundaryAuthoringCancelled(error, authoringChat)) throw error;
+    const notice: BoundaryAccessNotice = { tone: "warning", title: "Boundary conversation paused.",
+      lines: ["Existing authority is unchanged by interruption; saved steps are retained."],
+      footer: "Resume this job to continue from its saved checkpoint." };
+    await authoringChat?.streamCheckpoint(notice.title, notice.lines, "warning");
+    return { notice, activation_ready: false, handoff_ready: false, navigation: "pause", notice_presented: Boolean(authoringChat) };
   } finally {
     authoringChat?.close();
   }
@@ -4070,9 +4095,15 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   authoringChat?: BoundaryAuthoringChat;
 }): Promise<BoundaryAssistOutcome> {
   const currentModel = input.currentModel;
-  const runWithProgress = <T>(message: string, operation: () => Promise<T>) => input.authoringChat
-    ? input.authoringChat.progress(message, operation)
-    : withBoundaryModelProgress(message, operation);
+  const assertRunning = (error?: unknown) => {
+    if (boundaryAuthoringCancelled(error, input.authoringChat)) throw new AskError("ASK_CANCELLED", "Boundary conversation paused.", 499);
+  };
+  const runWithProgress = async <T>(message: string, operation: () => Promise<T>): Promise<T> => {
+    assertRunning();
+    const result = await (input.authoringChat ? input.authoringChat.progress(message, operation) : withBoundaryModelProgress(message, operation));
+    assertRunning();
+    return result;
+  };
   const writeRunner = (
     title: string,
     lines: string[],
@@ -4139,6 +4170,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let jobIntent: string | undefined;
   let resumePersistenceBlocked = false;
   const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage): Promise<void> => {
+    assertRunning();
     if (!input.authoringChat
       || !currentResumeBinding
       || !jobIntent?.trim()
@@ -4171,9 +4203,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ...(resumeAction ? { action: resumeAction } : {}),
         ...(activeResume ? { previous: activeResume } : {}),
       });
+      assertRunning();
       await writeBoundaryAuthoringResumeState(input.projectRoot, activeResume);
       resumePersistenceBlocked = false;
     } catch (error) {
+      assertRunning(error);
       activeResume = undefined;
       if (resumePersistenceBlocked) return;
       resumePersistenceBlocked = true;
@@ -4840,6 +4874,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ].join("\n"));
         }
       } catch (error) {
+        assertRunning(error);
         planningFailure = error;
       }
       if (jobPlan?.state === "planned") break;
@@ -5378,6 +5413,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           }),
         );
       } catch (error) {
+        assertRunning(error);
         failure = recoverableReadModelDraftFailure(error);
         if (!failure) throw error;
       }
@@ -5705,7 +5741,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             semanticActionModelResult = await runWithProgress(
               revisionFocus === "approval"
                 ? "Updating only the reviewed approval policy with the selected model"
-                : "Drafting one verified Action outcome with the selected model",
+                : `Preparing action ${semanticIndex + 1} of ${actionIntents.length}`,
               () => (input.modelActionRuleGenerator ?? generateModelActionRuleDraft)({
                 session: ruleSession,
                 intent: jointApprovalRepair ? "Revise only approval.shared_limits to preserve the original job's joint automatic-approval allowances across its actions. Keep every other component and policy setting unchanged." : semanticIntent,
@@ -5718,6 +5754,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                 builtCatalog: semanticActionCatalog!,
                 ...(partialActionCheckpoint && semanticIndex === partialActionIndex ? { checkpoint: partialActionCheckpoint } : {}),
                 onCheckpoint: async (checkpoint) => {
+                  assertRunning();
                   resumeAction = { ...resumeAction, intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived", checkpoint };
                   await persistAuthoringResume("action_drafting");
                 },
@@ -5823,6 +5860,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
               }),
             );
           } catch (error) {
+            assertRunning(error);
             if (error instanceof ActionAuthoringReadOnlyRequest) {
               actionIntents = semanticActionDrafts.map((entry) => entry.intent);
               partialActionCheckpoint = undefined;
@@ -6144,6 +6182,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             }
           }
         } catch (error) {
+          assertRunning(error);
           failure = recoverableActionModelDraftFailure(error);
           if (!failure) throw error;
         }
@@ -7214,6 +7253,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           failedReadRevision = undefined;
           return true;
         } catch (error) {
+          assertRunning(error);
           failedReadRevision = request;
           const message = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
           const failureTitle = readRevisionSaved ? "Read revision saved; review needs recovery" : "Read revision not saved";
@@ -7303,6 +7343,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           await savePolicySources(input.projectRoot, sources);
         }
       } catch (error) {
+        assertRunning(error);
         policyFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
         input.authoringChat.rememberDetails("RULES COVERAGE UNAVAILABLE", [policyFailure,
           "The draft and source snapshot remain saved. No rule was dropped and no authority was activated."]);
@@ -7360,6 +7401,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       chat.checkpoint("Action revision saved", [`${revised.compiled.rule.outcome}; other actions, active authority and source data unchanged.`]);
       return true;
     } catch (error) {
+      assertRunning(error);
       const diagnostic = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
       chat.rememberDetails("ACTION REVISION NOT SAVED", [diagnostic, "The existing draft and active authority are unchanged."]);
       chat.checkpoint("Action revision needs attention", [diagnostic, "The draft is preserved. Continue with the model or inspect /details; no new job is needed."], "warning");

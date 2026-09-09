@@ -2102,6 +2102,7 @@ describe("Synapsor Analytics shell", () => {
         terminal: true,
       });
 
+      io.onInterrupt(() => undefined);
       io.setStatus?.("Waiting for the provider...");
       io.setStatus?.("Running a reviewed data tool...");
       io.clearStatus?.();
@@ -2135,6 +2136,7 @@ describe("Synapsor Analytics shell", () => {
       writable.on("data", (chunk) => chunks.push(String(chunk)));
       const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
 
+      io.onInterrupt(() => undefined);
       io.setStatus?.("Building a complete structured draft that must stay on one line...");
       io.clearStatus?.();
       io.close();
@@ -2148,6 +2150,29 @@ describe("Synapsor Analytics shell", () => {
       if (previousNoColor === undefined) delete process.env.NO_COLOR;
       else process.env.NO_COLOR = previousNoColor;
     }
+  });
+
+  it("advertises Escape only with an interrupt handler and does not cancel while dismissing a question", async () => {
+    const readable = new PassThrough(), writable = new PassThrough();
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+    try {
+      io.setStatus?.("Uninterruptible operation");
+      expect(chunks.join("")).not.toContain("esc to interrupt");
+      const interrupt = vi.fn(), remove = io.onInterrupt(interrupt);
+      io.setStatus?.("Waiting for a provider");
+      readable.emit("keypress", "", { name: "escape" });
+      expect(interrupt).toHaveBeenCalledOnce();
+      const question = io.readWithEscape!("Clarify: ");
+      readable.emit("keypress", "", { name: "escape" });
+      expect(await question).toBeUndefined();
+      expect(interrupt).toHaveBeenCalledOnce();
+      remove();
+      chunks.length = 0;
+      io.setStatus?.("No registered cancellation");
+      expect(chunks.join("")).not.toContain("esc to interrupt");
+    } finally { io.close(); readable.destroy(); writable.destroy(); }
   });
 
   it("adds breathing room only for interactive terminals", () => {

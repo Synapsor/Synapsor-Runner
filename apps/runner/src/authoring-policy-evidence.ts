@@ -58,7 +58,13 @@ export function policyCoverageDraft(input: {
           target_binding: action.effect_envelope.target_binding ?? null,
           operation: action.effect_envelope.operation,
           fields: action.effect_envelope.allowed_fields.map((field) => field.name),
-          unrelated_fields: "not authorized for modification by this envelope",
+          version_advance: action.effect_envelope.version_advance
+            ? structuredClone(action.effect_envelope.version_advance) : null,
+          source_fields_modified: [...new Set([
+            ...action.effect_envelope.allowed_fields.map((field) => field.name),
+            ...(action.effect_envelope.version_advance ? [action.effect_envelope.version_advance.column] : []),
+          ])].sort(),
+          unrelated_fields: "Fields outside source_fields_modified are not authorized for modification by this envelope. Version advancement is Runner-owned, not a caller-supplied business field.",
         },
         execution: {
           configured_mode: action.effect_envelope.writeback.mode,
@@ -72,6 +78,7 @@ export function policyCoverageDraft(input: {
         approval: "Automatic approval counts are taken atomically from Runner's proposal/approval ledger with the configured scope, capability and window. Limits govern automatic approval, not authorized human fallback. Invalid eligibility is refused before approval.",
         request_identity: "The fixed request_change operation accepts outcome, scoped subject_refs and reviewed business inputs, not a client-supplied request ID. Repeating the same claimed references, outcome and inputs reuses the recorded proposal. New references or a different reviewed request are not an unlimited delivery-retry exemption. Execution uses the sealed proposal's idempotency identity.",
         conflict_protection: "Runner records immutable eligibility/effect evidence, re-verifies current facts and approved effect at execution, and checks configured version fields. A changed version or changed approved effect refuses stale execution; do not require duplicate equality predicates in require for these Runner-owned checks.",
+        version_advancement: "Each compiled action effect lists its exact version_advance, or null when none is configured. integer_increment advances that column in the same guarded source transaction as the successful change. Refused, rolled-back and replayed requests do not advance it again. A conflict field alone is not proof of advancement; neither is this contract permission to add an unconfigured version update.",
         receipts: "Runner's control ledger records processing and execution receipts, separately from source effects. A second source-table audit INSERT is not required. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed.",
         client_responsibilities: "The application authenticates the person, supplies trusted session identity, captures their selection and uses returned execution status/receipts for messages. A scoped subject reference authorizes one reviewed row; it does not prove the human clicked a UI. When an effective date is in the future, recording the change is not proof its benefits are already in force. Boundary rules cannot prove arbitrary client UI wording.",
         application_obligations: {

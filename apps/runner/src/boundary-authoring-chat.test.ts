@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
+import { PassThrough } from "node:stream";
 import {
   createBoundaryAuthoringChat,
 } from "./boundary-authoring-chat.js";
-import type { AnalyticsShellIo } from "./analytics-shell.js";
-import { AskError } from "./model-ask.js";
+import { createTerminalAnalyticsShellIo, type AnalyticsShellIo } from "./analytics-shell.js";
+import { AskError, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn } from "./model-ask.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { readBoundaryReviewSections } from "./read-boundary-review-view.js";
@@ -59,6 +61,158 @@ function memoryIo(input: {
 }
 
 describe("Boundary authoring chat", () => {
+  it("retains the current phase in provider status and restores nested progress context", async () => {
+    const memory = memoryIo();
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    try {
+      await chat.progress("Preparing action 1 of 2", async () => {
+        for (const phase of ["started", "tool_started", "tool_delta", "completed"] as const) {
+          chat.providerStream({ phase, characters: 64 });
+          expect(memory.setStatus.mock.lastCall?.[0]).toMatch(/^Preparing action 1 of 2 · /u);
+        }
+        await chat.progress("Checking attached rules", async () => {
+          chat.providerStream({ phase: "started" });
+          expect(memory.setStatus.mock.lastCall?.[0]).toMatch(/^Checking attached rules · /u);
+        });
+        expect(memory.setStatus).toHaveBeenLastCalledWith("Preparing action 1 of 2");
+        chat.providerStream({ phase: "started" });
+        expect(memory.setStatus.mock.lastCall?.[0]).toMatch(/^Preparing action 1 of 2 · /u);
+      });
+      expect(memory.clearStatus).toHaveBeenCalled();
+      await chat.progress("Preparing action 2 of 2", async () => {
+        chat.providerStream({ phase: "started" });
+        expect(memory.setStatus.mock.lastCall?.[0]).toMatch(/^Preparing action 2 of 2 · /u);
+      });
+    } finally { chat.close(); }
+  });
+  it.each([
+    ["escape", "structured"], ["ctrl-c", "structured"], ["escape", "prose"], ["ctrl-c", "prose"],
+  ])("aborts a real pending provider stream through terminal %s (%s) without a late tool or next turn", async (key, responseKind) => {
+    let started!: () => void, disconnected!: () => void;
+    const streaming = new Promise<void>((resolve) => { started = resolve; });
+    const connectionClosed = new Promise<void>((resolve) => { disconnected = resolve; });
+    let requests = 0;
+    const server = createServer((request, response) => {
+      requests++;
+      request.resume();
+      request.on("end", () => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: responseKind === "prose"
+          ? { content: "Checking the reviewed draft. " }
+          : { tool_calls: [{ index: 0, id: "partial", function: { name: "runner__inspect_draft", arguments: "{" } }] } }] })}\n\n`);
+        response.on("close", disconnected);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Test listener unavailable");
+    const readable = Object.assign(new PassThrough(), { isTTY: true, isRaw: false, setRawMode(value: boolean) { this.isRaw = value; } });
+    const writable = Object.assign(new PassThrough(), { isTTY: true, columns: 110, rows: 30 });
+    const output: string[] = [];
+    writable.on("data", (chunk) => output.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+    const chat = createBoundaryAuthoringChat({ io, color: false });
+    const tools = [{ name: "runner.inspect_draft", description: "Inspect disabled metadata", input_schema: { type: "object", properties: {} } }];
+    const authorityDigest = askToolSurfaceDigest(tools), callTool = vi.fn();
+    const configuration = resolveAskProviderConfiguration({ provider: "openai_compatible", model: "fixture", base_url: `http://127.0.0.1:${address.port}/v1`,
+      authority_digest: authorityDigest, egress_acknowledged: true }, {}, new Date());
+    try {
+      const pending = chat.progress("Drafting", () => runAskProviderTurn({ configuration, tools, authorityDigest,
+        question: "Prepare a disabled draft", history: [], signal: new AbortController().signal, conversationalAuthoring: true,
+        gateway: { mode: "authoring", listTools: () => tools, callTool, close: async () => undefined },
+        dependencies: { signal: chat.signal, onStream: (event) => {
+          chat.providerStream({ ...event, operator_text: responseKind === "prose" });
+          if (event.phase === (responseKind === "prose" ? "text_delta" : "tool_delta")) started();
+        } },
+      }));
+      const refused = expect(pending).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      await streaming;
+      if (responseKind === "prose") {
+        await vi.waitFor(() => expect(output.join("")).toContain("Checking the reviewed draft."));
+      }
+      expect(output.join("")).toContain("esc to interrupt");
+      if (key === "escape") readable.emit("keypress", "\u001b", { name: "escape" });
+      else readable.write("\u0003");
+      await refused;
+      await connectionClosed;
+      expect(chat.signal?.aborted).toBe(true);
+      expect(callTool).not.toHaveBeenCalled(); expect(requests).toBe(1);
+      const next = vi.fn();
+      await expect(chat.progress("Next outcome", next)).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      expect(next).not.toHaveBeenCalled();
+      expect(output.join("")).toContain("Cancelling");
+    } finally {
+      chat.close(); readable.destroy(); writable.destroy();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it.each(["composer", "readline"])("Ctrl-C settles the current literal %s prompt without aborting the next question", async (surface) => {
+    const readable = Object.assign(new PassThrough(), surface === "composer"
+      ? { isTTY: true, isRaw: false, setRawMode(value: boolean) { this.isRaw = value; } } : { isTTY: true });
+    const writable = Object.assign(new PassThrough(), { isTTY: true, columns: 100, rows: 30 });
+    const output: string[] = [];
+    writable.on("data", (chunk) => output.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+    const chat = createBoundaryAuthoringChat({ io, color: false });
+    try {
+      const pending = chat.progress("Clarifying", () => chat.readLiteral!("Current exact answer"));
+      await vi.waitFor(() => expect(output.join("")).toContain("Current exact answer"));
+      readable.write("\u0003");
+      await expect(pending).resolves.toBeUndefined();
+      expect(chat.signal?.aborted).toBe(false);
+      const next = chat.readLiteral!("Next exact answer");
+      await vi.waitFor(() => expect(output.join("")).toContain("Next exact answer"));
+      readable.write("Reviewed answer\r");
+      await expect(next).resolves.toBe("Reviewed answer");
+    } finally { chat.close(); readable.destroy(); writable.destroy(); }
+  });
+
+  it("awaits cancellation cleanup and isolates another chat and a newly resumed chat", async () => {
+    const memory = memoryIo(), otherMemory = memoryIo();
+    let interrupt!: () => void;
+    const unregister = vi.fn();
+    memory.io.onInterrupt = (handler) => { interrupt = handler; return unregister; };
+    const chat = createBoundaryAuthoringChat({ io: memory.io }), other = createBoundaryAuthoringChat({ io: otherMemory.io });
+    let release!: () => void, settled = false;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const pending = chat.progress("Waiting", () => held).finally(() => { settled = true; });
+    const refused = expect(pending).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    interrupt();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(await other.progress("Independent", async () => "ready")).toBe("ready");
+    release(); await refused;
+    chat.close(); other.close();
+    expect(unregister).toHaveBeenCalledOnce();
+    const resumed = createBoundaryAuthoringChat({ io: memoryIo().io });
+    expect(await resumed.progress("Resume", async () => "ready")).toBe("ready");
+    expect(resumed.signal?.aborted).toBe(false);
+    resumed.close();
+  });
+
+  it("keeps Escape at an operator clarification as a pause, without poisoning a new chat", async () => {
+    const readable = Object.assign(new PassThrough(), { isTTY: true, isRaw: false, setRawMode(value: boolean) { this.isRaw = value; } });
+    const writable = Object.assign(new PassThrough(), { isTTY: true, columns: 80, rows: 24 });
+    writable.resume();
+    const chat = createBoundaryAuthoringChat({ io: createTerminalAnalyticsShellIo({ readable, writable, terminal: true }) });
+    try {
+      const pending = chat.progress("Clarifying", async () => {
+        const answer = await chat.readOperator!();
+        if (answer === undefined) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
+        return answer;
+      });
+      const refused = expect(pending).rejects.toThrow("ACTION_RULE_MODEL_DRAFT_CANCELLED");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      readable.emit("keypress", "\u001b", { name: "escape" });
+      await refused;
+    } finally { chat.close(); readable.destroy(); writable.destroy(); }
+    const resumed = createBoundaryAuthoringChat({ io: memoryIo({ reads: ["Reviewed answer"] }).io });
+    expect(await resumed.progress("New clarification", () => resumed.readOperator!())).toBe("Reviewed answer");
+    resumed.close();
+  });
+
   it("keeps the concrete writer blocker on the primary recovery menu without model narration", async () => {
     const memory = memoryIo({ choices: ["pause"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });

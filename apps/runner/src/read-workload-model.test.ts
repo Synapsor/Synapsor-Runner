@@ -90,6 +90,55 @@ describe("model-assisted Read workload mapping", () => {
     expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ resource: "public.tbl_7", field: "col_2" }));
   });
 
+  it.each(["col_2 means the order lifecycle status", "Order lifecycle status"])(
+    "accepts verbatim naming evidence from the answered clarification: %s", async (answer) => {
+      const boundary = opaqueGeneratedBoundary();
+      boundary.pack.resources[0]!.label = "Orders";
+      const before = structuredClone(boundary);
+      const requestJson = vi.fn().mockResolvedValueOnce({ status: 200, body: { output: [{
+        type: "function_call", call_id: "naming_question", name: "runner__submit_read_workloads",
+        arguments: JSON.stringify({ clarification_request: { resource: "public.tbl_7", field: "col_2",
+          reason: "Unknown coded field meaning", question: "What does col_2 represent?" } }),
+      }] } }).mockResolvedValue({ status: 200, body: { output: [{
+        type: "function_call", call_id: "answered_mapping", name: "runner__submit_read_workloads",
+        arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read order lifecycle",
+          plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
+          operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: answer }] }),
+      }] } });
+      const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer }));
+      const result = await generateModelReadWorkload({ name: "answered_meaning", allowedQuestions: ["Read my order lifecycle"],
+        provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
+        env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+      expect(clarificationHandler).toHaveBeenCalledOnce();
+      expect(requestJson).toHaveBeenCalledTimes(2);
+      expect(result.analysis.status).toBe("ready");
+      expect(boundary).toEqual(before);
+    },
+  );
+
+  it.each(["model_question", "unanswered_field"])("does not manufacture naming evidence from %s", async (kind) => {
+    const boundary = opaqueGeneratedBoundary();
+    boundary.pack.resources[0]!.label = "Orders";
+    const answer = "Order lifecycle status";
+    const question = "Does col_2 mean payment eligibility?";
+    const requestJson = vi.fn().mockResolvedValueOnce({ status: 200, body: { output: [{
+      type: "function_call", call_id: "naming_question", name: "runner__submit_read_workloads",
+      arguments: JSON.stringify({ clarification_request: { resource: "public.tbl_7", field: "col_2", reason: "Unknown meaning", question } }),
+    }] } }).mockResolvedValue({ status: 200, body: { output: [{
+      type: "function_call", call_id: "fabricated_answer", name: "runner__submit_read_workloads",
+      arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read orders",
+        plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
+        operator_meanings: [{ resource: "public.tbl_7", field: kind === "unanswered_field" ? "col_1" : "col_2",
+          operator_quote: kind === "model_question" ? question : answer }] }),
+    }] } });
+    const error = await generateModelReadWorkload({ name: "invalid_answered_meaning", allowedQuestions: ["Read my orders"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
+      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson },
+      clarificationHandler: async () => ({ state: "answered", answer }) }).catch((error) => error);
+    expect(error).toBeInstanceOf(ReadWorkloadDraftError);
+    expect(error.message).toContain("READ_WORKLOAD_NAMING_EVIDENCE_INVALID");
+  });
+
   it("keeps a long original job while requesting concise schema-compatible plan descriptions", async () => {
     const job = "Help customers read their account, bills, services, support history, and eligible plan offers. ".repeat(4).trim();
     expect(job.length).toBeGreaterThan(280);
@@ -757,6 +806,70 @@ describe("model-assisted Read workload mapping", () => {
     expect(result.analysis.status).toBe("ready");
     expect(result.workload.allowed[0]?.plan).not.toHaveProperty("tenant_id");
     expect(result.workload.allowed[0]?.plan).not.toHaveProperty("principal_id");
+  });
+
+  it.each([
+    "Is public.orders.id an approved opaque record reference for signed-in users, or is there another reviewed field that should be used for that reference?",
+    "Which reviewed public.orders field provides the opaque record reference for users to select an order?",
+  ])("resolves opaque selection mechanics without exposing a database key: %s", async (question) => {
+    const boundary = generatedBoundary();
+    boundary.pack.resources[0]!.model_withheld_fields = ["id"];
+    const before = structuredClone(boundary);
+    const requestJson = vi.fn().mockResolvedValueOnce({ status: 200, body: { output: [{
+      type: "function_call", call_id: "selection_question", name: "runner__submit_read_workloads",
+      arguments: JSON.stringify({ clarification_request: { resource: "public.orders",
+        reason: "The user must select a record without exposing its internal database identity.", question } }),
+    }] } }).mockResolvedValueOnce(diagnosticResponse("valid"));
+    const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
+    const result = await generateModelReadWorkload({ name: "private_selection", allowedQuestions: ["Show my orders using opaque selection references"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, env: { OPENAI_API_KEY: "test-key" },
+      egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+    expect(clarificationHandler).not.toHaveBeenCalled();
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    const initialPrompt = JSON.stringify(requestJson.mock.calls[0]?.[0].body);
+    const repairPrompt = JSON.stringify(requestJson.mock.calls[1]?.[0].body);
+    expect(initialPrompt).toContain("obj_");
+    expect(repairPrompt).toContain("not a database field");
+    expect(result.analysis.status).toBe("ready");
+    expect(result.workload.allowed[0]?.plan).toEqual({ kind: "rows", resource: "public.orders", select: ["status"] });
+    expect(boundary).toEqual(before);
+  });
+
+  it.each([
+    "Does this field identify the customer-facing invoice reference or the order lifecycle status?",
+    "Does this opaque reference printed on the customer's bill mean the invoice number or the support case number?",
+  ])("keeps ambiguous customer-facing reference meaning as an operator decision: %s", async (question) => {
+    const requestJson = vi.fn().mockResolvedValueOnce({ status: 200, body: { output: [{
+      type: "function_call", call_id: "business_reference_question", name: "runner__submit_read_workloads",
+      arguments: JSON.stringify({ clarification_request: { resource: "public.orders", field: "status",
+        reason: "This business reference has an ambiguous meaning.",
+        question } }),
+    }] } }).mockResolvedValueOnce(diagnosticResponse("valid"));
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "It is the order lifecycle status." }));
+    const result = await generateModelReadWorkload({ name: "business_reference", allowedQuestions: ["Show my order status"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: generatedBoundary(), env: { OPENAI_API_KEY: "test-key" },
+      egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(result.analysis.status).toBe("ready");
+  });
+
+  it("bounds a repeated opaque-reference repair without asking the operator or accepting a draft", async () => {
+    const boundary = generatedBoundary();
+    const before = structuredClone(boundary);
+    const requestJson = vi.fn().mockResolvedValue({ status: 200, body: { output: [{
+      type: "function_call", call_id: "repeated_reference_question", name: "runner__submit_read_workloads",
+      arguments: JSON.stringify({ clarification_request: { resource: "public.orders",
+        reason: "Need the opaque record reference.", question: "Which column supplies the opaque selection reference?" } }),
+    }] } });
+    const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
+    const error = await generateModelReadWorkload({ name: "repeated_reference", allowedQuestions: ["Show my orders"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, env: { OPENAI_API_KEY: "test-key" },
+      egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler }).catch((error) => error);
+    expect(error).toBeInstanceOf(ReadWorkloadDraftError);
+    expect(error.message).toContain("READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED");
+    expect(clarificationHandler).not.toHaveBeenCalled();
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(boundary).toEqual(before);
   });
 
   it("intercepts a guessed opaque plan and requires a resource clarification before accepting it", async () => {
