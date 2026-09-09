@@ -49,6 +49,44 @@ describe("model-authored Action Rule draft compilation", () => {
       .runner_evidence.actions[compiled.rule.outcome]!;
     expect(missing.effect).toMatchObject({ version_advance: null, source_fields_modified: ["status"] });
   });
+  it.each(["boundary", "tenant", "tenant_principal", "tenant_object", "capability"] as const)(
+    "derives exact approval-history selectors, not ID-based pools (%s)", (scope) => {
+      const compile = (outcome: string, filter: boolean) => {
+        const candidate = draft();
+        candidate.name = candidate.outcome = outcome;
+        candidate.approval = { ...candidate.approval, class_name: `${outcome}.approval`, mode: "policy",
+          auto_approve_when: candidate.require, shared_limits: [{ id: `${outcome}.limit`, kind: "count", scope,
+            maximum: 3, window_seconds: 86_400, ...(filter ? { capability: outcome } : {}) },
+          { id: `${outcome}.required`, kind: "count", scope: scope === "boundary" || scope === "capability" ? "tenant" : "boundary",
+            maximum: 100, window_seconds: 86_400 }] };
+        return compileActionRuleModelDraft({ draft: candidate, builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest });
+      };
+      const actions = [compile("billing.first", false), compile("billing.second", false)];
+      const before = structuredClone(actions);
+      const evidence = policyCoverageDraft({ read: boundary(), decisions: [], actions });
+      const first = evidence.runner_evidence.actions["billing.first"]!.automatic_limits[0]!;
+      const second = evidence.runner_evidence.actions["billing.second"]!.automatic_limits[0]!;
+      expect(first.id).not.toBe(second.id);
+      expect(first.history_selector).toEqual({
+        action_boundary_name: actions[0]!.loaded.authority.action_boundary.name, approval_status: "approved",
+        window_seconds: 86_400, time_bounds: "inclusive: now - window_seconds through now",
+        capability: scope === "capability" ? "billing.first" : null,
+        tenant: scope === "boundary" || scope === "capability" ? null : "current_proposal.tenant_id",
+        principal: scope === "tenant_principal" ? "current_proposal.principal" : null,
+        business_object: scope === "tenant_object" ? "current_proposal.business_object" : null,
+        object_id: scope === "tenant_object" ? "current_proposal.object_id" : null,
+      });
+      expect(first.applies_to_outcome).toBe(true);
+      if (scope === "capability") expect(first.history_selector).not.toEqual(second.history_selector);
+      else expect(first.history_selector).toEqual(second.history_selector);
+      const filtered = policyCoverageDraft({ read: boundary(), decisions: [], actions: [compile("billing.first", true), compile("billing.second", true)] });
+      expect(filtered.runner_evidence.actions["billing.first"]!.automatic_limits[0]!.history_selector.capability).toBe("billing.first");
+      expect(filtered.runner_evidence.actions["billing.second"]!.automatic_limits[0]!.history_selector.capability).toBe("billing.second");
+      expect(evidence.runner_evidence.runtime_contract.approval_counter_selection.not_history_filters)
+        .toEqual(["limit.id", "approval_class", "action_boundary_digest"]);
+      expect(actions).toEqual(before);
+    },
+  );
   it("refreshes business search from a reviewed draft without changing tool schemas or touching source state", async () => {
     const compile = (candidate: ActionRuleModelDraftV1) => compileActionRuleModelDraft({ draft: candidate,
       builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest });

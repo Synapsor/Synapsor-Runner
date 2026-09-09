@@ -8,6 +8,7 @@ import {
   type RuntimeConfig,
 } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type {
   ActionRuleSpecV1,
   ActionRuleScalarTypeSpecV1,
@@ -17,10 +18,17 @@ import type {
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withProjectRuntimeCutover } from "./project-runtime-admission.js";
 import type { LoadedActiveActionRuleAuthorityV1 } from "./action-rule-authority.js";
+import * as actionAuthority from "./action-rule-authority.js";
+import { createProjectRuntimeStore, migrateProjectControlPolicies } from "./control-policy-store.js";
+import { encodeOperatorAuthority, validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
+import { encodeOperatorExecutionPolicy, executionBindingDigest, readOperatorExecutionConfig } from "./control-policy-execution.js";
+import * as executionPolicy from "./control-policy-execution.js";
+import { publishPolicyConfiguration } from "./control-policy-config-publication.js";
 import {
   createOptionalActionRuleRuntimeServices,
   createOptionalReadActionRuleRuntimeServices,
@@ -31,7 +39,7 @@ const readBoundary = `sha256:${"b".repeat(64)}` as const;
 const key = Buffer.alloc(32, 17);
 let projectRoot: string;
 beforeEach(async () => { projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-semantic-action-runtime-")); });
-afterEach(async () => { await fs.rm(projectRoot, { recursive: true, force: true }); });
+afterEach(async () => { vi.restoreAllMocks(); await fs.rm(projectRoot, { recursive: true, force: true }); });
 
 const config: RuntimeConfig = {
   version: 1,
@@ -51,6 +59,169 @@ const config: RuntimeConfig = {
 };
 
 describe("composed semantic Action runtime", () => {
+  it("queues a third separately reviewed writer on the same held client without changing its read or trust context", async () => {
+    const f = await heldExecutionFixture();
+    try {
+      const tools = f.services.semanticActions.listTools();
+      for (const outcome of f.outcomes.slice(0, 2)) expect(await f.request(outcome)).toMatchObject({ execution: "queued", source_database_changed: false });
+      const before = structuredClone(f.initial);
+      f.addThirdAuthority();
+      await f.publish(f.current);
+      await expect(readOperatorExecutionConfig({ projectRoot, config: f.initial, policyStore: f.binding }))
+        .rejects.toMatchObject({ code: "POLICY_EXECUTION_BINDING_CHANGED" });
+      expect(executionBindingDigest(f.current)).not.toBe(executionBindingDigest(f.initial));
+      expect(await f.services.semanticActions.callTool("app.describe_actions", {})).toMatchObject({ actions: expect.arrayContaining([
+        expect.objectContaining({ outcome: f.outcomes[2] }),
+      ]) });
+      const request = await f.request(f.outcomes[2]!);
+      expect(request).toMatchObject({ execution: "queued", proposal: { status: "approved" }, source_database_changed: false });
+      expect(await f.request(f.outcomes[2]!)).toMatchObject({ execution: "queued", request_disposition: "already_recorded", source_database_changed: false });
+      expect(await f.store.listWorkerQueue()).toHaveLength(3);
+      expect(await f.store.listProposals()).toHaveLength(3);
+      for (const proposal of await f.store.listProposals()) expect(await f.store.receipts(proposal.proposal_id)).toEqual([]);
+      expect(f.initial).toEqual(before);
+      expect(f.services.semanticActions.listTools()).toEqual(tools);
+      for (const [input] of f.facts.mock.calls) expect(input.config).toEqual(before);
+    } finally { await f.close(); }
+  });
+
+  it.each(["unreviewed_alias", "reviewed_trust", "reviewed_read", "reviewed_alias_scope", "pending", "queue_failure", "policy_changed_after_read"] as const)(
+    "holds an approved request safely with a sanitized actionable diagnostic: %s", async (mode) => {
+      const f = await heldExecutionFixture();
+      const log = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        f.addThirdAuthority();
+        let expectedCode = "POLICY_RUNTIME_CONFIG_CHANGED";
+        if (mode === "reviewed_trust") f.current.trusted_context = { provider: "static_dev", values: { tenant_id: "other", principal: "private_changed_identity" } };
+        if (mode === "reviewed_read") f.current.sources!.local_postgres!.read_url_env = "PRIVATE_CHANGED_READ_URL";
+        if (mode === "reviewed_alias_scope") f.current.sources![f.alias]!.statement_timeout_ms = 4321;
+        if (mode === "unreviewed_alias") {
+          expectedCode = "POLICY_EXECUTION_BINDING_CHANGED";
+          await fs.writeFile(f.configPath, JSON.stringify(f.current));
+        } else await f.publish(f.current);
+        let journal: string | undefined;
+        if (mode === "pending") {
+          expectedCode = "POLICY_CONFIG_PUBLICATION_PENDING";
+          journal = path.join(projectRoot, ".synapsor/control-policy/publications", `${canonicalJsonDigest("synapsor.actions.runner.json").slice(7)}.json`);
+          await fs.writeFile(journal, "private pending publication fixture");
+        }
+        if (mode === "queue_failure") {
+          expectedCode = "COMMAND_REJECTED";
+          vi.spyOn(f.store, "enqueueWorkerProposal").mockRejectedValue(new Error("postgres://private_user:private_secret@private_host/private_database"));
+        }
+        if (mode === "policy_changed_after_read") {
+          expectedCode = "POLICY_REVISION_CONFLICT";
+          const read = executionPolicy.readOperatorExecutionConfig;
+          vi.spyOn(executionPolicy, "readOperatorExecutionConfig").mockImplementationOnce(async (input) => {
+            const result = await read(input);
+            await f.revoke();
+            return result;
+          });
+        }
+        const configBefore = await fs.readFile(f.configPath, "utf8");
+        const epoch = (await f.binding.repository.deployment(f.binding.deployment_id))!.epoch;
+        expect(await f.request(f.outcomes[2]!)).toMatchObject({ execution: "held", proposal: { status: "approved" }, source_database_changed: false,
+          result_summary: { next: expect.stringContaining("retry this same request") } });
+        expect(await f.store.listWorkerQueue()).toEqual([]);
+        const proposals = await f.store.listProposals();
+        expect(proposals).toHaveLength(1);
+        expect(await f.store.receipts(proposals[0]!.proposal_id)).toEqual([]);
+        expect(await fs.readFile(f.configPath, "utf8")).toBe(configBefore);
+        if (journal) expect(await fs.readFile(journal, "utf8")).toBe("private pending publication fixture");
+        expect((await f.binding.repository.deployment(f.binding.deployment_id))!.epoch).toBe(epoch + (mode === "policy_changed_after_read" ? 1 : 0));
+        const logs = log.mock.calls.map(([text]) => String(text)).join("");
+        expect(logs).toContain('"event":"semantic_action_execution_held"');
+        expect(logs).toContain(`"code":"${expectedCode}"`);
+        expect(logs).toContain("retry the same approved request");
+        expect(logs).not.toMatch(/private_|PRIVATE_|postgres:\/\//);
+      } finally { await f.close(); }
+    });
+
+  it("does not reuse the held client's execution export after governed execution is revoked", async () => {
+    const f = await heldExecutionFixture();
+    try {
+      f.addThirdAuthority();
+      await f.publish(f.current);
+      await f.revoke();
+      expect(await f.request(f.outcomes[2]!)).toMatchObject({ execution: "not_enabled", source_database_changed: false });
+      expect(f.initial.supervised_worker!.enabled).toBe(true);
+      expect(await f.store.listWorkerQueue()).toEqual([]);
+    } finally { await f.close(); }
+  });
+
+  it("refreshes only the selected nested configuration using its own relative-path base", async () => {
+    const f = await heldExecutionFixture({ configName: "runtime/custom.runner.json", relativeBindings: true });
+    const canonicalPath = path.join(projectRoot, "synapsor.actions.runner.json");
+    const canonical = JSON.stringify({ ...f.initial, trusted_context: { provider: "environment" } });
+    try {
+      await fs.writeFile(canonicalPath, canonical);
+      f.addThirdAuthority();
+      await f.publish(f.current);
+      expect(JSON.parse(await fs.readFile(f.configPath, "utf8")).action_rules.project_root).toBe("..");
+      expect(await f.request(f.outcomes[2]!)).toMatchObject({ execution: "queued", proposal: { status: "approved" }, source_database_changed: false });
+      expect(await f.store.listWorkerQueue()).toHaveLength(1);
+      expect(await fs.readFile(canonicalPath, "utf8")).toBe(canonical);
+      for (const [input] of f.facts.mock.calls) expect(input.config).toEqual(f.initial);
+    } finally { await f.close(); }
+  });
+
+  it.each(["missing", "pending", "stale", "revoked"] as const)("fails closed for the selected custom publication: %s", async (mode) => {
+    const f = await heldExecutionFixture({ configName: "runtime/custom.runner.json" });
+    const log = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      f.addThirdAuthority();
+      await f.publish(f.current);
+      const canonicalPath = path.join(projectRoot, "synapsor.actions.runner.json");
+      const canonical = JSON.stringify(f.current);
+      await fs.writeFile(canonicalPath, canonical);
+      let journal: string | undefined;
+      if (mode === "missing") await fs.unlink(f.configPath);
+      if (mode === "stale") await fs.writeFile(f.configPath, JSON.stringify(f.initial));
+      if (mode === "pending") {
+        journal = path.join(projectRoot, ".synapsor/control-policy/publications", `${canonicalJsonDigest("runtime/custom.runner.json").slice(7)}.json`);
+        await fs.writeFile(journal, "private selected publication pending");
+      }
+      if (mode === "revoked") await f.revoke();
+      const epoch = (await f.binding.repository.deployment(f.binding.deployment_id))!.epoch;
+      const before = await fs.readFile(f.configPath, "utf8").catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      expect(await f.request(f.outcomes[2]!)).toMatchObject({ execution: mode === "revoked" ? "not_enabled" : "held", source_database_changed: false });
+      expect(await f.store.listWorkerQueue()).toEqual([]);
+      const proposals = await f.store.listProposals();
+      expect(proposals).toHaveLength(1);
+      expect(await f.store.receipts(proposals[0]!.proposal_id)).toEqual([]);
+      expect((await f.binding.repository.deployment(f.binding.deployment_id))!.epoch).toBe(epoch);
+      expect(await fs.readFile(canonicalPath, "utf8")).toBe(canonical);
+      if (before === undefined) await expect(fs.stat(f.configPath)).rejects.toMatchObject({ code: "ENOENT" });
+      else expect(await fs.readFile(f.configPath, "utf8")).toBe(before);
+      if (journal) expect(await fs.readFile(journal, "utf8")).toBe("private selected publication pending");
+      const expectedCode = { missing: "POLICY_RUNTIME_CONFIG_MISSING", pending: "POLICY_CONFIG_PUBLICATION_PENDING", stale: "POLICY_EXECUTION_BINDING_CHANGED", revoked: undefined }[mode];
+      if (expectedCode) expect(log.mock.calls.map(([text]) => String(text)).join("")).toContain(`"code":"${expectedCode}"`);
+    } finally { await f.close(); }
+  });
+
+  it.each(["unchanged", "binding_changed", "revoked"] as const)("does not guess a publication file for a config-only caller: %s", async (mode) => {
+    const f = await heldExecutionFixture({ configOnly: true });
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      let outcome = f.outcomes[0]!;
+      if (mode === "binding_changed") {
+        f.addThirdAuthority();
+        await f.publish(f.current);
+        outcome = f.outcomes[2]!;
+      } else {
+        await fs.writeFile(f.configPath, "not a runtime configuration");
+        if (mode === "revoked") await f.revoke();
+      }
+      const before = await fs.readFile(f.configPath, "utf8");
+      expect(await f.request(outcome)).toMatchObject({ execution: mode === "unchanged" ? "queued" : mode === "revoked" ? "not_enabled" : "held", source_database_changed: false });
+      expect(await f.store.listWorkerQueue()).toHaveLength(mode === "unchanged" ? 1 : 0);
+      expect(await fs.readFile(f.configPath, "utf8")).toBe(before);
+    } finally { await f.close(); }
+  });
+
   it.each(["active", "initially_inactive"])("holds %s discovery through its final authority checks", async (mode) => {
     const store = new ProposalStore();
     let authority = mode === "active" ? authorityFixture("active") : undefined;
@@ -690,9 +861,77 @@ describe("composed semantic Action runtime", () => {
   });
 });
 
+async function heldExecutionFixture(options: { configName?: string; configOnly?: boolean; relativeBindings?: boolean } = {}) {
+  const outcomes = ["billing.pause_notifications", "billing.pause_digest_notifications", "billing.pause_reminder_notifications"];
+  let authority = authorityFixture("active", { automaticApproval: true, outcomes: outcomes.slice(0, 2) });
+  vi.spyOn(actionAuthority, "createActiveActionRuleAuthorityLoader").mockReturnValue(async () => authority);
+  const storePath = path.join(projectRoot, "control.db"), configPath = path.join(projectRoot, options.configName ?? "synapsor.actions.runner.json");
+  const policy = (outcome: string, write_url_env: string) => ({ outcome, write_url_env,
+    action_boundary_digest: authority.authority.action_boundary.digest, mode: "supervised_worker" as const,
+    concurrency: 1, queue_limit: 10, lease_seconds: 60, max_attempts: 3, proposal_ttl_seconds: 3600,
+    rate_limit: { executions: 10, window_seconds: 60 }, worker_identity: "fixture_worker" });
+  const initial: RuntimeConfig = { ...structuredClone(config), storage: { sqlite_path: storePath }, action_rules: { project_root: projectRoot },
+    sources: { local_postgres: { engine: "postgres", read_url_env: "DATABASE_URL", write_url_env: "FIRST_WRITER", read_only: false,
+      receipts: { authority: "runner_ledger" } } },
+    supervised_worker: { enabled: true, profile: "staging", capabilities: [], outcomes: outcomes.slice(0, 2).map((outcome) => policy(outcome, "FIRST_WRITER")) } };
+  const records = [encodeOperatorAuthority({ type: "read_selection", selected_name: null }), encodeOperatorExecutionPolicy(initial)!];
+  const binding = (await migrateProjectControlPolicies({ projectRoot, config: initial, storePath, actor: "fixture_operator",
+    readLegacySnapshot: async () => ({ revisions: records, active: records.map((r) => ({ scope: r.scope, kind: r.kind, name: r.name, revision_id: r.revision_id })), drafts: [], provenance: [] }),
+    validateSnapshot: async (snapshot) => validateOperatorPolicySnapshot(snapshot, { runtimeConfig: initial }),
+  })).binding;
+  const serialize = (value: RuntimeConfig) => JSON.stringify(options.relativeBindings
+    ? { ...value, action_rules: { ...value.action_rules!, project_root: path.relative(path.dirname(configPath), projectRoot) || "." } } : value);
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(configPath, serialize(initial));
+  const runtimeStore = await createProjectRuntimeStore({ projectRoot, config: initial, storePath });
+  if (!(runtimeStore instanceof ProposalStore)) throw new Error("Expected the fixture's SQLite runtime store");
+  const store = runtimeStore;
+  const facts = vi.fn(async (input: Parameters<NonNullable<import("./semantic-action-runtime.js").ActionRuleRuntimeServiceInput["factSessionFactory"]>>[0]) => ({
+    fact_loader: { engine: "postgres" as const, load: async () => [{ preference_id: "preference-42", account_id: "acct_northstar",
+      principal_id: "customer_maya", status: "active", version: 4 }] }, close: async () => undefined,
+  }));
+  const services = (await createOptionalActionRuleRuntimeServices({ projectRoot, config: initial, store, key,
+    ...(options.configOnly ? {} : { configPath }),
+    deployment_scope: "held_fixture", workflow_session_id: "held_fixture", factSessionFactory: facts }))!;
+  const subjects = new Map<string, string>();
+  const issue = () => services.subjectReferences.issue({ source_id: "local_postgres", read_boundary_digest: readBoundary,
+    generation_lock_fingerprint: lock, workflow_session_id: services.workflow_session_id, resource: "billing.preferences",
+    ...subjectReferenceScopeFingerprints({ key, deployment_scope: "held_fixture", source_id: "local_postgres", tenant: "acct_northstar", principal: "customer_maya" }),
+    evidence_bundle_id: "held_fixture", observations: [{ row_index: 0, primary_key_value: "preference-42", observed_version_value: 4 }],
+  });
+  const current = structuredClone(initial);
+  const alias = `local_postgres_writer_${canonicalJsonDigest({ source: "local_postgres", write_url_env: "THIRD_WRITER" }).slice(7, 19)}`;
+  return { initial, current, configPath, alias, outcomes, services, store, binding, facts,
+    addThirdAuthority: () => {
+      authority = authorityFixture("active", { automaticApproval: true, outcomes });
+      current.sources![alias] = { ...initial.sources!.local_postgres!, write_url_env: "THIRD_WRITER" };
+      current.supervised_worker!.outcomes = outcomes.map((outcome, index) => policy(outcome, index === 2 ? "THIRD_WRITER" : "FIRST_WRITER"));
+    },
+    publish: async (next: RuntimeConfig) => {
+      const revision = encodeOperatorExecutionPolicy(next)!;
+      await publishPolicyConfiguration({ projectRoot, configPath, binding, before: await fs.readFile(configPath, "utf8"), after: serialize(next),
+        change: { expected_epoch: (await binding.repository.deployment(binding.deployment_id))!.epoch, revisions: [revision],
+          active: [{ scope: revision.scope, kind: revision.kind, name: revision.name, revision_id: revision.revision_id }],
+          event: { event_id: randomUUID(), actor: "fixture_operator", occurred_at: new Date().toISOString(), receipt: { operation: "review_execution" } } } });
+    },
+    revoke: async () => {
+      const revision = records[1]!;
+      await binding.repository.commit({ deployment_id: binding.deployment_id,
+        expected_epoch: (await binding.repository.deployment(binding.deployment_id))!.epoch,
+        revisions: [], active: [{ scope: revision.scope, kind: revision.kind, name: revision.name, revision_id: null }],
+        event: { event_id: randomUUID(), actor: "fixture_operator", occurred_at: new Date().toISOString(), receipt: { operation: "revoke_execution" } } });
+    },
+    request: async (outcome: string) => {
+      if (!subjects.has(outcome)) subjects.set(outcome, (await issue())[0]!.ref);
+      return services.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome, subject_refs: { preference: subjects.get(outcome)! } });
+    },
+    close: async () => { await store.close(); await binding.close(); },
+  };
+}
+
 function authorityFixture(
   requiredStatus: "active" | "paused",
-  options: { singleOrganization?: string; automaticApproval?: boolean; requiredApprovals?: number; sharedApprovalLimits?: boolean } = {},
+  options: { singleOrganization?: string; automaticApproval?: boolean; requiredApprovals?: number; sharedApprovalLimits?: boolean; outcomes?: string[] } = {},
 ): LoadedActiveActionRuleAuthorityV1 {
   const stringId = { kind: "string", max_length: 64, comparison: "exact" } as const;
   const statusType: ActionRuleScalarTypeSpecV1 = {
@@ -802,7 +1041,7 @@ function authorityFixture(
     approval_class: options.sharedApprovalLimits ? "billing.stock_change" : "billing.standard_change",
     ttl_seconds: 300,
   };
-  const rules = options.sharedApprovalLimits
+  const rules = options.outcomes ? options.outcomes.map((outcome) => ({ ...structuredClone(rule), name: outcome, outcome })) : options.sharedApprovalLimits
     ? [rule, {
       ...structuredClone(rule),
       name: "billing.pause_digest_notifications",
@@ -814,6 +1053,10 @@ function authorityFixture(
     ? [{ id: `${prefix}_boundary_24h`, kind: "count" as const, scope: "boundary" as const, maximum: 10, window_seconds: 86_400 }, {
       id: `${prefix}_tenant_24h`, kind: "count" as const, scope: "tenant" as const, maximum: 3, window_seconds: 86_400,
     }]
+    : options.outcomes ? [
+      { id: "held_boundary", kind: "count" as const, scope: "boundary" as const, maximum: 10, window_seconds: 86_400 },
+      { id: "held_tenant", kind: "count" as const, scope: "tenant" as const, maximum: 3, window_seconds: 86_400 },
+    ]
     : [{
       id: "billing_pause_action_24h",
       kind: "count" as const,

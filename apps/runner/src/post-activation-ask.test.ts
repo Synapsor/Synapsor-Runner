@@ -565,6 +565,7 @@ describe("post-activation Ask handoff", () => {
     expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", includeActions: true,
       selection: { route: "mcp-client", client: "claude-code" } }, {
       env: { WRITER_URL: "secret-writer", ...(configured ? { ACCOUNT_ENV: "private-account", USER_ENV: "private-user" } : {}) },
+      readRuntimeIdentity: async () => "local_environment",
       runMcpInstall: async () => 0, confirmLaunchCheck: async () => true,
       checkClientLaunch: async () => ({ ok: true, messages: [] }),
       readRuntimeBindings: async () => { if (mode === "unavailable") throw new Error("Unavailable"); return [{ role: "tenant", environment: "ACCOUNT_ENV" }, { role: "principal", environment: "USER_ENV" }]; },
@@ -583,7 +584,24 @@ describe("post-activation Ask handoff", () => {
     else expect(writes.join("")).toContain(mode === "unavailable" ? "Worker not started: the reviewed identity requirements could not be loaded"
       : "Worker not started: this local execution mode also requires trusted identity in ACCOUNT_ENV, USER_ENV");
     expect(run).not.toHaveBeenCalled();
-    expect(writes.join("")).not.toMatch(/secret-writer|private-account|private-user/);
+    const output = writes.join("");
+    expect(output).not.toMatch(/secret-writer|private-account|private-user|worker is running|customer use ready/i);
+    const executionStatus = "Client mode: execution configured; worker not started by setup; worker health not checked.";
+    expect(output).toContain(executionStatus);
+    expect(output.split("Client mode:")).toHaveLength(2);
+    expect(output.indexOf(executionStatus)).toBeLessThan(output.indexOf("  cd "));
+    if (mode === "missing") {
+      expect(output).toContain("LOCAL STDIO MCP CONFIGURED; NOT READY FOR CUSTOMER USE");
+      expect(output).toContain("Local test identity still needed: ACCOUNT_ENV, USER_ENV.");
+      expect(output.indexOf(executionStatus)).toBeLessThan(output.indexOf("  export "));
+      expect(output.indexOf("NOT READY FOR CUSTOMER USE")).toBeLessThan(output.indexOf("  export "));
+      expect(output.indexOf("Local test identity still needed:")).toBeLessThan(output.indexOf("  export "));
+      expect(output.split("never model-provided values")).toHaveLength(2);
+      expect(output).not.toContain("Use trusted test identities locally;");
+    } else {
+      expect(output).toContain("LOCAL STDIO MCP CONFIGURED; CUSTOMER USE NOT VERIFIED");
+      expect(output).not.toContain("  export ");
+    }
   });
 
   it.each(["missing_writer", "missing_identity", "unavailable_identity", "decline"] as const)(
@@ -637,6 +655,8 @@ describe("post-activation Ask handoff", () => {
     expect(start).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
     expect(writes.join("")).toContain("proposal-only; automatic database updates are off");
+    expect(writes.join("").indexOf("proposal-only;")).toBeLessThan(writes.join("").indexOf("  cd "));
+    expect(writes.join("")).not.toContain("execution configured");
     expect(writes.join("")).not.toContain("worker run");
   });
 
@@ -1190,6 +1210,8 @@ describe("post-activation Ask handoff", () => {
     expect(scopedHandoff).toContain("export SYNAPSOR_TENANT_ID='<tenant>'");
     expect(scopedHandoff).toContain("export SYNAPSOR_PRINCIPAL='<principal>'");
     expect(scopedHandoff).toContain("Local test identity still needed");
+    expect(scopedHandoff).toContain("NOT READY FOR CUSTOMER USE");
+    expect(scopedHandoff.indexOf("Local test identity still needed")).toBeLessThan(scopedHandoff.indexOf("  export "));
     expect(scopedHandoff).toContain("four fixed tools");
     expect(scopedHandoff.split("\n").length).toBeLessThanOrEqual(10);
     expect(scopedHandoff).not.toContain("Connection diagnostics");
@@ -1211,6 +1233,16 @@ describe("post-activation Ask handoff", () => {
       .not.toMatch(/Bearer\s+[A-Za-z0-9_-]/u);
   });
 
+  it("does not treat unset local bindings as missing production authentication", () => {
+    const handoff = formatMcpClientHandoff("/tmp/test-project", "claude-code", true,
+      [{ role: "tenant", environment: "TENANT_CONTEXT" }, { role: "principal", environment: "PERSON_CONTEXT" }],
+      "production_authentication", []);
+    expect(handoff).toContain("CUSTOMER USE NOT VERIFIED");
+    expect(handoff).toContain("Production identity comes from the reviewed authenticated session");
+    expect(handoff).toContain("Do not copy fixture values or accept identity from a client prompt or model");
+    expect(handoff).not.toMatch(/NOT READY FOR CUSTOMER USE|Local test identity|export |TENANT_CONTEXT|PERSON_CONTEXT/);
+  });
+
   it("does not ask to replace already configured local identity bindings", () => {
     const bindings = [{ role: "tenant" as const, environment: "TENANT_CONTEXT" },
       { role: "principal" as const, environment: "PERSON_CONTEXT" }];
@@ -1224,6 +1256,8 @@ describe("post-activation Ask handoff", () => {
     expect(ready).toContain("values stay private");
     expect(ready).toContain("not authenticated or proven by the MCP handshake");
     expect(ready).toContain("Other terminals or already-running clients");
+    expect(ready).toContain("CUSTOMER USE NOT VERIFIED");
+    expect(ready).not.toContain("NOT READY FOR CUSTOMER USE");
   });
 
   it("requires an explicit local MCP client choice", async () => {

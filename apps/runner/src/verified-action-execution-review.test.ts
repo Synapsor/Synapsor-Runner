@@ -24,7 +24,7 @@ describe("guided execution recovery", () => {
 
   function fixture() {
     const session = {
-      promptText: vi.fn(async () => ""),
+      promptText: vi.fn(async () => "SYNAPSOR_DATABASE_WRITE_URL"),
       chooseOption: vi.fn(async () => "pause"),
       confirmActivation: vi.fn(async () => true),
       rememberDetails: vi.fn(), showReviewDetails: vi.fn(),
@@ -40,6 +40,62 @@ describe("guided execution recovery", () => {
     vi.mocked(enableSemanticSupervisedExecution).mockResolvedValue({ outcome: input.outcome, config_path: "/owned/project/runner.json" } as Awaited<ReturnType<typeof enableSemanticSupervisedExecution>>);
     return input;
   }
+
+  it("asks for an explicit writer name when the generic reference is absent, without choosing another credential", async () => {
+    const input = fixture();
+    input.env = { DATABASE_URL: "private-reader", OTHER_WRITE_URL: "private-other", CHOSEN_WRITE_URL: "private-chosen" };
+    vi.mocked(input.session.promptText).mockResolvedValueOnce("  CHOSEN_WRITE_URL  ");
+    vi.mocked(input.session.confirmActivation!).mockResolvedValueOnce(false);
+    expect(await reviewSemanticSupervisedExecution(input)).toBeUndefined();
+    expect(input.session.promptText).toHaveBeenCalledExactlyOnceWith(
+      "Write connection variable (Enter defers this outcome)", expect.objectContaining({
+        context: expect.arrayContaining([`Outcome: ${input.outcome}`]),
+      }));
+    expect(previewSemanticSupervisedExecution).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ writeUrlEnv: "CHOSEN_WRITE_URL" }));
+    expect(verifySemanticExecutionReadPosture).toHaveBeenCalledOnce();
+    expect(input.session.chooseOption).not.toHaveBeenCalled();
+    expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
+    expect(JSON.stringify(vi.mocked(input.session.promptText).mock.calls)).not.toMatch(/SYNAPSOR_DATABASE_WRITE_URL|private-/);
+  });
+
+  it.each([
+    { generic: undefined, answer: "" },
+    { generic: "", answer: "  " },
+    { generic: "   ", answer: "" },
+    { generic: undefined, answer: undefined },
+  ])("defers without a credential check, failed-check record or activation when no default is selected (%j)", async ({ generic, answer }) => {
+    const input = fixture();
+    input.env = { SYNAPSOR_DATABASE_WRITE_URL: generic, OTHER_WRITE_URL: "private-unselected" };
+    vi.mocked(input.session.promptText).mockResolvedValueOnce(answer);
+    const before = structuredClone(input.active);
+    expect(await reviewSemanticSupervisedExecution(input)).toBeUndefined();
+    expect(input.session.promptText).toHaveBeenCalledExactlyOnceWith(
+      "Write connection variable (Enter defers this outcome)", expect.anything());
+    expect(previewSemanticSupervisedExecution).not.toHaveBeenCalled();
+    expect(verifySemanticExecutionReadPosture).not.toHaveBeenCalled();
+    expect(input.session.chooseOption).not.toHaveBeenCalled();
+    expect(input.session.confirmActivation).not.toHaveBeenCalled();
+    expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
+    expect(await readPausedExecutionSetup(input.projectRoot, input.active.authority.action_boundary.digest)).toBeUndefined();
+    expect(input.active).toEqual(before);
+    expect(fs.readdirSync(input.projectRoot)).toEqual([]);
+  });
+
+  it("retains the configured generic reference on Enter and still checks credentials before consent", async () => {
+    const input = fixture();
+    input.env = { SYNAPSOR_DATABASE_WRITE_URL: "private-configured" };
+    vi.mocked(input.session.chooseOption!).mockResolvedValueOnce("change");
+    vi.mocked(input.session.promptText).mockResolvedValueOnce("");
+    vi.mocked(input.session.confirmActivation!).mockResolvedValueOnce(false);
+    expect(await reviewSemanticSupervisedExecution(input)).toBeUndefined();
+    expect(input.session.promptText).toHaveBeenCalledExactlyOnceWith(
+      "Write connection variable (Enter uses SYNAPSOR_DATABASE_WRITE_URL)", expect.anything());
+    expect(previewSemanticSupervisedExecution).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ writeUrlEnv: "SYNAPSOR_DATABASE_WRITE_URL" }));
+    expect(verifySemanticExecutionReadPosture).toHaveBeenCalledOnce();
+    expect(input.session.confirmActivation).toHaveBeenCalledOnce();
+    expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
+    expect(JSON.stringify(vi.mocked(input.session.promptText).mock.calls)).not.toContain("private-configured");
+  });
 
   it("does not offer execution consent when repaired RLS has made the saved Read contract stale", async () => {
     const input = fixture();
@@ -60,6 +116,7 @@ describe("guided execution recovery", () => {
     if (mode === "missing_environment") delete input.env.SECOND_WRITER_URL;
     vi.mocked(readSemanticExecutionReviewDefaults).mockResolvedValue({ write_url_env: "SECOND_WRITER_URL",
       ...(mode === "unpinned_worker" ? {} : { worker_identity: "reviewed_second_worker" }) });
+    vi.mocked(input.session.promptText).mockResolvedValueOnce("");
     vi.mocked(input.session.chooseOption!).mockResolvedValueOnce("check");
     vi.mocked(input.session.confirmActivation!).mockResolvedValueOnce(false);
     expect(await reviewSemanticSupervisedExecution(input)).toBeUndefined();
@@ -73,6 +130,24 @@ describe("guided execution recovery", () => {
       "Write connection variable (Enter uses SECOND_WRITER_URL)", expect.anything());
     expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
     expect(JSON.stringify(vi.mocked(input.session.chooseOption!).mock.calls)).not.toContain("postgres://");
+  });
+
+  it("does not bypass a saved custom writer's missing-credential check on Enter", async () => {
+    const input = fixture();
+    input.env = { SYNAPSOR_DATABASE_WRITE_URL: "private-unrelated" };
+    vi.mocked(readSemanticExecutionReviewDefaults).mockResolvedValue({ write_url_env: "SAVED_WRITE_URL" });
+    vi.mocked(input.session.promptText).mockResolvedValueOnce("");
+    vi.mocked(previewSemanticSupervisedExecution).mockRejectedValueOnce(new Error("Writer credential is not configured."));
+    expect((await reviewSemanticSupervisedExecution(input))?.tone).toBe("warning");
+    expect(input.session.promptText).toHaveBeenCalledExactlyOnceWith(
+      "Write connection variable (Enter uses SAVED_WRITE_URL)", expect.objectContaining({
+        context: expect.arrayContaining(["The saved reference is a review default only; its current credential and permissions will be checked."]),
+      }));
+    expect(previewSemanticSupervisedExecution).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ writeUrlEnv: "SAVED_WRITE_URL" }));
+    expect(verifySemanticExecutionReadPosture).not.toHaveBeenCalled();
+    expect(input.session.confirmActivation).not.toHaveBeenCalled();
+    expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
+    expect(await readPausedExecutionSetup(input.projectRoot, input.active.authority.action_boundary.digest)).toMatchObject({ outcome: input.outcome });
   });
 
   it("does not guess a connection when saved review defaults cannot be validated", async () => {

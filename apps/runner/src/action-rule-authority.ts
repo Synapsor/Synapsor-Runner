@@ -72,6 +72,12 @@ type ExistingActionRuleAuthorityV1 =
   | ActionRuleAuthorityDraftV1
   | ActionRuleAuthorityActivationV1;
 
+export type ActionRuleAuthorityRevisionBaseline = {
+  projectRoot: string;
+  drafts: Record<string, string>;
+  active: string | null;
+};
+
 /** Validates stored revisions without activating, rebinding or refreshing them. */
 export function parseStoredActionRuleAuthority(value: unknown): ExistingActionRuleAuthorityV1 {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidDraft();
@@ -294,11 +300,54 @@ export async function writeActionRuleAuthorityDraft(
   return withProjectAuthorityMutation(projectRootInput, (held) => writeActionRuleAuthorityDraftUnlocked(held.projectRoot, draft), { permit });
 }
 
-async function writeActionRuleAuthorityDraftUnlocked(projectRootInput: string, draft: ActionRuleAuthorityDraftV1): Promise<string> {
+function actionRevisionBaseline(projectRoot: string, drafts: ActionRuleAuthorityDraftV1[],
+  active: ActionRuleAuthorityActivationV1 | undefined): ActionRuleAuthorityRevisionBaseline {
+  // Authority digests omit review copy and provenance. Read-only policy epoch
+  // changes must not invalidate these exact Action records.
+  return { projectRoot, drafts: Object.fromEntries(drafts.map((draft) => [draft.authority.name, canonicalJsonDigest(draft)])),
+    active: active ? canonicalJsonDigest(active) : null };
+}
+
+function storedActionRevisionBaseline(projectRoot: string, current: ControlPolicyScopeSnapshot): ActionRuleAuthorityRevisionBaseline {
+  return actionRevisionBaseline(projectRoot, current.drafts.map(parseStoredActionDraft),
+    current.active[0] ? parseStoredActionActivation(current.active[0]).activation : undefined);
+}
+
+export async function readActionRuleAuthorityRevisionBaseline(projectRoot: string,
+  permit?: ProjectAuthorityMutationPermit): Promise<ActionRuleAuthorityRevisionBaseline> {
+  return withProjectAuthorityMutation(projectRoot, async (held) => {
+    const stored = await withStoredActionPolicies(held.projectRoot, undefined, async (_binding, current) =>
+      storedActionRevisionBaseline(held.projectRoot, current));
+    return stored ?? actionRevisionBaseline(held.projectRoot, await listActionRuleAuthorityDrafts(held.projectRoot),
+      await readActionRuleAuthorityActivation(held.projectRoot));
+  }, { permit });
+}
+
+export async function writeActionRuleAuthorityDraftIfCurrent(projectRoot: string, draft: ActionRuleAuthorityDraftV1,
+  expected: ActionRuleAuthorityRevisionBaseline, permit?: ProjectAuthorityMutationPermit): Promise<ActionRuleAuthorityRevisionBaseline> {
+  // Freeze both inputs before waiting for the permit; never adopt a competing
+  // writer's state as the expected baseline after an asynchronous merge.
+  const replacement = parseDraft(structuredClone(draft));
+  const baseline = structuredClone(expected);
+  return withProjectAuthorityMutation(projectRoot, async (held) => {
+    await writeActionRuleAuthorityDraftUnlocked(held.projectRoot, replacement, baseline, held);
+    return { ...baseline, drafts: { ...baseline.drafts, [replacement.authority.name]: canonicalJsonDigest(replacement) } };
+  }, { permit });
+}
+
+function assertActionRevisionBaseline(current: ActionRuleAuthorityRevisionBaseline, expected: ActionRuleAuthorityRevisionBaseline): void {
+  if (canonicalJsonDigest(current) !== canonicalJsonDigest(expected)) {
+    throw authorityError("ACTION_BOUNDARY_REVISION_CHANGED", "Saved Action rules or their review changed while this job was being prepared. Reopen the saved job to review the current revision. No Action draft was replaced or activated.");
+  }
+}
+
+async function writeActionRuleAuthorityDraftUnlocked(projectRootInput: string, draft: ActionRuleAuthorityDraftV1,
+  expected?: ActionRuleAuthorityRevisionBaseline, permit?: ProjectAuthorityMutationPermit): Promise<string> {
   const projectRoot = path.resolve(projectRootInput);
   parseDraft(draft);
   const target = draftPath(projectRoot, draft.authority.name);
   const stored = await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
+    if (expected) assertActionRevisionBaseline(storedActionRevisionBaseline(projectRoot, current), expected);
     const revision = storedActionRecord(parseDraft(draft));
     await commitImmutableControlPolicies(binding, { expected_epoch: current.epoch, revisions: [revision], active: [],
       drafts: [actionPointer(revision)], event: actionPolicyEvent("save_disabled_action", "local_operator", current, revision) });
@@ -311,6 +360,7 @@ async function writeActionRuleAuthorityDraftUnlocked(projectRootInput: string, d
     });
     return projectRelativePath(projectRoot, target);
   }
+  if (expected) assertActionRevisionBaseline(await readActionRuleAuthorityRevisionBaseline(projectRoot, permit), expected);
   await writePrivateJsonAtomic(target, draft);
   return projectRelativePath(projectRoot, target);
 }

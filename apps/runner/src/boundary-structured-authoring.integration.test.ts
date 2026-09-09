@@ -6,9 +6,13 @@ import type { InspectOptions, SchemaInspection } from "@synapsor-runner/schema-i
 import { onboard } from "./guided-start.js";
 import { structuredBoundaryAuthoringCommand } from "./boundary-structured-authoring.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
-import { readActionRuleAuthorityActivation, readActionRuleAuthorityDraft } from "./action-rule-authority.js";
+import { readActionRuleAuthorityActivation, readActionRuleAuthorityDraft, writeActionRuleAuthorityDraft } from "./action-rule-authority.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
+import { applyModelReadBoundaryExposureRevision, loadBoundaryReviewContext, prepareModelReadBoundaryExposureRevision, reloadReadReviewForModelRevision } from "./boundary-commands.js";
+import { commitBoundaryReviewMutationBatch } from "./boundary-review-mutation.js";
+import * as reviewMutation from "./boundary-review-mutation.js";
+import { policyCoverageDraft } from "./authoring-policy-evidence.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -103,6 +107,79 @@ describe("public structured Boundary authoring integration", () => {
     expect(output).toContain("Export a new structured draft");
     expect(stdout.mock.calls.map(([chunk]) => String(chunk)).join("")).not.toContain("fixture.invalid");
     expect(inspect.mock.calls.every(([input]) => input.databaseUrlEnv === "TEST_READ_URL")).toBe(true);
+
+    // A same-job Action save advances the shared epoch even when Read is
+    // unchanged. It must not trap the following label/privacy repair.
+    const beforeActionSave = await loadBoundaryReviewContext(root);
+    const completeCoverage = policyCoverageDraft({ read: beforeActionSave.candidate, decisions: [], actions: [], authority: revised! });
+    expect(completeCoverage.actions.map((action) => action.outcome).sort())
+      .toEqual(revised!.authority.rules.map((entry) => entry.rule.outcome).sort());
+    expect(completeCoverage.actions).toHaveLength(2);
+    for (const entry of revised!.authority.rules) {
+      const covered = completeCoverage.actions.find((action) => action.outcome === entry.rule.outcome)!;
+      const approval = revised!.authority.approval_classes.find((item) => item.name === entry.rule.approval_class)!;
+      expect(covered.require).toEqual(entry.rule.require);
+      expect(covered.effect.set).toEqual(entry.rule.effect.set);
+      expect(covered.approval.shared_limits).toEqual(approval.shared_limits);
+      expect(completeCoverage.runner_evidence.actions[entry.rule.outcome]!.scoped_bindings)
+        .toHaveProperty(entry.verification_boundary.resources[0]!.binding);
+    }
+    await writeActionRuleAuthorityDraft(root, revised!);
+    const labelRevision = { changes: [], policy_changes: [{ resource: "warehouse.items",
+      settings: { field_metadata: [{ field: "q_av", label: "Reviewed stock units" }] } }] };
+    await expect(prepareModelReadBoundaryExposureRevision({ projectRoot: root, schemaInspector: inspect,
+      context: beforeActionSave, revision: labelRevision })).rejects.toThrow("authoring mismatch");
+    const refreshed = await reloadReadReviewForModelRevision(root, beforeActionSave, revised!);
+    expect(refreshed.bundle.mutation_bindings.authoring!.epoch).toBeGreaterThan(beforeActionSave.bundle.mutation_bindings.authoring!.epoch);
+    expect(refreshed.bundle.mutation_bindings.authoring!.revision_id).toBe(beforeActionSave.bundle.mutation_bindings.authoring!.revision_id);
+    expect(refreshed.candidate).toEqual(beforeActionSave.candidate);
+    const preview = await prepareModelReadBoundaryExposureRevision({ projectRoot: root, schemaInspector: inspect,
+      context: refreshed, revision: labelRevision });
+    expect(preview.candidate.pack.resources[0]!.field_metadata?.q_av?.label).toBe("Reviewed stock units");
+    expect(preview.candidate.pack.resources[0]!.model_withheld_fields).toEqual(resource.model_withheld_fields);
+    expect(await readActionRuleAuthorityDraft(root, revised!.authority.name)).toEqual(revised);
+
+    // Refreshing is only before a new preview, never a bypass for a stale
+    // commit or an independently changed Read/Action revision.
+    await writeActionRuleAuthorityDraft(root, revised!);
+    await expect(commitBoundaryReviewMutationBatch(root, preview)).rejects.toThrow("authoring mismatch");
+    const refreshedAgain = await reloadReadReviewForModelRevision(root, refreshed, revised!);
+    const currentPreview = await prepareModelReadBoundaryExposureRevision({ projectRoot: root, schemaInspector: inspect,
+      context: refreshedAgain, revision: labelRevision });
+    await commitBoundaryReviewMutationBatch(root, currentPreview);
+    await expect(reloadReadReviewForModelRevision(root, refreshedAgain, revised!)).rejects.toThrow("READ_BOUNDARY_REVISION_CHANGED");
+    const currentRead = await loadBoundaryReviewContext(root);
+    await expect(reloadReadReviewForModelRevision(root, currentRead, authority!)).rejects.toThrow("ACTION_BOUNDARY_REVISION_CHANGED");
+
+    // A second editor commits after this operation's save but before its reload.
+    // Never record a workload for B with A's revision or rebind Actions to B.
+    const workloadsPath = path.join(root, ".synapsor/read-workloads");
+    await expect(fs.access(workloadsPath)).rejects.toMatchObject({ code: "ENOENT" });
+    const realCommit = reviewMutation.commitBoundaryReviewMutationBatch;
+    vi.spyOn(reviewMutation, "commitBoundaryReviewMutationBatch").mockImplementationOnce(async (...args) => {
+      const firstCommit = await realCommit(...args);
+      const otherContext = await loadBoundaryReviewContext(root);
+      const otherPreview = await prepareModelReadBoundaryExposureRevision({ projectRoot: root, schemaInspector: inspect,
+        context: otherContext, revision: { changes: [], policy_changes: [{ resource: "warehouse.items",
+          settings: { field_metadata: [{ field: "q_av", label: "Another editor's label" }] } }] } });
+      await realCommit(root, otherPreview);
+      return firstCommit;
+    });
+    const onCommitted = vi.fn();
+    await expect(applyModelReadBoundaryExposureRevision({ projectRoot: root, schemaInspector: inspect,
+      context: currentRead, revision: labelRevision, onCommitted })).rejects.toThrow("READ_BOUNDARY_REVISION_CHANGED_AFTER_SAVE");
+    expect(onCommitted).toHaveBeenCalledOnce();
+    expect((await loadBoundaryReviewContext(root)).candidate.pack.resources[0]!.field_metadata?.q_av?.label)
+      .toBe("Another editor's label");
+    await expect(fs.access(workloadsPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readActionRuleAuthorityDraft(root, revised!.authority.name)).toEqual(revised);
+    const recovered = await applyModelReadBoundaryExposureRevision({ projectRoot: root, schemaInspector: inspect,
+      context: await loadBoundaryReviewContext(root), revision: labelRevision });
+    expect(recovered.context.bundle.candidate_digest).toBe(recovered.committed.candidate_digest);
+    expect(recovered.workload.review?.candidate_digest).toBe(recovered.committed.candidate_digest);
+    expect(recovered.context.bundle.mutation_bindings.review_revision).toBe(recovered.committed.review_revision);
+    expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+    await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active.");
   });
 
   it("authors a private 16-credit approval condition without making credits a proposed patch or caller argument", async () => {

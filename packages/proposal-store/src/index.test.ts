@@ -1404,6 +1404,60 @@ describe("proposal store", () => {
     }
   });
 
+  it.each(["boundary", "tenant"] as const)("shares %s approval history despite different limit IDs, policies, and revisions", (scope) => {
+    const store = new ProposalStore();
+    const create = (id: string, action: string) => {
+      const proposal = structuredClone(changeSet);
+      proposal.proposal_id = id;
+      proposal.action = action;
+      proposal.scope.object_id = id;
+      proposal.source.primary_key.value = id;
+      proposal.integrity.proposal_hash = `sha256:${id}`;
+      return store.createProposal(proposal);
+    };
+    const approve = (index: number, action: string, capability?: string) => {
+      const proposal = create(`wrp_shared_${scope}_${index}`, action);
+      return store.approveProposalByPolicy(proposal.proposal_id, {
+        policy: `policy_${index}`,
+        proposal_hash: proposal.proposal_hash,
+        proposal_version: proposal.proposal_version,
+        reason: "qualified",
+        action_boundary: {
+          name: "service_actions",
+          digest: `sha256:${String(index).repeat(64)}`,
+          limits: [{
+            id: `different_label_${index}`,
+            kind: "count",
+            scope,
+            maximum: 3,
+            window_seconds: 86400,
+            ...(capability ? { capability } : {}),
+          }],
+        },
+        now: `2026-07-12T00:0${index}:00.000Z`,
+      });
+    };
+    try {
+      expect(approve(1, "service.duration").approved).toBe(true);
+      expect(approve(2, "service.reminder").approved).toBe(true);
+      expect(approve(3, "service.archive").approved).toBe(true);
+      expect(approve(4, "service.reminder")).toMatchObject({
+        approved: false,
+        proposal: { state: "pending_review" },
+        tripped_limits: [expect.objectContaining({
+          id: "different_label_4",
+          observed: 3,
+          proposed: 1,
+          projected: 4,
+        })],
+      });
+      // An explicit capability filter narrows history; an ID or policy label does not.
+      expect(approve(5, "service.archive", "service.archive").approved).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
+
   it("isolates Action Boundary approval accounting by capability, principal, and object", () => {
     const store = new ProposalStore();
     const boundary = {

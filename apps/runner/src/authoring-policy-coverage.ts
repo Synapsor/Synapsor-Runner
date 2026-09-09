@@ -2,7 +2,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { AskError, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, type AskToolDefinition, type AskToolGateway } from "./model-ask.js";
 import type { ModelAuthoringNarrationSession } from "./model-authoring-narration.js";
 import { modelAuthoringHistory } from "./model-authoring-conversation.js";
-import { activePolicySource, policyTextLines, validApplicationObligations, type PolicyTextSnapshot, type PolicyCoverage, type PolicyPassage } from "./authoring-policy-source.js";
+import { activePolicySource, isDeferredPolicyDeployment, policyTextLines, validApplicationObligations, type PolicyTextSnapshot, type PolicyCoverage, type PolicyPassage } from "./authoring-policy-source.js";
 export type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js";
 import type { ReviewSection } from "./read-boundary-review-types.js";
 
@@ -13,6 +13,23 @@ const ISSUES = ["business_choice", "schema_meaning", "missing_configuration", "u
 
 export const unresolvedPolicyPassages = (report: PolicyCoverage) => report.passages.filter((passage) =>
   ["needs_decision", "conflict", "unsupported"].includes(passage.disposition));
+
+export function isMechanicalApprovalCounterPassage(passage: PolicyPassage): boolean {
+  return (passage.responsibility === "runner" || passage.issue_kind === "coverage_link")
+    && !passage.field_checks?.length && passage.draft_paths.some((pointer) =>
+      /^\/runner_evidence\/actions\/[^/]+\/automatic_limits(?:\/|$)/u.test(pointer)
+      || /^\/actions\/\d+\/approval\/shared_limits(?:\/|$)/u.test(pointer)
+      || /^\/runner_evidence\/runtime_contract\/approval_counter_selection(?:\/|$)/u.test(pointer));
+}
+
+/** A group-level link cannot distinguish later setup from an unmet control. */
+export function needsDeploymentCoverageClassification(passage: PolicyPassage): boolean {
+  return passage.disposition === "needs_decision" && passage.responsibility === "deployment"
+    && passage.issue_kind === "missing_configuration" && !passage.deployment_prerequisite
+    && !passage.application_obligations?.length && !passage.field_checks?.length
+    && passage.draft_paths.length === 1
+    && passage.draft_paths[0] === "/runner_evidence/runtime_contract/deployment_prerequisites";
+}
 
 function draftValue(draft: unknown, pointer: string): unknown {
   let value: unknown = draft;
@@ -95,18 +112,26 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
         throw new Error("Application obligations cover only customer selection or receipt/status presentation, linked to that exact runtime contract. Split field/privacy, eligibility, authentication and other mandatory controls into their own passages; they cannot be assigned away.");
       }
     }
+    if (needsDeploymentCoverageClassification({ ...entry, draft_paths: draftPaths })) {
+      throw new Error(`Source lines ${entry.start}-${entry.end}: Classify the deployment prerequisite against its exact current evidence, not the group overview. For supported Runner client installation only, use deployment_prerequisite=runner_client_connection and its exact /runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection path. Keep authenticated_identity separate. Application behavior still requires its own responsibility decision; unsupported or ambiguous requirements must remain unresolved without a deployment waiver. Do not change the draft or ask for runtime identity values to repair this coverage link. Return the complete corrected coverage.`);
+    }
     if (entry.deployment_prerequisite !== undefined) {
-      const pointer = "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity";
+      const clientConnection = entry.deployment_prerequisite === "runner_client_connection";
+      const prerequisite = clientConnection ? "runner_client_connection" : "authenticated_identity";
+      const pointer = `/runner_evidence/runtime_contract/deployment_prerequisites/${prerequisite}`;
       const extraPaths = draftPaths.filter((path) => path !== pointer && !path.startsWith(`${pointer}/`));
       if (!draftPaths.includes(pointer) || extraPaths.length) {
-        throw new Error(`Source lines ${entry.start}-${entry.end}: authenticated_identity draft_paths must contain only ${JSON.stringify(pointer)} (and optional children of that exact evidence). Remove unrelated links ${JSON.stringify(extraPaths)} from this deployment passage. Put already-enforced Read scope in a separate implemented passage and privacy/eligibility decisions in their own passages. Return the complete corrected coverage; do not change the draft or request identity values.`);
+        throw new Error(`Source lines ${entry.start}-${entry.end}: ${prerequisite} draft_paths must contain only ${JSON.stringify(pointer)} (and optional children of that exact evidence). Remove unrelated links ${JSON.stringify(extraPaths)} from this deployment passage. Put already-enforced Read scope in a separate implemented passage and privacy/eligibility decisions in their own passages. Return the complete corrected coverage; do not change the draft or request identity values.`);
       }
-      if (entry.deployment_prerequisite !== "authenticated_identity" || entry.responsibility !== "deployment"
-        || entry.issue_kind !== "missing_configuration" || entry.disposition !== "needs_decision"
-        || entry.field_checks?.length || entry.application_obligations?.length
-        || draftValue(draft, `${pointer}/reviewed_customer_scope`) !== true
+      const supported = clientConnection
+        ? draftValue(draft, `${pointer}/supported`) === true && draftValue(draft, `${pointer}/stage`) === "after_authority_review"
+          && draftValue(draft, `${pointer}/configuration_checked`) === false
+        : draftValue(draft, `${pointer}/reviewed_customer_scope`) === true;
+      if (!isDeferredPolicyDeployment({ ...entry, draft_paths: draftPaths }) || !supported
         || draftValue(draft, `${pointer}/verified`) !== false) {
-        throw new Error("Identity setup can remain pending until client connection only when exact Runner evidence proves the customer scope is already configured. Do not move privacy, eligibility, or undecided scope into deployment. Keep authentication unverified.");
+        throw new Error(clientConnection
+          ? "Runner client setup can remain pending only for supported installation after authority review, with configuration unchecked and connection unverified. Do not move application behavior, authentication, privacy, eligibility or business choices into this prerequisite."
+          : "Identity setup can remain pending until client connection only when exact Runner evidence proves the customer scope is already configured. Do not move privacy, eligibility, or undecided scope into deployment. Keep authentication unverified.");
       }
     }
     if (entry.evidence_checks !== undefined) {
@@ -167,7 +192,7 @@ export async function reviewPolicyCoverage(input: {
         topic: { type: "string", maxLength: 90, description: "Short business requirement, e.g. Three automatic approvals per customer account. Not technical reasoning or a JSON pointer." },
         responsibility: { type: "string", enum: [...RESPONSIBILITIES] }, issue_kind: { type: "string", enum: [...ISSUES] },
         next_step: { type: "string", maxLength: 400, description: "Concrete next step; ask the operator only for genuine business meaning. Pending execution is a deployment review, not a new rule." },
-        deployment_prerequisite: { type: "string", enum: ["authenticated_identity"], description: "Only connecting authenticated session identity to already configured customer scope. responsibility=deployment, issue_kind=missing_configuration, disposition=needs_decision. Link only the exact deployment_prerequisites/authenticated_identity evidence. Remains unverified; never use for unsettled authorization or privacy." },
+        deployment_prerequisite: { type: "string", enum: ["authenticated_identity", "runner_client_connection"], description: "Later unverified setup: authenticated_identity connects a session to already configured customer scope; runner_client_connection is supported Runner client installation after authority review. responsibility=deployment, issue_kind=missing_configuration, disposition=needs_decision. Link only the exact deployment_prerequisites/<name> evidence. Never use for application business behavior, unsettled authorization or privacy." },
         application_obligations: { type: "array", minItems: 1, maxItems: 2, uniqueItems: true,
           items: { type: "string", enum: ["customer_selection", "status_presentation"] },
           description: "Only for client-owned selection capture or truthful receipt/status presentation, linked to exact runtime_contract/application_obligations evidence. Keep unverified. Split other requirements into separate passages." },
@@ -218,12 +243,14 @@ export async function reviewPolicyCoverage(input: {
           "Compare supported DRAFT behavior, not whether the operator has activated it yet. Disabled status is expected here; do not classify a correctly prepared rule as missing merely because it has not executed. Executable rules, verified facts, approval and execution are distinct. A request for automatic completion is not implemented by approval-only configuration.",
           "Use runner_evidence for mechanical facts: actual field exposure, current digest-bound Read confirmations, exact business-field/trusted-scope mappings, compiled version guards, execution support and the runtime contract. read.unresolved_decisions is the historical review checklist; it is NOT the current pending set. Do not turn a confirmed checklist item into several new blockers. A tenant-scoped limit uses the same tenant-field value as the verified resources; if that field identifies the account in this reviewed deployment, the limit is per account across its principals. Never invent a broader tenant or demand a redundant account limit. Other deployments may have different mappings; ask about genuinely ambiguous labels.",
           "For concurrency revision advancement inspect runner_evidence.actions.<outcome>.effect.version_advance and source_fields_modified, not only the model-authored effect.set or business-field allowlist. Runner's compiler can add an exact private integer_increment from reviewed metadata. A present compiled version_advance implements that prepared increment without another business question or model field assignment. A null value does not; a version guard alone proves only stale detection. Execution consent and worker readiness remain separate.",
+          "For shared approval pools compare each automatic_limits.history_selector, applies_to_outcome, kind, maximum and total field against runtime_contract.approval_counter_selection. limit.id is diagnostic-only: it is NOT a ledger partition. Different IDs/classes with the same selectors share history; the same ID with different capability filters does not. Do not infer separate counters from ID spelling or demand renaming valid limits. Keep genuine selector, threshold, scope or business ambiguities unresolved. Correct mechanical misinterpretations in this report before asking the operator a business question or requesting an Action edit.",
           "For each passage include a short business topic, responsibility (runner for mechanical reconciliation, operator for missing business choice/meaning, deployment for wiring/activation/worker prerequisites, application for client behavior), issue_kind and concrete next_step. Group the same decision under the same topic while retaining all source ranges. Select draft_paths from the supplied references; Runner attaches their exact current values to the review, so do not copy or predict those values in another structure. Recheck contradictory claims before reporting them. Missing coverage links need correction of this report, not pointless edits to a correct action. Full internal privacy requires no actual value return AND no filter/sort/group/measure permissions; role candidates alone do not prove private business meaning. Preserve plan benefits and useful invoice/case references.",
           "For privacy passages emit field_checks for the affected fields, especially every privacy_review candidate the source requires to be private. Check actual values and analysis, not only model_withheld_fields declarations. If a field required private is exposed, this is a real conflict needing Read revision, not implemented. If its meaning is uncertain, request that meaning. Use keyed runner_evidence paths (resource/field/binding names) instead of guessing positions in raw draft arrays. Exact evidence sections are /runner_evidence/read_review, /runner_evidence/read_access, /runner_evidence/actions and /runner_evidence/runtime_contract. draft_paths also accepts /read_review/..., /read_access/... and /runtime_contract/... as exact section shorthand; these are canonicalized, not fuzzy matched.",
           "private_read_selection is Runner's private access, not agent visibility or model analysis. A field with actual_values_returned=false and no model_analysis is private from the agent even when Runner can select it internally. Do not demand removal of private selection to satisfy a rule that explicitly permits Runner-internal use. Conversely, existing scope filtering, opaque references and private Action verification do not justify adding Read selection for a kept-out field. Use the current operator clarification for ambiguous meanings; do not ask it again after it was answered.",
           "Supervised means supported automatic processing AFTER separate execution review and a running worker, not per-request staff approval of routine work. Distinguish preparation from live deployment; never claim prerequisites are already satisfied. Customer selection, authentication UI and truthful customer wording are application responsibilities, not missing source-table predicates. Runner receipts/statuses provide evidence but cannot prove an arbitrary client obeys them. Keep genuinely unsupported or unassigned mandatory requirements unresolved. Do not relabel such requirements background merely to clear coverage.",
           "Use application_obligations only for the two supplied client contracts: customer_selection and status_presentation. Link each exact /runner_evidence/runtime_contract/application_obligations/<name> path. Runner will ask the operator to assign these integration duties and retain them as unverified prerequisites, not pretend the database cannot support the offer. Do not assign eligibility, privacy, authorization or other mandatory database controls to the client. Split mixed clauses into separate passages. Operator assignment does not prove implementation, so keep these passages unresolved in this report even after assignment.",
           'For missing authenticated session wiring use deployment_prerequisite=authenticated_identity only if its exact supplied evidence says reviewed_customer_scope=true. Its draft_paths must be ["/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"], without /read or /runner_evidence/read_access. If the source line also describes already-enforced access restrictions, use a separate implemented entry for that same line with its Read evidence. This is a later client setup check, not a new business question or proof of authentication. Do not ask for actual tenant/principal values during metadata authoring. If which customers may access which records is undecided, keep that a blocking business choice instead. Never move database eligibility or privacy requirements to this deployment category.',
+          'For connecting a supported Runner-managed local stdio client such as Claude Code, use deployment_prerequisite=runner_client_connection with disposition=needs_decision, responsibility=deployment and issue_kind=missing_configuration. Link only /runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection, not its parent overview. This installation is a later handoff after authority review, not external application business implementation or a preactivation requirement. Keep connection unverified and configuration unchecked; do not label it implemented or assign it through application_obligations. Split customer selection, status presentation and authenticated identity into their own passages, preserving genuine application assignment choices. Custom client implementation or unsupported transport requirements must remain unresolved, not waived by supported local installation. Reconcile old group-level coverage against this exact evidence without changing business rules.',
           "For a genuine business/schema question, next_step must ask ONE short question in ordinary language, at most two sentences. Do not repeat the action summary, tell the operator to revise a permission, or include technical routing instructions. If the operator confirms an existing permission, record the clarified interpretation and recheck actual evidence; do not demand a nonempty access diff.",
           "This is a disabled-draft coverage review, not a live deployment check. When an execution requirement is fully represented by the compiled direct_sql effect and supported worker contract, mark that drafted behavior implemented and explicitly retain writer review, execution consent and worker startup as later prerequisites in its interpretation/next_step. Do not require those later stages to have run before allowing the operator to reach them. Missing effect support, missing business rules, ambiguous scope or unassigned application obligations remain unresolved; prepared must never mean running or completed.",
           "Runner semantics: inputs enforce their exact types/bounds before proposal creation. require rejects invalid cases. Verification uses scoped opaque subject references and freshly loaded private facts; runtime identities are injected, never model arguments. subject_ref and relationship loaders enforce the reviewed tenant/principal bindings on every loaded row, including related rows; the rule need not duplicate these as equality predicates. Authentication/session wiring is a runtime prerequisite, not an extra action predicate. Policy approval requires auto_approve_when plus every shared_limit; valid requests failing these use required_role/required_approvals human fallback. shared_limits are enforced using Runner's control ledger, not source tables. Human mode has no automatic approval. In model drafts, effect.writeback=proposal_only compiles to runtime writeback mode none and forbids execution. supervised prepares execution for a separate operator activation and worker, not immediate writes. Review actual values in the draft; these semantics do not supply missing business limits or facts.",
@@ -240,7 +267,10 @@ export async function reviewPolicyCoverage(input: {
       if (report) {
         const mechanical = unresolvedPolicyPassages(report).filter((passage) => passage.responsibility === "runner" || passage.issue_kind === "coverage_link");
         if (attempt === 0 && mechanical.length) {
-          issue = `Recheck these mechanical coverage gaps against runner_evidence and existing decisions without editing the draft: ${JSON.stringify(mechanical)}. If still unresolved, keep the concern with a concrete next step.`;
+          issue = `Recheck these mechanical coverage gaps against runner_evidence and existing decisions without editing the draft: ${JSON.stringify(mechanical)}. If still unresolved, keep the concern with a concrete next step.`
+            + (mechanical.some(isMechanicalApprovalCounterPassage)
+              ? " For approval counters use the supplied history_selector, not limit.id or approval_class. Reconcile equivalent selectors without renaming IDs; retain any genuine capability, scope, threshold or window mismatch."
+              : "");
           continue;
         }
         return report;
@@ -271,13 +301,16 @@ function passageStatus(passage: PolicyPassage): string {
 
 export function policyCoverageSummary(source: PolicyTextSnapshot, report?: PolicyCoverage): string[] {
   if (!report) return [`Attached rules: ${source.name} v${source.version}; coverage still needs checking. Choose Review attached rules; activation is blocked until review completes.`];
-  const unresolved = unresolvedPolicyPassages(report);
+  const open = unresolvedPolicyPassages(report);
+  const unresolved = open.filter((passage) => !isDeferredPolicyDeployment(passage));
+  const deferred = open.filter(isDeferredPolicyDeployment);
   const topics = [...new Set(unresolved.map((passage) => passageTopic(source, passage)))];
   return [
-    `Attached rules: ${source.name} v${source.version}; ${unresolved.length} open check(s) across ${topics.length} business topic(s).`,
+    `Attached rules: ${source.name} v${source.version}; ${open.length} open check(s) across ${new Set(open.map((passage) => passageTopic(source, passage))).size} business topic(s).`,
     ...(unresolved.length ? ["Structured draft prepared; policy coverage needs review before activation.",
       `Review topics: ${topics.slice(0, 3).join("; ")}. Open Review attached rules to inspect and resolve every topic.`]
       : ["Source interpretation is ready for your review, not proof of complete policy correctness."]),
+    ...(deferred.length ? [`Later client setup still pending and unverified: ${[...new Set(deferred.map((passage) => passageTopic(source, passage)))].join("; ")}. These setup checks do not block authority review.`] : []),
   ];
 }
 

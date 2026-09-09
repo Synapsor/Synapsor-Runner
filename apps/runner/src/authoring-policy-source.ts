@@ -21,10 +21,19 @@ export type PolicyPassage = { start: number; end: number;
   evidence_checks?: Array<{ path: string; equals: string | number | boolean | null }>;
   field_checks?: Array<{ resource: string; field: string; expectation: "private" | "business_visible" }>;
   application_obligations?: Array<"customer_selection" | "status_presentation">;
-  /** Deployment verification, not an assignment of row authorization to the client. */
-  deployment_prerequisite?: "authenticated_identity";
+  /** Later setup, not verification or an assignment of business controls to the client. */
+  deployment_prerequisite?: "authenticated_identity" | "runner_client_connection";
 };
 export type PolicyCoverage = { source_digest: string; draft_digest: string; passages: PolicyPassage[] };
+
+export function isDeferredPolicyDeployment(passage: PolicyPassage): boolean {
+  const prerequisite = passage.deployment_prerequisite;
+  const pointer = `/runner_evidence/runtime_contract/deployment_prerequisites/${prerequisite}`;
+  return (prerequisite === "authenticated_identity" || prerequisite === "runner_client_connection")
+    && passage.disposition === "needs_decision" && passage.responsibility === "deployment"
+    && passage.issue_kind === "missing_configuration" && !passage.field_checks?.length && !passage.application_obligations?.length
+    && passage.draft_paths.includes(pointer) && passage.draft_paths.every((path) => path === pointer || path.startsWith(`${pointer}/`));
+}
 
 export const POLICY_TEXT_MAX_BYTES = 32_768;
 export const POLICY_TEXT_MAX_LINES = 600;
@@ -249,7 +258,7 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
         && passage.field_checks.every((check) => check && typeof check.resource === "string" && check.resource.length <= 256
           && typeof check.field === "string" && check.field.length <= 128 && ["private", "business_visible"].includes(check.expectation)))
       && (passage.application_obligations === undefined || validApplicationObligations(passage.application_obligations))
-      && (passage.deployment_prerequisite === undefined || passage.deployment_prerequisite === "authenticated_identity")
+      && (passage.deployment_prerequisite === undefined || isDeferredPolicyDeployment(passage))
       && (passage.operator_override === undefined || typeof passage.operator_override === "string" && passage.operator_override.length <= 4_000)));
 }
 

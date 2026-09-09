@@ -21,6 +21,43 @@ function report(): PolicyCoverage {
 }
 
 describe("one authoritative guided review readiness model", () => {
+  it("keeps client installation separate from identity, application choices and privacy even under one topic", () => {
+    const coverage = report();
+    const deployments = ["runner_client_connection", "authenticated_identity"] as const;
+    coverage.passages.unshift(...deployments.map((prerequisite) => ({ start: 1, end: 1,
+      disposition: "needs_decision" as const, responsibility: "deployment" as const, issue_kind: "missing_configuration" as const,
+      topic: "Customer-selected offer", interpretation: "Later setup is still unverified.", deployment_prerequisite: prerequisite,
+      draft_paths: [`/runner_evidence/runtime_contract/deployment_prerequisites/${prerequisite}`],
+    })));
+    const before = structuredClone(coverage);
+    expect(policyReadinessItems(coverage).map((item) => item.blocksReview)).toEqual([false, false, true, true]);
+    expect(policyReviewReadiness(source, coverage).ready).toBe(false);
+    const session = newPolicySourceSession();
+    session.snapshots = [source]; session.active = source.version;
+    session.application_assignments = coverage.passages.filter((passage) => passage.application_obligations).map((passage) => ({
+      source_digest: coverage.source_digest, draft_digest: coverage.draft_digest, start: passage.start, end: passage.end,
+      obligations: passage.application_obligations!, owner: "client_application", verified: false, assigned_at: new Date().toISOString(),
+    }));
+    expect(policyReviewReadiness(source, coverage, session).ready).toBe(true);
+    expect(policyReviewReadiness(source, coverage, session).summary.join("\n")).toContain("still unverified: Runner client connection, signed-in customer identity, customer selection, accurate status messages");
+    expect(coverage).toEqual(before);
+    coverage.passages.push({ start: 1, end: 1, disposition: "conflict", responsibility: "runner", issue_kind: "coverage_link",
+      interpretation: "Private version is model-facing.", draft_paths: [],
+      field_checks: [{ resource: "service.appointments", field: "version", expectation: "private" }] });
+    expect(policyReviewReadiness(source, coverage, session)).toMatchObject({ ready: false, privacy: true });
+  });
+
+  it("does not waive generic deployment, custom application work or a malformed client prerequisite", () => {
+    const passage = { start: 1, end: 2, disposition: "needs_decision" as const, responsibility: "deployment" as const,
+      issue_kind: "missing_configuration" as const, interpretation: "Configure a custom application integration.", draft_paths: [] };
+    for (const changed of [passage, { ...passage, responsibility: "application" as const },
+      { ...passage, deployment_prerequisite: "runner_client_connection" as const },
+      { ...passage, deployment_prerequisite: "runner_client_connection" as const,
+        draft_paths: ["/runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection"],
+        field_checks: [{ resource: "service.appointments", field: "version", expectation: "private" as const }] },
+    ]) expect(policyReviewReadiness(source, { ...report(), passages: [changed] }).ready).toBe(false);
+  });
+
   it("repairs mixed deployment evidence in the bounded model correction, without changing scope or needing identity values", async () => {
     const identitySource = policyTextSnapshot(Buffer.from("Allow only signed-in customers to see their authorized account."), "identity.txt");
     const pointer = "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity";

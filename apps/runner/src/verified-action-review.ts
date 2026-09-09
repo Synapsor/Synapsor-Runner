@@ -441,9 +441,10 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
     const problem = executionSetupProblem(error);
     return { tone: "danger", title: "Execution was not enabled.", lines: [problem.summary], problem };
   }
-  let writeUrlEnv = defaults?.write_url_env ?? "SYNAPSOR_DATABASE_WRITE_URL";
+  let writeUrlEnv = defaults?.write_url_env
+    ?? (env.SYNAPSOR_DATABASE_WRITE_URL?.trim() ? "SYNAPSOR_DATABASE_WRITE_URL" : undefined);
   const workerIdentity = defaults ? defaults.worker_identity : "semantic_action_worker";
-  let configured = Boolean(env[writeUrlEnv]?.trim());
+  let configured = Boolean(writeUrlEnv && env[writeUrlEnv]?.trim());
   if (configured && input.session.chooseOption) {
     const choice = await input.session.chooseOption("Check your write connection", [
       { value: "check", label: "Check the configured write connection", detail: "Verify its permissions; do not enable execution or run a request." },
@@ -456,18 +457,21 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
   } else configured = false;
   if (!configured) {
     const writeUrlAnswer = await input.session.promptText(
-    `Write connection variable (Enter uses ${writeUrlEnv})`,
-    {
-      context: [
-        `Outcome: ${input.outcome}`,
-        "Your read-only connection cannot execute changes. Configure a separate write connection, then enter its variable name here, not its URL.",
-        "This checks permissions only. Enabling execution and starting a worker are separate decisions.",
-      ],
-    },
-  );
-  if (writeUrlAnswer === undefined) return undefined;
+      writeUrlEnv ? `Write connection variable (Enter uses ${writeUrlEnv})`
+        : "Write connection variable (Enter defers this outcome)",
+      {
+        context: [
+          `Outcome: ${input.outcome}`,
+          "Your read-only connection cannot execute changes. Configure a separate write connection, then enter its variable name here, not its URL.",
+          ...(defaults ? ["The saved reference is a review default only; its current credential and permissions will be checked."] : []),
+          "This checks permissions only. Enabling execution and starting a worker are separate decisions.",
+        ],
+      },
+    );
+    if (writeUrlAnswer === undefined) return undefined;
     writeUrlEnv = writeUrlAnswer.trim() || writeUrlEnv;
   }
+  if (!writeUrlEnv) return undefined;
   let profile: "development" | "staging" | "production";
   let preview: Awaited<ReturnType<typeof previewSemanticSupervisedExecution>>;
   try {

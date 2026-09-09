@@ -479,7 +479,14 @@ export async function runPostActivationAskHandoff(
           "No client reinstall or new activation was performed by this check.",
           "",
         ].join("\n"));
-      } else {
+      }
+      const execution = includeActions
+        ? await (dependencies.readExecutionState ?? readSemanticSupervisedExecutionState)({ projectRoot: input.projectRoot })
+        : undefined;
+      if (execution) {
+        write(`Client mode: ${execution.enabled ? "execution configured; worker not started by setup; worker health not checked" : "proposal-only; automatic database updates are off"}. Completion requires a successful execution receipt.\n`);
+      }
+      if (!connectionFailed) {
         write(formatMcpClientHandoff(
           input.projectRoot,
           selection.client,
@@ -489,9 +496,7 @@ export async function runPostActivationAskHandoff(
           runtimeBindings.filter((binding) => env[binding.environment]?.trim()).map((binding) => binding.environment),
         ));
       }
-      if (includeActions) {
-        const execution = await (dependencies.readExecutionState ?? readSemanticSupervisedExecutionState)({ projectRoot: input.projectRoot });
-        write(`Client mode: ${execution.enabled ? "execution configured; worker health not checked" : "proposal-only; automatic database updates are off"}. Completion requires a successful execution receipt.\n`);
+      if (execution) {
         if (execution.enabled && execution.policies.length) {
           const workerConfigPath = path.resolve(input.projectRoot, execution.config_path);
           const scopedWorkers = new Set(execution.policies.map((policy) => policy.worker_identity || undefined)).size > 1;
@@ -508,8 +513,7 @@ export async function runPostActivationAskHandoff(
           } else if (runtimeBindingFailure) {
             write("Worker not started: the reviewed identity requirements could not be loaded. Inspect the saved Read and Action authority and retry execution setup; client configuration is preserved.\n");
           } else if (missingIdentity.length) {
-            write(`Worker not started: this local execution mode also requires trusted identity in ${missingIdentity.map((binding) => binding.environment).join(", ")}.\n`
-              + "Use trusted test identities locally; production identity must come from the authenticated session, never the model.\n");
+            write(`Worker not started: this local execution mode also requires trusted identity in ${missingIdentity.map((binding) => binding.environment).join(", ")}.\n`);
           } else if (scopedWorkers) {
             write("Execution policies have different worker identity selections. Each command below selects one exact outcome; setup will not launch a generic worker.\n");
           } else {
@@ -820,15 +824,17 @@ export function formatMcpClientHandoff(
       : `code ${root}`;
   const missingBindings = runtimeBindings.filter((binding) => !configuredBindings.includes(binding.environment));
   return [
-    "LOCAL STDIO MCP CONFIGURED",
+    runtimeIdentity !== "production_authentication" && missingBindings.length
+      ? "LOCAL STDIO MCP CONFIGURED; NOT READY FOR CUSTOMER USE"
+      : "LOCAL STDIO MCP CONFIGURED; CUSTOMER USE NOT VERIFIED",
     `${managedMcpClientLabel(client)} launches Runner with the four fixed tools. Do not start a separate MCP server.`,
     ...(!includeActions ? ["Read only: no Action is active; change requests remain refused."] : []),
     ...(runtimeIdentity === "production_authentication"
       ? ["Production identity comes from the reviewed authenticated session. Do not copy fixture values or accept identity from a client prompt or model."]
       : runtimeBindings.length
       ? missingBindings.length ? [
-          "Local test identity still needed: use the account/person from your application fixture or trusted authentication setup. Runner cannot choose these from a database URL.",
-          "Provide only the missing reviewed bindings in this terminal before opening the client:",
+          `Local test identity still needed: ${missingBindings.map((binding) => binding.environment).join(", ")}.`,
+          "Provide trusted local test identities below, never model-provided values; production requires authenticated session identity.",
           ...missingBindings.map((binding) =>
             `  export ${binding.environment}='<${binding.role}>'`),
         ]

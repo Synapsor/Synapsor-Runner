@@ -3,6 +3,7 @@ import { loadActiveActionRuleAuthority, readActionRuleAuthorityActivation } from
 import type { BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { activePolicySource, loadPolicySources } from "./authoring-policy-source.js";
 import { policyReadinessItems } from "./authoring-review-readiness.js";
+import { needsDeploymentCoverageClassification } from "./authoring-policy-coverage.js";
 import { guidedActionStatus } from "./guided-action.js";
 import { readSemanticSupervisedExecutionState } from "./semantic-action-deployment.js";
 
@@ -59,9 +60,14 @@ export async function pendingClientResponsibilities(root: string, saved: Boundar
   if (!source || !sources.coverage || sources.coverage.source_digest !== source.digest) {
     return ["Attached rules need a current coverage check. Client behavior has not been verified."];
   }
-  return policyReadinessItems(sources.coverage, sources).filter((item) => item.kind === "deployment_prerequisite")
+  return policyReadinessItems(sources.coverage, sources).filter((item) => item.kind === "deployment_prerequisite"
+    || item.passages.some(needsDeploymentCoverageClassification))
     .flatMap((item) => [
-      `${item.title}: ${item.passages.some((passage) => passage.deployment_prerequisite) ? "runtime identity setup pending" : item.blocksReview ? "assignment pending" : "assigned to your client application"}; not verified.`,
+      `${item.title}: ${item.passages.some(needsDeploymentCoverageClassification) ? "setup classification pending"
+        : item.passages.some((passage) => passage.deployment_prerequisite === "runner_client_connection")
+        ? "Runner client connection setup pending"
+        : item.passages.some((passage) => passage.deployment_prerequisite === "authenticated_identity")
+          ? "runtime identity setup pending" : item.blocksReview ? "assignment pending" : "assigned to your client application"}; not verified.`,
       item.nextStep,
     ]);
 }

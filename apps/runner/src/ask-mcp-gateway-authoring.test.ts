@@ -11,10 +11,13 @@ const fixture = vi.hoisted(() => ({
   autoBands: true,
   withheld: false,
   semanticActive: false,
+  semanticInputs: [] as Array<{ configPath?: string; config: unknown }>,
 }));
 
 vi.mock("./semantic-action-runtime.js", () => ({
-  createOptionalActionRuleRuntimeServices: async () => fixture.semanticActive
+  createOptionalActionRuleRuntimeServices: async (input: { configPath?: string; config: unknown }) => {
+    fixture.semanticInputs.push({ configPath: input.configPath, config: structuredClone(input.config) });
+    return fixture.semanticActive
     ? {
         authority: {},
         subjectReferences: {},
@@ -46,7 +49,8 @@ vi.mock("./semantic-action-runtime.js", () => ({
             : { ok: true, status: "review_required", source_database_changed: false },
         },
       }
-    : undefined,
+    : undefined;
+  },
 }));
 
 vi.mock("./scoped-explore.js", async (importOriginal) => {
@@ -178,6 +182,7 @@ afterEach(async () => {
   fixture.autoBands = true;
   fixture.withheld = false;
   fixture.semanticActive = false;
+  fixture.semanticInputs.length = 0;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
@@ -458,10 +463,10 @@ describe("Ask authoring/runtime separation", () => {
     expect(fixture.closes).toBe(2);
   });
 
-  it("adds only the fixed verified Action pair to local Ask when semantic authority is active", async () => {
+  it.each(["companion", "primary"] as const)("preserves the selected %s config path while adding only the fixed verified Action pair to local Ask", async (selection) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ask-authoring-actions-"));
     roots.push(root);
-    const configPath = path.join(root, "synapsor.runner.json");
+    const configPath = path.join(root, "custom.runner.json");
     await fs.writeFile(configPath, JSON.stringify({
       version: 1,
       mode: "read_only",
@@ -475,7 +480,8 @@ describe("Ask authoring/runtime separation", () => {
       },
       capabilities: [],
     }, null, 2));
-    await fs.writeFile(path.join(root, "synapsor.actions.runner.json"), JSON.stringify({
+    const selectedPath = selection === "companion" ? path.join(root, "synapsor.actions.runner.json") : configPath;
+    await fs.writeFile(selectedPath, JSON.stringify({
       version: 1,
       mode: "review",
       storage: { sqlite_path: "./.synapsor/local.db" },
@@ -499,6 +505,11 @@ describe("Ask authoring/runtime separation", () => {
       mode: "authoring",
     });
     try {
+      expect(fixture.semanticInputs.length).toBeGreaterThan(0);
+      for (const input of fixture.semanticInputs) {
+        expect(input.configPath).toBe(selectedPath);
+        expect(input.config).toMatchObject({ mode: "review", action_rules: { project_root: root } });
+      }
       expect((await gateway.listTools()).map((tool) => tool.name)).toEqual([
         "app.describe_actions",
         "app.describe_data",

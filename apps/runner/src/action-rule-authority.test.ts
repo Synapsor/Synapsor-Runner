@@ -6,7 +6,7 @@ import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
-import { ScopedCatalogSession } from "@synapsor-runner/mcp-server";
+import { ScopedCatalogSession, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import type {
   ActionRuleSpecV1,
   ActionRuleScalarTypeSpecV1,
@@ -32,8 +32,11 @@ import {
   mergeActionRuleAuthorityDraft,
   readActionRuleAuthorityActivation,
   readActionRuleAuthorityDraft,
+  readActionRuleAuthorityRevisionBaseline,
   writeActionRuleAuthorityDraft,
+  writeActionRuleAuthorityDraftIfCurrent,
 } from "./action-rule-authority.js";
+import { migrateProjectControlPolicies } from "./control-policy-store.js";
 import {
   activateSemanticActionRuntime,
   enableSemanticSupervisedExecution,
@@ -64,6 +67,88 @@ afterEach(async () => {
 });
 
 describe("semantic Action Rule authority persistence", () => {
+  it.each((["legacy", "sqlite"] as const).flatMap((backend) =>
+    (["create", "review", "rules", "active"] as const).map((change) => ({ backend, change })),
+  ))("checks the exact Action baseline under the publication permit ($backend, $change)", async ({ backend, change }) => {
+    const root = await temporaryRoot(), boundary = activeReadBoundary();
+    await writeActiveReadSet(root, boundary);
+    const source = authoritySource(boundary.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: boundary.pack.name, read_boundary_digest: boundary.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }],
+      reviews: [authorityReview()], now: "2026-09-09T00:00:00.000Z" });
+    if (change !== "create") await writeActionRuleAuthorityDraft(root, draft);
+    if (change === "active") await activateActionRuleAuthority({ projectRoot: root, name: draft.authority.name,
+      expected_digest: draft.digest, confirmation: `ACTIVATE ${draft.digest}`, actor: "fixture reviewer" });
+    const binding = backend === "sqlite" ? await migrateActionBaselineFixture(root) : undefined;
+    try {
+      const previousDraft = await readActionRuleAuthorityDraft(root, draft.authority.name);
+      const expected = await readActionRuleAuthorityRevisionBaseline(root);
+      const replacement = structuredClone(draft);
+      const competing = change === "rules" ? buildActionRuleAuthorityDraft({ name: draft.authority.name,
+        action_boundary_name: draft.authority.action_boundary.name, catalog: source.catalog,
+        rules: draft.authority.rules.map((entry) => ({ ...entry, rule: { ...entry.rule, ttl_seconds: 120 } })),
+        reviews: draft.reviews, now: draft.created_at,
+      }) : { ...draft, reviews: draft.reviews.map((review) => ({ ...review, when: "A concurrent operator revised this review." })) };
+      if (change === "review") expect(competing.digest).toBe(draft.digest);
+      if (change === "rules") expect(competing.digest).not.toBe(draft.digest);
+      let pending!: Promise<unknown>, finished = false;
+      await withProjectAuthorityMutation(root, async (permit) => {
+        pending = writeActionRuleAuthorityDraftIfCurrent(root, replacement, expected)
+          .then(() => { finished = true; return "unexpected publication"; }, (error: unknown) => { finished = true; return error; });
+        await delay(50);
+        expect(finished).toBe(false);
+        if (change === "active") await deactivateActionRuleAuthority(root, permit);
+        else await writeActionRuleAuthorityDraft(root, competing, permit);
+        // Neither the caller's baseline nor replacement may change while queued.
+        Object.assign(expected, await readActionRuleAuthorityRevisionBaseline(root, permit));
+        replacement.reviews[0]!.when = "Mutated after the publication request.";
+      });
+      expect(await pending).toMatchObject({ code: "ACTION_BOUNDARY_REVISION_CHANGED" });
+      expect(await readActionRuleAuthorityDraft(root, draft.authority.name)).toEqual(change === "active" ? previousDraft : competing);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+    } finally { await binding?.close(); }
+  });
+
+  it.each(["legacy", "sqlite"] as const)("advances only its own Action baseline and preserves other active outcomes (%s)", async (backend) => {
+    const root = await temporaryRoot(), boundary = activeReadBoundary();
+    await writeActiveReadSet(root, boundary);
+    const source = authoritySource(boundary.activation.digest);
+    const draftFor = (outcome: string) => buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: boundary.pack.name, read_boundary_digest: boundary.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: { ...source.rule, name: outcome, outcome } }],
+      reviews: [{ ...authorityReview(), outcome }], now: "2026-09-09T00:00:00.000Z" });
+    const original = draftFor("billing.unrelated_outcome");
+    await writeActionRuleAuthorityDraft(root, original);
+    const active = await activateActionRuleAuthority({ projectRoot: root, name: original.authority.name,
+      expected_digest: original.digest, confirmation: `ACTIVATE ${original.digest}`, actor: "fixture reviewer" });
+    const binding = backend === "sqlite" ? await migrateActionBaselineFixture(root) : undefined;
+    try {
+      let expected = await readActionRuleAuthorityRevisionBaseline(root);
+      for (const outcome of ["billing.first_job_outcome", "billing.second_job_outcome"]) {
+        if (binding) {
+          // A Read-selection commit advances the shared epoch, not Action identity.
+          const selection = encodeOperatorAuthority({ type: "read_selection", selected_name: null });
+          const current = await binding.repository.deployment(binding.deployment_id);
+          await binding.repository.commit({ deployment_id: binding.deployment_id, expected_epoch: current!.epoch,
+            revisions: [], active: [{ scope: selection.scope, kind: selection.kind, name: selection.name, revision_id: selection.revision_id }],
+            event: { event_id: outcome, actor: "fixture reviewer", occurred_at: new Date().toISOString(), receipt: { operation: "read_selection" } } });
+          expect(await readActionRuleAuthorityRevisionBaseline(root)).toEqual(expected);
+        }
+        const saved = mergeActionRuleAuthorityDraft({ existing: await readActionRuleAuthorityDraft(root, original.authority.name) ?? active,
+          incoming: draftFor(outcome) });
+        expected = await writeActionRuleAuthorityDraftIfCurrent(root, saved, expected);
+        expect(await readActionRuleAuthorityRevisionBaseline(root)).toEqual(expected);
+      }
+      const saved = (await readActionRuleAuthorityDraft(root, original.authority.name))!;
+      expect(saved.authority.rules.map((entry) => entry.rule.outcome).sort()).toEqual([
+        "billing.first_job_outcome", "billing.second_job_outcome", "billing.unrelated_outcome",
+      ]);
+      expect(saved.authority.rules.find((entry) => entry.rule.outcome === "billing.unrelated_outcome")).toEqual(original.authority.rules[0]);
+      expect(await readActionRuleAuthorityActivation(root)).toEqual(active);
+    } finally { await binding?.close(); }
+  });
+
   it("adds a third mixed-punctuation outcome without mistaking review ordering for an invalid authority", async () => {
     const root = await temporaryRoot();
     const boundary = activeReadBoundary();
@@ -1510,6 +1595,19 @@ function activeReadBoundary(): ActivatedExplorationBoundary {
       reviewed_decisions: [],
     },
   } as unknown as ActivatedExplorationBoundary;
+}
+
+async function migrateActionBaselineFixture(projectRoot: string) {
+  const drafts = (await listActionRuleAuthorityDrafts(projectRoot)).map((authority) => encodeOperatorAuthority({ type: "action", authority }));
+  const active = await readActionRuleAuthorityActivation(projectRoot);
+  const activeRecords = [encodeOperatorAuthority({ type: "read_selection", selected_name: null }),
+    ...(active ? [encodeOperatorAuthority({ type: "action", authority: active })] : [])];
+  const pointer = (entry: typeof drafts[number]) => ({ scope: entry.scope, kind: entry.kind, name: entry.name, revision_id: entry.revision_id });
+  return (await migrateProjectControlPolicies({ projectRoot, config: {} as RuntimeConfig, storePath: path.join(projectRoot, "control.db"),
+    actor: "fixture reviewer", readLegacySnapshot: async () => ({ revisions: [...drafts, ...activeRecords],
+      active: activeRecords.map(pointer), drafts: drafts.map(pointer), provenance: [] }),
+    validateSnapshot: async (snapshot) => validateOperatorPolicySnapshot(snapshot),
+  })).binding;
 }
 
 async function temporaryRoot(): Promise<string> {

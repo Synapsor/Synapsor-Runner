@@ -309,7 +309,8 @@ async function connectAuthoringSurface(input: {
   let subjectStore: ProposalRuntimeStore | undefined;
   try {
     const modelAuthorityMetadata = await readModelAuthorityMetadataMode(input.configPath);
-    const actionConfig = await optionalActionRuntimeConfig(input);
+    const actionRuntime = await optionalActionRuntimeConfig(input);
+    const actionConfig = actionRuntime?.config;
     const selectedConfig = actionConfig ?? await authoringStoreConfig(input.configPath);
     subjectStore = await createProjectRuntimeStore({ projectRoot: input.projectRoot, config: selectedConfig ?? {} as RuntimeConfig,
       env: input.env, storePath: input.storePath });
@@ -321,7 +322,7 @@ async function connectAuthoringSurface(input: {
     const ownerBinding = owner ? await owner.contextDigest() : undefined;
     const semantic = actionConfig && !input.ownerPolicyScope
       ? await createOptionalActionRuleRuntimeServices({ projectRoot: input.projectRoot, config: actionConfig,
-          env: input.env, store: subjectStore })
+          configPath: actionRuntime!.configPath, env: input.env, store: subjectStore })
       : undefined;
     if (!input.ownerPolicyScope) try {
       runtime = await createScopedExploreBoundarySetRuntime({
@@ -417,8 +418,9 @@ async function connectSemanticActionSurface(input: {
   projectRoot: string;
   env: NodeJS.ProcessEnv;
 }): Promise<ConnectedMcpSurface | undefined> {
-  const config = await optionalActionRuntimeConfig(input);
-  if (!config) return undefined;
+  const selected = await optionalActionRuntimeConfig(input);
+  if (!selected) return undefined;
+  const { config, configPath } = selected;
   const store = await createProjectRuntimeStore({ projectRoot: input.projectRoot, config,
     env: input.env, storePath: input.storePath });
   let runtime: McpRuntime | undefined;
@@ -426,6 +428,7 @@ async function connectSemanticActionSurface(input: {
     const semantic = await createOptionalActionRuleRuntimeServices({
       projectRoot: input.projectRoot,
       config,
+      configPath,
       env: input.env,
       store,
     });
@@ -458,7 +461,7 @@ async function connectSemanticActionSurface(input: {
 
 async function optionalActionRuntimeConfig(
   input: { projectRoot: string; storePath: string; env: NodeJS.ProcessEnv; configPath?: string },
-): Promise<RuntimeConfig | undefined> {
+): Promise<{ config: RuntimeConfig; configPath: string } | undefined> {
   const configPath = path.join(path.resolve(input.projectRoot), "synapsor.actions.runner.json");
   try {
     await fs.access(configPath);
@@ -472,11 +475,11 @@ async function optionalActionRuntimeConfig(
       if (content === undefined) return undefined;
       const parsed: unknown = JSON.parse(content);
       if (!isRecord(parsed) || !parsed.action_rules) return undefined;
-      return readRuntimeConfig(primary, input);
+      return { config: await readRuntimeConfig(primary, input), configPath: path.resolve(primary) };
     }
     throw error;
   }
-  return readRuntimeConfig(configPath, input);
+  return { config: await readRuntimeConfig(configPath, input), configPath };
 }
 
 async function authoringStoreConfig(configPath: string): Promise<RuntimeConfig | undefined> {

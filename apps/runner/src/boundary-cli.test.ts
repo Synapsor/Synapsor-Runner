@@ -4,8 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as boundaryReviewMutations from "./boundary-review-mutation.js";
+import * as actionReadRevisions from "./action-rule-read-revision.js";
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
-import { loadPolicySources, activePolicySource } from "./authoring-policy-source.js";
+import { loadPolicySources, activePolicySource, newPolicySourceSession, policyTextSnapshot, savePolicySources, authoringDestination } from "./authoring-policy-source.js";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -77,7 +78,7 @@ import { AskError } from "./model-ask.js";
 import {
   generateModelActionSuggestionSet,
 } from "./action-suggestion-model.js";
-import { compileActionRuleModelDraft, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
+import { compileActionRuleModelDraft, actionRuleModelDraftFromAuthority, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import { buildActionRuleAuthorityDraft, readActionRuleAuthorityDraft, readActionRuleAuthorityActivation,
   writeActionRuleAuthorityDraft } from "./action-rule-authority.js";
 import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
@@ -5085,7 +5086,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised", "repair_on_resume", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+  it.each(["proposal_only", "supervised", "repair_on_resume", "concurrent_action_read_rebind", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit", "active_rules_recovery", "policy_target_business", "policy_target_mechanical", "policy_target_multi", "policy_target_retained", "policy_target_concurrent", "policy_target_collision"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
     const coverageFailure = posture === "coverage_failure";
     const partialConfirmation = posture === "partial_confirmation";
     const manualGuidedRetryNoop = posture === "guided_privacy_manual_retry_noop";
@@ -5107,6 +5108,22 @@ describe("boundary operator-plane CLI", () => {
       candidate: (await loadBoundaryReviewContext(root)).bundle.candidate_digest,
       action: await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"),
     });
+    let competingAction: Awaited<ReturnType<typeof readActionRuleAuthorityDraft>>;
+    if (posture === "concurrent_action_read_rebind") {
+      const buildCatalog = actionReadRevisions.buildActionCatalogForSavedReadRevision;
+      let rebinds = 0;
+      vi.spyOn(actionReadRevisions, "buildActionCatalogForSavedReadRevision").mockImplementation(async (args) => {
+        const catalog = await buildCatalog(args);
+        if (++rebinds === 2) {
+          const current = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
+          competingAction = { ...current, reviews: current.reviews.map((review) => ({
+            ...review, when: `${review.when} Concurrent operator clarification.`,
+          })) };
+          await writeActionRuleAuthorityDraft(root, competingAction);
+        }
+        return catalog;
+      });
+    }
     let beforeCancellation: Awaited<ReturnType<typeof snapshot>> | undefined;
     const cancelDrafting = async () => {
       beforeCancellation = await snapshot();
@@ -5620,6 +5637,20 @@ describe("boundary operator-plane CLI", () => {
         },
       )).resolves.toBe(0);
 
+      if (posture === "concurrent_action_read_rebind") {
+        expect(competingAction).toBeDefined();
+        expect(await readActionRuleAuthorityDraft(root, "reviewed_staging_rules")).toEqual(competingAction);
+        expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).not.toBe(preRevisionReadDigest);
+        expect(semanticChat.rememberDetails).toHaveBeenCalledWith("READ REVISION SAVED; REVIEW NEEDS RECOVERY", expect.arrayContaining([
+          expect.stringContaining("ACTION_BOUNDARY_REVISION_CHANGED"),
+          expect.stringContaining("The disabled Read revision was saved"),
+        ]));
+        expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+        await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+        expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
+        return;
+      }
+
       if (cancelScope) {
         expect(scopePreview).toBeDefined();
         expect(scopePreview!.source_database_changed).toBe(false);
@@ -6012,6 +6043,203 @@ describe("boundary operator-plane CLI", () => {
         confirmActivation: async () => false,
         confirmReviewedDisabled: async () => true,
       };
+      if (posture === "active_rules_recovery" || posture.startsWith("policy_target_")) {
+        if (!semantic || deferredResume.status !== "ready") throw new Error("Expected saved semantic job");
+        await activateExplorationBoundary({ projectRoot: root, candidate: reviewed.candidate, expectedDigest: exactReadDigest,
+          actor: "test-reviewer", confirmation: `ACTIVATE ${exactReadDigest}`,
+          confirmedDecisions: reviewed.candidate.unresolved_decisions, currentInspection: inspection });
+        const activeReadBefore = await loadActivatedExplorationBoundaries(root);
+        const catalog = buildActionRuleAuthoringCatalog({ boundary: reviewed.candidate, inspection, retainedCatalog: semantic.authority.catalog });
+        const { outcome: reviewedOutcome, ...reviewMaterial } = semantic.reviews[0]!;
+        const original = actionRuleModelDraftFromAuthority({ authority: semantic.authority, outcome: reviewedOutcome,
+          review: reviewMaterial, preserveVerificationFields: true });
+        const compile = (draft: ActionRuleModelDraftV1) => compileActionRuleModelDraft({ draft, builtCatalog: catalog,
+          readBoundary: reviewed.candidate, readBoundaryDigest: exactReadDigest });
+        const outcomes = ["maintenance.a_retained", original.outcome, "maintenance.z_retained"];
+        const compiled = outcomes.map((outcome) => {
+          const draft = structuredClone(original);
+          draft.name = draft.outcome = outcome;
+          draft.verification.name = `${outcome}.verification`; draft.effect.name = `${outcome}.effect`;
+          draft.approval = { ...draft.approval, class_name: `${outcome}.approval`, mode: "policy", auto_approve_when: draft.require,
+            shared_limits: [{ id: `${outcome}.overall`, kind: "count", scope: "boundary", maximum: 10, window_seconds: 86_400 },
+              { id: `${outcome}.tenant`, kind: "count", scope: "tenant", maximum: 3, window_seconds: 86_400 }] };
+          return compile(draft);
+        });
+        const combined = buildActionRuleAuthorityDraft({ name: semantic.authority.name, action_boundary_name: semantic.authority.action_boundary.name,
+          catalog: semantic.authority.catalog,
+          rules: compiled.flatMap((entry) => entry.loaded.authority.rules.map(({ activated_at: _at, ...rule }) => rule)),
+          approval_classes: compiled.flatMap((entry) => entry.loaded.authority.approval_classes),
+          reviews: compiled.map((entry) => ({ outcome: entry.rule.outcome, ...entry.review })) });
+        await writeActionRuleAuthorityDraft(root, combined);
+        const source = newPolicySourceSession();
+        source.snapshots = [policyTextSnapshot(Buffer.from("Preserve the shared limits and resolve the reviewer requirement for the current new outcome."), "Saved-rules.txt")];
+        source.active = 1;
+        source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+        await savePolicySources(root, source);
+        await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding: deferredResume.value.binding,
+          stage: "authority_review", jobIntent: deferredResume.value.job_intent, provider: "openai", model: "gpt-test",
+          conversation: deferredResume.value.conversation, read: deferredResume.value.read, action: deferredResume.value.action,
+          policySourceSession: source.id, previous: deferredResume.value }));
+        const recovery = posture === "active_rules_recovery";
+        let phase: "blocked" | "fail" | "ready" = "blocked";
+        let calls = 0, menus = 0;
+        const details: string[][] = [], diagnostics: string[] = [];
+        const confirmAction = vi.fn(async () => false);
+        const policySession: BoundaryReviewInteractiveSession = { ...resumedSession,
+          chooseResource: async (_resources, _overview, options) => {
+            if (recovery && phase !== "ready") throw new Error("Pending rules must not fall into the manual editor");
+            diagnostics.push(JSON.stringify(options?.notice)); return undefined;
+          },
+          chooseOption: async (title, _choices, options) => {
+            if (title === "START BOUNDARY DRAFTING") return "resume";
+            if (title === "REVIEW DISABLED ACTION REVISION") return "save";
+            if (title === "FINISH ATTACHED RULES REVIEW") {
+              expect(options?.initialValue).toBe("pause");
+              if (!recovery) return "pause";
+              menus++;
+              if (menus === 1) { expect(calls).toBe(2); return "details"; }
+              if (menus === 2) { expect(calls).toBe(2); phase = "fail"; return "resolve"; }
+              if (menus === 3) { expect(calls).toBe(3); return "details"; }
+              if (menus === 4) { expect(calls).toBe(3); return "pause"; }
+              expect(calls).toBe(3); phase = "ready"; return "resolve";
+            }
+            throw new Error(`Unexpected rules recovery prompt: ${title}`);
+          },
+          showReviewDetails: async (_title, lines) => { details.push(lines); },
+          confirmActivation: confirmAction,
+        };
+        const chat = testBoundaryAuthoringChat(policySession);
+        chat.readOperator = vi.fn().mockResolvedValueOnce("Require two reviewers for this same outcome; keep the others unchanged.");
+        chat.streamModel = vi.fn(async () => undefined);
+        const revise = vi.fn(async (input: Parameters<typeof generateModelActionRuleDraft>[0]): Promise<ModelActionRuleDraftResult> => {
+          expect(recovery).toBe(false);
+          expect(input.existingDraft!.outcome).toBe(original.outcome);
+          expect(input.reservedOutcomes).toEqual([outcomes[0], outcomes[2]]);
+          const draft = structuredClone(input.existingDraft!);
+          draft.approval.required_approvals = 2;
+          draft.review.human_review = "Two maintenance reviewers approve this proposal.";
+          if (posture === "policy_target_concurrent") {
+            const saved = (await readActionRuleAuthorityDraft(root, combined.authority.name))!;
+            await writeActionRuleAuthorityDraft(root, { ...saved, reviews: saved.reviews.map((entry) => ({ ...entry, when: `${entry.when} Concurrent review.` })) });
+          }
+          if (posture === "policy_target_collision") draft.name = draft.outcome = outcomes[0]!;
+          return { state: "ready", compiled: compile(draft), provider: "openai", model: "gpt-test", correction_used: false,
+            clarification_count: 0, authority_granted: false, source_database_changed: false };
+        });
+        const run = () => boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
+          policySession, undefined, { startWithAgentJob: true,
+            modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret", dependencies: { requestJson: async (request) => {
+              calls++;
+              const body = JSON.stringify(request.body);
+              expect(body).toContain("history_selector");
+              for (const outcome of outcomes) expect(body).toContain(outcome);
+              if (phase === "fail") throw new Error("POLICY_TEST_PROVIDER_UNAVAILABLE");
+              const saved = (await readActionRuleAuthorityDraft(root, combined.authority.name))!;
+              const fixed = phase === "ready" || saved.authority.approval_classes.find((entry) => entry.name === `${original.outcome}.approval`)!.required_approvals === 2;
+              return { status: 200, body: { output: [{ type: "function_call", call_id: `rules_${calls}`, name: "runner__review_policy_coverage",
+                arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: fixed ? "implemented" : "conflict",
+                  topic: recovery ? "Joint automatic-approval limits" : "Reviewer requirement",
+                  responsibility: recovery || posture === "policy_target_mechanical" ? "runner" : "operator",
+                  issue_kind: recovery || posture === "policy_target_mechanical" ? "contradiction" : "business_choice",
+                  interpretation: fixed ? "The prepared rules match the required selectors and reviewer quorum."
+                    : recovery ? "Different limit IDs were interpreted as separate pools." : "The current new outcome requires two reviewers.",
+                  next_step: recovery ? "Reconcile the history selectors without renaming IDs." : "Should this outcome require two reviewers?",
+                  draft_paths: recovery ? ["/actions/0/approval", "/actions/1/approval", "/actions/2/approval",
+                    ...outcomes.map((outcome) => `/runner_evidence/actions/${outcome}/automatic_limits`)]
+                    : posture === "policy_target_multi" ? ["/actions/0/approval", "/actions/1/approval", "/actions/2/approval"]
+                    : posture === "policy_target_retained" ? ["/actions/0/approval"]
+                    : ["/actions/1/approval", `/runner_evidence/actions/${original.outcome}/outcome`],
+                }] }) }] } };
+            } } }, modelBoundaryJobPlanner: resumedPlanner, modelActionRuleGenerator: revise,
+            modelAuthoringNarrator: async () => "Review the pending requirement for the saved outcome.",
+            actionProjectInspector: async () => inspection, boundaryAuthoringChatFactory: () => chat,
+          });
+        expect(await run()).toBe(0);
+        if (recovery) {
+          expect(menus).toBe(4);
+          expect(details.flat().join("\n")).toContain("history_selector");
+          expect(details.flat().join("\n")).toContain("POLICY_TEST_PROVIDER_UNAVAILABLE");
+          expect(chat.readOperator).not.toHaveBeenCalled();
+          expect(revise).not.toHaveBeenCalled();
+          expect(confirmAction).not.toHaveBeenCalled();
+          expect((await readActionRuleAuthorityDraft(root, combined.authority.name))!.digest).toBe(combined.digest);
+          phase = "blocked";
+          expect(await run()).toBe(0);
+          expect(menus).toBe(5);
+          expect(calls).toBe(4);
+          expect(confirmAction).toHaveBeenCalledOnce();
+          expect(revise).not.toHaveBeenCalled();
+          expect(chat.readOperator).not.toHaveBeenCalled();
+        } else {
+          const retainedOnly = posture === "policy_target_retained";
+          expect(revise).toHaveBeenCalledTimes(retainedOnly ? 0 : 1);
+          const failed = retainedOnly || posture === "policy_target_concurrent" || posture === "policy_target_collision";
+          expect(confirmAction).toHaveBeenCalledTimes(failed ? 0 : 1);
+          const saved = (await readActionRuleAuthorityDraft(root, combined.authority.name))!;
+          expect(saved.authority.approval_classes.find((entry) => entry.name === `${original.outcome}.approval`)!.required_approvals).toBe(failed ? 1 : 2);
+          for (const outcome of [outcomes[0]!, outcomes[2]!]) {
+            const stripTime = (rule: typeof saved.authority.rules[number]) => { const { activated_at: _time, ...rest } = rule; return rest; };
+            expect(stripTime(saved.authority.rules.find((entry) => entry.rule.outcome === outcome)!))
+              .toEqual(stripTime(combined.authority.rules.find((entry) => entry.rule.outcome === outcome)!));
+            expect(saved.authority.approval_classes.find((entry) => entry.name === `${outcome}.approval`))
+              .toEqual(combined.authority.approval_classes.find((entry) => entry.name === `${outcome}.approval`));
+          }
+          if (posture === "policy_target_concurrent") expect(saved.reviews.every((entry) => entry.when.endsWith("Concurrent review."))).toBe(true);
+          if (posture === "policy_target_collision") expect(saved.digest).toBe(combined.digest);
+          if (retainedOnly) {
+            expect(saved.digest).toBe(combined.digest);
+            expect(chat.checkpoint).toHaveBeenCalledWith("Action requirement still pending", expect.arrayContaining([
+              "Referenced outcomes: maintenance.a_retained.", expect.stringContaining("retained, not editable entries"),
+            ]), "warning");
+          }
+        }
+        expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeReadBefore);
+        expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+        return;
+      }
+      if (posture === "proposal_only") {
+        if (!semantic) throw new Error("Expected saved Action draft before concurrent resume");
+        const competing = { ...structuredClone(semantic), reviews: semantic.reviews.map((review) => ({
+          ...review, when: `${review.when} Concurrent operator clarification.`,
+        })) };
+        // The real caller has already loaded its completed outcomes and merge
+        // base when another operator publishes a new revision during rebind.
+        const buildCatalog = actionReadRevisions.buildActionCatalogForSavedReadRevision;
+        const rebind = vi.spyOn(actionReadRevisions, "buildActionCatalogForSavedReadRevision").mockImplementationOnce(async (args) => {
+          const result = await buildCatalog(args);
+          await writeActionRuleAuthorityDraft(root, competing);
+          return result;
+        });
+        let raceNotice: BoundaryAccessNotice | undefined;
+        const raceSession: BoundaryReviewInteractiveSession = { ...resumedSession,
+          chooseResource: async (_resources, _overview, options) => { raceNotice = options?.notice; return undefined; },
+          chooseOption: async (title) => {
+            if (title === "START BOUNDARY DRAFTING") return "resume";
+            throw new Error(`A stale Action must not reach activation review: ${title}`);
+          },
+        };
+        try {
+          await expect(boundaryReviewCommandInternal(
+            ["--project-root", root, "--access", "--job-first"], async () => inspection, raceSession, undefined, {
+              startWithAgentJob: true,
+              modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
+              modelBoundaryJobPlanner: resumedPlanner,
+              modelAuthoringNarrator: async () => "The saved job remains disabled.",
+              actionProjectInspector: async () => inspection,
+              boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(raceSession),
+            },
+          )).resolves.toBe(0);
+          expect(rebind).toHaveBeenCalledOnce();
+          expect(await readActionRuleAuthorityDraft(root, semantic.authority.name)).toEqual(competing);
+          expect(raceNotice?.lines.join("\n")).toContain("ACTION_BOUNDARY_REVISION_CHANGED");
+          expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(exactReadDigest);
+          expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+          expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
+        } finally {
+          rebind.mockRestore();
+          await writeActionRuleAuthorityDraft(root, semantic);
+        }
+      }
       await expect(boundaryReviewCommandInternal(
         ["--project-root", root, "--access", "--job-first"],
         async () => inspection,

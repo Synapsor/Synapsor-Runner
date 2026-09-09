@@ -149,7 +149,7 @@ export async function mcpServe(args: string[]): Promise<number> {
       : "semantic";
     const config = await readLocalExploreRuntimeConfig(projectRoot, configPath);
     if (config) {
-      await serveLocalExploreStdio({ projectRoot, config, modelAuthorityMetadata });
+      await serveLocalExploreStdio({ projectRoot, config, configPath, modelAuthorityMetadata });
     } else {
       await serveScopedExploreStdio({ projectRoot, modelAuthorityMetadata });
     }
@@ -183,6 +183,7 @@ export async function mcpServe(args: string[]): Promise<number> {
     await serveLocalExploreStdio({
       projectRoot: localExploreProjectRoot,
       config,
+      configPath,
       disableActions: readOnly,
       modelAuthorityMetadata: modelAuthorityMetadataMode(config),
     });
@@ -195,7 +196,7 @@ export async function mcpServe(args: string[]): Promise<number> {
     if (optionalArg(args, "--store") && path.resolve(optionalArg(args, "--store")!) !== selected) {
       throw new Error("Owner settings must use the project's configured control store; remove the different --store override.");
     }
-    await serveLocalExploreStdio({ projectRoot, config, modelAuthorityMetadata: modelAuthorityMetadataMode(config) });
+    await serveLocalExploreStdio({ projectRoot, config, configPath, modelAuthorityMetadata: modelAuthorityMetadataMode(config) });
     return 0;
   }
   if (isLocalExploreOnlyConfig(config)) {
@@ -219,6 +220,7 @@ export async function mcpServe(args: string[]): Promise<number> {
       ? await createOptionalActionRuleRuntimeServices({
           projectRoot: semanticProjectRoot,
           config,
+          configPath,
           env: process.env,
           store: runtimeStore,
         })
@@ -360,10 +362,10 @@ export async function mcpServeStreamableHttp(args: string[]): Promise<number> {
       tls,
       accessLog: process.stderr.isTTY === true,
       ...(productionExplore
-        ? { streamableSessionFactory: productionExploreSessionFactory(config, process.env) }
+        ? { streamableSessionFactory: productionExploreSessionFactory(config, process.env, { configPath }) }
         : configuredActionRuleProjectRoot(config)
           && await hasActiveActionRuleAuthority(configuredActionRuleProjectRoot(config)!)
-          ? { streamableSessionFactory: semanticActionSessionFactory(config, process.env, configuredActionRuleProjectRoot(config)!) }
+          ? { streamableSessionFactory: semanticActionSessionFactory(config, process.env, configuredActionRuleProjectRoot(config)!, configPath) }
           : {}),
     });
   } catch (error) {
@@ -823,6 +825,7 @@ export function productionExploreSessionFactory(
   config: RuntimeConfig,
   env: NodeJS.ProcessEnv,
   dependencies: {
+    configPath?: string;
     loadBoundaries?: typeof loadActivatedExplorationBoundaries;
     createExecutor?: typeof createScopedExploreDatabaseExecutor;
     createBoundarySetRuntime?: typeof createScopedExploreBoundarySetRuntime;
@@ -889,6 +892,7 @@ export function productionExploreSessionFactory(
       const semantic = await createOptionalReadActionRuleRuntimeServices({
         projectRoot,
         config,
+        configPath: dependencies.configPath,
         env,
         store,
         key: hmacKey,
@@ -959,17 +963,20 @@ function assertOwnerManagementLocalTransport(config: RuntimeConfig, readOnly: bo
 async function serveLocalExploreStdio(input: {
   projectRoot: string;
   config: RuntimeConfig;
+  configPath?: string;
   disableActions?: boolean;
   modelAuthorityMetadata: ReturnType<typeof modelAuthorityMetadataMode>;
 }): Promise<void> {
   const actionConfigPath = path.join(input.projectRoot, "synapsor.actions.runner.json");
-  const actionConfig = await fileExists(actionConfigPath) ? await readRuntimeConfig(actionConfigPath) : input.config;
+  const hasActionConfig = await fileExists(actionConfigPath);
+  const actionConfig = hasActionConfig ? await readRuntimeConfig(actionConfigPath) : input.config;
   const store = await createProjectRuntimeStore({ projectRoot: input.projectRoot, config: actionConfig, env: process.env,
     storePath: path.resolve(input.projectRoot, actionConfig.storage?.sqlite_path ?? ".synapsor/local.db") });
   try {
     const semantic = input.disableActions ? undefined : await createOptionalReadActionRuleRuntimeServices({
       projectRoot: input.projectRoot,
       config: actionConfig,
+      configPath: hasActionConfig ? actionConfigPath : input.configPath,
       env: process.env,
       store,
     }, reportOptionalActionSubjectFailure);
@@ -1045,11 +1052,13 @@ function semanticActionSessionFactory(
   config: RuntimeConfig,
   env: NodeJS.ProcessEnv,
   projectRoot: string,
+  configPath: string,
 ): StreamableHttpSessionFactory {
   return async ({ store, trustedContext, authenticationFingerprint, toolNameStyle, resultFormat }) => {
     const semantic = await createOptionalActionRuleRuntimeServices({
       projectRoot,
       config,
+      configPath,
       env,
       store,
       workflow_session_id: authenticatedActionWorkflowId(authenticationFingerprint),

@@ -1,5 +1,5 @@
-import type { PolicyCoverage, PolicyTextSnapshot, PolicyPassage, PolicySourceSession } from "./authoring-policy-source.js";
-import { unresolvedPolicyPassages } from "./authoring-policy-coverage.js";
+import { isDeferredPolicyDeployment, type PolicyCoverage, type PolicyTextSnapshot, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
+import { needsDeploymentCoverageClassification, unresolvedPolicyPassages } from "./authoring-policy-coverage.js";
 import { readBoundaryRevisionCatalog, type ReadBoundaryFieldExposureChange } from "./read-boundary-revision-model.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
@@ -22,19 +22,26 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
     nextStep: "Retry the coverage check for this saved draft.", passages: [], blocksReview: true }];
   const grouped = new Map<string, AuthoringReadinessItem>();
   for (const passage of unresolvedPolicyPassages(report)) {
-    const kind = passage.application_obligations?.length || passage.deployment_prerequisite ? "deployment_prerequisite"
+    const needsClassification = needsDeploymentCoverageClassification(passage);
+    const deferred = isDeferredPolicyDeployment(passage);
+    const kind = needsClassification ? "mechanical_correction"
+      : passage.application_obligations?.length || deferred ? "deployment_prerequisite"
       : passage.issue_kind === "schema_meaning" || passage.issue_kind === "business_choice" ? "business_decision"
       : passage.responsibility === "runner" || passage.issue_kind === "coverage_link" ? "mechanical_correction"
       : passage.disposition === "unsupported" ? "unsupported_runtime"
       : passage.responsibility === "deployment" ? "deployment_prerequisite" : "business_decision";
     const title = passage.topic ?? `Rule at lines ${passage.start}-${passage.end}`;
-    const key = `${kind}:${title}`;
-    const nextStep = passage.deployment_prerequisite === "authenticated_identity"
+    const key = `${kind}:${passage.deployment_prerequisite ?? ""}:${title}`;
+    const nextStep = needsClassification
+      ? "Recheck this deployment classification against exact Runner setup evidence. Do not revise business rules or require a client connection before authority review."
+      : deferred && passage.deployment_prerequisite === "runner_client_connection"
+        ? "After authority review, choose a supported Runner client in client setup and review installation and the connection check. Configuration has not been checked and connection remains unverified; identity, application behavior and execution need separate checks."
+      : deferred && passage.deployment_prerequisite === "authenticated_identity"
       ? "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it."
       : passage.next_step ?? passage.interpretation;
     const item = grouped.get(key) ?? { kind, title, nextStep, passages: [], blocksReview: false };
     item.passages.push(passage);
-    item.blocksReview ||= !passage.deployment_prerequisite && !applicationObligationAssigned(report, passage, session);
+    item.blocksReview ||= !deferred && !applicationObligationAssigned(report, passage, session);
     grouped.set(key, item);
   }
   return [...grouped.values()];
@@ -50,6 +57,7 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
   const assigned = items.filter((item) => !item.blocksReview);
   const clientChecks = [...new Set(assigned.flatMap((item) => item.passages.flatMap((passage) => [
     ...(passage.deployment_prerequisite === "authenticated_identity" ? ["signed-in customer identity"] : []),
+    ...(passage.deployment_prerequisite === "runner_client_connection" ? ["Runner client connection"] : []),
     ...(passage.application_obligations ?? []).map((obligation) => obligation === "customer_selection"
       ? "customer selection" : "accurate status messages"),
   ])))];

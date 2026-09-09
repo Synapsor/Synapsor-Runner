@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import mysql from "mysql2/promise";
 import {
   ActionRuleError,
@@ -14,6 +15,8 @@ import {
   createSemanticActionRuntime,
   createSubjectReferenceService,
   resolveSemanticSupervisedWorkerEligibility,
+  resolveSemanticSupervisedWriterSource,
+  resolveRuntimeConfig,
   resolveRuntimeSourceCredential,
   resolveTrustedContext,
   subjectReferenceScopeFingerprints,
@@ -52,7 +55,9 @@ import {
 } from "./action-rule-authority.js";
 import { loadExploreAuditKey } from "./scoped-explore.js";
 import { assertRuntimeControlPolicyContinuity, borrowRuntimeControlPolicies } from "./control-policy-store.js";
-import { readOperatorExecutionConfig } from "./control-policy-execution.js";
+import { executionBindingDigest, readOperatorExecutionConfig } from "./control-policy-execution.js";
+import { readPublishedPolicyConfiguration } from "./control-policy-config-publication.js";
+import { operationalLog, safeOperationalErrorCode } from "./cli-logging.js";
 
 type SemanticFactSession = {
   fact_loader: ActionRuleFactLoaderAdapterV1;
@@ -71,6 +76,7 @@ export type ActionRuleRuntimeServices = {
 export type ActionRuleRuntimeServiceInput = {
   projectRoot: string;
   config: RuntimeConfig;
+  configPath?: string;
   env?: NodeJS.ProcessEnv;
   store: ProposalRuntimeStore;
   key?: Buffer;
@@ -236,6 +242,14 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
     },
   } : baseReferences;
   const factSessionFactory = input.factSessionFactory ?? openSemanticFactSession;
+  const executionConfigAtStartup = structuredClone(input.config);
+  const executionConfigPath = input.configPath ? path.resolve(input.configPath) : undefined;
+  const held = (error: unknown) => {
+    operationalLog("warn", "semantic_action_execution_held", { code: safeOperationalErrorCode(error),
+      next_action: "Review saved execution and runtime configuration; then retry the same approved request. Do not edit stored policy hashes.",
+      source_database_changed: false });
+    return { execution: "held" as const, source_database_changed: false };
+  };
   const semanticActions = createSemanticActionRuntime({
     store: input.store,
     registry,
@@ -265,33 +279,51 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
         return { execution: "human_review", source_database_changed: false };
       }
       try {
-        await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
-        const currentConfig = policyStore ? (await readOperatorExecutionConfig({
-          projectRoot, config: input.config, policyStore,
-        })).config : input.config;
-        const eligibility = resolveSemanticSupervisedWorkerEligibility(currentConfig, activated, { phase: "queue" });
-        if (!eligibility.eligible || !eligibility.policy || !eligibility.action_boundary_digest) {
-          return { execution: "not_enabled", source_database_changed: false };
-        }
-        if (!input.store.enqueueWorkerProposal) {
-          return { execution: "held", source_database_changed: false };
-        }
-        await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
-        const delegated = await beginDelegation();
-        if (delegated) {
-          if (proposal.change_set.schema_version !== "synapsor.change-set.v4") throw new OwnerRuntimeError("DELEGATION_PROOF_REQUIRED");
-          await delegated.checkExisting(proposal.proposal_id, proposal.change_set.semantic_authority);
-        }
-        await input.store.enqueueWorkerProposal({
-          proposal_id: proposal.proposal_id,
-          execution_mode: "supervised_worker",
-          contract_digest: eligibility.action_boundary_digest,
-          max_attempts: eligibility.policy.max_attempts,
-          queue_limit: eligibility.policy.queue_limit,
+        return await withProjectAuthorityMutation(projectRoot, async () => {
+          await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+          let currentConfig = executionConfigAtStartup;
+          let policyEpoch: number | undefined;
+          if (policyStore) {
+            let candidate = executionConfigAtStartup;
+            if (executionConfigPath) {
+              const text = await readPublishedPolicyConfiguration(projectRoot, executionConfigPath);
+              if (text === undefined) throw Object.assign(new Error("The selected runtime configuration is no longer available."),
+                { code: "POLICY_RUNTIME_CONFIG_MISSING" });
+              candidate = resolveRuntimeConfig(JSON.parse(text) as RuntimeConfig, path.dirname(executionConfigPath));
+            }
+            const reviewed = await readOperatorExecutionConfig({ projectRoot, config: candidate, policyStore });
+            if (reviewed.config.supervised_worker === undefined) return { execution: "not_enabled" as const, source_database_changed: false };
+            assertExecutionConfigContinuation(executionConfigAtStartup, reviewed.config);
+            currentConfig = reviewed.config;
+            policyEpoch = reviewed.epoch;
+          }
+          const eligibility = resolveSemanticSupervisedWorkerEligibility(currentConfig, activated, { phase: "queue" });
+          if (!eligibility.eligible || !eligibility.policy || !eligibility.action_boundary_digest) {
+            return { execution: "not_enabled" as const, source_database_changed: false };
+          }
+          if (!input.store.enqueueWorkerProposal) {
+            return held({ code: "SEMANTIC_ACTION_QUEUE_UNAVAILABLE" });
+          }
+          await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+          const delegated = await beginDelegation();
+          if (delegated) {
+            if (proposal.change_set.schema_version !== "synapsor.change-set.v4") throw new OwnerRuntimeError("DELEGATION_PROOF_REQUIRED");
+            await delegated.checkExisting(proposal.proposal_id, proposal.change_set.semantic_authority);
+          }
+          if (policyStore && (await policyStore.repository.deployment(policyStore.deployment_id))?.epoch !== policyEpoch) {
+            throw Object.assign(new Error("Execution authority changed before queue admission."), { code: "POLICY_REVISION_CONFLICT" });
+          }
+          await input.store.enqueueWorkerProposal({
+            proposal_id: proposal.proposal_id,
+            execution_mode: "supervised_worker",
+            contract_digest: eligibility.action_boundary_digest,
+            max_attempts: eligibility.policy.max_attempts,
+            queue_limit: eligibility.policy.queue_limit,
+          });
+          return { execution: "queued" as const, source_database_changed: false };
         });
-        return { execution: "queued", source_database_changed: false };
-      } catch {
-        return { execution: "held", source_database_changed: false };
+      } catch (error) {
+        return held(error);
       }
     },
     resolveContext: async (expected) => {
@@ -348,6 +380,27 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
   }, projectRoot);
 }
 
+function assertExecutionConfigContinuation(original: RuntimeConfig, reviewed: RuntimeConfig): void {
+  const comparable = { ...reviewed, sources: { ...reviewed.sources } };
+  for (const [name, alias] of Object.entries(reviewed.sources ?? {})) {
+    if (Object.hasOwn(original.sources ?? {}, name)) continue;
+    // A separately reviewed writer alias may extend queue routing. It cannot
+    // change any existing source, Read access, identity, store or client binding.
+    const writer = alias.write_url_env;
+    const allowed = writer && Object.keys(original.sources ?? {}).some((source) =>
+        name === `${source}_writer_${canonicalJsonDigest({ source, write_url_env: writer }).slice(7, 19)}`
+        && resolveSemanticSupervisedWriterSource(reviewed, source, { write_url_env: writer }) === alias);
+    if (!allowed) throw executionConfigChanged();
+    delete comparable.sources[name];
+  }
+  if (executionBindingDigest(comparable) !== executionBindingDigest(original)) throw executionConfigChanged();
+}
+
+function executionConfigChanged(): Error {
+  return Object.assign(new Error("The reviewed execution configuration changes this client's existing runtime bindings."),
+    { code: "POLICY_RUNTIME_CONFIG_CHANGED" });
+}
+
 function assertDelegatedIdentity(delegated: DelegatedRequestContext, context: TrustedContext): void {
   if (delegated.trusted_context.tenant_id !== context.tenant_id || delegated.trusted_context.principal !== context.principal) {
     throw new OwnerRuntimeError("DELEGATION_IDENTITY_MISMATCH");
@@ -365,7 +418,15 @@ async function canonicalActionInput(input: ActionRuleRuntimeServiceInput, root: 
 
 function admitActionServices<T extends Omit<ActionRuleRuntimeServices, "authority">>(services: T, projectRoot: string): T {
   const call = services.semanticActions.callTool.bind(services.semanticActions);
-  services.semanticActions.callTool = (name, args) => withProjectRuntimeAdmission(projectRoot, () => call(name, args));
+  services.semanticActions.callTool = (name, args) => withProjectRuntimeAdmission(projectRoot, async () => {
+    const result = await call(name, args);
+    if (name === "app.request_change" && result.execution === "held"
+      && result.result_summary && typeof result.result_summary === "object" && !Array.isArray(result.result_summary)) {
+      return { ...result, result_summary: { ...result.result_summary,
+        next: "Execution is held. Ask the operator to inspect saved execution, runtime configuration and worker diagnostics, then retry this same request. Do not create a replacement request or edit stored policy hashes." } };
+    }
+    return result;
+  });
   const references = services.subjectReferences;
   const observation = references.observationRequirement.bind(references), issue = references.issue.bind(references), claim = references.claim.bind(references);
   references.observationRequirement = (resource) => withProjectRuntimeAdmission(projectRoot, () => observation(resource));

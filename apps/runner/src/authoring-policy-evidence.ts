@@ -1,6 +1,10 @@
 import { hasReviewedPrincipalScope, type ExplorationBoundaryDraft } from "./auto-boundary.js";
-import type { CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
+import { actionRuleModelDraftFromAuthority, type CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
+import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
+import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js";
 
 /** Evidence for authoring review, derived from the current typed candidates. No
  * runtime identities, rows, credentials or model assertions belong here. */
@@ -8,11 +12,23 @@ export function policyCoverageDraft(input: {
   read: ExplorationBoundaryDraft;
   decisions: Array<{ decision: string; confirmed: boolean }>;
   actions: CompiledActionRuleModelDraftV1[];
+  authority?: ActionRuleAuthorityDraftV1;
 }) {
   const catalog = readBoundaryRevisionCatalog(input.read);
+  // Coverage reviews the replacement bundle, not just newly authored entries.
+  // Otherwise adding one outcome makes retained business rules appear missing.
+  const actions: Array<Pick<CompiledActionRuleModelDraftV1, "draft" | "rule" | "verification_boundary" | "effect_envelope"> & { boundary_name: string }> = input.authority
+    ? input.authority.authority.rules.map((entry) => {
+      const review = input.authority!.reviews.find((item) => item.outcome === entry.rule.outcome);
+      if (!review) throw new Error(`POLICY_COVERAGE_ACTION_REVIEW_MISSING: ${entry.rule.outcome} needs its saved review before the complete policy can be checked.`);
+      return { boundary_name: input.authority!.authority.action_boundary.name,
+        rule: entry.rule, verification_boundary: entry.verification_boundary, effect_envelope: entry.effect_envelope,
+        draft: actionRuleModelDraftFromAuthority({ authority: input.authority!.authority, outcome: entry.rule.outcome,
+          review, preserveVerificationFields: true }) };
+    }) : input.actions.map((action) => ({ ...action, boundary_name: action.loaded.authority.action_boundary.name }));
   return {
     read: input.read,
-    actions: input.actions.map((action) => action.draft),
+    actions: actions.map((action) => action.draft),
     runner_evidence: {
       read_review: {
         meaning: "read.unresolved_decisions lists candidate review requirements, NOT current outstanding decisions. The following current digest-bound review status is authoritative for their confirmation, not activation.",
@@ -38,7 +54,7 @@ export function policyCoverageDraft(input: {
           }])),
         }] as const;
       })),
-      actions: Object.fromEntries(input.actions.map((action) => [action.rule.outcome, {
+      actions: Object.fromEntries(actions.map((action) => [action.rule.outcome, {
         outcome: action.rule.outcome,
         scoped_bindings: Object.fromEntries(action.verification_boundary.resources.map((resource) => [resource.binding, {
           binding: resource.binding, resource: resource.resource, scope: resource.scope, source: resource.source,
@@ -47,6 +63,18 @@ export function policyCoverageDraft(input: {
         }])),
         automatic_limits: (action.draft.approval.shared_limits ?? []).map((limit) => ({
           ...limit,
+          applies_to_outcome: limit.capability === undefined || limit.capability === action.rule.outcome,
+          history_selector: {
+            action_boundary_name: action.boundary_name,
+            approval_status: "approved",
+            window_seconds: limit.window_seconds,
+            time_bounds: "inclusive: now - window_seconds through now",
+            capability: limit.capability ?? (limit.scope === "capability" ? action.rule.outcome : null),
+            tenant: ["tenant", "tenant_principal", "tenant_object"].includes(limit.scope) ? "current_proposal.tenant_id" : null,
+            principal: limit.scope === "tenant_principal" ? "current_proposal.principal" : null,
+            business_object: limit.scope === "tenant_object" ? "current_proposal.business_object" : null,
+            object_id: limit.scope === "tenant_object" ? "current_proposal.object_id" : null,
+          },
           ...(limit.scope === "tenant" || limit.scope === "tenant_principal" ? {
             tenant_bindings: action.verification_boundary.resources.filter((resource) => resource.scope.mode === "columns")
               .map((resource) => ({ resource: resource.resource,
@@ -76,6 +104,12 @@ export function policyCoverageDraft(input: {
       }])),
       runtime_contract: {
         approval: "Automatic approval counts are taken atomically from Runner's proposal/approval ledger with the configured scope, capability and window. Limits govern automatic approval, not authorized human fallback. Invalid eligibility is refused before approval.",
+        approval_counter_selection: {
+          evidence: "Each automatic_limits entry supplies its exact history_selector and applies_to_outcome, derived from the current compiled authority. Null selectors mean no filter, not missing configuration. Tenant/principal/object selectors reference the current trusted proposal; no runtime identity values are supplied here.",
+          diagnostic_only: ["limit.id"],
+          not_history_filters: ["limit.id", "approval_class", "action_boundary_digest"],
+          semantics: "The evaluator selects approved history by Action Boundary name, inclusive time window and the listed optional capability/tenant/principal/object filters. Different limit IDs or approval classes do NOT create separate counters. The same selectors share the same history across outcomes and authority revisions; matching IDs do not combine different selectors. Compare kind, maximum and optional total field separately from the history selector. A capability filter, capability scope, different trusted scope or different window can change the selected history. Reconcile a false grouping claim in the report; do not rename IDs or change valid business rules to satisfy it.",
+        },
         request_identity: "The fixed request_change operation accepts outcome, scoped subject_refs and reviewed business inputs, not a client-supplied request ID. Repeating the same claimed references, outcome and inputs reuses the recorded proposal. New references or a different reviewed request are not an unlimited delivery-retry exemption. Execution uses the sealed proposal's idempotency identity.",
         conflict_protection: "Runner records immutable eligibility/effect evidence, re-verifies current facts and approved effect at execution, and checks configured version fields. A changed version or changed approved effect refuses stale execution; do not require duplicate equality predicates in require for these Runner-owned checks.",
         version_advancement: "Each compiled action effect lists its exact version_advance, or null when none is configured. integer_increment advances that column in the same guarded source transaction as the successful change. Refused, rolled-back and replayed requests do not advance it again. A conflict field alone is not proof of advancement; neither is this contract permission to add an unconfigured version update.",
@@ -86,6 +120,16 @@ export function policyCoverageDraft(input: {
           status_presentation: "The client presents returned statuses and receipts accurately. Approval, a queued request or a failed execution is not completion. A recorded future-effective change does not mean benefits are already in force.",
         },
         deployment_prerequisites: {
+          runner_client_connection: {
+            supported: true,
+            supported_clients: ["claude-code", "cursor", "vscode"] satisfies ManagedMcpProjectClient[],
+            transport: "local_stdio",
+            stage: "after_authority_review",
+            configuration_checked: false,
+            verified: false,
+            meaning: "Runner supports managed local stdio client installation at the later client handoff. This is not external application business implementation or a prerequisite for reviewing disabled authority. It does not prove a client is installed or connected, authenticate a customer, grant authority, or start a worker. Custom clients and production HTTP requirements need their own review.",
+            next_step: "After authority review, choose a supported client in client setup and review its installation and connection check. Connection, authenticated identity, application responsibilities and execution readiness remain separate and unverified.",
+          },
           authenticated_identity: {
             reviewed_customer_scope: input.read.pack.resources.length > 0
               && input.read.pack.resources.every((resource) => hasReviewedPrincipalScope(resource)
@@ -98,4 +142,35 @@ export function policyCoverageDraft(input: {
       },
     },
   };
+}
+
+/** Resolve traceability against the report's exact bundle, never an editable
+ * subset's array positions. A reference is evidence, not permission to edit. */
+export function policyCoverageActionTargets(input: {
+  report: PolicyCoverage;
+  draft: ReturnType<typeof policyCoverageDraft>;
+  passages: PolicyPassage[];
+  editableOutcomes: readonly string[];
+}): { referenced: string[]; editable: string[] } {
+  if (canonicalJsonDigest(input.draft) !== input.report.draft_digest) {
+    throw new Error("POLICY_COVERAGE_DRAFT_CHANGED: recheck the exact current draft before choosing an Action revision.");
+  }
+  const referenced = new Set<string>();
+  for (const passage of input.passages) {
+    for (const pointer of passage.draft_paths) {
+      const parts = pointer.slice(1).split("/").map((part) => part.replace(/~1/gu, "/").replace(/~0/gu, "~"));
+      let outcome: string | undefined;
+      if (parts[0] === "actions" && parts.length > 1) {
+        if (!/^(?:0|[1-9]\d*)$/u.test(parts[1]!)) throw new Error("POLICY_COVERAGE_ACTION_TARGET_INVALID: expected an exact Action index.");
+        outcome = input.draft.actions[Number(parts[1])]?.outcome;
+      } else if (parts[0] === "runner_evidence" && parts[1] === "actions" && parts.length > 2) {
+        if (Object.hasOwn(input.draft.runner_evidence.actions, parts[2]!)) outcome = input.draft.runner_evidence.actions[parts[2]!]!.outcome;
+      } else continue;
+      if (!outcome || input.draft.actions.filter((action) => action.outcome === outcome).length !== 1) {
+        throw new Error("POLICY_COVERAGE_ACTION_TARGET_INVALID: the referenced outcome is missing or ambiguous. No Action was selected.");
+      }
+      referenced.add(outcome);
+    }
+  }
+  return { referenced: [...referenced], editable: [...referenced].filter((outcome) => input.editableOutcomes.includes(outcome)) };
 }

@@ -98,6 +98,14 @@ export async function assertNoPendingPolicyConfiguration(projectRoot: string, co
   await assertNoRecord(files.journal);
 }
 
+/** Runtime inspection only: never settle a journal or trust a file as policy.
+ * Callers retain the publication permit through their final admission check. */
+export async function readPublishedPolicyConfiguration(projectRoot: string, configPath: string): Promise<string | undefined> {
+  const files = await publicationPaths(projectRoot, configPath, false);
+  await assertNoRecord(files.journal);
+  return readPrivateTarget(files.target);
+}
+
 async function publicationPaths(projectRoot: string, configPath: string, create: boolean) {
   const root = await fs.realpath(projectRoot), target = path.resolve(configPath);
   const relative = path.relative(root, target);

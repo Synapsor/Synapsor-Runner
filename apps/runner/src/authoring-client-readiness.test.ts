@@ -4,7 +4,9 @@ import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { clientHandoffMatchesActiveAuthority, pendingClientResponsibilities } from "./authoring-client-readiness.js";
-import { newPolicySourceSession, policyTextSnapshot, savePolicySources, bindPolicyCoverage } from "./authoring-policy-source.js";
+import { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources, bindPolicyCoverage } from "./authoring-policy-source.js";
+import { parsePolicyCoverage } from "./authoring-policy-coverage.js";
+import { policyReviewReadiness } from "./authoring-review-readiness.js";
 
 const active = vi.hoisted(() => ({ reads: vi.fn(), actions: vi.fn() }));
 vi.mock("./auto-boundary.js", async (original) => ({ ...await original<typeof import("./auto-boundary.js")>(), loadActivatedExplorationBoundaries: active.reads }));
@@ -82,6 +84,50 @@ describe("client setup checkpoint is navigation, never authority or readiness pr
       session.coverage.source_digest = digest("9");
       await savePolicySources(root, session);
       expect((await pendingClientResponsibilities(root, state)).join("\n")).toContain("current coverage check");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it("reloads pending Runner installation distinctly from session identity and application assignment", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-client-installation-"));
+    try {
+      const session = newPolicySourceSession();
+      const source = policyTextSnapshot(Buffer.from("Connect Claude Code.\nInject trusted customer identity.\nPresent completion accurately."), "rules.txt");
+      session.snapshots = [source]; session.active = source.version;
+      const evidence = { runner_evidence: { runtime_contract: {
+        deployment_prerequisites: {
+          runner_client_connection: { supported: true, stage: "after_authority_review", configuration_checked: false, verified: false },
+          authenticated_identity: { reviewed_customer_scope: true, verified: false },
+        }, application_obligations: { status_presentation: "Distinguish approval from a completion receipt." },
+      } } };
+      session.coverage = parsePolicyCoverage({ passages: [
+        ...(["runner_client_connection", "authenticated_identity"] as const).map((prerequisite, index) => ({
+          start: index + 1, end: index + 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
+          topic: "Client setup", interpretation: "Setup remains unverified.", deployment_prerequisite: prerequisite,
+          draft_paths: [`/runner_evidence/runtime_contract/deployment_prerequisites/${prerequisite}`],
+        })),
+        { start: 3, end: 3, disposition: "unsupported", responsibility: "application", interpretation: "Test the client's receipt messages.",
+          topic: "Status messages", application_obligations: ["status_presentation"],
+          draft_paths: ["/runner_evidence/runtime_contract/application_obligations/status_presentation"] },
+      ] }, source, evidence, "");
+      const before = structuredClone(session);
+      await savePolicySources(root, session);
+      const restored = await loadPolicySources(root, session.id);
+      expect(restored).toEqual(before);
+      expect(policyReviewReadiness(source, restored.coverage, restored).ready).toBe(false);
+      const output = (await pendingClientResponsibilities(root, { ...saved(), policy_source_session: session.id })).join("\n");
+      expect(output).toContain("Runner client connection setup pending; not verified");
+      expect(output).toContain("runtime identity setup pending; not verified");
+      expect(output).toContain("assignment pending; not verified");
+      expect(output).not.toContain("assigned to your client application");
+      expect(session).toEqual(before);
+      session.coverage.passages[0]!.draft_paths = ["/runner_evidence/runtime_contract/deployment_prerequisites"];
+      await savePolicySources(root, session);
+      expect((await loadPolicySources(root, session.id)).coverage).toBeUndefined();
+      expect((await pendingClientResponsibilities(root, { ...saved(), policy_source_session: session.id })).join("\n")).toContain("current coverage check");
+      delete session.coverage.passages[0]!.deployment_prerequisite;
+      await savePolicySources(root, session);
+      const legacy = (await pendingClientResponsibilities(root, { ...saved(), policy_source_session: session.id })).join("\n");
+      expect(legacy).toContain("setup classification pending; not verified");
+      expect(legacy).toContain("Recheck this deployment classification");
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it("handles an absent Action file for read-only jobs but refuses corrupt authority", async () => {
