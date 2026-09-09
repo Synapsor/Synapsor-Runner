@@ -9,6 +9,7 @@ import {
   type RuntimeSupervisedWorkerOutcomePolicy,
 } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { parseActionRuleAuthority } from "@synapsor-runner/action-rules";
 import {
   inspectDatabase,
   rolePostureFingerprint,
@@ -28,7 +29,7 @@ import {
 import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
 import { compareGenerationLock, loadGenerationLockForActivatedBoundary, generationLockRemediation,
   loadActivatedExplorationBoundaries, type ActivatedExplorationBoundary } from "./auto-boundary.js";
-import { bindSemanticReadScope } from "./semantic-action-read-scope.js";
+import { bindSemanticReadScope, bindSemanticReviewedReadScope } from "./semantic-action-read-scope.js";
 import { SemanticWriterPostureError } from "./semantic-execution-setup.js";
 import { writerProvisioningPlan } from "./writer-provisioning.js";
 import { encodeOperatorExecutionPolicy, parseOperatorExecutionPolicy, readOperatorExecutionConfig } from "./control-policy-execution.js";
@@ -98,6 +99,51 @@ const DEFAULT_SEMANTIC_WORKER_LIMITS = {
   proposal_ttl_seconds: 86_400,
   rate_limit: { executions: 60, window_seconds: 60 },
 } as const;
+
+/** Metadata-only prerequisite check. The candidate config stays in memory and cannot enable execution. */
+export async function inspectDraftSemanticWriter(input: {
+  draft: Pick<ActionRuleAuthorityDraftV1, "authority" | "digest">;
+  reads: Parameters<typeof bindSemanticReviewedReadScope>[2];
+  engine: "postgres" | "mysql";
+  readUrlEnv: string;
+  writeUrlEnv?: string;
+  env?: NodeJS.ProcessEnv;
+  inspect?: typeof inspectDatabase;
+}) {
+  const { authority, registry } = parseActionRuleAuthority(input.draft.authority, input.draft.digest);
+  const executable = registry.rules.filter(({ compiled }) => compiled.effect_envelope.writeback.mode === "direct_sql"
+    && compiled.effect_envelope.writeback.supervised_worker === "allowed");
+  if (!executable.length) return undefined;
+  const writeUrlEnv = environmentName(input.writeUrlEnv ?? "SYNAPSOR_DATABASE_WRITE_URL");
+  const env = input.env ?? process.env;
+  if (!stringValue(env[writeUrlEnv])) throw new Error("SEMANTIC_ACTION_WRITER_URL_MISSING: configure a separate writer during execution setup; Read and proposal progress can continue.");
+  // A single configured writer is checked against the complete planned bundle.
+  // Actual per-outcome deployment still rechecks its selected credential separately.
+  const sources = Object.fromEntries(executable.map(({ compiled }) => [compiled.source, {
+    engine: input.engine, read_url_env: environmentName(input.readUrlEnv), write_url_env: writeUrlEnv,
+    read_only: false, receipts: { authority: "runner_ledger" },
+  }]));
+  if (Object.keys(sources).length !== 1) throw new Error("SEMANTIC_ACTION_WRITER_SOURCE_MISMATCH: select and verify a writer for each source during execution setup.");
+  const outcomes = new Set(executable.map(({ compiled }) => compiled.outcome));
+  const scoped = bindSemanticReviewedReadScope({ version: 1, mode: "review", sources },
+    authority.rules.filter((rule) => outcomes.has(rule.rule.outcome)), input.reads);
+  const inspection = await (input.inspect ?? inspectDatabase)({ engine: input.engine,
+    databaseUrlEnv: writeUrlEnv, statementTimeoutMs: 5_000, env });
+  if (inspection.engine !== input.engine) throw new Error("SEMANTIC_ACTION_WRITER_ENGINE_MISMATCH: the writer must connect to the reviewed database engine.");
+  const fingerprint = rolePostureFingerprint(inspection);
+  const policies: RuntimeSupervisedWorkerOutcomePolicy[] = executable.map(({ compiled }) => ({
+    outcome: compiled.outcome, action_boundary_digest: authority.action_boundary.digest,
+    mode: "supervised_worker", ...DEFAULT_SEMANTIC_WORKER_LIMITS, write_url_env: writeUrlEnv,
+    require_least_privilege_writer: true, writer_posture_fingerprint: fingerprint,
+  }));
+  const candidate: RuntimeConfig = { ...scoped, version: 1, mode: "review",
+    supervised_worker: { enabled: false, profile: "development", capabilities: [], outcomes: policies } };
+  const assessment = assessSemanticSupervisedWriterPosture(candidate, policies[0]!, registry, inspection);
+  const plan = policies.length === 1 ? writerProvisioningPlan({ assessment, inspection, outcome: policies[0]!.outcome,
+    actionDigest: authority.action_boundary.digest, writerEnv: writeUrlEnv }) : undefined;
+  return { assessment, outcomes: policies.map((policy) => policy.outcome),
+    action_digest: authority.action_boundary.digest, ...(plan ? { plan } : {}) };
+}
 
 /**
  * Publishes the separate Action runtime binding before the immutable authority

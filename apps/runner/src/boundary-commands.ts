@@ -226,8 +226,11 @@ import {
 import {
   activateSemanticActionRuntime,
   executionReReviewOutcomesForActionActivation,
+  inspectDraftSemanticWriter,
   readSemanticSupervisedExecutionState,
 } from "./semantic-action-deployment.js";
+import { SemanticWriterPostureError, executionSetupProblem } from "./semantic-execution-setup.js";
+import { writerProvisioningSql } from "./writer-provisioning.js";
 export { reviewVerifiedActionAuthority } from "./verified-action-review.js";
 import {
   reviewSemanticSupervisedExecution,
@@ -4041,6 +4044,7 @@ type ReadBoundaryReviewDisposition = "activated" | "finish" | "manual_editor";
 
 type ReadBoundaryReviewOptions = {
   businessSummary?: () => string[];
+  deploymentReadiness?: () => Promise<{ summary: string[]; details: string[] }>;
   confirmedFieldMeanings?: (readDigest: string) => ReadonlySet<string>;
   privacyEvidence?: (boundary: ExplorationBoundaryDraft) => ReadPrivacyReview;
   sequenceSummary?: () => string[];
@@ -7835,6 +7839,39 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       assignments: authoringConversation?.policySources?.application_assignments ?? [] })) break;
   }
   const modelGuidedReadReviewReady = Boolean(input.authoringChat && modelAssistRecord);
+  let writerPreflight: { key: string; summary: string[]; details: string[] } | undefined;
+  const draftWriterReadiness = async () => {
+    if (!semanticActionAuthorityDraft || !semanticActionDrafts.some((entry) => entry.result.compiled.effect_envelope.writeback.mode === "direct_sql")) return { summary: [], details: [] };
+    const key = canonicalJsonDigest({ draft: semanticActionAuthorityDraft.digest, read: context.bundle.candidate_digest,
+      credential: process.env.SYNAPSOR_DATABASE_WRITE_URL ?? null });
+    if (writerPreflight?.key === key) return writerPreflight;
+    try {
+      const needsOtherRead = semanticActionAuthorityDraft.authority.rules.some((rule) =>
+        rule.read_boundary_name !== context.candidate.pack.name && rule.effect_envelope.writeback.mode === "direct_sql"
+          && rule.effect_envelope.writeback.supervised_worker === "allowed");
+      const otherReads = needsOtherRead ? (await loadActivatedExplorationBoundaries(input.projectRoot))
+        .filter((read) => read.pack.name !== context.candidate.pack.name)
+        .map((read) => ({ pack: read.pack, digest: read.activation.digest })) : [];
+      const checked = await inspectDraftSemanticWriter({ draft: semanticActionAuthorityDraft,
+        reads: [...otherReads, { pack: context.candidate.pack, digest: context.bundle.candidate_digest }],
+        engine: context.lock.engine, readUrlEnv: context.lock.source_env, inspect: input.schemaInspector });
+      if (!checked) return { summary: [], details: [] };
+      if (!checked.assessment.ok) {
+        const problem = new SemanticWriterPostureError(checked.assessment, "SYNAPSOR_DATABASE_WRITE_URL", checked.plan);
+        writerPreflight = { key,
+          summary: ["Execution prerequisite: the configured writer cannot safely complete these changes. An administrator must prepare a dedicated writer; execution setup offers the exact handoff and a recheck without reauthoring. Reads and proposals can still be reviewed."],
+          details: [...problem.problem.details, ...(checked.plan ? ["", "DRAFT WRITER GRANTS (administrator review only)", writerProvisioningSql(checked.plan)] : [])] };
+      } else writerPreflight = { key,
+        summary: ["Writer preflight: configured permissions match the combined draft requirements. The selected per-outcome writer is rechecked during separate execution review; execution is not enabled."],
+        details: ["Metadata-only draft writer check passed; no source rows read or changed.",
+          `Action revision: ${checked.action_digest}`, `Writer posture: ${checked.assessment.fingerprint}`,
+          JSON.stringify(checked.assessment.required_relations, null, 2)] };
+    } catch (error) {
+      const problem = executionSetupProblem(error);
+      writerPreflight = { key, summary: [`Execution prerequisite: ${problem.summary} Read and proposal review can continue; execution remains a separate decision.`], details: problem.details };
+    }
+    return writerPreflight;
+  };
   const preparedSemanticAction = Boolean(semanticActionAuthorityDraft);
   if ((actionDrafts.length || preparedSemanticAction || modelGuidedReadReviewReady)
     && !readBoundaryActive
@@ -7853,6 +7890,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     else await writeRunner("NEXT AUTHORITY REVIEW - READ BOUNDARY", nextReadReviewDetails);
     const reviewResult = await input.completeReadReview("activate", input.session, {
       businessSummary: () => semanticActionDrafts.flatMap((entry) => semanticActionBusinessReviewLines(entry.result.compiled, context.candidate)),
+      deploymentReadiness: draftWriterReadiness,
       sequenceSummary: () => {
         const automatic = semanticActionDrafts.filter((entry) => entry.result.compiled.effect_envelope.writeback.mode === "direct_sql");
         const missing = unmetExecutionEntries();
@@ -7861,9 +7899,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ? ["UNMET REQUEST: automatic completion is not configured. This draft would only propose changes. Choose Prepare requested automatic execution to retain the rules and prepare a separate execution review."]
             : []),
           `Next: Read review${semanticActionDrafts.length || actionDrafts.length ? " -> Action review" : ""}${automatic.length || missing.length ? ` -> execution review (${missing.length ? "configuration missing" : "prepared, not enabled; worker required"})` : ""} -> ${intendedClient && intendedClient !== "later" ? `${authoringClientLabel(intendedClient)} configuration and launch check` : "client setup"}.`,
-          ...(automatic.length || missing.length ? [`Still needed: ${process.env.SYNAPSOR_DATABASE_WRITE_URL?.trim()
-            ? "Write connection configured; exact permissions not yet verified."
-            : "The default write connection is not configured; choose a configured writer during execution setup."} Automatic completion also requires trusted runtime identity and a running worker; neither is proved by this Read review.`] : []),
+          ...(automatic.length || missing.length ? ["Still needed: separately verify and authorize the selected writer during execution setup. Automatic completion also requires trusted runtime identity and a running worker; neither is proved by this Read review."] : []),
         ];
       },
       executionPreparationNeeded: () => unmetExecutionEntries().length > 0,
@@ -7890,6 +7926,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       } : {}),
       privateDependencies: () => semanticActionDrafts.length
         ? ["Private Action verification is separate from model-facing Read operations. This draft remains subject to separate Action and execution review.",
+          ...(writerPreflight?.details ?? []),
           ...semanticActionDrafts.flatMap((entry) => [entry.result.compiled.draft.outcome,
             ...JSON.stringify(entry.result.compiled.draft, null, 2).split("\n")])]
         : ["No dependent semantic Action draft is attached to this review."],
@@ -11368,6 +11405,8 @@ async function confirmAndActivateFocusedBoundary(input: {
     ...(activationReviewNotice ? activationReviewNotice.trimEnd().split("\n") : []),
   ];
   const readiness = await input.reviewOptions?.readiness?.();
+  const deployment = await input.reviewOptions?.deploymentReadiness?.();
+  activationContext.push(...(deployment?.summary ?? []));
   const privacy = input.reviewOptions?.privacyEvidence?.(context.candidate)
     ?? readPrivacyReview({ boundary: context.candidate, confirmedMeanings: input.reviewOptions?.confirmedFieldMeanings?.(context.bundle.candidate_digest) });
   const discoveryConcerns = readDiscoveryCompatibility(context.candidate, context.bundle.candidate_digest,
@@ -11375,6 +11414,7 @@ async function confirmAndActivateFocusedBoundary(input: {
   const discoveryLines = readDiscoveryConcernLines(discoveryConcerns);
   activationContext.push(...(discoveryLines.length ? ["", ...discoveryLines] : ["Discovery compatibility: complete resource contracts fit the bounded MCP response."]));
   const conversationReviewContext = formatReadActivationDecisionSummary([
+    ...(deployment?.summary ?? []),
     ...(discoveryConcerns.length ? ["Discovery compatibility: some exact resource contracts exceed the supported size. Revise this saved draft before activation; exact details list the affected resources and sizes."] : []),
     ...(readiness?.summary ?? await input.reviewOptions?.rulesSummary?.() ?? []),
     ...(input.reviewOptions?.sequenceSummary?.() ?? ["Sequence: this decision grants Read access only. Action approval and source execution require separate reviews."]),
@@ -12070,7 +12110,7 @@ export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle
 export function formatReadActivationDecisionSummary(lines: string[], columns: number): string[] {
   const pending = lines.filter((line) => /^(?:Client integration still unverified|Next|Sequence|Still needed):/u.test(line));
   const facts = lines.filter((line) => !pending.includes(line));
-  const concern = (line: string) => /^(?:Before activation|UNMET REQUEST|Privacy decision|Discovery compatibility):/u.test(line);
+  const concern = (line: string) => /^(?:Before activation|UNMET REQUEST|Privacy decision|Discovery compatibility|Execution prerequisite):/u.test(line);
   facts.sort((a, b) => Number(concern(b)) - Number(concern(a)));
   if (pending.length) facts.push(`Still needed: ${pending.map((line) => line.slice(line.indexOf(":") + 1).trim()).join(" ")}`);
   const rows: Array<[string, string]> = [];

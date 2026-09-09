@@ -9,12 +9,21 @@ export function bindSemanticReadScope(
   rules: ActionRuleAuthorityV1["rules"],
   reads: ActivatedExplorationBoundary[],
 ): Record<string, unknown> {
+  return bindSemanticReviewedReadScope(config, rules, reads.map((read) => ({ pack: read.pack, digest: read.activation.digest })));
+}
+
+/** Pure binding for a checked draft or active revision; never grants authority. */
+export function bindSemanticReviewedReadScope(
+  config: Record<string, unknown>,
+  rules: ActionRuleAuthorityV1["rules"],
+  reads: Array<Pick<ActivatedExplorationBoundary, "pack"> & { digest: string }>,
+): Record<string, unknown> {
   const next = structuredClone(config);
   const sources = next.sources as Record<string, Record<string, unknown>> | undefined;
   const bindings = new Map<string, { mode: "postgres_rls"; tenant_setting: string; principal_setting?: string }>();
   for (const rule of rules) {
     const read = reads.find((candidate) => candidate.pack.name === rule.read_boundary_name);
-    if (!read || read.activation.digest !== rule.read_boundary_digest) {
+    if (!read || read.digest !== rule.read_boundary_digest) {
       throw new Error("SEMANTIC_ACTION_READ_SCOPE_STALE: review the Action's exact Read dependency before preparing its runtime.");
     }
     for (const resource of rule.verification_boundary.resources) {

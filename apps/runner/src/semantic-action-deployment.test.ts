@@ -9,6 +9,7 @@ import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import type { ActionRuleSpecV1, DerivedEffectEnvelopeSpecV1, RuleVerificationBoundarySpecV1 } from "@synapsor/spec";
 import { activateSemanticActionRuntime, restoreReviewedSemanticReadScope, previewSemanticSupervisedExecution,
   enableSemanticSupervisedExecution, executionReReviewOutcomesForActionActivation, semanticExecutionConfirmation } from "./semantic-action-deployment.js";
+import { inspectDraftSemanticWriter } from "./semantic-action-deployment.js";
 import { buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, loadActiveActionRuleAuthority,
   type ActionRuleAuthorityActivationV1, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
@@ -118,6 +119,72 @@ describe("complete Action Boundary execution re-review", () => {
       .toEqual(["warehouse.correct_quantity"]);
     expect(executionReReviewOutcomesForActionActivation({ active, draft,
       execution: { enabled: false, config_path: "synapsor.actions.runner.json", policies: policies as never } })).toEqual([]);
+  });
+});
+
+describe("metadata-only writer preflight before activation", () => {
+  it.each([false, true])("checks the whole planned writer envelope without activating (multiple=%s)", async (multiple) => {
+    const fixture = await activeProject("human", multiple);
+    await fs.rm(fixture.activePath);
+    const configBefore = await fs.readFile(fixture.configPath, "utf8");
+    const draftBefore = JSON.stringify(fixture.draft);
+    const inspection = writerInspection("dedicated", "status");
+    inspection.tables[0]!.row_level_security = true;
+    Object.assign(inspection.tables[0]!.role_posture!, { row_security_effective_for_current_role: true, row_security_update_permitted: true });
+    if (multiple) inspection.tables[0]!.role_posture!.column_privileges!.update!.push("priority");
+    const inspect = vi.fn(async () => inspection);
+    const input = { draft: fixture.draft, reads: [fixture.reviewedRead], engine: "postgres" as const,
+      readUrlEnv: "DATABASE_URL", env: { SYNAPSOR_DATABASE_WRITE_URL: "postgresql://private-test-credential" }, inspect };
+    const result = await inspectDraftSemanticWriter(input);
+    expect(result!.assessment.ok).toBe(true);
+    expect(result!.outcomes).toHaveLength(multiple ? 2 : 1);
+    expect(result!.assessment.required_relations![0]!.update_columns).toEqual(multiple ? ["priority", "status", "version"] : ["status", "version"]);
+    expect(inspect).toHaveBeenCalledWith({ engine: "postgres", databaseUrlEnv: "SYNAPSOR_DATABASE_WRITE_URL", statementTimeoutMs: 5000, env: input.env });
+    expect(JSON.stringify(result)).not.toContain("private-test-credential");
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(configBefore);
+    expect(JSON.stringify(fixture.draft)).toBe(draftBefore);
+    await expect(fs.stat(fixture.activePath)).rejects.toHaveProperty("code", "ENOENT");
+
+    inspection.tables[0]!.role_posture!.column_privileges!.update!.push("unrelated_secret");
+    inspection.tables[0]!.role_posture!.row_security_update_permitted = false;
+    const refused = await inspectDraftSemanticWriter(input);
+    expect(refused!.assessment.reasons).toEqual(expect.arrayContaining(["writer_excess_column_privilege", "writer_row_lock_rls_policy_missing"]));
+  });
+
+  it("refuses stale dependencies and missing credentials before opening a database connection", async () => {
+    const fixture = await activeProject();
+    const inspect = vi.fn(async () => writerInspection("writer", "status"));
+    const input = { draft: fixture.draft, reads: [fixture.reviewedRead], engine: "postgres" as const,
+      readUrlEnv: "DATABASE_URL", env: {}, inspect };
+    await expect(inspectDraftSemanticWriter(input)).rejects.toThrow(/WRITER_URL_MISSING/);
+    await expect(inspectDraftSemanticWriter({ ...input, env: { SYNAPSOR_DATABASE_WRITE_URL: "postgresql://test" },
+      reads: [{ ...fixture.reviewedRead, digest: `sha256:${"f".repeat(64)}` }] })).rejects.toThrow(/READ_SCOPE_STALE/);
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("retains exact foreign Read dependencies only for executable outcomes (executable=%s)", async (executable) => {
+    const fixture = await activeProject("human", true);
+    const foreign = { pack: { ...fixture.reviewedRead.pack, name: "other_reviewed_read" }, digest: `sha256:${"d".repeat(64)}` };
+    const draft = buildActionRuleAuthorityDraft({ name: fixture.draft.authority.name,
+      action_boundary_name: fixture.draft.authority.action_boundary.name, catalog: fixture.draft.authority.catalog,
+      reviews: fixture.draft.reviews, approval_classes: fixture.draft.authority.approval_classes,
+      rules: fixture.draft.authority.rules.map(({ activated_at: _time, ...rule }, index) => index === 0 ? rule : ({ ...rule,
+        read_boundary_name: foreign.pack.name, read_boundary_digest: foreign.digest as `sha256:${string}`,
+        effect_envelope: { ...rule.effect_envelope, writeback: executable ? rule.effect_envelope.writeback : { mode: "none", supervised_worker: "disabled" } } })) });
+    const inspection = writerInspection("dedicated", "status");
+    inspection.tables[0]!.row_level_security = true;
+    Object.assign(inspection.tables[0]!.role_posture!, { row_security_effective_for_current_role: true, row_security_update_permitted: true });
+    if (executable) inspection.tables[0]!.role_posture!.column_privileges!.update!.push("priority");
+    const inspect = vi.fn(async () => inspection);
+    const input = { draft, engine: "postgres" as const, readUrlEnv: "DATABASE_URL",
+      env: { SYNAPSOR_DATABASE_WRITE_URL: "postgresql://test" }, inspect };
+    if (executable) {
+      await expect(inspectDraftSemanticWriter({ ...input, reads: [fixture.reviewedRead] })).rejects.toThrow(/READ_SCOPE_STALE/);
+      expect(inspect).not.toHaveBeenCalled();
+    }
+    const result = await inspectDraftSemanticWriter({ ...input, reads: executable ? [fixture.reviewedRead, foreign] : [fixture.reviewedRead] });
+    expect(result!.assessment.ok).toBe(true);
+    expect(result!.outcomes).toHaveLength(executable ? 2 : 1);
   });
 });
 
@@ -275,5 +342,6 @@ async function activeProject(approvalMode: "human" | "policy" = "human", twoOutc
   await fs.writeFile(configPath, JSON.stringify(config));
   const activePath = path.join(root, ".synapsor/action-rules/active.json");
   const revisionPath = path.join(root, ".synapsor/action-rules/revisions", draft.digest.slice("sha256:".length), "authority.json");
-  return { root, configPath, readPath, activePath, revisionPath, authorityPaths: [readPath, activePath, revisionPath] };
+  return { root, configPath, readPath, activePath, revisionPath, authorityPaths: [readPath, activePath, revisionPath], draft,
+    reviewedRead: { pack: read.pack as Parameters<typeof inspectDraftSemanticWriter>[0]["reads"][number]["pack"], digest } };
 }

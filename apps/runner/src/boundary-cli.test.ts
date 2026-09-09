@@ -5532,7 +5532,10 @@ describe("boundary operator-plane CLI", () => {
           expect(review).not.toContain("Action 1:"); // Action rules have their own explicit next review.
           if (posture === "repair_on_resume" || writeback === "supervised") expect(review).toContain("prepared, not enabled; worker required");
           expect(review).not.toMatch(/\+\d+ more|small-group minimum|fields per|1000 queries/u);
-          if (writeback === "supervised") expect(review).toContain("-> execution review");
+          if (writeback === "supervised") {
+            expect(review).toContain("-> execution review");
+            if (!process.env.SYNAPSOR_DATABASE_WRITE_URL) expect(review).toContain("separate write connection is not configured");
+          }
           readReviewChoiceValues.push(options.map((option) => option.value));
           readActivationReviewCount += 1;
           if (manualGuidedRetry) {

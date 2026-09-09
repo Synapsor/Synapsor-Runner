@@ -885,6 +885,29 @@ production narrowing. See:
 - `development/runner-1.6.6-retail-results.json`
 - `development/runner-1.6.6-healthcare-phi-results.json`
 
+## Writer Prerequisites Before Activation
+
+For a draft that requests automatic completion, guided review inspects the
+already configured writer's metadata against the planned effect and private
+verification requirements. Missing credentials, extra privileges, or missing
+scoped row-lock permissions appear as an execution prerequisite in the main
+business review, not as a late unexplained failure. Full requirements remain in
+exact details. This check changes neither authority nor source rows.
+
+The default writer is checked against the combined planned outcomes. Each
+selected per-outcome writer is checked again during execution setup, including
+its exact authority/configuration binding. A draft preflight is not execution
+permission or proof of a running worker. Separate writers can support different
+outcomes without expanding a shared role.
+
+For an incompatible database role, execution setup exports a scoped
+administrator handoff and resumes after a recheck. Runner never runs grants or
+changes RLS automatically. Schema/RLS changes may require rescanning and
+revalidating the same saved job. The dedicated telecom fixture add-on in
+`examples/telecom-writer-repair` includes its own scoped lock policies and
+rolled-back verifier; the older broad tutorial writer is not a compatible
+substitute for an exact offered-plan-change writer.
+
 ## Visual Reference
 
 Repository screenshots cover desktop, mobile, light, dark, loading, blocked,
