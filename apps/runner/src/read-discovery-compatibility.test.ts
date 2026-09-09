@@ -12,6 +12,7 @@ const telecomOffer = JSON.parse(fs.readFileSync(new URL("./test-fixtures/telecom
   context: Record<string, unknown>; resource: Record<string, unknown> & { id: string };
 };
 const telecomInvoice = JSON.parse(fs.readFileSync(new URL("./test-fixtures/telecom-invoice-discovery.json", import.meta.url), "utf8")) as typeof telecomOffer;
+const universityRegistration = JSON.parse(fs.readFileSync(new URL("./test-fixtures/university-registration-discovery-resource.json", import.meta.url), "utf8")) as ExplorationBoundaryDraft["pack"]["resources"][number];
 
 const digest = `sha256:${"a".repeat(64)}` as const;
 function fixture(count = 32): ExplorationBoundaryDraft {
@@ -37,6 +38,36 @@ function rawContract(boundary: ExplorationBoundaryDraft) {
 function resource(value: Record<string, unknown>): any { return (value.resources as unknown[])[0]; }
 
 describe("complete bounded Read contracts", () => {
+  it("returns the university registration contract without the reported field-narrowing workaround", async () => {
+    const boundary = fixture();
+    // Metadata captured from the lab's generated revision, before the operator
+    // reduced its fourteen returnable fields to nine to fit the older build.
+    boundary.pack.resources = [structuredClone(universityRegistration)];
+    const raw = describeBoundary(boundary, { resource: universityRegistration.id });
+    const original = projectDescribeDataForModel(raw, true), baseline = resource(original);
+    expect(universityRegistration.selectable_fields).toHaveLength(14);
+    expect(catalogResponseBytes(original)).toBeGreaterThan(CATALOG_LIMITS.responseBytes);
+    const runtime = { boundary: { ...boundary, activation: { digest } }, session_fingerprint: digest,
+      model_authority_metadata: "semantic", describe: async () => structuredClone(raw) } as unknown as ScopedExploreRuntime;
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "university-complete-contract", version: "1" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport); await client.connect(clientTransport);
+      const result = await client.callTool({ name: "app.describe_data", arguments: { resource: universityRegistration.id } });
+      expect(result.isError).not.toBe(true);
+      const entry = resource(result.structuredContent as Record<string, unknown>);
+      for (const key of ["selectable_fields", "filter_operators", "sortable_fields", "groupable_fields", "field_enums",
+        "aggregate_measure_functions", "presence_measure_fields", "time_bucket_fields", "count_distinct_fields",
+        "model_withheld_fields", "kept_out_field_count", "maximum_rows", "maximum_groups", "minimum_cohort_size",
+        "relative_time_window_fields", "valid_plan_examples"]) expect(entry[key]).toEqual(baseline[key]);
+      expect(entry.fields.map((field: { id: string }) => field.id)).toEqual(baseline.fields.map((field: { id: string }) => field.id));
+      expect(Buffer.byteLength(JSON.stringify(entry))).toBeLessThanOrEqual(CATALOG_LIMITS.detailBytes);
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(CATALOG_LIMITS.responseBytes);
+      expect(readDiscoveryCompatibility(boundary, digest)).toEqual([]);
+    } finally { await client.close(); await server.close(); }
+  });
+
   it.each([telecomOffer, telecomInvoice].flatMap((capture) => [undefined, "reviewed_staging"].map((selectedBoundary) =>
     ({ capture, selectedBoundary, resourceId: capture.resource.id }))))("fits captured $resourceId with its complete review-required relationship (boundary=$selectedBoundary)", async ({ capture, selectedBoundary }) => {
     // Pinned packed responses were 17,825 (offers) and 17,367 (invoices) bytes.

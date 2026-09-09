@@ -4,16 +4,22 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { buildAutoBoundary, writeAutoBoundaryArtifacts } from "./auto-boundary.js";
-import { boundaryDeleteCommand, loadBoundaryReviewContext, boundaryAuthoringResumeBinding } from "./boundary-commands.js";
+import { activateExplorationBoundary, buildAutoBoundary, explorationBoundaryCandidateDigest, loadActivatedExplorationBoundaries,
+  loadActivatedExplorationBoundary, writeAutoBoundaryArtifacts } from "./auto-boundary.js";
+import { boundaryDeleteCommand, boundaryReviewCommand, loadBoundaryReviewContext, boundaryAuthoringResumeBinding } from "./boundary-commands.js";
+import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
+import { listActionRuleAuthorityDrafts, readActionRuleAuthorityActivation } from "./action-rule-authority.js";
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import {
-
-} from "./boundary-review-domain.js";
-import {
   saveInstantBoundaryEditBaseline,
+  saveInstantBoundaryReviewBaseline,
 } from "./boundary-review-persistence.js";
-import { boundaryCommand, reviewUnresolvedOrganizationScope, start } from "./guided-start.js";
+import { boundaryCommand, onboard, reviewUnresolvedOrganizationScope, start, type GuidedStartDependencies } from "./guided-start.js";
+import * as runtimeCommands from "./runtime-commands.js";
+import { initializeGuidedProject } from "./guided-project.js";
+import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { detectProjectContext } from "./project-detection.js";
+import { ControlPolicyRepository } from "@synapsor-runner/proposal-store";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import {
   activateInstantCliBoundary,
@@ -26,12 +32,253 @@ describe("guided start surfaces", () => {
   afterEach(() => {
     process.chdir(suiteCwd);
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
+  const entry = (command: string, args: string[], dependencies: GuidedStartDependencies) => command === "start"
+    ? start(args, dependencies) : onboard(["db", ...args], dependencies);
+
+  it.each(["start", "onboard"])("%s defaults to current job-first terminal review without opening Workbench", async (command) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-current-terminal-"));
+    const schemaInspector = vi.fn(async () => inspection()), runBoundaryReview = vi.fn(async () => 0), openWorkbench = vi.fn(async () => 0);
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      await expect(entry(command, ["--project-root", root, "--from-env", "DATABASE_URL"],
+        { interactive: true, schemaInspector, runBoundaryReview, openWorkbench })).resolves.toBe(0);
+      expect(runBoundaryReview).toHaveBeenCalledWith(["--project-root", root, "--access", "--job-first"], schemaInspector, expect.any(Function));
+      expect(openWorkbench).not.toHaveBeenCalled();
+      await expect(fs.stat(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(["start", "onboard"])("%s initializes the current disabled metadata without a TTY, model API or legacy selectors", async (command) => {
+    for (const flags of [[], ["--json"], ["--yes", "--json"]]) {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-current-headless-"));
+      const schemaInspector = vi.fn(async () => inspection()), runBoundaryReview = vi.fn(async () => 0), openWorkbench = vi.fn(async () => 0);
+      vi.stubEnv("OPENAI_API_KEY", undefined); vi.stubEnv("ANTHROPIC_API_KEY", undefined);
+      const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      try {
+        await expect(entry(command, ["--project-root", root, "--from-env", "DATABASE_URL", ...flags],
+          { interactive: false, schemaInspector, runBoundaryReview, openWorkbench })).resolves.toBe(0);
+        expect(schemaInspector).toHaveBeenCalledOnce();
+        expect(runBoundaryReview).not.toHaveBeenCalled(); expect(openWorkbench).not.toHaveBeenCalled();
+        const context = await loadBoundaryReviewContext(root);
+        expect(context.draft.pack.resources.map((resource) => resource.id)).toContain("public.service_visits");
+        const text = output.mock.calls.map(([chunk]) => String(chunk)).join("");
+        expect(text).toContain("--export-draft"); expect(text).toContain("--draft"); expect(text).toContain("--dry-run");
+        expect(text).not.toMatch(/choose one table|--table|--answers|legacy capability compatibility/u);
+        if (flags.includes("--json")) expect(JSON.parse(text)).toMatchObject({
+          ok: true, activation: "disabled_unreviewed", source_database_changed: false, active_authority_changed: false,
+          next_steps: { export_draft: expect.stringContaining("--export-draft"), submit_disabled_draft: expect.stringContaining("--draft") },
+        });
+        await expect(fs.stat(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      } finally { output.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+    }
+  });
+
+  it.each(["start", "onboard"])("%s dispatches explicit structured drafts directly without inspection or a model", async (command) => {
+    const runStructuredBoundaryAuthoring = vi.fn(async () => 0), schemaInspector = vi.fn();
+    for (const operation of [["--export-draft", "review.json"], ["--draft", "review.json", "--dry-run"], ["--draft", "review.json"]]) {
+      const args = ["--project-root", "/not-read-by-router", ...operation, "--json"];
+      await expect(entry(command, args, { interactive: false, schemaInspector, runStructuredBoundaryAuthoring })).resolves.toBe(0);
+      expect(runStructuredBoundaryAuthoring).toHaveBeenLastCalledWith(args, schemaInspector);
+    }
+    expect(schemaInspector).not.toHaveBeenCalled();
+  });
+
+  it.each(["start", "onboard"])("%s resumes interrupted fresh bootstrap through the same public entry", async (command) => {
+    for (const phase of ["checkpoint", "import"] as const) {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-current-bootstrap-resume-"));
+      const schemaInspector = vi.fn(async () => inspection());
+      const runBoundaryReview = vi.fn<NonNullable<GuidedStartDependencies["runBoundaryReview"]>>(async () => 0);
+      vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      const checkpointPath = path.join(root, ".synapsor/fresh-governed-authoring.json");
+      const rename = fs.rename.bind(fs);
+      const failure = phase === "import"
+        ? vi.spyOn(ControlPolicyRepository.prototype, "importDeployment").mockRejectedValueOnce(new Error("interrupted bootstrap import"))
+        : vi.spyOn(fs, "rename").mockImplementation(async (...args) => {
+          if (args[1] === checkpointPath) throw new Error("interrupted bootstrap checkpoint");
+          return rename(...args);
+        });
+      try {
+        await expect(entry(command, ["--project-root", root, "--from-env", "DATABASE_URL", "--json"],
+          { interactive: false, schemaInspector })).rejects.toThrow("interrupted bootstrap");
+        failure.mockRestore();
+        const config = await fs.readFile(path.join(root, "synapsor.runner.json"), "utf8");
+        const checkpoint = phase === "import" ? await fs.readFile(checkpointPath, "utf8") : undefined;
+        if (phase === "import") await expect(readProjectReadAuthoring(root)).rejects.toHaveProperty("code", "POLICY_MIGRATION_PENDING");
+        await expect(entry(command, ["--project-root", root, "--from-env", "DATABASE_URL", "--cli"],
+          { interactive: true, schemaInspector, runBoundaryReview })).resolves.toBe(0);
+        expect(runBoundaryReview).toHaveBeenCalledOnce();
+        expect(runBoundaryReview.mock.calls[0]![0]).not.toContain("--rescan");
+        expect(schemaInspector).toHaveBeenCalledTimes(phase === "import" ? 1 : 2);
+        expect(await fs.readFile(path.join(root, "synapsor.runner.json"), "utf8")).toBe(config);
+        if (checkpoint) expect(await fs.readFile(checkpointPath, "utf8")).toBe(checkpoint);
+        const authoring = await readProjectReadAuthoring(root);
+        expect(authoring?.selected?.progress.confirmed_decisions).toEqual([]);
+        await expect(loadActivatedExplorationBoundaries(root)).rejects.toHaveProperty("code", "ENOENT");
+        expect(await listActionRuleAuthorityDrafts(root)).toEqual([]);
+        await expect(fs.stat(path.join(root, "synapsor/generated"))).rejects.toHaveProperty("code", "ENOENT");
+      } finally { failure.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+    }
+  });
+
+  it.each(["start", "onboard"])("%s rejects old selectors before inspection or artifact mutation", async (command) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-current-selector-refusal-"));
+    const schemaInspector = vi.fn();
+    await fs.writeFile(path.join(root, "answers.json"), "preserved");
+    try {
+      for (const selector of ["--table", "--answers", "--spec", "--mode", "--table=public.orders", "-o"]) {
+        await expect(entry(command, ["--project-root", root, "--from-env", "DATABASE_URL", selector, "old-selection"],
+          { interactive: false, schemaInspector })).rejects.toThrow(/--legacy-capabilities/);
+      }
+      expect(schemaInspector).not.toHaveBeenCalled();
+      expect(await fs.readdir(root)).toEqual(["answers.json"]);
+      expect(await fs.readFile(path.join(root, "answers.json"), "utf8")).toBe("preserved");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(["start", "onboard"])("%s exports, validates and submits a real fresh disabled Read draft through the structured service", async (command) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-current-structured-route-"));
+    const schemaInspector = vi.fn(async () => inspection());
+    const dependencies = { interactive: false, schemaInspector };
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const result = () => JSON.parse(output.mock.calls.map(([chunk]) => String(chunk)).join(""));
+    vi.stubEnv("OPENAI_API_KEY", undefined); vi.stubEnv("ANTHROPIC_API_KEY", undefined);
+    try {
+      await entry(command, ["--project-root", root, "--from-env", "DATABASE_URL", "--json"], dependencies);
+      const before = (await loadBoundaryReviewContext(root)).bundle.bundle_digest;
+      output.mockClear();
+      const draftPath = path.join(root, "boundary-authoring.json");
+      await expect(entry(command, ["--project-root", root, "--export-draft", draftPath, "--json"], dependencies)).resolves.toBe(0);
+      expect(result()).toMatchObject({ ok: true, state: "exported", source_database_changed: false });
+      const draft = JSON.parse(await fs.readFile(draftPath, "utf8"));
+      expect(draft.schema_version).toBe("synapsor.boundary-draft-input.v1");
+      expect(draft.review_bundle_digest).toBe(before);
+      draft.read.resources = [{ resource_id: "public.service_visits", withhold_from_model_fields: ["status"] }];
+      draft.actions = [];
+      await fs.writeFile(draftPath, JSON.stringify(draft));
+      output.mockClear();
+      await expect(entry(command, ["--project-root", root, "--draft", draftPath, "--dry-run", "--json"], dependencies)).resolves.toBe(0);
+      expect(result()).toMatchObject({ ok: true, state: "validated_disabled_preview", source_database_changed: false });
+      expect((await loadBoundaryReviewContext(root)).bundle.bundle_digest).toBe(before);
+      output.mockClear();
+      await expect(entry(command, ["--project-root", root, "--draft", draftPath, "--json"], dependencies)).resolves.toBe(0);
+      expect(result()).toMatchObject({ ok: true, state: "saved_disabled", source_database_changed: false });
+      const context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources.find((resource) => resource.id === "public.service_visits")?.model_withheld_fields).toContain("status");
+      await expect(fs.stat(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(["start", "onboard"])("%s retains explicitly selected legacy answers compatibility", async (command) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-explicit-legacy-"));
+    const answers = path.join(root, "answers.json");
+    await fs.writeFile(answers, JSON.stringify({ engine: "postgres", read_url_env: "DATABASE_URL", schema: "public", table: "invoices",
+      primary_key: "id", tenant_column: "tenant_id", visible_columns: ["id", "status"], mode: "read_only" }));
+    const before = await fs.readFile(answers, "utf8"), output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      await expect(entry(command, ["--legacy-capabilities", "--answers", answers, "--yes", "--dry-run", "--no-open"], { interactive: false })).resolves.toBe(0);
+      expect(output.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain("legacy capability compatibility");
+      expect(await fs.readFile(answers, "utf8")).toBe(before);
+      expect(await fs.readdir(root)).toEqual(["answers.json"]);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("opens a structured saved semantic Action through current review without a new job or provider", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-structured-manual-review-"));
+    const metadata = inspection();
+    const table = metadata.tables[0]!;
+    table.columns.push({ ...table.columns[2]!, name: "version", data_type: "integer", ordinal_position: 5,
+      suggestions: { ...table.columns[2]!.suggestions, conflict: true } });
+    table.suggestions.conflict_columns = ["version"];
+    const schemaInspector = vi.fn(async () => metadata);
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    vi.stubEnv("OPENAI_API_KEY", undefined); vi.stubEnv("ANTHROPIC_API_KEY", undefined);
+    const noModel = vi.fn(async () => { throw new Error("Saved review must not call a model or start a new job"); });
+    try {
+      await start(["--project-root", root, "--from-env", "DATABASE_URL", "--json"], { interactive: false, schemaInspector });
+      const draftPath = path.join(root, "boundary-authoring.json");
+      await start(["--project-root", root, "--export-draft", draftPath, "--json"], { schemaInspector });
+      const input = JSON.parse(await fs.readFile(draftPath, "utf8"));
+      input.read.resources = [{ resource_id: "public.service_visits", include: true, withhold_from_model_fields: ["status", "version"] }];
+      const literal = (value: string) => ({ kind: "literal", value,
+        value_type: { kind: "string", max_length: 32, comparison: "exact" } });
+      input.actions = [{
+        schema_version: "synapsor.action-rule-model-draft.v1", name: "visits.cancel", outcome: "visits.cancel",
+        verification: { name: "visits.cancel_verification", resources: [{ binding: "visit", resource: "public.service_visits",
+          source: { kind: "subject_ref" }, fields: ["status"] }] },
+        effect: { name: "visits.cancel_effect", operation: "update", target_resource: "public.service_visits", target_binding: "visit",
+          allowed_fields: [{ name: "status", values: ["cancelled"] }], set: { status: literal("cancelled") }, writeback: "proposal_only" },
+        require: { kind: "compare", operator: "eq", left: { kind: "field", binding: "visit", field: "status" }, right: literal("scheduled") },
+        derive: {}, approval: { class_name: "visits.human", mode: "human", required_role: "visit_reviewer", required_approvals: 1, shared_limits: [] },
+        ttl_seconds: 300,
+        review: { when: "The visit is scheduled.", then: "Propose cancellation of the visit.", refused: ["The visit is not scheduled."],
+          human_review: "Every eligible proposal requires one visit reviewer.",
+          examples: [{ kind: "eligible", scenario: "Scheduled visit", result: "Propose cancellation" },
+            { kind: "ineligible", scenario: "Cancelled visit", result: "Refuse" }] },
+      }];
+      await fs.writeFile(draftPath, JSON.stringify(input));
+      output.mockClear();
+      const submitted = await start(["--project-root", root, "--draft", draftPath, "--json"], { schemaInspector });
+      const receipt = JSON.parse(output.mock.calls.map(([chunk]) => String(chunk)).join(""));
+      expect(receipt).toMatchObject({ ok: true, state: "saved_disabled", next_steps: {
+        review_read: `synapsor-runner boundary review --project-root '${root}' --access`,
+        review_actions: `synapsor-runner action review --project-root '${root}'`,
+      } });
+      expect(submitted).toBe(0);
+      const before = await listActionRuleAuthorityDrafts(root);
+      expect(before).toHaveLength(1);
+      const context = await loadBoundaryReviewContext(root);
+      const screens: string[] = [];
+      const chooseResource = vi.fn<BoundaryReviewInteractiveSession["chooseResource"]>()
+        .mockResolvedValueOnce({ action: "actions", boundary_name: context.candidate.pack.name })
+        .mockResolvedValue(undefined);
+      const chooseOption = vi.fn<NonNullable<BoundaryReviewInteractiveSession["chooseOption"]>>(async (title, choices, options) => {
+        screens.push(title);
+        if (title === "EXACT VERIFIED ACTION DETAILS") {
+          expect(options?.context?.join("\n")).toContain("visits.cancel");
+          return "back";
+        }
+        expect(title).toBe("VERIFIED ACTION BOUNDARY");
+        expect(choices.find((choice) => choice.value === "activate")?.disabled).toBe(true);
+        return screens.filter((screen) => screen === title).length === 1 ? "details_draft" : "back";
+      });
+      const session = { chooseResource, chooseOption, confirm: noModel, promptText: noModel,
+        editFieldTiers: noModel, close: vi.fn() } as unknown as BoundaryReviewInteractiveSession;
+      const runBoundaryReview = vi.fn(async (args: string[]) => boundaryReviewCommand(args, schemaInspector, session, undefined,
+        { modelReadWorkloadGenerator: noModel, modelBoundaryJobPlanner: noModel, modelActionRuleGenerator: noModel }));
+      await expect(start(["--project-root", root, "--from-env", "DATABASE_URL", "--cli"],
+        { interactive: true, schemaInspector, runBoundaryReview })).resolves.toBe(0);
+      expect(runBoundaryReview).toHaveBeenCalledWith(["--project-root", root, "--access"], schemaInspector, expect.any(Function));
+      expect(screens).toContain("EXACT VERIFIED ACTION DETAILS");
+      expect(noModel).not.toHaveBeenCalled();
+      expect(await listActionRuleAuthorityDrafts(root)).toEqual(before);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(context.bundle.candidate_digest);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("preserves explicit worker/config routing and never treats bare start as a worker", async () => {
+    const worker = vi.spyOn(runtimeCommands, "startWorker").mockResolvedValue(0);
+    const args = ["--once", "--config", "worker.json", "--store", "worker.db"];
+    await expect(start(args, { interactive: false })).resolves.toBe(0);
+    expect(worker).toHaveBeenCalledWith(args);
+    worker.mockClear();
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-bare-current-start-"));
+    process.chdir(root); vi.stubEnv("DATABASE_URL", undefined);
+    try {
+      await expect(start([], { interactive: false })).rejects.toThrow(/Current Boundary setup requires/);
+      expect(worker).not.toHaveBeenCalled();
+      await fs.writeFile(path.join(root, "synapsor.runner.json"), "preserved manual config");
+      await expect(start([], { interactive: true })).rejects.toThrow(/Existing manual capability artifacts were preserved/);
+      expect(await fs.readFile(path.join(root, "synapsor.runner.json"), "utf8")).toBe("preserved manual config");
+    } finally { process.chdir(suiteCwd); await fs.rm(root, { recursive: true, force: true }); }
+  });
   it.each(["start", "boundary"])("keeps %s publication and rollback inside one writer operation", async (command) => {
     for (const fail of [false, true]) {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-publication-"));
-      const generated = path.join(root, "synapsor/generated"), config = path.join(root, "synapsor.runner.json");
+      const sentinel = path.join(root, ".synapsor/later-writer"), config = path.join(root, "synapsor.runner.json");
       let reached!: () => void, release!: () => void;
       const entered = new Promise<void>((resolve) => { reached = resolve; });
       const resume = new Promise<void>((resolve) => { release = resolve; });
@@ -45,7 +292,7 @@ describe("guided start surfaces", () => {
         return copy(...args);
       });
       const removals = vi.spyOn(fs, "rm").mockImplementation(async (...args) => {
-        if (args[0] === generated) {
+        if (args[0] === config) {
           await delay(80);
           pendingAtRollback = !competitorEntered;
         }
@@ -64,8 +311,7 @@ describe("guided start surfaces", () => {
           competitorEntered = true;
           if (fail) await expect(fs.stat(config)).rejects.toHaveProperty("code", "ENOENT");
           else expect((await fs.stat(config)).isFile()).toBe(true);
-          await fs.mkdir(generated, { recursive: true });
-          await fs.writeFile(path.join(generated, "later-writer"), "preserved");
+          await fs.writeFile(sentinel, "preserved");
         });
         await delay(80);
         const pendingAtPublication = !competitorEntered;
@@ -75,7 +321,8 @@ describe("guided start surfaces", () => {
         expect(pendingAtPublication).toBe(true);
         if (fail) { expect(result).toHaveProperty("error"); expect(pendingAtRollback).toBe(true); }
         else expect(result).toEqual({ saved: true });
-        expect(await fs.readFile(path.join(generated, "later-writer"), "utf8")).toBe("preserved");
+        expect(await fs.readFile(sentinel, "utf8")).toBe("preserved");
+        await expect(fs.stat(path.join(root, "synapsor/generated"))).rejects.toHaveProperty("code", "ENOENT");
         expect((await fs.stat(path.join(root, ".synapsor/authority-write-lock.sqlite"))).isFile()).toBe(true);
       } finally {
         release(); await setup; await competitor;
@@ -94,17 +341,19 @@ describe("guided start surfaces", () => {
     try {
       await start(["--from-env", "DATABASE_URL", "--no-open"], { interactive: false, schemaInspector });
       const context = await loadBoundaryReviewContext(root);
-      await saveInstantBoundaryEditBaseline({ projectRoot: root, draft: context.draft, candidate: context.candidate, actor: "test-operator" });
-      const state = buildBoundaryAuthoringResumeState({ binding: boundaryAuthoringResumeBinding(context.bundle),
+      await saveInstantBoundaryEditBaseline({ projectRoot: root, draft: context.draft, candidate: context.candidate,
+        expectedAuthoring: context.bundle.mutation_bindings.authoring, actor: "test-operator" });
+      if (active) await activateTestRead(root);
+      const current = await loadBoundaryReviewContext(root);
+      const state = buildBoundaryAuthoringResumeState({ binding: boundaryAuthoringResumeBinding(current.bundle),
         stage: "authority_review", jobIntent: "Review service visits and propose rescheduling.", provider: "openai", model: "gpt-5.6-terra" });
       await writeBoundaryAuthoringResumeState(root, state);
-      const progressBefore = await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8");
-      if (active) await fs.writeFile(path.join(root, ".synapsor/exploration-boundary.active.json"), "{}\n");
+      const progressBefore = current.progress;
       await start(["--from-env", "DATABASE_URL", "--cli"], { interactive: true, schemaInspector, runBoundaryReview, runPostActivationHandoff: handoff });
       expect(runBoundaryReview).toHaveBeenCalledWith(["--project-root", root, "--access", "--job-first"], schemaInspector, expect.any(Function));
       expect(handoff).not.toHaveBeenCalled();
       expect(schemaInspector).toHaveBeenCalledOnce();
-      expect(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8")).toBe(progressBefore);
+      expect((await loadBoundaryReviewContext(root)).progress).toEqual(progressBefore);
     } finally { process.chdir(suiteCwd); await fs.rm(root, { recursive: true, force: true }); }
   });
 
@@ -121,9 +370,9 @@ describe("guided start surfaces", () => {
         reviewUnresolvedOrganizationScope: review, runBoundaryReview: async () => 0,
       });
       expect(review).toHaveBeenCalledOnce();
-      const draft = JSON.parse(await fs.readFile(path.join(root, "synapsor/generated/exploration-boundary.draft.json"), "utf8"));
+      const draft = (await loadBoundaryReviewContext(root)).draft;
       expect(draft.organization_scope).toMatchObject({ organization_id: "university-operations" });
-      expect(draft.activation?.enabled).not.toBe(true);
+      expect(draft.activation).toBe("disabled_unreviewed");
     } finally { process.chdir(suiteCwd); await fs.rm(root, { recursive: true, force: true }); }
   });
 
@@ -275,9 +524,8 @@ describe("guided start surfaces", () => {
       expect(output).not.toContain("Next: Review this exact boundary in Workbench.");
       await expect(fs.access(path.join(projectRoot, "synapsor.runner.json"))).resolves.toBeUndefined();
       await expect(fs.access(path.join(projectRoot, ".synapsor/local.db"))).resolves.toBeUndefined();
-      await expect(fs.access(
-        path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"),
-      )).resolves.toBeUndefined();
+      expect((await loadBoundaryReviewContext(projectRoot)).draft.activation).toBe("disabled_unreviewed");
+      await expect(fs.access(path.join(projectRoot, "synapsor/generated"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       process.chdir(suiteCwd);
       await fs.rm(projectRoot, { recursive: true, force: true });
@@ -327,7 +575,7 @@ describe("guided start surfaces", () => {
 
     try {
       await expect(start(
-        ["--from-env", "DATABASE_URL"],
+        ["--from-env", "DATABASE_URL", "--open-ui"],
         {
           interactive: true,
           schemaInspector: async () => mysqlInspection(),
@@ -340,15 +588,12 @@ describe("guided start surfaces", () => {
         path.join(projectRoot, "synapsor.runner.json"),
         "utf8",
       ));
-      const baseline = JSON.parse(await fs.readFile(
-        path.join(projectRoot, ".synapsor/auto-boundary-policy-baseline.json"),
-        "utf8",
-      ));
+      const baseline = (await loadBoundaryReviewContext(projectRoot)).draft;
       expect(config.trusted_context).toMatchObject({
         provider: "environment",
         tenant_binding: "tenant_id",
       });
-      expect(baseline.boundary.pack.resources).toEqual([
+      expect(baseline.pack.resources).toEqual([
         expect.objectContaining({
           id: "clinicdb.service_visits",
           tenant_key: "tenant_id",
@@ -383,11 +628,7 @@ describe("guided start surfaces", () => {
           openWorkbench: vi.fn(async () => 0),
         },
       );
-      await fs.writeFile(
-        path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-        "{}\n",
-        "utf8",
-      );
+      await activateTestRead(projectRoot);
       runBoundaryReview.mockClear();
 
       await expect(start(
@@ -440,12 +681,12 @@ describe("guided start surfaces", () => {
       )).resolves.toBe(0);
       expect(schemaInspector).toHaveBeenCalledTimes(1);
       expect(runBoundaryReview).toHaveBeenLastCalledWith(
-        ["--project-root", projectRoot, "--access", "--job-first"],
+        ["--project-root", projectRoot, "--access"],
         schemaInspector,
         expect.any(Function),
       );
       expect(output).toContain("Existing Runner-managed boundary project found.");
-      expect(output).toContain("Saved Read candidate: 1 table(s) in the initial disabled revision; review has not started.");
+      expect(output).toContain("Saved Read candidate: 1 table(s) in revision 1");
       expect(output).toContain("A new model conversation receives the current saved Read and Action state; the prior provider transcript is not retained.");
 
       runBoundaryReview.mockClear();
@@ -477,10 +718,7 @@ describe("guided start surfaces", () => {
         ["--from-env", "DATABASE_URL", "--no-open"],
         { interactive: false, schemaInspector: async () => inspection() },
       );
-      const draft = JSON.parse(await fs.readFile(
-        path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"),
-        "utf8",
-      )) as { pack: { name: string } };
+      const draft = (await loadBoundaryReviewContext(projectRoot)).draft;
 
       await expect(boundaryDeleteCommand([
         draft.pack.name,
@@ -500,8 +738,10 @@ describe("guided start surfaces", () => {
         .rejects.toMatchObject({ code: "ENOENT" });
       await expect(fs.access(path.join(projectRoot, ".synapsor/generation-lock.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
-      await expect(fs.access(path.join(projectRoot, ".synapsor/guided-onboarding.json")))
-        .rejects.toMatchObject({ code: "ENOENT" });
+      const emptyAuthoring = await readProjectReadAuthoring(projectRoot);
+      expect(emptyAuthoring?.authoring.entries).toEqual([]);
+      expect(emptyAuthoring?.authoring.selected_boundary_id).toBeNull();
+      await expect(loadActivatedExplorationBoundaries(projectRoot)).rejects.toHaveProperty("code", "ENOENT");
     } finally {
       process.chdir(suiteCwd);
       await fs.rm(projectRoot, { recursive: true, force: true });
@@ -533,13 +773,7 @@ describe("guided start surfaces", () => {
         { interactive: true, schemaInspector },
       )).resolves.toBe(0);
 
-      const draft = JSON.parse(await fs.readFile(
-        path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"),
-        "utf8",
-      )) as {
-        organization_scope?: { organization_id: string };
-        pack: { resources: Array<{ tenant_key?: string; tenant_scope?: unknown }> };
-      };
+      const draft = (await loadBoundaryReviewContext(projectRoot)).draft;
       expect(schemaInspector).toHaveBeenCalledTimes(2);
       expect(draft.organization_scope?.organization_id).toBe("internal-finance");
       expect(draft.pack.resources.every((resource) =>
@@ -563,7 +797,7 @@ describe("guided start surfaces", () => {
     process.chdir(projectRoot);
 
     try {
-      await expect(start(
+      await expect(legacyQuickStart(
         [
           "--from-env", "DATABASE_URL",
           "--cli",
@@ -608,7 +842,7 @@ describe("guided start surfaces", () => {
     process.chdir(projectRoot);
 
     try {
-      await expect(start(
+      await expect(legacyQuickStart(
         ["--from-env", "DATABASE_URL", "--cli"],
         {
           interactive: true,
@@ -648,13 +882,7 @@ describe("guided start surfaces", () => {
       expect(output).toContain(
         "Opening the focused access editor with this connected boundary as the baseline.",
       );
-      const progress = JSON.parse(await fs.readFile(
-        path.join(projectRoot, ".synapsor/boundary-review-progress.json"),
-        "utf8",
-      )) as {
-        candidate: { pack: { resources: Array<{ id: string }> } };
-        confirmed_decisions: string[];
-      };
+      const progress = (await loadBoundaryReviewContext(projectRoot)).progress!;
       expect(progress.candidate.pack.resources.map((resource) => resource.id))
         .toEqual(["public.service_visits"]);
       expect(progress.confirmed_decisions).toEqual([]);
@@ -682,7 +910,7 @@ describe("guided start surfaces", () => {
     process.chdir(projectRoot);
 
     try {
-      await expect(start(
+      await expect(legacyQuickStart(
         ["--from-env", "DATABASE_URL", "--cli"],
         {
           interactive: true,
@@ -754,32 +982,14 @@ describe("guided start surfaces", () => {
       expect(output).not.toContain("Detected project context");
       expect(output).not.toContain("BOUNDARY   reviewed_staging");
 
-      const active = JSON.parse(await fs.readFile(
-        path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-        "utf8",
-      )) as {
-        deployment_profile: string;
-        pack: { resources: unknown[] };
-        activation: {
-          mode: string;
-          confirmation_gesture: string;
-          reviewed_decisions: Array<{ confirmed: boolean }>;
-        };
-      };
+      const active = (await loadActivatedExplorationBoundary(projectRoot))!;
       expect(active.deployment_profile).toBe("development");
       expect(active.pack.resources).toHaveLength(1);
       expect(active.activation.mode).toBe("instant_development");
       expect(active.activation.confirmation_gesture).toBe("activate_for_model");
       expect(active.activation.reviewed_decisions.length).toBeGreaterThan(0);
       expect(active.activation.reviewed_decisions.every((item) => item.confirmed)).toBe(true);
-      const progress = JSON.parse(await fs.readFile(
-        path.join(projectRoot, ".synapsor/boundary-review-progress.json"),
-        "utf8",
-      )) as {
-        candidate: { pack: { resources: Array<{ id: string }> } };
-        confirmed_decisions: string[];
-        confirmations: unknown[];
-      };
+      const progress = (await loadBoundaryReviewContext(projectRoot)).progress!;
       expect(progress.candidate.pack.resources.map((resource) => resource.id))
         .toEqual(["public.service_visits"]);
       expect(progress.confirmed_decisions).toHaveLength(progress.confirmations.length);
@@ -806,8 +1016,10 @@ describe("guided start surfaces", () => {
     let inactiveAtSecondReview = false;
     const promptText = vi.fn(async (prompt: string) => {
       prompts.push(prompt);
-      const activePath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
-      const activeExists = await fs.access(activePath).then(() => true, () => false);
+      const activeExists = await loadActivatedExplorationBoundaries(projectRoot).then(() => true, (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      });
       if (prompt.includes("Regenerate against current posture")) {
         inactiveAtRegeneration = !activeExists;
       } else if (prompts.filter((item) => item.includes("Start asking")).length === 2) {
@@ -829,7 +1041,7 @@ describe("guided start surfaces", () => {
     process.chdir(projectRoot);
 
     try {
-      await expect(start(
+      await expect(legacyQuickStart(
         ["--from-env", "DATABASE_URL", "--cli"],
         {
           interactive: true,
@@ -871,14 +1083,8 @@ describe("guided start surfaces", () => {
       expect(runPostActivationHandoff).toHaveBeenCalledOnce();
       expect(chooseAskSelection).toHaveBeenCalledOnce();
 
-      const active = JSON.parse(await fs.readFile(
-        path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-        "utf8",
-      )) as { role_posture_fingerprint: string; activation: { mode: string } };
-      const lock = JSON.parse(await fs.readFile(
-        path.join(projectRoot, ".synapsor/generation-lock.json"),
-        "utf8",
-      )) as { role_posture_fingerprint: string };
+      const active = (await loadActivatedExplorationBoundary(projectRoot))!;
+      const lock = (await loadBoundaryReviewContext(projectRoot)).lock;
       expect(active.role_posture_fingerprint).toBe(lock.role_posture_fingerprint);
       expect(active.activation.mode).toBe("instant_development");
     } finally {
@@ -900,7 +1106,7 @@ describe("guided start surfaces", () => {
     process.chdir(projectRoot);
 
     try {
-      await expect(start(
+      await expect(legacyQuickStart(
         ["--from-env", "DATABASE_URL", "--cli"],
         {
           interactive: true,
@@ -966,7 +1172,7 @@ describe("guided start surfaces", () => {
     process.chdir(projectRoot);
 
     try {
-      await expect(start(
+      await expect(legacyQuickStart(
         ["--from-env", "DATABASE_URL", "--cli"],
         {
           interactive: true,
@@ -1022,7 +1228,7 @@ describe("guided start surfaces", () => {
     process.chdir(projectRoot);
 
     try {
-      await expect(start(
+      await expect(legacyQuickStart(
         ["--from-env", "DATABASE_URL", "--cli"],
         {
           interactive: true,
@@ -1087,10 +1293,7 @@ describe("guided start surfaces", () => {
       );
       expect(runPostActivationHandoff).not.toHaveBeenCalled();
       expect(output).toContain("✓ Connected");
-      const draft = await fs.readFile(
-        path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"),
-        "utf8",
-      );
+      const draft = JSON.stringify((await loadBoundaryReviewContext(projectRoot)).draft, null, 2);
       expect(draft).toContain('"tenant_env": "SYNAPSOR_TENANT_ID"');
       expect(draft).toContain('"principal_env": "SYNAPSOR_PRINCIPAL"');
       expect(draft).not.toContain("tenant-concrete-value");
@@ -1227,6 +1430,34 @@ describe("guided start surfaces", () => {
     }
   });
 });
+
+async function legacyQuickStart(args: string[], dependencies: GuidedStartDependencies) {
+  const projectRoot = process.cwd();
+  const singleOrganization = args.includes("--single-tenant");
+  const build = buildAutoBoundary({ inspection: singleOrganization ? singleOrganizationInspection() : inspection(),
+    project: await detectProjectContext(projectRoot),
+    sourceEnv: "DATABASE_URL",
+    configuredTrustedContext: { schema_version: "synapsor.configured-trusted-context-authority.v1", provider: "environment",
+      ...(singleOrganization ? {} : { tenant_binding: "tenant_id" }), tenant_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
+    ...(singleOrganization ? { singleOrganization: { organizationId: args[args.indexOf("--organization-id") + 1]! } } : {}),
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot, build });
+  await initializeGuidedProject({ projectRoot, build, runnerVersion: "1.8.0", instantOnboarding: true });
+  const result = await start(args, dependencies);
+  await expect(fs.stat(path.join(projectRoot, ".synapsor/control-policy/migration.json"))).rejects.toHaveProperty("code", "ENOENT");
+  return result;
+}
+
+async function activateTestRead(projectRoot: string) {
+  const context = await loadBoundaryReviewContext(projectRoot);
+  const saved = await saveInstantBoundaryReviewBaseline({ projectRoot, draft: context.draft, candidate: context.candidate,
+    actor: "test-operator", expectedAuthoring: context.bundle.mutation_bindings.authoring });
+  const digest = explorationBoundaryCandidateDigest(context.candidate);
+  return activateExplorationBoundary({ projectRoot, candidate: context.candidate, reviewDraft: context.draft,
+    generationLock: context.lock, expectedAuthoring: saved.authoring, expectedDigest: digest,
+    actor: "test-operator", confirmation: `ACTIVATE ${digest}`, confirmedDecisions: context.candidate.unresolved_decisions,
+    currentInspection: inspection() });
+}
 
 function inspection(): SchemaInspection {
   const column = (name: string, dataType: string, tenant = false) => ({

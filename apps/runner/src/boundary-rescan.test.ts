@@ -14,6 +14,10 @@ import {
   type GenerationLock,
 } from "./auto-boundary.js";
 import {
+  commitBoundaryResourceReviewMutation,
+  prepareBoundaryResourceReviewMutation,
+} from "./boundary-review-mutation.js";
+import {
   applyManagedBoundaryReviewDecision,
   boundaryReviewDecisions,
   createBoundaryReviewProgress,
@@ -1370,6 +1374,57 @@ describe("boundary rescan reconciliation", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("keeps a newly inspected field unavailable until an explicit disabled review, without changing active authority", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-rescan-new-field-"));
+    try {
+      const setup = await writeReviewedDirectCommerceProject(root);
+      const changed = structuredClone(setup.inspection);
+      const orders = changed.tables.find((table) => table.name === "orders")!;
+      orders.columns.push(column("registration_gate", "text", false, orders.columns.length + 1));
+      orders.suggestions.default_visible_columns.push("registration_gate");
+
+      const rescan = await prepareBoundaryRescan({ projectRoot: root, inspection: changed });
+      const reconciled = rescan.selectedProgress.candidate.pack.resources.find(
+        (resource) => resource.id === "public.orders",
+      )!;
+      expect(rescan.report.boundaries[0]!.newly_available_fields).toContainEqual({
+        resource_id: "public.orders", field: "registration_gate",
+      });
+      expect(reconciled.field_types).toHaveProperty("registration_gate");
+      expect(reconciled.selectable_fields).not.toContain("registration_gate");
+      expect(reconciled.kept_out_fields).toContain("registration_gate");
+
+      await commitBoundaryRescan(rescan);
+      expect((await loadActivatedExplorationBoundaries(root))[0]!.activation.digest)
+        .toBe(setup.activeDigest);
+
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.orders", selectable_fields: ["not_a_column"],
+        actor: "owner@example.test", reason: "Reject an unknown reviewed field.",
+      }, async () => changed)).rejects.toThrow(
+        /unknown field "not_a_column".*available columns: id, registration_gate, status, tenant_id/i,
+      );
+
+      const preview = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.orders",
+        selectable_fields: [...reconciled.selectable_fields, "registration_gate"],
+        actor: "owner@example.test", reason: "Review the newly inspected registration gate as visible.",
+      }, async () => changed);
+      expect(preview.semantic_diff.added_visible_fields).toEqual(["registration_gate"]);
+      expect(preview.candidate.pack.resources.find((resource) => resource.id === "public.orders")
+        ?.selectable_fields).toContain("registration_gate");
+      await commitBoundaryResourceReviewMutation(root, preview);
+
+      expect((await loadActivatedExplorationBoundaries(root))[0]!.activation.digest)
+        .toBe(setup.activeDigest);
+      const saved = await readBoundaryReviewProgress(root, preview.build.exploration_boundary);
+      expect(saved?.candidate.pack.resources.find((resource) => resource.id === "public.orders")
+        ?.selectable_fields).toContain("registration_gate");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
 
   it("activates a reconciled boundary over a stale revision without disturbing another active boundary", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-reconciled-activation-"));

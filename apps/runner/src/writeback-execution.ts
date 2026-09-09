@@ -10,6 +10,7 @@ import {
   capabilityWritebackExecutor,
   capabilityWritebackMode,
   resolveTrustedContext,
+  resolveSemanticSupervisedWriterSource,
   validateFreshnessAuthorityAgainstCurrentConfig,
   type RuntimeConfig,
 } from "@synapsor-runner/mcp-server";
@@ -180,7 +181,16 @@ export function createWritebackIntentAuthority(
 export async function resolveSqlWriteDatabaseUrl(job: WritebackJob, configPath: string, env: NodeJS.ProcessEnv,
   admittedConfig?: RuntimeConfig): Promise<string> {
   const config = admittedConfig ?? await readRuntimeConfig(configPath);
-  const source = config.sources?.[job.source_id];
+  let source = config.sources?.[job.source_id];
+  if (job.protocol_version === protocolVersions.normalizedWritebackJobV5) {
+    const policy = config.supervised_worker?.outcomes?.find((candidate) =>
+      candidate.outcome === job.semantic_authority.proof.outcome
+      && candidate.action_boundary_digest === job.semantic_authority.proof.action_boundary_digest);
+    if (policy) {
+      source = resolveSemanticSupervisedWriterSource(config, job.source_id, policy);
+      if (!source) throw new Error("SUPERVISED_WORKER_WRITER_MISMATCH: the outcome's exact writer source binding is unavailable");
+    }
+  }
   if (source?.credential_scope?.mode === "tenant_resolver") {
     throw new Error(
       `TENANT_CREDENTIAL_RESOLVER_REQUIRED: source ${job.source_id} requires application-supplied resolver ${source.credential_scope.resolver}; the stock CLI never loads executable resolver code. Embed the resolver or run one tenant-bound Runner process with shared credential mode.`,
@@ -190,6 +200,9 @@ export async function resolveSqlWriteDatabaseUrl(job: WritebackJob, configPath: 
   if (writeUrlEnv) {
     const value = envValue(env, writeUrlEnv);
     if (value) return value;
+  }
+  if (job.protocol_version === protocolVersions.normalizedWritebackJobV5) {
+    throw new Error("SEMANTIC_ACTION_WRITER_URL_MISSING: the exact reviewed writer environment variable must be available to this process");
   }
   return envValue(env, "SYNAPSOR_DATABASE_URL") || "";
 }

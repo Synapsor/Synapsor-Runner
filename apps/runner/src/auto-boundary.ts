@@ -3303,11 +3303,61 @@ export async function loadGenerationLockSnapshot(
   fingerprint: `sha256:${string}`,
 ): Promise<GenerationLock> {
   const projectRoot = path.resolve(projectRootInput);
+  const snapshotPath = generationLockSnapshotPath(projectRoot, fingerprint);
+  const stored = await withStoredReadPolicies(projectRoot, undefined, async (binding, current) => {
+    for (const lock of current.locks.values()) {
+      if (canonicalJsonDigest(lock) === fingerprint) return lock;
+    }
+    const currentAuthoring = current.records.find((record) => record.kind === OPERATOR_READ_AUTHORING_KEY.kind
+      && record.name === OPERATOR_READ_AUTHORING_KEY.name);
+    const currentLock = currentAuthoring && generationLockInAuthoringRecord(currentAuthoring, fingerprint);
+    if (currentLock) return currentLock;
+    // A minimized draft can replace its original evidence before Actions are
+    // rebound. Read immutable, deployment-scoped history in bounded pages; it
+    // supplies metadata only, never an active permission or a new pointer.
+    let before = { epoch: current.epoch + 1, revision_id: currentAuthoring?.revision_id ?? "history" };
+    for (;;) {
+      const page = await binding.repository.history({ deployment_id: binding.deployment_id,
+        key: OPERATOR_READ_AUTHORING_KEY, before, limit: 16 });
+      for (const { revision } of page) {
+        if (revision.revision_id === currentAuthoring?.revision_id) continue;
+        const lock = generationLockInAuthoringRecord(revision, fingerprint);
+        if (lock) return lock;
+      }
+      if (page.length < 16) break;
+      const last = page.at(-1)!;
+      before = { epoch: last.epoch, revision_id: last.revision.revision_id };
+    }
+    throw Object.assign(new Error("The exact saved schema snapshot is unavailable in this project's reviewed history. Resume this saved job with --rescan and revalidate it against the current database. Existing drafts and active authority are unchanged; legacy exports cannot replace the missing evidence."),
+      { code: "POLICY_GENERATION_SNAPSHOT_UNAVAILABLE" });
+  });
+  if (stored) return stored;
   const snapshot = JSON.parse(
-    await fs.readFile(generationLockSnapshotPath(projectRoot, fingerprint), "utf8"),
+    await fs.readFile(snapshotPath, "utf8"),
   ) as GenerationLock;
   assertGenerationLockFingerprint(snapshot, fingerprint);
   return snapshot;
+}
+
+function generationLockInAuthoringRecord(record: ControlPolicyRevision, fingerprint: `sha256:${string}`): GenerationLock | undefined {
+  const content = record.content;
+  if (!isRecord(content) || content.schema_version !== OPERATOR_POLICY_RECORD_VERSION || content.type !== "read_authoring"
+    || !Array.isArray(content.entries)) throw invalidStoredRead();
+  const { schema_version: _version, ...policy } = content;
+  assertOperatorPolicyRecord(record, OPERATOR_READ_AUTHORING_KEY, canonicalJsonDigest(policy));
+  for (const entry of content.entries) {
+    if (!isRecord(entry) || !isRecord(entry.progress)) throw invalidStoredRead();
+    for (const [rawBoundary, rawLock] of [[entry.draft, entry.draft_lock], [entry.progress.candidate, entry.candidate_lock]]) {
+      if (!isRecord(rawBoundary) || !isRecord(rawLock)) throw invalidStoredRead();
+      const boundary = rawBoundary as unknown as ExplorationBoundaryDraft;
+      const lock = rawLock as unknown as GenerationLock;
+      if (boundary.activation !== "disabled_unreviewed" || lock.schema_version !== GENERATION_LOCK_VERSION) throw invalidStoredRead();
+      if (boundary.pack.resources.length === 0) assertStoredExplorationMetadata(boundary, lock);
+      else assertStoredExplorationPolicy(boundary, lock);
+      if (canonicalJsonDigest(lock) === fingerprint) return structuredClone(lock);
+    }
+  }
+  return undefined;
 }
 
 export async function loadAutoBoundaryPolicyBaseline(
@@ -5889,8 +5939,16 @@ function emitDraftDsl(graph: AutoBoundaryEvidenceGraph, sourceName: string): str
     const principalKey = resource.principal_key.selected;
     const object = singularize(resource.table);
     const capabilityName = `${safeNamespace(resource.schema)}.inspect_${safeIdentifier(object)}`;
-    const lookupArg = `${safeIdentifier(object)}_id`;
     const trustedScopeFields = new Set([tenantKey, principalKey].filter((field): field is string => Boolean(field)));
+    let lookupArg = `${safeIdentifier(object)}_id`;
+    // A generated lookup is not a trusted identity input, even when the table
+    // name naturally produces the same identifier as its principal column.
+    if (trustedScopeFields.has(lookupArg)) {
+      const base = `${safeIdentifier(object)}_lookup_id`;
+      const occupied = new Set(resource.fields.map((field) => field.name));
+      lookupArg = base;
+      for (let suffix = 2; occupied.has(lookupArg); suffix++) lookupArg = `${base}_${suffix}`;
+    }
     const trustedScopeReadableFields = reviewedTrustedScopeReadableFields(resource);
     const visible = unique([
       ...(!trustedScopeFields.has(primaryKey) || trustedScopeReadableFields.has(primaryKey) ? [primaryKey] : []),

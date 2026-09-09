@@ -149,6 +149,39 @@ engine.
 
 ## Run And Operate The Worker
 
+### Reviewed Read/Action projects
+
+After the separate execution review, use the exact config path printed by execution setup.
+Guided projects normally use the Action companion below, not the primary
+read-only `synapsor.runner.json`:
+
+```bash
+synapsor-runner worker run --supervised --yes --config ./synapsor.actions.runner.json
+```
+
+For one bounded worker iteration:
+
+```bash
+synapsor-runner worker run --supervised --once --yes --config ./synapsor.actions.runner.json
+```
+
+Without `--supervised`, `worker run` uses the legacy queue; `--once` does not
+select supervised execution. Do not replace the reviewed config with another
+file or edit stored authority to resolve a binding refusal.
+
+Provide all reviewed writer environment variables and trusted identity in the
+worker's process before running the command. Use only the approved identity
+source, never model arguments. Setup prints the command even when prerequisites
+are missing; that is not a successful preflight or a running worker. Starting
+from setup still requires separate explicit consent. A client handshake or an
+approved request is not completion: require a successful execution receipt.
+
+### Legacy capability examples
+
+The following billing examples use an explicitly configured legacy capability
+project whose execution config is `synapsor.runner.json`. They are not the
+worker launch instructions for a guided Read/Action project.
+
 Validate first:
 
 ```bash

@@ -24,7 +24,9 @@ import {
   enableSemanticSupervisedExecution,
   previewSemanticSupervisedExecution,
   readSemanticSupervisedExecutionState,
+  readSemanticExecutionReviewDefaults,
   recoverSemanticActionRuntime,
+  executionReReviewOutcomesForActionActivation,
   semanticExecutionConfirmation,
 } from "./semantic-action-deployment.js";
 
@@ -97,6 +99,9 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     projectRoot: input.projectRoot,
     env: input.env,
   });
+  const executionReReviewOutcomes = input.draft
+    ? executionReReviewOutcomesForActionActivation({ active: input.active, draft: input.draft, execution: executionState })
+    : [];
   const enabledExecutionOutcomes = () => new Set(
     executionState.enabled && input.active
       ? executionState.policies
@@ -129,6 +134,10 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     ...(unavailableOutcomes.size ? [
       `Read dependency unavailable: ${[...unavailableOutcomes].join(", ")}. These outcomes cannot be used or executed.`,
       "Their activation records are retained. Review the linked Read authority; opening these details does not restore access.",
+    ] : []),
+    ...(executionReReviewOutcomes.length ? [
+      `Execution review required after activation: ${executionReReviewOutcomes.join(", ")}.`,
+      "The complete Action Boundary digest changes. Existing supervised execution is not carried forward; each listed outcome needs separate writer review after proposal authority activation.",
     ] : []),
     input.draft
       ? draftReady
@@ -389,10 +398,10 @@ export async function reviewSemanticSupervisedExecution(input: {
         { value: "retry", label: publication ? "Recover the saved attempt and reopen review" : revalidation ? "Recheck after saved-job revalidation" : "Recheck the writer and continue setup",
           detail: publication ? "Check the exact saved receipt without replaying activation or executing a request." : "After repair, verify the new configured connection. No request executes." },
         { value: "details", label: publication ? "Inspect the saved recovery details" : revalidation ? "Show how to revalidate this saved job" : "Inspect the exact writer requirements" },
-        { value: "pause", label: "Save and pause execution setup", detail: publication ? "Preserve the recovery record. Pausing does not disable existing execution."
+        { value: "pause", label: "Save and pause this outcome's execution setup", detail: publication ? "Preserve the recovery record. Pausing does not disable existing execution."
           : revalidation ? "Keep the rules and authority records; resume the same job to review the changed database contract."
             : "Preserve the existing activation records. This check enables no execution and runs no request." },
-      ], { initialValue: result.provisioning ? "export" : "pause", displayContext: true, context: [problem.summary, `Diagnostic: ${problem.code}.`] });
+      ], { initialValue: result.provisioning ? "export" : "pause", displayContext: true, context: [`Outcome: ${input.outcome}`, problem.summary, `Diagnostic: ${problem.code}.`] });
       if (recovery === "export" && result.provisioning) {
         try {
           const directory = await exportWriterProvisioning(input.projectRoot, result.provisioning);
@@ -426,22 +435,31 @@ export async function reviewSemanticSupervisedExecution(input: {
 
 async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof reviewSemanticSupervisedExecution>[0]): Promise<(BoundaryAccessNotice & { problem?: ExecutionSetupProblem; provisioning?: WriterProvisioningPlan }) | undefined> {
   const env = input.env ?? process.env;
-  let writeUrlEnv = "SYNAPSOR_DATABASE_WRITE_URL";
+  let defaults: Awaited<ReturnType<typeof readSemanticExecutionReviewDefaults>>;
+  try { defaults = await readSemanticExecutionReviewDefaults(input); }
+  catch (error) {
+    const problem = executionSetupProblem(error);
+    return { tone: "danger", title: "Execution was not enabled.", lines: [problem.summary], problem };
+  }
+  let writeUrlEnv = defaults?.write_url_env ?? "SYNAPSOR_DATABASE_WRITE_URL";
+  const workerIdentity = defaults ? defaults.worker_identity : "semantic_action_worker";
   let configured = Boolean(env[writeUrlEnv]?.trim());
   if (configured && input.session.chooseOption) {
     const choice = await input.session.chooseOption("Check your write connection", [
       { value: "check", label: "Check the configured write connection", detail: "Verify its permissions; do not enable execution or run a request." },
       { value: "change", label: "Use another configured connection" },
-      { value: "pause", label: "Set up execution later" },
-    ], { initialValue: "check", context: [`Connection: ${writeUrlEnv} is set (value hidden). Execution authorization comes after verification.`] });
+      { value: "pause", label: "Set up this outcome later" },
+    ], { initialValue: "check", displayContext: true, context: [`Outcome: ${input.outcome}`, `Connection: ${writeUrlEnv} is set (value hidden). Execution authorization comes after verification.`,
+      ...(defaults ? ["The saved reference is a review default only, not current execution authority."] : [])] });
     if (!choice || choice === "pause") return undefined;
     configured = choice === "check";
   } else configured = false;
   if (!configured) {
     const writeUrlAnswer = await input.session.promptText(
-    "Write connection variable (Enter uses SYNAPSOR_DATABASE_WRITE_URL)",
+    `Write connection variable (Enter uses ${writeUrlEnv})`,
     {
       context: [
+        `Outcome: ${input.outcome}`,
         "Your read-only connection cannot execute changes. Configure a separate write connection, then enter its variable name here, not its URL.",
         "This checks permissions only. Enabling execution and starting a worker are separate decisions.",
       ],
@@ -459,7 +477,7 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
       outcome: input.outcome,
       profile,
       writeUrlEnv,
-      workerIdentity: "semantic_action_worker",
+      ...(workerIdentity === undefined ? {} : { workerIdentity }),
       ...(input.env ? { env: input.env } : {}),
       ...(input.inspectDatabaseFn ? { inspect: input.inspectDatabaseFn } : {}),
     });
@@ -481,6 +499,7 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
             ["Effect", `${preview.operation.toUpperCase()} ${preview.target}`],
             ["Writer role", preview.writer_role],
             ["Credential reference", preview.write_url_env],
+            ["Worker identity", workerIdentity ?? "Not pinned by this policy"],
             ["Receipts", "Runner ledger"],
             ["Concurrency", String(preview.policy.concurrency)],
             ["Queue / retries", `${preview.policy.queue_limit} / ${preview.policy.max_attempts}`],
@@ -500,7 +519,7 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
       outcome: input.outcome,
       profile,
       writeUrlEnv,
-      workerIdentity: "semantic_action_worker",
+      ...(workerIdentity === undefined ? {} : { workerIdentity }),
       expectedActionBoundaryDigest: preview.action_boundary_digest,
       expectedConfigDigest: preview.current_config_digest,
       expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
@@ -561,7 +580,7 @@ function verifiedActionAuthoritySummary(
       : rule.writeback.mode === "none"
       ? "Proposal only"
       : enabledExecutionOutcomes.has(rule.outcome)
-        ? "Worker on"
+        ? "Execution enabled"
         : "Eligible, off",
   ]);
   const tableWidth = reviewTableWidth(terminalColumns);
@@ -607,7 +626,21 @@ function verifiedActionNotice(
   };
 }
 
-function verifiedActionAuthorityDetails(
+export function verifiedActionAuthoritySections(
+  draft: ActionRuleAuthorityDraftV1,
+  terminalColumns = 100,
+): import("./read-boundary-review-view.js").ReviewSection[] {
+  return [
+    { id: "outcomes", title: "All reviewed outcomes", lines: [
+      ...verifiedActionAuthoritySummary(draft, "PENDING PROPOSAL AUTHORITY", new Set(), terminalColumns),
+      "Every retained and added outcome in this revision is listed. Execution is a separate review.",
+      `Action Boundary digest: ${draft.authority.action_boundary.digest}`,
+    ] },
+    { id: "authority", title: "Complete authority and fingerprints", lines: verifiedActionAuthorityDetails(draft, terminalColumns) },
+  ];
+}
+
+export function verifiedActionAuthorityDetails(
   value: ActionRuleAuthorityDraftV1 | ActionRuleAuthorityActivationV1,
   terminalColumns = 100,
 ): string[] {
@@ -651,6 +684,14 @@ function verifiedActionAuthorityDetails(
       "",
     );
   }
+  lines.push(
+    "EXACT AUTHORITY (OPERATOR ONLY)",
+    `Authority digest: ${value.digest}`,
+    "The complete reviewed predicates, effects, private verification, approval limits and dependencies follow.",
+    "```json",
+    ...JSON.stringify(value.authority, null, 2).split("\n"),
+    "```",
+  );
   return lines;
 }
 

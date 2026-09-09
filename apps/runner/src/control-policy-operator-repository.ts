@@ -52,9 +52,18 @@ export class OperatorAuthorityRepository {
     expected_epoch: number; expected_revision_id: string | null;
     authoring: StoredReadAuthoring; actor: string; operation: string;
     verifiedDecision?: GovernedReadEditDecision;
+    /** Additional disabled policies prepared from the same exact Read revision.
+     * This is internal operator persistence, never a model-facing authority API. */
+    additionalDrafts?: OperatorAuthorityChange[];
   }): Promise<Awaited<ReturnType<OperatorAuthorityRepository["commit"]>>> {
     const frozen = structuredClone(input);
-    const before = await this.currentReadState();
+    assertDisabledActionCompanions(frozen.additionalDrafts);
+    // A Read-only snapshot intentionally omits Action and execution policy.
+    // That is insufficient when this transaction carries a semantic Action
+    // companion: validate the complete snapshot before the epoch CAS.
+    const before = frozen.additionalDrafts?.length
+      ? await this.current()
+      : await this.currentReadState();
     const previous = before.active.find(({ policy }) => policy.type === "read_authoring");
     if (before.epoch !== frozen.expected_epoch
       || (previous?.revision.revision_id ?? null) !== frozen.expected_revision_id) fail("POLICY_REVISION_CONFLICT");
@@ -89,7 +98,7 @@ export class OperatorAuthorityRepository {
       }
     }
     return this.commitAgainstState({ expected_epoch: frozen.expected_epoch, actor: frozen.actor, operation: frozen.operation,
-      drafts, active: [{ key: OPERATOR_READ_AUTHORING, policy: frozen.authoring }], verifiedDecision: frozen.verifiedDecision }, before);
+      drafts: [...drafts, ...(frozen.additionalDrafts ?? [])], active: [{ key: OPERATOR_READ_AUTHORING, policy: frozen.authoring }], verifiedDecision: frozen.verifiedDecision }, before);
   }
 
   /** Commits an exact reviewed set, never a best-effort merge after a race.
@@ -167,6 +176,17 @@ export class OperatorAuthorityRepository {
       epoch = recorded.epoch;
     }
     return { epoch, changes };
+  }
+}
+
+function assertDisabledActionCompanions(changes: OperatorAuthorityChange[] | undefined): void {
+  for (const change of changes ?? []) {
+    if (change.key.scope.level !== "operator" || change.key.kind !== "action"
+      || change.policy === null || change.policy.type !== "action"
+      || change.policy.authority.state !== "disabled"
+      || change.key.name !== change.policy.authority.authority.name) {
+      fail("POLICY_STRUCTURED_ACTION_COMPANION_INVALID");
+    }
   }
 }
 

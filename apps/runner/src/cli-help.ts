@@ -16,8 +16,11 @@ New here?
   No database needed: ${cmd} try
   Connect your database: ${cmd} start --from-env DATABASE_URL
 
-\`start\` is the interactive guided first run. \`onboard db\` is the explicit,
-scriptable one-command artifact generator for CI and established automation.
+\`start\` and \`onboard db\` share the current Boundary authoring flow:
+interactive guided first run in a terminal, metadata-only disabled setup without
+a TTY, and typed --export-draft/--draft authoring without a model API.
+The MCP entry uses app.describe_data, app.explore_data, app.describe_actions and
+app.request_change. Activation, approval and apply stay outside model tools.
 
 Usage:
   ${cmd} <command>
@@ -26,10 +29,10 @@ Commands:
   try          Run an isolated proof, or ask/explore/call active project tools
   explore      Validate or replay fixed JSON Explore plans without a model
   inspect      Inspect a Postgres/MySQL schema
-  start        Interactive guided first run, or no-arg legacy worker polling
+  start        Current Boundary setup; explicit config/store worker compatibility
   action       Review Safe Actions and operate immutable proposals
   up           Bring up local review mode guidance/server
-  init         Generate a Synapsor capability contract
+  init         Legacy capability and code-first contract compatibility
   config       Validate local synapsor.runner.json wiring
   mcp          Serve safe semantic tools over MCP
   contract     Validate and normalize canonical Synapsor contract files
@@ -39,7 +42,7 @@ Commands:
   dsl          Compile SQL-like Synapsor authoring DSL to contract JSON
   language-server  Start the Synapsor contract LSP over stdio
   cloud        Register runner metadata or dry-run contract push to Cloud
-  onboard      Scriptable one-command own-database artifact setup
+  onboard      Current Boundary setup, same as start; explicit legacy opt-in
   smoke        Test generated tool calls before wiring an MCP client
   tools        List model-facing MCP tools and aliases
   writeback    Print direct SQL writeback receipt DDL, grants, and checks
@@ -75,13 +78,11 @@ Examples:
   ${cmd} explore run --plan ./explore-plan.json --project-root .
   ${cmd} start --from-env DATABASE_URL
   ${cmd} start --from-env DATABASE_URL --cli
-  ${cmd} action review --project-root .
-  ${cmd} start --action refund_order --description "Propose one reviewed order refund"
-  ${cmd} action validate ./synapsor/actions/billing.propose_refund_order.ts
+  ${cmd} start --project-root . --export-draft ./boundary-authoring.json --json
+  ${cmd} start --project-root . --draft ./boundary-authoring.json --dry-run --json
   ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db --dry-run
   ${cmd} onboard db --from-env DATABASE_URL
   ${cmd} inspect --from-env DATABASE_URL
-  ${cmd} init --wizard --from-env DATABASE_URL
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} config model-output --authority-metadata semantic --config ./synapsor.runner.json
   ${cmd} contract validate ./synapsor.contract.json
@@ -417,29 +418,49 @@ Options:
   --tls-ca-env <ENV> --require-client-cert
 `,
     start: `Usage:
-  # Recommended interactive first run
+  # Current Boundary setup (onboard db uses the same route)
   ${cmd} start --from-env DATABASE_URL [--schema public]
   ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose] [--timeout 120] [--session-token-budget 200000] [--max-output-tokens 4096]
   ${cmd} start --from-env DATABASE_URL --rescan
   ${cmd} start --from-env DATABASE_URL --cli --single-tenant --organization-id internal-finance
 
-  # Canonical non-interactive read-only setup
-  ${cmd} start --from-env DATABASE_URL --table public.invoices --mode read_only --tenant-key tenant_id --yes --no-open
+  # Metadata-only initialization and typed disabled drafts; no TTY/model API
+  ${cmd} start --project-root . --from-env DATABASE_URL --json
+  ${cmd} start --project-root . --export-draft ./boundary-authoring.json --json
+  ${cmd} start --project-root . --draft ./boundary-authoring.json --dry-run --json
+  ${cmd} start --project-root . --draft ./boundary-authoring.json --json
+  ${cmd} start --project-root . --cli
 
-  ${cmd} start --from-env DATABASE_URL --answers ./answers.json --yes
+  # Explicit legacy capability/code-first compatibility
+  ${cmd} start --legacy-capabilities --from-env DATABASE_URL --answers ./answers.json --yes
   ${cmd} start --action refund_order --description "Propose one reviewed order refund" [--based-on billing.inspect_order]
-  ${cmd} start --from-env DATABASE_URL --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
   ${cmd} runner start --once --config ./synapsor.runner.json --store ./.synapsor/local.db
-  ${cmd} start
 
-A fresh interactive --from-env invocation with no existing config, selector, or
-automation input scans the whole schema, combines deterministic database,
-Prisma, Drizzle, OpenAPI, and existing Synapsor evidence, emits a disabled
-DSL-first Auto Boundary draft, and opens the secured local Workbench. It never
-samples source rows or uses an LLM. This fresh loopback route establishes the
-development authoring profile once; Workbench does not ask for a second
-development/staging declaration. Explicit production, unknown, remote, and
-established manual profiles retain their existing fail-closed behavior.
+A fresh terminal invocation enters the same job-first model/manual chat as
+--cli. Metadata inspection is read-only, samples no source rows, and needs no
+model. Natural-language mapping is optional and requires a configured provider
+and explicit metadata-egress consent. Manual review remains available.
+Use --open-ui explicitly for the preview Workbench instead.
+
+Without a TTY, --from-env initializes the same current Auto Boundary as
+boundary draft. --json emits one JSON result; --no-open also defers review.
+--yes is metadata-only, never semantic activation. Bare start uses an exported
+database environment or prompts for a hidden URL in a terminal; it is not a
+worker command. Existing manual artifacts are preserved, not silently migrated.
+
+--export-draft and --draft operate on existing metadata with no TTY or provider.
+Edit the exported typed Read/Action input; prose is not automatically parsed.
+--dry-run validates without publishing. Submission saves disabled drafts only.
+Read and Action authority need separate trusted human review; execution is a
+separate decision. Headless semantic activation is not implemented. Legacy
+action activate is not a semantic activation substitute.
+For a saved structured draft, boundary review --project-root . --access opens
+the existing Read controls without a model. Then action review --project-root .
+opens its Verified Action Boundary for separate exact proposal-authority review.
+
+The single current MCP entry uses exactly app.describe_data, app.explore_data,
+app.describe_actions and app.request_change. Requests create bounded proposals;
+approval is not completion. Only an applied receipt establishes completion.
 
 For a database that genuinely contains one organization and no tenant columns
 or row-level tenant policies, add \`--single-tenant --organization-id <stable-id>\`.
@@ -447,14 +468,6 @@ This is an explicit digest-bound owner decision: Runner applies no tenant row
 predicate, still applies reviewed principal scope when present, and refuses the
 mode if inspection finds evidence that the source is actually multi-tenant.
 
-Add \`--cli\` to keep the complete interactive journey in the terminal. Runner
-drafts or resumes the boundary and asks what job the agent should perform.
-Model-assisted structural mapping is recommended when OpenAI, Anthropic, or a
-loopback local model is configured; Runner-guided exact cards and full manual
-review remain available. The result is a minimized disabled Read Boundary and,
-for change-oriented jobs, a separate disabled proposal Action Boundary. The
-operator reviews and activates each exact authority independently. Models
-cannot activate, approve, apply, choose trusted scope, or send SQL.
 For the terminal model handoff, \`--timeout <seconds>\` sets the per-provider-call
 timeout from 1 through 600 seconds. Without an override, hosted and remote
 providers use 30 seconds while a loopback OpenAI-compatible model uses 120.
@@ -462,14 +475,8 @@ The same terminal handoff accepts \`--session-token-budget <tokens>\` and
 \`--max-output-tokens <tokens>\`; Workbench exposes parallel Ask-limit fields.
 These bound the local model client and provider spend/context only. They do not
 change reviewed database authority or Explore privacy/differencing budgets.
-Submitting the first question confirms the displayed provider/model/origin
-egress review. In the Analytics shell, \`/access\` opens the terminal boundary
-editor and \`/access-workbench\` opens its visual counterpart. \`--no-open\`
-retains its established behavior: initialize or resume
-without opening a browser or starting an interactive review.
-
-Running the same Start command in an existing guided project resumes its pinned
-review and does not inspect the database again. Add \`--rescan\` when you
+Running the terminal Start command in an existing guided project resumes its
+pinned review without inspecting again. Add \`--rescan\` when you
 deliberately want Runner to inspect the current schema and role posture for any
 single-organization or multi-tenant project. A rescan creates a disabled update;
 the previous exact boundary remains active until you review and activate the
@@ -477,19 +484,11 @@ new revision. On an existing reviewed project, \`--force\` also uses guarded
 reconciliation and does not discard curated review; prefer \`--rescan\` because it
 states the intent clearly.
 
-In a terminal, selectors such as --table seed the interactive wizard instead
-of disabling its prompts. For CI, provide --table, --mode, and either
---tenant-key or --single-tenant-dev together; Runner reports every missing
-decision in one error. Add --force only after reviewing existing generated
-files. --answers remains the stable file-driven automation path. These routes
-never unexpectedly open a browser, and a valid config/boundary handshake does
-not count as a real own-data read.
-
-With no flags, start the legacy cloud-linked writeback polling worker from the
-worker environment config. Prefer \`${cmd} runner start\` for that worker path
-so it is not confused with first-run onboarding. Add \`--once\` with both
-\`--config\` and \`--store\` for a bounded claim/apply cycle that still rechecks
-the local reviewed contract and proposal before writeback.
+Old --table, --answers, --spec, --mode and related capability selectors are
+rejected unless --legacy-capabilities is explicit. Compatibility does not
+convert old authority into semantic authority. init/code-first engines remain
+available as legacy routes. Existing start --config/--store/--once worker calls
+remain supported; prefer runner start for that explicit worker path.
 `,
     boundary: `Usage:
   ${cmd} boundary draft --from-env DATABASE_URL [--schema public] [--project-root .] [--json]
@@ -794,8 +793,8 @@ the value of a metadata flag to clear that value. In \`/access\`, press I on a
 table or selected column to edit the same metadata in the focused editor.
 Auto Boundary keeps the minimum group size at 5 by default. An owner may lower it
 to 1-4 only through --minimum-cohort with a recorded actor and reason. A value
-of 1 disables small-group suppression and can identify individuals; Protect and
-protected-capability activation require separate explicit re-confirmation.
+of 1 disables small-group suppression and can identify individuals; legacy
+Protect and protected-capability activation require separate explicit re-confirmation.
 
 Ranked top/bottom and two-period mover questions return at most the reviewed
 top-N (25 by default). --max-ranked-groups separately narrows how many
@@ -819,10 +818,13 @@ Headless activation is accepted only with an exact exported review bundle,
 exact digest confirmation, a short-lived nonce-bound decision, and a configured
 signed_key or jwt_oidc operator identity carrying the required role. --yes and
 an actor string are never sufficient. Workbench and CLI converge on the same
-activation checks. After activation, --authoring installs exactly
-app.describe_data and app.explore_data in the selected Cursor, Claude Code, or
-VS Code project. Scoped
-Explore remains local by default. Serving it over remote HTTP requires the
+activation checks. After Read activation, mcp install --authoring installs one
+local entry with four fixed tools: app.describe_data, app.explore_data,
+app.describe_actions, and app.request_change in the selected Cursor, Claude Code,
+or VS Code project. Read activation does not require Action activation;
+inactive Actions grant no change authority. Approval and execution remain
+separate from activation and outside MCP tools.
+Scoped Explore remains local by default. Serving it over remote HTTP requires the
 separate production_explore profile, secured Streamable HTTP, verified JWT
 tenant/principal context, and the production budget and rate-limit prerequisites.
 `,
@@ -842,8 +844,16 @@ tenant/principal context, and the production budget and rate-limit prerequisites
   ${cmd} action watch ./synapsor/actions/billing.propose_refund_order.ts
   ${cmd} action status [--json]
 
-Open action review for the managed terminal control plane, or use the explicit
-draft/revise/preview commands in CI. Preview is identity-free structural
+The capability draft/revise/activate commands below are legacy compatibility,
+not activation for current semantic ActionRule drafts. For current authoring,
+use start --export-draft/--draft. Review the saved Read through boundary review
+--access, then select Verified Action Boundary in action review for its separate
+exact proposal-authority confirmation. This saved-draft path needs no provider
+or new job conversation. Headless semantic activation is not implemented.
+
+Action review includes both verified semantic outcomes and legacy caller-supplied
+proposal capabilities. The explicit legacy draft/revise/preview commands are
+available in CI. Legacy preview is identity-free structural
 verification by default; --args deliberately runs the optional live scoped
 proposal diagnostic. The first reviewed revision is proposal-only:
 invocations create immutable proposals and cannot mutate source data. Execution
@@ -887,6 +897,9 @@ Inspect schema metadata without mutating the database or printing credentials.
   ${cmd} init from-drizzle ./src/schema.ts --output ./synapsor-drizzle-candidates
   ${cmd} init from-openapi ./openapi.yaml --output ./synapsor-openapi-candidates
 
+Legacy capability/code-first compatibility, not the current Boundary onboarding
+route. For current setup use start or onboard db; their scriptable --draft
+input compiles disabled Read/Action drafts and never grants activation authority.
 Generate a reviewed Synapsor Runner contract. Defaults to read-only in the wizard.
 Native direct SQL operations are update, insert, and delete. Existing configs default to update.
 Receipt modes are source_auto_migrate, source_precreated, and runner_ledger.
@@ -941,15 +954,16 @@ existing file, records explicit ownership, and never writes database URLs,
 credentials, trusted identity, approval, apply, revert, or policy authority.
 --authoring installs one local development/staging entry with four fixed tools:
 app.describe_data, app.explore_data, app.describe_actions, app.request_change.
-Read and Action activation remain separate; inactive actions grant no authority.
-It validates the
-current generation lock and database role before installation. When the
+Read activation does not require Action activation; inactive Actions grant no
+change authority. Approval and execution remain separate from activation.
+It validates the current generation lock and database role before installation. When the
 reviewed config is read-only, has no named capabilities, and has an active local
 boundary, Runner selects this mode automatically even if --authoring is omitted.
 New managed entries still include --authoring so their intent is visible. An
-inactive Explore-only project refuses installation instead of writing a
-zero-tool entry. Re-run after Protect activates a named capability to install
-that narrower runtime surface.
+inactive Read Boundary refuses installation instead of writing a zero-tool entry.
+Review and activate the saved Read Boundary with boundary review --project-root .
+--access, then re-run mcp install. Protect and named-capability installation are
+explicit legacy compatibility, not prerequisites for current Read.
 
 The unified entry loads reviewed Action authority from synapsor.actions.runner.json.
 No additional client tools are needed when reviewed outcomes or rules change.
@@ -998,17 +1012,27 @@ This command never prints database URLs or write credentials.
 
 Start the stdio MCP server for local MCP clients such as Claude Desktop, Cursor, or local agent tools. Startup logs stay off stdout so the MCP protocol remains clean.
 Stdio is the recommended local-desktop path: it opens no HTTP listener and therefore needs no HTTP token, TLS, OAuth flow, or MCP HTTP session.
-An active read-only development/staging boundary with no named capabilities selects local Explore automatically, including for older generated --config/--store commands. New client configs include --authoring --project-root explicitly so the intended surface remains obvious. Both routes expose only app.describe_data and app.explore_data after local human activation. They refuse HTTP, production/unknown profiles, stale generation locks, and credentials that are not demonstrably SELECT-only and non-owner. A local Explore-only config with no active boundary refuses startup instead of serving zero tools.
-An enabled production_explore config selects the same two read-only tools over
-Streamable HTTP automatically. --production-explore remains the recommended
+An active read-only development/staging boundary with no named capabilities
+selects local Explore automatically, including for older generated --config/--store
+commands. New client configs include --authoring --project-root explicitly.
+Both local routes expose four fixed tools after Read activation: app.describe_data,
+app.explore_data, app.describe_actions, and app.request_change.
+Read activation does not require Action activation; inactive Actions grant no
+change authority. Approval and execution remain separate from activation.
+These local routes refuse HTTP, production/unknown profiles, stale generation
+locks, and credentials that are not demonstrably SELECT-only and non-owner.
+A local Explore-only config with no active Read Boundary refuses startup.
+An enabled production_explore config serves the two Read tools app.describe_data
+and app.explore_data over Streamable HTTP automatically.
+--production-explore remains the recommended
 explicit launch marker and is included in generated Runner launch commands.
 Using an enabled production config over stdio or the legacy HTTP bridge refuses
 startup instead of silently serving a different or empty tool surface.
-The production Explore route
-from separately reviewed production boundaries. It requires asymmetric JWT
+The production Explore route reads from separately reviewed production boundaries.
+It requires asymmetric JWT
 tenant/principal claims, the configured OAuth scope, direct TLS or a trusted
 TLS proxy, and atomic shared-Postgres per-principal plus tenant privacy
-accounting. Static tokens, no-auth, cleartext break glass, Protect, approval,
+accounting. Static tokens, no-auth, cleartext break glass, legacy Protect, approval,
 apply, configuration, credentials, and SQL are unavailable on this surface.
 Production Explore also fixes the public names to app.describe_data and
 app.explore_data and fixes the reviewed result envelope. It rejects
@@ -1093,7 +1117,7 @@ OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default
 Print MCP client configuration that references the local runner command, auth metadata, and environment-variable names, not database URLs or credential values.
 For an active local Explore-only project, Runner emits the exact local stdio
 --authoring --project-root command and Explore-specific model instructions.
-If no reviewed local boundary is active, generation refuses with the activation
+If no reviewed local Read Boundary is active, generation refuses with the activation
 remedy instead of emitting a zero-tool server command.
 Opaque endpoint tokens are generated and provisioned by the operator. Signed JWT access tokens are issued by the configured identity provider. Runner verifies them but does not issue or refresh them.
 For production HTTP, the endpoint comes from http_security.oauth_resource.resource. Claude Code uses \${TOKEN}; Cursor and VS Code use \${env:TOKEN}. Set the named variable in the client process, then reload the client.
@@ -1101,7 +1125,7 @@ Claude Desktop remains stdio-only; use --client claude-code for Claude over Stre
 OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default.
 Use --include-instructions to include instructions matched to the selected
 surface: reviewed Explore instructions for Explore, or propose-first
-instructions for named capabilities.
+instructions for explicit legacy named-capability configurations.
 `,
     smoke: `Usage:
   ${cmd} smoke call [capability-name] [--sample] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
@@ -1155,26 +1179,32 @@ Templates:
 The template receives an approved proposal writeback request and must return an applied/conflict/failed receipt. Re-check tenant, principal, idempotency, row/version guards, and business policy before mutating state.
 `,
     onboard: `Usage:
-  # Interactive artifact setup
+  # Same current Boundary route as start
   ${cmd} onboard db --from-env DATABASE_URL [--schema public]
+  ${cmd} onboard db --project-root . --from-env DATABASE_URL --json
+  ${cmd} onboard db --project-root . --export-draft ./boundary-authoring.json --json
+  ${cmd} onboard db --project-root . --draft ./boundary-authoring.json --dry-run --json
+  ${cmd} onboard db --project-root . --draft ./boundary-authoring.json --json
+  ${cmd} onboard db --project-root . --cli
 
-  # Canonical non-interactive read-only setup
-  ${cmd} onboard db --from-env DATABASE_URL --table public.invoices --mode read_only --tenant-key tenant_id --yes --no-open
+TTY defaults to job-first model/manual chat; --cli makes that requirement
+explicit. Without a TTY, --from-env initializes metadata-only disabled current
+Auto Boundary artifacts. No model API or source-row query is needed.
+--export-draft/--draft use existing metadata and typed optional Read/Action
+changes, not prose parsing. --dry-run publishes nothing; --yes never activates.
+Separate trusted human Read and Action review is required. Headless semantic
+activation is not implemented; legacy action activate is not a substitute.
+For saved drafts use boundary review --project-root . --access, then
+action review --project-root . and choose Verified Action Boundary. No provider
+or new job conversation is required for these separate exact reviews.
 
-  ${cmd} onboard db --from-env DATABASE_URL --table public.invoices --mode review --operation update --tenant-key tenant_id --conflict-column updated_at --patch late_fee_cents=fixed:0 --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes --no-open
-  ${cmd} onboard db --from-env DATABASE_URL --table public.account_credits --mode review --operation insert --tenant-key tenant_id --dedup request_id=proposal_id,tenant_id=trusted_tenant --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes --no-open
-  ${cmd} onboard db --from-env DATABASE_URL --table public.invoices --mode review --operation update --tenant-key tenant_id --conflict-column updated_at --patch late_fee_cents=fixed:0 --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler --yes --no-open
-  ${cmd} onboard db --answers answers.json --yes
+The current MCP entry uses app.describe_data, app.explore_data,
+app.describe_actions and app.request_change. Approval and apply are not tools.
 
-Guided own-database setup: inspect schema, choose one object, create trusted
-context, choose read-only/shadow/review mode, select guarded single-row
-INSERT/UPDATE/DELETE or an app-owned handler, select receipt authority, generate
-semantic tools, validate config, and run a tool-boundary smoke check.
-In a terminal, Runner prompts for mode and trusted tenant scope. For CI, pass
---table, --mode, and either --tenant-key or --single-tenant-dev together; write
-modes also require their reviewed patch and --yes. Missing automation decisions
-are reported together. Use --answers for a stable file-driven run, and add
---force only after reviewing existing generated files.
+Old capability selectors --table/--answers/--spec/--mode require the explicit
+--legacy-capabilities compatibility flag. Existing artifacts are preserved.
+Example for an existing legacy workflow only:
+  ${cmd} onboard db --legacy-capabilities --answers answers.json --yes
 `,
     propose: `Usage:
   ${cmd} propose <capability-name> --sample [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
@@ -1458,6 +1488,12 @@ replay requires an exact signed-key or OIDC operator decision and requeues only
 the immutable redacted event, never its proposal or database mutation.
 `,
     worker: `Usage:
+Reviewed Read/Action execution:
+  ${cmd} worker run --supervised --yes --config ./synapsor.actions.runner.json
+  ${cmd} worker run --supervised --once --yes --config ./synapsor.actions.runner.json
+  ${cmd} worker status --config ./synapsor.actions.runner.json
+
+Legacy capability examples (explicit configured-runtime projects):
   ${cmd} worker run --yes --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} worker run --once --yes --max-attempts 5 --retry-base-ms 1000
   ${cmd} worker run --drain --yes --capability support.propose_plan_credit --tenant acme
@@ -1475,6 +1511,14 @@ the immutable redacted event, never its proposal or database mutation.
   ${cmd} worker dead-letter show wrp_... --config ./synapsor.runner.json
   ${cmd} worker dead-letter requeue wrp_... --retry-budget 3 --yes --config ./synapsor.runner.json --identity alice --identity-key ./alice.pem
   ${cmd} worker dead-letter discard wrp_... --reason "closed by operator" --yes --config ./synapsor.runner.json --identity alice --identity-key ./alice.pem
+
+Use the exact config path printed by execution setup. Guided Read/Action
+projects use the separate Action runtime config shown above, not the primary
+read-only config. Without --supervised, worker run uses the legacy queue;
+--once limits a run but does not select supervised execution.
+The reviewed writer credentials and trusted identity must be available in the
+worker process. A saved command or enabled execution is not a running worker;
+completion requires a successful execution receipt, not approval alone.
 
 Run a supervised local writeback worker over approved proposals. Automatic
 execution is disabled by default. It requires public contract permission plus

@@ -1,9 +1,10 @@
 # Guided Onboarding: Database To First Safe Tool
 
 This is the shortest path from an existing staging Postgres/MySQL database to
-one useful agent tool. It requires no Synapsor account, Cloud login, database
-replication, global install, MCP host, model API key, or hand-authored config,
-DSL, JSON, SQL, DDL, or grants.
+one reviewed agent job. Metadata initialization requires no Synapsor account,
+Cloud login, replication, global install, MCP host, or model API key. Optional
+natural-language mapping requires a configured provider and consent. Manual
+review and typed file-driven authoring need no model.
 
 ## The One-Minute Mental Model
 
@@ -12,13 +13,18 @@ does not give the agent SQL access.
 
 - Reads return only fields a human reviewed, under tenant and principal scope
   supplied outside model arguments.
-- Scoped Explore is a temporary local development/staging authoring tool that
-  supports repeated legal question combinations after one boundary review.
-- Protect optionally turns one selected analysis into a narrow named
-  capability for reuse or production.
+- Current reviewed Read supports repeated legal question combinations through
+  the four-tool MCP surface in development and configured production deployments.
+  Production Read does not require Protect or named per-capability tools.
+- The legacy compatibility workflow retains temporary local Scoped Explore
+  authoring and optional Protect exports of a selected analysis as a named
+  capability; it is not a prerequisite for current Read.
 - A model-facing write call creates an exact proposal. It does not commit.
 - The model cannot activate authority, approve a proposal, or apply a write.
 - A trusted operator or worker rechecks the effect and records a receipt.
+- The current MCP entry has four fixed tools: `app.describe_data`,
+  `app.explore_data`, `app.describe_actions`, and `app.request_change`.
+- Approval is not completion; only an applied receipt establishes completion.
 
 ## Operator Interface Status
 
@@ -40,7 +46,7 @@ Do not put a database URL in project documentation or chat. The shortest path
 uses a hidden terminal prompt:
 
 ```bash
-npx -y @synapsor/runner start --cli
+npx -y @synapsor/runner start
 ```
 
 Runner can also use an already-exported `DATABASE_URL`. When a regular `.env`
@@ -49,12 +55,14 @@ selected value only for the current Runner/Workbench process. The URL is not
 written to generated artifacts or the ledger. Runner requires Node 22.13 or
 newer.
 
-## Preview Workbench Path
+## Metadata Initialization
 
 Run this from an empty project directory or your application root:
 
 ```bash
-npx -y @synapsor/runner start
+npx -y @synapsor/runner start --from-env DATABASE_URL
+# Equivalent current route:
+npx -y @synapsor/runner onboard db --from-env DATABASE_URL
 ```
 
 The command automatically:
@@ -63,14 +71,21 @@ The command automatically:
 2. inspects schema metadata without sampling source rows;
 3. statically reads supported Prisma, Drizzle, OpenAPI, and existing Synapsor
    definitions when present;
-4. drafts disabled public DSL, canonical JSON, tests, and a generation lock;
+4. prepares the disabled Read catalog, canonical candidate, and generation lock;
 5. creates a valid zero-authority Runner config and local SQLite ledger;
-6. validates every generated artifact;
-7. opens one secured loopback Workbench URL.
+6. validates and saves the first disabled review in governed policy storage,
+   with no active Read, Action, or execution grant;
+7. enters the same job-first model/manual terminal conversation as `--cli`.
+
+Without a TTY, initialization stops at disabled metadata and prints actionable
+export/submit/review commands. `--json` produces one JSON result, and
+`--no-open` also defers interactive review. The preview Workbench requires
+explicit `--open-ui`; it is not the default onboarding surface.
 
 ## Preferred Terminal Path
 
-To keep the same journey browserless, add `--cli`:
+The terminal is the default. Add `--cli` when an interactive terminal is an
+explicit requirement:
 
 ```bash
 npx -y @synapsor/runner start --from-env DATABASE_URL --cli
@@ -88,66 +103,73 @@ also prepare a separate disabled Action Boundary and source-unchanged proposal
 rehearsal. Neither boundary activates the other. The model cannot activate,
 approve, apply, choose trusted scope, or supply SQL. Running the command again
 resumes the saved review, or goes to model/client selection when read authority
-is already active. `--no-open` remains the noninteractive initialize/resume
-flag; it does not start terminal review.
+is already active and the saved job has no remaining authority work. A partly
+activated job resumes its remaining separate decisions. Interruption retains
+saved steps and does not revoke previously confirmed authority.
 
-## Scripted Artifact Setup
+## Typed Headless Authoring
 
-`start` is the recommended interactive first run. `onboard db` is the explicit
-artifact generator for CI and established automation. A canonical read-only
-run is:
-
-```bash
-synapsor-runner onboard db \
-  --from-env DATABASE_URL \
-  --table public.orders \
-  --mode read_only \
-  --tenant-key tenant_id \
-  --yes \
-  --no-open
-```
-
-Noninteractive setup requires the table, mode, and one reviewed tenant-scope
-choice in the same invocation. If several are missing, Runner lists all of
-them together. Use `--single-tenant-dev` only for a reviewed single-tenant
-development source. Use `--force` only after inspecting generated files that
-already exist. In a real terminal, omit `--yes` and `--non-interactive`; table
-selectors seed the wizard, which prompts for mode and tenant scope.
-
-For shadow/review proposals, UPDATE and DELETE also require an explicit
-`--conflict-column`; INSERT requires a source-enforced `--dedup` mapping. Review
-mode additionally requires the credential name for its writeback path:
-`--write-url-env`, `--handler-url-env`, or `--handler-command-env`. Runner lists
-all missing choices together before inspecting or writing generated files.
-
-After generation, deferred trusted-context and writer environment variables are
-reported as `setup incomplete` with one next action. A missing primary database
-read credential, a required shared-HTTP session-auth key, or an invalid config
-reports `setup failed`. The strict reusable check remains:
+Both public entry points initialize the same current Auto Boundary without a
+TTY or model API:
 
 ```bash
-synapsor-runner doctor --config ./synapsor.runner.json
+synapsor-runner onboard db --project-root . --from-env DATABASE_URL --json
+synapsor-runner onboard db --project-root . --export-draft ./boundary-authoring.json --json
 ```
 
-Before human activation, the agent has no generated authority and no source row
-has been read. The fresh local `start` route establishes a development
-authoring profile for this secured loopback process. Supplying the selected
-database URL is the environment-selection step; Workbench does not ask you to
-declare or sign “development,” “staging,” or “not production” again.
+Edit the exported typed Read/Action input using the included inspected catalog.
+Keep its exact review bundle digest and mutation bindings. Read changes and
+Action definitions can be submitted as structured data; a job description is
+not automatically parsed into policy. Replace illustrative placeholders before
+validation. Input/output files must be inside the selected project.
 
-For the configured-model golden path, first value has two human interactions:
+```bash
+synapsor-runner onboard db --project-root . --draft ./boundary-authoring.json --dry-run --json
+synapsor-runner onboard db --project-root . --draft ./boundary-authoring.json --json
+# In the trusted operator terminal:
+synapsor-runner boundary review --project-root . --access
+synapsor-runner action review --project-root .
+```
 
-1. press Enter to accept the exact conservative local boundary;
-2. type the first natural-language question.
+`start` accepts the same flags. Export/submit assume initialized metadata, but
+need no TTY or model API. Dry-run publishes nothing. Submission stores disabled
+drafts only and never supplies human confirmations. Read activation, semantic
+Action activation, and execution are separate trusted decisions. `--yes` never
+activates semantic authority. Headless semantic activation is not implemented;
+legacy `action activate --headless` must not be used as its substitute.
 
-Before the second interaction, Runner displays the exact provider, model,
-origin, and reviewed egress boundary. Submitting that first question confirms
-the disclosure; no provider request occurs before submission. Review and
-activation remain separate digest-bound records under the hood even though the
-single Quick Start gesture authorizes both. The model performs neither action.
+A structured submission edits the selected Read revision and its outcomes.
+Unchanged outcomes linked to other Read boundaries retain their exact
+dependencies. Cross-Read dependency edits and generation-lock changes require
+joint review; this input cannot retarget them or replace that review.
+
+The saved-draft review commands do not restart a job or require a provider.
+In Read review, inspect the saved field/scope decisions, then press `C` to
+review and activate that exact Read Boundary. In `action review`, select
+**Verified Action Boundary**, inspect **View exact draft rules and examples**,
+then choose **Activate this exact proposal authority** and confirm the displayed
+authority separately. The same saved Action is available through the boundary's
+Actions menu. The Action remains blocked until its exact linked Read digest is
+active. Do not choose the optional model-revision command merely to review a
+saved draft. Execution requires its own later review; these gestures execute no
+source request.
+
+## Legacy Compatibility
+
+Old `--table`, `--answers`, `--spec`, `--mode`, handler and related capability
+selectors require explicit `--legacy-capabilities` on `start` or `onboard db`.
+There is no silent fallback based on TTY, selectors, or an existing config.
+Existing user artifacts and active authority are preserved, not migrated.
+`init` and code-first engines remain available as legacy compatibility; see
+[Legacy Onboarding](legacy-onboarding.md). Legacy DELETE, app handlers, and
+other operations do not imply current semantic support for those or multirow
+effects. Explicit `start --config ... --store ... --once` worker routes are
+retained; prefer `runner start`. Bare `start` is onboarding, not worker polling.
+
+## Reviewing Access
 
 After first value, `/access` opens the terminal boundary editor and
-`/access-workbench` opens the visual editor. Quick Start's active boundary is
+`/access-workbench` opens the visual editor. The active boundary is
 saved as the reviewed baseline, so adding a table or changing a column does not
 silently remove existing access. The edited or newly named boundary remains
 disabled until separate human review and exact-fingerprint activation.
@@ -175,8 +197,20 @@ one conventional `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is exported. If both
 or neither are available, Runner asks instead of guessing. No credential value
 is displayed or persisted.
 
+Current job-first onboarding prepares semantic ActionRule drafts for separate
+Read and Action review. An activated semantic action is discovered through
+`app.describe_actions` and requested through `app.request_change`; there is no
+new named proposal tool per action. Drafting is not activation, and approval
+is not completion.
+
+### Legacy Capability Action Assist
+
+The following caller-supplied Action Assist workflow belongs to the retained
+capability compatibility UI, not the current semantic ActionRule review path.
+The Actions menu itself also exposes saved **Verified Action Boundary** reviews;
+select that entry for current structured ActionRule drafts.
 After the exact read revision is fully reviewed, press `Y Safe actions`; read
-activation is not required merely to draft. The recommended Action Assist path
+activation is not required merely to draft. Legacy Action Assist
 turns one business intent into a consolidated proposal-only action card, asking
 only where a reviewed target, operation, guard, or business value bound is
 unresolved. Runner binds the disabled action to that read name and digest and
@@ -209,11 +243,14 @@ Workbench operators can see that inherited scope and review count/total
 circuit breakers per tenant, tenant+principal, tenant+object, capability, or
 boundary. Limit edits create a disabled digest; activation remains separate.
 
+### Continuing Current Read Review
+
 Activating a differently named boundary adds it to the same authoring session;
 activating an existing name updates only that boundary. Ask keeps the selected
 provider/model and in-memory key, clears stale conversation history, and binds
-egress to the new active-set digest. The model still sees only
-`app.describe_data` and `app.explore_data`, and every data plan uses one
+egress to the new active-set digest. The current MCP entry retains
+`app.describe_data`, `app.explore_data`, `app.describe_actions`, and
+`app.request_change`; every data plan uses one
 boundary rather than combining authority across boundaries.
 
 Routine low-risk edits are staged immediately on the selected disabled boundary; no
@@ -413,6 +450,24 @@ no Explore budget, changes no source data, and never activates authority. See
 [Boundary Assist](read-workload-boundary-assist.md) for the JSON shape and
 scripted command.
 
+For the current managed route, install the single four-tool entry after Read
+activation:
+
+```bash
+synapsor-runner mcp install claude-code --project --authoring --project-root . --dry-run
+```
+
+It exposes `app.describe_data`, `app.explore_data`, `app.describe_actions`, and
+`app.request_change`. Before Action activation, discovery is empty and change
+requests are refused. Adding or revising outcomes does not require a client
+configuration rewrite.
+
+## Legacy Named-Capability Explore Workflow
+
+The remaining Protect and named-tool material in this section is retained for
+explicit compatibility deployments. It is not the default Read/Action
+onboarding route above.
+
 Choose **Try first safe read**. Runner calls the real local runtime and shows:
 
 ```text
@@ -596,7 +651,14 @@ synapsor-runner try protect \
 If the latest answer ran several analyses, Runner lists `A1`, `A2`, and their
 plain descriptions and requires an explicit `--from A2`.
 
-## Fifteen Minutes: First Proposal
+## Legacy Capability Proposal Workflow
+
+This subsection retains the caller-supplied capability Action UI reference. It
+is not the activation route for structured semantic ActionRule drafts. Current
+saved drafts use the **Verified Action Boundary** entry in `action review` after
+separate Read review, and request changes via
+`app.request_change`. See [Legacy Onboarding](legacy-onboarding.md) for the
+compatibility inventory; headless semantic activation is not implemented.
 
 After the first read, open the preferred terminal control plane or choose
 **Add a safe action** in the preview Workbench:
@@ -652,8 +714,10 @@ and a disabled action behind the card. Unsupported or unsafe combinations fail c
 particular, DELETE, bounded-set, quorum, auto-approval, and reversibility cannot
 be combined beyond what the canonical DSL supports.
 
-After exact-digest human activation, call the named proposal tool in Workbench
-or through the host-neutral Try path. The result must say:
+For this legacy capability workflow only, after exact-digest human activation,
+call its named proposal tool in Workbench or through the host-neutral Try path.
+Current semantic actions instead use `app.describe_actions` and
+`app.request_change`. A proposal-only result must say:
 
 ```text
 Proposal created.
@@ -776,7 +840,11 @@ On a process-level failure, JSON output uses:
 generic command exception. Operation-specific receipts and reconciliation
 states remain authoritative.
 
-## Before And After
+## Historical Capability Qualification
+
+The counts and older Workbench screenshots in this section document the legacy
+capability onboarding gates, not acceptance evidence for current semantic
+onboarding or structured saved-draft activation.
 
 The earlier manual path could require roughly thirteen disconnected steps:
 inspect, compile, create config, validate, doctor, initialize a store, start

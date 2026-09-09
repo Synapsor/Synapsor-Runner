@@ -9,6 +9,8 @@ MODE=""
 CONFIG="synapsor.runner.json"
 STORE="./.synapsor/local.db"
 ALLOW_INSECURE_SSL=0
+LEGACY_CAPABILITIES=0
+LEGACY_OPTIONS=0
 
 usage() {
   cat <<'USAGE'
@@ -21,14 +23,18 @@ Usage:
 Options:
   --env NAME          Environment variable containing the read URL. Default: DATABASE_URL
   --engine ENGINE     auto, postgres, or mysql. Default: auto
-  --mode MODE         read_only, shadow, or review. Default: ask interactively
-  --config PATH       Generated config path. Default: synapsor.runner.json
-  --store PATH        Local proposal/evidence/replay store. Default: ./.synapsor/local.db
+  --legacy-capabilities
+                      Explicit older per-table setup for compatibility testing.
+  --mode MODE         Legacy only: read_only, shadow, or review.
+  --config PATH       Legacy only: generated config path.
+  --store PATH        Legacy only: local proposal/evidence/replay store.
   --allow-insecure-ssl
-                      For disposable dev DBs only: retry TLS failures with sslmode=no-verify.
+                      Legacy disposable tests only: retry TLS failures with sslmode=no-verify.
 
-This script does not print your database URL. It inspects metadata, opens the
-guided config wizard, previews MCP tools, and prints the serve/UI commands.
+The default uses current four-tool Read/Action onboarding in your working
+directory. Without a terminal, it prepares disabled metadata and prints the
+structured draft/review steps. Neither route activates authority automatically.
+Your database URL is not printed or added to command arguments.
 USAGE
 }
 
@@ -43,19 +49,27 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --mode)
+      LEGACY_OPTIONS=1
       MODE="${2:-}"
       shift 2
       ;;
     --config)
+      LEGACY_OPTIONS=1
       CONFIG="${2:-}"
       shift 2
       ;;
     --store)
+      LEGACY_OPTIONS=1
       STORE="${2:-}"
       shift 2
       ;;
     --allow-insecure-ssl)
+      LEGACY_OPTIONS=1
       ALLOW_INSECURE_SSL=1
+      shift
+      ;;
+    --legacy-capabilities)
+      LEGACY_CAPABILITIES=1
       shift
       ;;
     --help|-h)
@@ -88,6 +102,14 @@ case "$ENGINE" in
     exit 2
     ;;
 esac
+
+if [[ "$LEGACY_CAPABILITIES" -ne 1 ]]; then
+  if [[ "$LEGACY_OPTIONS" -eq 1 ]]; then
+    printf 'These options belong to the older per-table setup and require --legacy-capabilities. For current Read/Action onboarding, omit them. No project was changed.\n' >&2
+    exit 2
+  fi
+  exec "$SYNAPSOR_BIN" onboard db --from-env "$ENV_NAME" --engine "$ENGINE"
+fi
 
 choose_mode() {
   if [[ -n "$MODE" ]]; then
@@ -172,7 +194,7 @@ run_inspect() {
 
 cd "$ROOT"
 
-printf 'Synapsor Runner own-database setup\n\n'
+printf 'Synapsor Runner legacy capability compatibility setup\n\n'
 choose_mode
 printf 'Mode: %s\n' "$MODE"
 if [[ "$MODE" == "read_only" ]]; then

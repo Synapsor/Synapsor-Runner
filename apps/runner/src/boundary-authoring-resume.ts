@@ -190,7 +190,8 @@ export async function clearBoundaryAuthoringResumeState(projectRootInput: string
   await fs.rm(resumePath(path.resolve(projectRootInput)), { force: true });
 }
 
-/** Retain business context, never old validation or authority, after a rescan. */
+/** Retain business context and exact completed Action identities, never old
+ * validation, checkpoints, consent, or authority, after a rescan. */
 export function revalidateBoundaryAuthoringResume(
   state: BoundaryAuthoringResumeState,
   binding: BoundaryAuthoringResumeBinding,
@@ -203,7 +204,17 @@ export function revalidateBoundaryAuthoringResume(
     binding, stage: "planning", jobIntent: state.job_intent,
     provider: state.model.provider, model: state.model.name,
     conversation: state.conversation, policySourceSession: state.policy_source_session,
-    readIntent: state.read_intent, previous: state,
+    readIntent: state.read_intent,
+    ...(state.action ? {
+      action: {
+        intent: state.action.intent,
+        ...(state.action.outcome ? { outcome: state.action.outcome } : {}),
+        ...(state.action.strategy ? { strategy: state.action.strategy } : {}),
+        ...(state.action.intents ? { intents: state.action.intents } : {}),
+        ...(state.action.completed_outcomes ? { completed_outcomes: state.action.completed_outcomes } : {}),
+      },
+    } : {}),
+    previous: state,
   });
 }
 

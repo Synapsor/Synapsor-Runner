@@ -31,8 +31,8 @@ import { compareGenerationLock, loadGenerationLockForActivatedBoundary, generati
 import { bindSemanticReadScope } from "./semantic-action-read-scope.js";
 import { SemanticWriterPostureError } from "./semantic-execution-setup.js";
 import { writerProvisioningPlan } from "./writer-provisioning.js";
-import { encodeOperatorExecutionPolicy, readOperatorExecutionConfig } from "./control-policy-execution.js";
-import { OPERATOR_EXECUTION_POLICY_KEY } from "./control-policy-record.js";
+import { encodeOperatorExecutionPolicy, parseOperatorExecutionPolicy, readOperatorExecutionConfig } from "./control-policy-execution.js";
+import { OPERATOR_EXECUTION_POLICY_KEY, assertOperatorPolicyRecord } from "./control-policy-record.js";
 import { openBoundProjectControlPolicies, openProjectControlPolicies,
   type BoundProjectPolicyStore } from "./control-policy-store.js";
 import { assertNoPendingPolicyConfiguration, publishPolicyConfiguration, recoverPolicyConfiguration } from "./control-policy-config-publication.js";
@@ -68,6 +68,27 @@ export type SemanticSupervisedExecutionState = {
   config_path: string;
   policies: RuntimeSupervisedWorkerOutcomePolicy[];
 };
+
+/**
+ * A complete Action Boundary digest binds every supervised outcome. Retain no
+ * execution authority across a replacement: this only identifies the current
+ * outcomes an operator must separately review after activation.
+ */
+export function executionReReviewOutcomesForActionActivation(input: {
+  active?: ActionRuleAuthorityActivationV1;
+  draft: ActionRuleAuthorityDraftV1;
+  execution: SemanticSupervisedExecutionState;
+}): string[] {
+  if (!input.active || !input.execution.enabled
+    || input.active.authority.action_boundary.digest === input.draft.authority.action_boundary.digest) return [];
+  const nextExecutable = new Set(input.draft.authority.action_boundary.rules
+    .filter((rule) => rule.writeback.mode === "direct_sql" && rule.writeback.supervised_worker === "allowed")
+    .map((rule) => rule.outcome));
+  return [...new Set(input.execution.policies
+    .filter((policy) => policy.action_boundary_digest === input.active!.authority.action_boundary.digest
+      && nextExecutable.has(policy.outcome))
+    .map((policy) => policy.outcome))].sort();
+}
 
 const DEFAULT_SEMANTIC_WORKER_LIMITS = {
   concurrency: 1,
@@ -208,6 +229,9 @@ async function restoreReviewedSemanticReadScopeUnlocked(projectRoot: string): Pr
   if (previous === undefined) return false;
   const config = JSON.parse(previous) as Record<string, unknown>;
   if (!isRecord(config.action_rules)) return false;
+  // A configured runtime can precede activation or coexist with legacy actions.
+  // Only absence is a no-op; malformed revisions and stale Read bindings still fail.
+  if (await readActionRuleAuthorityActivation(projectRoot) === undefined) return false;
   const active = await loadActiveActionRuleAuthority(projectRoot);
   const next = bindSemanticReadScope(config, active.authority.rules, await loadActivatedExplorationBoundaries(projectRoot));
   if (canonicalJsonDigest(next) === canonicalJsonDigest(config)) return false;
@@ -404,6 +428,46 @@ export async function readSemanticSupervisedExecutionState(input: {
   };
 }
 
+/** Operator prompt defaults only, never execution authority. Historical records
+ * must still match this runtime binding; every use requires a fresh review. */
+export async function readSemanticExecutionReviewDefaults(input: {
+  projectRoot: string; outcome: string; env?: NodeJS.ProcessEnv;
+}): Promise<{ write_url_env: string; worker_identity?: string } | undefined> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const configPath = path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG);
+  if (await readOptionalText(configPath) === undefined) return undefined;
+  const binding = await openBoundProjectControlPolicies(projectRoot, input.env);
+  try {
+    const review = await executionConfigForReview(projectRoot, configPath, await readJsonObject(configPath), binding, input.env);
+    const config = resolveRuntimeConfig(review.config as RuntimeConfig, projectRoot);
+    let selected = config.supervised_worker?.outcomes?.find((policy) => policy.outcome === input.outcome);
+    let before: { epoch: number; revision_id: string } | undefined;
+    for (let pageIndex = 0; binding && !selected && pageIndex < 4; pageIndex++) {
+      const page = await binding.repository.history({ deployment_id: binding.deployment_id, key: OPERATOR_EXECUTION_POLICY_KEY,
+        limit: 16, ...(before ? { before } : {}) });
+      for (const { revision } of page) {
+        let historical;
+        try { historical = parseOperatorExecutionPolicy(revision.content, config); }
+        catch (error) {
+          if ((error as { code?: string }).code === "POLICY_EXECUTION_BINDING_CHANGED") continue;
+          throw error;
+        }
+        assertOperatorPolicyRecord(revision, OPERATOR_EXECUTION_POLICY_KEY, canonicalJsonDigest(historical));
+        selected = historical.policy.outcomes?.find((policy) => policy.outcome === input.outcome);
+        if (selected) break;
+      }
+      if (page.length < 16) break;
+      const last = page.at(-1)!;
+      before = { epoch: last.epoch, revision_id: last.revision.revision_id };
+    }
+    if (binding && (await binding.repository.deployment(binding.deployment_id))?.epoch !== review.epoch) {
+      throw new Error("SEMANTIC_ACTION_CONFIG_CHANGED: saved execution changed while choosing review defaults; reopen execution review.");
+    }
+    return selected ? { write_url_env: environmentName(selected.write_url_env),
+      ...(selected.worker_identity === undefined ? {} : { worker_identity: safeWorkerIdentity(selected.worker_identity) }) } : undefined;
+  } finally { await binding?.close(); }
+}
+
 export async function disableSemanticSupervisedExecution(input: {
   projectRoot: string;
   outcome: string;
@@ -570,10 +634,19 @@ export function semanticSupervisedExecutionConfig(input: {
   }
   const sources = isRecord(config.sources) ? structuredClone(config.sources) : {};
   const source = currentConfigSource(config, sourceRule.effect_envelope.source);
+  const writeUrlEnv = environmentName(input.writeUrlEnv);
+  const sourceName = sourceRule.effect_envelope.source;
+  const writerSourceName = typeof source.write_url_env === "string" && source.write_url_env !== writeUrlEnv
+    ? `${sourceName}_writer_${canonicalJsonDigest({ source: sourceName, write_url_env: writeUrlEnv }).slice(7, 19)}`
+    : sourceName;
   source.read_only = false;
-  source.write_url_env = environmentName(input.writeUrlEnv);
+  source.write_url_env = writeUrlEnv;
   source.receipts = { authority: "runner_ledger" };
-  sources[sourceRule.effect_envelope.source] = source;
+  if (writerSourceName !== sourceName && sources[writerSourceName]
+    && canonicalJsonDigest(sources[writerSourceName]) !== canonicalJsonDigest(source)) {
+    throw new Error("SEMANTIC_ACTION_WRITER_SOURCE_CONFLICT: the configured writer alias no longer matches the reviewed source binding");
+  }
+  sources[writerSourceName] = source;
   config.sources = sources;
   config.mode = "review";
 
@@ -586,8 +659,12 @@ export function semanticSupervisedExecutionConfig(input: {
     );
   }
   const capabilities = Array.isArray(existing?.capabilities) ? existing.capabilities : [];
+  // This is a review candidate only. Stale bundle bindings never carry forward;
+  // the old governed revision remains history after explicit publication.
   const outcomes = Array.isArray(existing?.outcomes)
-    ? existing.outcomes.filter((entry) => !isRecord(entry) || entry.outcome !== input.outcome)
+    ? existing.outcomes.filter((entry) => !isRecord(entry) || (entry.outcome !== input.outcome
+      && (typeof entry.action_boundary_digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(entry.action_boundary_digest)
+        || entry.action_boundary_digest === input.activation.authority.action_boundary.digest)))
     : [];
   const policy: RuntimeSupervisedWorkerOutcomePolicy = {
     outcome: input.outcome,

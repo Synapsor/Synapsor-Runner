@@ -10,6 +10,7 @@ import {
   writeBoundaryAuthoringResumeState,
   type BoundaryAuthoringResumeBinding,
 } from "./boundary-authoring-resume.js";
+import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 
 const binding: BoundaryAuthoringResumeBinding = {
   boundary_name: "reviewed_staging",
@@ -19,13 +20,22 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
-  it("revalidates business context without carrying stale analysis, Action checkpoints or consent", () => {
+  it("revalidates business context and exact completed outcomes without carrying stale analysis, Action checkpoints or consent", () => {
     const state = buildBoundaryAuthoringResumeState({ binding, stage: "client_setup",
       jobIntent: "Review visits and propose rescheduling.", provider: "openai", model: "gpt-5.6-terra",
       policySourceSession: "d2c11000-aaa1-4bbb-8ccc-111111111111",
       conversation: [{ question: "Who reviews exceptions?", answer: "The clinic manager." }],
       read: { analysis_id: "read_one", analysis_digest: `sha256:${"4".repeat(64)}` },
-      action: { intent: "Reschedule visits.", outcome: "clinic.reschedule" },
+      action: {
+        intent: "Reschedule visits.", outcome: "clinic.reschedule", strategy: "rule_derived",
+        intents: ["Reschedule visits.", "Notify the clinic."],
+        completed_outcomes: ["clinic.reschedule"],
+        checkpoint: actionRuleAuthoringCheckpoint({
+          intent_digest: `sha256:${"7".repeat(64)}`,
+          context_digest: `sha256:${"8".repeat(64)}`,
+          components: {},
+        }),
+      },
       clientHandoff: { read_digest: `sha256:${"5".repeat(64)}` },
     });
     const current = { ...binding, schema_fingerprint: `sha256:${"6".repeat(64)}` as const };
@@ -33,7 +43,12 @@ describe("Boundary authoring resume state", () => {
     expect(next).toMatchObject({ stage: "planning", binding: current, job_intent: state.job_intent,
       conversation: state.conversation, policy_source_session: state.policy_source_session, authority_granted: false });
     expect(next.read).toBeUndefined();
-    expect(next.action).toBeUndefined();
+    expect(next.action).toEqual({
+      intent: "Reschedule visits.", outcome: "clinic.reschedule", strategy: "rule_derived",
+      intents: ["Reschedule visits.", "Notify the clinic."],
+      completed_outcomes: ["clinic.reschedule"],
+    });
+    expect(next.action?.checkpoint).toBeUndefined();
     expect(next.client_handoff).toBeUndefined();
     expect(state.stage).toBe("client_setup");
     expect(() => revalidateBoundaryAuthoringResume(state, { ...current, boundary_name: "other" })).toThrow("different Read Boundary");

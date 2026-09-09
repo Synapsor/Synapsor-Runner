@@ -1,8 +1,42 @@
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
-import { loadActiveActionRuleAuthority } from "./action-rule-authority.js";
+import { loadActiveActionRuleAuthority, readActionRuleAuthorityActivation } from "./action-rule-authority.js";
 import type { BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { activePolicySource, loadPolicySources } from "./authoring-policy-source.js";
 import { policyReadinessItems } from "./authoring-review-readiness.js";
+import { guidedActionStatus } from "./guided-action.js";
+import { readSemanticSupervisedExecutionState } from "./semantic-action-deployment.js";
+
+export type PostActivationReadiness = {
+  read: "active" | "inactive";
+  legacy_actions: "active" | "inactive";
+  semantic_actions: "active" | "inactive";
+  semantic_outcomes: Array<{ outcome: string; approval_mode: "human" | "policy"; execution_enabled: boolean }>;
+  worker: "not_checked";
+};
+
+/** Saved authority metadata only, never a source/worker probe or an activation. */
+export async function readPostActivationReadiness(projectRoot: string): Promise<PostActivationReadiness> {
+  const reads = await loadActivatedExplorationBoundaries(projectRoot).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  });
+  const legacy = await guidedActionStatus(projectRoot);
+  const activation = await readActionRuleAuthorityActivation(projectRoot);
+  const semantic = activation === undefined ? undefined : await loadActiveActionRuleAuthority(projectRoot);
+  const execution = semantic ? await readSemanticSupervisedExecutionState({ projectRoot }) : undefined;
+  const outcomes = semantic?.authority.action_boundary.rules.map((rule) => ({
+    outcome: rule.outcome, approval_mode: rule.approval_mode,
+    execution_enabled: Boolean(execution?.enabled && execution.policies.some((policy) =>
+      policy.outcome === rule.outcome && policy.action_boundary_digest === semantic.authority.action_boundary.digest)),
+  })) ?? [];
+  return {
+    read: reads.length ? "active" : "inactive",
+    legacy_actions: legacy.action_boundary.active?.authority.capabilities.length ? "active" : "inactive",
+    semantic_actions: outcomes.length ? "active" : "inactive",
+    semantic_outcomes: outcomes,
+    worker: "not_checked",
+  };
+}
 
 /** This only restores navigation. Every runtime operation still resolves
  * current authority and trusted identity independently. */

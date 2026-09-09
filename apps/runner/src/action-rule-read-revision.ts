@@ -4,7 +4,7 @@ import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { explorationBoundaryCandidateDigest, generationLockSharedFactsDigest, loadGenerationLockSnapshot,
   type ExplorationBoundaryDraft, type GenerationLock } from "./auto-boundary.js";
 import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
-import { buildActionRuleAuthorityDraft, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
+import { buildActionRuleAuthorityDraft, type ActionRuleAuthorityActivationV1, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 
 /** Read minimization can replace authoring evidence without changing source
  * authority. Rebind from each catalog's exact saved snapshot, not a caller's
@@ -18,6 +18,51 @@ export async function buildActionCatalogForSavedReadRevision(input: {
       nextLock: await loadGenerationLockSnapshot(input.projectRoot, input.nextBoundary.generation_lock_fingerprint),
       nextBoundary: input.nextBoundary });
   return buildActionRuleAuthoringCatalog({ boundary: input.nextBoundary, inspection: input.inspection, retainedCatalog });
+}
+
+/** Rebuild every retained disabled Action outcome before it can be merged with
+ * a newly compiled outcome from a later Read revision. */
+export async function rebindStoredActionRuleAuthorityDraftForReadRevision(input: {
+  projectRoot: string;
+  existing: ActionRuleAuthorityDraftV1;
+  nextBoundary: ExplorationBoundaryDraft;
+  inspection: SchemaInspection;
+}): Promise<ActionRuleAuthorityDraftV1> {
+  const previousFingerprint = input.existing.authority.catalog.generation_lock_fingerprint;
+  if (previousFingerprint === input.nextBoundary.generation_lock_fingerprint) return input.existing;
+  return prepareActionRuleReadRevision({
+    existing: input.existing,
+    previousLock: await loadGenerationLockSnapshot(input.projectRoot, previousFingerprint),
+    nextLock: await loadGenerationLockSnapshot(input.projectRoot, input.nextBoundary.generation_lock_fingerprint),
+    nextBoundary: input.nextBoundary,
+    inspection: input.inspection,
+  });
+}
+
+/** An active authority is immutable runtime state. When an operator adds an
+ * outcome against a later Read revision, rebuild only a disabled replacement
+ * draft after proving the old and new generation locks are compatible. */
+export async function rebindActiveActionRuleAuthorityForReadRevision(input: {
+  projectRoot: string;
+  active: ActionRuleAuthorityActivationV1;
+  nextBoundary: ExplorationBoundaryDraft;
+  inspection: SchemaInspection;
+}): Promise<ActionRuleAuthorityDraftV1> {
+  const copy = buildActionRuleAuthorityDraft({
+    name: input.active.authority.name,
+    action_boundary_name: input.active.authority.action_boundary.name,
+    catalog: structuredClone(input.active.authority.catalog),
+    rules: input.active.authority.rules.map(({ activated_at: _activatedAt, ...rule }) => structuredClone(rule)),
+    approval_classes: structuredClone(input.active.authority.approval_classes),
+    reviews: structuredClone(input.active.reviews),
+    now: input.active.activated_at,
+  });
+  return rebindStoredActionRuleAuthorityDraftForReadRevision({
+    projectRoot: input.projectRoot,
+    existing: copy,
+    nextBoundary: input.nextBoundary,
+    inspection: input.inspection,
+  });
 }
 
 export function rebindActionCatalogForReadPolicyRevision(input: {

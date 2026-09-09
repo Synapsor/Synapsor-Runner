@@ -11,6 +11,7 @@ import {
 } from "./model-authoring-conversation.js";
 import { generateModelReadWorkload, readWorkloadCatalog } from "./read-workload-model.js";
 import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
+import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
 
 function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malformed" | "arguments" | "blocked") {
   if (kind === "malformed") return { status: 200, body: { output: [] } };
@@ -30,6 +31,131 @@ function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malforme
 }
 
 describe("model-assisted Read workload mapping", () => {
+  it("does not let a table-only clarification establish an unexplained coded field meaning", async () => {
+    const boundary = opaqueGeneratedBoundary();
+    const before = structuredClone(boundary);
+    const response = (meanings: unknown[] = []) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "table_then_field",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read lifecycle",
+        plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [], operator_meanings: meanings }) }] } });
+    const requestJson = vi.fn().mockResolvedValueOnce(response([{ resource: "public.tbl_7", operator_quote: "public.tbl_7 contains orders" }]))
+      .mockResolvedValue(response());
+    const clarificationHandler = vi.fn().mockResolvedValueOnce({ state: "answered", answer: "Order records" })
+      .mockResolvedValue({ state: "answered", answer: "Order lifecycle status" });
+    const result = await generateModelReadWorkload({ name: "separate_meanings", allowedQuestions: ["Read my order lifecycle"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
+      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+    expect(result.analysis.status).toBe("ready");
+    expect(clarificationHandler).toHaveBeenCalledTimes(2);
+    expect(clarificationHandler.mock.calls[0]![0]).not.toHaveProperty("field");
+    expect(clarificationHandler.mock.calls[1]![0]).toMatchObject({ resource: "public.tbl_7", field: "col_2" });
+    expect(requestJson).toHaveBeenCalledTimes(3);
+    expect(boundary).toEqual(before);
+  });
+
+  it.each(["approved_attachment", "unapproved_attachment", "model_summary"])("uses only actual authorized operator naming sources: %s", async (source) => {
+    const boundary = opaqueGeneratedBoundary();
+    boundary.pack.resources[0]!.label = "Orders";
+    const before = structuredClone(boundary);
+    const quote = "col_2 means the order lifecycle status";
+    const conversation = createModelAuthoringConversation();
+    if (source !== "model_summary") {
+      const policy = newPolicySourceSession(), snapshot = policyTextSnapshot(Buffer.from(quote), "Rules.txt");
+      policy.snapshots.push(snapshot); policy.active = snapshot.version;
+      if (source === "approved_attachment") policy.approvals.push({ digest: snapshot.digest,
+        destination: authoringDestination({ provider: "openai", model: "gpt-5.6-terra" }) });
+      conversation.policySources = policy;
+    }
+    const requestJson = vi.fn().mockResolvedValue({ status: 200, body: { output: [{ type: "function_call", call_id: "source",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read lifecycle",
+        plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
+        operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: quote }] }) }] } });
+    const result = await generateModelReadWorkload({ name: "source_provenance", allowedQuestions: [source === "model_summary" ? quote : "Read lifecycle"],
+      operatorNamingContext: "Read my orders", provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary,
+      egressAcknowledged: true, env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, conversation,
+      dependencies: { requestJson } }).catch(error => error);
+    if (source === "approved_attachment") {
+      expect(result.analysis.status).toBe("ready");
+      expect(requestJson).toHaveBeenCalledOnce();
+    } else {
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toContain(source === "unapproved_attachment" ? "POLICY_TEXT_EGRESS_REQUIRED" : "READ_WORKLOAD_NAMING_EVIDENCE_INVALID");
+      expect(requestJson).toHaveBeenCalledTimes(source === "unapproved_attachment" ? 0 : 2);
+    }
+    expect(boundary).toEqual(before);
+  });
+
+  it.each(["col_2", "q_av"])("asks for %s meaning instead of accepting or trapping a fabricated naming quote", async (field) => {
+    const boundary = opaqueGeneratedBoundary();
+    boundary.pack.resources[0]!.label = "Orders";
+    if (field === "q_av") {
+      boundary.pack.resources[0]!.selectable_fields.push(field);
+      boundary.pack.resources[0]!.field_types[field] = boundary.pack.resources[0]!.field_types.col_2!;
+    }
+    const before = structuredClone(boundary);
+    const response = (operator_quote: string) => ({ status: 200, body: { output: [{ type: "function_call",
+      call_id: "meaning", name: "runner__submit_read_workloads", arguments: JSON.stringify({
+        allowed: [{ id: "orders", description: "Read order status", plan: { kind: "rows", resource: "public.tbl_7", select: [field] } }],
+        forbidden: [], operator_meanings: [{ resource: "public.tbl_7", field, operator_quote }],
+      }) }] } });
+    const requestJson = vi.fn().mockResolvedValueOnce(response("col_2 is order status"))
+      .mockResolvedValue(response("Order lifecycle status"));
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Order lifecycle status" }));
+    const result = await generateModelReadWorkload({ name: "recover_meaning", allowedQuestions: ["Read my order status"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
+      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ resource: "public.tbl_7", field }));
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(result.analysis.status).toBe("ready");
+    expect(result.authority_granted).toBe(false);
+    expect(boundary).toEqual(before);
+  });
+
+  it("delivers a model clarification requested by the bounded validation correction", async () => {
+    const boundary = opaqueGeneratedBoundary();
+    boundary.pack.resources[0]!.label = "Orders";
+    const before = structuredClone(boundary);
+    const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call",
+      call_id: "mapping", name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } });
+    const requestJson = vi.fn().mockResolvedValueOnce(response({ allowed: [{ id: "orders", description: "Read orders",
+      plan: { kind: "rows", resource: "public.tbl_7", select: ["unknown_field"] } }], forbidden: [] }))
+      .mockResolvedValueOnce(response({ clarification_request: { resource: "public.tbl_7", field: "col_2",
+        reason: "The proposed field did not exist", question: "What does col_2 represent?" } }))
+      .mockResolvedValue(response({ allowed: [{ id: "orders", description: "Read order lifecycle",
+        plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [] }));
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Order lifecycle status" }));
+    const result = await generateModelReadWorkload({ name: "correct_then_clarify", allowedQuestions: ["Read my orders"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
+      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(requestJson).toHaveBeenCalledTimes(3);
+    expect(result.analysis.status).toBe("ready");
+    expect(result.diagnostics?.[0]?.code).toBe("READ_WORKLOAD_BLOCKED");
+    expect(boundary).toEqual(before);
+  });
+
+  it.each(["declined", "fabricated_again", "unknown_target"])("keeps naming recovery fail-closed: %s", async (kind) => {
+    const boundary = opaqueGeneratedBoundary();
+    boundary.pack.resources[0]!.label = "Orders";
+    const before = structuredClone(boundary);
+    const requestJson = vi.fn().mockResolvedValue({ status: 200, body: { output: [{ type: "function_call",
+      call_id: "unproven_meaning", name: "runner__submit_read_workloads", arguments: JSON.stringify({
+        allowed: [{ id: "orders", description: "Read order status", plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }],
+        forbidden: [], operator_meanings: [{ resource: "public.tbl_7", field: kind === "unknown_target" ? "unknown_field" : "col_2",
+          operator_quote: "col_2 is private payment eligibility" }],
+      }) }] } });
+    const clarificationHandler = vi.fn(async () => kind === "declined" ? { state: "declined" as const }
+      : { state: "answered" as const, answer: "Order lifecycle status" });
+    const error = await generateModelReadWorkload({ name: "refused_meaning", allowedQuestions: ["Read my orders"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
+      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler }).catch(error => error);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain(kind === "declined" ? "READ_WORKLOAD_CLARIFICATION_DECLINED" : "READ_WORKLOAD_NAMING_EVIDENCE_INVALID");
+    expect(clarificationHandler).toHaveBeenCalledTimes(kind === "unknown_target" ? 0 : 1);
+    expect(requestJson).toHaveBeenCalledTimes(kind === "declined" ? 1 : kind === "unknown_target" ? 2 : 3);
+    expect(boundary).toEqual(before);
+  });
+
   it("reuses a coded field meaning from the original operator job without another question or metadata mutation", async () => {
     const boundary = opaqueGeneratedBoundary();
     boundary.pack.resources[0]!.label = "Orders";
@@ -904,6 +1030,7 @@ describe("model-assisted Read workload mapping", () => {
                 },
               }],
               forbidden: [],
+              operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "col_2 is lifecycle status" }],
             };
       return {
         status: 200,

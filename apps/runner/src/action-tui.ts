@@ -100,6 +100,7 @@ import {
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { reviewVerifiedActionAuthority } from "./verified-action-review.js";
+import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 
 export { rankActionIntent } from "./guided-action-quick.js";
 
@@ -137,6 +138,7 @@ function isActionPromptBack(error: unknown): error is ActionPromptBack {
 }
 
 export type ActionControlPrompter = {
+  readonly terminalColumns?: number;
   choose(
     title: string,
     choices: ActionPromptChoice[],
@@ -244,7 +246,14 @@ export async function inspectActionProject(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<SchemaInspection> {
   const projectRoot = path.resolve(projectRootInput);
-  const lock = JSON.parse(
+  const governed = await readProjectReadAuthoring(projectRoot);
+  if (governed && !governed.selected) {
+    throw Object.assign(new Error("Select a saved governed Read boundary before reviewing Actions; legacy exports cannot replace its bindings."),
+      { code: "POLICY_AUTHORING_SELECTION_CHANGED" });
+  }
+  // The repository loader validates the selected draft and embedded lock.
+  // File exports are compatibility inputs only for non-governed projects.
+  const lock = governed ? governed.selected!.draft_lock : JSON.parse(
     await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8"),
   ) as {
     engine: "postgres" | "mysql";
@@ -258,7 +267,7 @@ export async function inspectActionProject(
     ) as { sources?: unknown };
     configuredSources = config.sources;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (governed || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const writerUrlEnv = actionInspectionDatabaseUrlEnv({
     engine: lock.engine,
@@ -2930,6 +2939,7 @@ export function createTerminalActionPrompter(input: ReadStream, output: WriteStr
   const theme = terminalTheme(Boolean(color), { brand: true });
   const clear = () => output.write("\u001b[2J\u001b[H");
   return {
+    get terminalColumns() { return output.columns; },
     async choose(title, choices, context = [], initialValue) {
       if (!choices.length) return undefined;
       const quitChoice = choices.find((choice) => choice.value === "quit" && !choice.disabled);
@@ -4756,6 +4766,10 @@ function boundarySessionForActionPrompter(
 ): BoundaryReviewInteractiveSession {
   return {
     presentationMode: "conversation",
+    get terminalColumns() {
+      // Action context adds two spaces before the shared pager's own margins.
+      return prompter.terminalColumns === undefined ? undefined : prompter.terminalColumns - 2;
+    },
     chooseOption: (title, choices, options) => prompter.choose(
       title,
       choices,
@@ -4768,6 +4782,7 @@ function boundarySessionForActionPrompter(
     confirm: (prompt, options) => prompter.confirm(prompt, options?.defaultValue),
     confirmActivation: (prompt) => prompter.confirm(prompt, false),
     rememberDetails: (title, lines) => prompter.rememberDetails?.(title, lines),
+    showReviewDetails: (title, lines) => prompter.message(title, lines, "Return to pending review"),
   } as BoundaryReviewInteractiveSession;
 }
 

@@ -9,8 +9,29 @@ import type {
   SemanticSupervisedWorkerEligibility,
   SupervisedWorkerEligibility,
   RuntimeConfig,
+  RuntimeSourceConfig,
+  RuntimeSupervisedWorkerOutcomePolicy,
   TrustedContextBindingMode,
 } from "./runtime-types.js";
+import { canonicalJsonStringify } from "@synapsor-runner/protocol";
+
+export function resolveSemanticSupervisedWriterSource(
+  config: RuntimeConfig,
+  sourceName: string,
+  policy: Pick<RuntimeSupervisedWorkerOutcomePolicy, "write_url_env">,
+): RuntimeSourceConfig | undefined {
+  const source = config.sources?.[sourceName];
+  if (!source || source.read_only === true || !source.write_url_env) return undefined;
+  if (source.write_url_env === policy.write_url_env) return source;
+  const aliases = Object.values(config.sources ?? {}).filter((candidate) =>
+    candidate.read_only !== true && candidate.write_url_env === policy.write_url_env);
+  if (aliases.length !== 1) return undefined;
+  const alias = aliases[0]!;
+  // A writer alias changes credentials, never the compiled source's scope or receipt authority.
+  const { write_url_env: _sourceWriter, ...sourceBinding } = source;
+  const { write_url_env: _aliasWriter, ...aliasBinding } = alias;
+  return canonicalJsonStringify(sourceBinding) === canonicalJsonStringify(aliasBinding) ? alias : undefined;
+}
 
 export function supervisedWorkerPolicyName(policy: RuntimeSupervisedWorkerPolicy): string {
   return "capability" in policy ? policy.capability : policy.outcome;
@@ -117,7 +138,8 @@ export function resolveSemanticSupervisedWorkerEligibility(
   }
 
   const envelope = activated.compiled.effect_envelope;
-  const source = config.sources?.[envelope.source];
+  const source = policy ? resolveSemanticSupervisedWriterSource(config, envelope.source, policy)
+    : config.sources?.[envelope.source];
   if (!source || source.read_only === true || !source.write_url_env) {
     reasons.push("writable_source_unavailable");
   } else {

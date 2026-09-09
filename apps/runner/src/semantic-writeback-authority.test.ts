@@ -43,6 +43,7 @@ import {
 import {
   semanticActionVerifierForRuntime,
   verifyLocalWritebackAuthority,
+  resolveSqlWriteDatabaseUrl,
 } from "./writeback-execution.js";
 import {
   claimSupervisedWorkerItem,
@@ -190,6 +191,27 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
 });
 
 describe("semantic writeback authority orchestration", () => {
+  it("resolves a real approved v5 job to its outcome writer without changing the compiled source", async () => {
+    const fixture = await writebackFixture();
+    const authority = await loadActiveActionRuleAuthority(fixture.root);
+    const config = semanticWorkerConfig(fixture.config, authority.registry.rules[0]!.action_boundary_digest);
+    const originalSource = structuredClone(config.sources!.local_postgres!);
+    config.sources!.second_writer = { ...structuredClone(originalSource), write_url_env: "SECOND_WRITER_URL" };
+    config.supervised_worker!.outcomes![0]!.write_url_env = "SECOND_WRITER_URL";
+    await fs.writeFile(fixture.configPath, JSON.stringify(config));
+    await expect(verifyLocalWritebackAuthority(fixture.job, fixture.configPath, fixture.storePath)).resolves.toBeUndefined();
+    const env: NodeJS.ProcessEnv = { SYNAPSOR_DATABASE_WRITE_URL: "first-credential", SECOND_WRITER_URL: "second-credential",
+      SYNAPSOR_DATABASE_URL: "must-not-fallback" };
+    await expect(resolveSqlWriteDatabaseUrl(fixture.job, fixture.configPath, env)).resolves.toBe("second-credential");
+    expect(fixture.job.source_id).toBe("local_postgres");
+    expect(config.sources!.local_postgres).toEqual(originalSource);
+    delete env.SECOND_WRITER_URL;
+    await expect(resolveSqlWriteDatabaseUrl(fixture.job, fixture.configPath, env)).rejects.toThrow(/SEMANTIC_ACTION_WRITER_URL_MISSING/);
+    config.sources!.second_writer.read_url_env = "OTHER_READER_URL";
+    await fs.writeFile(fixture.configPath, JSON.stringify(config));
+    await expect(resolveSqlWriteDatabaseUrl(fixture.job, fixture.configPath, env)).rejects.toThrow(/SUPERVISED_WORKER_WRITER_MISMATCH/);
+  });
+
   it("accepts one exact approved v5 job and reloads active authority for transaction verification", async () => {
     const fixture = await writebackFixture();
 

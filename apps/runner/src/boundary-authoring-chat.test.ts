@@ -452,6 +452,56 @@ describe("Boundary authoring chat", () => {
     chat.close();
   });
 
+  it("opens named Action review sections from generic exact details and returns to the same permission", async () => {
+    const memory = memoryIo({ choices: ["__view_runner_details__", "section:0", "section:1", "back", "no"] });
+    const review = vi.fn(async () => undefined);
+    memory.io.review = review;
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const guide = vi.fn(async () => "Do not request a model for inspection.");
+    chat.setPermissionGuide!(guide);
+    const exactDetails = { title: "Exact Action", summaryTitle: "ACTION REVIEW", lines: ["FULL RECORD"], sections: [
+      { id: "outcomes", title: "All reviewed outcomes", lines: ["RETAINED quantity", "RETAINED reorder", "ADDED archive"] },
+      { id: "authority", title: "Complete authority and fingerprints", lines: ["ALL PREDICATES AND LIMITS", "sha256:exact"] },
+    ] };
+    await expect(chat.session.confirmActivation!('Activate verified Action Boundary "warehouse"?', {
+      context: ["Add archive; retain two outcomes."], exactDetails,
+    })).resolves.toBe(false);
+    expect(review).toHaveBeenCalledTimes(2);
+    expect(review.mock.calls[0]).toEqual(["EXACT REVIEW - READ ONLY", expect.arrayContaining(exactDetails.sections[0]!.lines), "Exact Action menu"]);
+    expect(review.mock.calls[1]).toEqual(["EXACT REVIEW - READ ONLY", expect.arrayContaining(exactDetails.sections[1]!.lines), "Exact Action menu"]);
+    expect(guide).not.toHaveBeenCalled();
+    expect(memory.choices[0]).toEqual(memory.choices.at(-1));
+    chat.close();
+  });
+
+  it.each([true, false])("keeps full Action activation details through inspection and explanation failure (accept=%s)", async (accept) => {
+    const memory = memoryIo({ choices: ["__view_runner_details__", "__ask_boundary_model__", "__view_runner_details__", accept ? "yes" : "no"],
+      reads: ["Why does execution need review again?"] });
+    const reviews: string[] = [];
+    memory.io.review = async (_title, lines) => { reviews.push(lines.join("\n")); };
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const guide = vi.fn(async () => { throw new AskError("ASK_PROVIDER_TIMEOUT", "secret-token https://private.example/provider"); });
+    chat.setPermissionGuide!(guide);
+    const exact = { title: "EXACT ACTION BOUNDARY", summaryTitle: "ACTION REVIEW", lines: [
+      "RETAINED warehouse.correct_quantity", "RETAINED warehouse.set_reorder_point", "ADDED warehouse.archive_stock_item",
+      "Private verification: item_id, version", `Action Boundary digest: sha256:${"a".repeat(64)}`,
+    ] };
+    await expect(chat.session.confirmActivation!(
+      'Activate verified Action Boundary "warehouse_actions"?',
+      { context: ["Add archive; keep two existing outcomes. Execution requires separate review."], exactDetails: exact },
+    )).resolves.toBe(accept);
+    expect(guide).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(guide.mock.calls)).not.toContain("a".repeat(64));
+    expect(reviews).toHaveLength(2);
+    for (const review of reviews) for (const line of exact.lines) expect(review).toContain(line);
+    expect(reviews[1]).toContain("ASK_PROVIDER_TIMEOUT");
+    expect(reviews.join("\n") + memory.writes.join("")).not.toMatch(/secret-token|private.example/);
+    expect(memory.choices.every((choice) => choice.initialValue === "no")).toBe(true);
+    expect(memory.writes.join("").match(/ACTION REVIEW/g)).toHaveLength(1);
+    expect(exact.lines).toHaveLength(5);
+    chat.close();
+  });
+
   it("renders actual text deltas before completion, formats split markup, and drains before input", async () => {
     let columns = 64;
     const memory = memoryIo({ reads: ["Why?"], columns: () => columns });
@@ -543,6 +593,14 @@ describe("Boundary authoring chat", () => {
     expect(transcript).toContain("model> I mapped ticket trends");
     expect(transcript).not.toContain("synapsor>");
     expect(memory.close).toHaveBeenCalledOnce();
+  });
+
+  it.each(["current session", "only configured provider detected"] as const)("identifies the drafting model suggestion from %s without a provider request", (origin) => {
+    const memory = memoryIo({ reads: [] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, modelLabel: "openai[gpt-5.6-terra]", modelSelectionOrigin: origin, color: false });
+    expect(memory.writes.join("")).toContain(`Boundary drafting · openai[gpt-5.6-terra] (${origin})`);
+    expect(memory.prompts).toEqual([]);
+    chat.close();
   });
 
   it("renders activation as an exact permission rather than a generic wizard confirmation", async () => {

@@ -14,12 +14,14 @@ import type {
 import {
   databaseGrammarFeatureAvailable,
   databaseServerCompatibility,
-  inspectDatabase
+  inspectDatabase,
+  type SchemaInspection,
 } from "@synapsor-runner/schema-inspector";
 import crypto from "node:crypto";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { explicitActionExecutionIntent } from "./action-execution-intent.js";
-import { prepareActionRuleReadRevision, rebindActionCatalogForReadPolicyRevision, buildActionCatalogForSavedReadRevision } from "./action-rule-read-revision.js";
+import { prepareActionRuleReadRevision, rebindActionCatalogForReadPolicyRevision, buildActionCatalogForSavedReadRevision,
+  rebindActiveActionRuleAuthorityForReadRevision, rebindStoredActionRuleAuthorityDraftForReadRevision } from "./action-rule-read-revision.js";
 import { assertJointApprovalLimitsPreserved } from "./action-policy-scope.js";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -221,12 +223,15 @@ import {
 } from "./action-rule-authority.js";
 import {
   activateSemanticActionRuntime,
+  executionReReviewOutcomesForActionActivation,
   readSemanticSupervisedExecutionState,
 } from "./semantic-action-deployment.js";
 export { reviewVerifiedActionAuthority } from "./verified-action-review.js";
 import {
   reviewSemanticSupervisedExecution,
   reviewVerifiedActionAuthority,
+  verifiedActionAuthorityDetails,
+  verifiedActionAuthoritySections,
 } from "./verified-action-review.js";
 import { prepareQuickProposalAction } from "./guided-action-quick.js";
 import {
@@ -4066,6 +4071,8 @@ async function interactiveReadWorkloadAssist(
   const authoringChat = shouldOpenChat
     ? (input.boundaryAuthoringChatFactory ?? createBoundaryAuthoringChat)({
         ...(currentModel ? { modelLabel: boundaryModelLabel(currentModel) } : {}),
+        ...(currentModel ? { modelSelectionOrigin: input.modelAuthoringSession
+          ? "current session" as const : "only configured provider detected" as const } : {}),
       })
     : undefined;
   const session = authoringChat
@@ -4225,7 +4232,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           label: revalidateSavedJob ? "Revalidate the saved job against the changed database  [recommended]" : "Resume the interrupted job  [recommended]",
           detail: revalidateSavedJob
             ? "Retain the business rules and saved drafts; recheck current structure with fresh metadata permission. Nothing activates."
-            : `${conciseBoundaryJobIntent(availableResume.job_intent)} · continue from ${formatBoundaryAuthoringStage(availableResume.stage)} · prior metadata permission retained`,
+            : `${availableResume.model.provider}[${availableResume.model.name}] from saved job · ${conciseBoundaryJobIntent(availableResume.job_intent)} · continue from ${formatBoundaryAuthoringStage(availableResume.stage)} · prior metadata permission retained`,
         }]
       : []),
     {
@@ -4799,12 +4806,23 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     && (availableResume.stage !== "read_mapping"
       || Boolean(resumeReadIntent)
       || Boolean(resumeRead));
+  // A rescan invalidates the old Read analysis and any partial model checkpoint,
+  // but a completed semantic outcome remains an exact local identity to
+  // recompile. Do not send that completed work back through the planner.
+  const revalidatedCompletedOutcomes = revalidateSavedJob && resumeSelected
+    && availableResume?.action?.strategy === "rule_derived"
+    && availableResume.action.completed_outcomes?.length
+    ? [...availableResume.action.completed_outcomes]
+    : undefined;
+  const resumesCompletedActionsAfterRevalidation = Boolean(revalidatedCompletedOutcomes?.length);
   const shouldPlanModelJob = input.jobFirst
     && mode === "model"
     && preselectedMappingSession !== undefined
     && modelEgressAcknowledged
-    && !resumePastPlanning
-    && (input.modelBoundaryJobPlanner !== undefined || input.modelReadWorkloadGenerator === undefined);
+    && (!resumePastPlanning || resumesCompletedActionsAfterRevalidation)
+    && (resumesCompletedActionsAfterRevalidation
+      || input.modelBoundaryJobPlanner !== undefined
+      || input.modelReadWorkloadGenerator === undefined);
   if (shouldPlanModelJob) {
     reusableState ??= await inspectBoundaryJobAuthoringState({
       projectRoot: input.projectRoot,
@@ -4816,7 +4834,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       // Completed drafting has an exact local contract. A schema/role repair
       // requires revalidation of that contract, not another interpretation.
       if (revalidateSavedJob && resumeSelected && loadedResume.status === "stale"
-        && ["authority_review", "client_setup"].includes(loadedResume.value.stage)) {
+        && (resumesCompletedActionsAfterRevalidation
+          || ["authority_review", "client_setup"].includes(loadedResume.value.stage))) {
         jobPlan = {
           state: "planned", read_mode: "reuse", action_mode: "reuse",
           summary: "Revalidate the saved business rules against the changed database.",
@@ -4951,28 +4970,52 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           boundary: context.candidate, reviewRevision: context.progress!.revision });
         reusingExactRead = true;
         reusableState.read_boundaries_by_digest.set(explorationBoundaryCandidateDigest(context.candidate), context.candidate);
-        revalidatedActionOutcomes = [...new Set(reusableState.current_state.actions
-          .filter((action) => action.kind === "rule_derived" && action.outcome).map((action) => action.outcome!))];
+        revalidatedActionOutcomes = revalidatedCompletedOutcomes
+          ?? [...new Set(reusableState.current_state.actions
+            .filter((action) => action.kind === "rule_derived" && action.outcome).map((action) => action.outcome!))];
         if (reusableState.current_state.actions.some((action) => action.kind !== "rule_derived")) {
           return boundaryAssistResult(boundaryAssistBackNotice("Read review saved. Legacy proposal authority needs its own dependency review; no Action was replaced."));
         }
+        for (const outcome of revalidatedActionOutcomes) {
+          const baseline = await loadActionRuleRevisionBaseline({
+            projectRoot: input.projectRoot,
+            boundaryName: context.candidate.pack.name,
+            outcome,
+          });
+          if (!baseline) {
+            return boundaryAssistResult({
+              tone: "warning",
+              title: "A saved Action outcome needs exact review.",
+              lines: [
+                `Runner could not find the exact reviewed Action revision for ${outcome}.`,
+                "It did not replace, regenerate, or activate any Action authority. Source data is unchanged.",
+              ],
+              footer: "Reopen the saved Action review to select or prepare the exact outcome. Do not reset the project or re-enter the business job.",
+            });
+          }
+        }
+        const resumedActionIntents = resumesCompletedActionsAfterRevalidation
+          ? availableResume?.action?.intents ?? [availableResume!.action!.intent]
+          : revalidatedActionOutcomes.map(() => jobIntent!.trim());
         jobPlan = { ...jobPlan, read_mode: "reuse", action_mode: revalidatedActionOutcomes.length ? "revise" : "none",
           ...(revalidatedActionOutcomes.length ? { action_strategy: "rule_derived", action_intent: jobIntent.trim(),
-            action_intents: revalidatedActionOutcomes.map(() => jobIntent!.trim()), action_outcome: revalidatedActionOutcomes[0] } : {}) };
+            action_intents: resumedActionIntents, action_outcome: revalidatedActionOutcomes[0] } : {}) };
         resumeRead = { analysis_id: reusedReadWorkload.analysis_id, analysis_digest: reusedReadWorkload.analysis_digest };
       }
       mappedReadIntent = jobPlan.read_intent ?? jobIntent.trim();
       resumeReadIntent = jobPlan.read_mode === "create" || jobPlan.read_mode === "revise"
         ? mappedReadIntent
         : undefined;
-      resumeAction = jobPlan.action_mode === "create" || jobPlan.action_mode === "revise"
-        ? {
-            intent: boundedDownstreamActionIntent(jobPlan.action_intent!, jobIntent.trim()),
-            ...(jobPlan.action_intents ? { intents: jobPlan.action_intents } : {}),
-            ...(jobPlan.action_outcome ? { outcome: jobPlan.action_outcome } : {}),
-            ...(jobPlan.action_strategy ? { strategy: jobPlan.action_strategy } : {}),
-          }
-        : undefined;
+      resumeAction = resumesCompletedActionsAfterRevalidation
+        ? availableResume?.action
+        : jobPlan.action_mode === "create" || jobPlan.action_mode === "revise"
+          ? {
+              intent: boundedDownstreamActionIntent(jobPlan.action_intent!, jobIntent.trim()),
+              ...(jobPlan.action_intents ? { intents: jobPlan.action_intents } : {}),
+              ...(jobPlan.action_outcome ? { outcome: jobPlan.action_outcome } : {}),
+              ...(jobPlan.action_strategy ? { strategy: jobPlan.action_strategy } : {}),
+            }
+          : undefined;
       await persistAuthoringResume(
         jobPlan.read_mode === "create" || jobPlan.read_mode === "revise"
           ? "read_mapping"
@@ -5642,38 +5685,41 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             }
           }
         } else if (jobPlan?.state === "planned" && jobPlan.action_mode === "revise") {
-          const selectedOutcome = revalidatedActionOutcomes?.[semanticIndex] ?? jobPlan.action_outcome
-            ?? uniqueExistingSemanticOutcome(reusableState?.current_state.actions ?? []);
-          if (!selectedOutcome) {
+          const selectedOutcome = revalidatedActionOutcomes
+            ? revalidatedActionOutcomes[semanticIndex]
+            : jobPlan.action_outcome ?? uniqueExistingSemanticOutcome(reusableState?.current_state.actions ?? []);
+          if (!selectedOutcome && !revalidatedActionOutcomes) {
             throw new Error(
               "ACTION_RULE_REVISION_AMBIGUOUS: name the verified outcome to change, or ask the model to create a new outcome.",
             );
           }
-          const revisionBaseline = await loadActionRuleRevisionBaseline({
-            projectRoot: input.projectRoot,
-            boundaryName: context.candidate.pack.name,
-            outcome: selectedOutcome,
-          });
-          if (!revisionBaseline) {
-            throw new Error(
-              `ACTION_RULE_REVISION_NOT_FOUND: ${selectedOutcome} has no exact reviewed revision linked to ${context.candidate.pack.name}.`,
-            );
+          if (selectedOutcome) {
+            const revisionBaseline = await loadActionRuleRevisionBaseline({
+              projectRoot: input.projectRoot,
+              boundaryName: context.candidate.pack.name,
+              outcome: selectedOutcome,
+            });
+            if (!revisionBaseline) {
+              throw new Error(
+                `ACTION_RULE_REVISION_NOT_FOUND: ${selectedOutcome} has no exact reviewed revision linked to ${context.candidate.pack.name}.`,
+              );
+            }
+            semanticActionRevisionBaseline = revisionBaseline.draft;
+            if (revalidatedActionOutcomes) {
+              // Compile unchanged business AST against freshly inspected structure.
+              // Missing private resources/relationships fail; no old proof is copied.
+              semanticActionModelDraft = revisionBaseline.draft;
+              resumedActivatedAt = revisionBaseline.activatedAt;
+            } else semanticActionRevisionCatalog = revisionBaseline.catalog;
+            input.authoringChat?.rememberDetails("EXISTING ACTION RULE BASELINE", [
+              `Outcome: ${semanticActionRevisionBaseline.outcome}`,
+              `Target: ${semanticActionRevisionBaseline.effect.operation.toUpperCase()} ${semanticActionRevisionBaseline.effect.target_resource}`,
+              `WHEN: ${semanticActionRevisionBaseline.review.when}`,
+              `THEN: ${semanticActionRevisionBaseline.review.then}`,
+              `Approval: ${actionRuleDraftApprovalSummary(semanticActionRevisionBaseline)}`,
+              "This exact revision remains unchanged while Runner prepares a disabled replacement.",
+            ]);
           }
-          semanticActionRevisionBaseline = revisionBaseline.draft;
-          if (revalidatedActionOutcomes) {
-            // Compile unchanged business AST against freshly inspected structure.
-            // Missing private resources/relationships fail; no old proof is copied.
-            semanticActionModelDraft = revisionBaseline.draft;
-            resumedActivatedAt = revisionBaseline.activatedAt;
-          } else semanticActionRevisionCatalog = revisionBaseline.catalog;
-          input.authoringChat?.rememberDetails("EXISTING ACTION RULE BASELINE", [
-            `Outcome: ${semanticActionRevisionBaseline.outcome}`,
-            `Target: ${semanticActionRevisionBaseline.effect.operation.toUpperCase()} ${semanticActionRevisionBaseline.effect.target_resource}`,
-            `WHEN: ${semanticActionRevisionBaseline.review.when}`,
-            `THEN: ${semanticActionRevisionBaseline.review.then}`,
-            `Approval: ${actionRuleDraftApprovalSummary(semanticActionRevisionBaseline)}`,
-            "This exact revision remains unchanged while Runner prepares a disabled replacement.",
-          ]);
         }
         if (!semanticActionRevisionCatalog && reusingExactRead && !revalidatedActionOutcomes) {
           const savedAuthorities = [
@@ -6082,7 +6128,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         }
         // Persist completed outcomes before starting another one. They remain
         // disabled and will all be rebound to the final reviewed Read revision.
-        const saved = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, semanticActionModelResult.compiled);
+        const saved = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, semanticActionModelResult.compiled, undefined, {
+          nextBoundary: mappingBoundary,
+          inspection: actionInspection!,
+        });
         await writeActionRuleAuthorityDraft(input.projectRoot, saved);
         if (reopened) {
           const priorIntent = semanticActionDrafts[reopenedIndex]!.intent;
@@ -6695,7 +6744,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       readBoundaryDigest: exactReadDigest,
       activatedAt: entry.result.compiled.loaded.authority.rules.find((rule) => rule.rule.outcome === entry.result.compiled.rule.outcome)?.activated_at,
     });
-    replacement = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, compiled, replacement);
+    replacement = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, compiled, replacement, {
+      nextBoundary: reviewedRead,
+      inspection: actionInspection!,
+    });
     prepared.push({ entry, catalog, compiled });
     latestCompiled = compiled;
     }
@@ -7291,7 +7343,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }),
     }));
     for (const { entry, compiled } of prepared) {
-      const saved = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, compiled);
+      const saved = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, compiled, undefined, {
+        nextBoundary: context.candidate,
+        inspection: actionInspection!,
+      });
       await writeActionRuleAuthorityDraft(input.projectRoot, saved);
       entry.result = { ...entry.result, compiled };
       semanticActionAuthorityDraft = saved;
@@ -7390,7 +7445,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ]);
       } while (save === "details");
       if (save !== "save") return false;
-      const saved = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, revised.compiled);
+      const saved = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, revised.compiled, undefined, {
+        nextBoundary: context.candidate,
+        inspection: actionInspection!,
+      });
       await writeActionRuleAuthorityDraft(input.projectRoot, saved);
       entry.result = revised;
       semanticActionAuthorityDraft = saved;
@@ -7765,15 +7823,31 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     const exactActiveAction = priorActivation?.digest === semanticActionAuthorityDraft.digest
       ? (await loadActiveActionRuleAuthority(input.projectRoot)).activation
       : undefined;
+    const executionReReviewOutcomes = priorActivation
+      ? executionReReviewOutcomesForActionActivation({ active: priorActivation, draft: semanticActionAuthorityDraft,
+        execution: await readSemanticSupervisedExecutionState({ projectRoot: input.projectRoot }) })
+      : [];
+    const reviewedOutcomes = new Set(semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome));
+    const retainedOutcomeCount = semanticActionAuthorityDraft.authority.rules.filter((entry) => !reviewedOutcomes.has(entry.rule.outcome)).length;
     const approveActivation = exactActiveAction || await (input.session.confirmActivation ?? input.session.confirm)(
       `Activate verified Action Boundary "${semanticActionAuthorityDraft.authority.action_boundary.name}" for ${semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome).join(", ")}?`,
       {
+        exactDetails: { title: "EXACT ACTION BOUNDARY", summaryTitle: "ACTION REVIEW",
+          sections: verifiedActionAuthoritySections(semanticActionAuthorityDraft,
+            terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2),
+          lines: verifiedActionAuthorityDetails(semanticActionAuthorityDraft,
+            terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2) },
         context: [
+          `This revision contains ${semanticActionAuthorityDraft.authority.rules.length} outcomes; ${retainedOutcomeCount} retained. View exact details > All reviewed outcomes lists all.`,
           ...(revisionReview.length ? ["REVIEWED REPLACEMENT", ...revisionReview, ""] : []),
           ...semanticActionDrafts.flatMap((entry) => [
             ...semanticActionActivationReviewLines(entry.result.compiled, context.candidate,
               terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2),
           ]),
+          ...(executionReReviewOutcomes.length ? [
+            `EXECUTION RE-REVIEW AFTER ACTIVATION: ${executionReReviewOutcomes.join(", ")}.`,
+            "This complete Action Boundary digest changes. Existing supervised execution for those outcomes will not carry forward; Runner will request separate writer review for each after proposal activation.",
+          ] : []),
           "This gate activates proposal authority only. It does not approve, apply, or write source data.",
           "/details shows the exact immutable authority and digest.",
         ],
@@ -7793,18 +7867,24 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ["Database execution", "Not enabled by this activation; separate execution review follows"],
         ["Customer data", "Unchanged"],
       ], terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2), "success");
-      for (const entry of semanticActionDrafts.filter((candidate) => candidate.result.compiled.effect_envelope.writeback.mode === "direct_sql")) {
-        const compiled = entry.result.compiled;
+      const executionReviewOutcomes = [...new Set([
+        ...executionReReviewOutcomes,
+        ...activated.activation.authority.rules
+          .filter((candidate) => candidate.effect_envelope.writeback.mode === "direct_sql"
+            && candidate.effect_envelope.writeback.supervised_worker === "allowed")
+          .map((candidate) => candidate.rule.outcome),
+      ])];
+      for (const outcome of executionReviewOutcomes) {
         const activeReads = await loadActivatedExplorationBoundaries(input.projectRoot);
         const currentExecution = await readSemanticSupervisedExecutionState({ projectRoot: input.projectRoot });
         const alreadyEnabled = currentExecution.enabled && currentExecution.policies.some((policy) =>
-          policy.outcome === compiled.rule.outcome
+          policy.outcome === outcome
           && policy.action_boundary_digest === activated.activation.authority.action_boundary.digest);
         const executionNotice = alreadyEnabled ? undefined : await reviewSemanticSupervisedExecution({
           projectRoot: input.projectRoot,
           active: activated.activation,
           activeReads,
-          outcome: compiled.rule.outcome,
+          outcome,
           session: input.session,
           env: process.env,
           inspectDatabaseFn: input.schemaInspector,
@@ -7830,9 +7910,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           projectRoot: input.projectRoot,
         });
         semanticExecutionEnabled = executionState.enabled
-          && semanticActionDrafts.filter((candidate) => candidate.result.compiled.effect_envelope.writeback.mode === "direct_sql")
-            .every((candidate) => executionState.policies.some((policy) =>
-              policy.outcome === candidate.result.compiled.rule.outcome
+          && executionReviewOutcomes
+            .every((outcome) => executionState.policies.some((policy) =>
+              policy.outcome === outcome
               && policy.action_boundary_digest === activated.activation.authority.action_boundary.digest));
       }
     } else {
@@ -9248,6 +9328,7 @@ async function actionRuleAuthorityDraftFromCompiled(
   projectRoot: string,
   compiled: CompiledActionRuleModelDraftV1,
   preparedExisting?: ActionRuleAuthorityDraftV1,
+  readRevision?: { nextBoundary: ExplorationBoundaryDraft; inspection: SchemaInspection },
 ): Promise<ActionRuleAuthorityDraftV1> {
   const authority = compiled.loaded.authority;
   const createdAt = authority.rules[0]?.activated_at;
@@ -9261,7 +9342,25 @@ async function actionRuleAuthorityDraftFromCompiled(
     reviews: [{ outcome: compiled.rule.outcome, ...structuredClone(compiled.review) }],
     now: createdAt,
   });
-  const existingDraft = preparedExisting ?? await readActionRuleAuthorityDraft(projectRoot, incoming.authority.name);
+  let existingDraft = preparedExisting ?? await readActionRuleAuthorityDraft(projectRoot, incoming.authority.name);
+  if (readRevision) {
+    const expectedReadDigest = explorationBoundaryCandidateDigest(readRevision.nextBoundary);
+    if (incoming.authority.rules.some((rule) => rule.read_boundary_name !== readRevision.nextBoundary.pack.name
+      || rule.read_boundary_digest !== expectedReadDigest)) {
+      throw new Error("ACTION_RULE_REVISION_STALE: the compiled Action outcome is not bound to the exact current Read revision.");
+    }
+  }
+  if (existingDraft && existingDraft.authority.catalog.generation_lock_fingerprint !== incoming.authority.catalog.generation_lock_fingerprint) {
+    if (!readRevision || readRevision.nextBoundary.generation_lock_fingerprint !== incoming.authority.catalog.generation_lock_fingerprint) {
+      throw new Error("ACTION_RULE_REVISION_STALE: a saved Action draft uses a different Read generation lock. Reopen the exact Read review before merging outcomes.");
+    }
+    existingDraft = await rebindStoredActionRuleAuthorityDraftForReadRevision({
+      projectRoot,
+      existing: existingDraft,
+      nextBoundary: readRevision.nextBoundary,
+      inspection: readRevision.inspection,
+    });
+  }
   const active = existingDraft === undefined
     ? await readActionRuleAuthorityActivation(projectRoot)
     : undefined;
@@ -9269,6 +9368,17 @@ async function actionRuleAuthorityDraftFromCompiled(
     throw new Error(
       `ACTION_RULE_AUTHORITY_NAMESPACE_CONFLICT: active verified Action authority ${active.authority.name} must be explicitly deactivated before a different authority bundle can replace it.`,
     );
+  }
+  if (active && active.authority.catalog.generation_lock_fingerprint !== incoming.authority.catalog.generation_lock_fingerprint) {
+    if (!readRevision || readRevision.nextBoundary.generation_lock_fingerprint !== incoming.authority.catalog.generation_lock_fingerprint) {
+      throw new Error("ACTION_RULE_REVISION_STALE: active Action authority uses a different Read generation lock. Reopen the exact Read review before preparing a disabled replacement.");
+    }
+    existingDraft = await rebindActiveActionRuleAuthorityForReadRevision({
+      projectRoot,
+      active,
+      nextBoundary: readRevision.nextBoundary,
+      inspection: readRevision.inspection,
+    });
   }
   return mergeActionRuleAuthorityDraft({
     existing: existingDraft ?? active,
@@ -15235,6 +15345,9 @@ async function previewGuidedActionCommand(args: string[]): Promise<number> {
     const payload = {
       ok: true,
       preview: draft.effect_preview,
+      activation_review: { expected_digest: draft.action_boundary_digest, confirmation: `ACTIVATE ${draft.action_boundary_digest}`,
+        digest_purpose: "Action Boundary authority, not the compiled contract digest", authority_posture: draft.authority_posture,
+        writeback_mode: draft.writeback_mode, trusted_operator_confirmation_required: true },
       rehearsal_mode: "structural",
       runtime_identity_resolved: false,
       source_rows_read: false,
@@ -15243,6 +15356,9 @@ async function previewGuidedActionCommand(args: string[]): Promise<number> {
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else process.stdout.write([
       `Exact structural rehearsal verified for ${capabilityName}.`,
+      `Reviewed posture: ${draft.authority_posture}; writeback: ${draft.writeback_mode}. Nothing is activated by this rehearsal.`,
+      `Action Boundary digest for --expected-digest: ${draft.action_boundary_digest}`,
+      `Exact confirmation: ACTIVATE ${draft.action_boundary_digest}`,
       "Runtime tenant/principal values used: no",
       "Source rows read: no",
       "Source database changed: no",
@@ -15268,10 +15384,17 @@ async function previewGuidedActionCommand(args: string[]): Promise<number> {
     proposalHash: preview.proposal_hash,
     sourceDatabaseChanged: preview.source_database_changed,
   });
-  const payload = { ok: true, preview: draft.effect_preview, source_database_changed: false, rehearsal_ledger_persisted: false };
+  const payload = { ok: true, preview: draft.effect_preview,
+    activation_review: { expected_digest: draft.action_boundary_digest, confirmation: `ACTIVATE ${draft.action_boundary_digest}`,
+      digest_purpose: "Action Boundary authority, not the compiled contract digest", authority_posture: draft.authority_posture,
+      writeback_mode: draft.writeback_mode, trusted_operator_confirmation_required: true },
+    source_database_changed: false, rehearsal_ledger_persisted: false };
   if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   else process.stdout.write([
     `Exact proposal rehearsal verified for ${capabilityName}.`,
+    `Reviewed posture: ${draft.authority_posture}; writeback: ${draft.writeback_mode}. Nothing is activated by this rehearsal.`,
+    `Action Boundary digest for --expected-digest: ${draft.action_boundary_digest}`,
+    `Exact confirmation: ACTIVATE ${draft.action_boundary_digest}`,
     `Proposal: ${preview.proposal_id}`,
     `Hash: ${preview.proposal_hash}`,
     "Source database changed: no",
@@ -15317,7 +15440,7 @@ async function activateGuidedActionCommand(
   if (headless) {
     const draft = await readGuidedActionDraft(projectRoot, capabilityName);
     if (draft.action_boundary_digest !== expectedDigest || confirmation !== `ACTIVATE ${draft.action_boundary_digest}`) {
-      throw new Error(`Headless Safe Action activation requires the complete authority confirmation ACTIVATE ${draft.action_boundary_digest}.`);
+      throw new Error(`Headless Safe Action activation requires the Action Boundary digest (not contract_digest): --expected-digest ${draft.action_boundary_digest} and --confirmation 'ACTIVATE ${draft.action_boundary_digest}'. No authority changed.`);
     }
     if (!draft.effect_preview
       || draft.effect_preview.contract_digest !== draft.contract_digest
@@ -15565,8 +15688,11 @@ async function safeActionStatusCommand(args: string[]): Promise<number> {
   ]);
   let verifiedActive: ActionRuleAuthorityActivationV1 | undefined;
   let verifiedError: string | undefined;
+  let readiness: import("./authoring-client-readiness.js").PostActivationReadiness | undefined;
   try {
     verifiedActive = await readActionRuleAuthorityActivation(projectRoot);
+    const { readPostActivationReadiness } = await import("./authoring-client-readiness.js");
+    readiness = await readPostActivationReadiness(projectRoot);
   } catch (error) {
     verifiedError = error instanceof Error ? error.message : String(error);
   }
@@ -15593,11 +15719,18 @@ async function safeActionStatusCommand(args: string[]): Promise<number> {
       code_first: status,
       managed_actions: guided,
       verified_outcomes: verified,
+      readiness: readiness ?? { state: "blocked", worker: "not_checked" },
     }, null, 2)}\n`);
   }
   else process.stdout.write([
     "Synapsor Safe Action status",
     "",
+    ...(readiness ? [
+      `Read: ${readiness.read} | Verified outcomes: ${readiness.semantic_actions} | Legacy actions: ${readiness.legacy_actions}`,
+      ...readiness.semantic_outcomes.map((outcome) => `${outcome.outcome}: approval ${outcome.approval_mode}; execution ${outcome.execution_enabled ? "enabled" : "disabled"}`),
+      "Worker: not checked. Approval is not completion; completion requires an applied receipt.",
+      "",
+    ] : []),
     "Verified outcomes (Runner derives the exact effect from current facts)",
     ...renderVerifiedActionStatus(verified),
     "",

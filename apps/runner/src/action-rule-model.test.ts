@@ -4,10 +4,11 @@ import type {
   ActionRuleScalarTypeSpecV1,
 } from "@synapsor/spec";
 import { describe, expect, it, vi } from "vitest";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
-import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
-import { generateFocusedModelActionRuleDraft as generateModelActionRuleDraft, generateModelActionRuleDraft as converseActionRuleDraft } from "./action-rule-model.js";
+import { compileActionRuleModelDraft, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
+import { actionRuleModelDraftJsonSchema, generateFocusedModelActionRuleDraft as generateModelActionRuleDraft, generateModelActionRuleDraft as converseActionRuleDraft } from "./action-rule-model.js";
 import type { AskProviderDependencies } from "./model-ask.js";
 import type { ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { inspectActionRelationships } from "./action-rule-relationship-review.js";
@@ -24,6 +25,61 @@ const statusType: ActionRuleScalarTypeSpecV1 = {
   comparison: "exact",
   enum: ["active", "paused"],
 };
+
+describe("structured Action draft schema", () => {
+  it.each(["update", "insert"] as const)("accepts the compiler-valid nested %s fixture without merging component names", (operation) => {
+    const draft = modelDraft(), catalog = builtCatalog();
+    draft.effect.operation = operation;
+    if (operation === "insert") {
+      delete draft.effect.target_binding;
+      catalog.authoring.resources[0]!.operations.insert = true;
+    }
+    const before = structuredClone(draft);
+    const compiled = compileActionRuleModelDraft({ draft, builtCatalog: catalog,
+      readBoundary: boundary(), readBoundaryDigest: readDigest });
+    const validate = new Ajv2020({ strict: false, allErrors: true }).compile(actionRuleModelDraftJsonSchema());
+    expect(validate(compiled.draft), JSON.stringify(validate.errors)).toBe(true);
+    expect(compiled.rule.name).toBe(draft.name);
+    expect(compiled.verification_boundary.name).toBe(draft.verification.name);
+    expect(compiled.effect_envelope.name).toBe(draft.effect.name);
+    expect(compiled.approval_class.name).toBe(draft.approval.class_name);
+    expect(new Set([draft.name, draft.verification.name, draft.effect.name, draft.approval.class_name]).size).toBe(4);
+    expect(draft).toEqual(before);
+  });
+
+  it("retains nested policy predicates, shared limits and expression definitions", () => {
+    const draft = policyModelDraft();
+    const compiled = compileActionRuleModelDraft({ draft, builtCatalog: builtCatalog(),
+      readBoundary: boundary(), readBoundaryDigest: readDigest });
+    const validate = new Ajv2020({ strict: false, allErrors: true }).compile(actionRuleModelDraftJsonSchema());
+    expect(validate(compiled.draft), JSON.stringify(validate.errors)).toBe(true);
+    expect(compiled.approval_class.shared_limits).toEqual(draft.approval.shared_limits);
+    expect(validate({ ...draft, approval: { ...draft.approval,
+      auto_approve_when: { kind: "compare", operator: "execute", left: statusLiteral("active"), right: statusLiteral("active") },
+    } })).toBe(false);
+  });
+
+  it("rejects flattened phases, provider envelopes, unknown fields and invalid effect variants", () => {
+    const draft = modelDraft();
+    const validate = new Ajv2020({ strict: false, allErrors: true }).compile(actionRuleModelDraftJsonSchema());
+    expect(validate(draft), JSON.stringify(validate.errors)).toBe(true);
+    const { verification, effect, approval, ...rule } = draft;
+    const { target_binding: _target, ...withoutTarget } = effect;
+    const invalid = [
+      { ...rule, ...verification, ...approval, ...effect },
+      { ...draft, status: "draft" },
+      { ...draft, verification: { ...verification, status: "draft" } },
+      { ...draft, effect: { ...effect, status: "draft" } },
+      { ...draft, approval: { ...approval, actor: "external_actor" } },
+      { ...draft, effect: withoutTarget },
+      { ...draft, effect: { ...effect, operation: "insert" } },
+      { ...draft, effect: { ...effect, set: { status: {
+        kind: "literal", value: "paused", value_type: { kind: "unsupported_type" },
+      } } } },
+    ];
+    for (const candidate of invalid) expect(validate(candidate), JSON.stringify(candidate)).toBe(false);
+  });
+});
 
 describe("conversational Action authoring tools", () => {
   it.skipIf(!process.env.SYNAPSOR_LIVE_AUTHORING_PROVIDER)("qualifies live creation and a day-two edit through the same tools", async () => {

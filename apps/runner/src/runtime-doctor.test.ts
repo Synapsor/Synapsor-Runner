@@ -1,10 +1,149 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const postgres = vi.hoisted(() => ({ pool: vi.fn(), inspect: vi.fn() }));
+vi.mock("@synapsor-runner/postgres", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@synapsor-runner/postgres")>(),
+  createPostgresPool: postgres.pool,
+  inspectPostgresRlsTarget: postgres.inspect,
+}));
+
 import {
   exploreVocabularyDoctorCheck,
+  postgresRlsDoctorChecks,
   postgresRlsExploreTargets,
   withMysqlProbeConnection,
   withPostgresProbeClient,
 } from "./runtime-doctor.js";
+
+describe("runtime doctor RLS denied-identity canary", () => {
+  beforeEach(() => {
+    postgres.pool.mockReset();
+    postgres.inspect.mockReset();
+    postgres.inspect.mockResolvedValue({ ok: true, role: "reader", policies: [{}], errors: [] });
+  });
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it("uses valid UUID identities for both denied scopes under UUID-cast policies", async () => {
+    const probe = canaryProbe({ uuidCasts: true });
+    const checks = await probe.run();
+    expect(checks.every((check) => check.ok)).toBe(true);
+    expect(checks.at(-1)).toMatchObject({ level: "pass" });
+    expect(probe.bindings).toHaveLength(3);
+    expect(probe.bindings[0]).toEqual([probe.tenant, probe.principal]);
+    expect(probe.bindings[1]![0]).toMatch(uuid);
+    expect(probe.bindings[1]![0]).not.toBe(probe.tenant);
+    expect(probe.bindings[1]![1]).toBe(probe.principal);
+    expect(probe.bindings[2]![0]).toBe(probe.tenant);
+    expect(probe.bindings[2]![1]).toMatch(uuid);
+    expect(probe.bindings[2]![1]).not.toBe(probe.principal);
+    expect(probe.targetQueries).toEqual([
+      'SELECT "id" AS id FROM "public"."items" ORDER BY "id" LIMIT 1',
+      'SELECT "id" AS id FROM "public"."items" WHERE "id" = $1',
+      'SELECT "id" AS id FROM "public"."items" WHERE "id" = $1',
+    ]);
+    expect(probe.clients.every((client) => client.release.mock.calls.length === 1 && client.end.mock.calls.length === 1)).toBe(true);
+  });
+
+  it("still denies cross-tenant and cross-principal reads under text policies", async () => {
+    const probe = canaryProbe();
+    expect((await probe.run()).at(-1)).toMatchObject({ ok: true, level: "pass" });
+    expect(probe.bindings).toHaveLength(3);
+    expect(probe.targetQueries).toHaveLength(3);
+  });
+
+  it.each(["tenant", "principal"] as const)("refuses a policy missing %s isolation", async (bypass) => {
+    const probe = canaryProbe({ bypass });
+    const check = (await probe.run()).at(-1)!;
+    expect(check).toMatchObject({ ok: false, level: "fail" });
+    expect(check.message).toContain("POSTGRES_RLS_CANARY_SCOPE_BYPASS");
+    expect(probe.clients.every((client) => client.release.mock.calls.length === 1 && client.end.mock.calls.length === 1)).toBe(true);
+  });
+
+  it("does not call an empty visible scope proof of isolation", async () => {
+    const probe = canaryProbe({ empty: true });
+    const check = (await probe.run()).at(-1)!;
+    expect(check).toMatchObject({ ok: false, level: "fail" });
+    expect(check.message).toContain("POSTGRES_RLS_CANARY_NO_VISIBLE_ROW");
+    expect(probe.targetQueries).toHaveLength(1);
+  });
+
+  it("refuses trusted context leaking across rollback and connection reuse", async () => {
+    const probe = canaryProbe({ leak: true });
+    const check = (await probe.run()).at(-1)!;
+    expect(check).toMatchObject({ ok: false, level: "fail" });
+    expect(check.message).toContain("POSTGRES_RLS_CONTEXT_LEAKED_ACROSS_TRANSACTION");
+    expect(probe.targetQueries).toHaveLength(1);
+  });
+
+  it("reports a cast error without treating it as denial or disclosing the rejected value", async () => {
+    const secret = "private-scope-value postgres://user:private-password@private-host/db";
+    const probe = canaryProbe({ deniedError: Object.assign(new Error(`invalid input syntax for type uuid: ${secret}`), { code: "22P02" }) });
+    const check = (await probe.run()).at(-1)!;
+    expect(check).toMatchObject({ ok: false, level: "fail" });
+    expect(check.message).toContain("22P02");
+    expect(check.message).toMatch(/trusted.*setting|setting.*trusted/iu);
+    expect(check.message).toMatch(/not verified/iu);
+    expect(check.message).not.toContain(secret);
+    expect(check.message).not.toContain("private-password");
+    expect(probe.bindings).toHaveLength(2);
+    expect(probe.clients.every((client) => client.release.mock.calls.length === 1 && client.end.mock.calls.length === 1)).toBe(true);
+  });
+
+  it("keeps unknown database failures redacted and fail-closed", async () => {
+    const probe = canaryProbe({ deniedError: new Error("private unexpected database detail") });
+    const check = (await probe.run()).at(-1)!;
+    expect(check).toMatchObject({ ok: false, level: "fail" });
+    expect(check.message).toContain("database probe failed");
+    expect(check.message).not.toContain("private unexpected");
+    expect(probe.bindings).toHaveLength(2);
+  });
+});
+
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+function canaryProbe(options: { uuidCasts?: boolean; bypass?: "tenant" | "principal"; empty?: boolean; leak?: boolean; deniedError?: Error } = {}) {
+  const tenant = options.uuidCasts ? "11111111-1111-4111-8111-111111111111" : "trusted-tenant";
+  const principal = options.uuidCasts ? "22222222-2222-4222-8222-222222222222" : "trusted-principal";
+  const bindings: string[][] = [];
+  const targetQueries: string[] = [];
+  const clients: Array<{ release: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }> = [];
+  postgres.pool.mockImplementation(() => {
+    let current: string[] = [];
+    const client = { release: vi.fn(), end: vi.fn(async () => undefined),
+      query: vi.fn(async (sql: string, values: string[] = []) => {
+        if (sql === "BEGIN") return { rows: [] };
+        if (sql === "ROLLBACK") { if (!options.leak) current = []; return { rows: [] }; }
+        if (sql.startsWith("SELECT set_config")) {
+          current = [values[1]!, values[3]!]; bindings.push([...current]);
+          return { rows: [] };
+        }
+        if (sql.startsWith("SELECT current_setting")) return { rows: [{ tenant: current[0], principal: current[1] }] };
+        targetQueries.push(sql);
+        if (options.uuidCasts && current.some((value) => !uuid.test(value))) {
+          throw Object.assign(new Error("invalid input syntax for type uuid: rejected scope"), { code: "22P02" });
+        }
+        if (sql.includes("ORDER BY")) return { rows: options.empty ? [] : [{ id: "private-row-id" }] };
+        if (options.deniedError) throw options.deniedError;
+        const allowed = (options.bypass === "tenant" || current[0] === tenant)
+          && (options.bypass === "principal" || current[1] === principal);
+        return { rows: allowed ? [{ id: "private-row-id" }] : [], rowCount: allowed ? 1 : 0 };
+      }),
+    };
+    clients.push(client);
+    return { connect: async () => client, end: client.end };
+  });
+  vi.stubEnv("F10_DATABASE_URL", "postgresql://fixture.invalid/not-used");
+  vi.stubEnv("SYNAPSOR_TENANT_ID", tenant);
+  vi.stubEnv("SYNAPSOR_PRINCIPAL", principal);
+  const source = { engine: "postgres", read_url_env: "F10_DATABASE_URL", database_scope: {
+    mode: "postgres_rls", tenant_setting: "app.tenant_id", principal_setting: "app.principal_id",
+  } };
+  return { tenant, principal, bindings, targetQueries, clients,
+    run: () => postgresRlsDoctorChecks({ config: { sources: { fixture: source }, capabilities: [] }, sourceName: "fixture", source,
+      checkCanary: true, activeExploreBoundaries: [{ source: "fixture", pack: { resources: [{ schema: "public", table: "items", primary_key: "id" }] } }],
+    } as never),
+  };
+}
 
 describe("runtime doctor database probe cleanup", () => {
   it("uses active Explore resources as PostgreSQL RLS canary targets", () => {

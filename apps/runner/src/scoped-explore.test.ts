@@ -5993,7 +5993,7 @@ describe("Scoped Explore", () => {
     auditStore.close();
   }, 15_000);
 
-  it("never releases parent and child filtered scalar totals in either order", async () => {
+  describe("parent and child filtered scalar totals", () => {
     const scalarPlan = (value?: string) => ({
       kind: "aggregate" as const,
       resource: "public.subscriptions",
@@ -6004,80 +6004,91 @@ describe("Scoped Explore", () => {
       top_n: 1,
     });
 
-    const parentFirst = await activatedFixture();
-    const parentRuntime = await createScopedExploreRuntime({
-      projectRoot: parentFirst.root,
-      transport: "stdio",
-      env: parentFirst.env,
-      executor: complementAttackExecutor(),
-      inspectDatabaseFn: async () => parentFirst.inspection,
-    });
-    await expect(parentRuntime.explore(scalarPlan())).resolves.toMatchObject({ ok: true });
-    await expect(parentRuntime.explore(scalarPlan("price"))).rejects.toMatchObject({
-      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
-      message: expect.stringMatching(/related reviewed filter set.*subtracting/i),
-      details: {
-        reason: "complementary_scalar_filter_release",
-        resource: "public.subscriptions",
-        minimum_cohort_size: 5,
-        source_query_executed: true,
-        source_rows_returned_to_caller: false,
-        result_returned_to_caller: false,
-      },
-    });
-    await parentRuntime.close();
+    const scenarios: Array<[string, () => Promise<void>]> = [
+      ["refuses a child after its parent while retaining parent-first evidence", async () => {
+        const fixture = await activatedFixture();
+        const runtime = await createScopedExploreRuntime({
+          projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+          executor: complementAttackExecutor(), inspectDatabaseFn: async () => fixture.inspection,
+        });
+        try {
+          await expect(runtime.explore(scalarPlan())).resolves.toMatchObject({ ok: true });
+          await expect(runtime.explore(scalarPlan("price"))).rejects.toMatchObject({
+            code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+            message: expect.stringMatching(/related reviewed filter set.*subtracting/i),
+            details: {
+              reason: "complementary_scalar_filter_release",
+              resource: "public.subscriptions",
+              minimum_cohort_size: 5,
+              source_query_executed: true,
+              source_rows_returned_to_caller: false,
+              result_returned_to_caller: false,
+            },
+          });
+        } finally {
+          await runtime.close();
+        }
+      }],
+      ["refuses a parent after its child", async () => {
+        const fixture = await activatedFixture();
+        const runtime = await createScopedExploreRuntime({
+          projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+          executor: complementAttackExecutor(), inspectDatabaseFn: async () => fixture.inspection,
+        });
+        try {
+          await expect(runtime.explore(scalarPlan("price"))).resolves.toMatchObject({ ok: true });
+          await expect(runtime.explore(scalarPlan())).rejects.toMatchObject({
+            code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+            details: { reason: "complementary_scalar_filter_release" },
+          });
+        } finally {
+          await runtime.close();
+        }
+      }],
+      ["permits sibling filtered totals", async () => {
+        const fixture = await activatedFixture();
+        const runtime = await createScopedExploreRuntime({
+          projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+          executor: complementAttackExecutor(), inspectDatabaseFn: async () => fixture.inspection,
+        });
+        try {
+          await expect(runtime.explore(scalarPlan("price"))).resolves.toMatchObject({ ok: true });
+          await expect(runtime.explore(scalarPlan("service"))).resolves.toMatchObject({ ok: true });
+        } finally {
+          await runtime.close();
+        }
+      }],
+      ["refuses a nested filtered total", async () => {
+        const fixture = await activatedFixture();
+        const runtime = await createScopedExploreRuntime({
+          projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+          executor: complementAttackExecutor(), inspectDatabaseFn: async () => fixture.inspection,
+        });
+        try {
+          await expect(runtime.explore(scalarPlan("price"))).resolves.toMatchObject({ ok: true });
+          await expect(runtime.explore({
+            ...scalarPlan("price"),
+            where: [
+              { field: "reason_category", op: "eq" as const, value: "price" },
+              { field: "region", op: "eq" as const, value: "north" },
+            ],
+          })).rejects.toMatchObject({
+            code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+            details: {
+              reason: "complementary_scalar_filter_release",
+              predicate_relationship: "parent_or_child",
+            },
+          });
+        } finally {
+          await runtime.close();
+        }
+      }],
+    ];
 
-    const childFirst = await activatedFixture();
-    const childRuntime = await createScopedExploreRuntime({
-      projectRoot: childFirst.root,
-      transport: "stdio",
-      env: childFirst.env,
-      executor: complementAttackExecutor(),
-      inspectDatabaseFn: async () => childFirst.inspection,
-    });
-    await expect(childRuntime.explore(scalarPlan("price"))).resolves.toMatchObject({ ok: true });
-    await expect(childRuntime.explore(scalarPlan())).rejects.toMatchObject({
-      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
-      details: { reason: "complementary_scalar_filter_release" },
-    });
-    await childRuntime.close();
-
-    const siblings = await activatedFixture();
-    const siblingRuntime = await createScopedExploreRuntime({
-      projectRoot: siblings.root,
-      transport: "stdio",
-      env: siblings.env,
-      executor: complementAttackExecutor(),
-      inspectDatabaseFn: async () => siblings.inspection,
-    });
-    await expect(siblingRuntime.explore(scalarPlan("price"))).resolves.toMatchObject({ ok: true });
-    await expect(siblingRuntime.explore(scalarPlan("service"))).resolves.toMatchObject({ ok: true });
-    await siblingRuntime.close();
-
-    const nested = await activatedFixture();
-    const nestedRuntime = await createScopedExploreRuntime({
-      projectRoot: nested.root,
-      transport: "stdio",
-      env: nested.env,
-      executor: complementAttackExecutor(),
-      inspectDatabaseFn: async () => nested.inspection,
-    });
-    await expect(nestedRuntime.explore(scalarPlan("price"))).resolves.toMatchObject({ ok: true });
-    await expect(nestedRuntime.explore({
-      ...scalarPlan("price"),
-      where: [
-        { field: "reason_category", op: "eq" as const, value: "price" },
-        { field: "region", op: "eq" as const, value: "north" },
-      ],
-    })).rejects.toMatchObject({
-      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
-      details: {
-        reason: "complementary_scalar_filter_release",
-        predicate_relationship: "parent_or_child",
-      },
-    });
-    await nestedRuntime.close();
-  }, 20_000);
+    it.each(scenarios)("%s", async (_name, scenario) => {
+      await scenario();
+    }, 20_000);
+  });
 
   it("treats a scalar time window as a reviewed predicate for complement accounting", async () => {
     const fixture = await activatedFixture();

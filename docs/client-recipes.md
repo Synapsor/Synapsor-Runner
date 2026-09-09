@@ -1,11 +1,15 @@
 # Client And Framework Recipes
 
-Every recipe on this page connects to a reviewed Runner boundary. There are two
-client shapes:
+Every recipe on this page connects to a reviewed Runner boundary. The current
+managed local client uses one entry with four stable tools:
+`app.describe_data`, `app.explore_data`, `app.describe_actions`, and
+`app.request_change`. Read activation is enough to install it; until a reviewed
+Action Boundary is active, Action discovery is empty and change requests are
+refused. Adding or revising outcomes does not require a client rewrite.
 
-- authoring clients discover exactly `app.describe_data` and
-  `app.explore_data` and can repeatedly submit legal typed analytical plans;
-- production clients discover only activated named read/proposal capabilities.
+Explicit legacy named-capability configurations remain supported for existing
+integrations. They are not the default client shape for a new Read/Action
+project.
 
 Neither shape receives SQL, database credentials, trusted tenant identity,
 approval, apply, activation, or revert authority.
@@ -52,9 +56,9 @@ synapsor-runner mcp install claude-code \
 Use `cursor` or `vscode` for those managed project clients. Generic clients can
 launch `synapsor-runner mcp serve --authoring --project-root .`.
 
-## Operational Proposal Recipe
+## Legacy Operational Proposal Recipe
 
-The existing cross-framework recipe uses:
+The existing cross-framework named-capability recipe uses:
 
 - `support.inspect_customer`
 - `support.propose_plan_credit`

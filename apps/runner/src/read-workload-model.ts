@@ -25,6 +25,7 @@ import {
 } from "./model-authoring-conversation.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { ReadWorkloadDraftError, safeReadWorkloadDiagnostic, type ReadWorkloadDiagnostic } from "./read-workload-diagnostics.js";
+import { activePolicySource, policySourceHistory } from "./authoring-policy-source.js";
 
 const SUBMIT_READ_WORKLOAD_TOOL = "runner.submit_read_workloads";
 const MAX_READ_CLARIFICATIONS = 4;
@@ -111,8 +112,12 @@ export async function generateModelReadWorkload(input: {
   const name = boundedText(input.name, "workload name", 80);
   const allowedQuestions = boundedQuestions(input.allowedQuestions, "allowed questions", true);
   const forbiddenQuestions = boundedQuestions(input.forbiddenQuestions ?? [], "forbidden questions", false);
-  const namingSources = [...allowedQuestions, ...(input.operatorNamingContext
-    ? [boundedText(input.operatorNamingContext, "operator naming context", 4_000)] : [])];
+  const originalNamingSources = input.operatorNamingContext
+    ? [boundedText(input.operatorNamingContext, "operator naming context", 4_000)] : allowedQuestions;
+  const policySource = activePolicySource(input.conversation?.policySources);
+  if (policySource) policySourceHistory(input.conversation?.policySources, input);
+  const namingSources = [...originalNamingSources, ...(policySource
+    ? [policySource.text, ...(input.conversation?.policySources?.operator_messages ?? [])] : [])];
   const catalog = readWorkloadCatalog(input.generatedBoundary);
   const serializedCatalog = JSON.stringify(catalog);
   if (Buffer.byteLength(serializedCatalog) > 64 * 1024) {
@@ -179,10 +184,25 @@ export async function generateModelReadWorkload(input: {
           error_code: "READ_WORKLOAD_SUBMISSION_REFUSED",
         };
       }
+      // A new submission must never reuse a rejected earlier candidate.
+      workload = undefined;
+      analysis = undefined;
       try {
         suppliedMeanings = parseOperatorReadMeanings(args.operator_meanings, namingSources, catalog, clarifiedTargets);
       } catch (error) {
         workloadValidationBlockers = [error instanceof Error ? error.message : String(error)];
+        const clarification = input.clarificationHandler && error instanceof ReadNamingEvidenceError && error.target
+          && clarifiedTargets.length < MAX_READ_CLARIFICATIONS
+          ? refusedReadMeaningClarification(args, error.target, catalog, clarifiedTargets) : undefined;
+        if (clarification && error instanceof ReadNamingEvidenceError
+          && clarification.resource === error.target?.resource && clarification.field === error.target.field
+          && !clarificationRequest && !valueRequest) {
+          clarificationRequest = clarification;
+          return { ok: true, value: { status: "clarification_required_before_mapping",
+            refused_naming_evidence: true, resource: clarification.resource, field: clarification.field,
+            blockers: workloadValidationBlockers, authority_granted: false,
+            source_query_executed: false, source_database_changed: false } };
+        }
         return { ok: false, error_code: "READ_WORKLOAD_NAMING_EVIDENCE_INVALID", value: {
           error_code: "READ_WORKLOAD_NAMING_EVIDENCE_INVALID", blockers: workloadValidationBlockers,
           authority_granted: false, source_query_executed: false, source_database_changed: false,
@@ -417,8 +437,8 @@ export async function generateModelReadWorkload(input: {
     `Workload name: ${name}`,
     `Allowed questions: ${JSON.stringify(allowedQuestions)}`,
     `Forbidden questions: ${JSON.stringify(forbiddenQuestions)}`,
-    `Original operator naming context: ${JSON.stringify(namingSources)}`,
-    "When the operator already explains a coded identifier, reuse that explanation without another question. Include operator_meanings with the exact catalog resource, optional field, and a verbatim operator_quote containing that identifier AND its stated business meaning. Quotes must come from Original operator naming context or an actual operator answer in Reviewed business clarification, never your question, history or guesses. An answer to an exact field clarification may omit the identifier only for that same resource and field. A bare field identifier is allowed only if unique across this catalog; otherwise quote its qualified resource.field. Explaining a table does not explain all its coded fields. These are naming hints only, never scope, values, or authority.",
+    `Original operator naming context: ${JSON.stringify(originalNamingSources)}`,
+    "When the operator already explains a coded identifier, reuse that explanation without another question. Include operator_meanings with the exact catalog resource, optional field, and a verbatim operator_quote containing that identifier AND its stated business meaning. Quotes must come from Original operator naming context, the approved attached policy text or recorded operator corrections, or an actual operator answer in Reviewed business clarification. Never use model-generated read summaries, your question, model statements or guesses as operator evidence. An answer to an exact field clarification may omit the identifier only for that same resource and field. A bare field identifier is allowed only if unique across this catalog; otherwise quote its qualified resource.field. Explaining a table does not explain all its coded fields. These are naming hints only, never scope, values, or authority.",
     "Call runner.submit_read_workloads exactly once. Give each plan a concise description of the specific read it covers (1 through 280 characters), not a verbatim copy of the whole job. Preserve the job's meaning across the complete set of plans and assign each one stable lower-case id.",
     "Each id must start with a lower-case letter, use only lower-case letters, digits, dot, underscore, or hyphen, and contain at most 64 characters.",
     "Schema-declared ENUM/CHECK allowlists already appear as structural metadata. Do not request them as observed values.",
@@ -426,6 +446,7 @@ export async function generateModelReadWorkload(input: {
     OPAQUE_SELECTION_GUIDANCE,
     "If an opaque reviewed resource or field name makes the business meaning ambiguous, submit clarification_request for one exact catalog resource and optional field instead of guessing.",
     "Use clear reviewed business field names directly. Ask only for genuinely missing meaning; up to four distinct business questions can be answered in this mapping. Retain all earlier answers and never ask the same question again.",
+    "Clear or already labeled fields need no operator_meanings entry. Do not turn a general business request into evidence for an unexplained coded column; ask its meaning instead.",
     "If and only if one exact reviewed field's observed values are indispensable to map the job, submit value_request instead of a workload. Runner has not queried those values and will ask the operator separately.",
     "Decompose a compound job into separate representative plans when one plan cannot cover every requested read. Do not silently drop part of the job.",
     'Every plan.kind must be exactly "rows" or "aggregate". A rows plan requires resource and select. An aggregate plan requires resource and measures.',
@@ -461,12 +482,13 @@ export async function generateModelReadWorkload(input: {
     ...gateway,
     async callTool(tool, args) {
       const result = await gateway.callTool(tool, args);
-      if (!result.ok) {
-        const value = isRecord(result.value) ? result.value : {};
+      const value = isRecord(result.value) ? result.value : {};
+      if (!result.ok || value.refused_naming_evidence === true) {
         const reasons = Array.isArray(value.blockers)
           ? value.blockers.filter((reason): reason is string => typeof reason === "string")
           : typeof value.message === "string" ? [value.message] : [];
-        recordFailure("validation", result.error_code ?? "READ_WORKLOAD_BLOCKED", reasons);
+        recordFailure("validation", result.error_code ?? (value.refused_naming_evidence === true
+          ? "READ_WORKLOAD_NAMING_EVIDENCE_INVALID" : "READ_WORKLOAD_BLOCKED"), reasons);
       }
       return result;
     },
@@ -527,84 +549,87 @@ export async function generateModelReadWorkload(input: {
     usage = mergeUsage(usage, result.result.usage);
     correctionUsed = correctionUsed || result.correction_used;
   };
-  while (!workload && (mechanicalClarificationRequest || clarificationRequest || valueRequest)) {
-    if (mechanicalClarificationRequest) {
-      const request = mechanicalClarificationRequest;
-      mechanicalClarificationRequest = undefined;
-      mechanicalClarificationResolved = true;
-      correctionUsed = true;
-      await remap([
-        runnerResolvedReadMechanicalGuidance(request),
-        "Do not ask the operator about trusted ownership or scope mechanics again. Submit the complete workload using only model-visible business fields and relationships from the catalog.",
-        baseQuestion,
-      ].join("\n"));
-      continue;
-    }
-    if (clarificationRequest) {
-      if (!input.clarificationHandler) {
+  const resolveRequestedAssistance = async () => {
+    while (!workload && (mechanicalClarificationRequest || clarificationRequest || valueRequest)) {
+      if (mechanicalClarificationRequest) {
+        const request = mechanicalClarificationRequest;
+        mechanicalClarificationRequest = undefined;
+        mechanicalClarificationResolved = true;
+        correctionUsed = true;
+        await remap([
+          runnerResolvedReadMechanicalGuidance(request),
+          "Do not ask the operator about trusted ownership or scope mechanics again. Submit the complete workload using only model-visible business fields and relationships from the catalog.",
+          baseQuestion,
+        ].join("\n"));
+        continue;
+      }
+      if (clarificationRequest) {
+        if (!input.clarificationHandler) {
+          throw new Error(
+            `READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at ${clarificationRequest.resource}${clarificationRequest.field ? `.${clarificationRequest.field}` : ""}. Use interactive Boundary review to answer or decline. No source query ran.`,
+          );
+        }
+        const request = clarificationRequest;
+        const decision = validateReadClarificationDecision(
+          await input.clarificationHandler(request),
+        );
+        clarificationRequest = undefined;
+        clarificationResolved = true;
+        opaqueGuessBlockers = [];
+        if (decision.state === "declined") {
+          throw new Error(
+            `READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for ${request.resource}${request.field ? `.${request.field}` : ""}; Runner accepted no model draft.`,
+          );
+        }
+        clarifiedTargets.push({ ...request, answer: decision.answer });
+        clarificationAnswers.push(`Reviewed business clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: question ${JSON.stringify(request.question)}, operator answer ${JSON.stringify(decision.answer)}. This is naming context, not database values or authority.`);
+        await remap([
+          `The operator answered the exact metadata clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: ${JSON.stringify(decision.answer)}.`,
+          "Use that answer only as a naming explanation for this bounded mapping. It is not database data or authority.",
+          ...(approvedValueContext
+            ? [
+                `The separately reviewed value-context step is already complete. The operator approved these exact values for ${approvedValueContext.resource}.${approvedValueContext.field}: ${JSON.stringify(approvedValueContext.values)}. Do not request values again.`,
+                `Use plan.where on that exact field with only those values: ${JSON.stringify({ where: [{ field: approvedValueContext.field, op: approvedValueContext.values.length === 1 ? "eq" : "in", value: approvedValueContext.values.length === 1 ? approvedValueContext.values[0] : approvedValueContext.values }] })}. Never use a filters key.`,
+              ]
+            : valueRequestResolved
+              ? ["The separately reviewed value-context step is already complete. Do not request values again."]
+              : ["If exact observed values are still indispensable, use one value_request now; do not guess them."]),
+          baseQuestion,
+        ].join("\n"));
+        continue;
+      }
+      if (!valueRequest) break;
+      if (!input.valueRequestHandler) {
         throw new Error(
-          `READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at ${clarificationRequest.resource}${clarificationRequest.field ? `.${clarificationRequest.field}` : ""}. Use interactive Boundary review to answer or decline. No source query ran.`,
+          `READ_WORKLOAD_VALUE_CONTEXT_REQUIRED: the model requested ${valueRequest.resource}.${valueRequest.field}. Use interactive Boundary review to approve or decline exact value context. No source query ran.`,
         );
       }
-      const request = clarificationRequest;
-      const decision = validateReadClarificationDecision(
-        await input.clarificationHandler(request),
+      const request = valueRequest;
+      const decision = validateReadValueContextDecision(
+        await input.valueRequestHandler(request),
+        request,
       );
-      clarificationRequest = undefined;
-      clarificationResolved = true;
-      opaqueGuessBlockers = [];
-      if (decision.state === "declined") {
-        throw new Error(
-          `READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for ${request.resource}${request.field ? `.${request.field}` : ""}; Runner accepted no model draft.`,
-        );
-      }
-      clarifiedTargets.push({ ...request, answer: decision.answer });
-      clarificationAnswers.push(`Reviewed business clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: question ${JSON.stringify(request.question)}, operator answer ${JSON.stringify(decision.answer)}. This is naming context, not database values or authority.`);
+      valueRequest = undefined;
+      valueRequestResolved = true;
+      approvedValueContext = decision.state === "provided" ? decision : undefined;
+      const valueContext = decision.state === "provided"
+        ? [
+            `The operator separately approved these exact values for ${decision.resource}.${decision.field}: ${JSON.stringify(decision.values)}.`,
+            "Use only those values for this mapping. They are context for this bounded request, not authority and not a permission to expose rows.",
+            `Express the approved value constraint with plan.where, for example ${JSON.stringify({ where: [{ field: decision.field, op: decision.values.length === 1 ? "eq" : "in", value: decision.values.length === 1 ? decision.values[0] : decision.values }] })}. Never use a filters key.`,
+          ]
+        : [
+            "The operator declined observed-value context. Complete the mapping from reviewed structural metadata only.",
+            "Do not request values again. If the job cannot be mapped safely, submit a structurally valid conservative workload or allow Runner validation to refuse it.",
+          ];
       await remap([
-        `The operator answered the exact metadata clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: ${JSON.stringify(decision.answer)}.`,
-        "Use that answer only as a naming explanation for this bounded mapping. It is not database data or authority.",
-        ...(approvedValueContext
-          ? [
-              `The separately reviewed value-context step is already complete. The operator approved these exact values for ${approvedValueContext.resource}.${approvedValueContext.field}: ${JSON.stringify(approvedValueContext.values)}. Do not request values again.`,
-              `Use plan.where on that exact field with only those values: ${JSON.stringify({ where: [{ field: approvedValueContext.field, op: approvedValueContext.values.length === 1 ? "eq" : "in", value: approvedValueContext.values.length === 1 ? approvedValueContext.values[0] : approvedValueContext.values }] })}. Never use a filters key.`,
-            ]
-          : valueRequestResolved
-            ? ["The separately reviewed value-context step is already complete. Do not request values again."]
-            : ["If exact observed values are still indispensable, use one value_request now; do not guess them."]),
+        ...valueContext,
+        "Retain the completed business clarifications. If a different reviewed name remains genuinely ambiguous, request that missing meaning; do not repeat an answered question or guess it.",
         baseQuestion,
       ].join("\n"));
-      continue;
     }
-    if (!valueRequest) break;
-    if (!input.valueRequestHandler) {
-      throw new Error(
-        `READ_WORKLOAD_VALUE_CONTEXT_REQUIRED: the model requested ${valueRequest.resource}.${valueRequest.field}. Use interactive Boundary review to approve or decline exact value context. No source query ran.`,
-      );
-    }
-    const request = valueRequest;
-    const decision = validateReadValueContextDecision(
-      await input.valueRequestHandler(request),
-      request,
-    );
-    valueRequest = undefined;
-    valueRequestResolved = true;
-    approvedValueContext = decision.state === "provided" ? decision : undefined;
-    const valueContext = decision.state === "provided"
-      ? [
-          `The operator separately approved these exact values for ${decision.resource}.${decision.field}: ${JSON.stringify(decision.values)}.`,
-          "Use only those values for this mapping. They are context for this bounded request, not authority and not a permission to expose rows.",
-          `Express the approved value constraint with plan.where, for example ${JSON.stringify({ where: [{ field: decision.field, op: decision.values.length === 1 ? "eq" : "in", value: decision.values.length === 1 ? decision.values[0] : decision.values }] })}. Never use a filters key.`,
-        ]
-      : [
-          "The operator declined observed-value context. Complete the mapping from reviewed structural metadata only.",
-          "Do not request values again. If the job cannot be mapped safely, submit a structurally valid conservative workload or allow Runner validation to refuse it.",
-        ];
-    await remap([
-      ...valueContext,
-      "Retain the completed business clarifications. If a different reviewed name remains genuinely ambiguous, request that missing meaning; do not repeat an answered question or guess it.",
-      baseQuestion,
-    ].join("\n"));
-  }
+  };
+  await resolveRequestedAssistance();
   const correctionBlockers = analysis?.status === "blocked"
     ? analysis.blockers
     : workloadValidationBlockers;
@@ -627,6 +652,7 @@ export async function generateModelReadWorkload(input: {
       `Validation issues: ${JSON.stringify(correctionBlockers.slice(0, 12).map((blocker) => blocker.slice(0, 700)))}`,
       baseQuestion,
     ].join("\n"), "correction");
+    await resolveRequestedAssistance();
   }
   if (!workload || !analysis) {
     if (diagnostics.length) throw new ReadWorkloadDraftError(diagnostics);
@@ -1004,6 +1030,30 @@ function runnerResolvedReadMechanicalGuidance(request: ModelReadClarificationReq
 
 type OperatorReadMeaning = { resource: string; field?: string; operator_quote: string };
 
+class ReadNamingEvidenceError extends Error {
+  constructor(detail: string, readonly target?: { resource: string; field?: string }) {
+    super(`READ_WORKLOAD_NAMING_EVIDENCE_INVALID: ${target ? `${target.resource}${target.field ? `.${target.field}` : ""}: ` : ""}${detail}`);
+  }
+}
+
+// An explicit unsupported naming claim can reveal ambiguity beyond placeholder
+// regexes (for example q_av). Ask about that exact used field, never accept the claim.
+function refusedReadMeaningClarification(
+  args: Record<string, unknown>, target: { resource: string; field?: string },
+  catalog: ReturnType<typeof readWorkloadCatalog>, clarifications: readonly ModelReadClarificationRequest[],
+): ModelReadClarificationRequest | undefined {
+  const resource = catalog.resources.find(resource => resource.id === target.resource);
+  if (!resource || clarifications.some(prior => prior.resource === target.resource && prior.field === target.field)) return;
+  const metadata = target.field === undefined ? resource : resource.fields.find(field => field.id === target.field);
+  if (!metadata || metadata.label || metadata.description || ("record_identity" in metadata && metadata.record_identity)) return;
+  const plans = [...(Array.isArray(args.allowed) ? args.allowed : []), ...(Array.isArray(args.forbidden) ? args.forbidden : [])];
+  if (!plans.some(entry => isRecord(entry) && isRecord(entry.plan) && entry.plan.resource === target.resource
+    && (target.field === undefined || workloadPlanFields(entry.plan).includes(target.field)))) return;
+  return { ...target, reason: "The model's claimed business meaning has no valid operator evidence; Runner discarded it.",
+    question: target.field === undefined ? `What business records does ${resource.id} contain?`
+      : `What business value does the reviewed field ${resource.id}.${target.field} represent?` };
+}
+
 // Evidence comes from operator input only. It resolves naming ambiguity, never
 // grants operations or substitutes for the workload compiler's scope checks.
 function parseOperatorReadMeanings(
@@ -1013,17 +1063,21 @@ function parseOperatorReadMeanings(
   clarifications: readonly (ModelReadClarificationRequest & { answer: string })[],
 ): OperatorReadMeaning[] {
   if (value === undefined) return [];
-  const fail = (): never => { throw new Error("READ_WORKLOAD_NAMING_EVIDENCE_INVALID: use an exact reviewed identifier and a verbatim explanation from the operator's original wording or an answered clarification for that identifier; otherwise ask for its meaning."); };
+  const fail = (detail = "Use an exact reviewed identifier and a verbatim operator explanation; otherwise ask for its meaning.",
+    target?: { resource: string; field?: string }): never => { throw new ReadNamingEvidenceError(detail, target); };
   if (!Array.isArray(value) || value.length > 40) return fail();
   return value.map((entry) => {
     if (!isRecord(entry) || Object.keys(entry).some((key) => !["resource", "field", "operator_quote"].includes(key))) return fail();
     const resource = catalog.resources.find((resource) => resource.id === entry.resource);
     if (!resource || (entry.field !== undefined && (typeof entry.field !== "string"
       || !resource.fields.some((field) => field.id === entry.field)))) return fail();
+    const field = entry.field as string | undefined;
+    const target = { resource: resource.id, ...(field !== undefined ? { field } : {}) };
     const quote = entry.operator_quote;
     if (typeof quote !== "string" || !quote.trim() || quote.length > 1_000
-      || ![...sources, ...clarifications.map((entry) => entry.answer)].some((source) => source.includes(quote))) return fail();
-    const field = entry.field as string | undefined;
+      || ![...sources, ...clarifications.map((entry) => entry.answer)].some((source) => source.includes(quote))) {
+      return fail("The quote is not a verbatim original operator statement or answered clarification. Ask for the missing meaning; do not invent evidence.", target);
+    }
     // The reviewed question anchors a short answer to only its exact target.
     // Never use model-authored questions themselves as operator evidence.
     if (clarifications.some((entry) => entry.resource === resource.id && entry.field === field && entry.answer.includes(quote))) {
@@ -1034,7 +1088,9 @@ function parseOperatorReadMeanings(
     const references = [qualified, ...(uniqueField ? [field!] : [])];
     // Require a complete identifier token; m014 must not match m014_private.
     const tokens: string[] = Array.from(quote.match(/[\p{L}\p{N}_.:-]+/gu) ?? []);
-    if (!references.some((reference) => tokens.includes(reference) && quote.trim().length > reference.length + 4)) return fail();
+    if (!references.some((reference) => tokens.includes(reference) && quote.trim().length > reference.length + 4)) {
+      return fail("The operator quote does not identify this field or resource and explain its meaning. Ask a targeted clarification; a general job description is not naming evidence.", target);
+    }
     return { resource: resource.id, ...(field !== undefined ? { field } : {}), operator_quote: quote };
   });
 }
@@ -1070,7 +1126,6 @@ function opaqueWorkloadReferences(
       if (isClearlyOpaqueExploreIdentifier(field)
         && !metadata.label
         && !metadata.description
-        && !resourceClarified
         && !fieldClarified) {
         gaps.add(`${resource.id}.${field}`);
       }
@@ -1117,7 +1172,6 @@ function opaqueWorkloadClarificationRequest(
       if (isClearlyOpaqueExploreIdentifier(field)
         && !metadata.label
         && !metadata.description
-        && !resourceClarified
         && !fieldClarified) {
         return {
           resource: resource.id,

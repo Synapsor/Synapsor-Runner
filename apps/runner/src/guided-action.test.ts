@@ -2088,6 +2088,11 @@ describe("guided write actions", () => {
       "--json",
     ];
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const wrongDigest = [...args];
+    wrongDigest[wrongDigest.indexOf("--expected-digest") + 1] = created.draft.contract_digest;
+    await expect(actionCommand(wrongDigest, async () => fixture.inspection)).rejects.toThrow(
+      `--expected-digest ${created.draft.action_boundary_digest} and --confirmation 'ACTIVATE ${created.draft.action_boundary_digest}'`,
+    );
     await expect(actionCommand(args, async () => fixture.inspection)).resolves.toBe(0);
     expect(stdout).toHaveBeenCalledWith(expect.stringContaining('"authority_posture": "proposal_only"'));
     await expect(actionCommand(args, async () => fixture.inspection)).rejects.toThrow(/already consumed/);
@@ -2145,6 +2150,9 @@ describe("guided write actions", () => {
     expect(JSON.parse(output.join(""))).toMatchObject({
       ok: true,
       rehearsal_mode: "structural",
+      activation_review: { expected_digest: created.draft.action_boundary_digest,
+        confirmation: `ACTIVATE ${created.draft.action_boundary_digest}`, authority_posture: "proposal_only",
+        trusted_operator_confirmation_required: true },
       runtime_identity_resolved: false,
       source_rows_read: false,
       source_database_changed: false,

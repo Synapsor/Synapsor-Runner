@@ -1297,6 +1297,42 @@ function conversationalPhaseTool(phase: PhaseName, compatible: boolean, revision
   return tool;
 }
 
+/** The exact strict provider grammar, composed into the external structured
+ * draft shape. This is presentation only; compileActionRuleModelDraft remains
+ * the sole semantic validator and authority compiler. */
+export function actionRuleModelDraftJsonSchema(): Record<string, unknown> {
+  const schemas = new Map(ACTION_RULE_PHASES.map((phase) => [
+    phase,
+    phaseTool(phase, false, false).input_schema as Record<string, unknown>,
+  ]));
+  const drafts = (phase: PhaseName) => {
+    const schema = schemas.get(phase)!;
+    const branches = (schema.oneOf as Array<Record<string, unknown>>).filter((candidate) =>
+      (candidate.properties as Record<string, { const?: string }>).status?.const === "draft");
+    if (!branches.length) throw new Error(`Missing strict ${phaseTool(phase).name} draft schema.`);
+    return branches;
+  };
+  const withoutStatus = (branch: Record<string, unknown>) => {
+    const { status: _status, ...properties } = branch.properties as Record<string, unknown>;
+    return { ...branch, required: (branch.required as string[]).filter((key) => key !== "status"), properties };
+  };
+  const rule = withoutStatus(drafts("rule")[0]!);
+  const definitions = Object.assign({}, ...[...schemas.values()].map((schema) => schema.$defs ?? {}));
+  return {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    ...rule,
+    required: ["schema_version", ...rule.required, "verification", "effect", "approval"],
+    properties: {
+      schema_version: { const: ACTION_RULE_MODEL_DRAFT_VERSION },
+      ...rule.properties,
+      verification: withoutStatus(drafts("verification")[0]!),
+      effect: { oneOf: drafts("effect").map(withoutStatus) },
+      approval: withoutStatus(drafts("approval")[0]!),
+    },
+    ...(Object.keys(definitions).length ? { $defs: definitions } : {}),
+  };
+}
+
 function phaseTool(
   phase: PhaseName,
   compatibleFlatEnvelope = false,

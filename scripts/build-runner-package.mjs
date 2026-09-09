@@ -220,6 +220,7 @@ const publicDocs = [
   "fresh-developer-usability.md",
   "getting-started-own-database.md",
   "guided-onboarding.md",
+  "legacy-onboarding.md",
   "guarded-crud-writeback.md",
   "graduated-trust.md",
   "handler-helper.md",

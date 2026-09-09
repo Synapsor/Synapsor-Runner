@@ -62,6 +62,7 @@ export type BoundaryAuthoringChat = {
 
 export type BoundaryAuthoringChatFactory = (input: {
   modelLabel?: string;
+  modelSelectionOrigin?: "current session" | "only configured provider detected";
 }) => BoundaryAuthoringChat;
 
 type ChoiceInput = {
@@ -345,6 +346,7 @@ function choiceSummary(choice: BoundaryPromptChoice | undefined): string {
 
 export function createBoundaryAuthoringChat(input: {
   modelLabel?: string;
+  modelSelectionOrigin?: "current session" | "only configured provider detected";
   io?: AnalyticsShellIo;
   color?: boolean;
   streamLineDelayMs?: number;
@@ -1028,7 +1030,7 @@ export function createBoundaryAuthoringChat(input: {
     }
     if (choice.exactDetails) checkpoint(choice.exactDetails.summaryTitle ?? "READ REVIEW SUMMARY", request.context, "normal");
     retainExact();
-    if (verifiedCheckpointTitle && request.context.length) {
+    if (verifiedCheckpointTitle && request.context.length && !choice.exactDetails) {
       checkpoint(verifiedCheckpointTitle, request.context, "normal");
     }
     while (true) {
@@ -1062,22 +1064,17 @@ export function createBoundaryAuthoringChat(input: {
         retainExact();
         continue;
       }
-      if (selected === "details" && choice.exactDetails) {
+      if ((selected === "details" && choice.exactDetails) || selected === viewRunnerDetailsChoiceValue) {
         retainExact();
-        if (choice.exactDetails.sections) {
-          await browseReviewSections(exact!.title, [...choice.exactDetails.sections, {
+        if (exact?.sections) {
+          await browseReviewSections(exact.title, [...exact.sections, {
             id: "diagnostics", title: "Explanation diagnostics", lines: failure
               ? [`Category: ${failure.category}`, `Code: ${failure.code}`, `Retry possible: ${failure.retryable ? "yes" : "no"}`, failure.guidance,
                 ...(failure.mismatch ? [`Mismatch: ${failure.mismatch}`] : []),
                 "No correction was applied to authority. Explanation retry is optional; local details remain available."]
               : ["No explanation failure recorded for this pending review."],
           }]);
-        } else await showReviewDetails(latestDetails!.title, latestDetails!.lines);
-        continue;
-      }
-      if (selected === viewRunnerDetailsChoiceValue) {
-        retainExact();
-        if (latestDetails) await showReviewDetails(latestDetails.title, latestDetails.lines);
+        } else if (latestDetails) await showReviewDetails(latestDetails.title, latestDetails.lines);
         continue;
       }
       if (selected !== askModelChoiceValue) return selected;
@@ -1111,12 +1108,13 @@ export function createBoundaryAuthoringChat(input: {
   };
   const confirm = async (
     prompt: string,
-    options: { context?: string[]; defaultValue?: boolean } = {},
+    options: NonNullable<Parameters<BoundaryReviewInteractiveSession["confirm"]>[1]> = {},
     kind: "decision" | "permission" = isPermissionPrompt(prompt, options.context) ? "permission" : "decision",
   ): Promise<boolean | undefined> => {
     const permission = kind === "permission";
     if (permission) {
-      rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options.context), prompt]);
+      if (options.exactDetails) rememberDetails(options.exactDetails.title, options.exactDetails.lines);
+      else rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options.context), prompt]);
     } else await writeContext(options.context);
     const yesLabel = permission ? "Allow this exact step" : "Yes, continue";
     const noLabel = permission ? "Not now; keep authority unchanged" : "No; go back";
@@ -1127,6 +1125,7 @@ export function createBoundaryAuthoringChat(input: {
         ? permissionQuestion(prompt)
         : prompt,
       initialValue: options.defaultValue === true ? "yes" : "no",
+      ...(options.exactDetails ? { exactDetails: options.exactDetails } : {}),
       ...(/^Activate verified Action Boundary\b/u.test(prompt) ? { explainOnRequest: true } : {}),
       options: [
         {
@@ -1291,7 +1290,7 @@ export function createBoundaryAuthoringChat(input: {
   };
 
   const intro = [
-    `${theme.title("Boundary drafting")}${modelLabel ? theme.dim(` · ${modelLabel}`) : ""}`,
+    `${theme.title("Boundary drafting")}${modelLabel ? theme.dim(` · ${modelLabel}${input.modelSelectionOrigin ? ` (${input.modelSelectionOrigin})` : ""}`) : ""}`,
     "",
   ].flatMap((line) => wrapStyledTerminalLine(line, transcriptWidth()));
   writeTranscript(intro.join("\n"));

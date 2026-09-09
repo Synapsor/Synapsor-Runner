@@ -78,7 +78,9 @@ import {
   generateModelActionSuggestionSet,
 } from "./action-suggestion-model.js";
 import { compileActionRuleModelDraft, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
-import { readActionRuleAuthorityDraft } from "./action-rule-authority.js";
+import { buildActionRuleAuthorityDraft, readActionRuleAuthorityDraft, readActionRuleAuthorityActivation,
+  writeActionRuleAuthorityDraft } from "./action-rule-authority.js";
+import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
 import {
   generateModelActionRuleDraft,
   ActionAuthoringReadOnlyRequest,
@@ -104,6 +106,7 @@ import { readDelegationDraft } from "./delegation-setup.js";
 import { readBoundaryAuthoringResumeState, buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import { boundaryCommand } from "./guided-start.js";
+import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { initializeGuidedProject, readGuidedOnboardingState } from "./guided-project.js";
 import {
   compileExplorePlan,
@@ -883,7 +886,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 15_000);
 
-  it("keeps the boundary draft front door in the CLI register and offers Workbench second", async () => {
+  it("keeps standalone drafts in the governed CLI and offers external drafting and exact review", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-draft-front-door-"));
     const inspection = boundaryInspection();
     let output = "";
@@ -900,22 +903,18 @@ describe("boundary operator-plane CLI", () => {
       ], {
         boundarySchemaInspector: async () => inspection,
       })).resolves.toBe(0);
-      expect(output).toContain("State: disabled draft. Active Runner tools are unchanged.");
-      expect(output).toContain(
-        "Prepared the local Runner config, ledger, and MCP snippets automatically.",
-      );
-      expect(output).toContain("Next: review it in this terminal:");
+      expect(output).toContain("The disabled Boundary review is saved in the local control store.");
+      expect(output).toContain("No Read, Action or execution authority is active.");
+      expect(output).toContain("Structured authoring needs no TTY or model API");
+      expect(output).toContain("--export-draft");
+      expect(output).toContain("--dry-run --json");
       expect(output).toContain(`synapsor-runner boundary review --project-root '${root}'`);
-      expect(output).toContain("Visual alternative:");
-      expect(output).toContain(
-        `synapsor-runner ui --boundary-root '${path.join(root, "synapsor/generated")}' ` +
-        `--config '${path.join(root, "synapsor.runner.json")}' ` +
-        `--store '${path.join(root, ".synapsor/local.db")}' --open`,
-      );
       await expect(fs.access(path.join(root, "synapsor.runner.json"))).resolves.toBeUndefined();
       await expect(fs.access(path.join(root, ".synapsor/local.db"))).resolves.toBeUndefined();
       await expect(fs.access(path.join(root, ".synapsor/guided-onboarding.json")))
         .resolves.toBeUndefined();
+      expect((await readProjectReadAuthoring(root))?.selected).toBeDefined();
+      await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active.");
       expect(output).not.toContain(
         "Review it in the local Workbench; active Runner tools are unchanged.",
       );
@@ -1005,10 +1004,7 @@ describe("boundary operator-plane CLI", () => {
       ], {
         boundarySchemaInspector: async () => inspection,
       })).resolves.toBe(0);
-      const draft = JSON.parse(await fs.readFile(
-        path.join(root, "synapsor/generated/exploration-boundary.draft.json"),
-        "utf8",
-      ));
+      const draft = (await readProjectReadAuthoring(root))!.selected!.progress.candidate;
       expect(draft.organization_scope).toEqual({
         mode: "single_organization",
         organization_id: "internal-finance",
@@ -4194,6 +4190,50 @@ describe("boundary operator-plane CLI", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
+  it("revalidates completed semantic outcomes by their exact saved identities without drafting aliases", async () => {
+    const fixture = await staleSemanticRevalidationFixture();
+    const actionGenerator = vi.fn(async () => { throw new Error("Stale completed Actions must not be redrafted."); });
+    try {
+      await fixture.writeResume(["maintenance.complete_visit", "maintenance.close_visit"], ["Keep the first completed rule.", "Keep the second completed rule."]);
+      await expect(fixture.run(actionGenerator)).resolves.toBe(0);
+      expect(fixture.planner).not.toHaveBeenCalled();
+      expect(actionGenerator).not.toHaveBeenCalled();
+      await fixture.expectRetained(["maintenance.complete_visit", "maintenance.close_visit"]);
+    } finally { await fixture.dispose(); }
+  }, 20_000);
+
+  it("refuses a stale completed outcome with no exact reviewed anchor before changing disabled or active authority", async () => {
+    const fixture = await staleSemanticRevalidationFixture();
+    const actionGenerator = vi.fn(async () => { throw new Error("A missing anchor must not be redrafted."); });
+    try {
+      await fixture.writeResume(["maintenance.missing_visit"], ["Keep the missing rule."]);
+      await expect(fixture.run(actionGenerator)).resolves.toBe(0);
+      expect(fixture.planner).not.toHaveBeenCalled();
+      expect(actionGenerator).not.toHaveBeenCalled();
+      await fixture.expectRetained(["maintenance.complete_visit", "maintenance.close_visit"]);
+    } finally { await fixture.dispose(); }
+  }, 20_000);
+
+  it("recompiles completed outcomes once and drafts only the unfinished saved intent", async () => {
+    const fixture = await staleSemanticRevalidationFixture();
+    const actionGenerator = vi.fn(async (): Promise<ModelActionRuleDraftResult> => ({
+      state: "ready", compiled: fixture.compile("maintenance.create_followup", "maintenance.create_followup_approval"),
+      provider: "openai", model: "gpt-test", correction_used: false, clarification_count: 0,
+      authority_granted: false, source_database_changed: false,
+    }));
+    try {
+      await fixture.writeResume(["maintenance.complete_visit"], ["Keep the first completed rule.", "Create one follow-up request."]);
+      await expect(fixture.run(actionGenerator)).resolves.toBe(0);
+      expect(fixture.planner).not.toHaveBeenCalled();
+      expect(actionGenerator).toHaveBeenCalledOnce();
+      await fixture.expectRetained(["maintenance.complete_visit"]);
+      const recovered = await readActionRuleAuthorityDraft(fixture.root, "reviewed_staging_rules");
+      expect(recovered?.authority.rules.map((rule) => rule.rule.outcome).sort()).toEqual([
+        "maintenance.close_visit", "maintenance.complete_visit", "maintenance.create_followup",
+      ]);
+    } finally { await fixture.dispose(); }
+  }, 20_000);
+
   it.each([502, 2_000])("reuses exact active reads for a %i-character Action edit without remapping or changing Read authority", async (jobLength) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-action-only-reuse-"));
     const inspection = actionTargetInspection();
@@ -6178,6 +6218,65 @@ describe("boundary operator-plane CLI", () => {
       ]);
       const finalReadDigest = explorationBoundaryCandidateDigest((await loadBoundaryReviewContext(root)).candidate);
       expect(multiple?.authority.rules.every((entry) => entry.read_boundary_digest === finalReadDigest)).toBe(true);
+      if (posture === "supervised") {
+        await fs.writeFile(path.join(root, "synapsor.runner.json"), JSON.stringify({ version: 1, mode: "read_only",
+          sources: { local_postgres: { engine: "postgres", read_url_env: "DATABASE_URL", read_only: true } },
+          trusted_context: { provider: "environment" }, capabilities: [], storage: { sqlite_path: ".synapsor/local.db" } }));
+        const actionReview = await import("./verified-action-review.js");
+        const executionReviews: string[] = [];
+        const exactDiagnostics: unknown[] = [];
+        const defer = vi.spyOn(actionReview, "reviewSemanticSupervisedExecution").mockImplementation(async ({ outcome }) => {
+          executionReviews.push(outcome);
+          return { title: "Execution deferred", tone: "warning", lines: ["No execution enabled."] };
+        });
+        try {
+          for (const acceptAction of [false, true]) {
+            let exactActionReviews = 0;
+            let exactOptions: Parameters<NonNullable<BoundaryReviewInteractiveSession["confirmActivation"]>>[1];
+            const exactSession: BoundaryReviewInteractiveSession = { ...resumedSession,
+              chooseResource: async (_resources, _overview, options) => { exactDiagnostics.push(options); return undefined; },
+              chooseOption: async (title, choices, options) => title === "ACTIVATE READ BOUNDARY" ? "activate"
+                : resumedSession.chooseOption!(title, choices, options),
+              confirmActivation: async (prompt, options) => {
+                if (!prompt.includes("verified Action Boundary")) return true;
+                exactActionReviews++;
+                exactOptions = options;
+                return acceptAction;
+              },
+            };
+            const exactChat = testBoundaryAuthoringChat(exactSession);
+            vi.spyOn(exactChat, "streamRunner");
+            vi.spyOn(exactChat, "streamCheckpoint");
+            const code = await boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
+              exactSession, undefined, { startWithAgentJob: true,
+                modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
+                modelBoundaryJobPlanner: resumedPlanner, modelAuthoringNarrator: revisionNarrator,
+                actionProjectInspector: async () => inspection,
+                boundaryAuthoringChatFactory: () => exactChat,
+              });
+            exactDiagnostics.push(...vi.mocked(exactChat.streamRunner).mock.calls, ...vi.mocked(exactChat.streamCheckpoint).mock.calls,
+              ...vi.mocked(exactChat.runner).mock.calls, ...vi.mocked(exactChat.checkpoint).mock.calls);
+            expect(code, JSON.stringify(exactDiagnostics)).toBe(0);
+            expect(exactActionReviews).toBe(1);
+            expect(exactOptions?.exactDetails).toMatchObject({ title: "EXACT ACTION BOUNDARY", summaryTitle: "ACTION REVIEW" });
+            expect(exactOptions?.exactDetails?.sections?.map((section) => section.title)).toEqual([
+              "All reviewed outcomes", "Complete authority and fingerprints",
+            ]);
+            const exact = exactOptions?.exactDetails?.lines?.join("\n") ?? "";
+            for (const entry of multiple!.authority.rules) expect(exact).toContain(entry.rule.outcome);
+            expect(exact).toContain(multiple!.digest);
+            expect(exactOptions?.context?.join("\n")).toContain("This revision contains 3 outcomes; 1 retained.");
+            expect(exactOptions?.context?.join("\n")).not.toContain("\"schema_version\"");
+            if (!acceptAction) {
+              expect(executionReviews).toEqual([]);
+              await expect(fs.access(path.join(root, ".synapsor/action-rules/active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+            }
+          }
+          expect(executionReviews.sort(), JSON.stringify({ exactDiagnostics,
+            writeback: multiple!.authority.rules.map((rule) => rule.effect_envelope.writeback) }))
+            .toEqual(multiple!.authority.rules.map((entry) => entry.rule.outcome).sort());
+        } finally { defer.mockRestore(); }
+      }
       if (posture === "proposal_only") {
         let vocabularyReviewCount = 0;
         const vocabularySession: BoundaryReviewInteractiveSession = { ...resumedSession,
@@ -12166,14 +12265,10 @@ describe("boundary operator-plane CLI", () => {
         provider: "environment",
         tenant_binding: "tenant_id",
       });
-      const draft = JSON.parse(await fs.readFile(
-        path.join(root, "synapsor/generated/exploration-boundary.draft.json"),
-        "utf8",
-      ));
-      const baseline = JSON.parse(await fs.readFile(
-        path.join(root, ".synapsor/auto-boundary-policy-baseline.json"),
-        "utf8",
-      ));
+      const stored = (await readProjectReadAuthoring(root))!;
+      const authoring = stored.selected!;
+      const draft = authoring.progress.candidate;
+      const baseline = authoring.catalog!.policy_baseline;
       expect(draft.pack.resources).toEqual([
         expect.objectContaining({ id: "clinicdb.service_visits", tenant_key: "tenant_id" }),
       ]);
@@ -12183,9 +12278,11 @@ describe("boundary operator-plane CLI", () => {
 
       const second = await createSavedBoundary({
         projectRoot: root,
-        draft,
+        draft: authoring.draft,
         currentCandidate: draft,
+        currentProgress: authoring.progress,
         name: "visits_from_cli_draft",
+        expectedAuthoring: stored.bindings,
         resourceId: "clinicdb.service_visits",
         actor: "second-reviewer",
       });
@@ -12941,6 +13038,98 @@ function actionTargetInspection(): SchemaInspection {
   };
   inspection.tables.push(maintenance);
   return inspection;
+}
+
+async function staleSemanticRevalidationFixture() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-revalidate-semantic-actions-"));
+  const inspection = actionTargetInspection();
+  const build = buildAutoBoundary({ inspection, project: { root, package_manager: "npm", frameworks: ["node"],
+    schema_inputs: [], database_env_names: ["DATABASE_URL"] }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
+  const planner = vi.fn(async () => { throw new Error("Stale completed Actions must not be replanned."); });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const context = await loadBoundaryReviewContext(root);
+  const built = buildActionRuleAuthoringCatalog({ boundary: context.candidate, inspection });
+  const resource = built.catalog.resources.find((candidate) => candidate.name === "public.service_visits")!;
+  const status = structuredClone(resource.fields.find((field) => field.name === "status")!.type);
+  const maintenance = built.catalog.resources.find((candidate) => candidate.name === "public.maintenance_requests")!;
+  const requestKind = structuredClone(maintenance.fields.find((field) => field.name === "request_kind")!.type);
+  const estimatedHours = structuredClone(maintenance.fields.find((field) => field.name === "estimated_hours")!.type);
+  const compile = (outcome: string, approvalClass: string) => compileActionRuleModelDraft({
+    draft: {
+      schema_version: "synapsor.action-rule-model-draft.v1",
+      name: outcome,
+      outcome,
+      verification: { name: `${outcome}.verification`, resources: [{ binding: "visit", resource: "public.service_visits",
+        source: { kind: "subject_ref" }, fields: ["status"] }] },
+      effect: { name: `${outcome}.effect`, operation: "insert", target_resource: "public.maintenance_requests",
+        allowed_fields: [{ name: "request_kind", values: ["inspection_followup"] },
+          { name: "estimated_hours", minimum: 1, maximum: 8 }],
+        set: { request_kind: { kind: "literal", value: "inspection_followup", value_type: requestKind },
+          estimated_hours: { kind: "literal", value: 2, value_type: estimatedHours } }, writeback: "proposal_only" },
+      require: { kind: "compare", operator: "eq", left: { kind: "field", binding: "visit", field: "status" },
+        right: { kind: "literal", value: "scheduled", value_type: status } },
+      derive: {}, approval: { class_name: approvalClass, mode: "human", required_role: "maintenance_reviewer",
+        required_approvals: 1, shared_limits: [] }, ttl_seconds: 300,
+      review: { when: "The selected visit is scheduled.",
+        then: "Propose one inspection follow-up maintenance request for the selected visit.",
+        refused: ["The selected visit is not scheduled."], human_review: "One maintenance reviewer approves the proposal.",
+        examples: [{ kind: "eligible", scenario: "Scheduled visit", result: "Create a proposal" },
+          { kind: "ineligible", scenario: "Completed visit", result: "Refuse" }] },
+    }, builtCatalog: built, readBoundary: context.candidate,
+    readBoundaryDigest: explorationBoundaryCandidateDigest(context.candidate), activatedAt: "2026-09-08T12:00:00.000Z",
+  });
+  const compiled = [
+    compile("maintenance.complete_visit", "maintenance.complete_visit_approval"),
+    compile("maintenance.close_visit", "maintenance.close_visit_approval"),
+  ];
+  const stored = buildActionRuleAuthorityDraft({ name: "reviewed_staging_rules", action_boundary_name: "reviewed_staging_actions",
+    catalog: compiled[0]!.loaded.authority.catalog,
+    rules: compiled.flatMap((entry) => entry.loaded.authority.rules.map(({ activated_at: _activatedAt, ...rule }) => rule)),
+    approval_classes: compiled.flatMap((entry) => entry.loaded.authority.approval_classes),
+    reviews: compiled.map((entry) => ({ outcome: entry.rule.outcome, ...entry.review })), now: "2026-09-08T12:00:00.000Z" });
+  await writeActionRuleAuthorityDraft(root, stored);
+  const session: BoundaryReviewInteractiveSession = {
+    chooseResource: async () => undefined, editFieldTiers: async () => undefined,
+    promptText: async (prompt) => { throw new Error(`Business job must be retained: ${prompt}`); },
+    chooseOption: async (title) => {
+      if (title === "START BOUNDARY DRAFTING") return "resume";
+      if (title === "ACTIVATE READ BOUNDARY") return "finish";
+      if (title === "FINISH BOUNDARY REVIEW") return "finish";
+      throw new Error(`Unexpected completed-Action revalidation menu: ${title}`);
+    },
+    confirm: async () => true, confirmActivation: async () => false, confirmReviewedDisabled: async () => true,
+  };
+  const writeResume = async (completedOutcomes: string[], intents: string[]) => {
+    await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({
+      binding: { boundary_name: context.candidate.pack.name,
+        generation_lock_fingerprint: context.bundle.authority.generation_lock_fingerprint,
+        schema_fingerprint: `sha256:${"0".repeat(64)}`, role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint },
+      stage: "authority_review", jobIntent: "Keep the reviewed visit completion rules.", provider: "openai", model: "gpt-test",
+      action: { intent: "Keep the reviewed visit completion rules.", strategy: "rule_derived", intents,
+        completed_outcomes: completedOutcomes },
+    }));
+  };
+  const run = (modelActionRuleGenerator: (input: Parameters<typeof generateModelActionRuleDraft>[0]) => Promise<ModelActionRuleDraftResult>) =>
+    boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
+      session, undefined, { startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
+        modelBoundaryJobPlanner: planner, modelActionRuleGenerator,
+        modelAuthoringNarrator: async () => "Review the reconciled Read revision; nothing is active.",
+        actionProjectInspector: async () => inspection, boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(session),
+      });
+  const expectRetained = async (outcomes: string[]) => {
+    const current = await readActionRuleAuthorityDraft(root, stored.authority.name);
+    const normalized = (value: NonNullable<typeof current>) => ({
+      rules: value.authority.rules.filter((rule) => outcomes.includes(rule.rule.outcome)).map(({ activated_at: _activatedAt, ...rule }) => rule),
+      approval_classes: value.authority.approval_classes.filter((approval) => outcomes.includes(
+        value.authority.rules.find((rule) => rule.rule.approval_class === approval.name)?.rule.outcome ?? "")),
+      reviews: value.reviews.filter((review) => outcomes.includes(review.outcome)),
+    });
+    expect(normalized(current!)).toEqual(normalized(stored));
+    await expect(readActionRuleAuthorityActivation(root)).resolves.toBeUndefined();
+    await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+  };
+  return { root, compile, planner, writeResume, run, expectRetained,
+    dispose: () => fs.rm(root, { recursive: true, force: true }) };
 }
 
 function principalScopeInspection(options: { ambiguous?: boolean } = {}): SchemaInspection {

@@ -159,8 +159,10 @@ Runner redacts raw connection and driver messages from every MCP result format,
 resource-read error, and HTTP request error boundary, as well as structured
 operational logs. Recognized transient pool, PostgreSQL, MySQL, and network
 failures include a bounded `retry_after_ms`; unrelated database errors remain
-non-retryable. New `init` and `onboard db` configs write `result_format: 2` by
-default. Existing hand-written configs without `result_format` keep the legacy
+non-retryable. Compatibility `init` and explicitly selected legacy onboarding
+configs write `result_format: 2` by default. Fresh `onboard db` uses the reviewed
+four-tool system, not this per-capability setup path. Existing hand-written
+configs without `result_format` keep the legacy
 runtime default for compatibility; pass `--result-format v2` when serving an
 older config to force the v2 envelope, or `--result-format v1` for an older
 client that still depends on the legacy shape.

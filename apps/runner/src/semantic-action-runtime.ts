@@ -47,10 +47,11 @@ import {
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   createActiveActionRuleAuthorityLoader,
+  readActionRuleAuthorityActivation,
   type LoadedActiveActionRuleAuthorityV1,
 } from "./action-rule-authority.js";
 import { loadExploreAuditKey } from "./scoped-explore.js";
-import { assertRuntimeControlPolicyContinuity, borrowRuntimeControlPolicies, isControlPolicyFailure } from "./control-policy-store.js";
+import { assertRuntimeControlPolicyContinuity, borrowRuntimeControlPolicies } from "./control-policy-store.js";
 import { readOperatorExecutionConfig } from "./control-policy-execution.js";
 
 type SemanticFactSession = {
@@ -91,65 +92,60 @@ export type ActionRuleRuntimeServiceInput = {
 
 export async function createOptionalReadActionRuleRuntimeServices(
   input: ActionRuleRuntimeServiceInput,
-  onUnavailable?: (error: unknown) => void,
+  // Retain call-site compatibility; fatal errors must not announce a Read fallback.
+  _onUnavailable?: (error: unknown) => void,
 ): Promise<Omit<ActionRuleRuntimeServices, "authority"> | undefined> {
-  return withProjectRuntimeAdmission(input.projectRoot, async (root) => createAdmittedReadActionServices(await canonicalActionInput(input, root), onUnavailable));
+  return withProjectRuntimeAdmission(input.projectRoot, async (root) => createAdmittedReadActionServices(await canonicalActionInput(input, root)));
 }
 
-async function createAdmittedReadActionServices(input: ActionRuleRuntimeServiceInput,
-  onUnavailable?: (error: unknown) => void): Promise<Omit<ActionRuleRuntimeServices, "authority"> | undefined> {
+async function createAdmittedReadActionServices(input: ActionRuleRuntimeServiceInput): Promise<Omit<ActionRuleRuntimeServices, "authority"> | undefined> {
   // A wrong control store is a deployment failure, not optional Action absence.
   const projectRoot = path.resolve(input.config.action_rules?.project_root ?? input.projectRoot);
   const policyStore = await borrowRuntimeControlPolicies(projectRoot, input.store);
-  try {
-    const initial = await createOptionalActionRuleRuntimeServices(input);
-    if (initial) return initial;
-    const referenceContext = await actionReferenceContext(input, path.resolve(input.config.action_rules?.project_root ?? input.projectRoot));
-    const inactive = createInactiveSemanticActionRuntime();
-    // Keep the same client usable when its first Action is activated later.
-    // Reuse the normal authority loader and validators; absence grants nothing.
-    const catalogSession = input.catalogSession ?? new ScopedCatalogSession();
-    const load = createActiveActionRuleAuthorityLoader(projectRoot, policyStore);
-    const authorityLoader = (policyStore ? undefined : input.authorityLoader) ?? (() => load({ dependency_check: "report" }));
-    let ready: ActionRuleRuntimeServices | undefined;
-    let pending: Promise<ActionRuleRuntimeServices | undefined> | undefined;
-    const current = async () => {
+  const initial = await createOptionalActionRuleRuntimeServices(input);
+  if (initial) return initial;
+  const referenceContext = await actionReferenceContext(input, path.resolve(input.config.action_rules?.project_root ?? input.projectRoot));
+  const inactive = createInactiveSemanticActionRuntime();
+  // Keep the same client usable when its first Action is activated later.
+  // Reuse the normal authority loader and validators; absence grants nothing.
+  const catalogSession = input.catalogSession ?? new ScopedCatalogSession();
+  const load = createActiveActionRuleAuthorityLoader(projectRoot, policyStore);
+  const authorityLoader = (policyStore ? undefined : input.authorityLoader) ?? (() => load({ dependency_check: "report" }));
+  let ready: ActionRuleRuntimeServices | undefined;
+  let pending: Promise<ActionRuleRuntimeServices | undefined> | undefined;
+  const current = async () => {
+    await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+    if (ready) {
+      try { await authorityLoader(); return ready; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT"
+          || await readActionRuleAuthorityActivation(projectRoot, policyStore) !== undefined) throw error;
+        ready = undefined;
+        return undefined;
+      }
+    }
+    pending ??= createOptionalActionRuleRuntimeServices({ ...input, authorityLoader, key: referenceContext.key, catalogSession });
+    try {
+      ready = await pending;
       await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
-      if (ready) {
-        try { await authorityLoader(); return ready; }
-        catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-          ready = undefined;
-          return undefined;
-        }
-      }
-      pending ??= createOptionalActionRuleRuntimeServices({ ...input, authorityLoader, key: referenceContext.key, catalogSession });
-      try {
-        ready = await pending;
-        await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
-        return ready;
-      }
-      finally { pending = undefined; }
-    };
-    return admitActionServices({
-      ...referenceContext,
-      semanticActions: { ...inactive, callTool: async (name, args) =>
-        ((await current())?.semanticActions ?? inactive).callTool(name, args) },
-      subjectReferences: {
-        observationRequirement: async (resource) => (await current())?.subjectReferences.observationRequirement(resource),
-        issue: async (request) => (await current())?.subjectReferences.issue(request) ?? [],
-        claim: async (request) => {
-          const services = await current();
-          if (!services) throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "No Action authority is active.");
-          return services.subjectReferences.claim(request);
-        },
+      return ready;
+    }
+    finally { pending = undefined; }
+  };
+  return admitActionServices({
+    ...referenceContext,
+    semanticActions: { ...inactive, callTool: async (name, args) =>
+      ((await current())?.semanticActions ?? inactive).callTool(name, args) },
+    subjectReferences: {
+      observationRequirement: async (resource) => (await current())?.subjectReferences.observationRequirement(resource),
+      issue: async (request) => (await current())?.subjectReferences.issue(request) ?? [],
+      claim: async (request) => {
+        const services = await current();
+        if (!services) throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "No Action authority is active.");
+        return services.subjectReferences.claim(request);
       },
-    }, projectRoot);
-  } catch (error) {
-    if (isControlPolicyFailure(error) || input.config.action_rules?.owner_delegation) throw error;
-    onUnavailable?.(error);
-    return undefined;
-  }
+    },
+  }, projectRoot);
 }
 
 export async function createOptionalActionRuleRuntimeServices(
@@ -180,7 +176,9 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
   try {
     authority = await authorityLoader();
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    // A missing Read/revision beneath a persisted activation is not inactivity.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT"
+      && await readActionRuleAuthorityActivation(projectRoot, policyStore) === undefined) return undefined;
     throw error;
   }
   const { key, deployment_scope: deploymentScope, workflow_session_id: workflowSessionId } = await actionReferenceContext(input, projectRoot);

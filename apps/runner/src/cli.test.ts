@@ -356,7 +356,7 @@ describe("runner cli", () => {
     });
   });
 
-  it("keeps fresh selector-free start interactive and established answers routing noninteractive", async () => {
+  it("requires explicit legacy compatibility for old selector and answers routing", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-start-routing-"));
     const answersPath = path.join(tempDir, "answers.json");
     await fs.writeFile(answersPath, JSON.stringify({
@@ -375,13 +375,14 @@ describe("runner cli", () => {
       return true;
     });
 
-    await expect(main(["start", "--from-env", "DATABASE_URL"])).rejects.toThrow(
-      /Non-interactive own-database setup needs all review decisions[\s\S]*--table <schema\.table>[\s\S]*--mode read_only\|shadow\|review[\s\S]*--tenant-key <column> or --single-tenant-dev/,
+    await expect(main(["start", "--from-env", "DATABASE_URL", "--table", "public.invoices"])).rejects.toThrow(
+      /--legacy-capabilities/,
     );
     const existingOutput = path.join(tempDir, "existing.runner.json");
     await fs.writeFile(existingOutput, "{}\n", "utf8");
     await expect(main([
       "start",
+      "--legacy-capabilities",
       "--from-env",
       "DATABASE_URL",
       "--table",
@@ -393,6 +394,7 @@ describe("runner cli", () => {
     );
     await expect(main([
       "start",
+      "--legacy-capabilities",
       "--from-env",
       "DATABASE_URL",
       "--table",
@@ -408,6 +410,7 @@ describe("runner cli", () => {
     );
     await expect(main([
       "start",
+      "--legacy-capabilities",
       "--from-env",
       "DATABASE_URL",
       "--table",
@@ -431,6 +434,7 @@ describe("runner cli", () => {
     );
     await expect(main([
       "start",
+      "--legacy-capabilities",
       "--from-env",
       "DATABASE_URL",
       "--answers",
@@ -441,6 +445,25 @@ describe("runner cli", () => {
     ])).resolves.toBe(0);
     expect(output.join("")).toContain('"mode": "read_only"');
     expect(output.join("")).not.toContain("Opening the local first-safe-action workbench");
+  });
+
+  it.each(["start", "onboard"])("returns one JSON failure for invalid %s structured input without legacy fallback", async (command) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-structured-error-"));
+    const draft = path.join(root, "invalid-draft.json");
+    await fs.writeFile(draft, "{}\n");
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      await expect(runCliProcess([command, ...(command === "onboard" ? ["db"] : []), "--project-root", root,
+        "--draft", draft, "--dry-run", "--json"])).resolves.toBe(2);
+      const rendered = output.mock.calls.map(([chunk]) => String(chunk)).join("");
+      expect(JSON.parse(rendered)).toMatchObject({ ok: false, code: "STRUCTURED_DRAFT_VALIDATION_FAILED",
+        message: "structured boundary draft must use synapsor.boundary-draft-input.v1.",
+        source_database_changed: false, active_authority_changed: false });
+      expect(rendered).not.toMatch(/choose one table|own-database onboarding|legacy capability compatibility/u);
+      expect(await fs.readFile(draft, "utf8")).toBe("{}\n");
+      expect(await fs.readdir(root)).toEqual(["invalid-draft.json"]);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
   it("keeps a table selector interactive unless automation is explicit", () => {
@@ -500,6 +523,7 @@ describe("runner cli", () => {
       await expect(main([
         "onboard",
         "db",
+        "--legacy-capabilities",
         "--inspection-json",
         inspectionPath,
         "--from-env",
@@ -520,6 +544,7 @@ describe("runner cli", () => {
       await expect(main([
         "onboard",
         "db",
+        "--legacy-capabilities",
         "--inspection-json",
         inspectionPath,
         "--from-env",
@@ -633,7 +658,7 @@ describe("runner cli", () => {
     expect(output.join("")).toContain("synapsor-runner try");
     expect(output.join("")).toContain("start --from-env DATABASE_URL");
     expect(output.join("")).toContain("interactive guided first run");
-    expect(output.join("")).toContain("scriptable one-command artifact generator");
+    expect(output.join("")).toContain("typed --export-draft/--draft authoring without a model API");
     expect(output.join("")).toContain("inspect");
     expect(output.join("")).toContain("start");
     expect(output.join("")).toContain("up");
@@ -933,7 +958,9 @@ describe("runner cli", () => {
 
     output.length = 0;
     await expect(main(["action", "status", "--project-root", tempDir, "--json"])).resolves.toBe(0);
-    expect(JSON.parse(output.join(""))).toMatchObject({ ok: true, draft: { state: "disabled_draft" }, draft_matches_active: false });
+    expect(JSON.parse(output.join(""))).toMatchObject({ ok: true, draft: { state: "disabled_draft" }, draft_matches_active: false,
+      readiness: { read: "inactive", semantic_actions: "inactive", legacy_actions: "inactive",
+        semantic_outcomes: [], worker: "not_checked" } });
   });
 
   it("prints the concise quick demo without requiring Docker in noninteractive mode", async () => {
@@ -1078,7 +1105,7 @@ describe("runner cli", () => {
     }
   }, 15000);
 
-  it("routes try --from-env into the real read-only onboarding path without synthetic fallback", async () => {
+  it("routes explicit legacy try --from-env into real read-only onboarding without synthetic fallback", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-try-own-data-"));
     const oldCwd = process.cwd();
     const inspectionPath = path.join(tempDir, "schema-inspection.json");
@@ -1122,7 +1149,7 @@ describe("runner cli", () => {
     try {
       process.chdir(tempDir);
       await expect(main([
-        "try", "--prove", "--from-env", "DATABASE_URL", "--inspection-json", inspectionPath,
+        "try", "--legacy-capabilities", "--prove", "--from-env", "DATABASE_URL", "--inspection-json", inspectionPath,
         "--table", "tickets", "--tenant-key", "tenant_id", "--visible-columns", "id,tenant_id,status", "--yes",
       ])).resolves.toBe(1);
       const generated = await readGeneratedOnboarding(path.join(tempDir, "synapsor.runner.json"));
@@ -2709,6 +2736,7 @@ END
       await expect(main([
         "onboard",
         "db",
+        "--legacy-capabilities",
         "--answers",
         answersPath,
         "--yes",

@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivatedExplorationBoundary } from "./auto-boundary.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { reviewVerifiedActionAuthority } from "./boundary-commands.js";
-import { reviewSemanticSupervisedExecution } from "./verified-action-review.js";
+import { reviewSemanticSupervisedExecution, verifiedActionAuthorityDetails } from "./verified-action-review.js";
 import * as semanticDeployment from "./semantic-action-deployment.js";
 import { readPausedExecutionSetup } from "./semantic-execution-setup.js";
 import { runActionControlPlane, type ActionControlPrompter } from "./action-tui.js";
@@ -81,6 +81,14 @@ describe("semantic Action Rule authority persistence", () => {
     const active = await activateActionRuleAuthority({ projectRoot: root, name: first.authority.name,
       expected_digest: first.digest, confirmation: `ACTIVATE ${first.digest}`, actor: "reviewer" });
     const replacement = mergeActionRuleAuthorityDraft({ existing: active, incoming: draftFor(names.slice(2)) });
+    const beforeDetails = structuredClone(replacement);
+    const exactDetails = verifiedActionAuthorityDetails(replacement, 80);
+    for (const outcome of names) expect(exactDetails).toContain(`OUTCOME  ${outcome}`);
+    const codeStart = exactDetails.indexOf("```json");
+    expect(codeStart).toBeGreaterThan(0);
+    expect(JSON.parse(exactDetails.slice(codeStart + 1, exactDetails.lastIndexOf("```")).join("\n"))).toEqual(replacement.authority);
+    expect(exactDetails).toContain(`Authority digest: ${replacement.digest}`);
+    expect(replacement).toEqual(beforeDetails);
     await writeActionRuleAuthorityDraft(root, replacement);
     expect((await readActionRuleAuthorityActivation(root))?.digest).toBe(active.digest);
     expect((await readActionRuleAuthorityDraft(root, replacement.authority.name))?.reviews.map((review) => review.outcome).sort()).toEqual([...names].sort());
@@ -847,6 +855,17 @@ describe("semantic Action Rule authority persistence", () => {
     });
     const config = JSON.parse(await fs.readFile(path.join(root, "synapsor.actions.runner.json"), "utf8"));
     expect(config.supervised_worker.outcomes).toHaveLength(1);
+    const reviewMenu = vi.fn().mockResolvedValue("back");
+    await reviewVerifiedActionAuthority({
+      projectRoot: root,
+      boundaryName: readBoundary.pack.name,
+      session: { ...session, chooseOption: reviewMenu },
+      active,
+      env: { BILLING_WRITER_URL: "postgresql://secret-writer-url" },
+    });
+    expect(JSON.stringify(reviewMenu.mock.calls)).toContain("Execution enabled");
+    expect(JSON.stringify(reviewMenu.mock.calls)).not.toContain("Worker on");
+    expect(confirmations).toHaveLength(1);
   });
 
   it.each(["unconfirmed", "committed", "cancelled"] as const)("keeps the execution review truthful after a %s save and pause", async (state) => {

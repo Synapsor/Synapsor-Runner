@@ -54,6 +54,11 @@ want them.
 Choose OpenAI, Anthropic, or a local tool-capable model. Structural metadata and
 business answers leave the machine only after explicit egress consent.
 
+`onboard db --from-env DATABASE_URL` enters the same Read/Action workflow.
+For scripts or an external development assistant, the structured draft path
+validates disabled revisions without a terminal or a second model session.
+It does not activate authority; exact operator review remains separate.
+
 See [Database To First Safe Tool](docs/guided-onboarding.md).
 
 ### Compile From Representative Jobs
@@ -215,23 +220,8 @@ still require their own reviewed authority. Existing per-capability deployments
 remain a compatibility path; mixed Action Rule deployments expose those tools
 only with explicit `action_rules.legacy_tools: "enabled"`.
 
-Explicit per-action compatibility remains:
-
-```bash
-synapsor-runner start \
-  --action plan_credit \
-  --description "Propose one reviewed customer plan credit" \
-  --based-on support.inspect_customer
-```
-
-After activation, the agent can create an exact proposal but cannot approve or
-apply it:
-
-```text
-Proposal  support.propose_plan_credit on CUS-3001
-Effect    plan_credit_cents: 0 -> 2500
-Database  unchanged until an outside-model decision
-```
+Older per-action integrations are documented separately in
+[Legacy Onboarding](docs/legacy-onboarding.md); they are not the default setup.
 
 Auto-approval does not mean auto-apply: the exact contract digest and deployment both opt into supervised execution.
 External notifications are disabled and quiet by default. A webhook response cannot approve or apply.

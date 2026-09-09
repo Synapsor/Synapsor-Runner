@@ -212,8 +212,12 @@ needed after review. It does not write credential values. If an established
 Runner config already exists, `boundary draft` preserves it rather than
 replacing it.
 
-Established `--table`, `--answers`, `onboard db`, `--mode`, JSON, and
-noninteractive routes keep their previous one-object behavior.
+Fresh `onboard db` and `start` use this same Read/Action system. Scriptable
+structured drafting is documented in [Guided Onboarding](guided-onboarding.md);
+it does not require a provider or grant active authority. Legacy one-object
+selectors do not silently select a different permission system. Their explicit
+compatibility route and remaining engine differences are listed in
+[Legacy Onboarding](legacy-onboarding.md).
 
 ## What Auto Boundary Reads
 

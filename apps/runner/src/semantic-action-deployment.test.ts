@@ -1,0 +1,279 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { resolveActivatedActionRule, type ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
+import { loadRuntimeConfigFromFile, resolveRuntimeConfig, resolveSemanticSupervisedWorkerEligibility } from "@synapsor-runner/mcp-server";
+import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
+import type { ActionRuleSpecV1, DerivedEffectEnvelopeSpecV1, RuleVerificationBoundarySpecV1 } from "@synapsor/spec";
+import { activateSemanticActionRuntime, restoreReviewedSemanticReadScope, previewSemanticSupervisedExecution,
+  enableSemanticSupervisedExecution, executionReReviewOutcomesForActionActivation, semanticExecutionConfirmation } from "./semantic-action-deployment.js";
+import { buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, loadActiveActionRuleAuthority,
+  type ActionRuleAuthorityActivationV1, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
+import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
+import { readPostActivationReadiness } from "./post-activation-ask.js";
+
+const roots: string[] = [];
+afterEach(async () => {
+  for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+});
+
+describe("mixed-state semantic Read scope repair", () => {
+  it("leaves an Action config without active semantic authority untouched", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-mixed-scope-")); roots.push(root);
+    const configPath = path.join(root, "synapsor.actions.runner.json");
+    const config = `${JSON.stringify({ version: 1, action_rules: { project_root: root },
+      capabilities: [], sources: {}, supervised_worker: { enabled: false } }, null, 2)}\n`;
+    await fs.writeFile(configPath, config);
+    await expect(restoreReviewedSemanticReadScope(root)).resolves.toBe(false);
+    expect(await fs.readFile(configPath, "utf8")).toBe(config);
+    await expect(fs.stat(path.join(root, ".synapsor/action-rules/active.json"))).rejects.toHaveProperty("code", "ENOENT");
+  });
+
+  it("repairs only already-reviewed RLS wiring and reports human proposal-only authority without worker claims", async () => {
+    const fixture = await activeProject();
+    const before = await Promise.all(fixture.authorityPaths.map((file) => fs.readFile(file, "utf8")));
+    expect(await restoreReviewedSemanticReadScope(fixture.root)).toBe(true);
+    expect(JSON.parse(await fs.readFile(fixture.configPath, "utf8")).sources.local_postgres.database_scope)
+      .toEqual({ mode: "postgres_rls", tenant_setting: "synapsor.tenant_id" });
+    expect(await restoreReviewedSemanticReadScope(fixture.root)).toBe(false);
+    expect(await Promise.all(fixture.authorityPaths.map((file) => fs.readFile(file, "utf8")))).toEqual(before);
+    expect(await readPostActivationReadiness(fixture.root)).toEqual({
+      read: "active", legacy_actions: "inactive", semantic_actions: "active", worker: "not_checked",
+      semantic_outcomes: [{ outcome: "billing.pause_notifications", approval_mode: "human", execution_enabled: false }],
+    });
+  });
+
+  it.each(["malformed", "digest", "missing_immutable", "missing_read", "stale_read"])("does not mistake %s active authority for absence", async (mode) => {
+    const fixture = await activeProject();
+    if (mode === "malformed") await fs.writeFile(fixture.activePath, "{");
+    if (mode === "digest") {
+      const active = JSON.parse(await fs.readFile(fixture.activePath, "utf8"));
+      active.authority.rules[0].rule.ttl_seconds++;
+      await fs.writeFile(fixture.activePath, JSON.stringify(active));
+    }
+    if (mode === "missing_immutable") await fs.rm(fixture.revisionPath);
+    if (mode === "missing_read") await fs.rm(fixture.readPath);
+    if (mode === "stale_read") {
+      const activeRead = JSON.parse(await fs.readFile(fixture.readPath, "utf8"));
+      activeRead.boundaries[0].activation.digest = `sha256:${"c".repeat(64)}`;
+      await fs.writeFile(fixture.readPath, JSON.stringify(activeRead));
+    }
+    const beforeConfig = await fs.readFile(fixture.configPath, "utf8");
+    const beforeAuthority = await fs.readFile(fixture.activePath, "utf8");
+    await expect(restoreReviewedSemanticReadScope(fixture.root)).rejects.toThrow();
+    await expect(readPostActivationReadiness(fixture.root)).rejects.toThrow();
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(beforeConfig);
+    expect(await fs.readFile(fixture.activePath, "utf8")).toBe(beforeAuthority);
+  });
+
+  it("does not restore revoked semantic authority from its retained config or immutable revision", async () => {
+    const fixture = await activeProject();
+    await fs.rm(fixture.activePath);
+    const before = await fs.readFile(fixture.configPath, "utf8");
+    expect(await restoreReviewedSemanticReadScope(fixture.root)).toBe(false);
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(before);
+    expect((await readPostActivationReadiness(fixture.root)).semantic_actions).toBe("inactive");
+    await expect(fs.stat(fixture.activePath)).rejects.toHaveProperty("code", "ENOENT");
+    expect((await fs.stat(fixture.revisionPath)).isFile()).toBe(true);
+  });
+
+  it.each([false, true])("reports policy approval separately from exact execution binding (matches=%s)", async (matches) => {
+    const fixture = await activeProject("policy");
+    const active = JSON.parse(await fs.readFile(fixture.activePath, "utf8"));
+    const config = JSON.parse(await fs.readFile(fixture.configPath, "utf8"));
+    config.supervised_worker = { enabled: true, capabilities: [], outcomes: [{ outcome: "billing.pause_notifications",
+      action_boundary_digest: matches ? active.authority.action_boundary.digest : `sha256:${"f".repeat(64)}`,
+      mode: "supervised_worker", write_url_env: "PRIVATE_WRITER_ENV", concurrency: 1, queue_limit: 100,
+      lease_seconds: 300, max_attempts: 5, proposal_ttl_seconds: 3600, rate_limit: { executions: 10, window_seconds: 60 } }] };
+    await fs.writeFile(fixture.configPath, JSON.stringify(config));
+    const before = await fs.readFile(fixture.configPath, "utf8");
+    const readiness = await readPostActivationReadiness(fixture.root);
+    expect(readiness.semantic_outcomes).toEqual([
+      { outcome: "billing.pause_notifications", approval_mode: "policy", execution_enabled: matches },
+    ]);
+    expect(readiness.worker).toBe("not_checked");
+    expect(JSON.stringify(readiness)).not.toContain("PRIVATE_WRITER_ENV");
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(before);
+  });
+});
+
+describe("complete Action Boundary execution re-review", () => {
+  it("identifies only current enabled outcomes retained by a replacement bundle", () => {
+    const oldDigest = `sha256:${"a".repeat(64)}` as const;
+    const nextDigest = `sha256:${"b".repeat(64)}` as const;
+    const active = { authority: { action_boundary: { digest: oldDigest } } } as ActionRuleAuthorityActivationV1;
+    const draft = { authority: { action_boundary: { digest: nextDigest, rules: [
+      { outcome: "warehouse.correct_quantity", writeback: { mode: "direct_sql", supervised_worker: "allowed" } },
+      { outcome: "warehouse.new_availability", writeback: { mode: "direct_sql", supervised_worker: "allowed" } },
+      { outcome: "warehouse.proposal_only", writeback: { mode: "none" } },
+    ] } } } as ActionRuleAuthorityDraftV1;
+    const policies = [{ outcome: "warehouse.correct_quantity", action_boundary_digest: oldDigest },
+      { outcome: "warehouse.removed", action_boundary_digest: oldDigest },
+      { outcome: "warehouse.correct_quantity", action_boundary_digest: nextDigest }];
+
+    expect(executionReReviewOutcomesForActionActivation({ active, draft,
+      execution: { enabled: true, config_path: "synapsor.actions.runner.json", policies: policies as never } }))
+      .toEqual(["warehouse.correct_quantity"]);
+    expect(executionReReviewOutcomesForActionActivation({ active, draft,
+      execution: { enabled: false, config_path: "synapsor.actions.runner.json", policies: policies as never } })).toEqual([]);
+  });
+});
+
+describe("separate exact semantic writers", () => {
+  it("preserves the first enabled outcome after missing credentials, declined consent, posture drift, or stale config", async () => {
+    const fixture = await activeProject("human", true);
+    const env = { FIRST_WRITER_URL: "postgresql://first-test-writer", SECOND_WRITER_URL: "postgresql://second-test-writer" };
+    await enableWriter(fixture.root, "billing.pause_notifications", "FIRST_WRITER_URL", writerInspection("first", "status"), env);
+    const before = await fs.readFile(fixture.configPath, "utf8");
+    const inspect = vi.fn(async () => writerInspection("second", "priority"));
+    const input = { projectRoot: fixture.root, outcome: "billing.set_priority", writeUrlEnv: "SECOND_WRITER_URL",
+      profile: "staging" as const, workerIdentity: "semantic_action_worker", env, inspect };
+    await expect(previewSemanticSupervisedExecution({ ...input, env: {} })).rejects.toThrow(/WRITER_URL_MISSING/);
+    expect(inspect).not.toHaveBeenCalled();
+    const preview = await previewSemanticSupervisedExecution(input);
+    const enable = { ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
+      expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
+      confirmation: semanticExecutionConfirmation(preview) };
+    await expect(enableSemanticSupervisedExecution({ ...enable, confirmation: "declined" })).rejects.toThrow(/CONFIRMATION_REQUIRED/);
+    await expect(enableSemanticSupervisedExecution({ ...enable, inspect: async () => writerInspection("changed-role", "priority") }))
+      .rejects.toThrow(/WRITER_POSTURE_CHANGED/);
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(before);
+    const changed = JSON.parse(before);
+    changed.sources.local_postgres.statement_timeout_ms = 1234;
+    await fs.writeFile(fixture.configPath, JSON.stringify(changed));
+    await expect(enableSemanticSupervisedExecution(enable)).rejects.toThrow(/CONFIG_CHANGED/);
+    expect(JSON.parse(await fs.readFile(fixture.configPath, "utf8"))).toEqual(changed);
+  });
+
+  it("enables two outcomes without replacing the first writer or widening either writer's columns", async () => {
+    const fixture = await activeProject("human", true);
+    const env = { FIRST_WRITER_URL: "postgresql://first-test-writer", SECOND_WRITER_URL: "postgresql://second-test-writer" };
+    const authorityBefore = await Promise.all(fixture.authorityPaths.map((file) => fs.readFile(file, "utf8")));
+    const first = await enableWriter(fixture.root, "billing.pause_notifications", "FIRST_WRITER_URL", writerInspection("first", "status"), env);
+    const firstConfig = JSON.parse(await fs.readFile(fixture.configPath, "utf8"));
+    const second = await enableWriter(fixture.root, "billing.set_priority", "SECOND_WRITER_URL", writerInspection("second", "priority"), env);
+    const config = resolveRuntimeConfig(await loadRuntimeConfigFromFile(fixture.configPath));
+    expect(config.sources!.local_postgres).toEqual(firstConfig.sources.local_postgres);
+    expect(config.supervised_worker!.outcomes).toEqual([first.policy, second.policy]);
+    const { registry } = await loadActiveActionRuleAuthority(fixture.root);
+    for (const [outcome, policy, inspection] of [
+      ["billing.pause_notifications", first.policy, writerInspection("first", "status")],
+      ["billing.set_priority", second.policy, writerInspection("second", "priority")],
+    ] as const) {
+      const activated = resolveActivatedActionRule(registry, outcome);
+      expect(resolveSemanticSupervisedWorkerEligibility(config, activated, { workerIdentity: "semantic_action_worker" }).eligible).toBe(true);
+      expect(assessSemanticSupervisedWriterPosture(config, policy, registry, inspection).ok).toBe(true);
+      inspection.tables[0]!.role_posture!.column_privileges!.update!.push(outcome === "billing.set_priority" ? "status" : "priority");
+      expect(assessSemanticSupervisedWriterPosture(config, policy, registry, inspection).reasons).toContain("writer_excess_column_privilege");
+    }
+    expect(await Promise.all(fixture.authorityPaths.map((file) => fs.readFile(file, "utf8")))).toEqual(authorityBefore);
+    expect(JSON.stringify(config)).not.toContain("postgresql://");
+  });
+});
+
+async function enableWriter(root: string, outcome: string, writeUrlEnv: string, inspection: SchemaInspection, env: NodeJS.ProcessEnv) {
+  const input = { projectRoot: root, outcome, profile: "staging" as const, writeUrlEnv,
+    workerIdentity: "semantic_action_worker", env, inspect: async () => inspection };
+  const preview = await previewSemanticSupervisedExecution(input);
+  return enableSemanticSupervisedExecution({ ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
+    expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
+    confirmation: semanticExecutionConfirmation(preview) });
+}
+
+function writerInspection(role: string, field: string): SchemaInspection {
+  return { engine: "postgres", server_version: "PostgreSQL 16", current_user: role, inspected_at: "2026-09-08T00:00:00.000Z",
+    schemas: ["billing"], warnings: [], role_posture: { verified: true, superuser: false, bypass_rls: false,
+      read_only: false, writable_relations: ["billing.preferences"], owned_relations: [], reasons: [] },
+    tables: [{ schema: "billing", name: "preferences", row_level_security: false,
+      role_posture: { privileges: { select: true, insert: false, update: false, delete: false, truncate: false, references: false, trigger: false },
+        column_privileges: { update: [field, "version"] } } } as SchemaInspection["tables"][number]],
+  };
+}
+
+async function activeProject(approvalMode: "human" | "policy" = "human", twoOutcomes = false) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-mixed-active-")); roots.push(root);
+  const lock = `sha256:${"a".repeat(64)}` as const;
+  const stringType = { kind: "string", max_length: 64, comparison: "exact" } as const;
+  const stateType = { ...stringType, enum: ["active", "paused"] };
+  const catalog: ActionRuleCatalogV1 = {
+    schema_version: "synapsor.action-rule-catalog.v1", generation_lock_fingerprint: lock,
+    resources: [{ name: "billing.preferences", source: "local_postgres", engine: "postgres", schema: "billing", table: "preferences",
+      primary_key: "preference_id", tenant_key: "account_id", principal_scope_key: "principal_id", version_field: "version",
+      fields: ["preference_id", "account_id", "principal_id"].map((name) => ({ name, type: stringType, nullable: false }))
+        .concat([{ name: "status", type: stateType, nullable: false }]) }], relationships: [],
+  };
+  catalog.resources[0]!.fields.push({ name: "version", type: { kind: "integer" }, nullable: false });
+  if (twoOutcomes) catalog.resources[0]!.fields.push({ name: "priority", type: { kind: "integer" }, nullable: false });
+  const verification: RuleVerificationBoundarySpecV1 = {
+    schema_version: "synapsor.verification-boundary.v1", name: "billing.pause_verification", source: "local_postgres",
+    context: "trusted_context", generation_lock_fingerprint: lock,
+    resources: [{ binding: "preference", resource: "billing.preferences", source: { kind: "subject_ref" },
+      primary_key: "preference_id", version_field: "version", fields: catalog.resources[0]!.fields,
+      scope: { mode: "columns", tenant_field: "account_id", principal_field: "principal_id" },
+      cardinality: "one", max_rows: 1, overflow: "unsupported", lock: "for_update" }],
+    lock_order: ["preference"], transaction: { isolation: "repeatable_read", timezone: "UTC" },
+  };
+  const envelope: DerivedEffectEnvelopeSpecV1 = {
+    schema_version: "synapsor.derived-effect-envelope.v1", name: "billing.pause_effect", source: "local_postgres",
+    operation: "update", target_resource: "billing.preferences", target_binding: "preference", primary_key: "preference_id",
+    tenant_key: "account_id", principal_scope_key: "principal_id", conflict_key: "version", max_rows: 1,
+    allowed_fields: [{ name: "status", type: stateType, values: ["paused"] }],
+    version_advance: { column: "version", strategy: "integer_increment" }, approval_classes: ["billing.standard_change"],
+    writeback: { mode: "direct_sql", supervised_worker: "allowed" },
+  };
+  const rule: ActionRuleSpecV1 = {
+    schema_version: "synapsor.action-rule.v1", name: "billing.pause_notifications", outcome: "billing.pause_notifications",
+    context: "trusted_context", source: "local_postgres", verification_boundary_ref: verification.name, effect_envelope_ref: envelope.name,
+    subjects: [{ binding: "preference", resource: "billing.preferences", input: "opaque_subject_ref" }],
+    require: { kind: "compare", operator: "eq", left: { kind: "field", binding: "preference", field: "status" },
+      right: { kind: "literal", value: "active", value_type: stateType } }, derive: {},
+    effect: { operation: "update", target_resource: "billing.preferences", target_binding: "preference",
+      set: { status: { kind: "literal", value: "paused", value_type: stateType } } },
+    approval_class: "billing.standard_change", ttl_seconds: 300,
+  };
+  const read = { schema_version: "synapsor.exploration-boundary.v1", activation: "reviewed",
+    deployment_profile: "staging", source: "local_postgres", compiler_version: "test", spec_version: "test",
+    trusted_context: { provider: "environment", tenant_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
+    generation_lock_fingerprint: lock, role_posture_fingerprint: `sha256:${"b".repeat(64)}`,
+    pack: { name: "reviewed_billing", resources: [{ id: "billing.preferences", tenant_key: "account_id", principal_key: "principal_id",
+      rls_session: { tenant_setting: "synapsor.tenant_id" } }] }, budgets: {} };
+  const digest = canonicalJsonDigest(read);
+  const activeRead = { ...read, activation: { state: "active", digest, actor: "test", activated_at: "2026-09-08T19:00:00.000Z",
+    generation_lock_fingerprint: lock, reviewed_decisions: [] } };
+  await fs.mkdir(path.join(root, ".synapsor"));
+  const readPath = path.join(root, ".synapsor/exploration-boundaries.active.json");
+  await fs.writeFile(readPath, JSON.stringify({ schema_version: "synapsor.active-exploration-boundaries.v1",
+    selected_name: read.pack.name, boundaries: [activeRead], updated_at: activeRead.activation.activated_at }));
+  await fs.writeFile(path.join(root, "synapsor.runner.json"), JSON.stringify({ version: 1, mode: "read_only",
+    storage: { sqlite_path: "./.synapsor/local.db" }, trusted_context: { provider: "environment" }, capabilities: [],
+    sources: { local_postgres: { engine: "postgres", read_url_env: "DATABASE_URL", read_only: true } } }));
+  const draft = buildActionRuleAuthorityDraft({ name: "billing_rules", action_boundary_name: "billing_actions", catalog,
+    rules: [{ read_boundary_name: read.pack.name, read_boundary_digest: digest, verification_boundary: verification, effect_envelope: envelope, rule },
+      ...(twoOutcomes ? [{ read_boundary_name: read.pack.name, read_boundary_digest: digest, verification_boundary: verification,
+        effect_envelope: { ...envelope, name: "billing.priority_effect", allowed_fields: [{ name: "priority", type: { kind: "integer" as const }, values: [1] }] },
+        rule: { ...rule, name: "billing.set_priority", outcome: "billing.set_priority", effect_envelope_ref: "billing.priority_effect",
+          effect: { ...rule.effect, set: { priority: { kind: "literal" as const, value: 1, value_type: { kind: "integer" as const } } } } } }] : [])],
+    ...(approvalMode === "policy" ? { approval_classes: [{ name: rule.approval_class, mode: "policy" as const,
+      rules: [{ outcome: rule.outcome, auto_approve_when: rule.require }], required_role: "billing_reviewer", required_approvals: 1,
+      shared_limits: [{ id: "overall", kind: "count" as const, scope: "boundary" as const, maximum: 10, window_seconds: 3600 },
+        { id: "account", kind: "count" as const, scope: "tenant" as const, maximum: 2, window_seconds: 3600 }] }] } : {}),
+    reviews: [{ outcome: rule.outcome, when: "Preference is active", then: "Propose pausing notifications",
+      refused: ["Preference is already paused"], human_review: "One billing reviewer must approve", examples: [
+        { kind: "eligible", scenario: "Active preference", result: "Create proposal" },
+        { kind: "ineligible", scenario: "Paused preference", result: "Refuse" },
+      ] }, ...(twoOutcomes ? [{ outcome: "billing.set_priority", when: "Preference is active", then: "Set priority to one",
+        refused: ["Preference is paused"], human_review: "One reviewer must approve", examples: [
+          { kind: "eligible" as const, scenario: "Active preference", result: "Create proposal" },
+          { kind: "ineligible" as const, scenario: "Paused preference", result: "Refuse" }] }] : [])] });
+  await writeActionRuleAuthorityDraft(root, draft);
+  await activateSemanticActionRuntime({ projectRoot: root, draft, actor: "test reviewer" });
+  const configPath = path.join(root, "synapsor.actions.runner.json");
+  const config = JSON.parse(await fs.readFile(configPath, "utf8"));
+  delete config.sources.local_postgres.database_scope;
+  await fs.writeFile(configPath, JSON.stringify(config));
+  const activePath = path.join(root, ".synapsor/action-rules/active.json");
+  const revisionPath = path.join(root, ".synapsor/action-rules/revisions", draft.digest.slice("sha256:".length), "authority.json");
+  return { root, configPath, readPath, activePath, revisionPath, authorityPaths: [readPath, activePath, revisionPath] };
+}

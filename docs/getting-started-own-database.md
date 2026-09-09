@@ -20,130 +20,110 @@ Below-floor, future unverified, and unrecognized products fail with the detected
 version. See [Database Server Compatibility](database-server-compatibility.md)
 before using an older installation.
 
-## Fast path
+## Current Terminal Path
 
-Run the public guided path:
+`start` and `onboard db` enter the same current Auto Boundary workflow:
 
 ```bash
-npx -y @synapsor/runner start
+npx -y @synapsor/runner start --from-env DATABASE_URL
+# Equivalent entry:
+npx -y @synapsor/runner onboard db --from-env DATABASE_URL
 ```
 
-Paste a dedicated SELECT-only, non-owner URL into the hidden prompt, explicitly
-approve a regular project `.env` file for this process, or export
-`DATABASE_URL`. A fresh interactive project with no existing config, selector,
-or automation input follows:
+In a terminal, both default to job-first model/manual chat, equivalent to
+`--cli`. Bare `start` uses an exported database environment or offers a hidden
+URL prompt. It is not a worker command. Use a dedicated SELECT-only, non-owner
+credential; no URL is printed or written into generated configuration. Choose
+`--open-ui` explicitly for the preview Workbench.
+
+Inspection needs no model API and samples no source rows. Optional
+natural-language mapping needs a configured provider and explicit metadata
+egress consent. Exact manual review remains available. The workflow is:
 
 ```text
-inspect the whole selected schema and structured application artifacts
--> draft disabled public DSL, canonical JSON, tests, and generation lock
--> review scope, fields, analytics permissions, relationships, and budgets
--> activate the exact exploration-boundary digest in local Workbench
--> install exactly app.describe_data and app.explore_data in your project MCP client
--> repeatedly ask bounded row or aggregate questions against staging
-   |-> continue combining reviewed measures/dimensions/filters without review
-   `-> optionally Protect one selected result into a disabled named capability
-       -> activate that exact digest and remove broad Explore for production
-       -> serve only the named protected capability in production
+inspect metadata -> draft disabled Read and optional Action definitions
+-> trusted human review and activation of the exact Read Boundary
+-> separate trusted human review and activation of the exact Action Boundary
+-> separately reviewed execution, where supported
+-> connect the current four-tool MCP entry
 ```
 
-It does not print your database URL, put the URL in MCP client config, expose
-`execute_sql`, expose approval/commit tools, or give the model write
-credentials. Before boundary activation it does not read source rows.
+The tools are `app.describe_data`, `app.explore_data`, `app.describe_actions`,
+and `app.request_change`. No model tool activates authority, approves, applies,
+or accepts SQL. A proposal is not approval; approval is not completion. Only an
+applied receipt establishes a completed write. Trusted tenant/principal values
+come from the configured caller context, never from model arguments.
 
-Workbench leads with Ask after the one-time safe-read proof. A developer may
-configure OpenAI, Anthropic, or a loopback model there, connect an existing
-model-enabled MCP client, or use CLI `try ask`. The no-model composer remains
-an optional exact-plan fallback. Every path uses the same exact authoring tools
-and validation. Protect is not required for each legal staging question; it is
-the explicit promotion step for a repeatable or production-facing named
-capability.
+## Current Headless Path
 
-The browserless route is one continuous command:
+Without a TTY, `--from-env` initializes the same metadata-only disabled Auto
+Boundary as `boundary draft`. `--json` emits one JSON result with next steps;
+`--no-open` also defers review. No model API is required:
 
 ```bash
-synapsor-runner start --from-env DATABASE_URL --cli
+synapsor-runner onboard db --project-root . --from-env DATABASE_URL --json
+synapsor-runner onboard db --project-root . --export-draft ./boundary-authoring.json --json
 ```
 
-On later runs, that command resumes the pinned review without inspecting the
-database again. Add `--rescan` to that Start command only when you deliberately
-want a fresh schema and role-posture
-inspection. `--rescan` applies to both single-organization and multi-tenant
-projects. It preserves manual tables, derived/shared-reference scope, privacy
-settings, and other decisions whose exact reviewed inputs did not change. It
-invalidates only affected decisions, reports the concrete diff, leaves current
-authority active, and creates a disabled update that must be reviewed and
-activated. `--force` is not required; on this Start path it uses the same
-reconciliation behavior.
-
-On a fresh project, Runner first shows one conservative one-table,
-zero-relationship boundary. Pressing Enter once records its human review,
-rechecks schema and read-only role posture, and activates only that exact local
-digest with the provider/model displayed on the same screen. Press `M` to
-choose OpenAI, Anthropic, a loopback OpenAI-compatible model, an existing MCP
-client, or **Later**; press `E` to edit the tables and columns first. Accepting
-the displayed default still takes one gesture. Submitting the first question
-confirms the provider/model/origin egress review. JSON, CI, and headless
-activation remain noninteractive.
-
-If Runner can prove candidate columns but cannot safely choose the table's
-Record ID or Tenant isolation column, Enter opens one inline resolver instead
-of ending the command. Choose only from the database-inspected candidates,
-save them, and continue directly to column review. The equivalent Workbench
-control is **Resolve blocked access**. These choices update only the disabled
-draft; they require no operator key and activate nothing by themselves. A
-table with no source-proven unique Record ID remains blocked.
-
-Inside `Synapsor Analytics`, use `/access` to leave chat cleanly and edit or add
-a boundary in the terminal, or `/access-workbench` for the visual editor. Active
-boundaries remain available while the draft is edited. Additions and removals
-remain disabled until a human reviews and activates the exact fingerprint.
-Activating a new boundary name adds it to the same two-tool Explore catalog;
-updating an existing name changes only that boundary.
-
-The focused editor is intentionally two steps in both registers: edit tables,
-columns, and reviewed paths; then confirm the complete exact boundary once.
-Routine choices stage directly on the selected disabled boundary while the current
-active boundaries keep working. The final confirmation rechecks schema and role
-posture, updates only that exact named authority, and returns to Ask with the
-same provider and in-memory credential. Conversation history is cleared and
-provider egress is rebound to the new active-set digest. Sensitive-field
-widening and nullable relationship semantics remain explicit human exceptions.
-
-The lower-level `boundary draft` and `boundary review` commands remain
-available for automation and expert workflows. In a fresh directory,
-`boundary draft` also creates the validated local config, ledger, and MCP
-snippets automatically. The developer does not need a separate
-config/init/store command before Ask.
-
-`start` is the shortest public command for first-run onboarding. When
-`DATABASE_URL` is already exported, Runner uses it automatically. Explicit
-`--from-env`, `--schema`, and `--project-root` values always win.
-The fresh secured-loopback route establishes a local development authoring
-profile once. Workbench, Ask, the shell, and MCP display that posture when
-useful but do not ask for or accept a second development/staging declaration.
-Explicit manual, production, unknown, shared, and remote routes retain their
-existing configuration and fail-closed treatment.
-Read [Database To First Safe Tool](guided-onboarding.md) for the timed guided
-journey and [Auto Boundary, Scoped Explore, And
-Protect](auto-boundary-and-scoped-explore.md) for the complete security
-reference.
-
-Established routes remain unchanged. `--table`, `--answers`, `onboard db`,
-explicit `init` flags, existing configs, headless startup, JSON output, and CI
-do not enter Auto Boundary, prompt unexpectedly, open a browser, rescan an
-existing project, or require a generation lock. For example:
+Edit the exported typed draft using the inspected catalog. Read changes and
+Action definitions are structured inputs; the command does not parse prose
+business policy or infer permission. Retain the exact review bundle digest and
+bindings, and replace any illustrative template before submission. The file
+must remain inside the selected project.
 
 ```bash
-synapsor-runner start --from-env DATABASE_URL --table invoices --no-open
-synapsor-runner onboard db --from-env DATABASE_URL --answers ./answers.json
+synapsor-runner onboard db --project-root . --draft ./boundary-authoring.json --dry-run --json
+synapsor-runner onboard db --project-root . --draft ./boundary-authoring.json --json
+# In a trusted operator terminal, with the reviewed source environment available:
+synapsor-runner boundary review --project-root . --access
+synapsor-runner action review --project-root .
 ```
 
-The rest of this page documents those established one-object/manual routes.
-They remain supported for existing projects and automation. From a source
-checkout, use `./bin/synapsor-runner ...` if the global binary is not linked.
+`start` accepts the same export/submit flags. Export and submission assume
+metadata already exists; neither needs a TTY or provider. Dry-run validates
+without publishing. Submission saves disabled drafts, not human confirmations.
+`--yes` never activates semantic authority. Headless semantic activation is not
+implemented: legacy `action activate --headless` is not a substitute for the
+separate current Read/Action review.
 
-From a source checkout, `./scripts/use-your-db.sh` runs the same kind of
-guided flow plus local repository checks.
+These saved-draft review commands need no model provider or new job conversation.
+In Read review, inspect the saved fields and scope, then use `C` for the exact
+Read activation. In Action review, select **Verified Action Boundary**, inspect
+the exact draft rules and examples, then separately choose **Activate this exact
+proposal authority**. Its exact Read dependency must already be active.
+The Actions menu in boundary review also exposes that saved semantic draft.
+Optional model revision is not required. Execution is a later separate decision;
+activation alone does not execute a source request.
+
+Terminal resume preserves saved review and existing active authority. Use
+`--rescan` only for a deliberate metadata/role recheck; unchanged review inputs
+remain preserved and affected changes stay disabled until exact activation.
+No startup route silently migrates existing active authority. Existing manual
+capability artifacts are preserved and require an explicit compatibility route
+or a separate directory for current setup. Explicit worker calls with
+`--config`, `--store`, and `--once` remain supported; prefer `runner start`.
+
+See [Guided Onboarding](guided-onboarding.md) for review details and
+[Auto Boundary and Scoped Explore](auto-boundary-and-scoped-explore.md) for the
+security contract.
+
+## Legacy Capability Reference
+
+The remainder of this page is the retained one-object capability/code-first
+reference, not the current semantic authoring route. See the
+[legacy onboarding inventory](legacy-onboarding.md). Old `--table`, `--answers`,
+`--spec`, `--mode`, handler and related selectors are rejected by ordinary
+`start`/`onboard db` unless `--legacy-capabilities` is explicit:
+
+```bash
+synapsor-runner onboard db --legacy-capabilities --from-env DATABASE_URL --answers ./answers.json
+```
+
+`init`, code-first contracts, DELETE, app handlers, and their existing engines
+remain compatibility capabilities; their existence does not imply that the
+current semantic authoring compiler supports those operations or multirow
+effects. These recipes never migrate old authority into semantic authority.
+From a source checkout, use `./bin/synapsor-runner ...` for the local CLI.
 
 ## 1. Put the read URL in an environment variable
 
@@ -433,6 +413,7 @@ safe cascade/trigger inspection:
 
 ```bash
 npx -y @synapsor/runner onboard db \
+  --legacy-capabilities \
   --from-env DATABASE_URL \
   --table account_credits \
   --mode review \

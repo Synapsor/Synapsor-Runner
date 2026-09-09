@@ -205,10 +205,10 @@ This form opens the interactive shell. Add a quoted question before
 the command tells you to run `synapsor-runner start`; it never falls back to
 runtime proposal tools.
 
-## A Project Client Has Production Tools Instead Of Authoring Tools
+## A Project Client Has The Wrong Tool Surface
 
-Install the managed local entry only after boundary activation. Runner detects
-an active local Explore-only project automatically; the explicit form is:
+Install the managed local entry only after Read activation. The explicit form
+uses one unified four-tool entry:
 
 ```bash
 synapsor-runner mcp install claude-code \
@@ -218,24 +218,16 @@ synapsor-runner mcp install claude-code \
   --yes
 ```
 
-Authoring status reports exactly `app.describe_data` and `app.explore_data`.
-`mcp client-config` also emits this exact form. A pre-fix config/store-shaped
-entry is accepted and routed to the same surface, while an inactive
-Explore-only project now refuses with an activation remedy instead of exposing
-zero tools.
-After Protect and exact-digest activation, replace that entry with the
-production config. The protected named capability remains available while
-Explore disappears:
+The entry exposes `app.describe_data`, `app.explore_data`,
+`app.describe_actions`, and `app.request_change`. Before Action activation,
+Action discovery is empty and change requests are refused. A reviewed Action
+activation or outcome revision does not require replacing this entry. An
+inactive Read Boundary refuses installation instead of creating a zero-tool
+entry. Use `cursor` or `vscode` instead of `claude-code` for those clients.
 
-```bash
-synapsor-runner mcp install claude-code \
-  --project \
-  --config ./synapsor.runner.json \
-  --store ./.synapsor/local.db \
-  --yes
-```
-
-Use `cursor` or `vscode` instead of `claude-code` for those clients.
+The older `--config`/`--store` install form is explicit legacy
+named-capability compatibility. Do not use it to upgrade a managed Read/Action
+entry.
 
 ## Boundary Became Stale After A Schema Or Grant Change
 
@@ -343,21 +335,19 @@ reason, expiry, and one-use nonce requirements.
 ## Activated Tool Does Not Appear In The MCP Client
 
 Some MCP hosts do not refresh `tools/list` for a running stdio session. First
-confirm that Runner's active tool surface changed:
+confirm the unified managed entry still launches and the Action Boundary is
+active:
 
 ```bash
 synapsor-runner action status --json
-synapsor-runner try call --list \
-  --config ./synapsor.actions.runner.json --format json
 synapsor-runner mcp status claude-code --project --check-launch
 ```
 
-Activation prints the exact `try call` and `mcp install` commands for the
-separate action runtime. Production Explore deliberately remains its exact
-two-tool read surface and will not show Safe Actions.
-
-Use `cursor` or `vscode` instead of `claude-code` for those clients.
-Then reconnect or restart the project MCP server as directed by the Workbench.
+The managed entry always has the same four tool names; reviewed outcomes appear
+through `app.describe_actions`. Do not generate a separate action runtime or
+rewrite the project MCP file. Reconnect only when the selected host has cached
+the catalog, then use `cursor` or `vscode` instead of `claude-code` where
+appropriate.
 Do not work around a stale host session by adding approval, apply, activation,
 credentials, tenant values, or raw SQL to the client configuration.
 

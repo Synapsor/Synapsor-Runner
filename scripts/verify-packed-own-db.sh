@@ -100,6 +100,7 @@ export SYNAPSOR_PRINCIPAL="packed_own_db_smoke"
 PRODUCT_STARTED_MS="$(now_ms)"
 
 npx synapsor-runner onboard db \
+  --legacy-capabilities \
   --from-env DATABASE_URL \
   --engine postgres \
   --schema public \

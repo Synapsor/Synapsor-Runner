@@ -139,7 +139,9 @@ the registry tags first.
 
 ## Result Envelope Migration
 
-New `init` and `onboard db` configs default to:
+Compatibility `init` and explicitly selected legacy onboarding configs default
+to the following envelope setting. Fresh `onboard db` instead prepares reviewed
+Read/Action authority behind the fixed four-tool interface:
 
 ```json
 {

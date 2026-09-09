@@ -13,13 +13,13 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import * as schemaInspector from "@synapsor-runner/schema-inspector";
 import { createDefaultRuntimeStore, resolveRuntimeConfig, subjectReferenceScopeFingerprints,
-  REQUEST_CHANGE_TOOL, type RuntimeConfig } from "@synapsor-runner/mcp-server";
+  REQUEST_CHANGE_TOOL, resolveSemanticSupervisedWorkerEligibility, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { ControlPolicyRepository, migrateSharedPostgresRuntimeStore, ProposalStore } from "@synapsor-runner/proposal-store";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type { RuleVerificationBoundarySpecV1, DerivedEffectEnvelopeSpecV1, ActionRuleSpecV1 } from "@synapsor/spec";
 import { AUTO_BOUNDARY_OVERRIDES_VERSION, activateExplorationBoundary, buildAutoBoundary, deactivateExplorationBoundary,
   explorationBoundaryCandidateDigest, generationReviewEvidenceDigest, loadActivatedExplorationBoundary, loadActivatedExplorationBoundaries,
-  loadGenerationLockForActivatedBoundary, writeAutoBoundaryArtifacts, type ActivatedExplorationBoundary } from "./auto-boundary.js";
+  loadGenerationLockForActivatedBoundary, loadGenerationLockSnapshot, writeAutoBoundaryArtifacts, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { decodeOperatorAuthority, encodeOperatorAuthority, encodeOperatorExecutionPolicy, OPERATOR_READ_SELECTION, OPERATOR_READ_AUTHORING, OPERATOR_EXECUTION_POLICY,
   validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
@@ -62,10 +62,11 @@ import { verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-id
 import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, withSharedPostgresRuntimeStoreReadBridge } from "./store-shared.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
 import { activateSemanticActionRuntime, disableSemanticSupervisedExecution, enableSemanticSupervisedExecution,
-  previewSemanticSupervisedExecution, readSemanticSupervisedExecutionState, recoverSemanticActionRuntime, semanticExecutionConfirmation, verifySemanticExecutionReadPosture } from "./semantic-action-deployment.js";
+  previewSemanticSupervisedExecution, readSemanticSupervisedExecutionState, readSemanticExecutionReviewDefaults, recoverSemanticActionRuntime, semanticExecutionConfirmation, verifySemanticExecutionReadPosture } from "./semantic-action-deployment.js";
 import { activateActionRuleAuthority, buildActionRuleAuthorityDraft, createActiveActionRuleAuthorityLoader,
   deactivateActionRuleAuthority, listActionRuleAuthorityDrafts, loadActiveActionRuleAuthority, readActionRuleAuthorityActivation,
-  readActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, type ActionRuleAuthorityActivationV1 } from "./action-rule-authority.js";
+  mergeActionRuleAuthorityDraft, readActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, type ActionRuleAuthorityActivationV1 } from "./action-rule-authority.js";
+import { rebindActiveActionRuleAuthorityForReadRevision, rebindStoredActionRuleAuthorityDraftForReadRevision } from "./action-rule-read-revision.js";
 import { recoverPolicyConfiguration } from "./control-policy-config-publication.js";
 import { reviewVerifiedActionAuthority } from "./verified-action-review.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
@@ -659,6 +660,28 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
+    it("atomically saves only a validated disabled Action companion with Read authoring", async () => {
+      await useRepository(async ({ policies }) => {
+        const authoring = readAuthoringFixture();
+        const companion = actionFixture(fixture());
+        const key = { scope: { level: "operator" as const }, kind: "action" as const, name: companion.authority.name };
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch,
+          expected_revision_id: null, authoring, actor: "operator", operation: "save_structured_disabled_read_and_action",
+          additionalDrafts: [{ key, policy: { type: "action", authority: companion } }] });
+        const saved = await policies.current();
+        expect(saved.drafts.find(({ revision }) => revision.kind === "action")?.policy)
+          .toEqual({ type: "action", authority: companion });
+        const epoch = saved.epoch;
+        await expect(policies.commitReadAuthoring({ expected_epoch: epoch,
+          expected_revision_id: saved.active.find(({ policy }) => policy.type === "read_authoring")!.revision.revision_id,
+          authoring, actor: "operator", operation: "invalid_structured_companion",
+          additionalDrafts: [{ key, policy: null }] })).rejects.toMatchObject({
+          code: "POLICY_STRUCTURED_ACTION_COMPANION_INVALID",
+        });
+        expect((await policies.current()).epoch).toBe(epoch);
+      });
+    });
+
     it("retains partial coded metadata decisions and promotes only a fully valid disabled Read candidate", async () => {
       await useRepository(async ({ policies, projectRoot }) => {
         const { authoring, inspection } = metadataAuthoringFixture(projectRoot);
@@ -756,8 +779,236 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
+    it("reads current and paginated historical governed generation locks without legacy exports or pointer changes", async () => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const authoring = readAuthoringFixture();
+        const originalLock = structuredClone(authoring.entries[0]!.candidate_lock);
+        const originalFingerprint = canonicalJsonDigest(originalLock);
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare_generation_lock_history" });
+
+        let saved = (await readProjectReadAuthoring(projectRoot))!;
+        for (let revision = 2; revision <= 18; revision++) {
+          const next = structuredClone(saved.authoring);
+          const prior = next.entries[0]!;
+          const lock = {
+            ...prior.candidate_lock,
+            reviewed_overrides_digest: canonicalJsonDigest(`reviewed metadata revision ${revision}`),
+          };
+          const draft = { ...prior.draft, generation_lock_fingerprint: canonicalJsonDigest(lock) };
+          const candidate = { ...prior.progress.candidate, generation_lock_fingerprint: canonicalJsonDigest(lock) };
+          next.entries[0] = {
+            ...prior,
+            draft,
+            draft_lock: lock,
+            candidate_lock: lock,
+            progress: createBoundaryReviewProgress({
+              draft,
+              candidate,
+              boundaryId: prior.progress.boundary_id,
+              reviewOverrides: prior.progress.review_overrides,
+              confirmedDecisions: prior.progress.confirmed_decisions,
+              actor: "operator",
+              reason: `Preserve reviewed metadata history revision ${revision}.`,
+              revision,
+            }),
+          };
+          await saveProjectReadAuthoring({ projectRoot, expected: saved.bindings, authoring: next,
+            actor: "operator", operation: "advance_generation_lock_history" });
+          saved = (await readProjectReadAuthoring(projectRoot))!;
+        }
+
+        const currentLock = saved.selected!.candidate_lock;
+        const currentFingerprint = canonicalJsonDigest(currentLock);
+        expect(currentFingerprint).not.toBe(originalFingerprint);
+        await expect(fs.stat(path.join(projectRoot, ".synapsor/exploration-locks"))).rejects.toHaveProperty("code", "ENOENT");
+        await expect(fs.stat(path.join(projectRoot, ".synapsor/generation-lock.json"))).rejects.toHaveProperty("code", "ENOENT");
+        const beforePolicies = await policies.current();
+        const beforeAuthoring = structuredClone(saved);
+
+        await expect(loadGenerationLockSnapshot(projectRoot, currentFingerprint)).resolves.toEqual(currentLock);
+        await expect(loadGenerationLockSnapshot(projectRoot, originalFingerprint)).resolves.toEqual(originalLock);
+
+        expect(await policies.current()).toEqual(beforePolicies);
+        expect(await readProjectReadAuthoring(projectRoot)).toEqual(beforeAuthoring);
+        await expect(fs.stat(path.join(projectRoot, ".synapsor/exploration-locks"))).rejects.toHaveProperty("code", "ENOENT");
+        await expect(fs.stat(path.join(projectRoot, ".synapsor/generation-lock.json"))).rejects.toHaveProperty("code", "ENOENT");
+      });
+    });
+
+    it("rebinds all retained Action outcomes before merging a later Read revision and refuses unproven replacements", async () => {
+      await useRepository(async ({ policies, projectRoot }) => {
+        const source = fixture();
+        const authoring = readAuthoringFixture();
+        expect(authoring.entries[0]!.candidate_lock).toEqual(source.generation_lock);
+        await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
+          authoring, actor: "operator", operation: "prepare_action_read_rebind" });
+        let saved = (await readProjectReadAuthoring(projectRoot))!;
+        const oldBoundary = saved.selected!.progress.candidate;
+        const actionInspection = structuredClone(source.inspection);
+        actionInspection.role_posture!.read_only = false;
+        actionInspection.tables[0]!.writable = true;
+        actionInspection.tables[0]!.role_posture!.privileges!.update = true;
+        actionInspection.tables[0]!.columns = actionInspection.tables[0]!.columns.map((column) =>
+          ["id", "tenant_id", "principal_id"].includes(column.name)
+            ? { ...column, data_type: "varchar(64)" }
+            : column,
+        );
+
+        const saveReadRevision = async (lock: typeof source.generation_lock) => {
+          const next = structuredClone(saved.authoring);
+          const prior = next.entries[0]!;
+          const draft = { ...prior.draft, generation_lock_fingerprint: canonicalJsonDigest(lock) };
+          const candidate = { ...prior.progress.candidate, generation_lock_fingerprint: canonicalJsonDigest(lock) };
+          next.entries[0] = {
+            ...prior,
+            draft,
+            draft_lock: lock,
+            candidate_lock: lock,
+            progress: createBoundaryReviewProgress({
+              draft,
+              candidate,
+              boundaryId: prior.progress.boundary_id,
+              reviewOverrides: prior.progress.review_overrides,
+              confirmedDecisions: prior.progress.confirmed_decisions,
+              actor: "operator",
+              reason: "Prepare an exact disabled Read revision for Action dependency validation.",
+              revision: prior.progress.revision + 1,
+            }),
+          };
+          await saveProjectReadAuthoring({ projectRoot, expected: saved.bindings, authoring: next,
+            actor: "operator", operation: "advance_action_read_rebind" });
+          saved = (await readProjectReadAuthoring(projectRoot))!;
+          return saved.selected!.progress.candidate;
+        };
+        const nextLock = { ...source.generation_lock,
+          reviewed_overrides_digest: canonicalJsonDigest("reviewed metadata minimization") };
+        const nextBoundary = await saveReadRevision(nextLock);
+        const first = actionFixture(source);
+        const firstRule = first.authority.rules[0]!;
+        const secondRule = {
+          ...structuredClone(firstRule),
+          verification_boundary: { ...structuredClone(firstRule.verification_boundary), name: "inventory.verify_second" },
+          effect_envelope: { ...structuredClone(firstRule.effect_envelope), name: "inventory.effect_second" },
+          rule: { ...structuredClone(firstRule.rule), name: "inventory.replenish_second", outcome: "inventory.replenish_second",
+            verification_boundary_ref: "inventory.verify_second", effect_envelope_ref: "inventory.effect_second" },
+        };
+        const old = buildActionRuleAuthorityDraft({
+          name: first.authority.name,
+          action_boundary_name: first.authority.action_boundary.name,
+          catalog: first.authority.catalog,
+          rules: [firstRule, secondRule].map(({ activated_at: _activatedAt, ...rule }) => ({
+            ...rule,
+            read_boundary_name: oldBoundary.pack.name,
+            read_boundary_digest: explorationBoundaryCandidateDigest(oldBoundary),
+          })),
+          approval_classes: first.authority.approval_classes.map((approvalClass) => ({
+            ...structuredClone(approvalClass),
+            rules: [...approvalClass.rules.map((rule) => structuredClone(rule)), {
+              ...structuredClone(approvalClass.rules.find((rule) => rule.outcome === firstRule.rule.outcome)!),
+              outcome: secondRule.rule.outcome,
+            }],
+          })),
+          reviews: [first.reviews[0]!, { ...first.reviews[0]!, outcome: secondRule.rule.outcome }],
+          now: first.created_at,
+        });
+        const incomingCatalog = { ...structuredClone(old.authority.catalog),
+          generation_lock_fingerprint: nextBoundary.generation_lock_fingerprint };
+        const thirdRule = {
+          ...structuredClone(firstRule),
+          verification_boundary: { ...structuredClone(firstRule.verification_boundary), name: "inventory.verify_third",
+            generation_lock_fingerprint: nextBoundary.generation_lock_fingerprint },
+          effect_envelope: { ...structuredClone(firstRule.effect_envelope), name: "inventory.effect_third" },
+          rule: { ...structuredClone(firstRule.rule), name: "inventory.replenish_third", outcome: "inventory.replenish_third",
+            verification_boundary_ref: "inventory.verify_third", effect_envelope_ref: "inventory.effect_third" },
+        };
+        const incoming = buildActionRuleAuthorityDraft({
+          name: old.authority.name,
+          action_boundary_name: old.authority.action_boundary.name,
+          catalog: incomingCatalog,
+          rules: [{ ...thirdRule, read_boundary_name: nextBoundary.pack.name,
+            read_boundary_digest: explorationBoundaryCandidateDigest(nextBoundary) }],
+          reviews: [{ ...first.reviews[0]!, outcome: thirdRule.rule.outcome }],
+          now: first.created_at,
+        });
+        expect(() => mergeActionRuleAuthorityDraft({ existing: old, incoming })).toThrow();
+        const beforePolicies = await policies.current();
+        const beforeAuthoring = structuredClone(saved);
+        const rebound = await rebindStoredActionRuleAuthorityDraftForReadRevision({ projectRoot,
+          existing: old, nextBoundary, inspection: actionInspection });
+        const merged = mergeActionRuleAuthorityDraft({ existing: rebound, incoming });
+        expect(merged.authority.rules.map((rule) => rule.rule.outcome).sort()).toEqual([
+          "inventory.replenish", "inventory.replenish_second", "inventory.replenish_third",
+        ]);
+        for (const prior of old.authority.rules) {
+          const reboundRule = rebound.authority.rules.find((rule) => rule.rule.outcome === prior.rule.outcome)!;
+          expect(reboundRule.rule).toEqual(prior.rule);
+          expect(reboundRule.effect_envelope).toEqual(prior.effect_envelope);
+          expect(reboundRule.verification_boundary).toEqual({ ...prior.verification_boundary,
+            generation_lock_fingerprint: nextBoundary.generation_lock_fingerprint });
+        }
+        expect(rebound.authority.approval_classes).toEqual(old.authority.approval_classes);
+        expect(await policies.current()).toEqual(beforePolicies);
+        expect(await readProjectReadAuthoring(projectRoot)).toEqual(beforeAuthoring);
+
+        const active = {
+          schema_version: "synapsor.action-rule-authority-activation.v1" as const,
+          state: "active" as const,
+          authority: structuredClone(old.authority),
+          digest: old.digest,
+          reviews: structuredClone(old.reviews),
+          actor: "operator",
+          activated_at: old.created_at,
+        };
+        const activeBefore = structuredClone(active);
+        const reboundActive = await rebindActiveActionRuleAuthorityForReadRevision({ projectRoot,
+          active, nextBoundary, inspection: actionInspection });
+        const mergedFromActive = mergeActionRuleAuthorityDraft({ existing: reboundActive, incoming });
+        expect(reboundActive.state).toBe("disabled");
+        expect(mergedFromActive.authority.rules.map((rule) => rule.rule.outcome).sort()).toEqual([
+          "inventory.replenish", "inventory.replenish_second", "inventory.replenish_third",
+        ]);
+        expect(active).toEqual(activeBefore);
+        expect(await policies.current()).toEqual(beforePolicies);
+        expect(await readProjectReadAuthoring(projectRoot)).toEqual(beforeAuthoring);
+
+        for (const changed of ["schema", "role", "context"] as const) {
+          const lock = { ...nextLock,
+            ...(changed === "schema" ? { schema_fingerprint: canonicalJsonDigest("changed schema") } : {}),
+            ...(changed === "role" ? { role_posture_fingerprint: canonicalJsonDigest("changed role") } : {}),
+            ...(changed === "context" ? { trusted_context_fingerprint: canonicalJsonDigest("changed context") } : {}),
+          };
+          const boundary = await saveReadRevision(lock);
+          const before = await policies.current();
+          const beforeSaved = structuredClone(saved);
+          await expect(rebindStoredActionRuleAuthorityDraftForReadRevision({ projectRoot,
+            existing: old, nextBoundary: boundary, inspection: actionInspection })).rejects.toThrow("ACTION_RULE_REVISION_STALE");
+          expect(await policies.current()).toEqual(before);
+          expect(await readProjectReadAuthoring(projectRoot)).toEqual(beforeSaved);
+        }
+        const missingLock = { ...nextLock, reviewed_overrides_digest: canonicalJsonDigest("not in governed history") };
+        const missingBoundary = { ...structuredClone(nextBoundary), generation_lock_fingerprint: canonicalJsonDigest(missingLock) };
+        const beforeMissing = await policies.current();
+        const beforeMissingSaved = structuredClone(saved);
+        await expect(rebindStoredActionRuleAuthorityDraftForReadRevision({ projectRoot,
+          existing: old, nextBoundary: missingBoundary, inspection: actionInspection })).rejects.toMatchObject({
+          code: "POLICY_GENERATION_SNAPSHOT_UNAVAILABLE",
+        });
+        expect(await policies.current()).toEqual(beforeMissing);
+        expect(await readProjectReadAuthoring(projectRoot)).toEqual(beforeMissingSaved);
+        const foreign = structuredClone(old);
+        foreign.authority.rules[1]!.read_boundary_name = "independent_read";
+        const beforeForeign = await policies.current();
+        const beforeForeignSaved = structuredClone(saved);
+        await expect(rebindStoredActionRuleAuthorityDraftForReadRevision({ projectRoot,
+          existing: foreign, nextBoundary, inspection: actionInspection })).rejects.toThrow("ACTION_RULE_READ_REVIEW_REQUIRED");
+        expect(await policies.current()).toEqual(beforeForeign);
+        expect(await readProjectReadAuthoring(projectRoot)).toEqual(beforeForeignSaved);
+      });
+    });
+
     it.each(["disabled", "unrelated_active", "selected_active", "selected_changed", "guided_active", "metadata", "stale_export", "no_authoring",
-      "workbench", "wrong_store", "no_config", "no_config_cli", "bare", "deferred"])("resumes governed startup without generated exports: %s", async (mode) => {
+      "workbench", "wrong_store", "no_config", "no_config_cli", "bare", "deferred", "deferred_json"])("resumes governed startup without generated exports: %s", async (mode) => {
       await useRepository(async ({ policies, projectRoot, config }) => {
         const authoring = mode === "metadata" ? metadataAuthoringFixture(projectRoot).authoring : readAuthoringFixture();
         if (["selected_active", "selected_changed", "guided_active"].includes(mode)) {
@@ -804,7 +1055,8 @@ for (const backend of ["sqlite", "postgres"] as const) {
         process.chdir(projectRoot); process.env.DATABASE_URL = "postgresql://unused-test-host/never-connect";
         try {
           const args = mode === "bare" ? [] : ["--from-env", "DATABASE_URL",
-            ...(["workbench", "wrong_store", "no_config"].includes(mode) ? [] : [mode === "deferred" ? "--no-open" : "--cli"])];
+            ...(["workbench", "wrong_store", "no_config"].includes(mode) ? ["--open-ui"]
+              : mode === "deferred_json" ? ["--no-open", "--json"] : [mode === "deferred" ? "--no-open" : "--cli"])];
           const running = start(args, { interactive: true, schemaInspector: inspect,
             runBoundaryReview: review, runPostActivationHandoff: handoff, openWorkbench: workbench });
           if (mode === "no_authoring") await expect(running).rejects.toMatchObject({ code: "POLICY_READ_AUTHORING_MISSING" });
@@ -813,14 +1065,19 @@ for (const backend of ["sqlite", "postgres"] as const) {
           else await expect(running).resolves.toBe(0);
           expect(inspect).not.toHaveBeenCalled();
           expect(handoff).toHaveBeenCalledTimes(mode === "selected_active" ? 1 : 0);
-          expect(review).toHaveBeenCalledTimes(["disabled", "unrelated_active", "selected_changed", "guided_active", "metadata", "stale_export", "no_config_cli"].includes(mode) ? 1 : 0);
+          expect(review).toHaveBeenCalledTimes(["disabled", "unrelated_active", "selected_changed", "guided_active", "metadata", "stale_export", "no_config_cli", "bare"].includes(mode) ? 1 : 0);
           if (mode === "guided_active") expect(review).toHaveBeenCalledWith(
             ["--project-root", projectRoot, "--access", "--job-first"], inspect, expect.any(Function));
-          expect(workbench).toHaveBeenCalledTimes(["workbench", "bare"].includes(mode) ? 1 : 0);
-          if (["workbench", "bare"].includes(mode)) expect(workbench).toHaveBeenCalledWith(expect.arrayContaining([
+          expect(workbench).toHaveBeenCalledTimes(mode === "workbench" ? 1 : 0);
+          if (mode === "workbench") expect(workbench).toHaveBeenCalledWith(expect.arrayContaining([
             "--store", path.join(projectRoot, "control.db"),
           ]));
           if (mode === "disabled" || mode === "stale_export") expect(output.mock.calls.flat().join("")).toContain("Agent authority active: no");
+          if (mode === "deferred_json") expect(JSON.parse(output.mock.calls.flat().join(""))).toMatchObject({
+            ok: true, state: "saved_review", read_candidate_digest: expect.stringMatching(/^sha256:/),
+            source_database_changed: false, active_authority_changed: false, disabled_authority_changed: false,
+            next_steps: { review: expect.any(String) },
+          });
           expect(await policies.current()).toEqual(before);
           if (configBefore !== undefined) expect(await fs.readFile(configPath, "utf8")).toBe(configBefore);
           else await expect(fs.stat(configPath)).rejects.toMatchObject({ code: "ENOENT" });
@@ -2461,6 +2718,143 @@ for (const backend of ["sqlite", "postgres"] as const) {
         await expect(verifySemanticExecutionReadPosture(input)).rejects.toThrow("SEMANTIC_ACTION_READ_REVIEW_REQUIRED");
         await expect(verifySemanticExecutionReadPosture(input)).rejects.toThrow("Do not reset the project");
         expect(JSON.stringify(await readActionRuleAuthorityActivation(projectRoot))).toBe(before);
+      });
+    });
+
+    it.each(["replacement_warning", "sequential", "decline", "policy_race"] as const)(
+      "requires new execution review after a compiled two-to-three outcome replacement (%s)", async (mode) => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const source = fixture(), base = actionFixture(source, true);
+        const first = base.authority.rules[0]!;
+        const second = structuredClone(first);
+        second.rule.name = second.rule.outcome = "inventory.correct_quantity";
+        const oldRules = [first, second];
+        const approval = base.authority.approval_classes[0]!;
+        const policyClasses = [{ ...approval, rules: oldRules.map((entry) => ({ outcome: entry.rule.outcome,
+          auto_approve_when: entry.rule.require })), shared_limits: oldRules.flatMap((entry, index) =>
+          approval.shared_limits.map((limit) => ({ ...limit, id: `${limit.id}_${index}`, capability: entry.rule.outcome }))) }];
+        const makeDraft = (withThird: boolean) => {
+          const third = structuredClone(first);
+          third.rule.name = third.rule.outcome = "inventory.archive";
+          third.rule.approval_class = "inventory.archive_review";
+          third.effect_envelope.approval_classes = [third.rule.approval_class];
+          const rules = withThird ? [...oldRules, third] : oldRules;
+          return buildActionRuleAuthorityDraft({ name: base.authority.name,
+            action_boundary_name: base.authority.action_boundary.name, catalog: base.authority.catalog, rules,
+            now: "2026-09-08T00:00:00.000Z",
+            approval_classes: [...policyClasses, ...(withThird ? [{ name: third.rule.approval_class, mode: "human" as const,
+              required_role: "inventory_reviewer", required_approvals: 1, rules: [{ outcome: third.rule.outcome }], shared_limits: [] }] : [])],
+            reviews: rules.map((entry) => ({ ...base.reviews[0]!, outcome: entry.rule.outcome })),
+          });
+        };
+        const two = makeDraft(false), three = makeDraft(true);
+        expect(three.authority.rules.filter((entry) => entry.rule.outcome !== "inventory.archive")).toEqual(two.authority.rules);
+        expect(three.authority.approval_classes.filter((entry) => entry.name === approval.name)).toEqual(two.authority.approval_classes);
+        const config = executionConfig(); delete config.supervised_worker; delete config.action_rules;
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), JSON.stringify(config));
+        await writeActionRuleAuthorityDraft(projectRoot, two);
+        await activateSemanticActionRuntime({ projectRoot, draft: two, actor: "operator" });
+        const file = path.join(projectRoot, "synapsor.actions.runner.json");
+        const inputFor = (index: number) => ({ projectRoot, outcome: oldRules[index]!.rule.outcome,
+          profile: "staging" as const, writeUrlEnv: index ? "SECOND_WRITER_URL" : "FIRST_WRITER_URL",
+          workerIdentity: index ? "reviewed_second_worker" : "reviewed_first_worker", env: { ...process.env,
+            FIRST_WRITER_URL: "postgresql://fixture.invalid/not-opened", SECOND_WRITER_URL: "postgresql://fixture.invalid/not-opened" },
+          inspect: async () => {
+            const inspection = structuredClone(source.inspection);
+            inspection.current_user = `inventory_writer_${index}`;
+            inspection.role_posture!.read_only = false; inspection.role_posture!.writable_relations = ["inventory.items"];
+            inspection.tables[0]!.role_posture!.privileges.update = true;
+            return inspection;
+          },
+        });
+        const reviewInput = async (index: number) => {
+          const input = inputFor(index), preview = await previewSemanticSupervisedExecution(input);
+          return { ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
+            expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
+            confirmation: semanticExecutionConfirmation(preview) };
+        };
+        await enableSemanticSupervisedExecution(await reviewInput(0));
+        await enableSemanticSupervisedExecution(await reviewInput(1));
+        const oldExecution = await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY);
+        expect(await readSemanticExecutionReviewDefaults({ projectRoot, outcome: oldRules[1]!.rule.outcome })).toEqual({
+          write_url_env: "SECOND_WRITER_URL", worker_identity: "reviewed_second_worker",
+        });
+        const oldConfig = await readRuntimeConfig(file);
+        const activeTwo = await loadActiveActionRuleAuthority(projectRoot);
+        await writeActionRuleAuthorityDraft(projectRoot, three);
+        if (mode === "replacement_warning") {
+          const before = await binding.repository.deployment(binding.deployment_id);
+          const confirm = vi.fn(async (_prompt: string, options?: { context?: string[] }) => {
+            const text = options?.context?.join("\n") ?? "";
+            expect(text).toContain("Execution review required after activation");
+            expect(text).toContain("Existing supervised execution is not carried forward");
+            for (const entry of oldRules) expect(text).toContain(entry.rule.outcome);
+            return false;
+          });
+          await reviewVerifiedActionAuthority({ projectRoot, boundaryName: source.boundary.pack.name,
+            draft: three, active: activeTwo.activation, session: { confirm } as unknown as BoundaryReviewInteractiveSession });
+          expect(confirm).toHaveBeenCalledOnce();
+          expect(await binding.repository.deployment(binding.deployment_id)).toEqual(before);
+          expect(await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY)).toEqual(oldExecution);
+          return;
+        }
+        await activateSemanticActionRuntime({ projectRoot, draft: three, actor: "operator" });
+        expect(await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY)).toEqual(oldExecution);
+        const current = await loadActiveActionRuleAuthority(projectRoot);
+        for (const rule of current.registry.rules) expect(resolveSemanticSupervisedWorkerEligibility(oldConfig, rule, { phase: "queue" }).eligible).toBe(false);
+        const preview = await previewSemanticSupervisedExecution(inputFor(0));
+        expect((preview.config as RuntimeConfig).supervised_worker!.outcomes).toEqual([preview.policy]);
+        const reviewed = await reviewInput(0);
+        const before = await fs.readFile(file, "utf8");
+        const historyBefore = await binding.repository.history({ deployment_id: binding.deployment_id, key: OPERATOR_EXECUTION_POLICY });
+        if (mode === "decline" || mode === "policy_race") {
+          if (mode === "policy_race") await writeActionRuleAuthorityDraft(projectRoot, three);
+          const epoch = await binding.repository.deployment(binding.deployment_id);
+          await expect(enableSemanticSupervisedExecution({ ...reviewed,
+            ...(mode === "decline" ? { confirmation: "declined" } : {}) })).rejects.toThrow(
+            mode === "decline" ? "EXECUTION_CONFIRMATION_REQUIRED" : "SEMANTIC_ACTION_CONFIG_CHANGED");
+          expect(await binding.repository.deployment(binding.deployment_id)).toEqual(epoch);
+          expect(await fs.readFile(file, "utf8")).toBe(before);
+          expect(await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY)).toEqual(oldExecution);
+        } else {
+          const enabledFirst = await enableSemanticSupervisedExecution(reviewed);
+          const firstState = await readRuntimeConfig(file);
+          expect(firstState.supervised_worker!.outcomes).toEqual([enabledFirst.policy]);
+          const beforeHints = await binding.repository.deployment(binding.deployment_id);
+          expect(await readSemanticExecutionReviewDefaults({ projectRoot, outcome: oldRules[1]!.rule.outcome })).toEqual({
+            write_url_env: "SECOND_WRITER_URL", worker_identity: "reviewed_second_worker",
+          });
+          expect(await readSemanticExecutionReviewDefaults({ projectRoot, outcome: "inventory.archive" })).toBeUndefined();
+          expect(await binding.repository.deployment(binding.deployment_id)).toEqual(beforeHints);
+          expect((await readRuntimeConfig(file)).supervised_worker!.outcomes).toEqual([enabledFirst.policy]);
+          if (backend === "sqlite") {
+            const corrupt = vi.spyOn(ControlPolicyRepository.prototype, "history").mockResolvedValue([
+              { epoch: 1, revision: { ...oldExecution!, name: "unrelated_execution" } },
+            ]);
+            try { await expect(readSemanticExecutionReviewDefaults({ projectRoot, outcome: oldRules[1]!.rule.outcome })).rejects.toThrow(); }
+            finally { corrupt.mockRestore(); }
+            const bounded = vi.spyOn(ControlPolicyRepository.prototype, "history").mockResolvedValue(
+              Array.from({ length: 16 }, () => ({ epoch: 1, revision: oldExecution! })));
+            try {
+              expect(await readSemanticExecutionReviewDefaults({ projectRoot, outcome: "inventory.unknown" })).toBeUndefined();
+              expect(bounded).toHaveBeenCalledTimes(4);
+              for (const [lookup] of bounded.mock.calls) expect(lookup).toMatchObject({
+                deployment_id: binding.deployment_id, key: OPERATOR_EXECUTION_POLICY, limit: 16,
+              });
+            } finally { bounded.mockRestore(); }
+          }
+          const enabledSecond = await enableSemanticSupervisedExecution(await reviewInput(1));
+          const final = await readRuntimeConfig(file);
+          expect(final.supervised_worker!.outcomes).toEqual([enabledFirst.policy, enabledSecond.policy]);
+          expect(final.sources).toEqual(oldConfig.sources);
+          for (const rule of current.registry.rules) expect(resolveSemanticSupervisedWorkerEligibility(final, rule,
+            { workerIdentity: rule.compiled.outcome === oldRules[1]!.rule.outcome ? "reviewed_second_worker" : "reviewed_first_worker" }).eligible)
+            .toBe(rule.compiled.outcome !== "inventory.archive");
+          expect(await readActionRuleAuthorityActivation(projectRoot)).toEqual(current.activation);
+        }
+        const history = await binding.repository.history({ deployment_id: binding.deployment_id, key: OPERATOR_EXECUTION_POLICY });
+        for (const entry of historyBefore) expect(history).toContainEqual(entry);
       });
     });
 

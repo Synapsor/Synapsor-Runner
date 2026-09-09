@@ -960,7 +960,7 @@ function databaseScopeModeDoctorCheck(assurance: SourceIsolationAssurance): Doct
 }
 
 
-async function postgresRlsDoctorChecks(input: {
+export async function postgresRlsDoctorChecks(input: {
   config: RuntimeConfig;
   sourceName: string;
   source: RunnerSourceConfig;
@@ -1186,10 +1186,11 @@ async function verifyPostgresRlsCanary(input: {
       const id = visible.rows[0]?.id;
       if (id === undefined) throw new Error("POSTGRES_RLS_CANARY_NO_VISIBLE_ROW");
 
+      // Bare UUIDs remain valid for both UUID-cast and text-based RLS settings.
       const deniedScopes: Array<[string, string]> = [
-        [`synapsor-canary-tenant-${crypto.randomUUID()}`, input.context.principal],
+        [crypto.randomUUID(), input.context.principal],
         ...(input.scope.principal_setting
-          ? [[input.context.tenant_id, `synapsor-canary-principal-${crypto.randomUUID()}`] as [string, string]]
+          ? [[input.context.tenant_id, crypto.randomUUID()] as [string, string]]
           : []),
       ];
       for (const [tenantId, principal] of deniedScopes) {
@@ -1221,6 +1222,9 @@ async function verifyPostgresRlsCanary(input: {
 
 
 function rlsDoctorError(error: unknown): string {
+  if ((error as { code?: unknown } | null)?.code === "22P02") {
+    return "PostgreSQL value/type mismatch (22P02); check trusted setting values and RLS casts; isolation not verified";
+  }
   const message = error instanceof Error ? error.message : String(error);
   if (/POSTGRES_RLS_[A-Z0-9_:,-]+/.test(message)) return message.match(/POSTGRES_RLS_[A-Z0-9_:,-]+/)?.[0] ?? "POSTGRES_RLS_CHECK_FAILED";
   return safeDatabaseProbeError(error);

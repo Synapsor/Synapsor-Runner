@@ -57,49 +57,40 @@ MCP tool call
 The source database remains the source of truth. Runner stores local evidence,
 proposals, receipts, query audit, and replay in SQLite.
 
-## Add A Capability Without Reading dist/
+## Onboard Without Reading dist/
 
-Start from schema inspection or a recipe, then run the smoke boundary before
-wiring an MCP client:
+Fresh `start` and `onboard db` use the same reviewed Read/Action system. The
+runtime surface stays at four tools as business rules change. Start with a
+read-only database credential and describe the intended job:
 
 ```bash
 export DATABASE_URL="postgres://readonly:...@localhost:5432/app"
-./bin/synapsor-runner onboard db \
-  --from-env DATABASE_URL \
-  --engine postgres \
-  --schema public \
-  --table invoices \
-  --primary-key id \
-  --tenant-column tenant_id \
-  --conflict-column updated_at \
-  --mode review \
-  --visible-columns id,tenant_id,status,late_fee_cents,updated_at \
-  --namespace billing \
-  --object-name invoice \
-  --id-arg invoice_id \
-  --patch late_fee_cents=fixed:0 \
-  --write-url-env SYNAPSOR_DATABASE_WRITE_URL \
-  --yes \
-  --output synapsor.runner.json
-
-./bin/synapsor-runner config validate --config ./synapsor.runner.json
-./bin/synapsor-runner tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db
-./bin/synapsor-runner smoke call --config ./synapsor.runner.json --store ./.synapsor/local.db
+./bin/synapsor-runner onboard db --from-env DATABASE_URL --schema public
 ```
 
-For app-owned writes, use an executor and generate a template:
+For automation or an external development assistant, use the documented
+structured draft/export flow in `docs/guided-onboarding.md`. It validates and
+saves disabled revisions without a TTY or provider call. Draft success is not
+activation. Read, Action, execution and worker startup remain separately
+reviewed, with authenticated exact proof required for supported headless
+activation. Never call internal activation helpers with a fabricated actor.
+
+After the reviewed authorities are activated, use the managed client installer:
 
 ```bash
-./bin/synapsor-runner onboard db \
-  --from-env DATABASE_URL \
-  --table invoices \
-  --mode review \
-  --writeback http_handler \
-  --handler-url-env APP_WRITEBACK_URL \
-  --emit-handler \
-  --handler-template node-fastify \
+./bin/synapsor-runner mcp install claude-code \
+  --project --authoring --project-root . \
   --yes
 ```
+
+This grants no additional database authority. The four tools are
+`app.describe_data`, `app.explore_data`, `app.describe_actions`, and
+`app.request_change`. Missing runtime identity, writer or worker readiness must
+be reported accurately; a handshake is not proof of a successful source effect.
+
+Do not recommend named per-table tools for new projects. Legacy recipes,
+code-first actions and exported artifacts remain explicit compatibility/testing
+surfaces; see `docs/legacy-onboarding.md` for the inventory and unported effects.
 
 ## Test Safely
 

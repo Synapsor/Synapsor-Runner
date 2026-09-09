@@ -5,6 +5,7 @@ import {
 import {
   evaluateApprovalPolicy,
   resolveSupervisedWorkerEligibility,
+  resolveSemanticSupervisedWriterSource,
   supervisedWorkerPolicies,
   supervisedWorkerPolicyDigest,
   supervisedWorkerPolicyName,
@@ -311,7 +312,7 @@ export function assessSemanticSupervisedWriterPosture(
       continue;
     }
     const compiled = activated.compiled;
-    const source = config.sources?.[compiled.source];
+    const source = resolveSemanticSupervisedWriterSource(config, compiled.source, candidate);
     if (!source || source.engine !== inspection.engine || source.write_url_env !== policy.write_url_env) {
       reasons.push("writer_source_mismatch");
       continue;
@@ -591,7 +592,7 @@ export async function assertSemanticSupervisedWriterPosture(
   let assessment: SupervisedWriterPostureAssessment;
   try {
     const activated = resolveActivatedActionRule(registry, policy.outcome);
-    const source = config.sources?.[activated.compiled.source];
+    const source = resolveSemanticSupervisedWriterSource(config, activated.compiled.source, policy);
     if (!source || source.write_url_env !== policy.write_url_env) throw new Error("writer source is unavailable");
     const inspection = await inspect({
       engine: source.engine,

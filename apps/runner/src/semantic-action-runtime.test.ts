@@ -501,7 +501,7 @@ describe("composed semantic Action runtime", () => {
     }
   });
 
-  it("keeps Read serving available when semantic Action authority is invalid", async () => {
+  it("rejects invalid semantic authority without downgrading it to optional Read service", async () => {
     const store = new ProposalStore();
     const failure = Object.assign(new Error("stale semantic Action authority"), {
       code: "ACTION_RULE_AUTHORITY_STALE",
@@ -514,8 +514,8 @@ describe("composed semantic Action runtime", () => {
         store,
         key,
         authorityLoader: async () => { throw failure; },
-      }, unavailable)).resolves.toBeUndefined();
-      expect(unavailable).toHaveBeenCalledWith(failure);
+      }, unavailable)).rejects.toBe(failure);
+      expect(unavailable).not.toHaveBeenCalled();
 
       await expect(createOptionalActionRuleRuntimeServices({
         projectRoot,
@@ -527,6 +527,63 @@ describe("composed semantic Action runtime", () => {
     } finally {
       store.close();
     }
+  });
+
+  it.each(["corrupt_json", "invalid_state", "invalid_digest", "missing_immutable", "missing_read"] as const)(
+    "refuses persisted active authority with %s without source access or authority replacement", async (mode) => {
+      const store = new ProposalStore(":memory:");
+      const activation = structuredClone(authorityFixture("active").activation);
+      const activePath = path.join(projectRoot, ".synapsor/action-rules/active.json");
+      const revisionPath = path.join(projectRoot, ".synapsor/action-rules/revisions", activation.digest.slice("sha256:".length), "authority.json");
+      const original = JSON.stringify(activation);
+      await fs.mkdir(path.dirname(revisionPath), { recursive: true });
+      if (mode !== "missing_immutable") await fs.writeFile(revisionPath, original);
+      const corrupted = mode === "corrupt_json" ? "{"
+        : mode === "invalid_state" ? JSON.stringify({ ...activation, state: "disabled" })
+          : mode === "invalid_digest" ? JSON.stringify({ ...activation, digest: `sha256:${"f".repeat(64)}` })
+            : original;
+      await fs.writeFile(activePath, corrupted);
+      const factSessionFactory = vi.fn(async () => { throw new Error("Source access is forbidden in this test"); });
+      const unavailable = vi.fn();
+      try {
+        const input = { projectRoot, config, store, key, factSessionFactory };
+        await expect(createOptionalReadActionRuleRuntimeServices(input, unavailable)).rejects.toThrow();
+        await expect(createOptionalActionRuleRuntimeServices(input)).rejects.toThrow();
+        expect(unavailable).not.toHaveBeenCalled();
+        expect(factSessionFactory).not.toHaveBeenCalled();
+        expect(await store.listProposals()).toEqual([]);
+        expect(await fs.readFile(activePath, "utf8")).toBe(corrupted);
+        if (mode === "missing_immutable") await expect(fs.stat(revisionPath)).rejects.toHaveProperty("code", "ENOENT");
+        else expect(await fs.readFile(revisionPath, "utf8")).toBe(original);
+        await expect(fs.stat(path.join(projectRoot, ".synapsor/exploration-boundaries.active.json")))
+          .rejects.toHaveProperty("code", "ENOENT");
+      } finally { store.close(); }
+    },
+  );
+
+  it("keeps genuine missing activation as inactive services with empty discovery and no proposal", async () => {
+    const store = new ProposalStore(":memory:");
+    const factSessionFactory = vi.fn(async () => { throw new Error("Source access is forbidden in this test"); });
+    const unavailable = vi.fn();
+    try {
+      const input = { projectRoot, config, store, key, factSessionFactory };
+      expect(await createOptionalActionRuleRuntimeServices(input)).toBeUndefined();
+      const services = await createOptionalReadActionRuleRuntimeServices(input, unavailable);
+      expect(services).toBeDefined();
+      expect(services!.semanticActions.listTools().map((tool) => tool.name).sort())
+        .toEqual(["app.describe_actions", "app.request_change"]);
+      await expect(services!.semanticActions.callTool("app.describe_actions", {})).resolves.toMatchObject({
+        ok: true, actions: [], availability: "operator_review_required", source_database_changed: false,
+      });
+      await expect(services!.semanticActions.callTool(REQUEST_CHANGE_TOOL, {
+        outcome: "billing.pause_notifications", subject_refs: { preference: `obj_${"a".repeat(40)}` },
+      })).rejects.toMatchObject({ code: "SEMANTIC_ACTION_UNAVAILABLE" });
+      expect(factSessionFactory).not.toHaveBeenCalled();
+      expect(unavailable).not.toHaveBeenCalled();
+      expect(await store.listProposals()).toEqual([]);
+      await expect(fs.stat(path.join(projectRoot, ".synapsor/action-rules/active.json")))
+        .rejects.toHaveProperty("code", "ENOENT");
+    } finally { store.close(); }
   });
 
   it.each([

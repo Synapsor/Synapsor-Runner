@@ -31,9 +31,8 @@ Set database and trusted-context values in the environment that launches the
 MCP process. Keep real URLs and tokens in your shell or secret manager, not in
 the checked-in client JSON.
 
-For an activated local development/staging Auto Boundary, the managed installer
-detects the reviewed local Explore-only config and writes the explicit
-authoring command automatically:
+For an activated local development/staging Read Boundary, the managed installer
+writes the explicit unified authoring command automatically:
 
 ```bash
 synapsor-runner mcp install claude-code \
@@ -41,22 +40,6 @@ synapsor-runner mcp install claude-code \
   --authoring \
   --project-root . \
   --yes
-```
-
-That entry advertises exactly `app.describe_data` and `app.explore_data`.
-Cursor and VS Code use the same command with `cursor` or `vscode`. Production,
-unknown-profile, remote, and shared HTTP surfaces never advertise those broad
-authoring tools. `--authoring` remains available when you want to state the
-mode explicitly. Omitting it no longer creates a zero-tool entry: Runner either
-detects the active local boundary or refuses with activation guidance.
-
-Local stdio exposes the fixed Read and Action tools through one project entry:
-
-```bash
-synapsor-runner mcp install claude-code \
-  --project \
-  --authoring \
-  --project-root .
 ```
 
 Runner shows the exact tool preview and asks once. It owns one entry:
@@ -75,6 +58,9 @@ launches the client; Runner does not write them to project configuration.
 
 Use stdio for Claude Code, Claude Desktop, Cursor, VS Code, and other local MCP
 clients:
+
+The following config/store form is for an existing legacy named-capability
+deployment, not a fresh managed Read/Action project:
 
 ```json
 {
@@ -114,38 +100,26 @@ repository file.
 
 ### Managed Project Installs
 
-Runner can safely manage its own project-local entry for Cursor, Claude Code,
-or VS Code. Choose the client you actually use:
+Runner can safely manage its own unified project-local entry for Cursor, Claude
+Code, or VS Code. Choose the client you actually use:
 
 ```bash
-synapsor-runner mcp install cursor --project --dry-run \
-  --config ./synapsor.runner.json \
-  --store ./.synapsor/local.db
-synapsor-runner mcp install claude-code --project --dry-run \
-  --config ./synapsor.runner.json \
-  --store ./.synapsor/local.db
-synapsor-runner mcp install vscode --project --dry-run \
-  --config ./synapsor.runner.json \
-  --store ./.synapsor/local.db
+synapsor-runner mcp install cursor --project --authoring --dry-run
+synapsor-runner mcp install claude-code --project --authoring --dry-run
+synapsor-runner mcp install vscode --project --authoring --dry-run
 ```
 
 Replace `--dry-run` with `--yes` only after reviewing the preview, then verify
 the selected client:
 
 ```bash
-synapsor-runner mcp install claude-code --project --yes \
-  --config ./synapsor.runner.json \
-  --store ./.synapsor/local.db
-synapsor-runner mcp status claude-code --project --check-launch
-```
-
-For an active Read plus Action Boundary, use the combined form for both install
-and launch verification:
-
-```bash
 synapsor-runner mcp install claude-code --project --authoring --yes
 synapsor-runner mcp status claude-code --project --check-launch
 ```
+
+The unified entry retains its four-tool surface when reviewed outcomes change;
+do not replace it with a config/store entry to add Actions. Use a config/store
+install only for an intentional legacy named-capability deployment.
 
 | Client | Managed project file | Server map |
 | --- | --- | --- |

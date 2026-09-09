@@ -309,7 +309,8 @@ function verifyCliRouting(baseline, current) {
 
   for (const args of routes) {
     const baselineResult = runCli(baseline, args, { cwd: fixtureRoot, env: commonEnv });
-    const currentResult = runCli(current, args, { cwd: fixtureRoot, env: commonEnv });
+    const currentArgs = args[0] === "init" ? args : [...args, "--legacy-capabilities"];
+    const currentResult = runCli(current, currentArgs, { cwd: fixtureRoot, env: commonEnv });
     const diagnostic = [
       `${args.join(" ")} failed`,
       `baseline stderr:\n${baselineResult.stderr}`,

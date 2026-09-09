@@ -2146,6 +2146,10 @@ function preserveBoundaryResourcePolicy(
     ...(editedResource ? request.keep_out_fields ?? [] : []),
     ...(editedResource ? request.withhold_from_model_fields ?? [] : []),
     ...(editedResource ? request.allow_reviewed_fields ?? [] : []),
+    // --visible-fields is an explicit reviewed replacement list. New fields
+    // discovered by a rescan start kept out, so they must be retained here
+    // rather than silently disappearing during curated-policy preservation.
+    ...(editedResource ? request.selectable_fields ?? [] : []),
   ]);
   const operationRepairFields = new Set(
     reviewedBoundaryOperationRepairFields(previous, generated),
@@ -3054,6 +3058,14 @@ function assertRequestedExposureState(
     if (!resource.selectable_fields.includes(field)
       || resource.kept_out_fields.includes(field)
       || resource.model_withheld_fields?.includes(field)) {
+      throw new Error(
+        `Reviewed visible-field decision for ${request.resource_id}.${field} was not reflected in the disabled candidate.`,
+      );
+    }
+  }
+  for (const field of request.selectable_fields ?? []) {
+    if (!resource.selectable_fields.includes(field)
+      || resource.kept_out_fields.includes(field)) {
       throw new Error(
         `Reviewed visible-field decision for ${request.resource_id}.${field} was not reflected in the disabled candidate.`,
       );

@@ -101,6 +101,7 @@ import { padTerminalBlock } from "./terminal-layout.js";
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { saveInitialGovernedBoundaryReview } from "./boundary-initial-review.js";
+import { initializeFreshGovernedAuthoring, resumeFreshGovernedAuthoring } from "./control-policy-fresh-authoring.js";
 import { openBoundProjectControlPolicies, openProjectControlPolicies } from "./control-policy-store.js";
 import {
   validateExploreTrustedScopeDefinition,
@@ -109,6 +110,7 @@ import {
 
 export type GuidedStartDependencies = {
   schemaInspector?: typeof inspectDatabase;
+  runStructuredBoundaryAuthoring?: (args: string[], schemaInspector: typeof inspectDatabase) => Promise<number>;
   runInstantCliBoundary?: (
     input: Omit<InstantCliBoundaryActivationInput, "session">,
   ) => Promise<InstantCliBoundaryActivationResult>;
@@ -137,89 +139,116 @@ export async function start(
   args: string[] = [],
   dependencies: GuidedStartDependencies = {},
 ): Promise<number> {
+  if (args.includes("--legacy-capabilities")) return legacyCapabilityOnboard(args.filter((arg) => arg !== "--legacy-capabilities"));
+  if (args.includes("--draft") || args.includes("--export-draft")) return currentBoundaryOnboard(args, dependencies);
   if (args.includes("--action")) return startSafeAction(args);
-  const terminalAskFlags = ["--timeout", "--session-token-budget", "--max-output-tokens"];
-  const terminalAskFlag = terminalAskFlags.find((flag) => args.includes(flag));
-  if (terminalAskFlag && !args.includes("--cli")) {
-    throw new Error(`start ${terminalAskFlag} configures the terminal model session and requires --cli. Workbench has its own Ask settings.`);
+  if (args.some((arg) => ["--config", "--store", "--once"].includes(arg))
+    && !args.some((arg) => ["--from-env", "--draft", "--export-draft", "--cli"].includes(arg))) return startWorker(args);
+  return currentBoundaryOnboard(args, dependencies);
+}
+
+const CURRENT_SETUP_VALUES = new Set(["--from-env", "--project-root", "--engine", "--schema", "--organization-id",
+  "--timeout", "--session-token-budget", "--max-output-tokens"]);
+const CURRENT_SETUP_FLAGS = new Set(["--cli", "--no-open", "--open-ui", "--json", "--yes", "--non-interactive",
+  "--force", "--rescan", "--no-graduation-tip", "--verbose", "--single-tenant"]);
+
+async function currentBoundaryOnboard(args: string[], dependencies: GuidedStartDependencies): Promise<number> {
+  const schemaInspector = dependencies.schemaInspector ?? inspectDatabase;
+  if (args.includes("--draft") || args.includes("--export-draft")) {
+    const run = dependencies.runStructuredBoundaryAuthoring
+      ?? (await import("./boundary-structured-authoring.js")).structuredBoundaryAuthoringCommand;
+    return run(args, schemaInspector);
+  }
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!;
+    if (CURRENT_SETUP_VALUES.has(arg)) {
+      if (!args[index + 1] || args[index + 1]!.startsWith("-")) throw new Error(`${arg} requires a value.`);
+      index++;
+    } else if (!CURRENT_SETUP_FLAGS.has(arg)) {
+      throw new Error(`Unsupported current Boundary setup argument: ${arg}. `
+        + "Use --from-env <ENV_NAME> to initialize disabled metadata, then --export-draft <file>, --draft <file> --dry-run, and separate Boundary review. "
+        + "Old capability selectors (--table, --answers, --spec, --mode and related options) require explicit --legacy-capabilities; existing artifacts were not changed.");
+    }
   }
   const interactive = dependencies.interactive
     ?? (process.stdin.isTTY === true && process.stdout.isTTY === true);
+  const headless = args.includes("--no-open") || args.includes("--json") || args.includes("--yes")
+    || args.includes("--non-interactive") || (!interactive && !args.includes("--open-ui"));
+  const terminalAskFlags = ["--timeout", "--session-token-budget", "--max-output-tokens"];
+  const terminalAskFlag = terminalAskFlags.find((flag) => args.includes(flag));
+  if (terminalAskFlag && (headless || args.includes("--open-ui"))) {
+    throw new Error(`start ${terminalAskFlag} configures the terminal model session and requires --cli in an interactive terminal. Workbench has its own Ask settings.`);
+  }
   if (args.includes("--cli")) {
     if (!interactive) {
       throw new Error(
         "start --cli requires an interactive terminal. " +
-        "Use --no-open for noninteractive initialization without prompts.",
+        "Use start --from-env <ENV_NAME> --json for disabled metadata, then start --project-root <path> --export-draft <file> or --draft <file> --json --dry-run without a TTY or model API.",
       );
     }
-    if (args.includes("--no-open") || args.includes("--open-ui")) {
-      throw new Error("start --cli cannot be combined with --no-open or --open-ui.");
-    }
-    if (!optionalArg(args, "--from-env")) {
-      const project = await detectProjectContext(process.cwd());
-      const databaseEnv = preferredDetectedDatabaseEnv(project.database_env_names, process.env);
-      if (!databaseEnv) {
-        throw new Error(
-          "start --cli needs --from-env <DATABASE_URL_ENV_NAME> or an exported DATABASE_URL.",
-        );
-      }
-      process.stdout.write(
-        `Using exported ${databaseEnv}; its value will not be printed or written to generated files.\n`,
-      );
-      return startAutoBoundary(
-        ["--from-env", databaseEnv, ...args],
-        dependencies,
-      );
-    }
-    return startAutoBoundary(args, dependencies);
-  }
-  if (await shouldEnterAutoBoundary(args, interactive)) {
-    return startAutoBoundary(args, dependencies);
-  }
-  if (args.includes("--from-env") || args.includes("--schema") || args.includes("--mode") || args.includes("--engine")) {
-    if (args.length > 0) {
-      const openWorkbench = process.stdin.isTTY && process.stdout.isTTY && !args.includes("--no-open") && !args.includes("--dry-run");
-      return onboard(["db", ...args, ...(openWorkbench && !args.includes("--open-ui") ? ["--open-ui"] : [])]);
+    if (headless || args.includes("--open-ui")) {
+      throw new Error("start --cli cannot be combined with --no-open, --open-ui, --json, --yes or --non-interactive.");
     }
   }
-  if (args.length === 0) {
-    if (!interactive) {
-      throw new Error("Guided start needs an interactive terminal. For automation, pass --from-env DATABASE_URL with an established selector such as --table or --answers.");
-    }
-    const project = await detectProjectContext(process.cwd());
-    const guided = await readGuidedOnboardingState(project.root);
-    const authoring = await readProjectReadAuthoring(project.root);
-    const databaseEnv = preferredDetectedDatabaseEnv(project.database_env_names, process.env);
-    const establishedManualProject = !guided && !authoring && (
-      await fileExists(path.join(project.root, "synapsor.runner.json"))
-      || await fileExists(path.join(project.root, "synapsor.contract.json"))
-    );
-    if (establishedManualProject) {
-      if (!databaseEnv) {
-        throw new Error("No exported database URL environment variable was detected for the existing manual project. Run the same established command with --from-env <ENV_NAME>.");
-      }
-      process.stdout.write(`Using exported ${databaseEnv}; its value will not be printed or written to generated files.\n`);
-      return onboard(["db", "--from-env", databaseEnv, "--open-ui"]);
-    }
-    if (databaseEnv) {
-      process.stdout.write(`Using exported ${databaseEnv}; its value will not be printed or written to generated files.\n`);
-      return startAutoBoundary(["--from-env", databaseEnv], dependencies);
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const project = await detectProjectContext(projectRoot);
+  const guided = await readGuidedOnboardingState(project.root);
+  const authoring = await readOrResumeFreshReadAuthoring(project.root);
+  if (!guided && !authoring && !await loadManagedBoundaryProjectContext(project.root)
+    && (await fileExists(path.join(project.root, "synapsor.runner.json")) || await fileExists(path.join(project.root, "synapsor.contract.json")))) {
+    throw new Error("Existing manual capability artifacts were preserved. Use --legacy-capabilities for that compatibility workflow, or a separate project directory for current Boundary setup. Existing workers use runner start --config <file> --store <file>.");
+  }
+  const sourceEnv = optionalArg(args, "--from-env") ?? preferredDetectedDatabaseEnv(project.database_env_names, process.env);
+  if (!sourceEnv) {
+    if (!interactive || headless) {
+      throw new Error("Current Boundary setup requires --from-env <ENV_NAME> or an exported DATABASE_URL. No TTY or model API is needed for --json metadata initialization and --export-draft/--draft authoring.");
     }
     const input = await promptForInstantDatabaseInput(project.root);
     const previous = process.env[input.environmentVariable];
     process.env[input.environmentVariable] = input.value;
     process.stdout.write(`Using ${input.environmentVariable} from ${input.sourceLabel} for this Runner process only; its value will not be printed or written to generated files.\n`);
     try {
-      return await startAutoBoundary(
-        ["--from-env", input.environmentVariable],
-        dependencies,
-      );
+      return await currentBoundaryOnboard(["--from-env", input.environmentVariable, ...args], dependencies);
     } finally {
       if (previous === undefined) delete process.env[input.environmentVariable];
       else process.env[input.environmentVariable] = previous;
     }
   }
-  return startWorker(args);
+  const resolvedArgs = optionalArg(args, "--from-env") ? args : ["--from-env", sourceEnv, ...args];
+  // A normal deferred start resumes the governed candidate. Metadata is only
+  // reconciled through the explicit --rescan path below.
+  if (args.includes("--no-open") && !args.includes("--rescan") && !args.includes("--force") && authoring?.selected) {
+    const context = await loadBoundaryReviewContext(project.root);
+    if (context.lock.source_env !== sourceEnv) {
+      throw new Error(
+        `This reviewed project uses ${context.lock.source_env}, not ${sourceEnv}. `
+        + `Resume with --from-env ${context.lock.source_env}, or choose an explicit rescan.`,
+      );
+    }
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({
+      ok: true, state: "saved_review", boundary_name: context.candidate.pack.name,
+      read_candidate_digest: context.bundle.candidate_digest,
+      source_database_changed: false, active_authority_changed: false,
+      disabled_authority_changed: false, next_steps: structuredBoundaryNextSteps(projectRoot),
+    }, null, 2)}\n`);
+    return 0;
+  }
+  if (headless) {
+    const metadataArgs = ["--project-root", projectRoot, "--from-env", sourceEnv];
+    for (const flag of ["--engine", "--schema", "--organization-id"]) {
+      const value = optionalArg(args, flag);
+      if (value !== undefined) metadataArgs.push(flag, value);
+    }
+    for (const flag of ["--single-tenant", "--force", "--json", "--no-graduation-tip"]) if (args.includes(flag)) metadataArgs.push(flag);
+    if (args.includes("--rescan")) {
+      if (args.some((arg) => ["--engine", "--schema", "--single-tenant", "--organization-id"].includes(arg))) {
+        throw new Error("A rescan reuses the reviewed source and scope; omit new schema or scope selections.");
+      }
+      return boundaryCommand(["rescan", "--project-root", projectRoot, "--from-env", sourceEnv, ...(args.includes("--json") ? ["--json"] : [])], schemaInspector);
+    }
+    return boundaryCommand(["draft", ...metadataArgs], schemaInspector);
+  }
+  return startAutoBoundary(args.includes("--open-ui") || args.includes("--cli") ? resolvedArgs : [...resolvedArgs, "--cli"], dependencies);
 }
 
 
@@ -250,42 +279,47 @@ async function promptForInstantDatabaseInput(projectRoot: string): Promise<Insta
   ));
 }
 
+async function readOrResumeFreshReadAuthoring(projectRoot: string) {
+  let pending: unknown;
+  try {
+    const authoring = await readProjectReadAuthoring(projectRoot);
+    if (authoring) return authoring;
+  } catch (error) {
+    if ((error as { code?: unknown })?.code !== "POLICY_MIGRATION_PENDING") throw error;
+    pending = error;
+  }
+  if (!await fileExists(path.join(projectRoot, ".synapsor/fresh-governed-authoring.json"))) {
+    if (pending) throw pending;
+    return undefined;
+  }
+  const resumed = await resumeFreshGovernedAuthoring({ projectRoot, actor: "local_operator",
+    config: loadRuntimeConfigFromFile(path.join(projectRoot, "synapsor.runner.json")),
+    storePath: path.join(projectRoot, ".synapsor/local.db") });
+  if (!resumed && pending) throw pending;
+  return resumed?.authoring;
+}
 
-async function shouldEnterAutoBoundary(
-  args: string[],
-  interactive = process.stdin.isTTY === true && process.stdout.isTTY === true,
-): Promise<boolean> {
-  if (!optionalArg(args, "--from-env")) return false;
-  const establishedRoutingFlags = [
-    "--table",
-    "--answers",
-    "--mode",
-    "--yes",
-    "--non-interactive",
-    "--dry-run",
-    "--json",
-    "--inspection-json",
-    "--spec",
-    "--starter",
-    "--output",
-    "--out",
-    "-o",
-    "--action",
-    "--writeback",
-    "--single-tenant-dev",
-    "--tenant-key",
+function structuredBoundaryNextSteps(projectRoot: string) {
+  const command = `${cliCommandName()} start --project-root ${shellQuote(projectRoot)}`;
+  const draft = shellQuote(path.join(projectRoot, "boundary-authoring.json"));
+  return {
+    export_draft: `${command} --export-draft ${draft} --json`,
+    validate_draft: `${command} --draft ${draft} --dry-run --json`,
+    submit_disabled_draft: `${command} --draft ${draft} --json`,
+    review: `${cliCommandName()} boundary review --project-root ${shellQuote(projectRoot)} --access`,
+    review_actions: `${cliCommandName()} action review --project-root ${shellQuote(projectRoot)}`,
+  };
+}
+
+function structuredBoundaryGuidance(projectRoot: string): string[] {
+  const next = structuredBoundaryNextSteps(projectRoot);
+  return [
+    "Structured authoring needs no TTY or model API; edit the exported typed draft before validation/submission:",
+    ...Object.values(next).map((command) => `  ${command}`),
+    "Review the saved Read with C, then select Verified Action Boundary for the separate exact Action confirmation. No model or new job conversation is required.",
+    "Read and Action authority require separate trusted human review. --yes and --dry-run never activate authority.",
+    "The current MCP entry uses app.describe_data, app.explore_data, app.describe_actions and app.request_change; approval and apply stay outside model tools.",
   ];
-  if (establishedRoutingFlags.some((flag) => args.includes(flag))) return false;
-  if (args.includes("--no-open")) return true;
-  if (!interactive) return false;
-  if (await readProjectReadAuthoring(process.cwd())) return true;
-  if (await fileExists(path.resolve(".synapsor/guided-onboarding.json"))) return true;
-  if ((args.includes("--rescan") || args.includes("--force"))
-    && await fileExists(path.resolve("synapsor/generated/exploration-boundary.draft.json"))
-    && await fileExists(path.resolve(".synapsor/generation-lock.json"))) return true;
-  if (await fileExists(path.resolve("synapsor.runner.json"))) return false;
-  if (await fileExists(path.resolve("synapsor.contract.json"))) return false;
-  return true;
 }
 
 
@@ -293,7 +327,7 @@ async function startAutoBoundary(
   args: string[],
   dependencies: GuidedStartDependencies = {},
 ): Promise<number> {
-  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--cli", "--force", "--rescan", "--no-graduation-tip", "--verbose", "--single-tenant", "--organization-id", "--timeout", "--session-token-budget", "--max-output-tokens"]), "start --from-env Auto Boundary");
+  assertKnownOptions(args, new Set(["--from-env", "--project-root", "--engine", "--schema", "--no-open", "--open-ui", "--cli", "--force", "--rescan", "--no-graduation-tip", "--verbose", "--single-tenant", "--organization-id", "--timeout", "--session-token-budget", "--max-output-tokens"]), "start --from-env Auto Boundary");
   const cliMode = args.includes("--cli");
   const rawRequestTimeout = optionalArg(args, "--timeout");
   const requestTimeoutSeconds = rawRequestTimeout === undefined
@@ -346,7 +380,7 @@ async function startAutoBoundary(
   if (singleOrganization !== Boolean(organizationId)) {
     throw new Error("Single-organization Explore requires both --single-tenant and --organization-id <stable-org-id>.");
   }
-  const project = await detectProjectContext(process.cwd());
+  const project = await detectProjectContext(path.resolve(optionalArg(args, "--project-root") ?? process.cwd()));
   const regenerateInstantBoundary: NonNullable<InstantCliBoundaryActivationInput["regenerateBoundary"]> =
     async ({ inspection }) => {
       const journey = await readGuidedOnboardingState(project.root);
@@ -377,9 +411,11 @@ async function startAutoBoundary(
   const verbose = args.includes("--verbose");
   if (verbose) writeGuidedOutput(formatProjectDetection(project));
   const savedJourney = await readGuidedOnboardingState(project.root);
-  const initialAuthoring = await readProjectReadAuthoring(project.root);
+  const initialAuthoring = await readOrResumeFreshReadAuthoring(project.root);
   const needsInitialReview = initialAuthoring && !initialAuthoring.selected;
-  const existingJourney = needsInitialReview ? undefined : savedJourney;
+  const unfinishedFreshSetup = savedJourney && !initialAuthoring
+    && !await fileExists(path.join(project.root, "synapsor/generated/exploration-boundary.draft.json"));
+  const existingJourney = needsInitialReview || unfinishedFreshSetup ? undefined : savedJourney;
   const managedBoundaryContext = existingJourney || needsInitialReview
     ? undefined
     : await loadManagedBoundaryProjectContext(project.root);
@@ -662,6 +698,30 @@ async function startAutoBoundary(
     return openWorkbench(["--open", "--boundary-root", path.join(project.root, "synapsor/generated"),
       "--config", configPath, "--store", storePath]);
   }
+  if (!existingJourney && !managedBoundaryContext) {
+    const guided = await initializeGuidedProject({ projectRoot: project.root, build,
+      runnerVersion: runnerPackage.version, instantOnboarding: true,
+      suppressGraduationTip: args.includes("--no-graduation-tip") });
+    await initializeFreshGovernedAuthoring({ projectRoot: project.root, build, actor: "local_operator",
+      config: loadRuntimeConfigFromFile(guided.config_path), storePath: guided.store_path });
+    writeGuidedOutput(formatGuidedBoundaryReady(build, { blocked_objects: build.review.summary.blocked_objects },
+      cliMode ? "terminal" : args.includes("--no-open") ? "deferred" : "workbench", verbose));
+    writeGuidedOutput("The disabled Boundary review is saved in the local control store. No Read, Action or execution authority is active.\n");
+    if (cliMode) {
+      if (runInstantCliBoundary) {
+        const instant = await runInstantCliBoundary({ projectRoot: project.root, draft: build.exploration_boundary,
+          lock: build.lock, schemaInspector, initialInspection: inspection, regenerateBoundary: regenerateInstantBoundary });
+        if (instant.accepted) return runPostActivationHandoff({ projectRoot: project.root, ...terminalAskLimits,
+          selection: instant.askSelection, consentOnFirstQuestion: true });
+        if (instant.reason === "operator_cancelled") return 0;
+        return runBoundaryReview(["--project-root", project.root, "--access"], schemaInspector, activationHandoff);
+      }
+      return runBoundaryReview(["--project-root", project.root, "--access", "--job-first"], schemaInspector, activationHandoff);
+    }
+    if (args.includes("--no-open")) return 0;
+    return openWorkbench(["--open", "--boundary-root", path.join(project.root, "synapsor/generated"),
+      "--config", guided.config_path, "--store", guided.store_path]);
+  }
   await fs.mkdir(project.root, { recursive: true });
   const { result, guided } = await withProjectAuthorityMutation(project.root, async (held) => {
     let result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>> | undefined;
@@ -828,7 +888,7 @@ async function loadManagedBoundaryProjectContext(
 
 function formatGuidedBoundaryReady(
   build: ReturnType<typeof buildAutoBoundary>,
-  result: Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>>,
+  result: Pick<Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>>, "blocked_objects">,
   reviewSurface: "workbench" | "terminal" | "deferred" = "workbench",
   verbose = false,
 ): string {
@@ -1027,6 +1087,7 @@ export async function boundaryCommand(
         ok: true,
         reconciled: true,
         report: prepared.report,
+        ...(prepared.selectedProgress.candidate.deployment_profile !== "production" ? { next_steps: structuredBoundaryNextSteps(projectRoot) } : {}),
         ...(prepared.report.changed
           ? {
               next: followUp.editor,
@@ -1040,12 +1101,13 @@ export async function boundaryCommand(
       if (prepared.report.changed) {
         process.stdout.write(`\n${followUp.lines.join("\n")}\n`);
       }
+      if (prepared.selectedProgress.candidate.deployment_profile !== "production") process.stdout.write(`${structuredBoundaryGuidance(projectRoot).join("\n")}\n`);
     }
     return 0;
   }
   if (subcommand === "draft") {
     assertKnownOptions(rest, new Set([
-      "--from-env", "--engine", "--schema", "--project-root", "--force", "--json",
+      "--from-env", "--engine", "--schema", "--project-root", "--force", "--json", "--no-graduation-tip",
       "--profile", "--tenant-claim", "--principal-claim", "--single-tenant", "--organization-id",
     ]), "boundary draft");
     const sourceEnv = optionalArg(rest, "--from-env")
@@ -1079,7 +1141,7 @@ export async function boundaryCommand(
     }
     const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
     const existingJourney = await readGuidedOnboardingState(projectRoot);
-    const initialAuthoring = await readProjectReadAuthoring(projectRoot);
+    const initialAuthoring = await readOrResumeFreshReadAuthoring(projectRoot);
     const existingBoundaryRoot = path.join(
       projectRoot,
       existingJourney?.artifacts.boundary_root ?? "synapsor/generated",
@@ -1130,6 +1192,7 @@ export async function boundaryCommand(
           reconciled: true,
           destructive_regeneration: false,
           report: prepared.report,
+          ...(prepared.selectedProgress.candidate.deployment_profile !== "production" ? { next_steps: structuredBoundaryNextSteps(projectRoot) } : {}),
           ...(prepared.report.changed
             ? {
                 next: followUp.editor,
@@ -1147,6 +1210,7 @@ export async function boundaryCommand(
           ...(prepared.report.changed
             ? ["", ...followUp.lines]
             : []),
+          ...(prepared.selectedProgress.candidate.deployment_profile !== "production" ? structuredBoundaryGuidance(projectRoot) : []),
           "",
         ].join("\n"));
       }
@@ -1216,15 +1280,39 @@ export async function boundaryCommand(
         boundary_id: saved.progress.boundary_id, candidate_digest: saved.progress.candidate_digest,
         review_revision: saved.progress.revision, authoring_binding: saved.authoring,
         source_database_changed: false, active_authority_changed: false, next_action: next,
+        next_steps: structuredBoundaryNextSteps(projectRoot),
       }, null, 2)}\n`);
-      else process.stdout.write(`Disabled Boundary review saved in the existing control store. Active authority and runtime configuration are unchanged.\nNext: ${next}\n`);
+      else process.stdout.write(`Disabled Boundary review saved in the existing control store. Active authority and runtime configuration are unchanged.\nNext: ${next}\n${structuredBoundaryGuidance(projectRoot).join("\n")}\n`);
       return 0;
     }
     const shouldInitializeProject = deploymentProfile !== "production"
-      && !existingJourney
-      && !existingProject?.config_path;
+      && ((!existingJourney && !existingProject?.config_path)
+        || (existingJourney && !initialAuthoring
+          && !await fileExists(path.join(existingBoundaryRoot, "exploration-boundary.draft.json"))));
     if (shouldInitializeProject) {
       await preflightGuidedProjectInitialization(projectRoot);
+      const guided = await initializeGuidedProject({ projectRoot, build,
+        runnerVersion: runnerPackage.version, instantOnboarding: true,
+        suppressGraduationTip: rest.includes("--no-graduation-tip") });
+      const saved = await initializeFreshGovernedAuthoring({ projectRoot, build, actor: "local_operator",
+        config: loadRuntimeConfigFromFile(guided.config_path), storePath: guided.store_path });
+      const selected = saved.authoring.selected!;
+      const next = structuredBoundaryNextSteps(projectRoot);
+      if (rest.includes("--json")) process.stdout.write(`${JSON.stringify({
+        ok: true, activation: "disabled_unreviewed", storage: "control_repository", deployment_profile: deploymentProfile,
+        boundary_id: selected.progress.boundary_id, candidate_digest: selected.progress.candidate_digest,
+        review_revision: selected.progress.revision, authoring_binding: saved.authoring.bindings,
+        guided_project_created: guided.created, config_path: guided.config_path, store_path: guided.store_path,
+        source_database_changed: false, active_authority_changed: false, next_action: next.review, next_steps: next,
+      }, null, 2)}\n`);
+      else process.stdout.write([
+        "Metadata inspected. The disabled Boundary review is saved in the local control store.",
+        "No Read, Action or execution authority is active. Source database changed: no.",
+        ...(build.exploration_boundary.organization_scope
+          ? [`Scope: whole reviewed organization (${build.exploration_boundary.organization_scope.organization_id}); no tenant filter`] : []),
+        ...structuredBoundaryGuidance(projectRoot), "",
+      ].join("\n"));
+      return 0;
     }
     await fs.mkdir(projectRoot, { recursive: true });
     const { result, guided } = await withProjectAuthorityMutation(projectRoot, async (held) => {
@@ -1235,6 +1323,7 @@ export async function boundaryCommand(
         if (deploymentProfile !== "production" && (shouldInitializeProject || existingJourney)) {
           guided = await initializeGuidedProject({
             projectRoot: held.projectRoot, build, runnerVersion: runnerPackage.version, instantOnboarding: true,
+            suppressGraduationTip: rest.includes("--no-graduation-tip"),
           }, held);
         }
         if (deploymentProfile !== "production" && existingJourney) {
@@ -1281,6 +1370,9 @@ export async function boundaryCommand(
         ...(configPath ? { config_path: configPath } : {}),
         ...(storePath ? { store_path: storePath } : {}),
         next_action: reviewCommand,
+        ...(deploymentProfile !== "production" ? { next_steps: structuredBoundaryNextSteps(projectRoot) } : {}),
+        source_database_changed: false,
+        active_authority_changed: false,
         ...(productionConfigCommand ? { runtime_config_next_action: productionConfigCommand } : {}),
         visual_alternative: workbenchCommand,
       }, null, 2)}\n`);
@@ -1288,6 +1380,9 @@ export async function boundaryCommand(
       process.stdout.write([
         `Generated disabled Auto Boundary draft at ${displayPath(result.root)}.`,
         `Profile: ${deploymentProfile}.`,
+        ...(build.exploration_boundary.organization_scope
+          ? [`Scope: whole reviewed organization (${build.exploration_boundary.organization_scope.organization_id}); no tenant filter`]
+          : []),
         "State: disabled draft. Active Runner tools are unchanged.",
         ...(guided?.created
           ? [
@@ -1298,6 +1393,7 @@ export async function boundaryCommand(
         "",
         "Next: review it in this terminal:",
         `  ${reviewCommand}`,
+        ...(deploymentProfile !== "production" ? structuredBoundaryGuidance(projectRoot) : []),
         ...(productionConfigCommand
           ? [
             "",
@@ -1699,14 +1795,22 @@ async function readManagedProtectedDrafts(projectRoot: string): Promise<Array<Re
 }
 
 
-export async function onboard(args: string[]): Promise<number> {
+export async function onboard(args: string[], dependencies: GuidedStartDependencies = {}): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand !== "db") {
     usage(["onboard"]);
     return 2;
   }
-  process.stdout.write("Synapsor Runner own-database onboarding\n");
-  process.stdout.write("You will inspect metadata, choose one table/view, confirm safety rules, and generate semantic MCP tools without writing JSON by hand.\n\n");
+  if (rest.includes("--legacy-capabilities")) return legacyCapabilityOnboard(rest.filter((arg) => arg !== "--legacy-capabilities"));
+  return currentBoundaryOnboard(rest, dependencies);
+}
+
+async function legacyCapabilityOnboard(rest: string[]): Promise<number> {
+  if (rest.some((arg) => ["--draft", "--export-draft", "--cli"].includes(arg))) {
+    throw new Error("--legacy-capabilities cannot be combined with current Boundary --draft, --export-draft or --cli routes.");
+  }
+  process.stdout.write("Synapsor Runner legacy capability compatibility setup\n");
+  process.stdout.write("You will inspect metadata, choose one table/view, confirm safety rules, and generate legacy named capability tools without writing JSON by hand.\n\n");
   const startedAt = new Date().toISOString();
   const openWorkbench = rest.includes("--open-ui");
   const initArgs = rest.filter((value) => value !== "--open-ui" && value !== "--no-open");
@@ -1813,7 +1917,7 @@ async function assertCompleteNonInteractiveOnboardingInput(
       : "Canonical read-only automation:",
     mode && mode !== "read_only"
       ? `  ${canonicalWriteRecipe}`
-      : `  ${cliCommandName()} onboard db --from-env ${sourceEnv} --table public.orders --mode read_only --tenant-key tenant_id --yes --no-open`,
+      : `  ${cliCommandName()} onboard db --legacy-capabilities --from-env ${sourceEnv} --table public.orders --mode read_only --tenant-key tenant_id --yes --no-open`,
     "Use --force only after reviewing the generated files that would be replaced.",
   ].join("\n"));
 }
@@ -1823,7 +1927,7 @@ function canonicalReviewAutomationRecipe(
   sourceEnv: string,
   operation: "update" | "insert" | "delete",
 ): string {
-  const common = `${cliCommandName()} onboard db --from-env ${sourceEnv} --table public.orders --mode review --operation ${operation} --tenant-key tenant_id`;
+  const common = `${cliCommandName()} onboard db --legacy-capabilities --from-env ${sourceEnv} --table public.orders --mode review --operation ${operation} --tenant-key tenant_id`;
   if (operation === "insert") {
     return `${common} --patch status=arg:status --dedup request_id=proposal_id,tenant_id=trusted_tenant --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes --no-open`;
   }

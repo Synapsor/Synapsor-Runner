@@ -144,6 +144,7 @@ export {
   capabilityWritebackExecutor,
   capabilityWritebackMode,
   resolveSemanticSupervisedWorkerEligibility,
+  resolveSemanticSupervisedWriterSource,
   resolveSupervisedWorkerEligibility,
   supervisedWorkerPolicies,
   supervisedWorkerPolicyDigest,

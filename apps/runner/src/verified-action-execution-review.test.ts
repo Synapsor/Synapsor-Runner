@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { readPausedExecutionSetup, SemanticWriterPostureError } from "./semantic-execution-setup.js";
 import { reviewSemanticSupervisedExecution } from "./verified-action-review.js";
-import { enableSemanticSupervisedExecution, previewSemanticSupervisedExecution, verifySemanticExecutionReadPosture } from "./semantic-action-deployment.js";
+import { enableSemanticSupervisedExecution, previewSemanticSupervisedExecution, verifySemanticExecutionReadPosture,
+  readSemanticExecutionReviewDefaults } from "./semantic-action-deployment.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import type { WriterProvisioningPlan } from "./writer-provisioning.js";
 
@@ -12,12 +13,14 @@ vi.mock("./semantic-action-deployment.js", async (original) => ({
   ...await original<typeof import("./semantic-action-deployment.js")>(),
   previewSemanticSupervisedExecution: vi.fn(), enableSemanticSupervisedExecution: vi.fn(),
   verifySemanticExecutionReadPosture: vi.fn(),
+  readSemanticExecutionReviewDefaults: vi.fn(),
 }));
 
 describe("guided execution recovery", () => {
   const roots: string[] = [];
   afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
-  beforeEach(() => { vi.clearAllMocks(); vi.mocked(verifySemanticExecutionReadPosture).mockResolvedValue(undefined); });
+  beforeEach(() => { vi.clearAllMocks(); vi.mocked(verifySemanticExecutionReadPosture).mockResolvedValue(undefined);
+    vi.mocked(readSemanticExecutionReviewDefaults).mockResolvedValue(undefined); });
 
   function fixture() {
     const session = {
@@ -49,6 +52,37 @@ describe("guided execution recovery", () => {
     expect(input.session.chooseOption).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining([
       expect.objectContaining({ label: "Show how to revalidate this saved job" }),
     ]), expect.objectContaining({ displayContext: true }));
+  });
+
+  it.each(["retained_worker", "unpinned_worker", "missing_environment"])("uses only the outcome's saved writer and identity as reverified defaults (%s)", async (mode) => {
+    const input = fixture();
+    input.env = { SYNAPSOR_DATABASE_WRITE_URL: "postgres://unrelated-hidden", SECOND_WRITER_URL: "postgres://reviewed-hidden" };
+    if (mode === "missing_environment") delete input.env.SECOND_WRITER_URL;
+    vi.mocked(readSemanticExecutionReviewDefaults).mockResolvedValue({ write_url_env: "SECOND_WRITER_URL",
+      ...(mode === "unpinned_worker" ? {} : { worker_identity: "reviewed_second_worker" }) });
+    vi.mocked(input.session.chooseOption!).mockResolvedValueOnce("check");
+    vi.mocked(input.session.confirmActivation!).mockResolvedValueOnce(false);
+    expect(await reviewSemanticSupervisedExecution(input)).toBeUndefined();
+    expect(previewSemanticSupervisedExecution).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: input.outcome, writeUrlEnv: "SECOND_WRITER_URL",
+      ...(mode === "unpinned_worker" ? {} : { workerIdentity: "reviewed_second_worker" }),
+    }));
+    if (mode === "unpinned_worker") expect(vi.mocked(previewSemanticSupervisedExecution).mock.calls[0]![0].workerIdentity).toBeUndefined();
+    expect(input.session.promptText).toHaveBeenCalledTimes(mode === "missing_environment" ? 1 : 0);
+    if (mode === "missing_environment") expect(input.session.promptText).toHaveBeenCalledWith(
+      "Write connection variable (Enter uses SECOND_WRITER_URL)", expect.anything());
+    expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
+    expect(JSON.stringify(vi.mocked(input.session.chooseOption!).mock.calls)).not.toContain("postgres://");
+  });
+
+  it("does not guess a connection when saved review defaults cannot be validated", async () => {
+    const input = fixture();
+    vi.mocked(readSemanticExecutionReviewDefaults).mockRejectedValue(new Error("POLICY_AUTHORITY_IDENTITY_MISMATCH"));
+    expect((await reviewSemanticSupervisedExecution(input))?.tone).toBe("warning");
+    expect(input.session.promptText).not.toHaveBeenCalled();
+    expect(previewSemanticSupervisedExecution).not.toHaveBeenCalled();
+    expect(input.session.confirmActivation).not.toHaveBeenCalled();
+    expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
   });
 
   it("rechecks a corrected writer in the same conversation, retaining separate execution consent", async () => {
@@ -99,6 +133,19 @@ describe("guided execution recovery", () => {
     expect(await reviewSemanticSupervisedExecution(input)).toBeUndefined();
     expect(input.session.promptText).not.toHaveBeenCalled();
     expect(previewSemanticSupervisedExecution).toHaveBeenCalledOnce();
+    expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
+    expect(JSON.stringify(vi.mocked(input.session.chooseOption!).mock.calls)).not.toContain("secret-do-not-display");
+  });
+  it("names each pending outcome when moving between writer reviews without enabling either", async () => {
+    const input = fixture(); input.env = { SYNAPSOR_DATABASE_WRITE_URL: "postgres://secret-do-not-display" };
+    for (const outcome of ["inventory.replenish", "inventory.correct_stock"]) {
+      expect(await reviewSemanticSupervisedExecution({ ...input, outcome })).toBeUndefined();
+      expect(input.session.chooseOption).toHaveBeenLastCalledWith("Check your write connection", expect.arrayContaining([
+        expect.objectContaining({ value: "pause", label: "Set up this outcome later" }),
+      ]), expect.objectContaining({ displayContext: true, context: expect.arrayContaining([`Outcome: ${outcome}`]) }));
+    }
+    expect(previewSemanticSupervisedExecution).not.toHaveBeenCalled();
+    expect(input.session.confirmActivation).not.toHaveBeenCalled();
     expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
     expect(JSON.stringify(vi.mocked(input.session.chooseOption!).mock.calls)).not.toContain("secret-do-not-display");
   });

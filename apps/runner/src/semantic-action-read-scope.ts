@@ -35,6 +35,24 @@ export function bindSemanticReadScope(
       bindings.set(rule.verification_boundary.source, binding);
     }
   }
-  for (const [source, binding] of bindings) sources![source]!.database_scope = binding;
+  const aliases: typeof bindings = new Map();
+  const compiledSources = new Set(rules.map((rule) => rule.verification_boundary.source));
+  for (const [sourceName, binding] of bindings) {
+    const source = sources![sourceName]!;
+    // Only already-equivalent credential aliases follow the same reviewed Read binding.
+    if (source.read_only !== true && typeof source.write_url_env === "string") {
+      for (const [name, alias] of Object.entries(sources!)) {
+        if (compiledSources.has(name) || typeof alias.write_url_env !== "string") continue;
+        if (canonicalJsonDigest({ ...source, write_url_env: alias.write_url_env }) === canonicalJsonDigest(alias)) {
+          const previous = aliases.get(name);
+          if (previous && canonicalJsonDigest(previous) !== canonicalJsonDigest(binding)) {
+            throw new Error("SEMANTIC_ACTION_READ_SCOPE_MISMATCH: a writer alias matches sources with conflicting reviewed RLS session settings.");
+          }
+          aliases.set(name, binding);
+        }
+      }
+    }
+  }
+  for (const [name, binding] of [...bindings, ...aliases]) sources![name]!.database_scope = binding;
   return next;
 }
