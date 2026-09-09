@@ -4944,6 +4944,7 @@ describe("boundary operator-plane CLI", () => {
       editFieldTiers: async () => undefined,
       promptText: async () => answers.shift(),
       chooseOption: async (title, choices, options) => {
+        if (title === "CLIENT FOR THIS JOB") return "later";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         expect(title).toBe("START BOUNDARY DRAFTING");
         expect(options?.initialValue).toBe("model");
@@ -5471,6 +5472,9 @@ describe("boundary operator-plane CLI", () => {
           if (title === "CLIENT INTEGRATION RESPONSIBILITIES") {
             expect(applicationClarification).toBe(true);
             expect(choiceOptions?.initialValue).toBe("back");
+            expect(options.find((option) => option.value === "assign")?.label).toContain("Claude Code");
+            expect(choiceOptions?.context?.join("\n")).toContain("no custom code is needed for configuration and the connection check");
+            expect(choiceOptions?.context?.join("\n")).toContain("connection check of the four fixed tools");
             return "assign";
           }
           if (title === "REVIEW ATTACHED RULES") {
@@ -5510,6 +5514,7 @@ describe("boundary operator-plane CLI", () => {
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         if (title === "SAVE DISABLED PRIVACY REVISION") {
+          expect(clarifiedPrivacy && !mechanicalRead && !manualGuidedRetry, "An explicit privacy answer must not prompt to save again").toBe(false);
           if (!partialConfirmation) expect(choiceOptions?.exactDetails?.sections?.[0]?.id).toBe("reductions");
           expect(choiceOptions?.explainOnRequest).toBe(true);
           expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(preRevisionReadDigest);
@@ -5552,9 +5557,9 @@ describe("boundary operator-plane CLI", () => {
       narration: Parameters<typeof import("./model-authoring-narration.js").narrateValidatedAuthoringStep>[0],
     ) => narration.operatorMessage === "Why does Runner need this limit?"
       ? `It bounds automatic approval while proposals outside the limit remain reviewable. ${clarificationQuestion}`
-      : narration.responseStyle === "clarification" ? "Should customers see the visit status, or should it stay internal?"
+      : narration.responseStyle === "clarification" || narration.responseStyle === "business_questions" ? "Should customers see the visit status, or should it stay internal?"
       : "The exact disabled drafts are ready for review.");
-    const semanticChat = { ...testBoundaryAuthoringChat(session), signal: cancellation.signal };
+    const semanticChat = { ...testBoundaryAuthoringChat(session, "claude-code"), signal: cancellation.signal };
     semanticChat.streamCheckpoint = vi.fn(async () => undefined);
     semanticChat.progress = vi.fn(async (_message, operation) => operation());
     const readOperator = vi.fn()
@@ -5786,6 +5791,7 @@ describe("boundary operator-plane CLI", () => {
               generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
               schema_fingerprint: context.bundle.authority.schema_fingerprint, role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint });
             if (resumeLoad.status !== "ready") throw new Error("No saved interpretation session");
+            expect(resumeLoad.value.intended_client).toBe("claude-code");
             const restored = await loadPolicySources(root, resumeLoad.value.policy_source_session!);
             expect(restored.read_interpretations?.[0]?.fields).toContainEqual({ resource: "public.service_visits", field: "status", exposure: "model_and_runner" });
             expect(restored.read_interpretations?.[0]?.instruction).toContain("Visit status is customer-facing business information");
@@ -6956,6 +6962,7 @@ describe("boundary operator-plane CLI", () => {
         throw new Error(`Unexpected model-fallback text prompt: ${prompt}`);
       },
       chooseOption: async (title, _choices, options) => {
+        if (title === "CLIENT FOR THIS JOB") return "later";
         if (title === "START BOUNDARY DRAFTING") return "model";
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
         if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
@@ -13402,9 +13409,13 @@ function principalScopeInspection(options: { ambiguous?: boolean } = {}): Schema
 
 function testBoundaryAuthoringChat(
   session: BoundaryReviewInteractiveSession,
+  intendedClient: "claude-code" | "later" = "later",
 ): BoundaryAuthoringChat {
   return {
-    session: { ...session, presentationMode: "conversation" },
+    session: { ...session, presentationMode: "conversation",
+      chooseOption: async (title, options, config) => title === "CLIENT FOR THIS JOB" ? intendedClient
+        : session.chooseOption?.(title, options, config),
+    },
     actionPrompter: {
       choose: async () => undefined,
       text: async () => undefined,

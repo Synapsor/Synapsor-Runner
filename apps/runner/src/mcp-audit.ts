@@ -9,7 +9,8 @@ import {
   formatMcpAuditSarif,
   formatMcpAuditVerboseReport
 } from "@synapsor-runner/worker-core";
-import { spawn } from "node:child_process";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -18,7 +19,7 @@ import { generateAuditCandidateDirectory } from "./audit-candidates.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { isRecord, shellQuote } from "./cli-format.js";
 import { usage } from "./cli-help.js";
-import { envValue, firstPositional, optionalArg, outputArg, parseJsonRpcResponse, positional, splitCommand } from "./cli-options.js";
+import { envValue, firstPositional, optionalArg, outputArg, positional, splitCommand } from "./cli-options.js";
 import { assertGeneratedReviewActivation, writeGeneratedOnboardingFiles } from "./onboarding.js";
 import { loadBuiltInRecipes, requireRecipe } from "./recipe-domain.js";
 import { ui } from "./ui-command.js";
@@ -680,51 +681,27 @@ export function formatMcpLaunchFailure(error: unknown): string {
 }
 
 export async function fetchStdioMcpToolsCommand(command: string, commandArgs: string[], timeoutMs: number, cwd?: string): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, commandArgs, {
-      ...(cwd ? { cwd } : {}),
-      env: process.env,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let resolved = false;
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        child.kill("SIGTERM");
-        reject(new Error(`mcp audit stdio tools/list timed out after ${timeoutMs}ms`));
-      }
-    }, timeoutMs);
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", (error) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.on("close", () => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timeout);
-      const response = parseJsonRpcResponse(stdout, 2);
-      if (!response) {
-        reject(new Error(formatMcpLaunchFailure(stderr)));
-        return;
-      }
-      resolve(response);
-    });
-    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "synapsor-mcp-audit", version: "0.1.0" } } })}\n`);
-    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
-    child.stdin.end();
+  const client = new Client({ name: "synapsor-mcp-audit", version: "0.1.0" });
+  const transport = new StdioClientTransport({ command, args: commandArgs, cwd, stderr: "pipe",
+    env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
   });
+  let stderr = "";
+  transport.stderr?.on("data", (chunk) => { stderr = (stderr + String(chunk)).slice(-16_384); });
+  const deadline = Date.now() + timeoutMs;
+  try {
+    // The SDK waits for initialize and sends notifications/initialized before
+    // tools/list. Discovery never calls a data or action tool.
+    await client.connect(transport, { timeout: timeoutMs });
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error("MCP handshake timed out");
+    const result = await client.listTools({}, { timeout: remaining });
+    return { jsonrpc: "2.0", id: 2, result };
+  } catch (error) {
+    const diagnostic = formatMcpLaunchFailure(stderr);
+    throw new Error(diagnostic.startsWith("MCP_LAUNCH_CHECK_FAILED:") ? formatMcpLaunchFailure(error) : diagnostic);
+  } finally {
+    await transport.close();
+  }
 }
 
 

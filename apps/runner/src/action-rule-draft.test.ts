@@ -7,6 +7,7 @@ import { createSemanticActionRuntime } from "@synapsor-runner/mcp-server";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
 import { policyCoverageDraft } from "./authoring-policy-evidence.js";
+import { semanticActionBusinessReviewLines } from "./boundary-commands.js";
 import {
   ACTION_RULE_MODEL_DRAFT_VERSION,
   actionRuleModelDraftFromAuthority,
@@ -27,6 +28,51 @@ const statusType: ActionRuleScalarTypeSpecV1 = {
 };
 
 describe("model-authored Action Rule draft compilation", () => {
+  it.each(["proposal_only", "supervised"] as const)("business review follows compiled rules, not reassuring model prose (%s)", (writeback) => {
+    const proposed = draft();
+    proposed.effect.writeback = writeback;
+    proposed.review = { ...proposed.review, when: "Everyone is eligible", then: "All changes are complete", refused: ["Nothing is ever refused"] };
+    proposed.approval = { ...proposed.approval, mode: "policy", auto_approve_when: proposed.require,
+      shared_limits: [{ id: "overall", scope: "capability", kind: "count", maximum: 10, window_seconds: 86400 },
+        { id: "account", scope: "tenant", kind: "count", maximum: 3, window_seconds: 86400 }] };
+    const read = boundary();
+    const compiled = compileActionRuleModelDraft({ draft: proposed, builtCatalog: builtCatalog(), readBoundary: read, readBoundaryDigest: readDigest });
+    const before = structuredClone(compiled);
+    const summary = semanticActionBusinessReviewLines(compiled, read).join("\n");
+    expect(summary).not.toMatch(/Everyone is eligible|All changes are complete|Nothing is ever refused/);
+    expect(summary).toContain("Missing or failed eligibility checks are refused");
+    expect(summary).toContain("other valid requests, including limit overruns");
+    expect(summary).toContain("10 automatic approvals");
+    expect(summary).toContain("3 automatic approvals");
+    expect(summary).toContain("rolling 24 hours");
+    expect(summary).toContain("Target: only the selected account record");
+    expect(summary).not.toContain("reviewer reviewer");
+    expect(summary).toContain(writeback === "supervised" ? "prepared for separate review, not enabled" : "automatic execution is not configured");
+    expect(compiled).toEqual(before);
+  });
+  it.each([false, true])("business review identifies a verified related target without exposing join keys (composite=%s)", (composite) => {
+    const proposed = draft(), built = relatedBuiltCatalog();
+    proposed.verification.resources.push({ binding: "policy", resource: "billing.account_policies",
+      source: { kind: "relationship", from_binding: "account", relationship: "accounts_policy_fk", direction: "forward" }, fields: ["allow_pause"] });
+    const policy = built.authoring.resources.find((resource) => resource.name === "billing.account_policies")!;
+    policy.operations.update = true;
+    policy.fields.find((field) => field.name === "allow_pause")!.writable = true;
+    if (composite) {
+      const { local_field: _local, target_field: _target, ...link } = built.catalog.relationships[0]!;
+      built.catalog.relationships[0] = { ...link, field_pairs: [
+        { local_field: "tenant_id", target_field: "tenant_id" }, { local_field: "policy_id", target_field: "policy_id" },
+      ] };
+    }
+    proposed.effect = { ...proposed.effect, target_resource: "billing.account_policies", target_binding: "policy",
+      allowed_fields: [{ name: "allow_pause", values: [true] }],
+      set: { allow_pause: { kind: "literal", value: true, value_type: { kind: "boolean" } } } };
+    const compiled = compileActionRuleModelDraft({ draft: proposed, builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest });
+    const summary = semanticActionBusinessReviewLines(compiled, boundary()).join("\n");
+    expect(summary).toContain("Target: only the record linked to the selected account through the reviewed relationship");
+    expect(summary).toContain("verifies that selection and its trusted scope");
+    expect(summary).not.toContain("policy_id");
+    expect(summary).not.toContain("tenant_id");
+  });
   it.each(["proposal_only", "supervised"] as const)("supplies compiled version advancement to policy review without inventing execution authority (%s)", (writeback) => {
     const proposed = draft();
     proposed.effect.writeback = writeback;

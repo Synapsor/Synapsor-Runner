@@ -20,9 +20,17 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it("validates client preferences and includes them in the integrity digest", () => {
+    const input = { binding, stage: "planning" as const, jobIntent: "Review customer records.", provider: "openai" as const, model: "gpt-test" };
+    const state = buildBoundaryAuthoringResumeState({ ...input, intendedClient: "claude-code" });
+    expect(() => revalidateBoundaryAuthoringResume({ ...state, intended_client: "cursor" }, binding)).toThrow("digest");
+    expect(() => buildBoundaryAuthoringResumeState({ ...input, intendedClient: "unreviewed-launcher" as never })).toThrow("client preference");
+    expect(buildBoundaryAuthoringResumeState({ ...input, previous: state }).intended_client).toBeUndefined();
+  });
   it("revalidates business context and exact completed outcomes without carrying stale analysis, Action checkpoints or consent", () => {
     const state = buildBoundaryAuthoringResumeState({ binding, stage: "client_setup",
       jobIntent: "Review visits and propose rescheduling.", provider: "openai", model: "gpt-5.6-terra",
+      intendedClient: "claude-code",
       policySourceSession: "d2c11000-aaa1-4bbb-8ccc-111111111111",
       conversation: [{ question: "Who reviews exceptions?", answer: "The clinic manager." }],
       read: { analysis_id: "read_one", analysis_digest: `sha256:${"4".repeat(64)}` },
@@ -50,6 +58,7 @@ describe("Boundary authoring resume state", () => {
     });
     expect(next.action?.checkpoint).toBeUndefined();
     expect(next.client_handoff).toBeUndefined();
+    expect(next.intended_client).toBe("claude-code");
     expect(state.stage).toBe("client_setup");
     expect(() => revalidateBoundaryAuthoringResume(state, { ...current, boundary_name: "other" })).toThrow("different Read Boundary");
     expect(() => revalidateBoundaryAuthoringResume({ ...state, job_intent: "tampered" }, current)).toThrow("digest");
@@ -60,6 +69,7 @@ describe("Boundary authoring resume state", () => {
       const state = buildBoundaryAuthoringResumeState({
         binding,
         stage: "action_drafting",
+        intendedClient: "claude-code",
         jobIntent: "Let customers review tickets and propose one bounded refund.",
         provider: "openai",
         model: "gpt-5.6-terra",

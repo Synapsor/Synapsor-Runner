@@ -27,6 +27,52 @@ import { ProviderCredentialInputCancelledError } from "./secret-input.js";
 import * as managedLauncher from "./managed-mcp-project.js";
 
 describe("post-activation Ask handoff", () => {
+  it.each(["current", "read_only", "stale", "later", "used", "explicit"] as const)("continues the intended client once without changing authority (%s)", async (mode) => {
+    const boundary = await import("./boundary-commands.js");
+    const resume = await import("./boundary-authoring-resume.js");
+    const readiness = await import("./authoring-client-readiness.js");
+    const saved = { stage: "client_setup", intended_client: mode === "later" ? "later" : "claude-code" };
+    const before = structuredClone(saved);
+    const mocks = [
+      vi.spyOn(boundary, "loadBoundaryReviewContext").mockResolvedValue({ bundle: {} } as never),
+      vi.spyOn(boundary, "boundaryAuthoringResumeBinding").mockReturnValue({} as never),
+      vi.spyOn(resume, "readBoundaryAuthoringResumeState").mockResolvedValue({ status: "ready", value: saved } as never),
+      vi.spyOn(readiness, "clientHandoffMatchesActiveAuthority").mockResolvedValue(mode !== "stale"),
+      vi.spyOn(readiness, "pendingClientResponsibilities").mockResolvedValue(["Accurate request status", "Test a pending request and a completed receipt in Claude Code."]),
+    ];
+    const install = vi.fn(async (_args: string[]) => 0), chooseRoute = vi.fn(async () => "later" as const);
+    const chooseClient = vi.fn(), ask = vi.fn(), worker = vi.fn();
+    const writes: string[] = [];
+    try {
+      expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", autoStartConfiguredProvider: false,
+        ...(mode === "used" ? { usedIntendedClient: true } : {}),
+        ...(mode === "explicit" ? { selection: { route: "later" as const } } : {}),
+      }, {
+        env: { OPENAI_API_KEY: "private-test-key" },
+        readReadiness: async () => ({ read: "active", semantic_actions: mode === "read_only" ? "inactive" : "active",
+          legacy_actions: "inactive", worker: "not_checked", semantic_outcomes: mode === "read_only" ? [] : [{ outcome: "stock.correct_quantity", approval_mode: "human", execution_enabled: false }] }),
+        readActionDrafts: async () => [], hasActiveActions: async () => mode !== "read_only",
+        readRuntimeIdentity: async () => "local_environment", readRuntimeBindings: async () => [],
+        runMcpInstall: install, chooseRoute, chooseMcpClient: chooseClient, runAsk: ask, runWorker: worker,
+        confirmLaunchCheck: async () => false,
+        stdout: { write: (value) => { writes.push(String(value)); return true; } }, stderr: { write: () => true },
+      })).toBe(0);
+      const selected = mode === "current" || mode === "read_only";
+      expect(install).toHaveBeenCalledTimes(selected ? 1 : 0);
+      expect(chooseRoute).toHaveBeenCalledTimes(selected || mode === "explicit" ? 0 : 1);
+      if (selected) {
+        expect(install.mock.calls[0]?.[0]).toEqual(["install", "claude-code", "--project", "--authoring", "--project-root", "/tmp/not-created-project",
+          ...(mode === "read_only" ? [] : ["--include-actions"])]);
+        expect(writes.join("")).toContain("Test a pending request and a completed receipt in Claude Code.");
+        expect(writes.join("")).toContain("configured; launch not checked");
+      }
+      expect(chooseClient).not.toHaveBeenCalled();
+      expect(ask).not.toHaveBeenCalled();
+      expect(worker).not.toHaveBeenCalled();
+      expect(saved).toEqual(before);
+    } finally { for (const mock of mocks) mock.mockRestore(); }
+  });
+
   it.each([false, true])("reopens every pending active outcome after bundle activation, including after the first writer is re-enabled (%s)", async (firstEnabled) => {
     const boundary = await import("./boundary-commands.js");
     const resume = await import("./boundary-authoring-resume.js");

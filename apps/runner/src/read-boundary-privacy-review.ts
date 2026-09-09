@@ -13,6 +13,9 @@ type Finding = {
 export type ReadPrivacyReview = {
   digest: string; coverage: "current" | "unavailable" | "not_attached";
   findings: Finding[];
+  /** Actual return and analysis checks for the current policy's private fields. */
+  checkedPrivateFields?: number;
+  checkedPrivateGroups?: string[];
 };
 
 /** Presentation evidence only. Never modifies a permission or waives policy readiness. */
@@ -34,7 +37,8 @@ export function readPrivacyReview(input: {
       catch { /* Keep advisory evidence, but do not claim a checked business meaning. */ }
     }
   }
-  const findings = readBoundaryRevisionCatalog(input.boundary).resources.flatMap((resource) => resource.fields.flatMap((field): Finding[] => {
+  const catalog = readBoundaryRevisionCatalog(input.boundary);
+  const findings = catalog.resources.flatMap((resource) => resource.fields.flatMap((field): Finding[] => {
     const passages = checked?.passages.filter((passage) => passage.field_checks?.some((check) => check.resource === resource.id && check.field === field.id)) ?? [];
     const pending = passages.filter((passage) => ["needs_decision", "conflict", "unsupported"].includes(passage.disposition));
     const visible = passages.filter((passage) => ["implemented", "overridden"].includes(passage.disposition)
@@ -55,7 +59,18 @@ export function readPrivacyReview(input: {
       ],
     }];
   }));
-  return { digest, coverage: checked ? "current" : source ? "unavailable" : "not_attached", findings };
+  const privateFields = new Set(checked?.passages.flatMap((passage) =>
+    ["implemented", "overridden"].includes(passage.disposition)
+      ? (passage.field_checks ?? []).filter((field) => field.expectation === "private").map((field) => `${field.resource}.${field.field}`) : []));
+  const checkedFields = catalog.resources.flatMap((resource) =>
+    resource.fields.filter((field) => privateFields.has(`${resource.id}.${field.id}`) && !field.raw_return && !field.model_operations.length));
+  const checkedPrivateFields = checkedFields.length;
+  const checkedPrivateGroups = [...new Set(checkedFields.map((field) =>
+    field.roles.some((role) => ["record_identity", "relationship_key", "trusted_scope"].includes(role)) ? "record identifiers"
+      : field.roles.includes("conflict_or_version_guard") ? "internal revision markers"
+      : "other policy-private information"))];
+  return { digest, coverage: checked ? "current" : source ? "unavailable" : "not_attached", findings,
+    ...(checked ? { checkedPrivateFields, checkedPrivateGroups } : {}) };
 }
 
 export function readPrivacyFindingLines(finding: Finding): string[] {
@@ -75,6 +90,7 @@ export function readPrivacySummary(review: ReadPrivacyReview): string[] {
   const named = (findings: Finding[]) => findings.length <= 3 ? findings.map((finding) => finding.label).join("; ")
     : `${findings.length} fields; Inspect privacy findings lists each one directly`;
   return [
+    ...(review.checkedPrivateFields ? [`Policy-private information: ${review.checkedPrivateFields} checked field${review.checkedPrivateFields === 1 ? "" : "s"} (${review.checkedPrivateGroups?.join(", ") ?? "private fields"}) unavailable to customer viewing AND analysis, including filtering, sorting and aggregates. Exact details identifies each checked field.`] : []),
     ...(pending.length ? [`${pending.some((finding) => finding.status === "policy_decision") ? "Privacy decision" : "Privacy advisory"}: ${named(pending)}. Inspect privacy findings for the exact access and reason${pending.some((finding) => finding.status === "policy_decision") ? "." : "; a hint is not a policy violation."}`] : []),
     ...(checked.length ? [`Confirmed meaning: ${named(checked)} is customer-visible, as you requested. Access is unchanged.`] : []),
     ...(review.coverage === "unavailable" ? ["Privacy evidence: attached-rule verification is unavailable for this exact revision. Recorded meanings do not settle other requirements."] : []),

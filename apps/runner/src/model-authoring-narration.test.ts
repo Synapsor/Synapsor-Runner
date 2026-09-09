@@ -2,6 +2,23 @@ import { expect, it } from "vitest";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
 
+it.each([1, 2, 3, 4])("groups at most three genuine business questions with non-authorizing suggestions (%s)", async (count) => {
+  let body = "";
+  const answer = Array.from({ length: count }, (_, i) => `${i + 1}. I suggest keeping the internal date private because it tracks edits. Should customers see that date?`).join("\n");
+  const result = await narrateValidatedAuthoringStep({
+    session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", conversation: createModelAuthoringConversation(),
+      dependencies: { requestJson: async (request) => {
+        body = JSON.stringify(request.body);
+        return { status: 200, body: { output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: answer }] }] } };
+      } } }, egressAcknowledged: true, responseStyle: "business_questions", operatorMessage: "Ask the unanswered date meanings together.",
+    validatedFacts: ["Internal revision dates need a business visibility decision; no authority changed."],
+    nextQuestion: "Should these dates be private?",
+  });
+  expect(body).toContain("at most three short numbered questions");
+  expect(body).toContain("never an accepted decision");
+  expect(result).toBe(count <= 3 ? answer : undefined);
+});
+
 it("answers an inspection question from exact evidence without pitching activation or changing anything", async () => {
   let body = "";
   const response = "The finding is the support-case update date (telecom.support_cases.updated_at). Your checked customer-facing interpretation already addresses that naming hint; access is unchanged.";

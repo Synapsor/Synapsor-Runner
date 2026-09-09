@@ -32,7 +32,7 @@ export async function narrateValidatedAuthoringStep(input: {
   env?: NodeJS.ProcessEnv;
   egressAcknowledged: boolean;
   signal?: AbortSignal;
-  responseStyle?: "validated_result" | "permission" | "opening" | "clarification" | "inspection";
+  responseStyle?: "validated_result" | "permission" | "opening" | "clarification" | "business_questions" | "inspection";
   onFailure?: (failure: AuthoringExplanationFailure) => void;
 }): Promise<string | undefined> {
   const unavailable = (code: string, mismatch?: string) => {
@@ -65,6 +65,7 @@ export async function narrateValidatedAuthoringStep(input: {
   const permission = input.responseStyle === "permission";
   const opening = input.responseStyle === "opening";
   const clarification = input.responseStyle === "clarification";
+  const businessQuestions = input.responseStyle === "business_questions";
   const inspection = input.responseStyle === "inspection";
   const question = [
     `Operator message: ${JSON.stringify(input.operatorMessage)}`,
@@ -72,7 +73,9 @@ export async function narrateValidatedAuthoringStep(input: {
     ...input.validatedFacts.map((fact) => `- ${fact}`),
     ...(input.nextQuestion ? [`${clarification ? "Pending business meaning to clarify" : "Exact next question"}: ${JSON.stringify(input.nextQuestion)}`] : []),
     "Respond as the selected Boundary-drafting model, not as Runner.",
-    inspection
+    businessQuestions
+      ? "Ask the supplied unresolved business decisions together, at most three short numbered questions and 1100 characters total. Explain the practical uncertainty and suggest a reasoned answer when the reviewed facts support one. Mark it as a suggestion, never an accepted decision. Do not ask the operator to explain a database table or classify columns without their business purpose. Reuse policy/history answers; ask only what remains unknown."
+      : inspection
       ? "Answer the operator's actual question in at most three short sentences using the current evidence. Name the business information and exact field when needed to disambiguate. Distinguish advisory hints, checked business meanings and unresolved policy requirements. Do not repeat the activation pitch, ask for approval, suggest an edit merely to inspect, or claim a question changed the draft. If relevant evidence is unavailable, say what is unverified and name its direct local inspection option."
       : clarification
       ? "Ask exactly ONE short business question, at most 280 characters. Translate the pending meaning into a choice the operator can answer. Do not recap the action, cite source lines, give implementation instructions, or repeat safety notices. Do not decide the answer."
@@ -81,7 +84,9 @@ export async function narrateValidatedAuthoringStep(input: {
       : permission
       ? "Use at most three short sentences. Answer the operator's question when one was supplied, then explain why this permission is needed and what allowing or declining changes."
       : "Use at most four short sentences. Explain the validated result in ordinary business language.",
-    clarification
+    businessQuestions
+      ? "Keep each question answerable in ordinary business language. Preserve all of the supplied distinctions; do not replace them with generic permission questions or assume a recommendation grants access. Recommendations must preserve the supplied policy, never broaden customer access from inferred schema meaning."
+      : clarification
       ? "Preserve the pending question's business meaning, but remove schema jargon and instructions to edit permissions. A yes/no or visible/internal choice is appropriate when that is the actual missing decision."
       : input.nextQuestion
       ? "End by asking the exact next question without changing its meaning."
@@ -137,6 +142,8 @@ export async function narrateValidatedAuthoringStep(input: {
     const answer = result.answer.trim();
     if (clarification && (answer.length > 280 || (answer.match(/\?/gu) ?? []).length !== 1
       || !answer.endsWith("?") || answer.includes("\n"))) return unavailable("NARRATION_VALIDATION_REJECTED", "Clarification must be one short business question.");
+    if (businessQuestions && (answer.length > 1100 || (answer.match(/\?/gu) ?? []).length < 1
+      || (answer.match(/\?/gu) ?? []).length > 3)) return unavailable("NARRATION_VALIDATION_REJECTED", "Business clarification must contain one to three bounded questions.");
     if (opening && !openingNarrationIsSafe(answer, input.nextQuestion)) return unavailable("NARRATION_VALIDATION_REJECTED", "Opening exceeded the greeting contract or changed the next question.");
     const mismatch = narrationContradictsValidatedRecord(answer, input.validatedFacts);
     if (mismatch) return unavailable("NARRATION_VALIDATION_REJECTED", mismatch);

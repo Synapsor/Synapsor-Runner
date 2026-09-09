@@ -229,6 +229,7 @@ export async function runPostActivationAskHandoff(
     selection?: PostActivationAskSelection;
     /** Ephemeral presentation state for returns within this client handoff. */
     displayedExecutionReview?: string;
+    usedIntendedClient?: boolean;
   },
   dependencies: PostActivationAskDependencies = {},
 ): Promise<number> {
@@ -266,6 +267,7 @@ export async function runPostActivationAskHandoff(
   let pendingExecutionOutcomes: string[] = [];
   let staleExecutionOutcomes: string[] = [];
   let guidedClientSetup = false;
+  let intendedClient: ManagedMcpProjectClient | undefined;
   let paused: SavedExecutionSetup | undefined;
   let responsibilities: string[] = [];
   try {
@@ -276,6 +278,7 @@ export async function runPostActivationAskHandoff(
     if (saved.status === "ready" && saved.value.stage === "client_setup") {
       const current = await clientHandoffMatchesActiveAuthority(input.projectRoot, saved.value);
       guidedClientSetup = current;
+      if (current && saved.value.intended_client && saved.value.intended_client !== "later") intendedClient = saved.value.intended_client;
       if (!current) write("The saved client setup predates the current authority. Review the changed boundaries before relying on the prior setup check.\n");
       if (current && saved.value.client_handoff?.action_digest) {
         const active = await loadActiveActionRuleAuthority(input.projectRoot);
@@ -321,6 +324,7 @@ export async function runPostActivationAskHandoff(
     input = { ...input, displayedExecutionReview: executionReviewKey };
   }
   const selection = input.selection
+    ?? (intendedClient && !input.usedIntendedClient && !savedActionReviewPending && !needsFirstOutcome ? { route: "mcp-client" as const, client: intendedClient } : undefined)
     ?? configuredSelection
     ?? await choosePostActivationAskSelection(dependencies,
       savedActionReviewPending ? "review-outcomes" : needsFirstOutcome ? "create-outcome" : guidedClientSetup || executionReviewPending ? "mcp-client" : undefined,
@@ -330,6 +334,7 @@ export async function runPostActivationAskHandoff(
     return 0;
   }
   const route = selection.route;
+  if (route === "mcp-client" && intendedClient) input = { ...input, usedIntendedClient: true };
 
   if (route === "review-outcomes") {
     const args = ["review", "--project-root", input.projectRoot];
@@ -419,7 +424,7 @@ export async function runPostActivationAskHandoff(
   }
 
   if (route === "mcp-client") {
-    if (responsibilities.length) write(["Client integration checks still pending:", ...responsibilities.filter((_line, index) => index % 2 === 0),
+    if (responsibilities.length) write(["Client integration checks still pending:", ...responsibilities,
       "These are assigned, not verified. The connection check tests transport and tools only.", ""].join("\n"));
     const includeActions = firstOutcome ? false : input.includeActions
       ?? await (dependencies.hasActiveActions ?? hasActiveActionRuntime)(input.projectRoot);

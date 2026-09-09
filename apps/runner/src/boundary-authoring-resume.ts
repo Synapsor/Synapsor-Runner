@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { AskHistoryTurn } from "./model-ask.js";
+import { isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import { parseActionRuleAuthoringCheckpoint, type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import {
   createModelAuthoringConversation,
@@ -66,6 +67,7 @@ export type BoundaryAuthoringResumeState = {
   read?: BoundaryAuthoringResumeRead;
   action?: BoundaryAuthoringResumeAction;
   client_handoff?: BoundaryAuthoringClientHandoff;
+  intended_client?: AuthoringClientPlan;
   created_at: string;
   updated_at: string;
   authority_granted: false;
@@ -92,6 +94,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   read?: BoundaryAuthoringResumeRead;
   action?: BoundaryAuthoringResumeAction;
   clientHandoff?: BoundaryAuthoringClientHandoff;
+  intendedClient?: AuthoringClientPlan;
   previous?: BoundaryAuthoringResumeState;
   now?: string;
 }): BoundaryAuthoringResumeState {
@@ -126,6 +129,7 @@ export function buildBoundaryAuthoringResumeState(input: {
     ...(input.read ? { read: normalizeRead(input.read) } : {}),
     ...(input.action ? { action: normalizeAction(input.action) } : {}),
     ...(input.clientHandoff ? { client_handoff: normalizeClientHandoff(input.clientHandoff) } : {}),
+    ...(input.intendedClient ? { intended_client: normalizeIntendedClient(input.intendedClient) } : {}),
     created_at: input.previous?.created_at ?? now,
     updated_at: now,
     authority_granted: false as const,
@@ -205,6 +209,7 @@ export function revalidateBoundaryAuthoringResume(
     provider: state.model.provider, model: state.model.name,
     conversation: state.conversation, policySourceSession: state.policy_source_session,
     readIntent: state.read_intent,
+    intendedClient: state.intended_client,
     ...(state.action ? {
       action: {
         intent: state.action.intent,
@@ -256,6 +261,7 @@ export function assertBoundaryAuthoringResumeState(
   }
   if (value.read !== undefined) normalizeRead(value.read as BoundaryAuthoringResumeRead);
   if (value.policy_source_session !== undefined) normalizeSourceSession(value.policy_source_session);
+  if (value.intended_client !== undefined) normalizeIntendedClient(value.intended_client);
   if (value.read_intent !== undefined) {
     if (typeof value.read_intent !== "string") {
       throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Read intent is invalid.");
@@ -271,6 +277,11 @@ export function assertBoundaryAuthoringResumeState(
   if (canonicalJsonDigest(unsigned) !== value.revision_digest) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: the saved authoring state does not match its digest.");
   }
+}
+
+function normalizeIntendedClient(value: unknown): AuthoringClientPlan {
+  if (!isAuthoringClientPlan(value)) throw new Error("Invalid saved client preference; choose a supported client during setup.");
+  return value;
 }
 
 function normalizeClientHandoff(value: BoundaryAuthoringClientHandoff): BoundaryAuthoringClientHandoff {

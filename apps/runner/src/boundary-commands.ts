@@ -267,6 +267,7 @@ import { readDiscoveryCompatibility, readOptionalExplorationDraft } from "./auto
 import { readDiscoveryConcernLines } from "./read-discovery-compatibility.js";
 import { readPrivacyReview, readPrivacySummary, readPrivacyExplanationFacts, type ReadPrivacyReview } from "./read-boundary-privacy-review.js";
 import { automaticApprovalBusinessSummary } from "./authoring-business-review.js";
+import { authoringClientChoices, authoringClientLabel, authoringClientSetupFacts, isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import { renderReviewFacts } from "./review-facts.js";
 import { newPolicySourceSession, loadPolicySources, activePolicySource, savePolicySources, bindPolicyCoverage, recordReadInterpretation, confirmedReadFieldMeanings } from "./authoring-policy-source.js";
 import { BoundaryJobPlanningError, planningDiagnosticLines, saveBoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
@@ -4039,6 +4040,7 @@ type BoundaryAssistOutcome = {
 type ReadBoundaryReviewDisposition = "activated" | "finish" | "manual_editor";
 
 type ReadBoundaryReviewOptions = {
+  businessSummary?: () => string[];
   confirmedFieldMeanings?: (readDigest: string) => ReadonlySet<string>;
   privacyEvidence?: (boundary: ExplorationBoundaryDraft) => ReadPrivacyReview;
   sequenceSummary?: () => string[];
@@ -4176,6 +4178,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let resumeReadIntent = availableResume?.read_intent;
   let resumeAction: BoundaryAuthoringResumeAction | undefined = availableResume?.action;
   let selectedResumeModel: ActionModelSuggestionSession | undefined;
+  let intendedClient: AuthoringClientPlan | undefined;
   let jobIntent: string | undefined;
   let resumePersistenceBlocked = false;
   const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage): Promise<void> => {
@@ -4206,6 +4209,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         provider: selectedResumeModel.provider,
         model: selectedResumeModel.model,
         conversation: authoringConversation?.turns,
+        ...(intendedClient ? { intendedClient } : {}),
         ...(authoringConversation?.policySources?.snapshots.length ? { policySourceSession: authoringConversation.policySources.id } : {}),
         ...(resumeReadIntent ? { readIntent: resumeReadIntent } : {}),
         ...(resumeRead ? { read: resumeRead } : {}),
@@ -4396,6 +4400,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     if (resumeSelected && availableResume) {
       authoringConversation = createModelAuthoringConversation(availableResume.conversation);
       jobIntent = availableResume.job_intent;
+      intendedClient = availableResume.intended_client;
       activeResume = availableResume;
       resumeRead = availableResume.read;
       resumeReadIntent = availableResume.read_intent;
@@ -4604,6 +4609,14 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       title: "Describe one agent job first.",
       lines: ["Runner uses the job to keep the read and proposal drafts together; it does not infer authority from this sentence."],
     });
+  }
+  if (input.authoringChat && selectedResumeModel && input.session.chooseOption && !intendedClient) {
+    const clientQuestion = "Which client will use this job? I will carry that choice through setup; you can decide later.";
+    await input.authoringChat.streamModel([clientQuestion]);
+    const choice = await input.session.chooseOption("CLIENT FOR THIS JOB", authoringClientChoices.map((entry) => ({ ...entry })),
+      { initialValue: "later", reviewOnly: true, context: ["This selects a setup destination only. No configuration, identity, permissions or source data changes."] });
+    intendedClient = isAuthoringClientPlan(choice) ? choice : "later";
+    if (intendedClient !== "later") rememberModelAuthoringClarification(authoringConversation, clientQuestion, authoringClientLabel(intendedClient));
   }
   await persistAuthoringResume("planning");
   if (!mode && input.session.chooseOption) {
@@ -7198,7 +7211,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             if (counts.rawAdded || counts.analysisAdded || counts.selectionAdded) throw new Error("This privacy-only candidate requests new Read access. No changes were saved. Retry the narrow privacy correction; additional access must be reviewed as a separate requested change.");
           }
           let guidedRevisionReviewed = false;
-          if (request.privacyOnly && !preparedRevision && input.session.chooseOption) {
+          if (request.privacyOnly && !preparedRevision && !request.interpretationInstruction && input.session.chooseOption) {
             const diff = readRevisionDiff(context.candidate, preparedPreview.candidate, revision.changes);
             let accepted: string | undefined;
             do {
@@ -7306,7 +7319,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   : []),
                 "No Read or Action authority was activated, and no source query or source write occurred.",
               ],
-              nextQuestion: "Would you like to review the revised Read Boundary now?",
+              nextQuestion: "",
               egressAcknowledged: true,
             }),
           );
@@ -7600,18 +7613,25 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
     }
     if (!pending.length) return;
-    const business = pending.find((item) => item.kind === "business_decision");
+    let business = pending.find((item) => item.kind === "business_decision");
     if (business) {
+      // Group independent Read privacy meanings into one answer/revision. Do
+      // not accidentally route unrelated Action decisions through that editor.
+      const privacyQuestion = (item: typeof business) => item?.passages.every((passage) =>
+        passage.field_checks?.length && passage.field_checks.every((field) => field.expectation === "private"));
+      if (privacyQuestion(business)) {
+        const group = pending.filter((item) => item.kind === "business_decision" && privacyQuestion(item)).slice(0, 3);
+        business = { ...business, title: group.map((item) => item.title).join("; "), passages: group.flatMap((item) => item.passages) };
+      }
       const exactQuestions = [...new Set(business.passages.map((passage) => passage.next_step ?? passage.interpretation))];
       chat.rememberDetails("PENDING BUSINESS DECISION", [business.title, ...exactQuestions,
         "The saved draft is unchanged. Answering clarifies meaning; any permission change is validated separately."]);
       const question = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
-        session: modelAssistSession, operatorMessage: "Ask only the one unresolved business choice; do not repeat the saved action summary.",
+        session: modelAssistSession, operatorMessage: "Ask only these unresolved business choices together, with their purpose and suggested answers; do not repeat the saved action summary.",
         validatedFacts: business.passages.map((passage) => passage.interpretation),
-        nextQuestion: exactQuestions.join("\n"), responseStyle: "clarification", egressAcknowledged: true,
+        nextQuestion: exactQuestions.join("\n"), responseStyle: "business_questions", egressAcknowledged: true,
       }).catch(() => undefined);
-      const questions = [question ?? (exactQuestions.length === 1 && exactQuestions[0]!.length <= 280 && exactQuestions[0]!.endsWith("?")
-        ? exactQuestions[0]! : `One decision remains: ${business.title}. How should this work for your customers? /details has the exact question.`)];
+      const questions = question ? question.split(/\r?\n/u) : exactQuestions;
       await chat.streamModel(questions);
       let answer = await chat.readOperator();
       let explanationTurns = 0;
@@ -7655,18 +7675,22 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       && item.passages.every((passage) => passage.application_obligations?.length));
     if (clientItems.length && input.session.chooseOption) {
       const passages = clientItems.flatMap((item) => item.passages);
+      const clientFacts = authoringClientSetupFacts(intendedClient);
+      chat.rememberDetails("CLIENT SETUP PLAN", clientFacts);
       await chat.streamModel([
+        ...(intendedClient && intendedClient !== "later" ? [clientFacts[0]!] : []),
         `Your client needs to ${[...new Set(passages.flatMap((passage) => passage.application_obligations ?? []))]
           .map((duty) => duty === "customer_selection" ? "capture the user's selected record and requested change"
             : "show whether the request is awaiting review, approved, waiting for execution, blocked, or completed with a receipt").join(" and ")}.`,
         "Will your client handle this? Assignment is not verification; test the integration before customer use. Runner keeps enforcing the database rules.",
+        ...(intendedClient && intendedClient !== "later" ? ["Next, after authority review: generated client configuration, trusted test identity, and a connection check. /details explains the setup and behavior checks."] : []),
       ]);
       const choice = await input.session.chooseOption("CLIENT INTEGRATION RESPONSIBILITIES", [
-        { value: "assign", label: "My client application will handle these responsibilities", detail: "Record the assignment for this exact draft; keep client verification outstanding." },
+        { value: "assign", label: intendedClient && intendedClient !== "later" ? `Use ${authoringClientLabel(intendedClient)} for these client duties` : "My client application will handle these responsibilities", detail: "Record the assignment for this exact draft; keep client verification outstanding." },
         { value: "ask", label: "Ask the model about the integration" },
         { value: "back", label: "Keep this decision pending" },
       ], { initialValue: "back", reviewOnly: true, explainOnRequest: true,
-        context: passages.flatMap((passage) => [passage.topic ?? "Client responsibility", passage.next_step ?? passage.interpretation]),
+        context: [...clientFacts, ...passages.flatMap((passage) => [passage.topic ?? "Client responsibility", passage.next_step ?? passage.interpretation])],
       });
       if (choice === "ask") {
         await chat.streamModel(["What would you like to know about the client integration?"]);
@@ -7674,7 +7698,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         if (question?.trim()) {
           const response = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
             session: modelAssistSession, operatorMessage: question, egressAcknowledged: true,
-            validatedFacts: passages.map((passage) => passage.interpretation),
+            validatedFacts: [...clientFacts, ...passages.map((passage) => passage.interpretation)],
             nextQuestion: "Do you want to assign these integration duties to your client, or leave them pending?",
           }).catch(() => undefined);
           if (response) await chat.streamModel(response.split(/\r?\n/u));
@@ -7828,6 +7852,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     if (input.authoringChat) input.authoringChat.rememberDetails("NEXT AUTHORITY REVIEW - READ BOUNDARY", nextReadReviewDetails);
     else await writeRunner("NEXT AUTHORITY REVIEW - READ BOUNDARY", nextReadReviewDetails);
     const reviewResult = await input.completeReadReview("activate", input.session, {
+      businessSummary: () => semanticActionDrafts.flatMap((entry) => semanticActionBusinessReviewLines(entry.result.compiled, context.candidate)),
       sequenceSummary: () => {
         const automatic = semanticActionDrafts.filter((entry) => entry.result.compiled.effect_envelope.writeback.mode === "direct_sql");
         const missing = unmetExecutionEntries();
@@ -7835,7 +7860,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ...(missing.length
             ? ["UNMET REQUEST: automatic completion is not configured. This draft would only propose changes. Choose Prepare requested automatic execution to retain the rules and prepare a separate execution review."]
             : []),
-          `Next: Read review${semanticActionDrafts.length || actionDrafts.length ? " -> Action review" : ""}${automatic.length || missing.length ? ` -> execution review (${missing.length ? "configuration missing" : "prepared, not enabled; worker required"})` : ""} -> client setup.`,
+          `Next: Read review${semanticActionDrafts.length || actionDrafts.length ? " -> Action review" : ""}${automatic.length || missing.length ? ` -> execution review (${missing.length ? "configuration missing" : "prepared, not enabled; worker required"})` : ""} -> ${intendedClient && intendedClient !== "later" ? `${authoringClientLabel(intendedClient)} configuration and launch check` : "client setup"}.`,
           ...(automatic.length || missing.length ? [`Still needed: ${process.env.SYNAPSOR_DATABASE_WRITE_URL?.trim()
             ? "Write connection configured; exact permissions not yet verified."
             : "The default write connection is not configured; choose a configured writer during execution setup."} Automatic completion also requires trusted runtime identity and a running worker; neither is proved by this Read review.`] : []),
@@ -9341,6 +9366,54 @@ function semanticActionActivationReviewLines(compiled: CompiledActionRuleModelDr
   ];
 }
 
+/** Summarize the compiled conditions/effect, never model-authored review prose. */
+export function semanticActionBusinessReviewLines(compiled: CompiledActionRuleModelDraftV1, read: ExplorationBoundaryDraft): string[] {
+  const words = (value: string) => value.replaceAll("_", " ");
+  const resources = new Map(read.pack.resources.map((resource) => [resource.id, resource]));
+  const fieldNames = new Map<string, string>();
+  for (const binding of compiled.verification_boundary.resources) {
+    const resource = resources.get(binding.resource);
+    for (const field of binding.fields) fieldNames.set(`${binding.binding}.${field.name}`,
+      `${resource?.label ?? words(binding.binding)} ${resource?.field_metadata?.[field.name]?.label ?? words(field.name)}`);
+  }
+  const target = resources.get(compiled.rule.effect.target_resource);
+  const targetBinding = compiled.verification_boundary.resources.find((entry) => entry.binding === compiled.effect_envelope.target_binding);
+  let selectedBinding = targetBinding;
+  const visited = new Set<string>();
+  while (selectedBinding?.source.kind === "relationship" && !visited.has(selectedBinding.binding)) {
+    visited.add(selectedBinding.binding);
+    const fromBinding = selectedBinding.source.from_binding;
+    selectedBinding = compiled.verification_boundary.resources.find((entry) => entry.binding === fromBinding);
+  }
+  const selectedName = selectedBinding && (resources.get(selectedBinding.resource)?.label ?? words(selectedBinding.binding));
+  const changed = Object.entries(compiled.rule.effect.set).map(([field, value]) =>
+    `${target?.field_metadata?.[field]?.label ?? words(field)} from ${actionRuleScalarSummary(value, fieldNames)}`);
+  const expressions = Object.values(compiled.rule.effect.set);
+  const sourceBindings = [...new Set(expressions.flatMap((value) => value.kind === "field" ? [value.binding] : []))];
+  const sourceNames = sourceBindings.map((binding) => {
+    const resource = compiled.verification_boundary.resources.find((entry) => entry.binding === binding)?.resource;
+    return (resource && resources.get(resource)?.label) || words(binding);
+  });
+  const effect = sourceNames.length && expressions.every((value) => value.kind === "field")
+    ? `terms come from verified ${sourceNames.join(" and ")} records`
+    : changed.join("; ");
+  const policy = compiled.approval_class;
+  const automatic = policy.rules.find((rule) => rule.outcome === compiled.rule.outcome)?.auto_approve_when;
+  const reviewers = `${policy.required_approvals} ${policy.required_approvals > 1 ? "distinct " : ""}${words(policy.required_role)} approval${policy.required_approvals === 1 ? "" : "s"}`;
+  return [
+    `Change: ${compiled.draft.discovery?.title ?? words(compiled.rule.outcome.split(".").at(-1)!)}. ${compiled.rule.effect.operation === "insert" ? "Create" : "Update"} one ${target?.label ?? words(target?.table ?? compiled.rule.effect.target_resource)} record; ${effect}.`,
+    ...(compiled.rule.effect.operation === "update" && selectedBinding?.source.kind === "subject_ref"
+      ? [`Target: only ${targetBinding === selectedBinding ? `the selected ${selectedName} record` : `the record linked to the selected ${selectedName} through the reviewed relationship${visited.size > 1 ? "s" : ""}`}; Runner verifies that selection and its trusted scope before any change.`]
+      : []),
+    `Eligibility: ${actionRuleBooleanSummary(compiled.rule.require, fieldNames)}. Missing or failed eligibility checks are refused, not sent for human approval.`,
+    policy.mode === "policy" && automatic
+      ? `Approval: automatic ${actionRuleBooleanIsUnconditional(automatic) ? "for valid requests" : `only when ${actionRuleBooleanSummary(automatic, fieldNames)}`}; other valid requests, including limit overruns, require ${reviewers}.`
+      : `Approval: every valid request requires ${reviewers}.`,
+    ...(policy.mode === "policy" ? [`Approval limits: ${automaticApprovalBusinessSummary(compiled, read)}.`] : []),
+    `Completion: ${compiled.effect_envelope.writeback.mode === "none" ? "proposal only; automatic execution is not configured" : "automatic execution is prepared for separate review, not enabled by this Read decision"}.`,
+  ];
+}
+
 function actionRuleSharedLimitSummary(limit: ActionBoundarySharedLimitV1): string {
   const scope = {
     boundary: "Action Boundary",
@@ -9376,22 +9449,24 @@ function actionRuleDurationSummary(seconds: number): string {
   return `${seconds} seconds`;
 }
 
-function actionRuleBooleanSummary(expression: ActionRuleBooleanExpressionV1): string {
+function actionRuleBooleanSummary(expression: ActionRuleBooleanExpressionV1, fieldNames?: ReadonlyMap<string, string>): string {
   switch (expression.kind) {
     case "all":
-      return expression.expressions.map((item) => `(${actionRuleBooleanSummary(item)})`).join(" AND ");
+      return expression.expressions.map((item) => `(${actionRuleBooleanSummary(item, fieldNames)})`).join(fieldNames ? " and " : " AND ");
     case "any":
-      return expression.expressions.map((item) => `(${actionRuleBooleanSummary(item)})`).join(" OR ");
+      return expression.expressions.map((item) => `(${actionRuleBooleanSummary(item, fieldNames)})`).join(fieldNames ? " or " : " OR ");
     case "not":
-      return `NOT (${actionRuleBooleanSummary(expression.expression)})`;
+      return `NOT (${actionRuleBooleanSummary(expression.expression, fieldNames)})`;
     case "compare":
-      return `${actionRuleScalarSummary(expression.left)} ${actionRuleComparisonSymbol(expression.operator)} ${actionRuleScalarSummary(expression.right)}`;
+      return `${actionRuleScalarSummary(expression.left, fieldNames)} ${fieldNames
+        ? ({ eq: "matches", neq: "differs from", lt: "is less than", lte: "is at most", gt: "is greater than", gte: "is at least" })[expression.operator]
+        : actionRuleComparisonSymbol(expression.operator)} ${actionRuleScalarSummary(expression.right, fieldNames)}`;
     case "null_check":
-      return `${actionRuleScalarSummary(expression.value)} ${expression.operator === "is_null" ? "is null" : "is not null"}`;
+      return `${actionRuleScalarSummary(expression.value, fieldNames)} ${expression.operator === "is_null" ? "is null" : "is not null"}`;
     case "in":
-      return `${actionRuleScalarSummary(expression.value)} is one of ${expression.values.map(actionRuleScalarSummary).join(", ")}`;
+      return `${actionRuleScalarSummary(expression.value, fieldNames)} is one of ${expression.values.map((value) => actionRuleScalarSummary(value, fieldNames)).join(", ")}`;
     case "exists":
-      return `a reviewed ${expression.binding} row exists where ${actionRuleBooleanSummary(expression.where)}`;
+      return `a reviewed ${expression.binding} row exists where ${actionRuleBooleanSummary(expression.where, fieldNames)}`;
   }
 }
 
@@ -9399,28 +9474,28 @@ function actionRuleComparisonSymbol(operator: Extract<ActionRuleBooleanExpressio
   return ({ eq: "=", neq: "!=", lt: "<", lte: "<=", gt: ">", gte: ">=" })[operator];
 }
 
-function actionRuleScalarSummary(expression: ActionRuleScalarExpressionV1): string {
+function actionRuleScalarSummary(expression: ActionRuleScalarExpressionV1, fieldNames?: ReadonlyMap<string, string>): string {
   switch (expression.kind) {
     case "input":
       return `reviewed business input ${expression.name}`;
     case "literal":
       return actionRuleLiteralSummary(expression.value, expression.value_type);
     case "trusted":
-      return `trusted ${expression.binding.replaceAll("_", " ")}`;
+      return fieldNames && expression.binding === "transaction_time" ? "the current time" : `trusted ${expression.binding.replaceAll("_", " ")}`;
     case "field":
-      return `${expression.binding}.${expression.field}`;
+      return fieldNames?.get(`${expression.binding}.${expression.field}`) ?? `${expression.binding}.${expression.field}`;
     case "derived":
       return `derived ${expression.name}`;
     case "aggregate":
       return `${expression.operation}(${expression.binding}${expression.field ? `.${expression.field}` : ""})`;
     case "math":
-      return `${expression.operation}(${expression.inputs.map(actionRuleScalarSummary).join(", ")})`;
+      return `${expression.operation}(${expression.inputs.map((value) => actionRuleScalarSummary(value, fieldNames)).join(", ")})`;
     case "scale":
-      return `${expression.operation}(${actionRuleScalarSummary(expression.input)}, ${expression.constant}; ${expression.rounding})`;
+      return `${expression.operation}(${actionRuleScalarSummary(expression.input, fieldNames)}, ${expression.constant}; ${expression.rounding})`;
     case "clamp":
-      return `clamp(${actionRuleScalarSummary(expression.input)}, ${actionRuleScalarSummary(expression.minimum)}, ${actionRuleScalarSummary(expression.maximum)})`;
+      return `clamp(${actionRuleScalarSummary(expression.input, fieldNames)}, ${actionRuleScalarSummary(expression.minimum, fieldNames)}, ${actionRuleScalarSummary(expression.maximum, fieldNames)})`;
     case "add_duration":
-      return `${actionRuleScalarSummary(expression.timestamp)} + ${actionRuleDurationSummary(expression.seconds)}`;
+      return `${actionRuleScalarSummary(expression.timestamp, fieldNames)} + ${actionRuleDurationSummary(expression.seconds)}`;
   }
 }
 
@@ -11304,6 +11379,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     ...(readiness?.summary ?? await input.reviewOptions?.rulesSummary?.() ?? []),
     ...(input.reviewOptions?.sequenceSummary?.() ?? ["Sequence: this decision grants Read access only. Action approval and source execution require separate reviews."]),
     ...formatReadActivationBusinessSummary(context.bundle, undefined, privacy),
+    ...(input.reviewOptions?.businessSummary?.() ?? []),
     ...authorityReplacementContext,
   ], terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns));
   const changesForReview = input.reviewOptions?.reviewChanges?.()
@@ -11971,7 +12047,9 @@ export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle
   const sharedCount = resources.filter((resource) => resource.shared_reference_scope).length;
   const unscopedCount = resources.filter((resource) => !resource.shared_reference_scope && !hasReviewedPrincipalScope(resource)).length;
   const readable = resources.map((resource) => resource.label ?? resource.id.split(".").at(-1)!.replaceAll("_", " "));
-  const privateCount = resources.reduce((count, resource) => count + (resource.model_withheld_fields?.length ?? 0), 0);
+  const fields = readBoundaryRevisionCatalog(bundle.candidate).resources.flatMap((resource) => resource.fields);
+  const privateCount = fields.filter((field) => !field.raw_return && !field.model_operations.length).length;
+  const analysisOnlyCount = fields.filter((field) => !field.raw_return && field.model_operations.length).length;
   return [
     bundle.candidate.organization_scope
       ? "Who: whole-organization access, not one customer's information."
@@ -11981,7 +12059,8 @@ export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle
           ? "Who: reviewed shared references, not customer-private records."
           : `Who: account isolation is enforced, but ${unscopedCount} non-shared resource(s) lack individual customer filtering. Inspect exact scope before activation.`,
     `Can read: ${readable.join(", ")}.`,
-    `Kept private: ${privateCount} Runner-only fields; ${excluded.length} excluded from Read. View exact Read Boundary details names every field and operation.`,
+    `Kept private: ${privateCount} fields unavailable for customer viewing and analysis, including ${excluded.length} excluded from Read. Exact details names every field and operation.`,
+    ...(analysisOnlyCount ? [`Analysis without raw values: ${analysisOnlyCount} field${analysisOnlyCount === 1 ? " permits" : "s permit"} some analysis but not direct viewing. These are not fully private; exact details lists the allowed operations.`] : []),
     ...readPrivacySummary(privacy ?? readPrivacyReview({ boundary: bundle.candidate, confirmedMeanings })),
     ...(sharedCount ? [`Shared references: ${sharedCount} reviewed resource(s) are intentionally common across accounts; inspect exact scope.`] : []),
     "This approval: read access only. It approves no request and executes no database change.",
@@ -11991,6 +12070,8 @@ export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle
 export function formatReadActivationDecisionSummary(lines: string[], columns: number): string[] {
   const pending = lines.filter((line) => /^(?:Client integration still unverified|Next|Sequence|Still needed):/u.test(line));
   const facts = lines.filter((line) => !pending.includes(line));
+  const concern = (line: string) => /^(?:Before activation|UNMET REQUEST|Privacy decision|Discovery compatibility):/u.test(line);
+  facts.sort((a, b) => Number(concern(b)) - Number(concern(a)));
   if (pending.length) facts.push(`Still needed: ${pending.map((line) => line.slice(line.indexOf(":") + 1).trim()).join(" ")}`);
   const rows: Array<[string, string]> = [];
   const notes: string[] = [];

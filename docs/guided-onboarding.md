@@ -107,6 +107,24 @@ is already active and the saved job has no remaining authority work. A partly
 activated job resumes its remaining separate decisions. Interruption retains
 saved steps and does not revoke previously confirmed authority.
 
+In model-guided setup, choose the intended client once: Claude Code, VS Code,
+Cursor, or decide later. That preference follows the saved job through review
+and into the managed client installer; it is not an identity or permission.
+The main review describes customer access and the compiled change, eligibility,
+human fallback, approval limits, and execution posture together. Full field and
+operation details remain optional. Hiding raw values does not necessarily block
+analysis; the review distinguishes those permissions explicitly.
+
+Answer missing business questions in chat. An explicitly requested, validated
+privacy reduction saves to the disabled draft without another Save screen;
+unrequested changes and additional access retain their review. Read, Action,
+execution, client installation, and worker startup keep their separate consent.
+After review, the selected client's setup collects trusted local test identity
+and offers a protocol/tool check. Configuration ready for a client to launch,
+a verified connection, and a completed source change with a receipt are distinct
+states. Client behavior and production authentication still need integration
+testing; assignment alone is not verification.
+
 ## Typed Headless Authoring
 
 Both public entry points initialize the same current Auto Boundary without a

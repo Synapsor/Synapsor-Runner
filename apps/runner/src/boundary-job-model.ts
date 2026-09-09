@@ -219,6 +219,7 @@ export async function planModelBoundaryJob(input: {
     "This step only routes Read versus Action work. Preserve unresolved Action thresholds, bounds, reviewer rules, and rolling limits in action_intent; the focused Action authoring conversation asks those business questions later. Do not ask them here.",
     "When both modes are reuse or none, summarize the existing Read resources and Action capabilities from Current reviewed state. Do not merely repeat the operator request.",
     "If the job is genuinely ambiguous between Read and Action work, submit one concise clarification question. Do not guess.",
+    "Ask about the missing business distinction, explain why it matters, and offer a tentative interpretation or recommended answer when supported by the supplied policy. Do not ask an unexplained table/column naming question or treat your proposed interpretation as accepted scope. Reuse the operator's existing answers.",
     "This plan grants no authority and cannot activate, approve, apply, execute SQL, or write source data.",
   ].join("\n");
   const run = (nextQuestion: string) => runAskProviderTurn({

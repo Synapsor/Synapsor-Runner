@@ -6,6 +6,7 @@ import { newPolicySourceSession, policyTextSnapshot, type PolicyPassage } from "
 import { readPrivacyReview, readPrivacySummary, readPrivacyExplanationFacts } from "./read-boundary-privacy-review.js";
 import { readBoundaryReviewSections } from "./read-boundary-review-view.js";
 import { automaticApprovalBusinessSummary } from "./authoring-business-review.js";
+import { formatReadActivationBusinessSummary } from "./boundary-commands.js";
 
 function fixture() {
   const boundary: ExplorationBoundaryDraft = {
@@ -60,6 +61,8 @@ describe("exact-revision privacy explanation evidence", () => {
     expect(input.session.read_interpretations).toBeUndefined();
     const review = readPrivacyReview(input);
     expect(review.coverage).toBe("current");
+    expect(review.checkedPrivateFields).toBe(1);
+    expect(readPrivacySummary(review).join("\n")).toContain("unavailable to customer viewing AND analysis");
     expect(review.findings).toHaveLength(1);
     expect(review.findings[0]).toMatchObject({ resource: "telecom.support_cases", field: "updated_at", raw: true,
       status: "business_meaning_checked" });
@@ -102,6 +105,8 @@ describe("exact-revision privacy explanation evidence", () => {
     if (change === "invalid_claim") input.coverage.report.passages[0]!.field_checks![0]!.expectation = "private";
     const review = readPrivacyReview({ ...input, coverage: change === "missing" ? undefined : input.coverage });
     expect(review.coverage).toBe("unavailable");
+    expect(review.checkedPrivateFields).toBeUndefined();
+    expect(readPrivacySummary(review).join("\n")).not.toContain("Policy-private information:");
     expect(review.findings[0]!.status).toBe("advisory");
     expect(readPrivacySummary(review).join("\n")).toContain("verification is unavailable");
     expect(readPrivacySummary(review).join("\n")).not.toContain("Confirmed meaning:");
@@ -130,5 +135,11 @@ describe("exact-revision privacy explanation evidence", () => {
     input.boundary.pack.resources[0]!.filterable_fields.version = ["eq"];
     const review = readPrivacyReview({ boundary: input.boundary });
     expect(review.findings.find((finding) => finding.field === "version")).toMatchObject({ raw: false, status: "advisory", analysis: ["filter:eq"] });
+    const summary = formatReadActivationBusinessSummary({ candidate: input.boundary } as never).join("\n");
+    expect(summary).toContain("Analysis without raw values: 1 field permits some analysis but not direct viewing");
+    expect(summary).toContain("These are not fully private");
+    const stale = readPrivacyReview(input);
+    expect(stale.checkedPrivateFields).toBeUndefined();
+    expect(readPrivacySummary(stale).join("\n")).not.toContain("Policy-private information:");
   });
 });
