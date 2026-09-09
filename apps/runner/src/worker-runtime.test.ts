@@ -6,14 +6,17 @@ import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { readRuntimeConfig } from "./cli-project.js";
 import { applyProposal } from "./guarded-apply.js";
+import { waitFor } from "./cli-options.js";
 import { isRetryableWritebackCode, workerCommand, workerFailureRecovery } from "./worker-runtime.js";
 
 vi.mock("./cli-project.js", async (original) => ({ ...await original<typeof import("./cli-project.js")>(), readRuntimeConfig: vi.fn() }));
 vi.mock("./guarded-apply.js", () => ({ applyProposal: vi.fn() }));
+vi.mock("./cli-options.js", async (original) => ({ ...await original<typeof import("./cli-options.js")>(), waitFor: vi.fn() }));
 const roots: string[] = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks(); vi.mocked(readRuntimeConfig).mockReset(); vi.mocked(applyProposal).mockReset();
+  vi.mocked(waitFor).mockReset();
   for (const root of roots.splice(0)) await fs.rm(root, { force: true, recursive: true });
 });
 
@@ -146,6 +149,46 @@ describe("supervised worker current execution policy", () => {
     expect(await workerCommand(args)).toBe(0);
     expect(events).toHaveBeenCalledWith(expect.objectContaining({ event_type: "worker.started",
       details: expect.objectContaining({ worker_identity: "semantic_action_worker" }) }));
+  });
+
+  it("announces a running idle worker once and stops cleanly without implying a completed effect", async () => {
+    const { config, args } = await fixture();
+    vi.mocked(readRuntimeConfig).mockResolvedValue(config);
+    const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const before = process.listenerCount("SIGINT");
+    vi.mocked(waitFor).mockResolvedValueOnce(undefined).mockImplementationOnce(async () => {
+      process.emit("SIGINT");
+      expect(process.listenerCount("SIGINT")).toBe(before + 1);
+      process.emit("SIGINT");
+    });
+    expect(await workerCommand(args.filter((arg) => !["--once", "--batch-quiet"].includes(arg)))).toBe(0);
+    const text = output.mock.calls.map(([value]) => String(value)).join("");
+    expect(text.match(/Worker started\./g)).toHaveLength(1);
+    expect(text).toContain("each execution still requires current authority");
+    expect(text).toContain("Ctrl-C stops the worker; saved rules and queued requests remain");
+    expect(text).not.toMatch(/completed|healthy|ready for customer/i);
+    expect(applyProposal).not.toHaveBeenCalled();
+    expect(process.listenerCount("SIGINT")).toBe(before);
+  });
+
+  it.each(["--once", "--drain", "--batch-quiet", "--json"])("does not add a daemon banner in %s mode", async (mode) => {
+    const { config, args } = await fixture();
+    vi.mocked(readRuntimeConfig).mockResolvedValue(config);
+    const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.mocked(waitFor).mockImplementation(async () => { process.emit("SIGINT"); });
+    expect(await workerCommand([...args.filter((arg) => !["--once", "--batch-quiet"].includes(arg)), mode])).toBe(0);
+    expect(output).not.toHaveBeenCalled();
+    expect(applyProposal).not.toHaveBeenCalled();
+  });
+
+  it("does not announce startup when reviewed worker identity validation fails", async () => {
+    const { config, args } = await fixture();
+    config.supervised_worker!.outcomes![0]!.worker_identity = "reviewed_worker";
+    vi.mocked(readRuntimeConfig).mockResolvedValue(config);
+    const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await expect(workerCommand([...args.filter((arg) => !["--once", "--batch-quiet"].includes(arg)), "--worker-id", "wrong_worker"]))
+      .rejects.toMatchObject({ code: "SUPERVISED_WORKER_IDENTITY_MISMATCH" });
+    expect(output).not.toHaveBeenCalled();
   });
 
   it.each(["argument", "environment"])("refuses an explicit wrong %s identity before touching the queue", async (source) => {

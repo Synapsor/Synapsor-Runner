@@ -651,9 +651,12 @@ async function workerRun(args: string[]): Promise<number> {
   }
   let stopped = false;
   const stop = () => { stopped = true; };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
+  // A foreground process group and its launcher can deliver the same signal.
+  // Keep shutdown idempotent until the current guarded operation finishes.
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
   try {
+    reportWorkerStarted(args);
     do {
       // Refresh before both enqueue and claim. A changed source, identity or
       // store binding requires a restart, not a hot switch of this worker.
@@ -787,14 +790,16 @@ async function workerRun(args: string[]): Promise<number> {
 async function workerRunSharedRuntimeStoreDaemon(args: string[], config: RuntimeConfig): Promise<number> {
   const pollMs = positiveIntOption(args, "--poll-ms", 5000, 10, 3_600_000);
   let stopped = false;
+  let announced = false;
   const stop = () => { stopped = true; };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
   try {
     while (!stopped) {
       await withSharedPostgresRuntimeStoreBridge(args, config, "worker run", (bridgeStorePath) => {
         return workerRun(argsWithRuntimeStoreBridge([...args, "--drain"], bridgeStorePath));
       });
+      if (!announced) { reportWorkerStarted(args); announced = true; }
       if (!stopped) await waitFor(pollMs);
     }
     return 0;
@@ -802,6 +807,13 @@ async function workerRunSharedRuntimeStoreDaemon(args: string[], config: Runtime
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
   }
+}
+
+
+function reportWorkerStarted(args: string[]): void {
+  if (args.some((arg) => ["--once", "--drain", "--batch-quiet", "--json"].includes(arg))) return;
+  process.stdout.write("Worker started. Watching for approved requests; each execution still requires current authority.\n"
+    + "Keep this terminal open. Ctrl-C stops the worker; saved rules and queued requests remain.\n");
 }
 
 

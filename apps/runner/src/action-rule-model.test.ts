@@ -209,6 +209,48 @@ describe("conversational Action authoring tools", () => {
     expect(askClarification).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["http://127.0.0.1:11434/v1", true],
+    ["https://provider.example/v1", false],
+  ] as const)("offers honest compatible-provider recovery without extending retries (%s)", async (baseUrl, local) => {
+    const incomplete = "The draft components still needed are effect, rule, and approval. Submit the corresponding tools.";
+    const steps = [call("runner.submit_verification_boundary_draft"), say(incomplete), say(incomplete), say(incomplete)];
+    const requestJson = vi.fn(async () => steps.shift()!);
+    const askClarification = vi.fn(async () => { throw new Error("Mechanical work reached the operator"); });
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const input = requestInput(requestJson);
+    const error = await converseActionRuleDraft({ ...input,
+      session: { provider: "openai_compatible", model: "local-fixture", baseUrl, dependencies: { requestJson } },
+      askClarification, onCheckpoint: async (value) => { checkpoint = value; },
+    }).then(() => { throw new Error("Incomplete draft must not pass"); }, (error: unknown) => error);
+
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toContain("ACTION_RULE_MODEL_DRAFT_INCOMPLETE");
+    expect(message).toContain("after two internal corrections");
+    expect(message).toContain("structured draft/export");
+    expect(message).toContain("no authority or source data changed");
+    expect(message.includes("configured context window")).toBe(local);
+    expect(message.includes("structured tool-call support")).toBe(local);
+    expect(message).not.toContain(baseUrl);
+    expect(message).not.toContain(input.intent);
+    expect(requestJson).toHaveBeenCalledTimes(4);
+    expect(steps).toEqual([]);
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(Object.keys(checkpoint!.components)).toEqual(["verification"]);
+    expect(checkpoint!.components.verification).toMatchObject({ name: modelDraft().verification.name });
+
+    const recovery = [call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Prepared for review.")];
+    const resumed = await converseActionRuleDraft({ ...input, checkpoint,
+      session: { ...input.session, dependencies: { requestJson: async () => recovery.shift()! } },
+    });
+    expect(recovery).toEqual([]);
+    expect(resumed.state).toBe("ready");
+    expect(resumed.authority_granted).toBe(false);
+    expect(resumed.source_database_changed).toBe(false);
+  });
+
   it("keeps a joint-limit repair from changing the reviewer or other saved components", async () => {
     const baseline = policyModelDraft();
     const limits = [{ id: "joint_overall", kind: "count", scope: "boundary", maximum: 10, window_seconds: 86400 },

@@ -43,10 +43,9 @@ try {
   }
   const aliasSource = await fs.readFile(path.join(root, "packages/runner-alias/bin/synapsor-runner.mjs"), "utf8");
   if (aliasSource.length > 1_000
-    || !aliasSource.includes('import.meta.resolve("@synapsor/runner/cli")')
-    || !aliasSource.includes('"--disable-warning=ExperimentalWarning"')
+    || !aliasSource.includes('await import("@synapsor/runner/cli")')
     || aliasSource.includes("--no-warnings")
-    || /activate|approve|apply|database|ledger|contract/i.test(aliasSource)) {
+    || /activate|approve|apply|database|ledger|contract|child_process|spawn/i.test(aliasSource)) {
     throw new Error("Runner alias contains independent runtime or authority logic.");
   }
 

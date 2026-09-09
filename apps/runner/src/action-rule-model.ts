@@ -478,7 +478,13 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     };
     if (isIncompleteToolSubmissionResponse(response)) {
       if (mechanicalResponseRepairs >= 2) {
-        throw new Error("ACTION_RULE_MODEL_DRAFT_INCOMPLETE: the model did not finish its structured draft after two internal corrections. Saved drafts are retained. Retry with this model or choose another; no authority or source data changed.");
+        throw new Error([
+          "ACTION_RULE_MODEL_DRAFT_INCOMPLETE: the model did not finish its structured draft after two internal corrections. Saved drafts are retained.",
+          ...(configuration.endpoint_scope === "custom_loopback"
+            ? ["Check the local server's configured context window and the model's structured tool-call support before retrying; a successful connection alone does not establish authoring compatibility."]
+            : []),
+          "Retry with a compatible model or use the documented structured draft/export recovery; no authority or source data changed.",
+        ].join(" "));
       }
       mechanicalResponseRepairs += 1;
       correctionUsed = true;

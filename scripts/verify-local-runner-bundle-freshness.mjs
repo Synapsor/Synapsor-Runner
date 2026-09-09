@@ -3,7 +3,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -64,8 +64,63 @@ try {
   assert.equal(fs.existsSync(path.join(tempRoot, "new.runner.json")), false,
     "stale config init wrote a project file before the freshness refusal");
   process.stdout.write("Local Runner bundle freshness verification passed: diagnostics remain available; authority and authoring stay blocked.\n");
+  await verifyLauncherShutdown(workspaceSource, old);
 } finally {
   await fsp.rm(tempRoot, { recursive: true, force: true });
+}
+
+async function verifyLauncherShutdown(workspaceSource, old) {
+  await fsp.utimes(workspaceSource, old, old);
+  // Replace only the disposable copied bundle. The real launcher must preserve
+  // the child's status and allow its asynchronous shutdown to finish.
+  await fsp.writeFile(path.join(fixtureRunnerRoot, "dist/runner.mjs"), `
+if (process.argv[2] === 'exit-seven') process.exit(7);
+let stopping = false;
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+  if (stopping) return;
+  stopping = true;
+  setTimeout(() => { process.stdout.write('stopped\\n'); process.exit(0); }, 150);
+});
+setInterval(() => {}, 1000);
+process.stdout.write('ready\\n');
+`);
+  const alias = path.join(fixtureRunnerRoot, "alias.mjs");
+  await fsp.copyFile(path.join(root, "packages/runner-alias/bin/synapsor-runner.mjs"), alias);
+  const modes = process.platform === "win32" ? ["exit-seven"] : ["group-interrupt", "parent-terminate", "exit-seven"];
+  for (const cli of [fixtureCli, alias]) for (const mode of modes) {
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [cli, mode], {
+        cwd: tempRoot, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "", sent = false, settled = false;
+      const timer = setTimeout(() => finish(new Error(`${mode}: launcher did not finish shutdown`)), 10_000);
+      function finish(error, result) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try {
+          if (process.platform === "win32") child.kill();
+          else process.kill(-child.pid, "SIGKILL");
+        } catch { /* This isolated process group may have already exited. */ }
+        if (error) reject(error); else resolve(result);
+      }
+      child.stdout.on("data", chunk => {
+        stdout += chunk.toString();
+        if (!sent && stdout.includes("ready\n")) {
+          sent = true;
+          process.kill(mode === "group-interrupt" ? -child.pid : child.pid,
+            mode === "group-interrupt" ? "SIGINT" : "SIGTERM");
+        }
+      });
+      child.stderr.resume();
+      child.on("error", error => finish(error));
+      child.on("close", (code, signal) => finish(null, { code, signal, stdout }));
+    });
+    assert.equal(result.code, mode === "exit-seven" ? 7 : 0, `${path.basename(cli)} ${mode}: child status changed`);
+    assert.equal(result.signal, null, `${path.basename(cli)} ${mode}: launcher exited before its child`);
+    if (mode !== "exit-seven") assert.equal(result.stdout, "ready\nstopped\n", `${mode}: incomplete shutdown`);
+  }
+  process.stdout.write(`Runner launchers verified: ${modes.length * 2} child-exit/shutdown cases passed.\n`);
 }
 
 function run(cli, args, envOverrides = {}) {
