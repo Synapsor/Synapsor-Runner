@@ -60,6 +60,7 @@ export type ModelReadValueRequest = {
 export type ModelReadClarificationRequest = {
   resource: string;
   field?: string;
+  category?: "business_meaning" | "relationship_support";
   reason: string;
   question: string;
 };
@@ -158,7 +159,7 @@ export async function generateModelReadWorkload(input: {
   let suppliedMeanings: OperatorReadMeaning[] = [];
   const clarificationAnswers: string[] = [];
   const clarificationKey = (request: ModelReadClarificationRequest) =>
-    JSON.stringify([request.resource, request.field ?? "", request.question.trim().toLowerCase().replace(/\s+/gu, " ")]);
+    JSON.stringify([request.resource, request.field ?? "", request.category ?? "business_meaning"]);
   let approvedValueContext: Extract<ModelReadValueContextDecision, { state: "provided" }> | undefined;
   let opaqueGuessBlockers: string[] = [];
   let workloadValidationBlockers: string[] = [];
@@ -277,7 +278,7 @@ export async function generateModelReadWorkload(input: {
               ok: false,
               value: {
                 error_code: "READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED",
-                message: "Runner already supplied the reviewed scope and opaque selection mechanics for this bounded mapping.",
+                message: "Runner already supplied the available record links and scope. Another operator confirmation cannot change this catalog. Keep the requested information and saved answers; retry mapping or inspect the exact available links. Do not substitute broader reads or omit requirements.",
                 authority_granted: false,
                 source_query_executed: false,
                 source_database_changed: false,
@@ -443,6 +444,8 @@ export async function generateModelReadWorkload(input: {
     "Each id must start with a lower-case letter, use only lower-case letters, digits, dot, underscore, or hyphen, and contain at most 64 characters.",
     "Schema-declared ENUM/CHECK allowlists already appear as structural metadata. Do not request them as observed values.",
     "Every resource in this catalog already has reviewed trusted scope. Tenant/principal ownership fields are intentionally omitted and Runner injects them outside the plan. Never ask which field, key, or relationship owns a row; map only the requested business projection, filter, grouping, and measure.",
+    'Listed relationships are available for this disabled draft, including complete composite keys checked privately by Runner. Use rows.related: [{relationship: "<exact relationship id>", select: ["<target field>"]}] to include business details from up to three related paths, with at most 20 total selected fields. Do not ask permission to use a listed link; the operator reviews the resulting access later. Related-only resources cannot be queried independently.',
+    'Clarification is for a genuinely missing business meaning. If blocked on catalog/relationship support, set clarification_request.category to "relationship_support" so Runner can resolve it internally, not ask the operator to expose links or approve the same instruction again.',
     OPAQUE_SELECTION_GUIDANCE,
     "If an opaque reviewed resource or field name makes the business meaning ambiguous, submit clarification_request for one exact catalog resource and optional field instead of guessing.",
     "Phrase that clarification around the concrete business uncertainty, not 'what does table X contain?'. When metadata suggests a meaning, state it as a tentative interpretation and ask what remains uncertain and why it matters to this job. Offer a reasoned suggested answer only when the supplied policy supports it. Suggestions are not accepted meanings or authorization; never infer broader customer access. Keep technical target identifiers in the structured resource/field properties, rather than making the operator inspect SQL.",
@@ -559,6 +562,7 @@ export async function generateModelReadWorkload(input: {
         correctionUsed = true;
         await remap([
           runnerResolvedReadMechanicalGuidance(request),
+          `Available record links for this view: ${JSON.stringify(catalog.resources.find(resource => resource.id === request.resource)?.relationships ?? [])}. Use their exact IDs; composite key details and private keys are already checked by Runner. rows.related selects target fields without granting independent target reads.`,
           "Do not ask the operator about trusted ownership or scope mechanics again. Submit the complete workload using only model-visible business fields and relationships from the catalog.",
           baseQuestion,
         ].join("\n"));
@@ -766,7 +770,9 @@ export function readWorkloadCatalog(boundary: ExplorationBoundaryDraft) {
         target_resource: relationship.target_resource,
         path_depth: relationship.path_depth ?? 1,
         cardinality: "many_to_one",
+        scope: "independently_enforced_on_every_resource",
       })),
+      ...(resource.relationship_only ? { relationship_only: true } : {}),
       derived_measures: (resource.derived_measures ?? []).map((measure) => ({ id: measure.name, label: measure.label })),
       numeric_bands: (resource.numeric_bands ?? []).map((band) => ({ id: band.name, label: band.label })),
       auto_bands: (resource.auto_bands ?? []).map((policy) => ({
@@ -822,6 +828,11 @@ function readWorkloadToolDefinition(resourceIds: string[]): AskToolDefinition {
             minItems: 1,
             items: { type: "string", minLength: 1 },
           },
+          related: { type: "array", minItems: 1, maxItems: 3, items: {
+            type: "object", additionalProperties: false, required: ["relationship", "select"],
+            properties: { relationship: { type: "string", minLength: 1 },
+              select: { type: "array", minItems: 1, maxItems: 20, items: { type: "string", minLength: 1 } } },
+          } },
           where: whereSchema,
         },
       },
@@ -946,6 +957,7 @@ function readWorkloadToolDefinition(resourceIds: string[]): AskToolDefinition {
               additionalProperties: false,
               required: ["resource", "reason", "question"],
               properties: {
+                category: { type: "string", enum: ["business_meaning", "relationship_support"] },
                 resource: { type: "string", enum: resourceIds },
                 field: { type: "string", minLength: 1, maxLength: 256 },
                 reason: { type: "string", minLength: 1, maxLength: 500 },
@@ -970,6 +982,9 @@ function parseReadClarificationRequest(
   catalog: ReturnType<typeof readWorkloadCatalog>,
 ): ModelReadClarificationRequest {
   const resource = boundedText(value.resource, "clarification_request.resource", 256);
+  if (value.category !== undefined && value.category !== "business_meaning" && value.category !== "relationship_support") {
+    throw new Error("clarification_request.category must be business_meaning or relationship_support.");
+  }
   const catalogResource = catalog.resources.find((candidate) => candidate.id === resource);
   if (!catalogResource) {
     throw new Error("clarification_request.resource must be one exact reviewed catalog resource.");
@@ -982,6 +997,7 @@ function parseReadClarificationRequest(
   }
   return {
     resource,
+    ...(value.category ? { category: value.category } : {}),
     ...(field ? { field } : {}),
     reason: boundedText(value.reason, "clarification_request.reason", 500),
     question: boundedText(value.question, "clarification_request.question", 500),
@@ -1008,10 +1024,13 @@ function normalizeOpaqueClarificationRequest(
 }
 
 function isRunnerResolvedReadMechanicalQuestion(request: ModelReadClarificationRequest): boolean {
+  if (request.category === "relationship_support") return true;
   const normalized = `${request.reason} ${request.question}`
     .toLocaleLowerCase("en-US")
     .replace(/[_-]+/gu, " ");
   return [
+    /\b(?:can|may|should|could)\b.{0,120}\b(?:catalog|runner|we|i)\b.{0,120}\b(?:expose|add|confirm|include|use)\b.{0,120}\b(?:relationship|link|path|join)s?\b/u,
+    /\b(?:relationship|link|path|join)s?\b.{0,150}\b(?:already (?:approved|confirmed)|catalog (?:expose|support)|supported by runner)\b/u,
     /\b(?:which|what)\b.{0,180}\b(?:field|column|key|binding|relationship|path)\b.{0,180}\b(?:own|owner|ownership|belongs|association|tenant|principal|account|scope)\b/u,
     /\b(?:tenant|principal|account|organization|customer)\b.{0,180}\b(?:own|owner|ownership|belongs|association|scope)\b.{0,180}\b(?:field|column|key|binding|relationship|path)\b/u,
     /\b(?:trusted\s+(?:scope|context|identity)|row\s+level\s+security|rls)\b/u,
@@ -1086,7 +1105,10 @@ function parseOperatorReadMeanings(
     }
     const qualified = field === undefined ? resource.id : `${resource.id}.${field}`;
     const uniqueField = field !== undefined && catalog.resources.filter((resource) => resource.fields.some((entry) => entry.id === field)).length === 1;
-    const references = [qualified, ...(uniqueField ? [field!] : [])];
+    const table = resource.id.split(".").at(-1)!;
+    const uniqueTable = catalog.resources.filter((candidate) => candidate.id.split(".").at(-1) === table).length === 1;
+    const references = [qualified, ...(uniqueField ? [field!] : []),
+      ...(uniqueTable ? [field === undefined ? table : `${table}.${field}`] : [])];
     // Require a complete identifier token; m014 must not match m014_private.
     const tokens: string[] = Array.from(quote.match(/[\p{L}\p{N}_.:-]+/gu) ?? []);
     if (!references.some((reference) => tokens.includes(reference) && quote.trim().length > reference.length + 4)) {
@@ -1102,10 +1124,7 @@ function opaqueWorkloadReferences(
   clarified: readonly ModelReadClarificationRequest[],
   supplied: readonly OperatorReadMeaning[],
 ): string[] {
-  const entries = [
-    ...(Array.isArray(args.allowed) ? args.allowed : []),
-    ...(Array.isArray(args.forbidden) ? args.forbidden : []),
-  ];
+  const entries = workloadNamingEntries(args, catalog);
   const gaps = new Set<string>();
   for (const entry of entries) {
     if (!isRecord(entry) || !isRecord(entry.plan) || typeof entry.plan.resource !== "string") continue;
@@ -1141,10 +1160,7 @@ function opaqueWorkloadClarificationRequest(
   clarified: readonly ModelReadClarificationRequest[],
   supplied: readonly OperatorReadMeaning[],
 ): ModelReadClarificationRequest | undefined {
-  const entries = [
-    ...(Array.isArray(args.allowed) ? args.allowed : []),
-    ...(Array.isArray(args.forbidden) ? args.forbidden : []),
-  ];
+  const entries = workloadNamingEntries(args, catalog);
   for (const entry of entries) {
     if (!isRecord(entry) || !isRecord(entry.plan) || typeof entry.plan.resource !== "string") continue;
     const plan = entry.plan;
@@ -1186,6 +1202,28 @@ function opaqueWorkloadClarificationRequest(
   return undefined;
 }
 
+function workloadNamingEntries(args: Record<string, unknown>, catalog: ReturnType<typeof readWorkloadCatalog>): unknown[] {
+  const entries = [...(Array.isArray(args.allowed) ? args.allowed : []), ...(Array.isArray(args.forbidden) ? args.forbidden : [])];
+  return entries.flatMap(entry => {
+    if (!isRecord(entry) || !isRecord(entry.plan)) return [];
+    const plan = entry.plan;
+    const root = catalog.resources.find(resource => resource.id === plan.resource);
+    const references = [...(Array.isArray(plan.related) ? plan.related : []),
+      ...["measures", "dimensions", "where"].flatMap(key => Array.isArray(plan[key]) ? plan[key] : []),
+      plan.time_bucket, plan.time_window, plan.comparison];
+    const targets = new Map<string, string[]>();
+    for (const reference of references) {
+      if (!isRecord(reference) || typeof reference.relationship !== "string") continue;
+      const target = root?.relationships.find(item => item.id === reference.relationship)?.target_resource;
+      if (!target) continue;
+      const fields = Array.isArray(reference.select) ? reference.select.filter((field): field is string => typeof field === "string")
+        : typeof reference.field === "string" ? [reference.field] : [];
+      targets.set(target, [...(targets.get(target) ?? []), ...fields]);
+    }
+    return [entry, ...[...targets].map(([resource, select]) => ({ plan: { resource, select } }))];
+  });
+}
+
 function workloadPlanFields(plan: Record<string, unknown>): string[] {
   const fields = new Set<string>();
   const addField = (value: unknown): void => {
@@ -1195,10 +1233,10 @@ function workloadPlanFields(plan: Record<string, unknown>): string[] {
   for (const key of ["measures", "dimensions", "where", "order_by"] as const) {
     if (!Array.isArray(plan[key])) continue;
     for (const item of plan[key]) {
-      if (isRecord(item)) addField(item.field);
+      if (isRecord(item) && !item.relationship) addField(item.field);
     }
   }
-  if (isRecord(plan.time_bucket)) addField(plan.time_bucket.field);
+  if (isRecord(plan.time_bucket) && !plan.time_bucket.relationship) addField(plan.time_bucket.field);
   return [...fields];
 }
 

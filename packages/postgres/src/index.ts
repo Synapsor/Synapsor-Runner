@@ -17,6 +17,8 @@ import {
   type WritebackResult,
 } from "@synapsor-runner/protocol";
 import { assertCompensationJobIntegrity, assertFrozenSetJobIntegrity, assertSemanticActionReverification, classifyFrozenSetReconciliation, compensationInverseFromJob, type ApplyAdapter, type CompensationWritebackJob, type ReconciliationObservation, type RunnerConfig } from "@synapsor-runner/worker-core";
+import { semanticAtomicUpdateEffects, semanticEffectMutation, semanticAtomicEffectResult,
+  type SemanticMutationInput, type SemanticAtomicEffectResult } from "@synapsor-runner/worker-core";
 
 export const postgresReceiptMigration = `CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts (
   idempotency_key text PRIMARY KEY,
@@ -96,6 +98,7 @@ type MutationOutcome = {
   memberEffects?: Array<{ primary_key: ColumnValue; before_digest?: string; after_digest?: string; tombstone_digest?: string }>;
   inverse?: InverseDescriptorV1;
   semanticVerification?: NormalizedWritebackResultV5["semantic_verification"];
+  atomicEffects?: SemanticAtomicEffectResult[];
 };
 
 const POSTGRES_TIMESTAMP_OIDS = new Set([1114, 1184]);
@@ -512,7 +515,7 @@ function rlsOperationForJob(job: WritebackJob): Exclude<PostgresRlsOperation, "S
   return "UPDATE";
 }
 
-function principalScope(job: WritebackJob): { column: string; value: string | number | boolean | null } | undefined {
+function principalScope(job: { target: SemanticMutationInput["target"] }): { column: string; value: string | number | boolean | null } | undefined {
   const scope = job.target.principal_scope;
   if (!scope) return undefined;
   if (scope.value === undefined) throw new Error("PRINCIPAL_SCOPE_VALUE_REQUIRED");
@@ -591,7 +594,7 @@ export function buildPostgresInsert(job: WritebackJob): { sql: string; values: u
   };
 }
 
-function validateSemanticPatch(job: NormalizedWritebackJobV5): void {
+function validateSemanticPatch(job: SemanticMutationInput): void {
   const patchColumns = Object.keys(job.patch).sort();
   const allowedColumns = [...job.allowed_columns].sort();
   if (JSON.stringify(patchColumns) !== JSON.stringify(allowedColumns)) throw new Error("SEMANTIC_EFFECT_MISMATCH");
@@ -606,7 +609,7 @@ function validateSemanticPatch(job: NormalizedWritebackJobV5): void {
 }
 
 function appendPostgresSemanticScope(
-  job: NormalizedWritebackJobV5,
+  job: SemanticMutationInput,
   values: unknown[],
   where: string[],
 ): void {
@@ -623,7 +626,7 @@ function appendPostgresSemanticScope(
   }
 }
 
-export function buildPostgresSemanticUpdate(job: NormalizedWritebackJobV5): { sql: string; values: unknown[] } {
+export function buildPostgresSemanticUpdate(job: SemanticMutationInput): { sql: string; values: unknown[] } {
   if (job.operation !== "single_row_update" || job.target.primary_key.value === undefined || job.conflict_guard.kind !== "version_column") {
     throw new Error("SEMANTIC_EFFECT_MISMATCH");
   }
@@ -799,6 +802,9 @@ function reconciliationProjection(job: WritebackJob): string[] {
 }
 
 export function buildPostgresReconciliationRead(job: WritebackJob): { sql: string; values: unknown[] } {
+  if (job.protocol_version === "5.0" && job.semantic_authority.effect.atomic_updates) {
+    throw new Error("ATOMIC_RECONCILIATION_REQUIRES_COMPLETE_RECEIPT");
+  }
   const projection = reconciliationProjection(job).map(quotePostgresIdentifier).join(", ");
   if (job.protocol_version === "4.0") {
     const values: unknown[] = [job.target.tenant_guard.value];
@@ -1049,6 +1055,14 @@ async function sourceTransaction<T>(
           operations: ["SELECT"],
         });
       }
+      if (job.protocol_version === "5.0" && job.semantic_authority.effect.atomic_updates) {
+        for (const effect of semanticAtomicUpdateEffects(job).slice(1)) {
+          if (String(effect.tenant_guard?.value) !== config.databaseScope.tenantId
+            || (effect.principal_scope && String(effect.principal_scope.value) !== config.databaseScope.principal)) throw new Error("SEMANTIC_SCOPE_INVALID");
+          await assertPostgresRlsTarget(client, { schema: effect.schema, table: effect.table,
+            scope: config.databaseScope, operations: ["SELECT", "UPDATE"] });
+        }
+      }
       await bindPostgresRlsScope(client, config.databaseScope);
     }
     await hooks.afterBegin?.();
@@ -1248,6 +1262,22 @@ async function mutatePostgresSemantic(
     factLoader: createPostgresActionRuleFactLoader(client, config.databaseScope),
   });
   assertSemanticActionReverification(job, semanticVerification);
+
+  if (job.semantic_authority.effect.atomic_updates) {
+    const atomicEffects: SemanticAtomicEffectResult[] = [];
+    // All facts are reverified before writing. Any member failure must throw
+    // through sourceTransaction; a normal return would commit earlier updates.
+    for (const effect of semanticAtomicUpdateEffects(job)) {
+      const mutation = buildPostgresSemanticUpdate(semanticEffectMutation(effect));
+      const result = await client.query(mutation.sql, mutation.values);
+      if (result.rowCount !== 1) throw new Error(result.rowCount === 0 ? "SEMANTIC_AUTHORITY_STALE" : "MULTI_ROW_WRITE_BLOCKED");
+      if (result.rows[0]?.__synapsor_result_version == null) throw new Error("VERSION_DID_NOT_ADVANCE");
+      atomicEffects.push(semanticAtomicEffectResult(effect, result.rows[0].__synapsor_result_version));
+    }
+    return { status: "applied", affectedRows: atomicEffects.length, targetIdentity: identityForJob(job),
+      beforeDigest: job.semantic_authority.proof.verified_facts_digest as `sha256:${string}`,
+      afterDigest: digest(atomicEffects), atomicEffects, semanticVerification };
+  }
 
   if (job.operation === "single_row_update") {
     const mutation = buildPostgresSemanticUpdate(job);
@@ -1841,6 +1871,8 @@ function resultFromOutcome(job: WritebackJob, config: RunnerConfig, outcome: Mut
   const operation = operationOf(job);
   const hash = overrideHash ?? resultHash(job, outcome.status, outcome.resultVersion);
   if (job.protocol_version === "5.0") {
+    const atomicEffects = outcome.atomicEffects ?? (job.semantic_authority.effect.atomic_updates && outcome.affectedRows === 0
+      ? semanticAtomicUpdateEffects(job).map(effect => semanticAtomicEffectResult(effect)) : undefined);
     const proof = job.semantic_authority.proof;
     const code = outcome.code ?? overrideCode;
     const semanticVerification = outcome.semanticVerification ?? {
@@ -1859,11 +1891,13 @@ function resultFromOutcome(job: WritebackJob, config: RunnerConfig, outcome: Mut
       receipt_authority: receiptAuthority(config),
       status: outcome.status,
       affected_rows: outcome.affectedRows,
+      ...(atomicEffects === undefined ? {} : { atomic_effects: atomicEffects }),
       target_identity: outcome.targetIdentity,
       before_digest: outcome.beforeDigest,
       after_digest: outcome.afterDigest,
       semantic_verification: semanticVerification,
-      result_hash: hash,
+      result_hash: overrideHash ?? (atomicEffects === undefined ? hash : digest({ job_id: job.job_id, status: outcome.status,
+        effect_digest: proof.derived_effect_digest, atomic_effects: atomicEffects })),
       error_code: code,
       completed_at: new Date().toISOString(),
     });

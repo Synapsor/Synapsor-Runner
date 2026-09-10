@@ -2,8 +2,9 @@ import { capabilityWritebackMode, type RuntimeConfig } from "@synapsor-runner/mc
 import {
   type StoredProposal
 } from "@synapsor-runner/proposal-store";
-import { protocolVersions, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, executionReceiptV5Schema, normalizedWritebackResultV5Schema, protocolVersions, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import {
+  semanticAtomicEffectResult,
   type RunnerConfig
 } from "@synapsor-runner/worker-core";
 import crypto from "node:crypto";
@@ -116,6 +117,58 @@ export function hashReceipt(input: unknown): `sha256:${string}` {
 
 
 export function toExecutionReceipt(job: WritebackJob, result: WritebackResult, dryRun: boolean): Record<string, unknown> {
+  if (job.protocol_version === "5.0" || result.protocol_version === "5.0") {
+    if (job.protocol_version !== "5.0" || result.protocol_version !== "5.0" || result.job_id !== job.job_id) {
+      throw new Error("semantic result does not match writeback job v5");
+    }
+    normalizedWritebackResultV5Schema.parse(result);
+    const proof = job.semantic_authority.proof;
+    const verification = result.semantic_verification;
+    if (result.operation !== job.operation || verification.proof_digest !== proof.proof_digest
+      || verification.action_rule_digest !== proof.action_rule_digest
+      || verification.compiled_plan_digest !== proof.compiled_plan_digest
+      || verification.proposal_dependency_set_digest !== proof.dependency_set_digest
+      || verification.effect_digest !== proof.derived_effect_digest) {
+      throw new Error("semantic result verification does not match the reviewed job");
+    }
+    const effect = job.semantic_authority.effect;
+    const completed = result.status === "applied" || result.status === "already_applied";
+    if (effect.atomic_updates) {
+      const members = [effect, ...effect.atomic_updates];
+      if (canonicalJsonDigest(result.target_identity) !== canonicalJsonDigest([effect.primary_key])) {
+        throw new Error("atomic result primary identity does not match the reviewed job");
+      }
+      if (completed && !result.atomic_effects) throw new Error("atomic completion requires every reviewed target result");
+      if (result.atomic_effects && (result.atomic_effects.length !== members.length || members.some((member, index) => {
+        const expected = semanticAtomicEffectResult(member), actual = result.atomic_effects![index]!;
+        return expected.effect_digest !== actual.effect_digest || expected.resource !== actual.resource
+          || expected.schema !== actual.schema || expected.table !== actual.table
+          || canonicalJsonDigest(expected.target_identity) !== canonicalJsonDigest(actual.target_identity);
+      }))) throw new Error("atomic result does not match every reviewed target");
+    } else if (result.atomic_effects) throw new Error("single-record job cannot report additional effects");
+    const status = dryRun ? "canceled" : result.status;
+    const core = {
+      schema_version: protocolVersions.executionReceiptV5, writeback_job_id: job.job_id, proposal_id: job.proposal_id,
+      proposal_hash: job.proposal_hash, approval_id: job.approval_id,
+      runner_id: result.runner_id, operation: result.operation, receipt_authority: result.receipt_authority,
+      status, target: { source_id: job.source_id, schema: job.target.schema, table: job.target.table, identity: result.target_identity },
+      rows_affected: dryRun ? 0 : result.affected_rows, idempotency_key: job.idempotency_key,
+      ...(result.atomic_effects ? { atomic_effects: dryRun
+        ? result.atomic_effects.map(({ before_digest: _before, after_digest: _after, ...effect }) => ({ ...effect, affected_rows: 0 }))
+        : result.atomic_effects } : {}),
+      ...(!dryRun && result.before_digest ? { before_digest: result.before_digest } : {}),
+      ...(!dryRun && result.after_digest ? { after_digest: result.after_digest } : {}),
+      semantic_verification: result.semantic_verification,
+      source_database_mutated: !dryRun && status === "applied" && result.affected_rows > 0,
+      safe_outcome_code: dryRun ? "DRY_RUN" : status.toUpperCase(),
+      ...(result.error_code ? { safe_error_code: result.error_code } : {}),
+      executed_at: result.completed_at,
+      ...(status === "reconciliation_required" ? { reconciliation: {
+        intent_id: result.intent_id!, reason: "Source outcome requires complete receipt or operator reconciliation.",
+      } } : {}),
+    };
+    return executionReceiptV5Schema.parse({ ...core, receipt_hash: canonicalJsonDigest(core) });
+  }
   const affectedRows = result.affected_rows ?? 0;
   const terminalStatus = result.status === "applied" && !dryRun && affectedRows === 0 ? "already_applied" : result.status;
   const previousVersion = job.conflict_guard.kind === "version_column" ? job.conflict_guard.expected_value : undefined;

@@ -19,6 +19,8 @@ export type {
   CapabilitySpec,
   ContractMetadata,
   DerivedEffectEnvelopeSpecV1,
+  AtomicUpdateEnvelopeSpecV1,
+  AtomicUpdateRuleSpecV1,
   DerivedEffectFieldSpecV1,
   EvidenceSpec,
   ExternalActionSpec,

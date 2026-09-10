@@ -63,6 +63,13 @@ export type ActionRuleModelDraftV1 = {
     }>;
     set: Record<string, ActionRuleScalarExpressionV1>;
     writeback: "proposal_only" | "supervised";
+    atomic_updates?: Array<{
+      operation: "update";
+      target_resource: string;
+      target_binding: string;
+      allowed_fields: Array<{ name: string; minimum?: number; maximum?: number; values?: JsonScalar[] }>;
+      set: Record<string, ActionRuleScalarExpressionV1>;
+    }>;
   };
   require: ActionRuleBooleanExpressionV1;
   derive: Record<string, ActionRuleScalarExpressionV1>;
@@ -119,6 +126,7 @@ export function actionRuleModelDraftFromAuthority(input: {
     source.rule.require,
     ...Object.values(source.rule.derive),
     ...Object.values(source.rule.effect.set),
+    ...(source.rule.atomic_updates ?? []).flatMap((member) => Object.values(member.set)),
     ...(approvalRule.auto_approve_when ? [approvalRule.auto_approve_when] : []),
   ]) {
     collectActionRuleFieldReferences(expression, referencedFields);
@@ -177,6 +185,13 @@ export function actionRuleModelDraftFromAuthority(input: {
         ...(field.values === undefined ? {} : { values: structuredClone(field.values) }),
       })),
       set: structuredClone(source.rule.effect.set),
+      ...(source.effect_envelope.atomic_updates ? { atomic_updates: source.effect_envelope.atomic_updates.map((member, index) => ({
+        operation: "update" as const, target_resource: member.target_resource, target_binding: member.target_binding,
+        allowed_fields: member.allowed_fields.map(({ name, minimum, maximum, values }) => ({ name,
+          ...(minimum === undefined ? {} : { minimum }), ...(maximum === undefined ? {} : { maximum }),
+          ...(values === undefined ? {} : { values: structuredClone(values) }) })),
+        set: structuredClone(source.rule.atomic_updates![index]!.set),
+      })) } : {}),
       writeback: source.effect_envelope.writeback.mode === "none"
         ? "proposal_only"
         : "supervised",
@@ -344,14 +359,16 @@ export function compileActionRuleModelDraft(input: {
   if (!verificationResources.length) invalid("An Action Rule requires at least one private verification binding.");
   assertNoCallerGuardComparison(draft, verificationResources);
 
-  const target = catalogByName.get(draft.effect.target_resource);
-  const targetAuthoring = authoringByName.get(draft.effect.target_resource);
-  if (!target || !targetAuthoring) invalid(`Effect target ${draft.effect.target_resource} is outside the reviewed catalog.`);
-  if (!targetAuthoring.operations[draft.effect.operation]) {
-    invalid(`${draft.effect.operation.toUpperCase()} ${target.name} is not source-proven for a derived Action Rule.`);
+  const approvalClassName = safeRuleName(draft.approval.class_name, "approval class");
+  const buildEnvelope = (effect: Omit<ActionRuleModelDraftV1["effect"], "atomic_updates">): DerivedEffectEnvelopeSpecV1 => {
+  const target = catalogByName.get(effect.target_resource);
+  const targetAuthoring = authoringByName.get(effect.target_resource);
+  if (!target || !targetAuthoring) invalid(`Effect target ${effect.target_resource} is outside the reviewed catalog.`);
+  if (!targetAuthoring.operations[effect.operation]) {
+    invalid(`${effect.operation.toUpperCase()} ${target.name} is not source-proven for a derived Action Rule.`);
   }
   const targetFields = new Map(target.fields.map((field) => [field.name, field]));
-  const allowedFields = draft.effect.allowed_fields.map((field) => {
+  const allowedFields = effect.allowed_fields.map((field) => {
     const catalogField = targetFields.get(field.name);
     const authoringField = targetAuthoring.fields.find((candidate) => candidate.name === field.name);
     if (!catalogField || !authoringField?.writable) {
@@ -366,18 +383,17 @@ export function compileActionRuleModelDraft(input: {
       ...(field.values === undefined ? {} : { values: field.values }),
     };
   });
-  const resolvedTargetBinding = draft.effect.operation === "update"
-    ? requiredTargetBinding(draft.effect.target_binding, bindings, target)
+  const resolvedTargetBinding = effect.operation === "update"
+    ? requiredTargetBinding(effect.target_binding, bindings, target)
     : undefined;
-  if (resolvedTargetBinding) draft.effect.target_binding = resolvedTargetBinding;
-  const approvalClassName = safeRuleName(draft.approval.class_name, "approval class");
-  const envelope: DerivedEffectEnvelopeSpecV1 = {
+  if (resolvedTargetBinding) effect.target_binding = resolvedTargetBinding;
+  return {
     schema_version: "synapsor.derived-effect-envelope.v1",
-    name: safeQualifiedName(draft.effect.name, "effect envelope"),
+    name: safeQualifiedName(effect.name, "effect envelope"),
     source: catalog.resources[0]?.source ?? input.readBoundary.source,
-    operation: draft.effect.operation,
+    operation: effect.operation,
     target_resource: target.name,
-    ...(draft.effect.operation === "update"
+    ...(effect.operation === "update"
       ? {
           target_binding: resolvedTargetBinding!,
           conflict_key: requiredVersionField(target),
@@ -395,10 +411,31 @@ export function compileActionRuleModelDraft(input: {
     max_rows: 1,
     allowed_fields: allowedFields,
     approval_classes: [approvalClassName],
-    writeback: draft.effect.writeback === "supervised"
+    writeback: effect.writeback === "supervised"
       ? { mode: "direct_sql", supervised_worker: "allowed" }
       : { mode: "none", supervised_worker: "disabled" },
   };
+  };
+  const envelope = buildEnvelope(draft.effect);
+  if (draft.effect.atomic_updates !== undefined) {
+    if (!Array.isArray(draft.effect.atomic_updates) || draft.effect.atomic_updates.length < 1
+      || draft.effect.atomic_updates.length > 3 || draft.effect.operation !== "update") {
+      invalid("Atomic completion requires two through four exact version-guarded updates in one transaction.");
+    }
+    envelope.atomic_updates = draft.effect.atomic_updates.map((member) => {
+      if (member.operation !== "update" || Object.keys(member).some((key) => !["operation", "target_resource", "target_binding", "allowed_fields", "set"].includes(key))) {
+        invalid("Atomic companions accept only one exact UPDATE target, reviewed fields and set expressions.");
+      }
+      const checked = buildEnvelope({ ...member, name: draft.effect.name, writeback: draft.effect.writeback });
+      if (!checked.target_binding || !checked.conflict_key || !checked.version_advance) {
+        invalid(`Atomic update ${checked.target_resource} needs an exact row and an integer version field.`);
+      }
+      const { schema_version: _schema, name: _name, source: _source, approval_classes: _approval,
+        writeback: _writeback, deduplication: _dedup, atomic_updates: _atomic, ...target } = checked;
+      return { ...target, operation: "update" as const, target_binding: checked.target_binding,
+        conflict_key: checked.conflict_key, version_advance: checked.version_advance };
+    });
+  }
   const verificationBoundary: RuleVerificationBoundarySpecV1 = {
     schema_version: "synapsor.verification-boundary.v1",
     name: safeQualifiedName(draft.verification.name, "Verification Boundary"),
@@ -431,12 +468,16 @@ export function compileActionRuleModelDraft(input: {
     derive: draft.derive,
     effect: {
       operation: draft.effect.operation,
-      target_resource: target.name,
+      target_resource: envelope.target_resource,
       ...(draft.effect.operation === "update"
         ? { target_binding: envelope.target_binding }
         : {}),
       set: draft.effect.set,
     },
+    ...(draft.effect.atomic_updates ? { atomic_updates: draft.effect.atomic_updates.map((member, index) => ({
+      operation: "update" as const, target_resource: member.target_resource,
+      target_binding: envelope.atomic_updates![index]!.target_binding, set: member.set,
+    })) } : {}),
     approval_class: approvalClassName,
     ttl_seconds: boundedInteger(draft.ttl_seconds, 30, 3_600, "Action Rule ttl_seconds"),
   };

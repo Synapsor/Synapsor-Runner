@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import type { SupervisedWriterPostureAssessment } from "./worker-policy.js";
@@ -55,6 +57,34 @@ function plan(): WriterProvisioningPlan {
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 
 describe("dedicated writer provisioning handoff", () => {
+  it.each([false, true])("exports a separately reviewed telecom writer without broadening the old one (consume=%s)", async (consume) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-telecom-writer-"));
+    roots.push(root);
+    const reviewed = plan();
+    reviewed.relations[0]!.update_columns = ["base_monthly_cents", "data_policy", "effective_from", "included_lines",
+      "international_day_pass", "plan_code", "plan_display_name", "version"];
+    if (consume) {
+      reviewed.relations[1]!.privileges = ["select", "update"];
+      reviewed.relations[1]!.update_columns = ["status", "version"];
+    }
+    const handoff = await exportWriterProvisioning(root, reviewed), output = path.join(root, "new-writer.sql");
+    const recipe = path.resolve("examples/telecom-writer-repair/prepare.mjs");
+    const inputBefore = await fs.readFile(path.join(handoff, "requirements.json"), "utf8");
+    await promisify(execFile)(process.execPath, [recipe, handoff, output]);
+    const sql = await fs.readFile(output, "utf8");
+    expect(sql).toContain(consume ? 'GRANT UPDATE ("status", "version") ON TABLE "telecom"."plan_change_offers"'
+      : 'GRANT UPDATE ("plan_offer_id") ON TABLE "telecom"."plan_change_offers"');
+    expect(sql).not.toMatch(/ALTER ROLE "synapsor_plan_writer"|GRANT.*TO "synapsor_plan_writer"/);
+    expect(sql).toContain("Fixture policies changed after export");
+    expect(sql).toContain("No password, shared-role mutation, source row change, or execution activation");
+    expect(await fs.readFile(path.join(handoff, "requirements.json"), "utf8")).toBe(inputBefore);
+    await expect(promisify(execFile)(process.execPath, [recipe, handoff, output])).rejects.toThrow();
+    expect(await fs.readFile(output, "utf8")).toBe(sql);
+    reviewed.relations[1]!.update_columns = ["status", "version", "plan_code"];
+    const unrelated = await exportWriterProvisioning(root, reviewed), refusedOutput = path.join(root, "refused.sql");
+    await expect(promisify(execFile)(process.execPath, [recipe, unrelated, refusedOutput])).rejects.toThrow(/not the supported two-relation/);
+    await expect(fs.access(refusedOutput)).rejects.toThrow();
+  });
   it("derives only the reviewed effect columns and private-lock identity from the posture assessment", () => {
     const output = writerProvisioningSql(plan());
 

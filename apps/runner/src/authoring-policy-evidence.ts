@@ -93,6 +93,12 @@ export function policyCoverageDraft(input: {
             ...(action.effect_envelope.version_advance ? [action.effect_envelope.version_advance.column] : []),
           ])].sort(),
           unrelated_fields: "Fields outside source_fields_modified are not authorized for modification by this envelope. Version advancement is Runner-owned, not a caller-supplied business field.",
+          ...(action.effect_envelope.atomic_updates ? { atomic_updates: action.effect_envelope.atomic_updates.map((effect, index) => ({
+            target_resource: effect.target_resource, target_binding: effect.target_binding,
+            fields: effect.allowed_fields.map((field) => field.name), set: action.rule.atomic_updates![index]!.set,
+            source_fields_modified: [...effect.allowed_fields.map((field) => field.name), effect.version_advance.column].sort(),
+            version_advance: effect.version_advance,
+          })), transaction: "All listed updates share one verification, approval, transaction and receipt. Any failed update rolls back all changes. Permanent consumption requires an explicit change plus eligibility checking that changed fact." } : {}),
         },
         execution: {
           configured_mode: action.effect_envelope.writeback.mode,

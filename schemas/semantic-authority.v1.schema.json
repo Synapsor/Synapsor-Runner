@@ -412,6 +412,73 @@
         },
         "effect_digest": {
           "$ref": "#/properties/proof/properties/action_boundary_digest"
+        },
+        "atomic_updates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "$ref": "#/properties/effect/properties/operation"
+              },
+              "source": {
+                "$ref": "#/properties/subject_bindings/items/properties/binding"
+              },
+              "resource": {
+                "$ref": "#/properties/proof/properties/action_rule_name"
+              },
+              "schema": {
+                "$ref": "#/properties/subject_bindings/items/properties/binding"
+              },
+              "table": {
+                "$ref": "#/properties/subject_bindings/items/properties/binding"
+              },
+              "primary_key": {
+                "$ref": "#/properties/effect/properties/primary_key"
+              },
+              "tenant_guard": {
+                "$ref": "#/properties/effect/properties/tenant_guard"
+              },
+              "organization_scope": {
+                "$ref": "#/properties/effect/properties/organization_scope"
+              },
+              "principal_scope": {
+                "$ref": "#/properties/effect/properties/principal_scope"
+              },
+              "expected_version": {
+                "$ref": "#/properties/effect/properties/expected_version"
+              },
+              "version_advance": {
+                "$ref": "#/properties/effect/properties/version_advance"
+              },
+              "allowed_columns": {
+                "$ref": "#/properties/effect/properties/allowed_columns"
+              },
+              "set": {
+                "$ref": "#/properties/effect/properties/set"
+              },
+              "deduplication": {
+                "$ref": "#/properties/effect/properties/deduplication"
+              },
+              "effect_digest": {
+                "$ref": "#/properties/proof/properties/action_boundary_digest"
+              }
+            },
+            "required": [
+              "operation",
+              "source",
+              "resource",
+              "schema",
+              "table",
+              "primary_key",
+              "allowed_columns",
+              "set",
+              "effect_digest"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 3
         }
       },
       "required": [

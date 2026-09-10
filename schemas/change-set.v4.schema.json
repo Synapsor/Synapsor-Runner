@@ -755,6 +755,73 @@
             },
             "effect_digest": {
               "$ref": "#/properties/contract/properties/digest"
+            },
+            "atomic_updates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "$ref": "#/properties/semantic_authority/properties/effect/properties/operation"
+                  },
+                  "source": {
+                    "$ref": "#/properties/source/properties/schema"
+                  },
+                  "resource": {
+                    "$ref": "#/properties/action"
+                  },
+                  "schema": {
+                    "$ref": "#/properties/source/properties/schema"
+                  },
+                  "table": {
+                    "$ref": "#/properties/source/properties/schema"
+                  },
+                  "primary_key": {
+                    "$ref": "#/properties/semantic_authority/properties/effect/properties/primary_key"
+                  },
+                  "tenant_guard": {
+                    "$ref": "#/properties/semantic_authority/properties/effect/properties/tenant_guard"
+                  },
+                  "organization_scope": {
+                    "$ref": "#/properties/semantic_authority/properties/effect/properties/organization_scope"
+                  },
+                  "principal_scope": {
+                    "$ref": "#/properties/semantic_authority/properties/effect/properties/principal_scope"
+                  },
+                  "expected_version": {
+                    "$ref": "#/properties/semantic_authority/properties/effect/properties/expected_version"
+                  },
+                  "version_advance": {
+                    "$ref": "#/properties/semantic_authority/properties/effect/properties/version_advance"
+                  },
+                  "allowed_columns": {
+                    "$ref": "#/properties/semantic_authority/properties/effect/properties/allowed_columns"
+                  },
+                  "set": {
+                    "$ref": "#/properties/patch"
+                  },
+                  "deduplication": {
+                    "$ref": "#/properties/semantic_authority/properties/effect/properties/deduplication"
+                  },
+                  "effect_digest": {
+                    "$ref": "#/properties/contract/properties/digest"
+                  }
+                },
+                "required": [
+                  "operation",
+                  "source",
+                  "resource",
+                  "schema",
+                  "table",
+                  "primary_key",
+                  "allowed_columns",
+                  "set",
+                  "effect_digest"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 3
             }
           },
           "required": [

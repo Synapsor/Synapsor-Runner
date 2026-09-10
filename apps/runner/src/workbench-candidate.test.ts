@@ -51,6 +51,13 @@ describe("recommended Workbench starter pack", () => {
     expect(recommendedWorkbenchCandidate(draft)).toEqual(draft);
   });
 
+  it("refuses a relationship whose join column is not in the inspected field catalog", () => {
+    const events = resource("events", { relationships: [relationship("events_region", "regions")] });
+    delete events.field_types.region_id;
+    const draft = boundary([events, resource("regions")]);
+    expect(() => recommendedWorkbenchCandidate(draft)).toThrow(/not cardinality-proven/);
+  });
+
   it("never widens the requested starter-pack bound", () => {
     const draft = boundary([
       resource("events", {
@@ -415,6 +422,7 @@ function resource(
     "occurred_at",
     ...measures,
     ...groups,
+    ...(options.relationships ?? []).flatMap(relationship => relationship.local_columns),
   ];
   return {
     id: `public.${table}`,

@@ -91,9 +91,7 @@ const exactDerivedEffectUnsignedSchema = z.object({
   deduplication: z.object({ components: z.array(semanticDeduplicationComponentSchema).min(1).max(8) }).strict().optional(),
 }).strict();
 
-export const exactDerivedEffectV1Schema = exactDerivedEffectUnsignedSchema.extend({
-  effect_digest: sha256,
-}).strict().superRefine((effect, ctx) => {
+function validateExactDerivedEffect(effect: z.infer<typeof exactDerivedEffectUnsignedSchema> & { effect_digest: string }, ctx: z.RefinementCtx): void {
   const { effect_digest: _digest, ...unsigned } = effect;
   if (canonicalJsonDigest(unsigned) !== effect.effect_digest) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "derived effect digest mismatch", path: ["effect_digest"] });
   const sorted = [...effect.allowed_columns].sort();
@@ -111,6 +109,34 @@ export const exactDerivedEffectV1Schema = exactDerivedEffectUnsignedSchema.exten
     const components = effect.deduplication?.components ?? [];
     if (!components.some((component) => component.source === "proposal_id")) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "semantic INSERT deduplication requires proposal identity", path: ["deduplication"] });
     if (effect.tenant_guard !== undefined && !components.some((component) => component.source === "trusted_tenant" && component.column === effect.tenant_guard?.column && component.value === effect.tenant_guard?.value)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "semantic INSERT deduplication must bind the trusted tenant", path: ["deduplication"] });
+  }
+}
+
+const exactSingleDerivedEffectV1Schema = exactDerivedEffectUnsignedSchema.extend({ effect_digest: sha256 }).strict()
+  .superRefine(validateExactDerivedEffect);
+
+export const exactDerivedEffectV1Schema = exactDerivedEffectUnsignedSchema.extend({
+  effect_digest: sha256,
+  atomic_updates: z.array(exactSingleDerivedEffectV1Schema).min(1).max(3).optional(),
+}).strict().superRefine((effect, ctx) => {
+  validateExactDerivedEffect(effect, ctx);
+  if (!effect.atomic_updates) return;
+  const members = [effect, ...effect.atomic_updates];
+  const identities = new Set<string>();
+  for (const [index, member] of members.entries()) {
+    const path = index === 0 ? [] : ["atomic_updates", index - 1];
+    if (member.operation !== "single_row_update" || !member.version_advance
+      || member.expected_version?.column !== member.version_advance.column) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: "every atomic update requires an exact version-advancing UPDATE" });
+    }
+    if (member.source !== effect.source || member.tenant_guard?.value !== effect.tenant_guard?.value
+      || canonicalJsonStringify(member.organization_scope ?? null) !== canonicalJsonStringify(effect.organization_scope ?? null)
+      || (member.principal_scope && effect.principal_scope && member.principal_scope.value !== effect.principal_scope.value)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: "atomic updates must share the same trusted source and scope" });
+    }
+    const identity = canonicalJsonStringify([member.schema, member.table, member.primary_key, member.tenant_guard?.value ?? null]);
+    if (identities.has(identity)) ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: "atomic updates cannot repeat a physical target" });
+    identities.add(identity);
   }
 });
 
@@ -180,6 +206,13 @@ export const semanticAuthorityV1Schema = z.object({
   if (semantic.proof.subject_bindings_digest !== canonicalJsonDigest(semantic.subject_bindings)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "subject binding digest mismatch", path: ["proof", "subject_bindings_digest"] });
   if (semantic.proof.dependency_set_digest !== canonicalJsonDigest(semantic.dependencies)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "dependency set digest mismatch", path: ["proof", "dependency_set_digest"] });
   if (semantic.proof.derived_effect_digest !== semantic.effect.effect_digest) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "eligibility proof does not bind the exact derived effect", path: ["proof", "derived_effect_digest"] });
+  for (const [index, effect] of (semantic.effect.atomic_updates ?? []).entries()) {
+    if (!semantic.dependencies.some(dependency => dependency.resource === effect.resource
+      && canonicalJsonStringify(dependency.primary_key) === canonicalJsonStringify(effect.primary_key)
+      && canonicalJsonStringify(dependency.version ?? null) === canonicalJsonStringify(effect.expected_version ?? null))) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["effect", "atomic_updates", index], message: "atomic update must match one verified dependency identity and version" });
+    }
+  }
 });
 
 const semanticChangeSetBaseSchema = z.object({
@@ -394,6 +427,31 @@ export const semanticVerificationResultSchema = z.object({
   }
 });
 
+const atomicEffectResultSchema = z.object({
+  resource: qualifiedName,
+  schema: safeIdentifier,
+  table: safeIdentifier,
+  effect_digest: sha256,
+  target_identity: z.array(columnValueSchema).min(1).max(8),
+  affected_rows: z.number().int().min(0).max(1),
+  before_digest: sha256.optional(),
+  after_digest: sha256.optional(),
+}).strict();
+const atomicEffectResultsSchema = z.array(atomicEffectResultSchema).min(2).max(4);
+
+function validateAtomicEffectResults(status: string, rows: number,
+  effects: z.infer<typeof atomicEffectResultsSchema> | undefined, ctx: z.RefinementCtx): void {
+  if (!effects) {
+    if (rows > 1) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "multiple rows require complete atomic effect results", path: ["atomic_effects"] });
+    return;
+  }
+  const identities = effects.map(effect => canonicalJsonStringify([effect.schema, effect.table, effect.target_identity]));
+  if (new Set(identities).size !== identities.length || effects.reduce((sum, effect) => sum + effect.affected_rows, 0) !== rows
+    || (status === "applied" ? effects.some(effect => effect.affected_rows !== 1 || !effect.after_digest) : rows !== 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "atomic results require distinct targets and complete all-or-nothing affected-row evidence", path: ["atomic_effects"] });
+  }
+}
+
 export const normalizedWritebackResultV5Schema = z.object({
   protocol_version: z.literal(semanticProtocolVersions.normalizedWritebackJobV5),
   job_id: z.string().min(1).max(200),
@@ -401,7 +459,8 @@ export const normalizedWritebackResultV5Schema = z.object({
   operation: z.enum(["single_row_update", "single_row_insert"]),
   receipt_authority: z.enum(["source_db", "runner_ledger"]),
   status: z.enum(["applied", "conflict", "failed", "canceled", "already_applied", "reconciliation_required"]),
-  affected_rows: z.number().int().min(0).max(1),
+  affected_rows: z.number().int().min(0).max(4),
+  atomic_effects: atomicEffectResultsSchema.optional(),
   target_identity: z.array(columnValueSchema).min(1).max(8),
   before_digest: sha256.optional(),
   after_digest: sha256.optional(),
@@ -411,6 +470,7 @@ export const normalizedWritebackResultV5Schema = z.object({
   error_code: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(),
   intent_id: z.string().min(1).max(240).optional(),
 }).strict().superRefine((result, ctx) => {
+  validateAtomicEffectResults(result.status, result.affected_rows, result.atomic_effects, ctx);
   if (result.status === "applied" && result.semantic_verification.status !== "reverified") {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "semantic apply requires transaction-time re-verification", path: ["semantic_verification", "status"] });
   }
@@ -438,7 +498,8 @@ export const executionReceiptV5Schema = z.object({
     table: safeIdentifier,
     identity: z.array(columnValueSchema).min(1).max(8),
   }).strict(),
-  rows_affected: z.number().int().min(0).max(1),
+  rows_affected: z.number().int().min(0).max(4),
+  atomic_effects: atomicEffectResultsSchema.optional(),
   idempotency_key: z.string().min(1).max(256),
   before_digest: sha256.optional(),
   after_digest: sha256.optional(),
@@ -450,6 +511,7 @@ export const executionReceiptV5Schema = z.object({
   receipt_hash: sha256,
   reconciliation: z.object({ intent_id: z.string().min(1).max(240), reason: z.string().min(1).max(500) }).strict().optional(),
 }).strict().superRefine((receipt, ctx) => {
+  validateAtomicEffectResults(receipt.status, receipt.rows_affected, receipt.atomic_effects, ctx);
   const { receipt_hash: _receiptHash, ...receiptCore } = receipt;
   if (canonicalJsonDigest(receiptCore) !== receipt.receipt_hash) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "semantic execution receipt hash mismatch", path: ["receipt_hash"] });

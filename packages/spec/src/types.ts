@@ -301,6 +301,8 @@ export type DerivedEffectEnvelopeSpecV1 = ExtensionFields & {
   conflict_key?: string;
   max_rows: 1;
   allowed_fields: DerivedEffectFieldSpecV1[];
+  /** Additional exact updates that commit or roll back with the primary update. */
+  atomic_updates?: AtomicUpdateEnvelopeSpecV1[];
   version_advance?: {
     column: string;
     strategy: "integer_increment";
@@ -318,6 +320,22 @@ export type DerivedEffectEnvelopeSpecV1 = ExtensionFields & {
     mode: "none" | "direct_sql";
     supervised_worker: "disabled" | "allowed";
   };
+};
+
+export type AtomicUpdateEnvelopeSpecV1 = Pick<DerivedEffectEnvelopeSpecV1,
+  "target_resource" | "primary_key" | "tenant_key" | "organization_scope" | "principal_scope_key" | "allowed_fields"> & {
+  operation: "update";
+  target_binding: string;
+  conflict_key: string;
+  max_rows: 1;
+  version_advance: { column: string; strategy: "integer_increment" };
+};
+
+export type AtomicUpdateRuleSpecV1 = {
+  operation: "update";
+  target_resource: string;
+  target_binding: string;
+  set: Record<string, ActionRuleScalarExpressionV1>;
 };
 
 export type ActionRuleSubjectSpecV1 = ExtensionFields & {
@@ -352,6 +370,7 @@ export type ActionRuleSpecV1 = ExtensionFields & {
     target_binding?: string;
     set: Record<string, ActionRuleScalarExpressionV1>;
   };
+  atomic_updates?: AtomicUpdateRuleSpecV1[];
   approval_class: string;
   ttl_seconds: number;
 };

@@ -999,16 +999,21 @@ describe("boundary rescan reconciliation", () => {
       ]);
       expect(reconciled.filterable_fields).not.toHaveProperty("private_status");
       expect(reconciled.groupable_fields).not.toContain("private_status");
-      expect(reconciled.field_enums).not.toHaveProperty("private_status");
+      expect(reconciled.selectable_fields).toContain("private_status");
+      expect(reconciled.field_enums.private_status).toEqual(["internal", "external"]);
       expect(reconciled.field_enums.priority).toEqual(["urgent"]);
       expect(preview.report.boundaries[0]!.invalidated_decisions.map((decision) => decision.id))
         .toContain("resource.clinicdb.orders.field_permissions");
       expect(preview.report.boundaries[0]!.newly_proven_value_allowlists).toEqual([{
         resource_id: "clinicdb.orders",
+        field: "private_status",
+        value_count: 2,
+      }, {
+        resource_id: "clinicdb.orders",
         field: "status",
         value_count: 4,
       }]);
-      expect(preview.report.totals.newly_proven_value_allowlists).toBe(1);
+      expect(preview.report.totals.newly_proven_value_allowlists).toBe(2);
       expect(formatBoundaryRescanReport(preview.report)).toMatch(
         /clinicdb\.orders\.status: an enforced schema vocabulary now narrows existing filter\/group authority to 4 reviewed values; confirm field permissions, then activate/i,
       );
@@ -1052,6 +1057,12 @@ describe("boundary rescan reconciliation", () => {
         "no_show",
         "cancelled",
       ]));
+      const rows = validateExplorePlan({ kind: "rows", resource: "clinicdb.orders", select: ["private_status"] }, active);
+      const [rowQuery] = compileExplorePlan(rows, active, { tenant: "clinic-one", principal: "reviewer" }, "mysql");
+      expect(rowQuery?.params).toEqual(expect.arrayContaining(["internal", "external"]));
+      expect(rowQuery?.reviewed_value_controls).toContainEqual({
+        kind: "exclude_unreviewed_rows", resource: "clinicdb.orders", field: "private_status",
+      });
       expect(() => validateExplorePlan({
         kind: "rows",
         resource: "clinicdb.orders",

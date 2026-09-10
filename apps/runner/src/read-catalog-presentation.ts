@@ -89,7 +89,7 @@ function compactCatalogResourceDetail(resource: Record<string, unknown>, vocabul
       // The operation maps remain the executable contract. Remove a per-field
       // copy only when ALL its facts are recoverable exactly, including denials.
       const operations = {
-        return_value: !throughRelationship && modelStrings(entry.selectable_fields).includes(id),
+        return_value: modelStrings(entry.selectable_fields).includes(id),
         model_egress: modelStrings(entry.model_withheld_fields).includes(id) ? "withheld" : "visible",
         filter_operators: modelStringArrayRecord(entry.filter_operators)[id] ?? [],
         sortable: !throughRelationship && modelStrings(entry.sortable_fields).includes(id),
@@ -111,6 +111,21 @@ function compactCatalogResourceDetail(resource: Record<string, unknown>, vocabul
   result.field_contract = "Only listed operations/values are allowed. model_withheld_fields stay private. Field operations, if present, also apply.";
   delete result.valid_plan_example;
   result.relationships = modelRecords(resource.relationships).map((relationship) => compact(relationship, true));
+  const entries = [result, ...modelRecords(result.relationships)];
+  const fields = entries.flatMap((entry) => modelRecords(entry.fields));
+  // A missing status must stay missing, never inherit permissive semantics.
+  if (fields.length && fields.every((field) => typeof field.semantic_status === "string")
+    && fields.some((field) => field.semantic_status === "descriptive_identifier")) {
+    result.field_defaults = { semantic_status: "descriptive_identifier" };
+    result.field_contract += " field_defaults apply to root and relationship fields; explicit field values override defaults.";
+    for (const entry of entries) {
+      entry.fields = modelRecords(entry.fields).map((field) => {
+        const copy = { ...field };
+        if (copy.semantic_status === "descriptive_identifier") delete copy.semantic_status;
+        return copy;
+      });
+    }
+  }
   return result;
 }
 
@@ -131,6 +146,9 @@ function modelResourceIndex(resource: Record<string, unknown>): Record<string, u
     boundary_name: modelString(resource.boundary_name),
     fields: modelReviewedFields(resource.fields, false),
     selectable_fields: modelStrings(resource.selectable_fields),
+    ...(resource.relationship_only === true ? { relationship_only: true } : {}),
+    ...(relationships.length ? { related_rows: { syntax: { related: [{ relationship: "<reviewed relationship id>", select: ["<target field>"] }] },
+      max_relationships: 3, max_total_fields: 20, output_names: "<relationship id>.<field>", scope: "Every target remains independently scoped; private join keys are not returned." } } : {}),
     filter_operators: modelStringArrayRecord(resource.filter_operators),
     sortable_fields: modelStrings(resource.sortable_fields),
     groupable_fields: modelStrings(resource.groupable_fields),
@@ -165,6 +183,7 @@ function modelResourceIndex(resource: Record<string, unknown>): Record<string, u
 }
 
 function modelValidRowsPlan(resource: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (resource.relationship_only === true) return undefined;
   const resourceId = modelString(resource.id);
   const withheld = new Set(withheldFieldNames(resource.field_egress));
   const selected = modelStrings(resource.selectable_fields)
@@ -175,7 +194,8 @@ function modelValidRowsPlan(resource: Record<string, unknown>): Record<string, u
     : undefined;
 }
 
-function modelValidAggregatePlan(resource: Record<string, unknown>): Record<string, unknown> {
+function modelValidAggregatePlan(resource: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (resource.relationship_only === true) return undefined;
   const resourceId = modelString(resource.id) ?? "";
   const semanticStatus = new Map(modelRecords(resource.fields).flatMap((field) => {
     const id = modelString(field.id);
@@ -203,6 +223,7 @@ function modelResourceDetail(resource: Record<string, unknown>): Record<string, 
       ? relationship.operator_review_required
       : undefined,
     target_resource: modelString(relationship.target_resource),
+    selectable_fields: modelStrings(relationship.selectable_fields),
     target_label: modelString(relationship.target_label),
     target_description: modelString(relationship.target_description),
     vocabulary: modelRecordOrUndefined(relationship.vocabulary),

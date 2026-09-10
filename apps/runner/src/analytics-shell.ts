@@ -2855,6 +2855,7 @@ function protectedPlanReviewLines(
     return [
       `${theme.dim("Resource:")} ${theme.value(safeTerminalText(plan.resource))}`,
       `${theme.dim("Fields:")} ${theme.value(plan.select.map(safeTerminalText).join(", "))}`,
+      ...(plan.related ?? []).map((entry) => `${theme.dim("Related fields:")} ${theme.value(safeTerminalText(entry.relationship))}: ${theme.value(entry.select.map(safeTerminalText).join(", "))}`),
       `${theme.dim("Maximum rows:")} ${theme.value(String(plan.limit))}`,
     ];
   }

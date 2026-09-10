@@ -119,6 +119,10 @@ export function createScopedExploreMcpServer(
     kind: z.literal("rows"),
     resource: resourceId,
     select: modelArray(z.array(fieldId).min(1).max(20)),
+    related: optionalModelArgument(modelArray(z.array(z.object({
+      relationship: relationshipId,
+      select: modelArray(z.array(fieldId).min(1).max(20)),
+    }).strict()).min(1).max(3))),
     time_window: optionalModelArgument(modelObject(z.union([
       absoluteRowTimeWindow,
       relativeRowTimeWindow,
@@ -466,6 +470,7 @@ function exploreToolDescription(production: boolean, automaticBandsReviewed: boo
     'Aggregate: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"count"}],"dimensions":[{"field":"<field>"}]}}. For totals or averages, use sum or avg with one exact reviewed measure field. Omitted top_n uses Runner\'s reviewed bound.',
     'Related grouping: {"dimensions":[{"field":"<exact target field>","relationship":"<exact reviewed relationship id>"}]}. When the question asks base records by a related field, use that pair instead of a similar local field; never concatenate the ids.',
     'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field>"]}}. Omitted limit uses Runner\'s reviewed bound.',
+    'Related row details use "related":[{"relationship":"<exact reviewed relationship id>","select":["<exact target field>"]}]. At most three paths and twenty total fields; each path preserves the reviewed customer scope. Returned keys are <relationship>.<field>.',
     'Named controls use {"derived_measure":"<name>"} in measures or {"numeric_band":"<name>"} in dimensions.',
     ...(automaticBandsReviewed
       ? ['Reviewed auto-band example: {"numeric_band":{"field":"amount_cents","method":"quantile","buckets":5}}. Copy the field, method, and bucket range from app.describe_data; never send edges, widths, offsets, formulas, or labels.']

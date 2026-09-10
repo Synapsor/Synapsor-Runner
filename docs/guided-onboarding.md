@@ -278,6 +278,19 @@ for governance work. Sensitive widening requires reviewer identity and reason.
 Nullable relationships require a direct keep-unmatched or exclude-unmatched
 choice because either answer changes business totals.
 
+Declared composite relationships are available for a scoped display, including
+registration -> section -> course. Runner retains every key pair and checks
+target uniqueness and each resource's scope; private join keys need not become
+customer-visible. Describe the required information, not SQL or joins. The model
+prepares supported links in the disabled draft and asks only when business
+meaning remains ambiguous. Repeating consent cannot resolve an unsupported link.
+
+The same `app.explore_data` tool accepts `rows.related` selections using exact
+relationship IDs from `app.describe_data`. One view supports up to three reviewed
+paths and twenty selected fields in total. A related-only resource cannot become
+an independent query root; its display fields are reached through the permitted
+record. Field exclusions, value allowlists and disclosure budgets still apply.
+
 To add or change a per-user row limit in the terminal editor, select the table,
 press `Enter` for columns, then press `O`. Choose a direct non-null column, a
 proven mandatory relationship path, or explicitly keep no per-user limit, and
@@ -907,6 +920,47 @@ revalidating the same saved job. The dedicated telecom fixture add-on in
 `examples/telecom-writer-repair` includes its own scoped lock policies and
 rolled-back verifier; the older broad tutorial writer is not a compatible
 substitute for an exact offered-plan-change writer.
+
+When completing an operation also consumes its selected offer, the reviewed
+action can use two through four exact, version-checked updates in one database
+transaction. It remains one outcome through the existing four tools, with one
+approval and one receipt covering all changed records. A failure rolls back all
+of them. See [Atomic Updates](action-rule-engine.md#atomic-updates) for the exact
+supported limits. The previous single-record writer is not automatically widened;
+export and review the new exact writer requirements before enabling completion.
+
+## Resuming After A Relationship-Support Upgrade
+
+Reopen the existing project with the newer Runner and choose to resume the saved
+job. If Read mapping never completed, Runner rechecks declared composite links
+that the older generator could not represent. It updates only that unfinished
+catalog, retains field privacy and scope, and validates the requested row view
+before the normal access review. Links deliberately removed from a previously
+composite-capable catalog are not restored.
+
+A completed Read mapping, a saved Action, and active authority are not replaced
+by this refresh. Changing those still uses the normal draft-edit and explicit
+activation flow. No reset, concrete customer identity, or source write is needed
+to repair metadata-only authoring.
+
+## Connected Regression Tests
+
+Use only a disposable PostgreSQL database in `SYNAPSOR_TEST_POSTGRES_URL`.
+Tests create and remove their own schemas and roles; they never fall back to
+`DATABASE_URL` or a saved tutorial project. The live tests additionally require
+`OPENAI_API_KEY` and an explicit paid-provider opt-in:
+
+```bash
+SYNAPSOR_TEST_GUIDED_COMPOSITE_LIVE=1 corepack pnpm exec vitest run apps/runner/src/guided-composite-live.test.ts
+SYNAPSOR_TEST_GUIDED_ATOMIC_LIVE=1 corepack pnpm exec vitest run apps/runner/src/guided-atomic-live.test.ts
+```
+
+Optional absolute `SYNAPSOR_GUIDED_COMPOSITE_REPORT` and
+`SYNAPSOR_GUIDED_ATOMIC_REPORT` paths retain sanitized test evidence. These
+programmatic journeys exercise real model calls and database/MCP/worker behavior;
+they are not a claim of unaided terminal onboarding acceptance. The ordinary
+suite separately checks terminal interaction, draft preservation, exact review,
+scope, concurrency, rollback, writer permissions and receipts.
 
 ## Visual Reference
 

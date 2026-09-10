@@ -309,6 +309,9 @@ export async function createProtectedQueryDraft(input: {
   });
   if (protectedPlan.boundary_digest !== boundary.activation.digest) throw new Error("Protect token belongs to a different or superseded exploration boundary.");
   const plan = validateExplorePlan(protectedPlan.plan, boundary);
+  if (plan.kind === "rows" && plan.related?.length) {
+    throw new Error("This related-record view is supported by app.explore_data. Legacy Protect export cannot preserve its related fields; keep using the reviewed four-tool interface.");
+  }
   assertPreparedExplorePlanAuthority(plan, prepared);
   const reviewedCohortOverride = await reviewedMinimumCohortOverride({
     projectRoot,

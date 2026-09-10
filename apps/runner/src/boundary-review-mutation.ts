@@ -2142,6 +2142,7 @@ function preserveBoundaryResourcePolicy(
   request: BoundaryResourceReviewRequest,
   editedResource: boolean,
 ): void {
+  if (previous.relationship_only) generated.relationship_only = true;
   const visibilityChanges = new Set([
     ...(editedResource ? request.keep_out_fields ?? [] : []),
     ...(editedResource ? request.withhold_from_model_fields ?? [] : []),

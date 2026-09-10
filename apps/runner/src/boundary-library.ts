@@ -820,6 +820,7 @@ function rebaseDisabledBoundary(
 
 function rebaseBoundaryResource(current: BoundaryResource, stored: BoundaryResource): BoundaryResource {
   const resource = structuredClone(current);
+  if (stored.relationship_only) resource.relationship_only = true;
   const currentFields = new Set(Object.keys(current.field_types));
   const currentSelectable = new Set(current.selectable_fields);
   const storedSelectable = new Set(stored.selectable_fields);
@@ -913,8 +914,6 @@ function rebaseBoundaryResource(current: BoundaryResource, stored: BoundaryResou
     stored,
     current,
     selectable,
-    retainedFilterableFields: resource.filterable_fields,
-    retainedGroupableFields: resource.groupable_fields,
   });
   resource.time_bucket_fields = intersectStoredMap(
     stored.time_bucket_fields,
@@ -957,8 +956,6 @@ function rebaseStoredFieldEnums(input: {
   stored: BoundaryResource;
   current: BoundaryResource;
   selectable: Set<string>;
-  retainedFilterableFields: BoundaryResource["filterable_fields"];
-  retainedGroupableFields: string[];
 }): BoundaryResource["field_enums"] {
   const result = intersectStoredMap(
     input.stored.field_enums,
@@ -971,13 +968,8 @@ function rebaseStoredFieldEnums(input: {
       || values.length === 0) {
       continue;
     }
-    const hadLegacyCategoricalAuthority = Object.hasOwn(input.stored.filterable_fields, field)
-      || input.stored.groupable_fields.includes(field);
-    const retainsCategoricalAuthority = Object.hasOwn(input.retainedFilterableFields, field)
-      || input.retainedGroupableFields.includes(field);
-    if (hadLegacyCategoricalAuthority && retainsCategoricalAuthority) {
-      result[field] = [...values];
-    }
+    // Selecting raw values also enforces this guard, even without filter/group use.
+    result[field] = [...values];
   }
   return result;
 }

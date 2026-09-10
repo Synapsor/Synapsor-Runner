@@ -550,6 +550,9 @@ export function extractReadAuthorityAtoms(
 
   if (plan.kind === "rows") {
     for (const field of plan.select) fieldAtom({ operation: "return", field });
+    for (const item of plan.related ?? []) {
+      for (const field of item.select) fieldAtom({ operation: "return", field, relationship: item.relationship });
+    }
     for (const filter of plan.where ?? []) {
       fieldAtom({ operation: "filter", field: filter.field, relationship: filter.relationship, qualifier: filter.op });
     }
@@ -835,6 +838,7 @@ function narrowResource(
     if (definition?.relationship) relationshipIds.add(definition.relationship);
   }
   const narrowed = structuredClone(resource);
+  if (!rooted.some(atom => atom.operation === "resource")) narrowed.relationship_only = true;
   narrowed.selectable_fields = narrowed.selectable_fields.filter((field) => selected.has(field));
   narrowed.sortable_fields = narrowed.sortable_fields.filter((field) => sortable.has(field));
   narrowed.groupable_fields = narrowed.groupable_fields.filter((field) => groupable.has(field));
@@ -895,6 +899,7 @@ function narrowResource(
   });
   if (!narrowed.auto_bands.length) delete narrowed.auto_bands;
   const enumFields = new Set([
+    ...selected,
     ...groupable,
     ...filterable.keys(),
   ]);
@@ -1000,6 +1005,10 @@ function assertExactMetadataReferences(
   const root = resourceFor(boundary, plan.resource);
   const references: Array<{ field?: unknown; relationship?: unknown }> = [];
   for (const value of Array.isArray(plan.select) ? plan.select : []) references.push({ field: value });
+  for (const item of Array.isArray(plan.related) ? plan.related : []) {
+    if (!isRecord(item) || !Array.isArray(item.select)) continue;
+    for (const field of item.select) references.push({ field, relationship: item.relationship });
+  }
   for (const value of Array.isArray(plan.where) ? plan.where : []) if (isRecord(value)) references.push(value);
   for (const value of Array.isArray(plan.order_by) ? plan.order_by : []) if (isRecord(value)) references.push(value);
   for (const value of Array.isArray(plan.measures) ? plan.measures : []) if (isRecord(value)) references.push(value);

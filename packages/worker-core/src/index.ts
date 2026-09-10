@@ -4,6 +4,7 @@ import { ControlPlaneClient, type ClaimedWritebackJob } from "@synapsor-runner/c
 import { canonicalJsonDigest, parseWritebackJob, protocolVersions, type InverseDescriptorV1, type NormalizedWritebackJobV5, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 
 export * from "./mcp-audit.js";
+export * from "./semantic-atomic-updates.js";
 
 export type RunnerConfig = {
   controlPlaneUrl: string;

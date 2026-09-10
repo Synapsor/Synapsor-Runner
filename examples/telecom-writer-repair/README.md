@@ -12,6 +12,9 @@ after the tutorial's schema/security scripts. This creates the separate
 `synapsor_plan_writer` role for the exact seven plan fields plus version, with
 scoped offer locking. It leaves the shared writer unchanged. Use this role in
 `SYNAPSOR_DATABASE_WRITE_URL` for the single offered-plan-change walkthrough.
+This older initializer does not grant offer consumption. A combined plan change
+and permanent offer consumption needs the exact handoff below and a separately
+reviewed dedicated writer; do not silently broaden the initialized role.
 Its password is a public test credential, not suitable for production. A role
 collision fails rather than rewriting an existing role. Do not run this fresh
 initializer as a repair against an existing database; use the checked handoff
@@ -39,8 +42,10 @@ node prepare.mjs "$HANDOFF" "$REPAIR"
 ```
 
 The generator checks the actual compiled effect: eight subscription columns,
-SELECT on subscriptions and offers, and the offer identity privilege needed for
-private row locking. It refuses a different effect instead of widening grants.
+SELECT on subscriptions and offers, and either the offer identity privilege for
+private row locking or the exact `status` and `version` updates for atomic offer
+consumption. Only the reviewed exported effect selects that grant set. It refuses
+a different effect instead of widening grants.
 Review the generated SQL before administration. The script itself is offline.
 
 ## Authorized Administrator Step

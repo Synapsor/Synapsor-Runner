@@ -8,6 +8,7 @@ import type {
 import {
   canonicalJsonDigest,
   eligibilityProofDigest,
+  exactDerivedEffectV1Schema,
   type NormalizedWritebackJobV5,
 } from "@synapsor-runner/protocol";
 import { ActionRuleError } from "./errors.js";
@@ -351,6 +352,18 @@ function fieldServiceFixture(): {
   return { catalog, boundary, envelope, rule, facts };
 }
 
+function atomicFieldServiceFixture() {
+  const fixture = fieldServiceFixture();
+  const type = fixture.catalog.resources[2]!.fields.find(field => field.name === "status")!.type;
+  fixture.envelope.atomic_updates = [{ operation: "update", target_resource: "field_service.appointment_slot_offers",
+    target_binding: "offer", primary_key: "offer_id", tenant_key: "account_id", principal_scope_key: "principal_id",
+    conflict_key: "version", max_rows: 1, version_advance: { column: "version", strategy: "integer_increment" },
+    allowed_fields: [{ name: "status", type, values: ["released"] }] }];
+  fixture.rule.atomic_updates = [{ operation: "update", target_resource: "field_service.appointment_slot_offers",
+    target_binding: "offer", set: { status: { kind: "literal", value: "released", value_type: type } } }];
+  return fixture;
+}
+
 function inventoryFixture() {
   const catalog: ActionRuleCatalogV1 = {
     schema_version: "synapsor.action-rule-catalog.v1",
@@ -688,6 +701,45 @@ describe("portable Action Rule compiler and evaluator", () => {
     });
     expect(result.dependencies).toHaveLength(3);
   });
+
+  it("binds both guarded updates to one immutable effect and derives them from the same prewrite facts", () => {
+    const fixture = atomicFieldServiceFixture();
+    const compiled = compileActionRule({ rule: fixture.rule, verification_boundary: fixture.boundary,
+      effect_envelope: fixture.envelope, catalog: fixture.catalog });
+    const before = structuredClone(fixture.facts);
+    const result = evaluateActionRule({ compiled, facts: fixture.facts, proposal_id: "atomic_reschedule" });
+    expect(result.result).toBe("eligible");
+    if (result.result !== "eligible") throw new Error("Expected eligible derived updates");
+    expect(result.effect.atomic_updates).toEqual([expect.objectContaining({
+      resource: "field_service.appointment_slot_offers", primary_key: { column: "offer_id", value: "offer_1" },
+      expected_version: { column: "version", value: 4 }, version_advance: { column: "version", strategy: "integer_increment" },
+      set: { status: "released" }, tenant_guard: { column: "account_id", value: "acct_1" },
+      principal_scope: { column: "principal_id", value: "customer_1" },
+    })]);
+    expect(exactDerivedEffectV1Schema.parse(result.effect)).toEqual(result.effect);
+    expect(fixture.facts).toEqual(before);
+    const tampered = structuredClone(result.effect);
+    tampered.atomic_updates![0]!.set.status = "held";
+    expect(exactDerivedEffectV1Schema.safeParse(tampered).success).toBe(false);
+    const staleCompiled = structuredClone(compiled);
+    staleCompiled.atomic_updates![0]!.target_resource.table = "unreviewed";
+    expect(() => evaluateActionRule({ compiled: staleCompiled, facts: fixture.facts, proposal_id: "tampered" })).toThrow(/integrity/);
+    fixture.facts.bindings.offer!.rows[0]!.status = "released";
+    expect(evaluateActionRule({ compiled, facts: fixture.facts, proposal_id: "fresh_after_consumption" }).result).toBe("ineligible");
+  });
+
+  it.each(["missing_envelope", "unguarded", "duplicate_binding", "over_limit", "cross_engine", "wrong_field", "nested"])(
+    "refuses unsupported atomic update authority: %s", (kind) => {
+      const f = atomicFieldServiceFixture();
+      if (kind === "missing_envelope") delete f.envelope.atomic_updates;
+      if (kind === "unguarded") delete (f.envelope.atomic_updates![0]! as any).version_advance;
+      if (kind === "duplicate_binding") f.envelope.atomic_updates![0]!.target_binding = "appointment";
+      if (kind === "over_limit") { f.envelope.atomic_updates = Array(4).fill(f.envelope.atomic_updates![0]); f.rule.atomic_updates = Array(4).fill(f.rule.atomic_updates![0]); }
+      if (kind === "cross_engine") f.catalog.resources[2]!.engine = "mysql";
+      if (kind === "wrong_field") f.rule.atomic_updates![0]!.set = { expires_at: { kind: "trusted", binding: "transaction_time" } };
+      if (kind === "nested") (f.rule.atomic_updates![0]! as any).atomic_updates = [];
+      expect(() => compileActionRule({ rule: f.rule, verification_boundary: f.boundary, effect_envelope: f.envelope, catalog: f.catalog })).toThrow();
+    });
 
   it("refuses field-service rescheduling after dispatch without deriving an effect", () => {
     const fixture = fieldServiceFixture();

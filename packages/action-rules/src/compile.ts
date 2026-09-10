@@ -10,6 +10,7 @@ import type {
 } from "@synapsor/spec";
 import { ActionRuleError } from "./errors.js";
 import { actionRuleRelationshipPairs } from "./relationships.js";
+import { actionRuleEffectEnvelopes, actionRuleEffects, assertAtomicUpdateShape } from "./atomic-updates.js";
 import {
   actionRuleDigest,
   effectEnvelopeDigest,
@@ -554,6 +555,7 @@ function compileAgainstCatalog(
   const rule = normalizeActionRule(input.rule);
   const boundary = normalizeVerificationBoundary(input.verification_boundary);
   const envelope = normalizeDerivedEffectEnvelope(input.effect_envelope);
+  assertAtomicUpdateShape(rule, envelope);
   if (catalog.schema_version !== "synapsor.action-rule-catalog.v1") fail("ACTION_RULE_INVALID", "Unsupported Action Rule catalog version.");
   if (rule.schema_version !== "synapsor.action-rule.v1" || boundary.schema_version !== "synapsor.verification-boundary.v1" || envelope.schema_version !== "synapsor.derived-effect-envelope.v1") fail("ACTION_RULE_INVALID", "Unsupported Action Rule authority version.");
   if (!Number.isSafeInteger(rule.ttl_seconds) || rule.ttl_seconds < 15 || rule.ttl_seconds > 3_600) fail("ACTION_RULE_INVALID", "Action Rule ttl_seconds must be from 15 through 3600.", "rule.ttl_seconds");
@@ -626,7 +628,7 @@ function compileAgainstCatalog(
       fail("ACTION_RULE_UNBOUNDED", `Lock parent ${binding.verification.source.from_binding} must precede ${binding.binding}.`, "verification_boundary.lock_order");
     }
   }
-  assertAuthorityScope(envelope, bindings);
+  for (const member of actionRuleEffectEnvelopes(envelope)) assertAuthorityScope(member, bindings);
 
   const subjects = new Map(rule.subjects.map((subject) => [subject.binding, subject]));
   if (subjects.size !== rule.subjects.length) fail("ACTION_RULE_INVALID", "Action Rule subject bindings must be unique.");
@@ -651,16 +653,25 @@ function compileAgainstCatalog(
 
   const targetResource = catalogResources.get(envelope.target_resource);
   if (targetResource === undefined) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Effect target ${envelope.target_resource} is not in the inspected catalog.`);
-  const effectFieldTypes = assertEnvelope(envelope, rule, targetResource, bindings, context);
-  for (const relationship of catalog.relationships) {
-    if (relationship.from_resource !== targetResource.name) continue;
-    for (const pair of actionRuleRelationshipPairs(relationship)) {
-      const expression = rule.effect.set[pair.local_field];
-      if (expression && usesBusinessInput(expression, rule)) {
-        fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Relationship identity ${pair.local_field} must come from a verified subject or fact, not a business input.`, `rule.effect.set.${pair.local_field}`);
+  const effects = actionRuleEffects(rule);
+  const compiledEffects = actionRuleEffectEnvelopes(envelope).map((member, index) => {
+    const target = catalogResources.get(member.target_resource);
+    if (!target || target.engine !== targetResource.engine) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", "Every atomic target must exist in the same inspected source and engine.");
+    const effectRule = { ...rule, effect: effects[index]! };
+    const fieldTypes = assertEnvelope(member, effectRule, target, bindings, context);
+    for (const relationship of catalog.relationships) {
+      if (relationship.from_resource !== target.name) continue;
+      for (const pair of actionRuleRelationshipPairs(relationship)) {
+        const expression = effectRule.effect.set[pair.local_field];
+        if (expression && usesBusinessInput(expression, rule)) {
+          fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Relationship identity ${pair.local_field} must come from a verified subject or fact, not a business input.`, `rule.effect.set.${pair.local_field}`);
+        }
       }
     }
-  }
+    return { target_resource: target, effect_field_types: Object.fromEntries(Object.entries(fieldTypes).sort(([a], [b]) => a.localeCompare(b))) };
+  });
+  const effectFieldTypes = compiledEffects[0]!.effect_field_types;
+  const atomicUpdates = compiledEffects.length > 1 ? compiledEffects.slice(1) : undefined;
   const ruleDigest = actionRuleDigest(rule);
   const boundaryDigest = verificationBoundaryDigest(boundary);
   const envelopeDigest = effectEnvelopeDigest(envelope);
@@ -678,6 +689,7 @@ function compileAgainstCatalog(
     derivation_order: order,
     derived_types: derivedTypes,
     effect_field_types: effectFieldTypes,
+    ...(atomicUpdates === undefined ? {} : { atomic_updates: atomicUpdates }),
   });
   return {
     schema_version: COMPILED_ACTION_RULE_VERSION,
@@ -700,6 +712,7 @@ function compileAgainstCatalog(
     derivation_order: order,
     derived_types: derivedTypes,
     effect_field_types: Object.fromEntries(Object.entries(effectFieldTypes).sort(([left], [right]) => left.localeCompare(right))),
+    ...(atomicUpdates === undefined ? {} : { atomic_updates: atomicUpdates }),
     approval_class: rule.approval_class,
     ttl_seconds: rule.ttl_seconds,
     uses: 1,

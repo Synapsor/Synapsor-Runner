@@ -5470,12 +5470,7 @@ describe("boundary operator-plane CLI", () => {
         if (policyText) {
           if (title === "SEND ATTACHED RULES") return "send";
           if (title === "CLIENT INTEGRATION RESPONSIBILITIES") {
-            expect(applicationClarification).toBe(true);
-            expect(choiceOptions?.initialValue).toBe("back");
-            expect(options.find((option) => option.value === "assign")?.label).toContain("Claude Code");
-            expect(choiceOptions?.context?.join("\n")).toContain("no custom code is needed for configuration and the connection check");
-            expect(choiceOptions?.context?.join("\n")).toContain("connection check of the four fixed tools");
-            return "assign";
+            throw new Error("An already selected Claude Code client must not require a second duty-assignment decision");
           }
           if (title === "REVIEW ATTACHED RULES") {
             rulesMenuVisits++;
@@ -5487,8 +5482,7 @@ describe("boundary operator-plane CLI", () => {
             return "accept";
           }
           if (title === "REVIEW DISABLED ACTION REVISION") {
-            expect(choiceOptions?.context?.join("\n")).toContain("approval");
-            return "save";
+            throw new Error("A requested, validated draft edit must not ask again whether to save it");
           }
           if (title === "FINISH BOUNDARY REVIEW") {
             if (confirmedCurrent) throw new Error(`No-change reconciliation did not finish: ${JSON.stringify(vi.mocked(semanticChat.rememberDetails).mock.calls)}`);
@@ -5846,7 +5840,10 @@ describe("boundary operator-plane CLI", () => {
         expect(activePolicySource(restored)?.text).toBe(sourceText);
         expect(restored.coverage?.passages[0]?.disposition).toBe("implemented");
         await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
-        expect(semanticChat.checkpoint).toHaveBeenCalledWith("Action revision saved", expect.any(Array));
+        expect(semanticChat.checkpoint).toHaveBeenCalledWith("Draft updated", expect.arrayContaining([
+          expect.stringContaining("Your requested change is saved for review."),
+          expect.stringContaining("Live execution of a customer request."),
+        ]));
         return;
       }
 

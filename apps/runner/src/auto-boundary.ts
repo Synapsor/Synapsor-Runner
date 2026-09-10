@@ -551,6 +551,8 @@ export type ExplorationBoundaryDraft = {
       field_types: Record<string, string>;
       field_enums: Record<string, string[]>;
       selectable_fields: string[];
+      /** Fields may be used through reviewed joins, but not as an independent query root. */
+      relationship_only?: true;
       filterable_fields: Record<string, Array<"eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "in">>;
       sortable_fields: string[];
       groupable_fields: string[];
@@ -2070,7 +2072,7 @@ function authorityDependencyFields(
     ...resource.count_distinct_fields,
     ...Object.keys(resource.time_bucket_fields),
   ].filter((field): field is string => Boolean(field)));
-  for (const relationship of resource.relationships) {
+  for (const relationship of resources.flatMap((entry) => entry.relationships)) {
     for (const link of relationship.proof?.links ?? []) {
       if (link.source_resource === resource.id) link.source_columns.forEach((field) => fields.add(field));
       if (link.target_resource === resource.id) link.target_columns.forEach((field) => fields.add(field));
@@ -2183,6 +2185,7 @@ export function describeExplorationBoundaryMetadata(
           { model_egress: modelWithheld.has(field) ? "withheld" : "visible" },
         ])),
         selectable_fields: resource.selectable_fields,
+        ...(resource.relationship_only ? { relationship_only: true } : {}),
         filterable_fields: Object.keys(resource.filterable_fields),
         filter_operators: resource.filterable_fields,
         sortable_fields: resource.sortable_fields,
@@ -2294,6 +2297,7 @@ export function describeExplorationBoundaryMetadata(
               targetModelWithheld,
               true,
             )),
+            selectable_fields: target.selectable_fields,
             filterable_fields: Object.keys(target.filterable_fields),
             filter_operators: target.filterable_fields,
             groupable_fields: target.groupable_fields,
@@ -2355,7 +2359,7 @@ function describeReviewedFieldGrammar(
       ? { description: resource.field_metadata[field]!.description }
       : {}),
     operations: {
-      return_value: !throughRelationship && resource.selectable_fields.includes(field),
+      return_value: resource.selectable_fields.includes(field),
       model_egress: modelWithheld.has(field) ? "withheld" : "visible",
       filter_operators: [...(resource.filterable_fields[field] ?? [])],
       sortable: !throughRelationship && resource.sortable_fields.includes(field),
@@ -4828,13 +4832,21 @@ function assertBoundaryCandidateNarrowsDraft(
       assertSubset(values, original.field_enums[field] ?? [], `${resource.id}.${field} reviewed enum values`);
     }
     for (const field of Object.keys(original.field_enums)) {
-      if (!Object.hasOwn(resource.field_enums, field)
-        && (Object.hasOwn(resource.filterable_fields, field)
+      if (original.field_enums[field]!.length > 0
+        && !resource.field_enums[field]?.length
+        && (resource.selectable_fields.includes(field)
+          || Object.hasOwn(resource.filterable_fields, field)
           || resource.groupable_fields.includes(field))) {
         throw new Error(
-          `${resource.id}.${field} cannot disable its reviewed value allowlist while retaining filter or group authority.`,
+          `${resource.id}.${field} cannot disable its reviewed value allowlist while retaining select, filter or group authority.`,
         );
       }
+    }
+    if (resource.relationship_only !== undefined && resource.relationship_only !== true) {
+      throw new Error(`${resource.id} relationship-only access must be true or absent.`);
+    }
+    if (original.relationship_only && !resource.relationship_only) {
+      throw new Error(`${resource.id} cannot add independent query access during narrowing review.`);
     }
     assertSubset(resource.selectable_fields, original.selectable_fields, `${resource.id} selectable fields`);
     assertSubset(resource.sortable_fields, original.sortable_fields, `${resource.id} sortable fields`);
@@ -4881,6 +4893,11 @@ function assertBoundaryCandidateNarrowsDraft(
     const candidateWithheld = resource.model_withheld_fields ?? [];
     assertSubset(candidateWithheld, originalWithheld, `${resource.id} model-withheld fields`);
     assertSubset(candidateWithheld, Object.keys(original.field_types), `${resource.id} model-withheld fields`);
+    assertSubset(
+      originalWithheld.filter((field) => resource.selectable_fields.includes(field)),
+      candidateWithheld,
+      `${resource.id} retained model-withheld selectable fields`,
+    );
     for (const [field, operators] of Object.entries(resource.filterable_fields)) {
       const originalOperators = original.filterable_fields[field];
       if (!originalOperators) throw new Error(`${resource.id} cannot add filterable field ${field}.`);
@@ -4924,27 +4941,38 @@ function assertBoundaryCandidateNarrowsDraft(
         || links.length > reviewedAnalysisRelationshipHopLimit(candidate.budgets)) {
         throw new Error(`${resource.id} relationship ${relationship.id} has invalid structural path proof.`);
       }
+      let expectedSource = resource.id;
       for (const link of links) {
         const source = candidateResources.get(link.source_resource);
         const target = candidateResources.get(link.target_resource);
         if (!source || !target) {
           throw new Error(`${resource.id} relationship ${relationship.id} leaves the reviewed pack.`);
         }
-        if (link.cardinality !== "many_to_one" || link.max_fan_out !== 1
+        if (link.source_resource !== expectedSource
+          || link.source_columns.length < 1
+          || link.source_columns.length !== link.target_columns.length
+          || new Set(link.source_columns).size !== link.source_columns.length
+          || new Set(link.target_columns).size !== link.target_columns.length
+          || link.source_columns.some((field) => !Object.hasOwn(source.field_types, field))
+          || link.target_columns.some((field) => !Object.hasOwn(target.field_types, field))
+          || link.cardinality !== "many_to_one" || link.max_fan_out !== 1
           || link.target_uniqueness.columns.length !== link.target_columns.length
           || link.target_uniqueness.columns.some((field, index) => field !== link.target_columns[index])) {
           throw new Error(`${resource.id} relationship ${relationship.id} is not cardinality-proven many-to-one.`);
         }
-        const usesKeptOutJoinKey =
-          link.source_columns.some((field) => source.kept_out_fields.includes(field))
-          || link.target_columns.some((field) => target.kept_out_fields.includes(field));
-        const isTrustedTenantLink = link.source_columns.length === 1
-          && link.target_columns.length === 1
-          && link.source_columns[0] === source.tenant_key
-          && link.target_columns[0] === target.tenant_key;
-        if (usesKeptOutJoinKey && !isTrustedTenantLink) {
+        const usesKeptOutJoinKey = link.source_columns.some((field, index) => {
+          const targetField = link.target_columns[index]!;
+          const trustedTenantPair = field === source.tenant_key && targetField === target.tenant_key;
+          return !trustedTenantPair && (source.kept_out_fields.includes(field)
+            || target.kept_out_fields.includes(targetField));
+        });
+        if (usesKeptOutJoinKey) {
           throw new Error(`${resource.id} relationship ${relationship.id} cannot use a kept-out field.`);
         }
+        expectedSource = target.id;
+      }
+      if (expectedSource !== relationship.target_resource) {
+        throw new Error(`${resource.id} relationship ${relationship.id} does not end at its reviewed target.`);
       }
     }
     assertKeptOutUnavailable(resource);
@@ -6044,22 +6072,12 @@ function buildExplorationBoundaryDraft(
     const relationships = resource.relationships
       .filter((relationship) => {
         const target = graph.resources.find((candidate) => candidate.id === relationship.referenced_resource);
-        const trustedTenantRelationship = Boolean(
-          resource.tenant_key.selected
-          && target?.tenant_key.selected
-          && relationship.columns.length === 1
-          && relationship.referenced_columns.length === 1
-          && relationship.columns[0] === resource.tenant_key.selected
-          && relationship.referenced_columns[0] === target.tenant_key.selected,
-        );
         if (!target
           || target.status !== "draft_read"
           || !relationship.cardinality_proven
           || !relationship.target_uniqueness
-          || relationship.columns.length !== 1
-          || relationship.referenced_columns.length !== 1
-          || (relationship.columns.some((field) => keptOutSet.has(field))
-            && !trustedTenantRelationship)) {
+          || relationship.columns.length < 1
+          || relationship.columns.length !== relationship.referenced_columns.length) {
           return false;
         }
         const targetTrustedFields = new Set([target.tenant_key.selected, target.principal_key.selected]
@@ -6070,8 +6088,14 @@ function buildExplorationBoundaryDraft(
             .map((field) => field.name),
           ...targetTrustedFields,
         ]);
-        return !relationship.referenced_columns.some((field) => targetKeptOut.has(field))
-          || trustedTenantRelationship;
+        // Scope components can remain private in a composite join; this does
+        // not permit other excluded columns or replace either table's scope.
+        return relationship.columns.every((field, index) => {
+          const targetField = relationship.referenced_columns[index]!;
+          const trustedTenantPair = field === resource.tenant_key.selected
+            && targetField === target.tenant_key.selected;
+          return trustedTenantPair || (!keptOutSet.has(field) && !targetKeptOut.has(targetField));
+        });
       })
       .sort((left, right) => {
         const score = (relationship: typeof left) => {
@@ -6274,11 +6298,7 @@ function addComposedExplorationPaths(
   const byId = new Map(resources.map((resource) => [resource.id, resource]));
   const hardDepth = EXPLORATION_BUDGET_REVIEW_CEILINGS.max_analysis_relationship_hops ?? 2;
   for (const root of resources) {
-    const factShaped = root.relationships.length >= 2
-      || root.aggregate_measures.some((field) => !isReferenceIdentifierName(field))
-      || Object.keys(root.time_bucket_fields).length > 0
-      || (root.relationships.length > 0 && root.groupable_fields.length > 0);
-    if (!factShaped) continue;
+    if (!root.relationships.length) continue;
     const directTargets = new Set(
       root.relationships
         .filter((relationship) => relationship.path_depth === 1)

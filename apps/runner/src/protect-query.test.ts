@@ -39,6 +39,20 @@ afterEach(async () => {
 });
 
 describe("Protect This Query", () => {
+  it("refuses legacy export rather than silently dropping related row fields", async () => {
+    const fixture = await activatedFixture(starProtectInspection());
+    const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      executor: fixedExecutor([{ id: "test-row", __synapsor_related_0_0: "Downtown" }]),
+      inspectDatabaseFn: async () => fixture.inspection });
+    try {
+      const result = await runtime.explore({ kind: "rows", resource: "public.subscriptions", select: ["id"],
+        related: [{ relationship: "subscriptions_store_id_fkey", select: ["name"] }] });
+      await expect(createProtectedQueryDraft({ projectRoot: fixture.root, token: (result.protect as { token: string }).token,
+        capabilityName: "retail.related_rows", description: "Show the store for these subscriptions", returnsHint: "Reviewed display fields",
+        env: fixture.env, inspectDatabaseFn: async () => fixture.inspection })).rejects.toThrow(/cannot preserve its related fields/);
+    } finally { await runtime.close(); }
+  });
+
   it("reports an invalid capability name before inspecting analysis history", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-invalid-protect-name-"));
     temporaryRoots.push(projectRoot);

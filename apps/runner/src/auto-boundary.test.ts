@@ -36,6 +36,7 @@ import {
   normalizeManagedBoundaryReviewDecision,
 } from "./boundary-review-domain.js";
 import { reconstructBoundaryReviewOverrides } from "./boundary-review-policy.js";
+import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
 
 describe("Auto Boundary compiler", () => {
   it("emits deterministic disabled DSL-first candidates without source data or secrets", () => {
@@ -991,6 +992,51 @@ describe("Auto Boundary compiler", () => {
       decided_at: "2026-08-19T12:01:00.000Z",
     });
     expect(() => build(principalOverrides)).toThrow(/trusted tenant and principal/i);
+  });
+
+  it("retains complete composite Read paths with private keys and independently scoped targets", () => {
+    const inspection = relationshipChainInspection();
+    for (const table of inspection.tables) {
+      table.unique_constraints.push({ name: `${table.name}_tenant_identity`, columns: ["tenant_id", "id"] });
+      for (const foreignKey of table.foreign_keys) {
+        foreignKey.columns.unshift("tenant_id");
+        foreignKey.referenced_columns.unshift("tenant_id");
+      }
+    }
+    let overrides = emptyReviewOverrides();
+    for (const [resource, field] of [["sales_facts", "product_id"], ["products", "id"],
+      ["products", "category_id"], ["categories", "id"]]) {
+      overrides = applyManagedBoundaryReviewDecision(overrides, {
+        kind: "field_exposure", resource_id: `public.${resource}`, field: field!,
+        exposure: "withhold_from_model", actor: "reviewer@example.test",
+        reason: "Keep database identifiers private while preserving reviewed record links.",
+        decided_at: "2026-09-09T12:00:00.000Z",
+      });
+    }
+    const generated = buildAutoBoundary({ inspection, overrides,
+      project: projectSummary("/workspace/composite-read"), sourceEnv: "DATABASE_URL" }).exploration_boundary;
+    const root = generated.pack.resources.find(resource => resource.id === "public.sales_facts")!;
+    const relationship = root.relationships.find(link => link.target_resource === "public.categories")!;
+    expect(relationship).toMatchObject({ path_depth: 2, proof: { links: [
+      { source_columns: ["tenant_id", "product_id"], target_columns: ["tenant_id", "id"],
+        target_uniqueness: { columns: ["tenant_id", "id"] } },
+      { source_columns: ["tenant_id", "category_id"], target_columns: ["tenant_id", "id"],
+        target_uniqueness: { columns: ["tenant_id", "id"] } },
+    ] } });
+    expect(root.model_withheld_fields).toContain("product_id");
+    expect(root.kept_out_fields).toContain("tenant_id");
+    const candidate = structuredClone(generated);
+    for (const resource of candidate.pack.resources) {
+      resource.relationships = resource.relationships.filter(link => (link.path_depth ?? 1) <= 2);
+    }
+    expect(() => reviewExplorationBoundaryCandidate(generated, candidate)).not.toThrow();
+    const tampered = structuredClone(candidate);
+    const changed = tampered.pack.resources.find(resource => resource.id === root.id)!
+      .relationships.find(link => link.id === relationship.id)!;
+    changed.proof!.links[0]!.source_columns = ["product_id"];
+    changed.proof!.links[0]!.target_columns = ["id"];
+    changed.proof!.digest = canonicalJsonDigest(changed.proof!.links);
+    expect(() => reviewExplorationBoundaryCandidate(generated, tampered)).toThrow(/alter relationship/);
   });
 
   it("keeps three-hop many-to-one paths reviewable but inactive until the exact bounded opt-in", () => {
@@ -3117,6 +3163,42 @@ describe("Auto Boundary compiler", () => {
     const field = Object.keys(typeChanged.pack.resources[0]!.field_types)[0]!;
     typeChanged.pack.resources[0]!.field_types[field] = "forged_type";
     expect(() => reviewExplorationBoundaryCandidate(original, typeChanged)).toThrow("field types and RLS session bindings cannot change");
+  });
+
+  it.each(["removed", "empty"])("rejects %s value allowlists while raw select is retained", removal => {
+    const { exploration_boundary: draft } = buildAutoBoundary({
+      inspection: churnInspection(), project: projectSummary("/workspace/app"), sourceEnv: "DATABASE_URL",
+    });
+    const original = draft.pack.resources[0]!;
+    original.field_enums.region = ["north", "south"];
+    delete original.filterable_fields.region;
+    original.groupable_fields = original.groupable_fields.filter((field) => field !== "region");
+    expect(original.selectable_fields).toContain("region");
+    const candidate = structuredClone(draft);
+    if (removal === "removed") delete candidate.pack.resources[0]!.field_enums.region;
+    else candidate.pack.resources[0]!.field_enums.region = [];
+    expect(() => reviewExplorationBoundaryCandidate(draft, candidate)).toThrow(/cannot disable its reviewed value allowlist/);
+    candidate.pack.resources[0]!.field_enums.region = ["north"];
+    expect(reviewExplorationBoundaryCandidate(draft, candidate).candidate.pack.resources[0]!.field_enums.region).toEqual(["north"]);
+    expect(original.field_enums.region).toEqual(["north", "south"]);
+  });
+
+  it.each([true, false])("only permits dropping withholding after raw select is removed (retained=%s)", retainSelect => {
+    const { exploration_boundary: draft } = buildAutoBoundary({
+      inspection: churnInspection(), project: projectSummary("/workspace/app"), sourceEnv: "DATABASE_URL",
+    });
+    const original = draft.pack.resources[0]!;
+    original.model_withheld_fields = ["region"];
+    restrictPrivateFieldAnalysis(draft, original.id, ["region"]);
+    const candidate = structuredClone(draft);
+    const resource = candidate.pack.resources[0]!;
+    delete resource.model_withheld_fields;
+    if (!retainSelect) resource.selectable_fields = resource.selectable_fields.filter((field) => field !== "region");
+    const review = () => reviewExplorationBoundaryCandidate(draft, candidate);
+    if (retainSelect) expect(review).toThrow(/model-withheld selectable fields/);
+    else expect(review).not.toThrow();
+    expect(original.model_withheld_fields).toEqual(["region"]);
+    expect(original.selectable_fields).toContain("region");
   });
 
   it("permits only coherent authority narrowing during bulk review", () => {

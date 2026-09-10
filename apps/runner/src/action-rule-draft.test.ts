@@ -1,8 +1,11 @@
 import type {
   ActionRuleCatalogV1,
 } from "@synapsor-runner/action-rules";
+import { normalizeActionRule } from "@synapsor-runner/action-rules";
 import type { ActionRuleScalarExpressionV1, ActionRuleScalarTypeSpecV1 } from "@synapsor/spec";
 import { describe, expect, it } from "vitest";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import { actionRuleModelDraftJsonSchema } from "./action-rule-model.js";
 import { createSemanticActionRuntime } from "@synapsor-runner/mcp-server";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
@@ -28,6 +31,72 @@ const statusType: ActionRuleScalarTypeSpecV1 = {
 };
 
 describe("model-authored Action Rule draft compilation", () => {
+  it("round-trips one combined action through the model schema, review and a later policy edit", () => {
+    const { proposed, built } = atomicDraft();
+    const input = { builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest };
+    const compiled = compileActionRuleModelDraft({ ...input, draft: proposed });
+    const validate = new Ajv2020({ strict: false, allErrors: true }).compile(actionRuleModelDraftJsonSchema());
+    expect(validate(compiled.draft), JSON.stringify(validate.errors)).toBe(true);
+    expect(compiled.effect_envelope.atomic_updates).toMatchObject([{ target_resource: "billing.account_policies",
+      target_binding: "policy", version_advance: { column: "version", strategy: "integer_increment" } }]);
+    expect(compiled.rule.atomic_updates).toMatchObject([{ set: { allow_pause: { kind: "literal", value: false } } }]);
+    const restored = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority,
+      outcome: proposed.outcome, review: proposed.review });
+    expect(restored.effect.atomic_updates).toEqual(proposed.effect.atomic_updates);
+    restored.approval.required_approvals = 2;
+    const edited = compileActionRuleModelDraft({ ...input, draft: restored });
+    expect(edited.rule.atomic_updates).toEqual(compiled.rule.atomic_updates);
+    expect(edited.effect_envelope).toEqual(compiled.effect_envelope);
+    expect(edited.verification_boundary).toEqual(compiled.verification_boundary);
+    expect(normalizeActionRule(edited.rule).require).toEqual(normalizeActionRule(compiled.rule).require);
+    expect(edited.approval_class.required_approvals).toBe(2);
+    expect(edited.loaded.authority.rules).toHaveLength(1);
+    const review = semanticActionBusinessReviewLines(edited, boundary()).join("\n");
+    expect(review).toContain("Also changes");
+    expect(review).toContain("allow pause becomes false");
+    expect(review).toContain("together");
+    expect(policyCoverageDraft({ read: boundary(), decisions: [], actions: [edited] })
+      .runner_evidence.actions[proposed.outcome]!.effect.atomic_updates).toMatchObject([
+        { version_advance: { column: "version", strategy: "integer_increment" }, source_fields_modified: ["allow_pause", "version"] },
+      ]);
+  });
+
+  it.each(["duplicate", "unknown_field", "no_version", "read_only", "nested", "insert", "too_many"])(
+    "refuses an unsafe companion before saving any action: %s", (failure) => {
+      const { proposed, built } = atomicDraft();
+      const member = proposed.effect.atomic_updates![0]!;
+      if (failure === "duplicate") { member.target_binding = "account"; member.target_resource = "billing.accounts"; }
+      if (failure === "unknown_field") member.allowed_fields = [{ name: "made_up" }];
+      if (failure === "no_version") {
+        delete built.catalog.resources[1]!.version_field;
+        delete built.authoring.resources[1]!.selected_version_field;
+        built.authoring.resources[1]!.version_candidates = [];
+      }
+      if (failure === "read_only") built.authoring.resources[1]!.operations.update = false;
+      if (failure === "nested") Object.assign(member, { atomic_updates: [structuredClone(member)] });
+      if (failure === "insert") Object.assign(member, { operation: "insert" });
+      if (failure === "too_many") proposed.effect.atomic_updates = Array(4).fill(member);
+      const before = structuredClone(proposed);
+      expect(() => compileActionRuleModelDraft({ draft: proposed, builtCatalog: built,
+        readBoundary: boundary(), readBoundaryDigest: readDigest })).toThrow();
+      expect(proposed).toEqual(before);
+    },
+  );
+  it("retains a private value used only by the companion update when reopening the action", () => {
+    const { proposed, built } = atomicDraft();
+    const field = { name: "allow_pause_after_use", type: { kind: "boolean" as const }, nullable: false };
+    built.catalog.resources[1]!.fields.push(field);
+    built.authoring.resources[1]!.fields.push({ ...field, role: "runner_verification_only", writable: false });
+    proposed.verification.resources[1]!.fields.push(field.name);
+    proposed.effect.atomic_updates![0]!.set.allow_pause = { kind: "field", binding: "policy", field: field.name };
+    const input = { builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest };
+    const compiled = compileActionRuleModelDraft({ ...input, draft: proposed });
+    const restored = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority, outcome: proposed.outcome, review: proposed.review });
+    expect(restored.verification.resources.find(resource => resource.binding === "policy")!.fields).toContain(field.name);
+    const reopened = compileActionRuleModelDraft({ ...input, draft: restored });
+    expect(reopened.rule.atomic_updates).toEqual(compiled.rule.atomic_updates);
+    expect(reopened.verification_boundary).toEqual(compiled.verification_boundary);
+  });
   it.each(["proposal_only", "supervised"] as const)("business review follows compiled rules, not reassuring model prose (%s)", (writeback) => {
     const proposed = draft();
     proposed.effect.writeback = writeback;
@@ -450,6 +519,23 @@ describe("model-authored Action Rule draft compilation", () => {
     })).toThrow(/dot-qualified fixed name/u);
   });
 });
+
+function atomicDraft() {
+  const proposed = draft(), built = relatedBuiltCatalog();
+  proposed.verification.resources.push({ binding: "policy", resource: "billing.account_policies",
+    source: { kind: "relationship", from_binding: "account", relationship: "accounts_policy_fk", direction: "forward" }, fields: ["allow_pause"] });
+  proposed.require = { kind: "all", expressions: [proposed.require, {
+    kind: "compare", operator: "eq", left: { kind: "field", binding: "policy", field: "allow_pause" },
+    right: { kind: "literal", value: true, value_type: { kind: "boolean" } },
+  }] };
+  const policy = built.authoring.resources[1]!;
+  policy.operations.update = true;
+  policy.fields.find((field) => field.name === "allow_pause")!.writable = true;
+  proposed.effect.atomic_updates = [{ operation: "update", target_resource: policy.name, target_binding: "policy",
+    allowed_fields: [{ name: "allow_pause", values: [false] }],
+    set: { allow_pause: { kind: "literal", value: false, value_type: { kind: "boolean" } } } }];
+  return { proposed, built };
+}
 
 function draft(): ActionRuleModelDraftV1 {
   return {

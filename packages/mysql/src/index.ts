@@ -17,6 +17,8 @@ import {
   type WritebackResult,
 } from "@synapsor-runner/protocol";
 import { assertCompensationJobIntegrity, assertFrozenSetJobIntegrity, assertSemanticActionReverification, classifyFrozenSetReconciliation, compensationInverseFromJob, type ApplyAdapter, type CompensationWritebackJob, type ReconciliationObservation, type RunnerConfig } from "@synapsor-runner/worker-core";
+import { semanticAtomicUpdateEffects, semanticEffectMutation, semanticAtomicEffectResult,
+  type SemanticMutationInput, type SemanticAtomicEffectResult } from "@synapsor-runner/worker-core";
 
 export const mysqlReceiptMigration = `CREATE TABLE IF NOT EXISTS synapsor_writeback_receipts (
   idempotency_key varchar(255) PRIMARY KEY,
@@ -52,6 +54,7 @@ type MutationOutcome = {
   memberEffects?: Array<{ primary_key: ColumnValue; before_digest?: string; after_digest?: string; tombstone_digest?: string }>;
   inverse?: InverseDescriptorV1;
   semanticVerification?: NormalizedWritebackResultV5["semantic_verification"];
+  atomicEffects?: SemanticAtomicEffectResult[];
 };
 
 export function quoteMysqlIdentifier(identifier: string): string {
@@ -175,7 +178,7 @@ export function mysqlActionRuleIsolation(
 }
 
 function operationOf(job: WritebackJob): Operation { return job.operation ?? "single_row_update"; }
-function principalScope(job: WritebackJob): { column: string; value: string | number | boolean | null } | undefined {
+function principalScope(job: { target: SemanticMutationInput["target"] }): { column: string; value: string | number | boolean | null } | undefined {
   const scope = job.target.principal_scope;
   if (!scope) return undefined;
   if (scope.value === undefined) throw new Error("PRINCIPAL_SCOPE_VALUE_REQUIRED");
@@ -249,7 +252,7 @@ export function buildMysqlInsert(job: WritebackJob): { sql: string; values: unkn
   };
 }
 
-function validateSemanticPatch(job: NormalizedWritebackJobV5): void {
+function validateSemanticPatch(job: SemanticMutationInput): void {
   const patchColumns = Object.keys(job.patch).sort();
   const allowedColumns = [...job.allowed_columns].sort();
   if (JSON.stringify(patchColumns) !== JSON.stringify(allowedColumns)) throw new Error("SEMANTIC_EFFECT_MISMATCH");
@@ -264,7 +267,7 @@ function validateSemanticPatch(job: NormalizedWritebackJobV5): void {
 }
 
 function appendMysqlSemanticScope(
-  job: NormalizedWritebackJobV5,
+  job: SemanticMutationInput,
   values: unknown[],
   where: string[],
 ): void {
@@ -281,7 +284,7 @@ function appendMysqlSemanticScope(
   }
 }
 
-export function buildMysqlSemanticUpdate(job: NormalizedWritebackJobV5): { sql: string; values: unknown[] } {
+export function buildMysqlSemanticUpdate(job: SemanticMutationInput): { sql: string; values: unknown[] } {
   if (job.operation !== "single_row_update" || job.target.primary_key.value === undefined || job.conflict_guard.kind !== "version_column") {
     throw new Error("SEMANTIC_EFFECT_MISMATCH");
   }
@@ -445,6 +448,9 @@ function reconciliationProjection(job: WritebackJob): string[] {
 }
 
 export function buildMysqlReconciliationRead(job: WritebackJob): { sql: string; values: unknown[] } {
+  if (job.protocol_version === "5.0" && job.semantic_authority.effect.atomic_updates) {
+    throw new Error("ATOMIC_RECONCILIATION_REQUIRES_COMPLETE_RECEIPT");
+  }
   const projection = reconciliationProjection(job).map(quoteMysqlIdentifier).join(", ");
   if (job.protocol_version === "4.0") {
     const scope = principalScope(job);
@@ -926,6 +932,27 @@ async function mutateMysqlSemantic(
     factLoader: createMysqlActionRuleFactLoader(connection),
   });
   assertSemanticActionReverification(job, semanticVerification);
+
+  if (job.semantic_authority.effect.atomic_updates) {
+    const atomicEffects: SemanticAtomicEffectResult[] = [];
+    for (const effect of semanticAtomicUpdateEffects(job)) {
+      const input = semanticEffectMutation(effect);
+      const mutation = buildMysqlSemanticUpdate(input);
+      const [updated] = await connection.query<Record<string, unknown>>(mutation.sql, mutation.values);
+      const count = affectedRows(updated);
+      if (count !== 1) throw new Error(count === 0 ? "SEMANTIC_AUTHORITY_STALE" : "MULTI_ROW_WRITE_BLOCKED");
+      const values: unknown[] = [effect.primary_key.value];
+      const where = [`${quoteMysqlIdentifier(effect.primary_key.column)} = ?`];
+      appendMysqlSemanticScope(input, values, where);
+      const [rows] = await connection.query<Record<string, unknown>[]>(
+        `SELECT ${quoteMysqlIdentifier(effect.expected_version!.column)} AS __synapsor_result_version FROM ${quoteMysqlIdentifier(effect.schema)}.${quoteMysqlIdentifier(effect.table)} WHERE ${where.join(" AND ")} LIMIT 2 FOR UPDATE`, values);
+      if (rows.length !== 1 || rows[0]?.__synapsor_result_version == null) throw new Error("VERSION_DID_NOT_ADVANCE");
+      atomicEffects.push(semanticAtomicEffectResult(effect, rows[0].__synapsor_result_version));
+    }
+    return { status: "applied", affectedRows: atomicEffects.length, targetIdentity: identityForJob(job),
+      beforeDigest: job.semantic_authority.proof.verified_facts_digest as `sha256:${string}`,
+      afterDigest: digest(atomicEffects), atomicEffects, semanticVerification };
+  }
 
   if (job.operation === "single_row_update") {
     if (job.conflict_guard.kind !== "version_column") throw new Error("SEMANTIC_EFFECT_MISMATCH");
@@ -1470,6 +1497,8 @@ function resultFromExistingReceipt(job: WritebackJob, config: RunnerConfig, row:
 function resultFromOutcome(job: WritebackJob, config: RunnerConfig, outcome: MutationOutcome, overrideCode?: string, overrideHash?: `sha256:${string}`): WritebackResult {
   const hash = overrideHash ?? resultHash(job, outcome.status, outcome.resultVersion);
   if (job.protocol_version === "5.0") {
+    const atomicEffects = outcome.atomicEffects ?? (job.semantic_authority.effect.atomic_updates && outcome.affectedRows === 0
+      ? semanticAtomicUpdateEffects(job).map(effect => semanticAtomicEffectResult(effect)) : undefined);
     const proof = job.semantic_authority.proof;
     const code = outcome.code ?? overrideCode;
     const semanticVerification = outcome.semanticVerification ?? {
@@ -1480,7 +1509,12 @@ function resultFromOutcome(job: WritebackJob, config: RunnerConfig, outcome: Mut
       proposal_dependency_set_digest: proof.dependency_set_digest,
       effect_digest: proof.derived_effect_digest,
     };
-    return wireResult({ protocol_version: "5.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identity: outcome.targetIdentity, before_digest: outcome.beforeDigest, after_digest: outcome.afterDigest, semantic_verification: semanticVerification, result_hash: hash, error_code: code, completed_at: new Date().toISOString() });
+    return wireResult({ protocol_version: "5.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation,
+      receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows,
+      ...(atomicEffects === undefined ? {} : { atomic_effects: atomicEffects }), target_identity: outcome.targetIdentity,
+      before_digest: outcome.beforeDigest, after_digest: outcome.afterDigest, semantic_verification: semanticVerification,
+      result_hash: overrideHash ?? (atomicEffects === undefined ? hash : digest({ job_id: job.job_id, status: outcome.status,
+        effect_digest: proof.derived_effect_digest, atomic_effects: atomicEffects })), error_code: code, completed_at: new Date().toISOString() });
   }
   if (job.protocol_version === "4.0") return wireResult({ protocol_version: "4.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identities: identityForJob(job), member_effects: outcome.memberEffects ?? [], ...((outcome.status === "applied" || outcome.status === "already_applied") ? { inverse: outcome.inverse ?? compensationInverseFromJob(job) } : {}), result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() });
   if (job.protocol_version === "3.0") return wireResult({ protocol_version: "3.0", job_id: job.job_id, runner_id: config.runnerId, operation: job.operation, receipt_authority: receiptAuthority(config), status: outcome.status, affected_rows: outcome.affectedRows, target_identities: identityForJob(job), set_digest: job.frozen_set.set_digest, member_effects: outcome.memberEffects ?? [], ...(job.inverse_capture && (outcome.status === "applied" || outcome.status === "already_applied") ? { inverse: job.inverse_capture } : {}), result_hash: hash, error_code: outcome.code ?? overrideCode, completed_at: new Date().toISOString() });

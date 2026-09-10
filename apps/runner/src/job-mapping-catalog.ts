@@ -232,6 +232,47 @@ function isGeneratedDirectResource(view: BoundaryResourceReviewView): boolean {
   return !generated.tenant_scope && !generated.shared_reference_scope;
 }
 
+/** Upgrade only an unfinished mapping catalog, never an already mapped Read revision. */
+export async function refreshIncompleteReadMappingRelationships(input: {
+  projectRoot: string;
+  schemaInspector: typeof inspectDatabase;
+}): Promise<string[]> {
+  const review = await loadBoundaryResourceReviewCatalog(input.projectRoot);
+  const first = review.candidate.pack.resources[0];
+  if (!first) return [];
+  const decision = {
+    actor: "runner-job-mapping",
+    reason: "Resume the unfinished job with newly supported declared composite links; keep access disabled pending exact review.",
+  };
+  const preview = await prepareBoundaryReviewMutationBatch(input.projectRoot,
+    [{ resource_id: first.id, ...decision }], input.schemaInspector, review.bindings);
+  const included = new Set(review.candidate.pack.resources.map(resource => resource.id));
+  const additions: string[] = [];
+  const requests: BoundaryResourceReviewRequest[] = [];
+  for (const resource of preview.build.exploration_boundary.pack.resources) {
+    const prior = review.candidate.pack.resources.find(item => item.id === resource.id);
+    if (!prior) continue;
+    const originallyGenerated = new Set(review.views.find(view => view.resource_id === resource.id)
+      ?.generated_candidate?.relationships.map(link => link.id));
+    const missing = resource.relationships.filter(relationship =>
+      !originallyGenerated.has(relationship.id)
+      && !prior.relationships.some(link => link.id === relationship.id)
+      && relationship.proof?.links.some(link => link.source_columns.length > 1)
+      && relationship.proof.links.every(link => included.has(link.source_resource) && included.has(link.target_resource)));
+    if (!missing.length) continue;
+    // A link present in the old generated catalog but removed by a reviewer
+    // is deliberately excluded above. Do not restore reviewed exclusions.
+    additions.push(...missing.map(link => `${resource.id}:${link.id}`));
+    requests.push({ resource_id: resource.id, ...decision,
+      relationship_ids: [...prior.relationships.map(link => link.id), ...missing.map(link => link.id)] });
+  }
+  if (!requests.length) return [];
+  const refreshed = await prepareBoundaryReviewMutationBatch(input.projectRoot, requests,
+    input.schemaInspector, review.bindings);
+  await commitBoundaryReviewMutationBatch(input.projectRoot, refreshed);
+  return additions;
+}
+
 export async function applyJobMappingCatalog(input: {
   projectRoot: string;
   expectedPlanDigest: string;

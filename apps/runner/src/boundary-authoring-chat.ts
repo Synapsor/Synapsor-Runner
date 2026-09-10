@@ -229,6 +229,40 @@ function permissionQuestion(value: string): string {
     .find(Boolean) ?? "Review this exact permission.";
 }
 
+// Keep the exact permission contract for validation and details. Only the
+// terminal wording changes; choice values and conservative defaults do not.
+function activationChoicePresentation(choice: ChoiceInput): ChoiceInput {
+  if (choice.message === "ACTIVATE READ BOUNDARY" || choice.message === "REPLACE ACTIVE READ BOUNDARY") {
+    const replacing = choice.message === "REPLACE ACTIVE READ BOUNDARY";
+    return {
+      ...choice,
+      title: replacing ? "REVIEW ACCESS CHANGES" : "REVIEW ACCESS",
+      message: replacing
+        ? "Replace the assistant's current reading permissions with the reviewed changes?"
+        : "Allow the assistant to read the information shown above? This does not enable changes to the database.",
+      options: choice.options.map((option) => ({
+        ...option,
+        label: option.label
+          .replace("Activate this exact Read Boundary", "Enable the reviewed reading access")
+          .replace("Replace active Read Boundary", "Replace current reading access")
+          .replace("Revise this Read Boundary with the current model", "Change what the assistant can read")
+          .replace("View exact Read Boundary details", "Inspect exact reading permissions")
+          .replace("Keep current active Read Boundary and finish", "Keep current reading access and finish")
+          .replace("Keep Read Boundary disabled and finish", "Save without enabling access and finish"),
+      })),
+    };
+  }
+  if (/^Activate verified Action Boundary\b/u.test(choice.message)) {
+    return {
+      ...choice, title: "REVIEW CHANGE REQUESTS",
+      message: "Allow the reviewed change requests and approval rules? Database execution has a separate review.",
+      options: choice.options.map((option) => option.value === "yes"
+        ? { ...option, label: "Enable the reviewed change requests" } : option),
+    };
+  }
+  return choice;
+}
+
 function isModelQuestion(title: string | undefined, context: string[] | undefined): boolean {
   const heading = title ?? context?.[0] ?? "";
   return /^(?:ANSWER ONE BUSINESS QUESTION|(?:SET|CONFIRM) (?:PROPOSAL RANGE|PROPOSAL FIELDS|ACTION TARGET|PROPOSAL EFFECT|CONFLICT AND RETRY GUARD)|CLARIFY ONE REVIEWED NAME|MODEL QUESTION|DESCRIBE THE AUTO-APPROVAL RULE)/iu
@@ -312,15 +346,10 @@ function compactRoutineCheckpoint(
   if (title === "NEXT AUTHORITY REVIEW - READ BOUNDARY") {
     const actionDependency = Number(contextValue(lines, "Dependent Action drafts:")) > 0;
     return {
-      title: actionDependency
-        ? "Action draft saved; Read dependency needs review"
-        : "Read draft ready for activation review",
-      lines: [
-        contextValue(lines, "Read Boundary:") ?? "The exact Read draft is ready.",
-        ...(actionDependency
-          ? ["The rehearsed Action draft depends on this exact Read revision. Read and Action activation remain separate decisions."]
-          : []),
-      ],
+      title: "Ready to review access",
+      lines: [actionDependency
+        ? "First review what the assistant can read, then its change requests. Each needs your approval; execution has a separate review."
+        : "Review what the assistant can read before enabling access."],
     };
   }
   if (title === "NEXT AUTHORITY REVIEW - ACTION BOUNDARY") {
@@ -519,9 +548,9 @@ export function createBoundaryAuthoringChat(input: {
           : theme.key;
     const facts = meaningfulContext(lines);
     const factStyle = (line: string, index: number) => {
-      if (["READ REVIEW SUMMARY", "ACTION REVIEW", "Verified Action Boundary active"].includes(title)) {
+      if (["READ REVIEW SUMMARY", "ACTION REVIEW", "Verified Action Boundary active", "Draft updated"].includes(title)) {
         const label = line.match(/^(\S.{0,38}?)( {2,}|:)(.*)$/u);
-        if (label) return `${/^(?:Privacy|UNMET)/u.test(label[1]!) ? theme.warning(label[1]!) : theme.key(label[1]!)}${label[2]}${theme.value(label[3]!)}`;
+        if (label) return `${/^(?:Privacy|UNMET|Decision needed|Not checked)/u.test(label[1]!) ? theme.warning(label[1]!) : theme.key(label[1]!)}${label[2]}${theme.value(label[3]!)}`;
         return theme.value(line);
       }
       if (/^\|\s*DECISION\s*\|/u.test(line)) return theme.bold(line);
@@ -921,6 +950,7 @@ export function createBoundaryAuthoringChat(input: {
     }
   };
   const choose = async (choice: ChoiceInput): Promise<string | undefined> => {
+    choice = activationChoicePresentation(choice);
     finishLiveResponse();
     await livePending;
     assertNotCancelled();

@@ -80,7 +80,7 @@ export async function narrateValidatedAuthoringStep(input: {
       : clarification
       ? "Ask exactly ONE short business question, at most 280 characters. Translate the pending meaning into a choice the operator can answer. Do not recap the action, cite source lines, give implementation instructions, or repeat safety notices. Do not decide the answer."
       : opening
-      ? "Use exactly two short sentences. First say only that you are ready to help draft reviewed boundaries while Runner validates each decision. Then ask the exact next question."
+      ? "Use exactly two short sentences. First say you will help set up what the assistant can do, with settings checked before anything is enabled. Then ask the exact next question. Do not introduce Boundary, egress, authority, outcome, principal, or proposal terminology."
       : permission
       ? "Use at most three short sentences. Answer the operator's question when one was supplied, then explain why this permission is needed and what allowing or declining changes."
       : "Use at most four short sentences. Explain the validated result in ordinary business language.",

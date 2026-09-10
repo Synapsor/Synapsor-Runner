@@ -88,6 +88,25 @@ function ruleContract() {
 }
 
 describe("Action Rule contract authority", () => {
+  it("preserves bounded atomic updates and rejects missing guards or nested effects", () => {
+    const contract = ruleContract() as any;
+    const envelope = contract.derived_effect_envelopes[0];
+    const rule = contract.action_rules[0];
+    const { schema_version: _s, name: _n, source: _source, approval_classes: _a, writeback: _w, ...target } = envelope;
+    envelope.atomic_updates = [{ ...target, target_binding: "second_preference" }];
+    rule.atomic_updates = [{ ...rule.effect, target_binding: "second_preference" }];
+    expect(validateContract(contract)).toMatchObject({ ok: true });
+    const normalized = normalizeContract(contract);
+    expect(normalized.derived_effect_envelopes?.[0]?.atomic_updates).toEqual(envelope.atomic_updates);
+    expect(normalized.action_rules?.[0]?.atomic_updates).toEqual(rule.atomic_updates);
+    for (const invalid of [{ ...target, version_advance: undefined }, { ...target, atomic_updates: [target] }]) {
+      envelope.atomic_updates = [invalid];
+      expect(validateContract(contract).ok).toBe(false);
+    }
+    envelope.atomic_updates = Array(4).fill({ ...target, target_binding: "second_preference" });
+    expect(validateContract(contract).ok).toBe(false);
+  });
+
   it("preserves composite field-pair order and rejects mixed, repeated, incomplete or injected joins", () => {
     const contract = ruleContract() as any;
     const parent = contract.verification_boundaries[0].resources[0];

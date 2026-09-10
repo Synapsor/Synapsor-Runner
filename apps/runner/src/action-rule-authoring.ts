@@ -59,6 +59,7 @@ export type ActionRuleAuthoringCatalogV1 = {
     aggregates: readonly [];
     arithmetic: readonly ["add", "subtract", "min", "max", "multiply", "divide", "clamp", "add_duration"];
     effects: readonly ["single_row_update", "single_row_insert"];
+    atomic_updates?: { maximum_records: 4; same_source: true; versioned_updates_only: true; all_or_nothing: true };
   };
   diagnostics: Array<{
     code: string;
@@ -284,6 +285,7 @@ export function buildActionRuleAuthoringCatalog(input: {
       aggregates: [],
       arithmetic: ["add", "subtract", "min", "max", "multiply", "divide", "clamp", "add_duration"],
       effects: ["single_row_update", "single_row_insert"],
+      atomic_updates: { maximum_records: 4, same_source: true, versioned_updates_only: true, all_or_nothing: true },
     },
     diagnostics,
   } as const;

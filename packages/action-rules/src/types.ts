@@ -80,6 +80,10 @@ export type CompiledActionRuleV1 = {
   derivation_order: string[];
   derived_types: Record<string, ActionRuleScalarTypeSpecV1>;
   effect_field_types: Record<string, ActionRuleScalarTypeSpecV1>;
+  atomic_updates?: Array<{
+    target_resource: ActionRuleCatalogResourceV1;
+    effect_field_types: Record<string, ActionRuleScalarTypeSpecV1>;
+  }>;
   approval_class: string;
   ttl_seconds: number;
   uses: 1;
@@ -135,6 +139,7 @@ export type DerivedActionEffectV1 = {
     components: Array<{ column: string; source: "proposal_id" | "trusted_tenant" | "derived" | "fixed"; value: JsonScalar }>;
   };
   effect_digest: `sha256:${string}`;
+  atomic_updates?: Array<Omit<DerivedActionEffectV1, "atomic_updates">>;
 };
 
 export type ActionRuleEvaluationV1 =

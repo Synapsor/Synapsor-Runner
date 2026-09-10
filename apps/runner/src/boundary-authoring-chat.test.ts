@@ -61,6 +61,36 @@ function memoryIo(input: {
 }
 
 describe("Boundary authoring chat", () => {
+  it.each([false, true])("uses plain access decisions without changing exact review or pending defaults (replacement=%s)", async (replacing) => {
+    const memory = memoryIo({ choices: ["activate"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const exact = { title: "Exact Read Boundary review", lines: ["Fingerprint: sha256:unchanged", "Removed: 2 tables"] };
+    const before = structuredClone(exact);
+    expect(await chat.session.chooseOption!(replacing ? "REPLACE ACTIVE READ BOUNDARY" : "ACTIVATE READ BOUNDARY", [
+      { value: "activate", label: replacing ? "Replace active Read Boundary (removes 2 tables)" : "Activate this exact Read Boundary" },
+      { value: "revise_model", label: "Revise this Read Boundary with the current model" },
+      { value: "details", label: "View exact Read Boundary details" },
+      { value: "finish", label: replacing ? "Keep current active Read Boundary and finish" : "Keep Read Boundary disabled and finish" },
+    ], { initialValue: "finish", exactDetails: exact, explainOnRequest: true })).toBe("activate");
+    expect(exact).toEqual(before);
+    expect(memory.choices[0]).toMatchObject({ title: replacing ? "REVIEW ACCESS CHANGES" : "REVIEW ACCESS", initialValue: "finish" });
+    expect(memory.choices[0]!.labels).toContain("Inspect exact reading permissions");
+    expect(memory.choices[0]!.labels).toContain("Change what the assistant can read");
+    if (replacing) expect(memory.choices[0]!.labels).toContain("Replace current reading access (removes 2 tables)");
+    else expect(memory.choices[0]!.message).toContain("does not enable changes to the database");
+    chat.close();
+  });
+  it("distinguishes enabling change requests from execution without changing consent", async () => {
+    const memory = memoryIo({ choices: ["no"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    expect(await chat.session.confirmActivation!('Activate verified Action Boundary "telecom"?', {
+      context: ["Only the reviewed plan change. Approval is not execution."],
+    })).toBe(false);
+    expect(memory.choices[0]).toMatchObject({ title: "REVIEW CHANGE REQUESTS", initialValue: "no" });
+    expect(memory.choices[0]!.message).toContain("execution has a separate review");
+    expect(memory.choices[0]!.labels).toContain("Enable the reviewed change requests");
+    chat.close();
+  });
   it("retains the current phase in provider status and restores nested progress context", async () => {
     const memory = memoryIo();
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
@@ -362,8 +392,8 @@ describe("Boundary authoring chat", () => {
         { value: "finish", label: "Leave disabled" },
       ], { initialValue: "finish", explainOnRequest: true, context: [`Pending reviewed revision: ${digest}`], exactDetails: exact })).toBe("finish");
       expect(forwardSelections).toHaveLength(3);
-      expect(forwardMenus.map((choice) => choice.title)).toEqual(["PERMISSION REQUIRED", exact.title, resources.title]);
-      expect(forwardMenus[0]!.labels).toContain("View exact Read Boundary details");
+      expect(forwardMenus.map((choice) => choice.title)).toEqual(["REVIEW ACCESS", exact.title, resources.title]);
+      expect(forwardMenus[0]!.labels).toContain("Inspect exact reading permissions");
       expect(forwardMenus[1]!.labels).toContain(resources.title);
       expect(forwardMenus[2]!.labels).toEqual(["Overview", ...resources.children!.map((resource) => resource.title), "Return"]);
       expect(review).toHaveBeenCalledOnce();
@@ -799,8 +829,8 @@ describe("Boundary authoring chat", () => {
 
     const transcript = memory.writes.join("");
     const compact = transcript.replace(/\s+/gu, " ");
-    expect(compact).toContain("Action draft saved; Read dependency needs review");
-    expect(compact).toContain("Read and Action activation remain separate decisions");
+    expect(compact).toContain("Ready to review access");
+    expect(compact).toContain("Each needs your approval; execution has a separate review");
     expect(compact).not.toContain("The job draft is complete");
   });
 
@@ -812,7 +842,7 @@ describe("Boundary authoring chat", () => {
       "This read-only job has no Action Boundary draft. Declining keeps the reviewed Read draft disabled.",
     ]);
     const output = memory.writes.join("").replace(/\s+/gu, " ");
-    expect(output).toContain("Read draft ready for activation review");
+    expect(output).toContain("Review what the assistant can read before enabling access");
     expect(output).not.toMatch(/Action draft saved|rehearsed Action draft|Read dependency needs review/u);
     chat.close();
   });

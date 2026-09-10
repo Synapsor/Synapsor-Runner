@@ -159,13 +159,14 @@ const VERIFICATION_SOURCE_KEYS = new Set(["kind", "from_binding", "relationship"
 const VERIFICATION_SCOPE_KEYS = new Set(["mode", "tenant_field", "principal_field", "from_binding", "organization_id"]);
 const VERIFICATION_ORDER_KEYS = new Set(["field", "direction"]);
 const VERIFICATION_TRANSACTION_KEYS = new Set(["isolation", "timezone"]);
-const EFFECT_ENVELOPE_KEYS = new Set(["schema_version", "name", "source", "operation", "target_resource", "target_binding", "primary_key", "tenant_key", "organization_scope", "principal_scope_key", "conflict_key", "max_rows", "allowed_fields", "version_advance", "deduplication", "approval_classes", "writeback"]);
+const EFFECT_ENVELOPE_KEYS = new Set(["schema_version", "name", "source", "operation", "target_resource", "target_binding", "primary_key", "tenant_key", "organization_scope", "principal_scope_key", "conflict_key", "max_rows", "allowed_fields", "version_advance", "deduplication", "approval_classes", "writeback", "atomic_updates"]);
+const ATOMIC_UPDATE_ENVELOPE_KEYS = new Set(["operation", "target_resource", "target_binding", "primary_key", "tenant_key", "organization_scope", "principal_scope_key", "conflict_key", "max_rows", "allowed_fields", "version_advance"]);
 const EFFECT_FIELD_KEYS = new Set(["name", "type", "minimum", "maximum", "values"]);
 const EFFECT_DEDUP_KEYS = new Set(["components"]);
 const EFFECT_DEDUP_COMPONENT_KEYS = new Set(["column", "source", "derived", "fixed"]);
 const EFFECT_VERSION_ADVANCE_KEYS = new Set(["column", "strategy"]);
 const EFFECT_WRITEBACK_KEYS = new Set(["mode", "supervised_worker"]);
-const ACTION_RULE_KEYS = new Set(["schema_version", "name", "outcome", "context", "source", "verification_boundary_ref", "effect_envelope_ref", "subjects", "inputs", "require", "derive", "effect", "approval_class", "ttl_seconds"]);
+const ACTION_RULE_KEYS = new Set(["schema_version", "name", "outcome", "context", "source", "verification_boundary_ref", "effect_envelope_ref", "subjects", "inputs", "require", "derive", "effect", "atomic_updates", "approval_class", "ttl_seconds"]);
 const ACTION_RULE_SUBJECT_KEYS = new Set(["binding", "resource", "input"]);
 const ACTION_RULE_EFFECT_KEYS = new Set(["operation", "target_resource", "target_binding", "set"]);
 const ACTION_RULE_SCALAR_TYPE_KEYS = new Set(["kind", "unit", "currency", "max_length", "enum", "comparison"]);
@@ -2255,41 +2256,20 @@ function validateActionRuleAuthority(
         if (raw.schema_version !== "synapsor.derived-effect-envelope.v1") errors.push({ path: `${path}.schema_version`, code: "INVALID_EFFECT_ENVELOPE_VERSION", message: "schema_version must be synapsor.derived-effect-envelope.v1." });
         validateNamedAuthority(raw.name, `${path}.name`, envelopeNames, "EFFECT_ENVELOPE", errors);
         if (!isSafeIdentifier(raw.source)) errors.push({ path: `${path}.source`, code: "INVALID_EFFECT_SOURCE", message: "source must be a fixed safe identifier." });
-        if (raw.operation !== "update" && raw.operation !== "insert") errors.push({ path: `${path}.operation`, code: "INVALID_DERIVED_EFFECT_OPERATION", message: "derived effects support update or insert only." });
-        if (!isQualifiedOrSafeName(raw.target_resource) || !resourceNames.has(String(raw.target_resource))) errors.push({ path: `${path}.target_resource`, code: "UNKNOWN_EFFECT_RESOURCE", message: "target_resource must reference a declared resource." });
-        for (const key of ["target_binding", "primary_key", "tenant_key", "principal_scope_key", "conflict_key"] as const) {
-          if (raw[key] !== undefined && !isSafeIdentifier(raw[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_EFFECT_IDENTIFIER", message: `${key} must be a fixed safe identifier.` });
-        }
-        if (!isSafeIdentifier(raw.primary_key)) errors.push({ path: `${path}.primary_key`, code: "DERIVED_EFFECT_PRIMARY_KEY_REQUIRED", message: "derived effects require one exact target primary key." });
-        const organizationScoped = validateProtectedOrganizationScope(raw.organization_scope, `${path}.organization_scope`, errors);
-        if ((raw.tenant_key === undefined) === !organizationScoped) {
-          errors.push({
-            path,
-            code: "DERIVED_EFFECT_SCOPE_REQUIRED",
-            message: "derived effect envelope must declare exactly one trusted tenant key or reviewed single-organization scope.",
+        validateDerivedEffectTarget(raw, path, resourceNames, errors);
+        if (raw.atomic_updates !== undefined) {
+          const members = validateAtomicUpdateList(raw.atomic_updates, `${path}.atomic_updates`, errors);
+          const bindings = new Set([raw.target_binding]);
+          validateAtomicUpdateGuard(raw, path, errors);
+          members.forEach((member, index) => {
+            const memberPath = `${path}.atomic_updates[${index}]`;
+            checkUnknownKeys(member, ATOMIC_UPDATE_ENVELOPE_KEYS, memberPath, errors);
+            validateDerivedEffectTarget(member, memberPath, resourceNames, errors);
+            validateAtomicUpdateGuard(member, memberPath, errors);
+            if (bindings.has(member.target_binding)) errors.push({ path: memberPath, code: "DUPLICATE_ATOMIC_UPDATE_TARGET", message: "Atomic update bindings must be distinct." });
+            bindings.add(member.target_binding);
           });
         }
-        if (raw.max_rows !== 1) errors.push({ path: `${path}.max_rows`, code: "DERIVED_EFFECT_SINGLE_ROW_REQUIRED", message: "first-release derived effects must change exactly one row." });
-        validateDerivedEffectFields(raw.allowed_fields, path, errors);
-        if (raw.operation === "update") {
-          if (!isSafeIdentifier(raw.target_binding) || !isSafeIdentifier(raw.conflict_key)) errors.push({ path, code: "DERIVED_UPDATE_GUARDS_REQUIRED", message: "derived UPDATE requires target_binding and conflict_key." });
-          if (raw.deduplication !== undefined) errors.push({ path: `${path}.deduplication`, code: "DERIVED_UPDATE_DEDUP_FORBIDDEN", message: "derived UPDATE uses row identity and a conflict guard, not INSERT deduplication." });
-        }
-        if (raw.operation === "insert") {
-          if (!isRecord(raw.deduplication)) errors.push({ path: `${path}.deduplication`, code: "DERIVED_INSERT_DEDUP_REQUIRED", message: "derived INSERT requires reviewed source-enforced deduplication." });
-          for (const key of ["target_binding", "conflict_key", "version_advance"] as const) {
-            if (raw[key] !== undefined) errors.push({ path: `${path}.${key}`, code: "DERIVED_INSERT_UPDATE_GUARD_FORBIDDEN", message: `derived INSERT cannot declare UPDATE-only ${key}.` });
-          }
-        }
-        if (raw.version_advance !== undefined) {
-          if (!isRecord(raw.version_advance)) errors.push({ path: `${path}.version_advance`, code: "INVALID_DERIVED_VERSION_ADVANCE", message: "version_advance must freeze one integer conflict-column increment." });
-          else {
-            checkUnknownKeys(raw.version_advance, EFFECT_VERSION_ADVANCE_KEYS, `${path}.version_advance`, errors);
-            if (!isSafeIdentifier(raw.version_advance.column) || raw.version_advance.strategy !== "integer_increment") errors.push({ path: `${path}.version_advance`, code: "INVALID_DERIVED_VERSION_ADVANCE", message: "version_advance must freeze one integer conflict-column increment." });
-            if (raw.operation === "update" && raw.version_advance.column !== raw.conflict_key) errors.push({ path: `${path}.version_advance.column`, code: "DERIVED_VERSION_GUARD_MISMATCH", message: "version_advance must increment the reviewed conflict key." });
-          }
-        }
-        if (raw.deduplication !== undefined) validateDerivedDedup(raw.deduplication, `${path}.deduplication`, errors);
         if (!Array.isArray(raw.approval_classes)
           || raw.approval_classes.length === 0
           || raw.approval_classes.length > 64
@@ -2336,21 +2316,86 @@ function validateActionRuleAuthority(
       if (!isSafeIdentifier(name)) errors.push({ path: `${path}.derive.${name}`, code: "INVALID_DERIVED_NAME", message: "derived value names must be safe identifiers." });
       validateRuleScalarExpression(expression, `${path}.derive.${name}`, errors, 0);
     }
-    if (!isRecord(raw.effect)) errors.push({ path: `${path}.effect`, code: "ACTION_RULE_EFFECT_REQUIRED", message: "effect must be an exact object." });
-    else {
-      checkUnknownKeys(raw.effect, ACTION_RULE_EFFECT_KEYS, `${path}.effect`, errors);
-      if (raw.effect.operation !== "update" && raw.effect.operation !== "insert") errors.push({ path: `${path}.effect.operation`, code: "INVALID_ACTION_RULE_EFFECT", message: "effect operation must be update or insert." });
-      if (!isQualifiedOrSafeName(raw.effect.target_resource) || !resourceNames.has(String(raw.effect.target_resource))) errors.push({ path: `${path}.effect.target_resource`, code: "UNKNOWN_ACTION_RULE_EFFECT_RESOURCE", message: "effect target_resource must reference a declared resource." });
-      if (raw.effect.target_binding !== undefined && !isSafeIdentifier(raw.effect.target_binding)) errors.push({ path: `${path}.effect.target_binding`, code: "INVALID_ACTION_RULE_TARGET_BINDING", message: "target_binding must be a safe identifier." });
-      if (!isRecord(raw.effect.set) || Object.keys(raw.effect.set).length === 0) errors.push({ path: `${path}.effect.set`, code: "ACTION_RULE_EFFECT_SET_REQUIRED", message: "effect.set must contain at least one derived field." });
-      else for (const [field, expression] of Object.entries(raw.effect.set)) {
-        if (!isSafeIdentifier(field)) errors.push({ path: `${path}.effect.set.${field}`, code: "INVALID_ACTION_RULE_EFFECT_FIELD", message: "effect fields must be safe identifiers." });
-        validateRuleScalarExpression(expression, `${path}.effect.set.${field}`, errors, 0);
-      }
+    validateActionRuleEffect(raw.effect, `${path}.effect`, resourceNames, errors);
+    if (raw.atomic_updates !== undefined) {
+      const members = validateAtomicUpdateList(raw.atomic_updates, `${path}.atomic_updates`, errors);
+      if (!isRecord(raw.effect) || raw.effect.operation !== "update") errors.push({ path: `${path}.effect`, code: "ATOMIC_UPDATE_REQUIRED", message: "Atomic updates require an UPDATE as the primary effect." });
+      members.forEach((member, index) => {
+        validateActionRuleEffect(member, `${path}.atomic_updates[${index}]`, resourceNames, errors);
+        if (member.operation !== "update" || !isSafeIdentifier(member.target_binding)) errors.push({ path: `${path}.atomic_updates[${index}]`, code: "ATOMIC_UPDATE_REQUIRED", message: "Each atomic update needs one exact target binding." });
+      });
     }
     if (!isDottedName(raw.approval_class)) errors.push({ path: `${path}.approval_class`, code: "INVALID_ACTION_RULE_APPROVAL_CLASS", message: "approval_class must be a fixed name." });
     if (!Number.isSafeInteger(raw.ttl_seconds) || Number(raw.ttl_seconds) < 15 || Number(raw.ttl_seconds) > 3600) errors.push({ path: `${path}.ttl_seconds`, code: "INVALID_ACTION_RULE_TTL", message: "ttl_seconds must be an integer from 15 through 3600." });
   });
+}
+
+function validateAtomicUpdateList(value: unknown, path: string, errors: ValidationIssue[]): JsonRecord[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 3 || value.some(member => !isRecord(member))) {
+    errors.push({ path, code: "INVALID_ATOMIC_UPDATES", message: "atomic_updates must contain one through three exact additional updates." });
+    return [];
+  }
+  return value as JsonRecord[];
+}
+
+function validateAtomicUpdateGuard(raw: JsonRecord, path: string, errors: ValidationIssue[]): void {
+  if (raw.operation !== "update" || !isRecord(raw.version_advance) || raw.version_advance.strategy !== "integer_increment"
+    || raw.version_advance.column !== raw.conflict_key || raw.deduplication !== undefined) {
+    errors.push({ path, code: "ATOMIC_UPDATE_GUARDS_REQUIRED", message: "Every atomic update requires its own integer version advance and no INSERT deduplication." });
+  }
+}
+
+function validateDerivedEffectTarget(raw: JsonRecord, path: string, resourceNames: Set<string>, errors: ValidationIssue[]): void {
+        if (raw.operation !== "update" && raw.operation !== "insert") errors.push({ path: `${path}.operation`, code: "INVALID_DERIVED_EFFECT_OPERATION", message: "derived effects support update or insert only." });
+        if (!isQualifiedOrSafeName(raw.target_resource) || !resourceNames.has(String(raw.target_resource))) errors.push({ path: `${path}.target_resource`, code: "UNKNOWN_EFFECT_RESOURCE", message: "target_resource must reference a declared resource." });
+        for (const key of ["target_binding", "primary_key", "tenant_key", "principal_scope_key", "conflict_key"] as const) {
+          if (raw[key] !== undefined && !isSafeIdentifier(raw[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_EFFECT_IDENTIFIER", message: `${key} must be a fixed safe identifier.` });
+        }
+        if (!isSafeIdentifier(raw.primary_key)) errors.push({ path: `${path}.primary_key`, code: "DERIVED_EFFECT_PRIMARY_KEY_REQUIRED", message: "derived effects require one exact target primary key." });
+        const organizationScoped = validateProtectedOrganizationScope(raw.organization_scope, `${path}.organization_scope`, errors);
+        if ((raw.tenant_key === undefined) === !organizationScoped) {
+          errors.push({
+            path,
+            code: "DERIVED_EFFECT_SCOPE_REQUIRED",
+            message: "derived effect envelope must declare exactly one trusted tenant key or reviewed single-organization scope.",
+          });
+        }
+        if (raw.max_rows !== 1) errors.push({ path: `${path}.max_rows`, code: "DERIVED_EFFECT_SINGLE_ROW_REQUIRED", message: "first-release derived effects must change exactly one row." });
+        validateDerivedEffectFields(raw.allowed_fields, path, errors);
+        if (raw.operation === "update") {
+          if (!isSafeIdentifier(raw.target_binding) || !isSafeIdentifier(raw.conflict_key)) errors.push({ path, code: "DERIVED_UPDATE_GUARDS_REQUIRED", message: "derived UPDATE requires target_binding and conflict_key." });
+          if (raw.deduplication !== undefined) errors.push({ path: `${path}.deduplication`, code: "DERIVED_UPDATE_DEDUP_FORBIDDEN", message: "derived UPDATE uses row identity and a conflict guard, not INSERT deduplication." });
+        }
+        if (raw.operation === "insert") {
+          if (!isRecord(raw.deduplication)) errors.push({ path: `${path}.deduplication`, code: "DERIVED_INSERT_DEDUP_REQUIRED", message: "derived INSERT requires reviewed source-enforced deduplication." });
+          for (const key of ["target_binding", "conflict_key", "version_advance"] as const) {
+            if (raw[key] !== undefined) errors.push({ path: `${path}.${key}`, code: "DERIVED_INSERT_UPDATE_GUARD_FORBIDDEN", message: `derived INSERT cannot declare UPDATE-only ${key}.` });
+          }
+        }
+        if (raw.version_advance !== undefined) {
+          if (!isRecord(raw.version_advance)) errors.push({ path: `${path}.version_advance`, code: "INVALID_DERIVED_VERSION_ADVANCE", message: "version_advance must freeze one integer conflict-column increment." });
+          else {
+            checkUnknownKeys(raw.version_advance, EFFECT_VERSION_ADVANCE_KEYS, `${path}.version_advance`, errors);
+            if (!isSafeIdentifier(raw.version_advance.column) || raw.version_advance.strategy !== "integer_increment") errors.push({ path: `${path}.version_advance`, code: "INVALID_DERIVED_VERSION_ADVANCE", message: "version_advance must freeze one integer conflict-column increment." });
+            if (raw.operation === "update" && raw.version_advance.column !== raw.conflict_key) errors.push({ path: `${path}.version_advance.column`, code: "DERIVED_VERSION_GUARD_MISMATCH", message: "version_advance must increment the reviewed conflict key." });
+          }
+        }
+        if (raw.deduplication !== undefined) validateDerivedDedup(raw.deduplication, `${path}.deduplication`, errors);
+}
+
+function validateActionRuleEffect(effect: unknown, path: string, resourceNames: Set<string>, errors: ValidationIssue[]): void {
+    if (!isRecord(effect)) errors.push({ path, code: "ACTION_RULE_EFFECT_REQUIRED", message: "effect must be an exact object." });
+    else {
+      checkUnknownKeys(effect, ACTION_RULE_EFFECT_KEYS, path, errors);
+      if (effect.operation !== "update" && effect.operation !== "insert") errors.push({ path: `${path}.operation`, code: "INVALID_ACTION_RULE_EFFECT", message: "effect operation must be update or insert." });
+      if (!isQualifiedOrSafeName(effect.target_resource) || !resourceNames.has(String(effect.target_resource))) errors.push({ path: `${path}.target_resource`, code: "UNKNOWN_ACTION_RULE_EFFECT_RESOURCE", message: "effect target_resource must reference a declared resource." });
+      if (effect.target_binding !== undefined && !isSafeIdentifier(effect.target_binding)) errors.push({ path: `${path}.target_binding`, code: "INVALID_ACTION_RULE_TARGET_BINDING", message: "target_binding must be a safe identifier." });
+      if (!isRecord(effect.set) || Object.keys(effect.set).length === 0) errors.push({ path: `${path}.set`, code: "ACTION_RULE_EFFECT_SET_REQUIRED", message: "effect.set must contain at least one derived field." });
+      else for (const [field, expression] of Object.entries(effect.set)) {
+        if (!isSafeIdentifier(field)) errors.push({ path: `${path}.set.${field}`, code: "INVALID_ACTION_RULE_EFFECT_FIELD", message: "effect fields must be safe identifiers." });
+        validateRuleScalarExpression(expression, `${path}.set.${field}`, errors, 0);
+      }
+    }
 }
 
 function validateVerificationResources(value: unknown, boundaryPath: string, resourceNames: Set<string>, errors: ValidationIssue[]): void {

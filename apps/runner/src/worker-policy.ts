@@ -1,4 +1,5 @@
 import {
+  actionRuleEffectEnvelopes,
   resolveActivatedActionRule,
   type RuntimeActionRuleRegistryV1,
 } from "@synapsor-runner/action-rules";
@@ -317,21 +318,26 @@ export function assessSemanticSupervisedWriterPosture(
       reasons.push("writer_source_mismatch");
       continue;
     }
-    const target = compiled.target_resource;
-    const targetRelation = `${target.schema}.${target.table}`;
-    const operation = compiled.effect_envelope.operation;
-    addAllowed(targetRelation, ["select", operation]);
-    addRequired(targetRelation, "select");
-    addRequired(targetRelation, operation);
-    if (operation === "update") {
-      const fields = updateColumns.get(targetRelation) ?? new Set<string>();
-      compiled.effect_envelope.allowed_fields.forEach((field) => fields.add(field.name));
-      if (compiled.effect_envelope.version_advance?.strategy === "integer_increment") {
-        fields.add(compiled.effect_envelope.version_advance.column);
+    const envelopes = actionRuleEffectEnvelopes(compiled.effect_envelope);
+    const targets = [compiled.target_resource, ...(compiled.atomic_updates?.map((effect) => effect.target_resource) ?? [])];
+    for (const [index, envelope] of envelopes.entries()) {
+      const target = targets[index];
+      if (!target) { reasons.push("atomic_effect_target_unresolved"); continue; }
+      const targetRelation = `${target.schema}.${target.table}`;
+      const operation = envelope.operation;
+      addAllowed(targetRelation, ["select", operation]);
+      addRequired(targetRelation, "select");
+      addRequired(targetRelation, operation);
+      if (operation === "update") {
+        const fields = updateColumns.get(targetRelation) ?? new Set<string>();
+        envelope.allowed_fields.forEach((field) => fields.add(field.name));
+        if (envelope.version_advance?.strategy === "integer_increment") {
+          fields.add(envelope.version_advance.column);
+        }
+        updateColumns.set(targetRelation, fields);
       }
-      updateColumns.set(targetRelation, fields);
+      if (source.database_scope?.mode === "postgres_rls") rlsRequired.add(targetRelation);
     }
-    if (source.database_scope?.mode === "postgres_rls") rlsRequired.add(targetRelation);
 
     for (const binding of compiled.bindings) {
       const relation = `${binding.resource.schema}.${binding.resource.table}`;

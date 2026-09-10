@@ -8,6 +8,7 @@ import type {
 import { ActionRuleError } from "./errors.js";
 import { validateActionRuleInputs } from "./inputs.js";
 import { actionRuleRelationshipPairs } from "./relationships.js";
+import { actionRuleEffectEnvelopes, actionRuleEffects, assertAtomicUpdateShape } from "./atomic-updates.js";
 import {
   actionRuleDigest,
   effectEnvelopeDigest,
@@ -68,6 +69,7 @@ function compiledPlanDigest(compiled: CompiledActionRuleV1): `sha256:${string}` 
     derivation_order: compiled.derivation_order,
     derived_types: compiled.derived_types,
     effect_field_types: compiled.effect_field_types,
+    ...(compiled.atomic_updates === undefined ? {} : { atomic_updates: compiled.atomic_updates }),
   });
 }
 
@@ -487,7 +489,7 @@ function assertEffectValue(value: JsonScalar, type: ActionRuleScalarTypeSpecV1, 
   if (values !== undefined && !values.some((candidate) => candidate === value)) throw new ActionRuleError("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Derived ${field} is outside its reviewed effect allowlist.`);
 }
 
-function deriveEffect(input: EvaluateActionRuleInputV1, context: EvaluationContext): DerivedActionEffectV1 {
+function deriveSingleEffect(input: EvaluateActionRuleInputV1, context: EvaluationContext): DerivedActionEffectV1 {
   const { compiled, facts, proposal_id: proposalId } = input;
   if (proposalId.length < 1 || proposalId.length > 200) throw new ActionRuleError("ACTION_RULE_FACTS_UNKNOWN", "Runner proposal identity is unavailable.");
   const envelope = compiled.effect_envelope;
@@ -557,6 +559,25 @@ function deriveEffect(input: EvaluateActionRuleInputV1, context: EvaluationConte
     set,
     ...(deduplication === undefined ? {} : { deduplication }),
   };
+  return { ...unsigned, effect_digest: canonicalJsonDigest(unsigned) };
+}
+
+function deriveEffect(input: EvaluateActionRuleInputV1, context: EvaluationContext): DerivedActionEffectV1 {
+  const envelopes = actionRuleEffectEnvelopes(input.compiled.effect_envelope);
+  const effects = actionRuleEffects(input.compiled.rule);
+  const targets = [{ target_resource: input.compiled.target_resource, effect_field_types: input.compiled.effect_field_types },
+    ...(input.compiled.atomic_updates ?? [])];
+  assertAtomicUpdateShape(input.compiled.rule, input.compiled.effect_envelope);
+  if (targets.length !== envelopes.length) throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Compiled atomic targets do not match their reviewed envelopes.");
+  const derived = envelopes.map((envelope, index) => deriveSingleEffect({ ...input, compiled: { ...input.compiled,
+    effect_envelope: envelope, rule: { ...input.compiled.rule, effect: effects[index]! }, ...targets[index]!,
+  } }, context));
+  if (derived.length === 1) return derived[0]!;
+  const identities = derived.map(effect => canonicalJsonDigest({ source: effect.source, schema: effect.schema,
+    table: effect.table, identity: effect.primary_key, tenant: effect.tenant_guard ?? null }));
+  if (new Set(identities).size !== identities.length) throw new ActionRuleError("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", "Atomic updates cannot write the same physical target more than once.");
+  const { effect_digest: _digest, ...primary } = derived[0]!;
+  const unsigned = { ...primary, atomic_updates: derived.slice(1) };
   return { ...unsigned, effect_digest: canonicalJsonDigest(unsigned) };
 }
 

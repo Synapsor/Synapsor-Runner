@@ -75,6 +75,7 @@ export function buildOperatorParentCatalog(
       allow_automatic_approval: prior?.compiled_plan_digest === rule.compiled_plan_digest ? prior.allow_automatic_approval : false,
       ...(prior?.compiled_plan_digest === rule.compiled_plan_digest && prior.budget_charges ? { budget_charges: structuredClone(prior.budget_charges) } : {}),
       effect_envelope: { operation: rule.effect_envelope.operation, target_resource: rule.effect_envelope.target_resource,
+        ...(rule.effect_envelope.atomic_updates ? { atomic_updates: structuredClone(rule.effect_envelope.atomic_updates) } : {}),
         allowed_fields: structuredClone(rule.effect_envelope.allowed_fields), writeback: structuredClone(rule.effect_envelope.writeback) },
     };
   });

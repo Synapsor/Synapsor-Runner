@@ -113,7 +113,58 @@
     "rows_affected": {
       "type": "integer",
       "minimum": 0,
-      "maximum": 1
+      "maximum": 4
+    },
+    "atomic_effects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+$"
+          },
+          "schema": {
+            "$ref": "#/properties/target/properties/schema"
+          },
+          "table": {
+            "$ref": "#/properties/target/properties/schema"
+          },
+          "effect_digest": {
+            "$ref": "#/properties/proposal_hash"
+          },
+          "target_identity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/properties/target/properties/identity/items"
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "affected_rows": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "before_digest": {
+            "$ref": "#/properties/proposal_hash"
+          },
+          "after_digest": {
+            "$ref": "#/properties/proposal_hash"
+          }
+        },
+        "required": [
+          "resource",
+          "schema",
+          "table",
+          "effect_digest",
+          "target_identity",
+          "affected_rows"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 2,
+      "maxItems": 4
     },
     "idempotency_key": {
       "type": "string",

@@ -9,13 +9,17 @@ const grants = await fs.readFile(path.join(handoff, "grants.sql"), "utf8");
 const fields = ["base_monthly_cents", "data_policy", "effective_from", "included_lines", "international_day_pass", "plan_code", "plan_display_name", "version"];
 const subscriptions = plan.relations?.find((relation) => relation.relation === "telecom.subscriptions");
 const offers = plan.relations?.find((relation) => relation.relation === "telecom.plan_change_offers");
+const consumesOffer = JSON.stringify([...(offers?.update_columns ?? [])].sort()) === '["status","version"]';
+const offersAllowed = consumesOffer
+  ? JSON.stringify([...(offers?.privileges ?? [])].sort()) === '["select","update"]'
+  : JSON.stringify(offers?.privileges) === '["select"]' && offers?.update_columns?.length === 0;
 if (plan.version !== 1 || plan.engine !== "postgres" || !/^sha256:[a-f0-9]{64}$/u.test(plan.action_digest)
   || !/^runner_writer_[a-f0-9]{12}$/u.test(plan.suggested_role) || plan.relations?.length !== 2
   || !subscriptions || !offers || subscriptions.schema !== "telecom" || subscriptions.table !== "subscriptions"
   || offers.schema !== "telecom" || offers.table !== "plan_change_offers"
   || JSON.stringify([...subscriptions.update_columns].sort()) !== JSON.stringify(fields)
   || JSON.stringify([...subscriptions.privileges].sort()) !== '["select","update"]'
-  || JSON.stringify(offers.privileges) !== '["select"]' || offers.update_columns.length
+  || !offersAllowed
   || subscriptions.lock_column !== "subscription_id" || offers.lock_column !== "plan_offer_id"
   || !subscriptions.rls_required || !offers.rls_required || subscriptions.triggers.length || offers.triggers.length) {
   throw new Error("This is not the supported two-relation offered-plan effect. Keep its authority unchanged; an administrator must review a different writer plan.");
@@ -55,7 +59,7 @@ const expectedGrants = [
   `GRANT SELECT ON TABLE "telecom"."subscriptions" TO "${role}";`,
   `GRANT UPDATE (${fields.map((field) => `"${field}"`).join(", ")}) ON TABLE "telecom"."subscriptions" TO "${role}";`,
   `GRANT SELECT ON TABLE "telecom"."plan_change_offers" TO "${role}";`,
-  `GRANT UPDATE ("plan_offer_id") ON TABLE "telecom"."plan_change_offers" TO "${role}";`,
+  `GRANT UPDATE (${consumesOffer ? '"status", "version"' : '"plan_offer_id"'}) ON TABLE "telecom"."plan_change_offers" TO "${role}";`,
 ];
 if (expectedGrants.some((line) => !grants.split("\n").includes(line))) throw new Error("Reviewed grant export does not match the fixture plan; export again.");
 const sql = [

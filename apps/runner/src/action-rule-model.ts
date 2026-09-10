@@ -80,6 +80,7 @@ type EffectSubmission = {
   allowed_fields: ActionRuleModelDraftV1["effect"]["allowed_fields"];
   set: Record<string, ActionRuleScalarExpressionV1>;
   writeback: "proposal_only" | "supervised";
+  atomic_updates?: ActionRuleModelDraftV1["effect"]["atomic_updates"];
 };
 
 type RuleSubmission = {
@@ -105,6 +106,7 @@ type RevisionField =
   | "allowed_fields"
   | "set"
   | "writeback"
+  | "atomic_updates"
   | "require"
   | "derive"
   | "ttl_seconds"
@@ -782,7 +784,8 @@ async function preparePhaseResources(input: {
   }
   const resourceIds = input.phase === "verification"
     ? (input.submission as VerificationSubmission).resources.map((resource) => resource.resource)
-    : [(input.submission as EffectSubmission).target_resource];
+    : [(input.submission as EffectSubmission).target_resource,
+      ...((input.submission as EffectSubmission).atomic_updates ?? []).map((effect) => effect.target_resource)];
   const context = await input.input.prepareResources({
     phase: input.phase,
     resourceIds: [...new Set(resourceIds)].sort(),
@@ -823,6 +826,13 @@ function reconcileRunnerScopedEffect(
   submission: EffectSubmission,
   builtCatalog: BuiltActionRuleAuthoringCatalogV1,
 ): EffectSubmission {
+  if (submission.atomic_updates) {
+    const { atomic_updates, ...main } = submission;
+    return { ...reconcileRunnerScopedEffect(main, builtCatalog), atomic_updates: atomic_updates.map((member) => {
+      const checked = reconcileRunnerScopedEffect({ ...member, name: main.name, writeback: main.writeback }, builtCatalog);
+      return { ...member, allowed_fields: checked.allowed_fields, set: checked.set };
+    }) };
+  }
   const target = builtCatalog.catalog.resources.find((resource) => resource.name === submission.target_resource);
   const runnerScoped = new Set([
     target?.tenant_key,
@@ -843,6 +853,24 @@ function validateAndResolveEffectSubmission(input: {
   verification: VerificationSubmission | undefined;
   builtCatalog: BuiltActionRuleAuthoringCatalogV1;
 }): EffectSubmission {
+  if (input.submission.atomic_updates !== undefined) {
+    const { atomic_updates, ...main } = input.submission;
+    if (main.operation !== "update" || !Array.isArray(atomic_updates) || atomic_updates.length < 1 || atomic_updates.length > 3) {
+      throw new Error("ACTION_RULE_ATOMIC_BOUNDS: use two through four exact version-guarded updates in one transaction.");
+    }
+    const checkedMain = validateAndResolveEffectSubmission({ ...input, submission: main });
+    const members = atomic_updates.map((member) => {
+      if (!isRecord(member) || member.operation !== "update" || !Array.isArray(member.allowed_fields) || !isRecord(member.set)
+        || Object.keys(member).some((key) => !["operation", "target_resource", "target_binding", "allowed_fields", "set"].includes(key))) {
+        throw new Error("ACTION_RULE_ATOMIC_SHAPE: each companion must be one exact UPDATE, without nested effects or separate execution authority.");
+      }
+      const checked = validateAndResolveEffectSubmission({ ...input, submission: { ...member, name: main.name, writeback: main.writeback } });
+      return { ...member, target_binding: checked.target_binding! };
+    });
+    const bindings = [checkedMain.target_binding, ...members.map((member) => member.target_binding)];
+    if (new Set(bindings).size !== bindings.length) throw new Error("ACTION_RULE_ATOMIC_TARGET_DUPLICATED: each update must target a different verified row.");
+    return { ...checkedMain, atomic_updates: members };
+  }
   if (!input.verification) {
     throw new Error("ACTION_RULE_EFFECT_VERIFICATION_REQUIRED: an Effect draft requires the accepted Verification draft from this same authoring run.");
   }
@@ -1639,12 +1667,21 @@ function effectPhaseInputSchema(
 function effectDraftProperties(
   compatibleFlatEnvelope: boolean,
   includeTargetBinding: boolean,
+  includeAtomicUpdates = true,
 ): Record<string, unknown> {
   return {
     name: { type: "string" },
     operation: { type: "string", enum: ["update", "insert"] },
     target_resource: { type: "string" },
     ...(includeTargetBinding ? { target_binding: { type: "string" } } : {}),
+    ...(includeTargetBinding && includeAtomicUpdates ? { atomic_updates: {
+      type: "array", minItems: 1, maxItems: 3, items: {
+        type: "object", additionalProperties: false,
+        required: ["operation", "target_resource", "target_binding", "allowed_fields", "set"],
+        properties: { ...Object.fromEntries(Object.entries(effectDraftProperties(compatibleFlatEnvelope, true, false))
+          .filter(([key]) => key !== "name" && key !== "writeback")), operation: { const: "update" } },
+      },
+    } } : {}),
     allowed_fields: {
       type: "array", minItems: 1, maxItems: 32,
       items: {
@@ -1778,9 +1815,10 @@ function phaseInstruction(phase: PhaseName): string {
       "Do not nest the draft under object, boundary, conditions, derivation, subject_ref, or another wrapper.",
     ].join(" ");
     case "effect": return [
-      "Draft only the maximum one-row effect and exact deterministic set expressions. The agent must not supply these derived patch values. Natural requests to automatically complete, execute or apply eligible changes mean writeback=supervised. This prepares DISABLED execution configuration for a later exact operator review, never enables writes during setup. The operator need not know the term supervised. Approval alone is not completion. Use proposal_only for approval-only, test-without-writes or unspecified execution intent; preserve existing posture during unrelated edits. If the requested execution is unsupported, explain its concrete blocker instead of silently falling back to proposal_only.",
+      "Draft exact deterministic changes, each limited to one verified row. Use bounded atomic_updates when multiple records must change together. The agent must not supply these derived patch values. Natural requests to automatically complete, execute or apply eligible changes mean writeback=supervised. This prepares DISABLED execution configuration for a later exact operator review, never enables writes during setup. The operator need not know the term supervised. Approval alone is not completion. Use proposal_only for approval-only, test-without-writes or unspecified execution intent; preserve existing posture during unrelated edits. If the requested execution is unsupported, explain its concrete blocker instead of silently falling back to proposal_only.",
       "An UPDATE draft must include target_binding naming one exact row for target_resource from the accepted Verification draft: a subject_ref or a unique reviewed relationship path from a subject. Many-row targets are forbidden. An INSERT draft must omit target_binding. Runner resolves an omitted UPDATE binding only when exactly one eligible row binding exists; it never guesses between multiple targets.",
-      "A draft uses only the top-level keys status, name, operation, target_resource, allowed_fields, set, writeback, and target_binding only for UPDATE. Copy target and field identifiers byte-for-byte from the catalog, and encode each set value as an Action Rule scalar expression.",
+      "A draft uses only status, name, operation, target_resource, allowed_fields, set, writeback, target_binding for UPDATE, and optional atomic_updates for a transactional completion. Copy identifiers byte-for-byte and encode set values as scalar expressions.",
+      "When the business operation must also consume an offer or update another verified record, include atomic_updates with 1-3 companion UPDATEs: operation, target_resource, target_binding, allowed_fields, set. All 2-4 targets must be distinct exact verified rows with integer version fields in this database. They share one approval, execution review, transaction and receipt. Failure rolls back every update. Never replace permanent offer consumption with plan mismatch or idempotency, and never split one atomic business operation into separate requests. If a required consumption field or version is unavailable, explain the concrete prerequisite without dropping it.",
       "For every field expression, copy binding byte-for-byte from the resources in the already validated Verification draft. A word such as subject, target, row, or item is not a binding unless that exact value appears there.",
       "A source-field expression has exactly kind=field, binding=<an exact accepted Verification binding>, and field=<an exact field on that binding>. A constant has kind=literal, value, and the exact reviewed value_type. Never copy placeholder identifiers, submit expression strings, or submit the JSON Schema.",
       "Expression identifiers, source bindings, and the mapping from verified fields into deterministic effect values are Runner-resolved mechanics. Never ask the operator to name them. Approval mode, reviewer role, and approval-ledger state are separate control-store policy and must never be encoded into a source status field. If a fixed business value such as the initial status of a new row is genuinely missing, ask only which reviewed business value the row should store.",
@@ -1844,6 +1882,7 @@ function parsePhaseSubmission(
       allowed_fields: structuredClone(value.allowed_fields) as EffectSubmission["allowed_fields"],
       set: structuredClone(value.set) as Record<string, ActionRuleScalarExpressionV1>,
       writeback: value.writeback,
+      ...(value.atomic_updates === undefined ? {} : { atomic_updates: structuredClone(value.atomic_updates) as EffectSubmission["atomic_updates"] }),
     }, ...(changedFields ? { changed_fields: changedFields } : {}) };
   }
   if (phase === "rule") {
@@ -1924,7 +1963,7 @@ function phaseSubmissionsFromDraft(
 
 function revisionFieldsForPhase(phase: PhaseName): RevisionField[] {
   if (phase === "verification") return ["resources"];
-  if (phase === "effect") return ["allowed_fields", "set", "writeback"];
+  if (phase === "effect") return ["allowed_fields", "set", "writeback", "atomic_updates"];
   if (phase === "rule") {
     return [
       "inputs",
@@ -1980,6 +2019,10 @@ function mergeRevisionSubmission(input: {
     if (input.changedFields.includes("allowed_fields")) current.allowed_fields = structuredClone(candidate.allowed_fields);
     if (input.changedFields.includes("set")) current.set = structuredClone(candidate.set);
     if (input.changedFields.includes("writeback")) current.writeback = candidate.writeback;
+    if (input.changedFields.includes("atomic_updates")) {
+      if (candidate.atomic_updates === undefined) delete current.atomic_updates;
+      else current.atomic_updates = structuredClone(candidate.atomic_updates);
+    }
     current.name = input.baseline.effect.name;
     current.operation = input.baseline.effect.operation;
     current.target_resource = input.baseline.effect.target_resource;

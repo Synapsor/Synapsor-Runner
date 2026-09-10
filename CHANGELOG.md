@@ -2,6 +2,27 @@
 
 ## 1.8.0 (unreleased)
 
+### Composite Reads And Atomic Completion
+
+- Customer-scoped row views can follow up to three reviewed relationship paths
+  and return up to twenty fields in total. Composite keys remain complete,
+  every resource is scoped, and related-only resources cannot be queried alone.
+- Model-guided authoring resolves supported relationship mechanics internally
+  and asks about genuinely unknown business meanings. Resuming an unfinished
+  older mapping can recover newly supported composite links without restoring
+  links a reviewer removed or changing active access.
+- One verified change can update up to four versioned records in the same
+  database transaction, including a plan change and consumption of its offer.
+  Every target is reverified before writing; any failure rolls back the whole
+  change. Completion receipts bind every target. Mixed insert/update batches
+  remain unsupported and uncertain commits require complete receipt evidence.
+- Writer review includes every changed record and column. Existing writers are
+  not automatically broadened. Approval and execution remain separate gates;
+  the client still uses the same four tools.
+- Guided reviews use plain-language decisions and selective Runner result
+  panels. Requested disabled edits no longer need a second save decision, and
+  an already selected client does not need to be selected again.
+
 ### Coherent Setup Readiness
 
 - Required attached-rule decisions lead the existing review and replace the

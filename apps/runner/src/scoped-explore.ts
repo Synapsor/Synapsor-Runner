@@ -177,6 +177,7 @@ export type RowExplorePlan = {
   kind: "rows";
   resource: string;
   select: string[];
+  related?: Array<{ relationship: string; select: string[] }>;
   time_window?: CanonicalTimeWindow;
   where?: ExploreFilter[];
   order_by?: Array<{ field: string; direction: Direction }>;
@@ -1745,8 +1746,11 @@ export function projectScopedExploreResultForModel(input: {
     }
   }
   const columns = new Set(modelWithheldExploreOutputColumns(plan, input.boundary));
-  const equalityWithheld = new Set(plan.kind === "rows" ? [...columns].filter((field) =>
-    reviewedModelAnalysisOperations(resourceFor(input.boundary, plan.resource), field).length === 0) : []);
+  const rootResource = resourceFor(input.boundary, plan.resource);
+  const equalityWithheld = new Set(plan.kind === "rows" ? rowOutputFields(plan).filter((entry) =>
+    columns.has(entry.key) && reviewedModelAnalysisOperations(entry.relationship
+      ? relationshipResource(rootResource, entry.relationship, input.boundary) : rootResource, entry.field).length === 0)
+    .map((entry) => entry.key) : []);
   if (columns.size === 0) {
     return finalize(projected, false, operatorMetadataWithheld);
   }
@@ -1795,7 +1799,7 @@ export function modelWithheldExploreOutputColumns(
     return (resource.model_withheld_fields ?? []).includes(field);
   };
   if (plan.kind === "rows") {
-    return plan.select.filter((field) => isWithheld(field));
+    return rowOutputFields(plan).filter((entry) => isWithheld(entry.field, entry.relationship)).map((entry) => entry.key);
   }
   const aliases = aggregateOutputAliases(plan, boundary);
   const columns = new Set<string>();
@@ -1944,10 +1948,23 @@ function validateRowPlan(
   boundary: ActivatedExplorationBoundary,
   context: ExploreValidationContext,
 ): RowExplorePlan {
-  assertKeys(input, ["kind", "resource", "select", "time_window", "where", "order_by", "limit"], "row plan");
+  assertKeys(input, ["kind", "resource", "select", "related", "time_window", "where", "order_by", "limit"], "row plan");
   const resource = requestedResource(boundary, input.resource);
   const select = stringArray(input.select, "select", 1, Math.min(20, boundary.budgets.max_response_cells));
   assertSubsetAllowed(select, resource.selectable_fields, resource, "select");
+  const related = input.related === undefined ? [] : recordArray(input.related, "related", 1, 3).map((item) => {
+    assertKeys(item, ["relationship", "select"], "related selection");
+    const relationship = requiredString(item.relationship, "related.relationship");
+    const target = relationshipResource(resource, relationship, boundary);
+    const fields = stringArray(item.select, "related.select", 1, 20);
+    assertSubsetAllowed(fields, target.selectable_fields, target, "select");
+    return { relationship, select: fields };
+  });
+  if (new Set(related.map(item => item.relationship)).size !== related.length) throw planError("related relationships must be unique");
+  const selectedFields = select.length + related.reduce((count, item) => count + item.select.length, 0);
+  if (selectedFields > Math.min(20, boundary.budgets.max_response_cells)) throw planError("a row view may select at most 20 reviewed fields in total");
+  const outputKeys = [...select, ...related.flatMap(item => item.select.map(field => `${item.relationship}.${field}`))];
+  if (new Set(outputKeys).size !== outputKeys.length) throw planError("row output names must be unique");
   const where = validateFilters(input.where, resource, boundary);
   const timeWindow = input.time_window === undefined
     ? undefined
@@ -1959,7 +1976,7 @@ function validateRowPlan(
     return { field, direction: direction(order.direction) };
   });
   const maximumRowsByCells = Math.max(1, Math.floor(
-    boundary.budgets.max_response_cells / select.length,
+    boundary.budgets.max_response_cells / selectedFields,
   ));
   const limit = input.limit === undefined
     ? Math.min(50, boundary.budgets.max_rows, maximumRowsByCells)
@@ -1969,6 +1986,7 @@ function validateRowPlan(
     kind: "rows",
     resource: resource.id,
     select,
+    ...(related.length ? { related } : {}),
     ...(timeWindow ? { time_window: timeWindow } : {}),
     ...(where.length ? { where } : {}),
     ...(orderBy?.length ? { order_by: orderBy } : {}),
@@ -2373,6 +2391,17 @@ function validateAggregateOrder(
   throw planError("aggregate order_by.kind must be measure, comparison_change, or time_bucket");
 }
 
+function rowOutputFields(plan: RowExplorePlan): Array<{ field: string; relationship?: string; key: string; sqlAlias: string }> {
+  const result = plan.select.map(field => ({ field, key: field, sqlAlias: field }));
+  const aliases = new Set(plan.select);
+  return [...result, ...(plan.related ?? []).flatMap((item, index) => item.select.map((field, fieldIndex) => {
+    let sqlAlias = `__synapsor_related_${index}_${fieldIndex}`;
+    while (aliases.has(sqlAlias)) sqlAlias += "_";
+    aliases.add(sqlAlias);
+    return { field, relationship: item.relationship, key: `${item.relationship}.${field}`, sqlAlias };
+  }))];
+}
+
 function compileRowPlan(
   plan: RowExplorePlan,
   boundary: ActivatedExplorationBoundary,
@@ -2383,22 +2412,33 @@ function compileRowPlan(
   const resource = resourceFor(boundary, plan.resource);
   const params: Scalar[] = [];
   const alias = "t0";
+  const joined = compileReviewedRelationshipJoins(resource, unique([
+    ...(plan.related ?? []).map(item => item.relationship),
+    ...(plan.where ?? []).flatMap(filter => filter.relationship ? [filter.relationship] : []),
+  ]), boundary, context, params, engine);
   const scope = compileScopePredicates(resource, boundary, alias, context, params, engine);
   const where = scope.predicates;
-  for (const filter of plan.where ?? []) where.push(filterSql(filter, resource, alias, params, engine));
+  for (const filter of plan.where ?? []) {
+    const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
+    where.push(filterSql(filter, target?.resource ?? resource, target?.alias ?? alias, params, engine));
+  }
   if (plan.time_window) {
     appendTimeWindowPredicate(where, plan.time_window, alias, params, engine);
   }
-  const enumUses = unique([
-    ...plan.select,
-    ...(plan.where ?? []).map((filter) => filter.field),
-  ].filter((field) => resource.field_enums[field]?.length));
-  for (const field of enumUses) {
-    where.push(reviewedEnumAllowlistSql(resource, field, alias, params, engine));
-  }
+  const outputs = rowOutputFields(plan);
+  const enumUses = [...new Map([...outputs, ...(plan.where ?? [])].map(item =>
+    [`${item.relationship ?? ""}\0${item.field}`, item])).values()].flatMap(item => {
+    const target = item.relationship ? joined.targets.get(item.relationship)! : { resource, alias };
+    if (!target.resource.field_enums[item.field]?.length) return [];
+    const constraint = reviewedEnumAllowlistSql(target.resource, item.field, target.alias, params, engine);
+    where.push(item.relationship
+      ? `(${target.alias}.${quote(target.resource.primary_key, engine)} IS NULL OR ${constraint})` : constraint);
+    return [{ resource: target.resource.id, field: item.field }];
+  });
+  const outputAliases = outputs.map(entry => entry.sqlAlias);
   const hiddenAlias = (base: string): string => {
     let candidate = base;
-    while (plan.select.includes(candidate)) candidate += "_";
+    while (outputAliases.includes(candidate)) candidate += "_";
     return candidate;
   };
   const primaryKeyAlias = hiddenAlias("__synapsor_subject_primary_key");
@@ -2415,7 +2455,7 @@ function compileRowPlan(
     }
     : undefined;
   const columns = [
-    ...plan.select.map((field) => `${alias}.${quote(field, engine)} AS ${quote(field, engine)}`),
+    ...outputs.map(entry => `${entry.relationship ? joined.targets.get(entry.relationship)!.alias : alias}.${quote(entry.field, engine)} AS ${quote(entry.sqlAlias, engine)}`),
     ...(subjectProjection
       ? [
         `${alias}.${quote(resource.primary_key, engine)} AS ${quote(primaryKeyAlias, engine)}`,
@@ -2430,16 +2470,15 @@ function compileRowPlan(
     : ` ORDER BY ${alias}.${quote(resource.primary_key, engine)} ASC`;
   params.push(plan.limit);
   return {
-    sql: `SELECT ${columns.join(", ")} FROM ${qualified(resource, engine)} ${alias}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
+    sql: `SELECT ${columns.join(", ")} FROM ${qualified(resource, engine)} ${alias}${joined.sql}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
     params,
-    resources: scope.resources,
+    resources: uniqueResources([...scope.resources, ...joined.resources]),
     ...(subjectProjection ? { subject_projection: subjectProjection } : {}),
     ...(enumUses.length
       ? {
-        reviewed_value_controls: enumUses.map((field) => ({
+        reviewed_value_controls: enumUses.map((item) => ({
           kind: "exclude_unreviewed_rows" as const,
-          resource: resource.id,
-          field,
+          ...item,
         })),
       }
       : {}),
@@ -3093,11 +3132,12 @@ function shapeExploreResponse(
       effect: "rows_outside_reviewed_values_excluded" as const,
     }));
   if (plan.kind === "rows") {
-    const data = rows.map((row) => Object.fromEntries(plan.select.map((field) => [field, safeDatabaseValue(row[field])])));
+    const fields = rowOutputFields(plan);
+    const data = rows.map((row) => Object.fromEntries(fields.map((entry) => [entry.key, safeDatabaseValue(row[entry.sqlAlias])])));
     return {
       data,
       rowCount: data.length,
-      cells: data.length * plan.select.length,
+      cells: data.length * fields.length,
       suppressed: 0,
       status: data.length ? "ok" : "empty",
       incompleteComparisons: 0,
@@ -3759,7 +3799,7 @@ function describeExploreResult(input: {
     grain: input.plan.kind === "rows"
       ? {
         kind: "rows",
-        selected_fields: input.plan.select,
+        selected_fields: rowOutputFields(input.plan).map(entry => entry.key),
         maximum_rows: input.plan.limit,
       }
       : input.plan.comparison
@@ -4174,7 +4214,7 @@ function assertExploreComplexity(
 }
 
 function estimatedExploreResponseCells(plan: ExplorePlan): number {
-  if (plan.kind === "rows") return plan.limit * plan.select.length;
+  if (plan.kind === "rows") return plan.limit * rowOutputFields(plan).length;
   const fieldsPerGroup = plan.comparison
     ? (plan.dimensions?.length ?? 0) + plan.measures.length * 4
     : (plan.dimensions?.length ?? 0) + (plan.time_bucket ? 1 : 0) + plan.measures.length;
@@ -4685,7 +4725,8 @@ function privacyComplementFingerprints(
 function exploreComplexity(plan: ExplorePlan, boundary: ActivatedExplorationBoundary): number {
   if (plan.kind === "rows") {
     return 1
-      + plan.select.length
+      + rowOutputFields(plan).length
+      + (plan.related ?? []).reduce((count, item) => count + (reviewedRelationship(resourceFor(boundary, plan.resource), item.relationship, boundary).path_depth ?? 1), 0)
       + (plan.time_window ? 2 : 0)
       + (plan.where?.length ?? 0) * 2
       + (plan.order_by?.length ?? 0);
@@ -5720,8 +5761,13 @@ function relationshipAuthoritiesForPlan(
   plan: ExplorePlan,
   boundary: ActivatedExplorationBoundary,
 ): Array<{ root: BoundaryResource; relationshipId: string }> {
-  if (plan.kind !== "aggregate") return [];
   const root = resourceFor(boundary, plan.resource);
+  if (plan.kind === "rows") {
+    return unique([
+      ...(plan.related ?? []).map((item) => item.relationship),
+      ...(plan.where ?? []).flatMap((filter) => filter.relationship ? [filter.relationship] : []),
+    ]).map((relationshipId) => ({ root, relationshipId }));
+  }
   const authorities = unique([
     plan.relationship,
     ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
@@ -5760,6 +5806,8 @@ function requestedResource(boundary: Pick<ActivatedExplorationBoundary, "pack">,
   const id = requiredString(value, "resource");
   const resource = boundary.pack.resources.find((candidate) => candidate.id === id);
   if (!resource) throw new ScopedExploreError("EXPLORE_RESOURCE_FORBIDDEN", `Resource ${id} is not in the activated authoring pack.`);
+  if (resource.relationship_only) throw new ScopedExploreError("EXPLORE_RESOURCE_FORBIDDEN",
+    `Resource ${id} is available only through reviewed relationships from permitted records, not as an independent query.`);
   return resource;
 }
 
@@ -5785,6 +5833,10 @@ function reviewedRelationship(root: BoundaryResource, id: string, boundary: Acti
   let expectedSource = root.id;
   for (const link of links) {
     if (link.source_resource !== expectedSource
+      || link.source_columns.length < 1
+      || link.source_columns.length !== link.target_columns.length
+      || new Set(link.source_columns).size !== link.source_columns.length
+      || new Set(link.target_columns).size !== link.target_columns.length
       || link.cardinality !== "many_to_one"
       || link.max_fan_out !== 1
       || link.target_uniqueness.columns.length !== link.target_columns.length

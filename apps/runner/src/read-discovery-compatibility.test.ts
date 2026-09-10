@@ -87,8 +87,17 @@ describe("complete bounded Read contracts", () => {
       const entry = resource(result.structuredContent as Record<string, unknown>), original = resource(baseline);
       expect(entry.fields).toHaveLength(11);
       expect(entry.relationships).toHaveLength(1);
+      const resolvedFields = (contract: any) => contract.fields.map((field: any) => ({
+        ...entry.field_defaults, ...contract.field_defaults,
+        ...(contract.field_enums[field.id] ? { allowed_values: contract.field_enums[field.id] } : {}),
+        ...field,
+      }));
       expect(entry.relationships[0]).toMatchObject({ id: original.relationships[0].id, activation: "review_required",
-        operator_review_required: true, fields: expect.arrayContaining(original.relationships[0].fields.map(({ operations: _copy, plan_reference: _ref, ...field }: any) => field)) });
+        operator_review_required: true });
+      for (const [before, after] of [[original, entry], [original.relationships[0], entry.relationships[0]]]) {
+        const metadata = ({ operations: _copy, plan_reference: _ref, ...field }: any) => field;
+        expect(resolvedFields(after).map(metadata)).toEqual(before.fields.map(metadata));
+      }
       for (const key of ["selectable_fields", "filter_operators", "groupable_fields", "field_enums", "model_withheld_fields",
         "maximum_rows", "maximum_groups", "minimum_cohort_size", "relative_time_window_fields", "valid_plan_examples"]) {
         expect(entry[key]).toEqual(original[key]);

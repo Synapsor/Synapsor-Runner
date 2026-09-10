@@ -428,24 +428,46 @@ class; eligibility does not itself approve or apply the change.
 
 No domain-specific MCP function is added for any of these outcomes.
 
-## Deliberate V1 Limits
+## Atomic Updates
 
-The first portable release supports one exact row mutation per rule-derived
-proposal. It does not pretend that two independent proposals are one atomic
-business transaction.
+A rule can update two through four exact verified records in one database
+transaction. Add one through three `atomic_updates` to both its effect envelope
+and rule. Each companion specifies its target resource, verified binding,
+allowed columns and deterministic changes. Every target must have an integer
+version that advances, and must pass its own trusted scope and exact-row checks.
+
+For example, a plan switch derives subscription terms from the selected offer
+and sets that same offer's status to its reviewed consumed value. Validity and
+availability are checked before either write. One proposal, approval decision,
+effect digest and receipt cover both records. Any failed update or source receipt
+write rolls back the whole transaction. After a successful change the offer stays
+consumed, even if the subscription later returns to its original plan. Replay of
+the same request performs no additional writes.
+
+The model-guided flow can draft and revise this combined operation through the
+existing authoring tools. It requires separate review of exact permissions for
+every affected record; a subscription-only writer is not sufficient. The runtime
+MCP tool list remains unchanged. An uncertain transaction outcome is never
+reconciled from only one record: complete receipt evidence or operator review is
+required.
+
+## Deliberate V1 Limits
 
 Not supported in the v1 direct semantic path:
 
-- multi-row effects such as inserting an enrollment and consuming an offer;
+- mixed INSERT/UPDATE transactions such as inserting an enrollment and consuming
+  an offer (updating an existing registration and its offer together is supported);
+- more than four records per atomic update, unversioned atomic updates, or nested
+  mutation batches;
 - hard `DELETE`, DDL, UPSERT, arbitrary SQL, or model-generated predicates;
 - cross-database atomicity;
 - scalar aggregates or negatively polarized existence checks whose absence
   could change through an unlocked phantom row;
 - unbounded supporting rows or unreviewed many-to-many traversal.
 
-Use an application-owned transactional executor for a genuinely multi-effect
-business operation until a reviewed multi-effect protocol exists. Do not split
-it into unbound actions and call that atomic.
+Use an application-owned transactional executor for business operations outside
+these reviewed effect shapes. Do not split them into unbound actions and call
+that atomic.
 
 ## Failure Semantics
 
@@ -456,7 +478,7 @@ it into unbound actions and call that atomic.
 | Subject forged, expired, wrong scope, or stale authority | Generic unavailable/not-found posture | None |
 | Eligible but policy does not match or limit trips | Human-review proposal | None |
 | Approved proposal changes before apply | `SEMANTIC_AUTHORITY_STALE` or conflict | None |
-| Exact supervised transaction succeeds | Applied receipt | Exactly one reviewed row |
+| Exact supervised transaction succeeds | Applied receipt | Exact reviewed record, or every record in its atomic update |
 
 See [Safe Action Human Control Plane](safe-action-control-plane.md),
 [Proposal And Evidence Freshness](proposal-evidence-freshness.md), and the

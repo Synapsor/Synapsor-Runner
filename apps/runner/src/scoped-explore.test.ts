@@ -44,6 +44,7 @@ import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
 import { readBoundaryReviewSections, readRevisionDiff } from "./read-boundary-review-view.js";
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "./read-workload-assist.js";
 
 const temporaryRoots: string[] = [];
 
@@ -52,6 +53,66 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
+  it("discovers and returns two-hop composite row details without granting independent target reads", async () => {
+    const inspection = relationshipInspection();
+    const [root, region] = inspection.tables;
+    const group = structuredClone(region!);
+    group.name = "groups";
+    group.unique_constraints = [{ name: "groups_tenant_key", columns: ["tenant_id", "id"] }];
+    region!.columns.push(column("group_id", "uuid", { immutable: true }));
+    region!.suggestions.default_visible_columns.push("group_id");
+    region!.foreign_keys.push({ name: "region_group", columns: ["tenant_id", "group_id"], referenced_schema: "public",
+      referenced_table: "groups", referenced_columns: ["tenant_id", "id"], delete_rule: "RESTRICT" });
+    root!.foreign_keys[0]!.columns.unshift("tenant_id");
+    root!.foreign_keys[0]!.referenced_columns.unshift("tenant_id");
+    region!.unique_constraints.push({ name: "regions_tenant_key", columns: ["tenant_id", "id"] });
+    inspection.tables.push(group);
+    const relationship = "subscriptions_region_id_fkey__region_group";
+    const requested = { kind: "rows", resource: "public.subscriptions", select: ["region"],
+      related: [{ relationship: "subscriptions_region_id_fkey", select: ["name"] }, { relationship, select: ["name"] }] };
+    const fixture = await activatedFixture(candidate => {
+      const analysis = analyzeReadWorkloadSet({ generatedBoundary: candidate, workload: {
+        schema_version: READ_WORKLOAD_SET_VERSION, name: "linked_display", source: { kind: "operator_exact_plan" },
+        allowed: [{ id: "display", description: "Show my subscription with its region and group", plan: requested }],
+        forbidden: [{ id: "all_groups", description: "Do not expose unrelated groups", plan: { kind: "rows", resource: "public.groups", select: ["name"] } }],
+      } });
+      expect(analysis.blockers).toEqual([]);
+      expect(analysis.coverage).toMatchObject({ allowed_supported: 1, forbidden_denied: 1 });
+      Object.assign(candidate, analysis.candidate);
+    }, inspection);
+    const plan = validateExplorePlan(requested, fixture.boundary);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(plan, fixture.boundary, { tenant: "private-tenant", principal: "private-person" }, engine);
+      const sql = query!.sql.replaceAll('"', '`');
+      expect(sql).toContain('t0.`tenant_id` = t1.`tenant_id` AND t0.`region_id` = t1.`id`');
+      expect(sql).toContain('t1.`tenant_id` = t2.`tenant_id` AND t1.`group_id` = t2.`id`');
+      expect(sql).toContain('t1.`tenant_id` =');
+      expect(sql).toContain('t2.`tenant_id` =');
+      expect(sql.split(" FROM ")[0]).not.toMatch(/tenant_id|region_id|group_id/);
+      expect(query!.params.filter(value => value === "private-tenant")).toHaveLength(3);
+      expect(query!.resources).toHaveLength(3);
+    }
+    expect(() => validateExplorePlan({ kind: "rows", resource: "public.groups", select: ["name"] }, fixture.boundary)).toThrow(/only through reviewed relationships/);
+    expect(() => validateExplorePlan({ ...requested, related: [{ relationship, select: ["tenant_id"] }] }, fixture.boundary)).toThrow(/not reviewed/);
+    const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([{ region: "west", __synapsor_related_0_0: "Coast", __synapsor_related_1_0: "Pacific" }]) });
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "composite-read-test", version: "1" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport); await client.connect(clientTransport);
+      expect((await client.listTools()).tools).toHaveLength(4);
+      const described = await client.callTool({ name: "app.describe_data", arguments: { resource: "public.subscriptions" } });
+      expect(described.isError).not.toBe(true);
+      expect(JSON.stringify(described.structuredContent)).toContain("related_rows");
+      const response = await client.callTool({ name: "app.explore_data", arguments: { plan: requested } });
+      expect(response.isError, JSON.stringify(response)).not.toBe(true);
+      expect(response.structuredContent).toMatchObject({ data: [{ region: "west",
+        "subscriptions_region_id_fkey.name": "Coast", [relationship + ".name"]: "Pacific" }] });
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
   it.each([true, false])("uses runtime disk relationships rather than a divergent supplied review (disk link=%s)", async (diskLink) => {
     const fixture = await activatedFixture(undefined, relationshipInspection());
     const activePath = path.join(fixture.root, ".synapsor/exploration-boundaries.active.json");
@@ -451,7 +512,12 @@ describe("Scoped Explore", () => {
           });
           expect(described.isError).not.toBe(true);
           expect(Buffer.byteLength(JSON.stringify(described))).toBeLessThanOrEqual(16_384);
-          expect(described.structuredContent).toMatchObject({
+          const contract = described.structuredContent as { resources: Array<{
+            field_defaults?: Record<string, unknown>; fields: Record<string, unknown>[];
+          }> };
+          expect({ ...contract, resources: contract.resources.map((resource) => ({
+            ...resource, fields: resource.fields.map((field) => ({ ...resource.field_defaults, ...field })),
+          })) }).toMatchObject({
             vocabulary_policy: { exact_ids_required_in_plans: true },
             resources: [{
               id: "public.select",
@@ -3754,7 +3820,7 @@ describe("Scoped Explore", () => {
             plan_reference: "exact_id_only",
             semantic_status: "descriptive_identifier",
             operations: expect.objectContaining({
-              return_value: false,
+              return_value: true,
               sortable: false,
               groupable: true,
             }),
@@ -3978,7 +4044,8 @@ describe("Scoped Explore", () => {
       expect(compactResource.vocabulary.status).toBe(focusedProjection.resources[0].vocabulary.status);
       for (const field of focusedProjection.resources[0].fields) {
         const { plan_reference: _duplicateGlobalRule, operations: _duplicateOperations, allowed_values: _duplicateValues, ...completeField } = field;
-        expect(compactResource.fields.find((candidate: { id: string }) => candidate.id === field.id)).toEqual(completeField);
+        expect({ ...compactResource.field_defaults,
+          ...compactResource.fields.find((candidate: { id: string }) => candidate.id === field.id) }).toEqual(completeField);
       }
       expect(compactResource.filter_operators).toEqual(focusedProjection.resources[0].filter_operators);
       expect(compactResource.field_enums).toEqual(focusedProjection.resources[0].field_enums);

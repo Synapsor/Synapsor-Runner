@@ -315,6 +315,19 @@ export function normalizeDerivedEffectEnvelope(
     normalized.deduplication.components = [...normalized.deduplication.components]
       .sort((left, right) => left.column.localeCompare(right.column));
   }
+  if (normalized.atomic_updates !== undefined) {
+    array(normalized.atomic_updates, "effect_envelope.atomic_updates", 1, 3);
+    normalized.atomic_updates = normalized.atomic_updates.map((update, index) => {
+      const raw = record(update, `effect_envelope.atomic_updates.${index}`);
+      const allowed = new Set(["operation", "target_resource", "target_binding", "primary_key", "tenant_key",
+        "organization_scope", "principal_scope_key", "conflict_key", "max_rows", "allowed_fields", "version_advance"]);
+      if (Object.keys(raw).some(key => !allowed.has(key))) invalid(`effect_envelope.atomic_updates.${index}`, "Atomic update contains unsupported fields.");
+      array(update.allowed_fields, `effect_envelope.atomic_updates.${index}.allowed_fields`, 1, 64);
+      return { ...update, allowed_fields: update.allowed_fields.map(field => ({ ...field,
+        ...(field.values === undefined ? {} : { values: [...field.values].sort(compareCanonical) }),
+      })).sort((a, b) => a.name.localeCompare(b.name)) };
+    });
+  }
   return canonicalClone(normalized);
 }
 
@@ -344,6 +357,18 @@ export function normalizeActionRule(rule: ActionRuleSpecV1): ActionRuleSpecV1 {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([name, expression]) => [name, normalizeScalarExpression(expression, `rule.effect.set.${name}`)]),
   );
+  if (normalized.atomic_updates !== undefined) {
+    array(normalized.atomic_updates, "rule.atomic_updates", 1, 3);
+    normalized.atomic_updates = normalized.atomic_updates.map((update, index) => {
+      const raw = record(update, `rule.atomic_updates.${index}`);
+      if (Object.keys(raw).some(key => !["operation", "target_resource", "target_binding", "set"].includes(key))) {
+        invalid(`rule.atomic_updates.${index}`, "Atomic update contains unsupported fields.");
+      }
+      record(update.set, `rule.atomic_updates.${index}.set`);
+      return { ...update, set: Object.fromEntries(Object.entries(update.set).sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, expression]) => [name, normalizeScalarExpression(expression, `rule.atomic_updates.${index}.set.${name}`)])) };
+    });
+  }
   return canonicalClone(normalized);
 }
 

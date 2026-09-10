@@ -156,11 +156,11 @@ describe("model-assisted Read workload mapping", () => {
     expect(boundary).toEqual(before);
   });
 
-  it("reuses a coded field meaning from the original operator job without another question or metadata mutation", async () => {
+  it.each(["col_2", "tbl_7.col_2", "public.tbl_7.col_2"])("reuses a coded field meaning for %s without another question or metadata mutation", async (identifier) => {
     const boundary = opaqueGeneratedBoundary();
     boundary.pack.resources[0]!.label = "Orders";
     const before = structuredClone(boundary);
-    const quote = "col_2 means the order lifecycle status";
+    const quote = `${identifier} means the order lifecycle status`;
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "known_meaning",
       name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read order lifecycle",
         plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
@@ -179,13 +179,14 @@ describe("model-assisted Read workload mapping", () => {
     expect(boundary).toEqual(before);
   });
 
-  it.each(["fabricated_quote", "unknown_field", "withheld_field", "ambiguous_leaf", "identifier_prefix"])(
+  it.each(["fabricated_quote", "unknown_field", "withheld_field", "ambiguous_leaf", "ambiguous_table", "identifier_prefix"])(
     "refuses invalid operator naming evidence before accepting a plan: %s", async (kind) => {
       const boundary = opaqueGeneratedBoundary();
       boundary.pack.resources[0]!.label = "Orders";
       if (kind === "ambiguous_leaf") boundary.pack.resources.push({ ...structuredClone(boundary.pack.resources[0]!), id: "public.other", table: "other" });
+      if (kind === "ambiguous_table") boundary.pack.resources.push({ ...structuredClone(boundary.pack.resources[0]!), id: "other.tbl_7", schema: "other" });
       if (kind === "withheld_field") boundary.pack.resources[0]!.model_withheld_fields = ["col_2"];
-      const quote = "col_2 means the lifecycle status";
+      const quote = `${kind === "ambiguous_table" ? "tbl_7.col_2" : "col_2"} means the lifecycle status`;
       const args = { allowed: [{ id: "orders", description: "Read order lifecycle", plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
         operator_meanings: [{ resource: "public.tbl_7", field: kind === "unknown_field" ? "absent" : "col_2",
           operator_quote: kind === "identifier_prefix" ? "col_2_private means the lifecycle status" : quote }] };
@@ -1150,17 +1151,38 @@ describe("model-assisted Read workload mapping", () => {
 
   it("bounds distinct follow-up questions and retains an explicit failure without accepting a draft", async () => {
     let count = 0;
+    const boundary = generatedBoundary();
+    const fields = ["status", "amount", "id", "delivery_kind", "gift_kind"];
+    boundary.pack.resources[0]!.field_types.delivery_kind = "text";
+    boundary.pack.resources[0]!.field_types.gift_kind = "text";
+    boundary.pack.resources[0]!.selectable_fields.push("delivery_kind", "gift_kind");
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call",
       call_id: `clarification_${count}`, name: "runner__submit_read_workloads", arguments: JSON.stringify({ clarification_request: {
-        resource: "public.orders", field: "status", reason: "Need business meaning", question: `What is status meaning number ${++count}?`,
+        resource: "public.orders", field: fields[count], reason: "Need business meaning", question: `What is this field's meaning number ${++count}?`,
       } }) }] } }));
     const handler = vi.fn(async () => ({ state: "answered" as const, answer: "This is the order lifecycle status." }));
     await expect(generateModelReadWorkload({ name: "bounded_clarifications", allowedQuestions: ["Count orders"],
-      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: generatedBoundary(), env: { OPENAI_API_KEY: "provider-test-key" },
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, env: { OPENAI_API_KEY: "provider-test-key" },
       egressAcknowledged: true, clarificationHandler: handler, dependencies: { requestJson }, deferNarration: true,
     })).rejects.toThrow("Four business questions were answered");
     expect(handler).toHaveBeenCalledTimes(4);
     expect(requestJson).toHaveBeenCalledTimes(5);
+  });
+
+  it("does not ask the operator to answer paraphrases of an already answered business question", async () => {
+    let count = 0;
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call",
+      call_id: `clarification_${count++}`, name: "runner__submit_read_workloads", arguments: JSON.stringify({ clarification_request: {
+        resource: "public.orders", field: "status", reason: "Need business meaning",
+        question: count === 1 ? "What does status mean?" : "Could you clarify the meaning of status again?",
+      } }) }] } }));
+    const handler = vi.fn(async () => ({ state: "answered" as const, answer: "The order lifecycle state." }));
+    await expect(generateModelReadWorkload({ name: "repeated_clarification", allowedQuestions: ["Count orders"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: generatedBoundary(), env: { OPENAI_API_KEY: "provider-test-key" },
+      egressAcknowledged: true, clarificationHandler: handler, dependencies: { requestJson }, deferNarration: true,
+    })).rejects.toThrow(/same business question.*already answered/i);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(requestJson).toHaveBeenCalledTimes(2);
   });
 
   it("allows one naming clarification followed by one separately approved value request", async () => {
