@@ -66,6 +66,29 @@ export function createInactiveSemanticActionRuntime(): SemanticActionRuntime {
 type RegistryLoader = RuntimeActionRuleRegistryV1
   | (() => RuntimeActionRuleRegistryV1 | Promise<RuntimeActionRuleRegistryV1>);
 
+const subjectRequestTurns = new WeakMap<ProposalRuntimeStore, Map<string, Promise<void>>>();
+
+/** Only same-process admission: each waiter must rerun authority, context and
+ * reference checks. Store transactions still enforce cross-process limits. */
+async function withSubjectRequestTurn<T>(store: ProposalRuntimeStore,
+  request: { outcome: string; subject_refs: Record<string, string> }, operation: () => Promise<T>): Promise<T> {
+  let turns = subjectRequestTurns.get(store);
+  if (!turns) subjectRequestTurns.set(store, turns = new Map());
+  const key = canonicalJsonDigest({ outcome: request.outcome, subject_refs: request.subject_refs });
+  const previous = turns.get(key);
+  let release!: () => void;
+  const current = new Promise<void>(resolve => { release = resolve; });
+  turns.set(key, current);
+  try {
+    await previous;
+    return await operation();
+  } finally {
+    release();
+    if (turns.get(key) === current) turns.delete(key);
+    if (turns.size === 0) subjectRequestTurns.delete(store);
+  }
+}
+
 export type SemanticActionContinuation = {
   execution: "human_review" | "not_enabled" | "queued" | "held" | "completed";
   source_database_changed: boolean;
@@ -140,153 +163,155 @@ export function createSemanticActionRuntime(input: {
         throw new McpRuntimeError("MCP_TOOL_NOT_FOUND", "The requested Synapsor Action tool is not available.");
       }
       const request = parseRequestChange(args);
-      try {
-        const registry = await loadRegistry();
-        const authorization = await input.resolveCatalogAuthorization(registry);
-        if (authorization.allowed_outcomes && !authorization.allowed_outcomes.includes(request.outcome)) {
-          throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "The requested outcome is not available in the current authorized catalog.");
-        }
-        const expected = resolveActivatedActionRule(registry, request.outcome);
-        if ((await input.unavailableOutcomes?.() ?? []).includes(request.outcome)) {
-          throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "This outcome needs operator review of its changed Read dependency. Other reviewed outcomes remain available. No proposal or source change was created.");
-        }
-        let businessInputs: ReturnType<typeof validateActionRuleInputs>;
+      return withSubjectRequestTurn(input.store, request, async () => {
         try {
-          businessInputs = validateActionRuleInputs(expected.compiled.rule, request.inputs);
-        } catch (error) {
-          throw new McpRuntimeError("ARGUMENT_INVALID", error instanceof Error ? error.message : "Invalid reviewed business inputs.");
-        }
-        const resolvedContext = await input.resolveContext(expected);
-        try {
-          assertRuntimeContext(expected, resolvedContext);
-          if (input.delegationRequired && !resolvedContext.delegation) throw new OwnerRuntimeError("DELEGATION_PROOF_REQUIRED");
-          const claimed = await input.subjectReferences.claim({
-            ...resolvedContext.subject_authority,
-            outcome: request.outcome,
-            subject_refs: request.subject_refs,
-            inputs: businessInputs,
-          });
-          assertSameActivatedAuthority(expected, claimed.activated);
-
-          const existing = await input.store.getProposal(claimed.proposal_id);
-          if (existing !== undefined) {
-            assertExistingProposal(existing, claimed);
-            if (existing.change_set.schema_version === protocolVersions.changeSetV4) {
-              if (Boolean(existing.change_set.semantic_authority.proof.delegation) !== Boolean(resolvedContext.delegation)) {
-                throw new OwnerRuntimeError("DELEGATION_PROOF_REQUIRED");
-              }
-              await resolvedContext.delegation?.checkExisting(existing.proposal_id, existing.change_set.semantic_authority);
-            }
-            await ensureSemanticEvidence(input.store, existing);
-            const continuation = input.onProposalReady
-              ? await input.onProposalReady({ proposal: existing, activated: expected })
-              : undefined;
-            return await semanticProposalResult(input.store, existing, expected, "existing", continuation);
+          const registry = await loadRegistry();
+          const authorization = await input.resolveCatalogAuthorization(registry);
+          if (authorization.allowed_outcomes && !authorization.allowed_outcomes.includes(request.outcome)) {
+            throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "The requested outcome is not available in the current authorized catalog.");
           }
-
-          const verifiedAt = claimed.claimed_at;
-          const decision = await evaluateSemanticActionEligibility({
-            registry,
-            outcome: request.outcome,
-            subjects: claimed.subjects,
-            trusted: trustedFacts(expected, resolvedContext.trusted_context, verifiedAt),
-            adapter: resolvedContext.fact_loader,
-            proposal_id: claimed.proposal_id,
-            trusted_context_digest: claimed.trusted_context_digest,
-            evidence_provenance_digest: claimed.evidence_provenance_digest,
-            verified_at: verifiedAt,
-            inputs: businessInputs,
-            check_delegation: resolvedContext.delegation?.checkProposal,
-          });
-          if (decision.result !== "eligible") {
-            await recordSemanticRefusal(input.store, {
-              outcome: request.outcome,
-              source: expected.compiled.source,
-              table: `${expected.compiled.target_resource.schema}.${expected.compiled.target_resource.table}`,
-              trustedContext: resolvedContext.trusted_context,
-              result: decision.result,
-              checkedAt: verifiedAt,
-            });
-            const unavailable = decision.result === "unknown";
-            throw new McpRuntimeError(
-              unavailable ? "SEMANTIC_ACTION_UNAVAILABLE" : "SEMANTIC_ACTION_NOT_ELIGIBLE",
-              unavailable
-                ? "Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created."
-                : "Current authoritative facts do not permit this reviewed outcome. No proposal or source change was created.",
-            );
+          const expected = resolveActivatedActionRule(registry, request.outcome);
+          if ((await input.unavailableOutcomes?.() ?? []).includes(request.outcome)) {
+            throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "This outcome needs operator review of its changed Read dependency. Other reviewed outcomes remain available. No proposal or source change was created.");
           }
-
-          const evidenceBundleId = `ev_rule_${claimed.proposal_id.slice("wrp_rule_".length)}`;
-          const queryFingerprint = semanticQueryFingerprint(decision.semantic_authority.proof);
-          const changeSet = buildDerivedChangeSet({
-            decision,
-            context: resolvedContext.trusted_context,
-            proposalId: claimed.proposal_id,
-            createdAt: claimed.claimed_at,
-            evidenceBundleId,
-            queryFingerprint,
-          });
-          let proposal: StoredProposal;
+          let businessInputs: ReturnType<typeof validateActionRuleInputs>;
           try {
-            proposal = await input.store.createProposal(changeSet);
+            businessInputs = validateActionRuleInputs(expected.compiled.rule, request.inputs);
           } catch (error) {
-            if (error instanceof ProposalStoreError && error.code === "PROPOSAL_ALREADY_EXISTS") {
+            throw new McpRuntimeError("ARGUMENT_INVALID", error instanceof Error ? error.message : "Invalid reviewed business inputs.");
+          }
+          const resolvedContext = await input.resolveContext(expected);
+          try {
+            assertRuntimeContext(expected, resolvedContext);
+            if (input.delegationRequired && !resolvedContext.delegation) throw new OwnerRuntimeError("DELEGATION_PROOF_REQUIRED");
+            const claimed = await input.subjectReferences.claim({
+              ...resolvedContext.subject_authority,
+              outcome: request.outcome,
+              subject_refs: request.subject_refs,
+              inputs: businessInputs,
+            });
+            assertSameActivatedAuthority(expected, claimed.activated);
+
+            const existing = await input.store.getProposal(claimed.proposal_id);
+            if (existing !== undefined) {
+              assertExistingProposal(existing, claimed);
+              if (existing.change_set.schema_version === protocolVersions.changeSetV4) {
+                if (Boolean(existing.change_set.semantic_authority.proof.delegation) !== Boolean(resolvedContext.delegation)) {
+                  throw new OwnerRuntimeError("DELEGATION_PROOF_REQUIRED");
+                }
+                await resolvedContext.delegation?.checkExisting(existing.proposal_id, existing.change_set.semantic_authority);
+              }
+              await ensureSemanticEvidence(input.store, existing);
+              const continuation = input.onProposalReady
+                ? await input.onProposalReady({ proposal: existing, activated: expected })
+                : undefined;
+              return await semanticProposalResult(input.store, existing, expected, "existing", continuation);
+            }
+
+            const verifiedAt = claimed.claimed_at;
+            const decision = await evaluateSemanticActionEligibility({
+              registry,
+              outcome: request.outcome,
+              subjects: claimed.subjects,
+              trusted: trustedFacts(expected, resolvedContext.trusted_context, verifiedAt),
+              adapter: resolvedContext.fact_loader,
+              proposal_id: claimed.proposal_id,
+              trusted_context_digest: claimed.trusted_context_digest,
+              evidence_provenance_digest: claimed.evidence_provenance_digest,
+              verified_at: verifiedAt,
+              inputs: businessInputs,
+              check_delegation: resolvedContext.delegation?.checkProposal,
+            });
+            if (decision.result !== "eligible") {
+              await recordSemanticRefusal(input.store, {
+                outcome: request.outcome,
+                source: expected.compiled.source,
+                table: `${expected.compiled.target_resource.schema}.${expected.compiled.target_resource.table}`,
+                trustedContext: resolvedContext.trusted_context,
+                result: decision.result,
+                checkedAt: verifiedAt,
+              });
+              const unavailable = decision.result === "unknown";
               throw new McpRuntimeError(
-                "PROPOSAL_ALREADY_EXISTS",
-                "An active proposal already exists for this reviewed subject and outcome.",
+                unavailable ? "SEMANTIC_ACTION_UNAVAILABLE" : "SEMANTIC_ACTION_NOT_ELIGIBLE",
+                unavailable
+                  ? "Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created."
+                  : "Current authoritative facts do not permit this reviewed outcome. No proposal or source change was created.",
               );
             }
-            throw error;
-          }
-          await ensureSemanticEvidence(input.store, proposal);
-          await resolvedContext.delegation?.checkExisting(proposal.proposal_id, decision.semantic_authority);
-          if (decision.approval.path === "automatic_eligible") {
-            const approvalDecision = await input.store.approveProposalByPolicy(proposal.proposal_id, {
-              policy: decision.approval.authority.name,
-              proposal_hash: proposal.proposal_hash,
-              proposal_version: proposal.proposal_version,
-              reason: "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
-              action_boundary: {
-                name: decision.activated.action_boundary_name,
-                digest: decision.activated.action_boundary_digest,
-                limits: decision.approval.authority.shared_limits,
-              },
-              now: verifiedAt,
+
+            const evidenceBundleId = `ev_rule_${claimed.proposal_id.slice("wrp_rule_".length)}`;
+            const queryFingerprint = semanticQueryFingerprint(decision.semantic_authority.proof);
+            const changeSet = buildDerivedChangeSet({
+              decision,
+              context: resolvedContext.trusted_context,
+              proposalId: claimed.proposal_id,
+              createdAt: claimed.claimed_at,
+              evidenceBundleId,
+              queryFingerprint,
             });
-            proposal = approvalDecision.proposal;
+            let proposal: StoredProposal;
+            try {
+              proposal = await input.store.createProposal(changeSet);
+            } catch (error) {
+              if (error instanceof ProposalStoreError && error.code === "PROPOSAL_ALREADY_EXISTS") {
+                throw new McpRuntimeError(
+                  "PROPOSAL_ALREADY_EXISTS",
+                  "An active proposal already exists for this reviewed subject and outcome.",
+                );
+              }
+              throw error;
+            }
+            await ensureSemanticEvidence(input.store, proposal);
+            await resolvedContext.delegation?.checkExisting(proposal.proposal_id, decision.semantic_authority);
+            if (decision.approval.path === "automatic_eligible") {
+              const approvalDecision = await input.store.approveProposalByPolicy(proposal.proposal_id, {
+                policy: decision.approval.authority.name,
+                proposal_hash: proposal.proposal_hash,
+                proposal_version: proposal.proposal_version,
+                reason: "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+                action_boundary: {
+                  name: decision.activated.action_boundary_name,
+                  digest: decision.activated.action_boundary_digest,
+                  limits: decision.approval.authority.shared_limits,
+                },
+                now: verifiedAt,
+              });
+              proposal = approvalDecision.proposal;
+            }
+            const continuation = input.onProposalReady
+              ? await input.onProposalReady({ proposal, activated: decision.activated })
+              : undefined;
+            return await semanticProposalResult(input.store, proposal, decision.activated, "created", continuation);
+          } finally {
+            await resolvedContext.close?.();
           }
-          const continuation = input.onProposalReady
-            ? await input.onProposalReady({ proposal, activated: decision.activated })
-            : undefined;
-          return await semanticProposalResult(input.store, proposal, decision.activated, "created", continuation);
-        } finally {
-          await resolvedContext.close?.();
-        }
-      } catch (error) {
-        if (error instanceof McpRuntimeError) throw error;
-        if (error instanceof PostgresRlsPrerequisiteError) {
-          throw new McpRuntimeError("SEMANTIC_ACTION_DATABASE_REVIEW_REQUIRED",
-            "Database row-filtering prerequisites are not satisfied. An operator must recheck database access in the saved setup before retrying. No proposal or source change was created.");
-        }
-        if (error instanceof OwnerRuntimeError) {
-          throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "Current delegated authority could not be verified. No source change was executed. Refresh the authorized catalog before retrying.");
-        }
-        if (error instanceof ActionRuleError) {
-          if (error.code === "ACTION_RULE_NOT_ELIGIBLE" && error.path === "outcome") {
-            throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE",
-              "The requested outcome is not available in the current authorized catalog. Refresh the action list before retrying. No proposal or source change was created.");
+        } catch (error) {
+          if (error instanceof McpRuntimeError) throw error;
+          if (error instanceof PostgresRlsPrerequisiteError) {
+            throw new McpRuntimeError("SEMANTIC_ACTION_DATABASE_REVIEW_REQUIRED",
+              "Database row-filtering prerequisites are not satisfied. An operator must recheck database access in the saved setup before retrying. No proposal or source change was created.");
           }
-          throw new McpRuntimeError(
-            error.code === "ACTION_RULE_NOT_ELIGIBLE"
-              ? "SEMANTIC_ACTION_NOT_ELIGIBLE"
-              : "SEMANTIC_ACTION_UNAVAILABLE",
-            error.code === "ACTION_RULE_NOT_ELIGIBLE"
-              ? "Current authoritative facts do not permit this reviewed outcome. No proposal or source change was created."
-              : "Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.",
-          );
+          if (error instanceof OwnerRuntimeError) {
+            throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "Current delegated authority could not be verified. No source change was executed. Refresh the authorized catalog before retrying.");
+          }
+          if (error instanceof ActionRuleError) {
+            if (error.code === "ACTION_RULE_NOT_ELIGIBLE" && error.path === "outcome") {
+              throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE",
+                "The requested outcome is not available in the current authorized catalog. Refresh the action list before retrying. No proposal or source change was created.");
+            }
+            throw new McpRuntimeError(
+              error.code === "ACTION_RULE_NOT_ELIGIBLE"
+                ? "SEMANTIC_ACTION_NOT_ELIGIBLE"
+                : "SEMANTIC_ACTION_UNAVAILABLE",
+              error.code === "ACTION_RULE_NOT_ELIGIBLE"
+                ? "Current authoritative facts do not permit this reviewed outcome. No proposal or source change was created."
+                : "Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.",
+            );
+          }
+          throw error;
         }
-        throw error;
-      }
+      });
     },
   };
 }

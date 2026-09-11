@@ -25,6 +25,7 @@ import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { z } from "zod";
 import { createScopedReadDiscovery } from "./scoped-read-discovery.js";
 import { RuntimeAdmissionError } from "./project-runtime-admission.js";
+import { operationalLog, safeOperationalErrorCode } from "./cli-logging.js";
 import runnerPackage from "../package.json" with { type: "json" };
 import { EXPLORATION_TIME_BUCKETS } from "./auto-boundary.js";
 import {
@@ -648,6 +649,9 @@ async function toolResult(
       && error.details && Number.isSafeInteger(error.details.measured_bytes) && Number.isSafeInteger(error.details.limit_bytes)
       ? { kind: error.details.kind, measured_bytes: error.details.measured_bytes, limit_bytes: error.details.limit_bytes,
           retryable: false, recovery: "operator_boundary_review" } : undefined;
+    if (!(error instanceof ScopedExploreError || error instanceof McpRuntimeError || error instanceof RuntimeAdmissionError)) {
+      operationalLog("warn", "mcp_operation_failed", { code: safeOperationalErrorCode(error), result_code: "EXPLORE_INTERNAL" });
+    }
     const payload = error instanceof ScopedExploreError || error instanceof McpRuntimeError || error instanceof RuntimeAdmissionError
       ? {
         ok: false,

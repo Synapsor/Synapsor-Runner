@@ -1,5 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   compileActionRule,
   createActionRuleApprovalClasses,
@@ -210,6 +213,9 @@ function authorityContext(): SubjectReferenceAuthorityContext {
 }
 
 function createFixtureRuntime(options: {
+  store?: ProposalStore;
+  beforeLoad?: (query: ActionRuleFactQueryV1) => Promise<void>;
+  subjectAuthority?: () => SubjectReferenceAuthorityContext;
   unavailableOutcomes?: () => string[];
   businessInput?: boolean;
   status?: "active" | "paused";
@@ -221,7 +227,7 @@ function createFixtureRuntime(options: {
   delegationRequired?: boolean;
   resourceFailure?: Error;
 } = {}) {
-  const store = new ProposalStore();
+  const store = options.store ?? new ProposalStore();
   const { registry, activated } = semanticFixture({
     businessInput: options.businessInput,
     automaticApproval: options.automaticApproval,
@@ -255,11 +261,12 @@ function createFixtureRuntime(options: {
           principal: "customer_maya",
           provenance: "http_claims",
         },
-        subject_authority: authorityContext(),
+        subject_authority: options.subjectAuthority?.() ?? authorityContext(),
         fact_loader: {
           engine: "postgres",
           async assertResourceCompatible() { if (options.resourceFailure) throw options.resourceFailure; },
           async load(query) {
+            await options.beforeLoad?.(query);
             queries.push(query);
             const identityPredicate = query.predicates.find((predicate) =>
               predicate.operation === "eq" && predicate.column === "preference_id");
@@ -586,6 +593,166 @@ describe("fixed semantic Action MCP", () => {
     } finally {
       fixture.store.close();
     }
+  });
+
+  it.each([false, true])("replays concurrent identical requests without duplicate creation or approval (automatic=%s)", async automaticApproval => {
+    const fixture = createFixtureRuntime({ automaticApproval });
+    try {
+      const ref = await issueSubject(fixture);
+      const request = { outcome: "billing.pause_notifications", subject_refs: { preference: ref } };
+      const results = await Promise.allSettled([
+        fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request),
+        fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request),
+      ]);
+      expect(results.map(result => result.status === "fulfilled" ? "fulfilled"
+        : (result.reason as { code?: string }).code ?? String(result.reason))).toEqual(["fulfilled", "fulfilled"]);
+      const values = results.flatMap(result => result.status === "fulfilled" ? [result.value] : []);
+      expect(values.map(value => value.request_disposition).sort()).toEqual(["already_recorded", "created"]);
+      expect(values.every(value => value.source_database_changed === false)).toBe(true);
+      const proposals = await fixture.store.listProposals();
+      expect(proposals).toHaveLength(1);
+      expect(proposals[0]!.state).toBe(automaticApproval ? "approved" : "pending_review");
+      expect(await fixture.store.approvals(proposals[0]!.proposal_id)).toHaveLength(automaticApproval ? 1 : 0);
+    } finally { fixture.store.close(); }
+  });
+
+  it("coordinates distinct runtime instances borrowing the same store without sharing results", async () => {
+    const first = createFixtureRuntime({ automaticApproval: true });
+    const second = createFixtureRuntime({ store: first.store, automaticApproval: true });
+    try {
+      const request = { outcome: "billing.pause_notifications", subject_refs: { preference: await issueSubject(first) } };
+      const results = await Promise.all([first.semanticActions.callTool(REQUEST_CHANGE_TOOL, request),
+        second.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)]);
+      expect(results.map(result => result.request_disposition).sort()).toEqual(["already_recorded", "created"]);
+      expect(first.queries.length + second.queries.length).toBe(1);
+      const proposals = first.store.listProposals();
+      expect(proposals).toHaveLength(1);
+      expect(first.store.approvals(proposals[0]!.proposal_id)).toHaveLength(1);
+    } finally { first.store.close(); }
+  });
+
+  it.each(["authority", "scope"])("rechecks queued %s instead of reusing an earlier caller's authorized result", async change => {
+    let unavailable: string[] = [], scope = authorityContext();
+    const fixture = createFixtureRuntime({ automaticApproval: true, unavailableOutcomes: () => unavailable,
+      subjectAuthority: () => scope, onProposalReady: async () => {
+        if (change === "authority") unavailable = ["billing.pause_notifications"];
+        else scope = { ...scope, principal_scope_fingerprint: canonicalJsonDigest("different caller") };
+        return { execution: "queued", source_database_changed: false };
+      } });
+    try {
+      const request = { outcome: "billing.pause_notifications", subject_refs: { preference: await issueSubject(fixture) } };
+      const results = await Promise.allSettled([fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request),
+        fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)]);
+      expect(results[0]!.status).toBe("fulfilled");
+      expect(results[1]).toMatchObject({ status: "rejected", reason: {
+        code: change === "authority" ? "SEMANTIC_ACTION_UNAVAILABLE" : "SUBJECT_REFERENCE_UNAVAILABLE" } });
+      expect(fixture.queries).toHaveLength(1);
+      expect(fixture.store.listProposals()).toHaveLength(1);
+    } finally { fixture.store.close(); }
+  });
+
+  it("releases failed admission and reruns current verification for the waiting request", async () => {
+    let first = true;
+    const fixture = createFixtureRuntime({ automaticApproval: true, beforeLoad: async () => {
+      if (first) { first = false; throw Object.assign(new Error("test source unavailable"), { code: "ECONNRESET" }); }
+    } });
+    try {
+      const request = { outcome: "billing.pause_notifications", subject_refs: { preference: await issueSubject(fixture) } };
+      const results = await Promise.allSettled([fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request),
+        fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)]);
+      expect(results[0]!.status).toBe("rejected");
+      expect(results[1]).toMatchObject({ status: "fulfilled", value: { request_disposition: "created" } });
+      expect(await fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)).toMatchObject({ request_disposition: "already_recorded" });
+      expect(fixture.store.listProposals()).toHaveLength(1);
+    } finally { fixture.store.close(); }
+  });
+
+  it("does not turn changed business inputs into an identical request replay", async () => {
+    const fixture = createFixtureRuntime({ businessInput: true });
+    try {
+      const subject_refs = { preference: await issueSubject(fixture) };
+      const results = await Promise.allSettled(["paused", "active"].map(notification_state => fixture.semanticActions.callTool(
+        REQUEST_CHANGE_TOOL, { outcome: "billing.pause_notifications", subject_refs, inputs: { notification_state } })));
+      expect(results[0]).toMatchObject({ status: "fulfilled", value: { request_disposition: "created" } });
+      expect(results[1]).toMatchObject({ status: "rejected", reason: { code: "SUBJECT_REFERENCE_UNAVAILABLE" } });
+      expect(fixture.store.listProposals()).toHaveLength(1);
+    } finally { fixture.store.close(); }
+  });
+
+  it("keeps unrelated requests concurrent while the exact atomic approval limit decides the winner", async () => {
+    let release!: () => void, waiting = false;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const fixture = createFixtureRuntime({ automaticApproval: true, preferences: [
+      { preference_id: "raw-preference-42", status: "active", version: 4 },
+      { preference_id: "raw-preference-43", status: "active", version: 2 },
+    ], beforeLoad: async query => {
+      if (query.predicates.some(predicate => predicate.operation === "eq" && predicate.value === "raw-preference-42")) {
+        waiting = true; await gate;
+      }
+    } });
+    const work: Array<Promise<Record<string, unknown>>> = [];
+    try {
+      const first = await issueSubject(fixture), second = await issueSubject(fixture, "raw-preference-43", 2);
+      work.push(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: "billing.pause_notifications", subject_refs: { preference: first } }));
+      await vi.waitFor(() => expect(waiting).toBe(true));
+      let completed = false;
+      work.push(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: "billing.pause_notifications", subject_refs: { preference: second } })
+        .then(result => { completed = true; return result; }));
+      await vi.waitFor(() => expect(completed).toBe(true));
+      release();
+      await Promise.all(work);
+      const proposals = fixture.store.listProposals();
+      expect(proposals.map(proposal => proposal.state).sort()).toEqual(["approved", "pending_review"]);
+      expect(proposals.flatMap(proposal => fixture.store.approvals(proposal.proposal_id))).toHaveLength(1);
+    } finally { release(); await Promise.allSettled(work); fixture.store.close(); }
+  });
+
+  it.each([false, true])("preserves competing different-request conflict and approval checks (separate stores=%s)", async separateStores => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "semantic-request-race-"));
+    const firstStore = new ProposalStore(path.join(directory, "requests.sqlite"));
+    const secondStore = separateStores ? new ProposalStore(firstStore.path) : firstStore;
+    const first = createFixtureRuntime({ store: firstStore, automaticApproval: true });
+    const second = createFixtureRuntime({ store: secondStore, automaticApproval: true });
+    try {
+      const refs = [await issueSubject(first), await issueSubject(second)];
+      const results = await Promise.allSettled([first, second].map((fixture, index) => fixture.semanticActions.callTool(
+        REQUEST_CHANGE_TOOL, { outcome: "billing.pause_notifications", subject_refs: { preference: refs[index]! } })));
+      expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.find(result => result.status === "rejected")).toMatchObject({ reason: { code: "PROPOSAL_ALREADY_EXISTS" } });
+      const proposals = firstStore.listProposals();
+      expect(proposals).toHaveLength(1);
+      expect(firstStore.approvals(proposals[0]!.proposal_id)).toHaveLength(1);
+    } finally { if (separateStores) secondStore.close(); firstStore.close(); await rm(directory, { recursive: true, force: true }); }
+  });
+
+  it("keeps the final automatic approval atomic for different subjects across separate store instances", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "semantic-approval-race-"));
+    const firstStore = new ProposalStore(path.join(directory, "requests.sqlite"));
+    const secondStore = new ProposalStore(firstStore.path);
+    let release!: () => void, arrivals = 0;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const beforeLoad = async () => { if (++arrivals === 2) release(); await gate; };
+    const preferences = [
+      { preference_id: "raw-preference-42", status: "active" as const, version: 4 },
+      { preference_id: "raw-preference-43", status: "active" as const, version: 2 },
+    ];
+    const first = createFixtureRuntime({ store: firstStore, automaticApproval: true, beforeLoad, preferences });
+    const second = createFixtureRuntime({ store: secondStore, automaticApproval: true, beforeLoad, preferences });
+    const work: Array<Promise<Record<string, unknown>>> = [];
+    try {
+      const refs = [await issueSubject(first), await issueSubject(second, "raw-preference-43", 2)];
+      for (const [index, fixture] of [first, second].entries()) {
+        work.push(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, {
+          outcome: "billing.pause_notifications", subject_refs: { preference: refs[index]! },
+        }));
+      }
+      await vi.waitFor(() => expect(arrivals).toBe(2));
+      const results = await Promise.all(work);
+      expect(results.every(result => result.request_disposition === "created" && result.source_database_changed === false)).toBe(true);
+      const proposals = firstStore.listProposals();
+      expect(proposals.map(proposal => proposal.state).sort()).toEqual(["approved", "pending_review"]);
+      expect(proposals.flatMap(proposal => secondStore.approvals(proposal.proposal_id))).toHaveLength(1);
+    } finally { release(); await Promise.allSettled(work); secondStore.close(); firstStore.close(); await rm(directory, { recursive: true, force: true }); }
   });
 
   it("loads scoped authoritative facts and creates one idempotent Runner-derived proposal", async () => {

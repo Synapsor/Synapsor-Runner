@@ -314,6 +314,33 @@ describe("Scoped Explore", () => {
     } finally { await client.close(); await server.close(); await runtime.close(); }
   });
 
+  it.each(["PROPOSAL_NOT_PENDING_REVIEW", "ERR_SQLITE_ERROR", "secret-password\nprivate-role"])("keeps only a bounded operator category for unexpected MCP errors (%s)", async code => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection, executor: fixedExecutor([]) });
+    vi.spyOn(runtime, "explore").mockRejectedValue(Object.assign(
+      new Error("private-role secret-password postgres://private-host/private-db tenant=private-identity"), { code }));
+    const server = createScopedExploreMcpServer(runtime);
+    const client = new Client({ name: "private-operational-diagnostic-test", version: "1" });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await server.connect(st); await client.connect(ct);
+      const result = await client.callTool({ name: "app.explore_data", arguments: {
+        plan: { kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 1 },
+      } });
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toMatchObject({ error_code: "EXPLORE_INTERNAL", source_database_changed: false });
+      const lines = stderr.mock.calls.map(([line]) => String(line));
+      expect(lines).toHaveLength(1);
+      const entry = JSON.parse(lines[0]!);
+      expect(entry).toEqual({ timestamp: expect.any(String), level: "warn", event: "mcp_operation_failed",
+        code: code.includes("secret") ? "COMMAND_REJECTED" : code, result_code: "EXPLORE_INTERNAL" });
+      expect(JSON.stringify({ result, lines })).not.toMatch(/private-role|secret-password|private-host|private-db|private-identity/u);
+      expect(JSON.stringify(result)).not.toContain(code);
+    } finally { stderr.mockRestore(); await client.close(); await server.close(); await runtime.close(); }
+  });
+
   it("maps a real deferred schema-inspection authentication failure to a sanitized MCP connection diagnostic", async () => {
     const fixture = await activatedFixture();
     const connect = vi.spyOn(Pool.prototype, "connect").mockRejectedValue(Object.assign(
