@@ -258,6 +258,40 @@ describe("composed semantic Action runtime", () => {
     } finally { await pending; store.close(); }
   });
 
+  it.each(["active", "inactive"] as const)("keeps a connected %s client usable through deactivation and reactivation", async initial => {
+    const store = new ProposalStore(":memory:");
+    let authority = initial === "active" ? authorityFixture("active") : undefined;
+    let failure: Error | undefined;
+    const factSessionFactory = vi.fn();
+    try {
+      const services = (await createOptionalReadActionRuleRuntimeServices({ projectRoot, config, store, key, factSessionFactory,
+        authorityLoader: async () => {
+          if (failure) throw failure;
+          if (!authority) throw Object.assign(new Error("No active authority"), { code: "ENOENT" });
+          return authority;
+        } }))!;
+      const tools = services.semanticActions.listTools();
+      for (const active of [true, false, true, false]) {
+        authority = active ? authorityFixture("active") : undefined;
+        expect(await services.semanticActions.callTool("app.describe_actions", {})).toMatchObject({
+          ok: true, actions: active ? [{ outcome: "billing.pause_notifications" }] : [],
+        });
+        expect(services.semanticActions.listTools()).toEqual(tools);
+        if (!active) {
+          expect(await services.subjectReferences.observationRequirement("billing.preferences")).toBeUndefined();
+          await expect(services.semanticActions.callTool("app.request_change", { outcome: "billing.pause_notifications",
+            subject_refs: { preference: `obj_${"a".repeat(40)}` } })).rejects.toMatchObject({ code: "SEMANTIC_ACTION_UNAVAILABLE" });
+        }
+      }
+      authority = authorityFixture("active");
+      await services.semanticActions.callTool("app.describe_actions", {});
+      failure = new Error("Invalid active authority is not absence");
+      await expect(services.semanticActions.callTool("app.describe_actions", {})).rejects.toBe(failure);
+      expect(factSessionFactory).not.toHaveBeenCalled();
+      expect(await store.listProposals()).toEqual([]);
+    } finally { store.close(); }
+  });
+
   it("discovers the first activated outcome without reconnecting the read-only client", async () => {
     const store = new ProposalStore();
     let authority: LoadedActiveActionRuleAuthorityV1 | undefined;

@@ -5034,7 +5034,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           await persistAuthoringResume("authority_review");
         }
         input.authoringChat?.checkpoint(result.notice.title, result.notice.lines ?? []);
-        return boundaryAssistResult(result.notice);
+        return { ...boundaryAssistResult(result.notice, false, false, Boolean(input.authoringChat)), navigation: "pause" };
       }
       if (!removal.alreadyRemoved) await writeActionRuleAuthorityDraftIfCurrent(input.projectRoot, removal.draft, removal.baseline);
       const previousAction = availableResume?.action;

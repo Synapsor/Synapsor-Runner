@@ -56,7 +56,7 @@ describe("prepareSavedActionRuleRemoval", () => {
       expect.stringContaining(pending.draft_digest), expect.stringContaining("already-dispatched"),
     ]));
     expect(chooseOption).toHaveBeenCalledWith("REMOVE THE LAST ALLOWED CHANGE", expect.any(Array),
-      expect.objectContaining({ initialValue: "pause" }));
+      expect.objectContaining({ initialValue: "pause", exactDetails: { title: "Remove the last allowed change", lines: expect.any(Array) } }));
     expect(authority.deactivateActionRuleAuthorityIfCurrent).not.toHaveBeenCalled();
     chooseOption.mockResolvedValueOnce("remove");
     expect((await reviewFinalActionRemoval({ projectRoot: "/fixture", removal, session })).completed).toBe(true);

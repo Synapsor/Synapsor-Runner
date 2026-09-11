@@ -109,15 +109,15 @@ async function createAdmittedReadActionServices(input: ActionRuleRuntimeServiceI
   const projectRoot = path.resolve(input.config.action_rules?.project_root ?? input.projectRoot);
   const policyStore = await borrowRuntimeControlPolicies(projectRoot, input.store);
   const initial = await createOptionalActionRuleRuntimeServices(input);
-  if (initial) return initial;
-  const referenceContext = await actionReferenceContext(input, path.resolve(input.config.action_rules?.project_root ?? input.projectRoot));
+  const referenceContext = initial ? { key: initial.key, deployment_scope: initial.deployment_scope,
+    workflow_session_id: initial.workflow_session_id } : await actionReferenceContext(input, projectRoot);
   const inactive = createInactiveSemanticActionRuntime();
-  // Keep the same client usable when its first Action is activated later.
+  // Keep the same client usable across first activation and last deactivation.
   // Reuse the normal authority loader and validators; absence grants nothing.
   const catalogSession = input.catalogSession ?? new ScopedCatalogSession();
   const load = createActiveActionRuleAuthorityLoader(projectRoot, policyStore);
   const authorityLoader = (policyStore ? undefined : input.authorityLoader) ?? (() => load({ dependency_check: "report" }));
-  let ready: ActionRuleRuntimeServices | undefined;
+  let ready: ActionRuleRuntimeServices | undefined = initial;
   let pending: Promise<ActionRuleRuntimeServices | undefined> | undefined;
   const current = async () => {
     await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);

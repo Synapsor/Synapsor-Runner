@@ -16,6 +16,33 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 11:09 UTC: `38b2349` is committed and pushed only to private backup;
+its frozen executable is `8b85ed8783bfd4004b46ccfd76e62046b008b83cddc50be9662da1346f6a969d`
+in durable `candidate-yUqQWI`. Public museum final-action removal succeeded
+through explicit deactivation and retained Read/client/history. However, the
+already-connected older client returned `EXPLORE_INTERNAL` after deactivation.
+The initially-active runtime skipped the dynamic activation wrapper. The
+follow-up uses that wrapper for both initial states, retains reference context,
+and still fails closed for missing/corrupt active dependencies. Full focused
+CLI/removal/runtime group: 265 passed; typecheck passed. Public retest pending.
+Removal also now presents its exact permission panel and returns to guided
+navigation instead of a manual-editor detour.
+
+The full integration run recorded 5,453 passes, 445 optional skips and one
+failure: its worker loaded the old removal module while the test was edited to
+expect the new details panel. The current focused run passes, but that mixed
+source run is NOT a final qualification. Rerun the pipeline on stable source.
+
+Manufacturing recovery preserved private ordering/collection evidence and
+activated Read/Action, but public rescan after authorized writer administration
+now reports missing uniqueness despite an inspected full-key UNIQUE constraint.
+Execution remains off; generic constraint-evidence recovery is under investigation.
+The renamed/coded library case is in fresh public onboarding. It repeated source
+meanings already supplied in the policy, then requested a legitimate explicit
+review of the distinct trusted person binding. No coded authority is active yet.
+The original student, unfamiliar complete-collection operation, further fresh
+journeys and final-artifact gates remain open. This is not overall completion.
+
 2026-09-11 10:49 UTC implementation follow-up: private verification-only fields
 now have exact coverage evidence, including all public Read and Action uses;
 nonexistent pointers and exposed fields still fail validation. Minimal rule edits
