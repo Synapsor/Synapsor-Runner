@@ -27,6 +27,63 @@ const savedClientPassage: PolicyPassage = {
   next_step: "After authority review, choose and configure the Claude Code client connection.",
 };
 
+describe("execution setup is not a business-rule revision", () => {
+  const pointer = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup";
+  const source = policyTextSnapshot(Buffer.from("Keep a separate reader. Review a dedicated writer before enabling automatic completion."), "rules.txt");
+  const previous: PolicyPassage = { start: 1, end: 1, disposition: "needs_decision",
+    responsibility: "deployment", issue_kind: "missing_configuration", topic: "Separate reader and dedicated writer",
+    interpretation: "Execution is prepared, but dedicated writer authorization and reader separation are not verified.",
+    draft_paths: ["/read", "/runner_evidence/actions/work.finish/execution"],
+    next_step: "Review the dedicated writer and keep the reader separate before enabling execution." };
+  const evidence = () => ({ read: {}, runner_evidence: { actions: { "work.finish": { execution: { configured_mode: "direct_sql" } } },
+    runtime_contract: { deployment_prerequisites: { runner_execution_setup: {
+      supported: true, stage: "after_authority_review", configuration_checked: false, verified: false,
+    } } } } });
+  const deferred = { ...previous, deployment_prerequisite: "runner_execution_setup", draft_paths: [pointer] };
+
+  it("corrects the preserved writer/Read classification without asking for a business edit", async () => {
+    const conversation = createModelAuthoringConversation();
+    conversation.policySources = newPolicySourceSession();
+    conversation.policySources.snapshots = [source]; conversation.policySources.active = 1;
+    conversation.policySources.approvals = [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model: "fixture" }) }];
+    const draft = evidence(), before = structuredClone(draft), requests: string[] = [];
+    const result = await reviewPolicyCoverage({ source, draft,
+      previousReport: { source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages: [previous] },
+      session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async (request) => {
+        requests.push(JSON.stringify(request.body));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: `coverage_${requests.length}`,
+          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [requests.length === 1 ? previous : deferred] }) }] } };
+      } } }, env: { OPENAI_API_KEY: "test-key" },
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContain("Classify the deployment prerequisite");
+    expect(requests[1]).toContain("runner_execution_setup");
+    expect(policyReviewReadiness(source, result).ready).toBe(true);
+    expect(policyReadinessItems(result)).toMatchObject([{ kind: "deployment_prerequisite", blocksReview: false }]);
+    expect(policyReviewReadiness(source, result).summary.join("\n")).toContain("writer review");
+    expect(policyReadinessItems(result)[0]!.nextStep).toContain("After authority review");
+    expect(result.passages[0]!.disposition).toBe("needs_decision");
+    expect(draft).toEqual(before);
+  });
+
+  it("does not waive unsupported execution, business decisions, privacy or counters", () => {
+    expect(() => parsePolicyCoverage({ passages: [deferred] }, source, evidence(), "")).not.toThrow();
+    for (const change of [{ supported: false }, { stage: "unknown" }, { verified: true }, { configuration_checked: true }]) {
+      const draft = evidence(); Object.assign(draft.runner_evidence.runtime_contract.deployment_prerequisites.runner_execution_setup, change);
+      expect(() => parsePolicyCoverage({ passages: [deferred] }, source, draft, "Trust me")).toThrow();
+    }
+    for (const change of [
+      { disposition: "implemented" }, { disposition: "unsupported" }, { responsibility: "operator" }, { issue_kind: "business_choice" },
+      { draft_paths: [pointer, "/read"] }, { application_obligations: ["status_presentation"] },
+      { field_checks: [{ resource: "work.records", field: "internal", expectation: "private" }] },
+      { counter_requirements: [{ path: pointer, current_capability: null, required_capability: null }] },
+    ]) expect(() => parsePolicyCoverage({ passages: [{ ...deferred, ...change }] }, source, evidence(), "")).toThrow();
+    expect(() => parsePolicyCoverage({ passages: [deferred] }, source, {}, "")).toThrow();
+    const report = parsePolicyCoverage({ passages: [{ ...previous, disposition: "unsupported" }] }, source, evidence(), "");
+    expect(policyReviewReadiness(source, report).ready).toBe(false);
+  });
+});
+
 describe("policy clarification evidence", () => {
   const source = policyTextSnapshot(Buffer.from("Allow at most ten automatic changes per day."), "rules.txt");
   const passage = { start: 1, end: 1, disposition: "overridden", interpretation: "The operator tightened the daily maximum.", draft_paths: [] };

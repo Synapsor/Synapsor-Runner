@@ -25,6 +25,28 @@ const reusableState: BoundaryJobCurrentState = {
 };
 
 describe("model Boundary job planning", () => {
+  it.each(["claude-code", "cursor", "vscode", "later", undefined])("carries an already selected client as a bounded setup preference (%s)", async intendedClient => {
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "plan",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "reuse", action_mode: "none",
+        ...(intendedClient ? { intended_client: intendedClient } : {}), summary: "Keep the reviewed access." }) }] } }));
+    const before = structuredClone(reusableState);
+    const result = await planModelBoundaryJob({ session: { provider: "openai", model: "fixture", apiKey: "test-key", dependencies: { requestJson } },
+      jobIntent: intendedClient ? `Use ${intendedClient} with the existing access.` : "Keep the current access.",
+      currentState: reusableState, egressAcknowledged: true });
+    expect(result).toMatchObject({ state: "planned", authority_granted: false, source_database_changed: false });
+    if (intendedClient) expect(result).toHaveProperty("intended_client", intendedClient);
+    else expect(result).not.toHaveProperty("intended_client");
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(reusableState).toEqual(before);
+  });
+  it("rejects custom paths or configuration objects in the client preference", async () => {
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "plan",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "reuse", action_mode: "none",
+        intended_client: { command: "unreviewed", args: [] }, summary: "Keep the reviewed access." }) }] } }));
+    await expect(planModelBoundaryJob({ session: { provider: "openai", model: "fixture", apiKey: "test-key", dependencies: { requestJson } },
+      jobIntent: "Keep the current access.", currentState: reusableState, egressAcknowledged: true })).rejects.toThrow("supported client choice");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
   it.each([
     { fully_reviewed: false, revision_eligible: true },
     { fully_reviewed: true, revision_eligible: false },

@@ -144,6 +144,15 @@ export function policyCoverageDraft(input: {
           status_presentation: "The client presents returned statuses and receipts accurately. Approval, a queued request or a failed execution is not completion. A recorded future-effective change does not mean benefits are already in force.",
         },
         deployment_prerequisites: {
+          runner_execution_setup: {
+            supported: actions.length > 0 && actions.every((action) => action.effect_envelope.writeback.mode === "direct_sql"),
+            outcomes: actions.map((action) => ({ outcome: action.rule.outcome, configured_mode: action.effect_envelope.writeback.mode })),
+            stage: "after_authority_review",
+            configuration_checked: false,
+            verified: false,
+            meaning: "Only deployment of already compiled direct SQL effects: review a separate writer and exact database grants, separately enable execution, then configure and start a worker. These are not prerequisites for reviewing disabled business rules. This evidence never asserts that the writer, grants, execution or worker are ready. Reader credentials stay separate. Proposal-only effects, missing actions, unsupported transactions, business eligibility, privacy and approval conditions cannot use this prerequisite.",
+            next_step: "After authority review, use execution setup to prepare the exact writer handoff or verify an existing dedicated writer. If administration is needed, save and resume this job after the administrator applies only the reviewed requirements. Execution remains off until separately enabled; completion requires a successful receipt.",
+          },
           runner_client_connection: {
             supported: true,
             supported_clients: ["claude-code", "cursor", "vscode"] satisfies ManagedMcpProjectClient[],

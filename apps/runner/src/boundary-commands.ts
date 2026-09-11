@@ -4808,14 +4808,15 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       lines: ["Runner uses the job to keep the read and proposal drafts together; it does not infer authority from this sentence."],
     });
   }
-  if (input.authoringChat && selectedResumeModel && input.session.chooseOption && !intendedClient) {
+  const chooseUnspecifiedClient = async () => {
+    if (!input.authoringChat || !selectedResumeModel || !input.session.chooseOption || intendedClient) return;
     const clientQuestion = "Which client will use this job? I will carry that choice through setup; you can decide later.";
     await input.authoringChat.streamModel([clientQuestion]);
     const choice = await input.session.chooseOption("CLIENT FOR THIS JOB", authoringClientChoices.map((entry) => ({ ...entry })),
       { initialValue: "later", reviewOnly: true, context: ["This selects a setup destination only. No configuration, identity, permissions or source data changes."] });
     intendedClient = isAuthoringClientPlan(choice) ? choice : "later";
     if (intendedClient !== "later") rememberModelAuthoringClarification(authoringConversation, clientQuestion, authoringClientLabel(intendedClient));
-  }
+  };
   if (editingSavedJob) {
     pendingJobRevision = jobIntent.trim();
     if (!resumeSelected) rememberModelAuthoringTurn(authoringConversation, "Requested change to the saved job", pendingJobRevision);
@@ -5258,6 +5259,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       additionalAttemptUsed = true;
     }
     if (jobPlan?.state === "planned") {
+      if (!intendedClient && isAuthoringClientPlan(jobPlan.intended_client)) intendedClient = jobPlan.intended_client;
+      await chooseUnspecifiedClient();
       if (pendingActionAddition) {
         const actionCount = jobPlan.action_intents?.length ?? 1;
         if (!pendingActionAdditionIsCurrent()
@@ -5509,6 +5512,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
     }
   }
+  await chooseUnspecifiedClient();
   const promptedActionIntents = retainedReadEdit && jobPlan?.state === "planned"
     ? jobPlan.action_intents ?? []
     : resumePastPlanning

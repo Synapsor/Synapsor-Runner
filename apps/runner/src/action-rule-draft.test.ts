@@ -270,6 +270,16 @@ describe("model-authored Action Rule draft compilation", () => {
       source_fields_modified: ["status", "version"] });
     expect(action.execution.configured_mode).toBe(writeback === "supervised" ? "direct_sql" : "none");
     expect(action.execution.activation).toBe("separate_operator_review");
+    const deployment = evidence.runner_evidence.runtime_contract.deployment_prerequisites.runner_execution_setup;
+    expect(deployment).toMatchObject({ supported: writeback === "supervised", stage: "after_authority_review",
+      configuration_checked: false, verified: false,
+      outcomes: [{ outcome: compiled.rule.outcome, configured_mode: action.execution.configured_mode }] });
+    expect(policyCoverageDraft({ read: boundary(), decisions: [], actions: [] })
+      .runner_evidence.runtime_contract.deployment_prerequisites.runner_execution_setup.supported).toBe(false);
+    const unsupported = structuredClone(compiled);
+    unsupported.effect_envelope.writeback = { mode: "none", supervised_worker: "disabled" };
+    expect(policyCoverageDraft({ read: boundary(), decisions: [], actions: [compiled, unsupported] })
+      .runner_evidence.runtime_contract.deployment_prerequisites.runner_execution_setup.supported).toBe(false);
     expect(action.effect.unrelated_fields).toContain("source_fields_modified");
     expect(compiled).toEqual(before);
     expect(evidence.read.pack.resources[0]!.selectable_fields).toEqual(["status"]);

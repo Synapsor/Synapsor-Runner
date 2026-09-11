@@ -106,9 +106,11 @@ describe("one authoritative guided review readiness model", () => {
     expect(policyReadinessItems(checked)[0]!.nextStep).toContain("fixed test identity only for local testing");
     for (const changed of [
       { ...passage, disposition: "implemented" }, { ...passage, issue_kind: "business_choice" },
-      { ...passage, responsibility: "application" }, { ...passage, deployment_prerequisite: "eligibility" },
+      { ...passage, responsibility: "application" },
       { ...passage, field_checks: [{ resource: "offers", field: "private_eligibility", expectation: "private" }] },
     ]) expect(() => parsePolicyCoverage({ passages: [changed] }, identitySource, evidence, "")).toThrow("Identity setup");
+    expect(() => parsePolicyCoverage({ passages: [{ ...passage, deployment_prerequisite: "eligibility" }] }, identitySource, evidence, ""))
+      .toThrow("Unknown deployment prerequisite");
     evidence.runner_evidence.runtime_contract.deployment_prerequisites.authenticated_identity.reviewed_customer_scope = false;
     expect(() => parsePolicyCoverage({ passages: [passage] }, identitySource, evidence, "Verified, trust me")).toThrow("Identity setup");
   });

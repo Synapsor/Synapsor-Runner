@@ -2,6 +2,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { BoundaryJobPlanningError, planningErrorDiagnostic, planningResponseDiagnostic,
   type BoundaryJobPlanningDiagnostic, type PlanningAttemptDiagnostic } from "./boundary-job-diagnostics.js";
 import { activePolicySource } from "./authoring-policy-source.js";
+import { authoringClientChoices, isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import {
   askToolSurfaceDigest,
   resolveAskProviderConfiguration,
@@ -66,6 +67,7 @@ export type BoundaryJobCurrentState = {
 
 export type BoundaryJobPlan = {
   state: "planned";
+  intended_client?: AuthoringClientPlan;
   read_mode: "create" | "resume" | "reuse" | "revise" | "none";
   read_intent?: string;
   action_mode: "create" | "reuse" | "revise" | "remove" | "none";
@@ -98,6 +100,7 @@ export type BoundaryJobPlanningSession = {
 
 type BoundaryJobPlanCore = {
   state: "planned";
+  intended_client?: AuthoringClientPlan;
   read_mode: "create" | "resume" | "reuse" | "revise" | "none";
   read_intent?: string;
   action_mode: "create" | "reuse" | "revise" | "remove" | "none";
@@ -220,6 +223,7 @@ export async function planModelBoundaryJob(input: {
     "Trusted tenant/principal/account association is injected by Runner and may be enforced by reviewed SQL scope or PostgreSQL RLS. Never request a source field merely to recreate trusted scope.",
     "Approval counts, rolling windows, and aggregate approval limits are evaluated from Runner's proposal ledger. Never request a source table or source field for approval history.",
     "This step only routes Read versus Action work. Preserve unresolved Action thresholds, bounds, reviewer rules, and rolling limits in action_intent; the focused Action authoring conversation asks those business questions later. Do not ask them here.",
+    "If the operator has already selected a supported client in their job or supplied policy, include intended_client. It is a setup preference, not permission to install files, authenticate anyone or activate authority. Do not infer it from the drafting provider or a merely mentioned alternative. Omit when unspecified or ambiguous; Runner will ask once and preserve the choice through resume.",
     "When both modes are reuse or none, summarize the existing Read resources and Action capabilities from Current reviewed state. Do not merely repeat the operator request.",
     "If the job is genuinely ambiguous between Read and Action work, submit one concise clarification question. Do not guess.",
     "Ask about the missing business distinction, explain why it matters, and offer a tentative interpretation or recommended answer when supported by the supplied policy. Do not ask an unexplained table/column naming question or treat your proposed interpretation as accepted scope. Reuse the operator's existing answers.",
@@ -363,6 +367,8 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinitio
           required: ["status", "read_mode", "action_mode", "summary", ...(["create", "revise"].includes(readMode) ? ["read_intent"] : [])],
           properties: {
             status: { type: "string", enum: ["planned"] },
+            intended_client: { type: "string", enum: authoringClientChoices.map((entry) => entry.value),
+              description: "Optional existing operator choice for client setup; omit when not chosen or ambiguous. Does not install, connect or grant authority." },
             read_mode: { type: "string", enum: [readMode] },
             read_intent: {
               type: "string",
@@ -406,6 +412,7 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinitio
           required: ["status", "read_mode", "action_mode", "action_outcome", "summary"],
           properties: {
             status: { type: "string", enum: ["planned"] },
+            intended_client: { type: "string", enum: authoringClientChoices.map((entry) => entry.value) },
             read_mode: { type: "string", enum: ["none", ...(state.read.exact_reusable_revision_count > 0 ? ["reuse"] : [])] },
             action_mode: { type: "string", enum: ["remove"] },
             action_outcome: {
@@ -441,8 +448,11 @@ function parseJobPlan(
   jobIntent: string,
 ): BoundaryJobPlanCore {
   const keys = value.status === "clarification" ? ["status", "question"]
-    : ["status", "read_mode", "read_intent", "action_mode", "action_intent", "action_intents", "action_outcome", "action_strategy", "summary"];
+    : ["status", "read_mode", "read_intent", "action_mode", "action_intent", "action_intents", "action_outcome", "action_strategy", "summary", "intended_client"];
   if (Object.keys(value).some((key) => !keys.includes(key))) throw new Error("Planning arguments contain an unexpected property. Return only the fields in the selected tool contract, not schema keywords.");
+  if (value.intended_client !== undefined && !isAuthoringClientPlan(value.intended_client)) {
+    throw new Error("intended_client must be a supported client choice or omitted. Custom client configuration remains a later review.");
+  }
   if (value.status === "clarification") {
     const question = boundedText(
       value.question,
@@ -630,6 +640,7 @@ function parseJobPlan(
   }
   return {
     state: "planned",
+    ...(isAuthoringClientPlan(value.intended_client) ? { intended_client: value.intended_client } : {}),
     read_mode: readMode,
     ...(effectiveReadIntent ? { read_intent: effectiveReadIntent } : {}),
     action_mode: actionMode,

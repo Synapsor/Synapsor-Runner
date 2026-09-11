@@ -16,6 +16,42 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 E-07 checkpoint: `91cfb03` was committed on the existing branch and
+pushed only to the private `backup` remote. Its full local pipeline passed:
+5,399 tests, 443 optional skips, type/dependency checks, packaging and bundle
+freshness. This is an implementation checkpoint, not completed qualification.
+
+Frozen executable `5aea505b1ec2759eab75325944bee032064bb2e594f4902620fc85888703fc4c`
+was captured before selecting new library-collection and manufacturing-release
+fixtures. The latter has a structurally different private complete inspection
+collection. Source and runtime snapshots, policies, terminal logs and owned
+projects now live in durable external storage, not only `/tmp`:
+`/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/`.
+
+The library fresh public CLI/Terra attempt failed before activation. It prepared
+the rule and privacy settings, then classified missing dedicated-writer setup
+as unfinished business drafting. Asking to proceed opened "Choose what to
+revise" rather than the writer handoff. The operator paused safely; no active
+authority or source change occurred. The roughly ten-minute attempt also
+repeated an explicit Claude Code choice. It has no client/worker/runtime success.
+Exact records and friction notes are in `library-run.md` beside the transcript.
+
+The follow-up now provides typed execution-setup evidence for compiled supported
+effects, retaining writer review, execution consent and worker startup as
+unverified later stages. Unsupported effects and unresolved business/privacy/
+approval requirements cannot use this category. Client preference can accompany
+the existing model plan; the host retains it through the saved job. Focused
+checks: 166 passed, one optional skip; all 284 CLI/chat/resume tests passed,
+as did types, dependency checks and packaging. The CLI regression reaches review
+without an extra business edit or repeated client choice. Real-model recovery
+tests are pending. Freeze again and add a further unseen case after
+this fix; do not count only the repaired known fixtures as generalization.
+
+No original project/policy was changed. Advising limits remain unanswered;
+OpenRouter live qualification still lacks a credential. Continue independent
+work without inventing either. The full student journey, unfamiliar operations
+and same-client edits, then final-artifact gates remain incomplete.
+
 Post-reboot update: PUBLIC40 finished with correct private admission mapping,
 21 privacy changes, two preserved Actions and separately reviewed Read/Action
 activation. Two generated administrator handoffs were applied to the owned test

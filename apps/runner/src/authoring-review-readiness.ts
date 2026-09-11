@@ -38,6 +38,8 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
         ? "After authority review, choose a supported Runner client in client setup and review installation and the connection check. Configuration has not been checked and connection remains unverified; identity, application behavior and execution need separate checks."
       : deferred && passage.deployment_prerequisite === "authenticated_identity"
       ? "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it."
+      : deferred && passage.deployment_prerequisite === "runner_execution_setup"
+      ? "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt."
       : passage.next_step ?? passage.interpretation;
     const item = grouped.get(key) ?? { kind, title, nextStep, passages: [], blocksReview: false };
     item.passages.push(passage);
@@ -66,7 +68,9 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
     `Before activation: ${topics.join("; ")}. These are required decisions, not optional recommendations.`,
     "Continue with the model to resolve them in this saved draft. Activation is unavailable until the checks pass.",
   ] : [`Attached rules: ${source.name} v${source.version}; interpretation checked for this revision.`]),
-    ...(assigned.length ? [`Client integration still unverified: ${clientChecks.join(", ")}. Check these during client setup before customer use.`] : []),
+    ...(clientChecks.length ? [`Client integration still unverified: ${clientChecks.join(", ")}. Check these during client setup before customer use.`] : []),
+    ...(assigned.some((item) => item.passages.some((passage) => passage.deployment_prerequisite === "runner_execution_setup"))
+      ? ["Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."] : []),
   ] };
 }
 

@@ -5909,7 +5909,8 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised", "repair_on_resume", "concurrent_action_read_rebind", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit", "active_rules_recovery", "policy_target_business", "policy_target_mechanical", "policy_target_multi", "policy_target_pause", "policy_target_mixed_read", "policy_target_mixed_read_scope", "policy_target_retained", "policy_target_concurrent", "policy_target_collision"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+  it.each(["proposal_only", "supervised", "writer_setup", "repair_on_resume", "concurrent_action_read_rebind", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit", "active_rules_recovery", "policy_target_business", "policy_target_mechanical", "policy_target_multi", "policy_target_pause", "policy_target_mixed_read", "policy_target_mixed_read_scope", "policy_target_retained", "policy_target_concurrent", "policy_target_collision"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+    const writerSetup = posture === "writer_setup";
     const coverageFailure = posture === "coverage_failure";
     const partialConfirmation = posture === "partial_confirmation";
     const manualGuidedRetryNoop = posture === "guided_privacy_manual_retry_noop";
@@ -5920,8 +5921,8 @@ describe("boundary operator-plane CLI", () => {
     const confirmedCurrent = posture === "confirmed_current" || partialConfirmation || manualGuidedRetryNoop;
     const clarifiedPrivacy = posture === "clarified_privacy" || confirmedCurrent || mechanicalRead || manualGuidedRetry;
     const applicationClarification = posture === "application_clarification";
-    const policyText = posture === "policy_text" || (clarifiedPrivacy && !manualGuidedRetry) || applicationClarification || coverageFailure || posture === "cancel_coverage";
-    const writeback = posture === "supervised" || posture === "privacy_retry" ? "supervised" : "proposal_only";
+    const policyText = writerSetup || posture === "policy_text" || (clarifiedPrivacy && !manualGuidedRetry) || applicationClarification || coverageFailure || posture === "cancel_coverage";
+    const writeback = writerSetup || posture === "supervised" || posture === "privacy_retry" ? "supervised" : "proposal_only";
     const guidedPrivacy = posture === "guided_privacy" || posture === "decline_privacy";
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-semantic-action-"));
     const cancellation = new AbortController();
@@ -5991,7 +5992,8 @@ describe("boundary operator-plane CLI", () => {
       });
     }
     let sourceHandler: ((command: string, argument: string) => Promise<boolean>) | undefined;
-    const sourceText = applicationClarification ? "The application captures the customer's selected visit.\nRequire one maintenance reviewer. Do not execute changes."
+    const sourceText = writerSetup ? "Keep the reader separate from the dedicated writer.\nReview and provision the writer before enabling automatic completion."
+      : applicationClarification ? "The application captures the customer's selected visit.\nRequire one maintenance reviewer. Do not execute changes."
       : confirmedCurrent ? "Customers may see business status; internal eligibility state stays private.\nRequire one maintenance reviewer. Do not execute changes."
       : clarifiedPrivacy ? "Hide internal visit status from the customer; retain eligibility verification.\nRequire one maintenance reviewer. Do not execute changes."
       : "A scheduled visit may receive one two-hour follow-up.\nRequire two maintenance reviewers. Do not execute changes.";
@@ -6017,6 +6019,7 @@ describe("boundary operator-plane CLI", () => {
       + (posture === "repair_on_resume" ? " Do not write refunds or unrelated changes." : "");
     const modelBoundaryJobPlanner = vi.fn(async () => ({
       state: "planned" as const,
+      ...(writerSetup ? { intended_client: "claude-code" as const } : {}),
       read_mode: "create" as const,
       action_mode: "create" as const,
       action_strategy: "rule_derived" as const,
@@ -6334,7 +6337,11 @@ describe("boundary operator-plane CLI", () => {
           if (title === "ACTIVATE READ BOUNDARY") {
             expect(options.some((option) => option.value === "more_review")).toBe(true);
             expect(choiceOptions?.context?.join("\n")).toContain("Rules.txt v1");
-            expect(semanticActionAttempt).toBe(clarifiedPrivacy || applicationClarification ? 2 : 3);
+            expect(semanticActionAttempt).toBe(writerSetup || clarifiedPrivacy || applicationClarification ? 2 : 3);
+            if (writerSetup) {
+              readActivationReviewCount++;
+              expect(choiceOptions?.context?.join(" ")).toContain("Execution setup pending");
+            }
             return "finish";
           }
         }
@@ -6391,6 +6398,14 @@ describe("boundary operator-plane CLI", () => {
       : narration.responseStyle === "clarification" || narration.responseStyle === "business_questions" ? "Should customers see the visit status, or should it stay internal?"
       : "The exact disabled drafts are ready for review.");
     const semanticChat = { ...testBoundaryAuthoringChat(session, "claude-code"), signal: cancellation.signal };
+    if (writerSetup) {
+      const choose = semanticChat.session.chooseOption!;
+      semanticChat.session.chooseOption = async (title, options, config) => {
+        if (title === "CLIENT FOR THIS JOB") throw new Error("Do not repeat the operator's client choice captured by the model plan.");
+        if (title === "CHOOSE WHAT TO REVISE") throw new Error("Missing writer setup is not a business-rule edit.");
+        return choose(title, options, config);
+      };
+    }
     semanticChat.streamCheckpoint = vi.fn(async () => undefined);
     semanticChat.progress = vi.fn(async (_message, operation) => operation());
     const readOperator = vi.fn()
@@ -6432,6 +6447,15 @@ describe("boundary operator-plane CLI", () => {
                 throw new Error("ASK_REQUIRED_TOOL_NOT_CALLED");
               }
               if (coverageFailure) throw new Error("COVERAGE_TEST_PROVIDER_UNAVAILABLE");
+              if (writerSetup) return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
+                arguments: JSON.stringify({ passages: [{ start: 1, end: 2, disposition: "needs_decision", topic: "Dedicated writer setup",
+                  responsibility: "deployment", issue_kind: "missing_configuration",
+                  interpretation: "The writer is not configured; review its requirements while retaining a separate reader.",
+                  next_step: "Continue to writer setup after authority review.",
+                  ...(coverageRequests.length === 1
+                    ? { draft_paths: ["/read", "/runner_evidence/actions/maintenance.create_inspection_followup/execution"] }
+                    : { draft_paths: ["/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"], deployment_prerequisite: "runner_execution_setup" }),
+                }] }) }] } };
               if (applicationClarification) return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
                 arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: "needs_decision",
                   topic: "Customer selection", issue_kind: "missing_configuration", responsibility: "application",
@@ -6584,6 +6608,21 @@ describe("boundary operator-plane CLI", () => {
       }
 
       if (policyText) {
+        if (writerSetup) {
+          expect(readActivationReviewCount).toBe(1);
+          expect(coverageRequests).toHaveLength(2);
+          expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2); // One existing fixture correction, no policy-edit call.
+          expect(modelReadBoundaryRevisionGenerator).not.toHaveBeenCalled();
+          expect(semanticChat.readOperator).toHaveBeenCalledOnce(); // Existing fixture clarification only, no deployment business question.
+          const context = await loadBoundaryReviewContext(root);
+          const saved = await readBoundaryAuthoringResumeState(root, { boundary_name: context.candidate.pack.name,
+            generation_lock_fingerprint: context.bundle.authority.generation_lock_fingerprint,
+            schema_fingerprint: context.bundle.authority.schema_fingerprint, role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint });
+          expect(saved).toMatchObject({ status: "ready", value: { intended_client: "claude-code", stage: "authority_review" } });
+          await expect(readActionRuleAuthorityActivation(root)).resolves.toBeUndefined();
+          await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+          return;
+        }
         if (coverageFailure) {
           expect(sourceReviews.flat().join("\n")).toContain("COVERAGE_TEST_PROVIDER_UNAVAILABLE");
           expect(sourceReviews.flat().join("\n")).toContain("Viewing this record makes no model request");

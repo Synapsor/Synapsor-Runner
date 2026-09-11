@@ -23,16 +23,17 @@ export type PolicyPassage = { start: number; end: number;
   field_checks?: Array<{ resource: string; field: string; expectation: "private" | "business_visible" }>;
   application_obligations?: Array<"customer_selection" | "status_presentation">;
   /** Later setup, not verification or an assignment of business controls to the client. */
-  deployment_prerequisite?: "authenticated_identity" | "runner_client_connection";
+  deployment_prerequisite?: "authenticated_identity" | "runner_client_connection" | "runner_execution_setup";
 };
 export type PolicyCoverage = { source_digest: string; draft_digest: string; passages: PolicyPassage[] };
 
 export function isDeferredPolicyDeployment(passage: PolicyPassage): boolean {
   const prerequisite = passage.deployment_prerequisite;
   const pointer = `/runner_evidence/runtime_contract/deployment_prerequisites/${prerequisite}`;
-  return (prerequisite === "authenticated_identity" || prerequisite === "runner_client_connection")
+  return (prerequisite === "authenticated_identity" || prerequisite === "runner_client_connection" || prerequisite === "runner_execution_setup")
     && passage.disposition === "needs_decision" && passage.responsibility === "deployment"
     && passage.issue_kind === "missing_configuration" && !passage.field_checks?.length && !passage.application_obligations?.length
+    && !passage.counter_requirements?.length
     && passage.draft_paths.includes(pointer) && passage.draft_paths.every((path) => path === pointer || path.startsWith(`${pointer}/`));
 }
 
