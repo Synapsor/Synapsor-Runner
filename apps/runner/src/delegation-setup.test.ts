@@ -83,6 +83,93 @@ describe("delegation setup artifacts", () => {
     })).toThrow("job intent must be 1 through 2000 safe characters");
   });
 
+  it.each([
+    ["Preserve the saved rules.", "Preserve the saved rules."],
+    ["Preserve the saved rules.", "  PRESERVE   the saved rules.  "],
+  ])("preserves distinct outcome bindings with equivalent descriptions (%s, %s)", (first, second) => {
+    const input = delegationInput({
+      actionIntents: [second, first],
+      semanticActions: [
+        semanticAction(first, "university.accept_seat", "1"),
+        semanticAction(second, "university.restore_registration", "2"),
+      ],
+    });
+    const before = structuredClone(input);
+    const draft = buildDelegationDraft(input);
+    expect(draft.actions).toEqual(input.semanticActions!.map((entry) => ({
+      ...entry,
+      intent: entry.intent.trim().replace(/\s+/g, " "),
+      kind: "rule_derived",
+      rehearsal: "passed",
+      state: "disabled",
+    })));
+    expect(new Set(draft.actions.map((action) => action.outcome)).size).toBe(2);
+    expect(buildDelegationDraft(input)).toEqual(draft);
+    expect(input).toEqual(before);
+  });
+
+  it("retains outcome-bound entries without a parallel legacy intent list", () => {
+    const semanticActions = [semanticAction("Preserve both rules.", "university.accept_seat"),
+      semanticAction("Preserve both rules.", "university.restore_registration")];
+    expect(buildDelegationDraft(delegationInput({ semanticActions })).actions.map((action) => action.outcome))
+      .toEqual(["university.accept_seat", "university.restore_registration"]);
+  });
+
+  it.each(["same entry", "different authority", "different description"])("rejects an outcome identity collision (%s)", (collision) => {
+    const first = semanticAction("Accept the seat.", "university.accept_seat");
+    const second = { ...first,
+      outcome: " university.accept_seat ",
+      ...(collision === "different authority" ? { authority_digest: digest("2") } : {}),
+      ...(collision === "different description" ? { intent: "Restore the registration." } : {}),
+    };
+    const input = delegationInput({ actionIntents: [first.intent, second.intent], semanticActions: [first, second] });
+    const before = structuredClone(input);
+    expect(() => buildDelegationDraft(input)).toThrow("DELEGATION_ACTION_OUTCOME_COLLISION");
+    expect(input).toEqual(before);
+  });
+
+  it("preserves unambiguous legacy drafts and pending work alongside outcome-bound entries", () => {
+    const input = delegationInput({
+      actionIntents: ["Propose a bounded ticket status change.", "Accept the seat.", "Release the advising hold."],
+      actionDrafts: [{ intent: "  PROPOSE a bounded ticket status change. ", draft: actionDraft(false) }],
+      semanticActions: [semanticAction("Accept the seat.", "university.accept_seat")],
+    });
+    const before = structuredClone(input);
+    const draft = buildDelegationDraft(input);
+    expect(draft.actions).toMatchObject([
+      { intent: "Accept the seat.", outcome: "university.accept_seat", kind: "rule_derived", rehearsal: "passed" },
+      { intent: "Propose a bounded ticket status change.", capability: "support.propose_update_tickets", kind: "discretionary", rehearsal: "required" },
+      { intent: "Release the advising hold.", rehearsal: "not_started" },
+    ]);
+    expect(draft.authority_granted).toBe(false);
+    expect(draft.source_database_changed).toBe(false);
+    expect(input).toEqual(before);
+  });
+
+  it.each([
+    "duplicate legacy drafts", "duplicate legacy requests", "semantic and legacy overlap",
+    "unmatched legacy draft", "unmatched semantic entry", "fewer requests than outcomes", "more requests than outcomes",
+  ])("rejects ambiguous unbound intent pairings (%s)", (ambiguity) => {
+    const intent = "Preserve the saved rule.";
+    const legacy = { intent, draft: actionDraft(false) };
+    const semantic = semanticAction(intent, "university.accept_seat");
+    const variants: Record<string, Partial<Parameters<typeof buildDelegationDraft>[0]>> = {
+      "duplicate legacy drafts": { actionIntents: [intent, intent], actionDrafts: [legacy,
+        { intent: intent.toUpperCase(), draft: { ...actionDraft(true), capability: "support.propose_other_change" } }] },
+      "duplicate legacy requests": { actionIntents: [intent, intent], actionDrafts: [legacy] },
+      "semantic and legacy overlap": { actionIntents: [intent, intent], actionDrafts: [legacy], semanticActions: [semantic] },
+      "unmatched legacy draft": { actionIntents: ["Another request."], actionDrafts: [legacy] },
+      "unmatched semantic entry": { actionIntents: ["Another request."], semanticActions: [semantic] },
+      "fewer requests than outcomes": { actionIntents: [intent], semanticActions: [semantic,
+        semanticAction(intent, "university.restore_registration")] },
+      "more requests than outcomes": { actionIntents: [intent, intent], semanticActions: [semantic] },
+    };
+    const input = delegationInput(variants[ambiguity]);
+    const before = structuredClone(input);
+    expect(() => buildDelegationDraft(input)).toThrow("DELEGATION_ACTION_BINDING_AMBIGUOUS");
+    expect(input).toEqual(before);
+  });
+
   it("reports EXPLORE, PROPOSE, DELEGATE, and APPLY as separate authority stages", () => {
     const draft = buildDelegationDraft({
       jobName: "support_agent",
@@ -158,6 +245,21 @@ describe("delegation setup artifacts", () => {
     await expect(listDelegationDrafts(root)).resolves.toEqual([newer, older]);
   });
 });
+
+function delegationInput(overrides: Partial<Parameters<typeof buildDelegationDraft>[0]> = {}): Parameters<typeof buildDelegationDraft>[0] {
+  return {
+    jobIntent: "Preserve the original student registration policy and pending work.",
+    boundaryName: "reviewed_support",
+    workload: workload(),
+    review: review(),
+    now: "2026-08-28T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function semanticAction(intent: string, outcome: string, fingerprint = "1") {
+  return { intent, outcome, action_boundary_name: "reviewed_rules", authority_digest: digest(fingerprint) };
+}
 
 function workload(): ReadWorkloadView {
   return {

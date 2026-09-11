@@ -51,7 +51,7 @@ You do not hand-map every table, write policy JSON, or create another MCP tool
 for each business action. Manual and no-model editors remain available when you
 want them.
 
-Choose OpenAI, Anthropic, or a local tool-capable model. Structural metadata and
+Choose OpenAI, Anthropic, OpenRouter, or a local tool-capable model. Structural metadata and
 business answers leave the machine only after explicit egress consent.
 
 `onboard db --from-env DATABASE_URL` enters the same Read/Action workflow.

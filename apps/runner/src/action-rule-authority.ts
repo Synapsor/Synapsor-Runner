@@ -224,6 +224,54 @@ export function mergeActionRuleAuthorityDraft(input: {
   });
 }
 
+/**
+ * Builds an explicit disabled replacement without one existing semantic
+ * outcome. Normal merge remains an upsert: callers must opt into removal.
+ */
+export function removeOutcomeActionRuleAuthorityDraft(input: {
+  existing: ExistingActionRuleAuthorityV1;
+  outcome: string;
+  now?: string;
+}): ActionRuleAuthorityDraftV1 {
+  const existing = input.existing.state === "active"
+    ? parseActivation(input.existing)
+    : parseDraft(input.existing);
+  const rules = existing.authority.rules;
+  if (!rules.some((rule) => rule.rule.outcome === input.outcome)) {
+    throw authorityError(
+      "ACTION_RULE_OUTCOME_NOT_FOUND",
+      `Outcome ${input.outcome} is not present in this exact verified Action Boundary.`,
+    );
+  }
+  if (rules.length === 1) {
+    throw authorityError(
+      "ACTION_RULE_LAST_OUTCOME_REMOVAL_UNSUPPORTED",
+      "Removing the final outcome is not supported here. Deactivate the verified Action Boundary instead.",
+    );
+  }
+  const retainedRules = rules
+    .filter((rule) => rule.rule.outcome !== input.outcome)
+    .map(({ activated_at: _activatedAt, ...rule }) => structuredClone(rule));
+  const approvalClasses = existing.authority.approval_classes.flatMap((approvalClass) => {
+    const rules = approvalClass.rules
+      .filter((rule) => rule.outcome !== input.outcome)
+      .map((rule) => structuredClone(rule));
+    return rules.length ? [{ ...structuredClone(approvalClass), rules }] : [];
+  });
+  const reviews = existing.reviews
+    .filter((review) => review.outcome !== input.outcome)
+    .map((review) => structuredClone(review));
+  return buildActionRuleAuthorityDraft({
+    name: existing.authority.name,
+    action_boundary_name: existing.authority.action_boundary.name,
+    catalog: structuredClone(existing.authority.catalog),
+    rules: retainedRules,
+    approval_classes: approvalClasses,
+    reviews,
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
+}
+
 function replacementApprovalClassName(
   approvalClass: ActionRuleApprovalClassSourceV1,
 ): string {

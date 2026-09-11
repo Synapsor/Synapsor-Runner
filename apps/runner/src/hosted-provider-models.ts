@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
+import { isFixedOpenRouterModel, type HostedProvider } from "./hosted-provider-settings.js";
 
-export type HostedModelProvider = "openai" | "anthropic";
+export type HostedModelProvider = HostedProvider;
 
 export type HostedProviderModel = {
   id: string;
@@ -23,10 +24,12 @@ export async function discoverHostedProviderModels(input: {
   if (!apiKey) return [];
   const endpoint = input.provider === "openai"
     ? "https://api.openai.com/v1/models"
-    : "https://api.anthropic.com/v1/models?limit=100";
+    : input.provider === "openrouter"
+      ? "https://openrouter.ai/api/v1/models"
+      : "https://api.anthropic.com/v1/models?limit=100";
   const response = await (input.fetchImpl ?? fetch)(endpoint, {
     redirect: "error",
-    headers: input.provider === "openai"
+    headers: input.provider !== "anthropic"
       ? {
           accept: "application/json",
           authorization: `Bearer ${apiKey}`,
@@ -39,16 +42,39 @@ export async function discoverHostedProviderModels(input: {
     signal: AbortSignal.timeout(input.timeoutMs ?? 4_000),
   });
   if (!response.ok) return [];
+  const maxBytes = input.provider === "openrouter" ? 2_097_152 : 262_144;
   const contentLength = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(contentLength) && contentLength > 262_144) return [];
-  const text = await response.text();
-  if (Buffer.byteLength(text, "utf8") > 262_144) return [];
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    await response.body?.cancel();
+    return [];
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return [];
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      bytes += next.value.byteLength;
+      if (bytes > maxBytes) { await reader.cancel(); return []; }
+      chunks.push(next.value);
+    }
+  } finally { reader.releaseLock(); }
+  const text = Buffer.concat(chunks).toString("utf8");
   const value: unknown = JSON.parse(text);
   if (!isRecord(value) || !Array.isArray(value.data)) return [];
   const models = value.data.flatMap((item): HostedProviderModel[] => {
     if (!isRecord(item) || typeof item.id !== "string") return [];
     const id = item.id.trim();
-    if (!safeModelId(id) || !compatibleModelId(input.provider, id)) return [];
+    if (input.provider === "openrouter") {
+      const parameters = item.supported_parameters;
+      if (!isFixedOpenRouterModel(id) || !Array.isArray(parameters)
+        || !["tools", "tool_choice", "max_tokens"].every((key) => parameters.includes(key))
+        || !isRecord(item.architecture)
+        || !Array.isArray(item.architecture.input_modalities) || !item.architecture.input_modalities.includes("text")
+        || !Array.isArray(item.architecture.output_modalities) || !item.architecture.output_modalities.includes("text")) return [];
+    } else if (!safeModelId(id) || !compatibleModelId(input.provider, id)) return [];
     return [{
       id,
       ...(typeof item.created_at === "string" ? { created_at: item.created_at } : {}),

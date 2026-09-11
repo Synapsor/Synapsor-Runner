@@ -14,6 +14,23 @@ const reads = [{ activation: { digest }, pack: { name: "customer", resources: [
 ] } }] as ActivatedExplorationBoundary[];
 
 describe("semantic Action reviewed Read scope", () => {
+  it.each([false, true])("combines tenant-only reference rows and customer rows in one reviewed transaction (reverse=%s)", (reverse) => {
+    const mixed = structuredClone(reads);
+    mixed[0]!.pack.resources[1]!.rls_session = { tenant_setting: scope.tenant_setting };
+    const orderedRules = structuredClone(rules);
+    if (reverse) orderedRules[0]!.verification_boundary.resources.reverse();
+    const config = { sources: { source: { engine: "postgres", read_url_env: "DATABASE_URL",
+      database_scope: { mode: "postgres_rls", tenant_setting: scope.tenant_setting } } } };
+    const before = structuredClone({ config, mixed, orderedRules });
+    const result = bindSemanticReadScope(config, orderedRules, mixed);
+    expect(result).toEqual({ sources: { source: { ...config.sources.source,
+      database_scope: { mode: "postgres_rls", ...scope } } } });
+    expect(bindSemanticReadScope(result, orderedRules, mixed)).toEqual(result);
+    expect({ config, mixed, orderedRules }).toEqual(before);
+    mixed[0]!.pack.resources[1]!.rls_session!.tenant_setting = "another.account";
+    expect(() => bindSemanticReadScope(config, orderedRules, mixed)).toThrow("conflicting");
+  });
+
   it("never overwrites another compiled source's reviewed scope and refuses an ambiguous shared alias", () => {
     const source = { engine: "postgres", read_url_env: "DATABASE_URL", read_only: false,
       write_url_env: "FIRST_WRITER_URL", receipts: { authority: "runner_ledger" } };

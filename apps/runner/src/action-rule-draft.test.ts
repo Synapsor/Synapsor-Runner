@@ -31,6 +31,121 @@ const statusType: ActionRuleScalarTypeSpecV1 = {
 };
 
 describe("model-authored Action Rule draft compilation", () => {
+  it("exports only draft review fields from a stored outcome-linked review", () => {
+    const proposed = draft(), built = builtCatalog();
+    const compiled = compileActionRuleModelDraft({ draft: proposed, builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest });
+    const storedReview = { outcome: proposed.outcome, ...proposed.review };
+    const before = structuredClone(storedReview);
+    const exported = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority, outcome: proposed.outcome, review: storedReview });
+    const validate = new Ajv2020({ strict: false, allErrors: true }).compile(actionRuleModelDraftJsonSchema());
+    expect(validate(exported), JSON.stringify(validate.errors)).toBe(true);
+    expect(exported.review).toEqual(proposed.review);
+    expect(exported.review).not.toHaveProperty("outcome");
+    expect(storedReview).toEqual(before);
+    expect(() => actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority, outcome: proposed.outcome,
+      review: { ...storedReview, outcome: "other.outcome" } as typeof storedReview })).toThrow("review belongs to another outcome");
+    expect(validate({ ...exported, review: storedReview })).toBe(false);
+  });
+  it("reopens canonical child-first resources in their reviewed parent-first lock order", () => {
+    const proposed = draft(), built = relatedBuiltCatalog();
+    proposed.verification.resources.push({ binding: "a_policy", resource: "billing.account_policies",
+      source: { kind: "relationship", from_binding: "account", relationship: "accounts_policy_fk", direction: "forward" }, fields: ["allow_pause"] });
+    proposed.require = { kind: "all", expressions: [proposed.require,
+      { kind: "compare", operator: "eq", left: { kind: "field", binding: "a_policy", field: "allow_pause" },
+        right: { kind: "literal", value: true, value_type: { kind: "boolean" } } }] };
+    const input = { builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest };
+    const compiled = compileActionRuleModelDraft({ ...input, draft: proposed });
+    expect(compiled.loaded.authority.rules[0]!.verification_boundary.resources.map(resource => resource.binding))
+      .toEqual(["a_policy", "account"]);
+    const before = structuredClone(compiled.loaded.authority);
+    const restored = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority,
+      outcome: proposed.outcome, review: proposed.review, preserveVerificationFields: true });
+    const reopened = compileActionRuleModelDraft({ ...input, draft: restored });
+    expect(reopened.verification_boundary).toEqual(compiled.verification_boundary);
+    expect(reopened.effect_envelope).toEqual(compiled.effect_envelope);
+    expect(normalizeActionRule(reopened.rule)).toEqual(normalizeActionRule(compiled.rule));
+    expect(reopened.approval_class).toEqual(compiled.approval_class);
+    expect(compiled.loaded.authority).toEqual(before);
+    const resumedAgain = actionRuleModelDraftFromAuthority({ authority: reopened.loaded.authority,
+      outcome: proposed.outcome, review: proposed.review, preserveVerificationFields: true });
+    expect(resumedAgain).toEqual(restored);
+    for (const order of [["account"], ["account", "account"], ["account", "missing"]]) {
+      const invalid = structuredClone(before);
+      invalid.rules[0]!.verification_boundary.lock_order = order;
+      expect(() => actionRuleModelDraftFromAuthority({ authority: invalid,
+        outcome: proposed.outcome, review: proposed.review })).toThrow(/inconsistent reviewed verification order/);
+    }
+  });
+  it("round-trips explicit nullable text and timestamp clearing without changing approval settings", () => {
+    const built = builtCatalog(), proposed = draft();
+    for (const [name, type] of [["drop_reason", { kind: "string", max_length: 32, comparison: "exact", enum: ["prerequisite_error"] }],
+      ["dropped_at", { kind: "timestamp" }]] as const) {
+      const field = { name, type: structuredClone(type) as ActionRuleScalarTypeSpecV1, nullable: true };
+      built.catalog.resources[0]!.fields.push(field);
+      built.authoring.resources[0]!.fields.push({ ...field, role: "runner_verification_only", writable: true });
+      proposed.effect.allowed_fields.push({ name, values: [null] });
+      proposed.effect.set[name] = { kind: "literal", value: null, value_type: field.type };
+    }
+    const input = { builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest };
+    const compiled = compileActionRuleModelDraft({ ...input, draft: proposed });
+    const restored = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority, outcome: proposed.outcome, review: proposed.review });
+    const validate = new Ajv2020({ strict: false, allErrors: true }).compile(actionRuleModelDraftJsonSchema());
+    expect(validate(restored), JSON.stringify(validate.errors)).toBe(true);
+    expect(restored.effect.set).toEqual(proposed.effect.set);
+    expect(restored.effect.allowed_fields).toEqual([...proposed.effect.allowed_fields].sort((a, b) => a.name.localeCompare(b.name)));
+    expect(compileActionRuleModelDraft({ ...input, draft: restored }).loaded.authority.approval_classes).toEqual(compiled.loaded.authority.approval_classes);
+  });
+  it("infers complete collection protection and preserves aggregate-only private fields through edits", () => {
+    const built = relatedBuiltCatalog();
+    const policy = built.catalog.resources[1]!;
+    const authoring = built.authoring.resources[1]!;
+    const accountId = { name: "account_id", type: stringId, nullable: false };
+    const amount = { name: "amount", type: { kind: "integer" as const, unit: "credits" }, nullable: false };
+    policy.fields.push(accountId, amount);
+    authoring.fields.push({ ...accountId, role: "guard", writable: false }, { ...amount, role: "runner_verification_only", writable: false });
+    const relation = { name: "policies_account_fk", from_resource: policy.name, to_resource: "billing.accounts",
+      field_pairs: ["tenant_id", "principal_id", "account_id"].map(field => ({ local_field: field, target_field: field })),
+      cardinality: "many_to_one" as const, nullable: false, target_unique: true };
+    built.catalog.relationships = [relation]; built.authoring.relationships = [relation];
+    const proposed = draft();
+    proposed.verification.resources.push({ binding: "policies", resource: policy.name,
+      source: { kind: "relationship", from_binding: "account", relationship: relation.name, direction: "inverse" },
+      fields: ["allow_pause", "amount"], max_rows: 10, overflow: "unsupported", deterministic_order: [{ field: "policy_id", direction: "asc" }] });
+    proposed.require = { kind: "not", expression: { kind: "exists", binding: "policies", where: { kind: "compare", operator: "eq",
+      left: { kind: "field", binding: "policies", field: "allow_pause" }, right: { kind: "literal", value: false, value_type: { kind: "boolean" } } } } };
+    proposed.derive.total = { kind: "aggregate", operation: "sum", binding: "policies", field: "amount", where: { kind: "compare", operator: "eq",
+      left: { kind: "field", binding: "policies", field: "allow_pause" }, right: { kind: "literal", value: true, value_type: { kind: "boolean" } } } };
+    const input = { builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest };
+    const invalidOrder = structuredClone(proposed);
+    invalidOrder.verification.resources[1]!.deterministic_order = [{ field: "amount", direction: "desc" }];
+    let repair: ReturnType<typeof actionRuleDraftDiagnostics>[number] | undefined;
+    try { compileActionRuleModelDraft({ ...input, draft: invalidOrder }); }
+    catch (error) { repair = actionRuleDraftDiagnostics(error, { builtCatalog: built, verification: invalidOrder.verification })[0]; }
+    expect(repair?.code).toBe("ACTION_RULE_UNBOUNDED");
+    expect(repair?.correction?.after).toEqual([{ field: "amount", direction: "desc" }, { field: "policy_id", direction: "asc" }]);
+    const corrected = structuredClone(invalidOrder);
+    corrected.verification.resources[1]!.deterministic_order = repair!.correction!.after;
+    const repaired = compileActionRuleModelDraft({ ...input, draft: corrected });
+    expect(repaired.draft.require).toEqual(proposed.require);
+    expect(repaired.draft.approval).toEqual(proposed.approval);
+    expect(repaired.draft.effect).toEqual(proposed.effect);
+    const compiled = compileActionRuleModelDraft({ ...input, draft: proposed });
+    expect(compiled.verification_boundary.resources[1]!.collection_consistency).toBe("complete_locked");
+    expect(compiled.verification_boundary.transaction.isolation).toBe("read_committed");
+    expect(proposed.verification.resources[1]!.collection_consistency).toBeUndefined();
+    const minimal = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority, outcome: proposed.outcome, review: proposed.review });
+    expect(minimal.verification.resources[1]!.fields).toContain("amount");
+    const restored = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority, outcome: proposed.outcome, review: proposed.review, preserveVerificationFields: true });
+    expect(restored.verification.resources[1]!.collection_consistency).toBe("complete_locked");
+    const validate = new Ajv2020({ strict: false, allErrors: true }).compile(actionRuleModelDraftJsonSchema());
+    expect(validate(restored), JSON.stringify(validate.errors)).toBe(true);
+    restored.approval.required_approvals = 2;
+    const edited = compileActionRuleModelDraft({ ...input, draft: restored });
+    expect(edited.verification_boundary).toEqual(compiled.verification_boundary);
+    expect(edited.rule.require).toEqual(compiled.rule.require);
+    expect(edited.rule.derive).toEqual(compiled.rule.derive);
+    expect(edited.effect_envelope).toEqual(compiled.effect_envelope);
+  });
   it("round-trips one combined action through the model schema, review and a later policy edit", () => {
     const { proposed, built } = atomicDraft();
     const input = { builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest };
@@ -651,8 +766,8 @@ function builtCatalog(): BuiltActionRuleAuthoringCatalogV1 {
       supported_language: {
         comparisons: ["eq", "neq", "lt", "lte", "gt", "gte"],
         predicates: ["all", "any", "not", "null_check", "in", "exists"],
-        aggregates: [],
-        arithmetic: ["add", "subtract", "min", "max", "multiply", "divide", "clamp", "add_duration"],
+        aggregates: ["count", "sum", "min", "max"],
+        arithmetic: ["add", "subtract", "min", "max", "multiply", "divide", "clamp", "add_duration", "date_of"],
         effects: ["single_row_update", "single_row_insert"],
       },
       diagnostics: [],

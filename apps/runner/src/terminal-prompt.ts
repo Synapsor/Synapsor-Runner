@@ -229,7 +229,9 @@ export async function readTerminalTextWithEscape(
   }
   const promptLines = padTerminalBlock(prompt).split("\n");
   const questionPrompt = promptLines.pop() ?? "";
-  if (promptLines.length) output.write(`${promptLines.join("\n")}\n`);
+  // The preceding prompt may have just restored an alternate/raw screen.
+  // Flush the explanatory frame before readline accepts the next line.
+  if (promptLines.length) await writeTerminalPrompt(output, `${promptLines.join("\n")}\n`);
   const rl = readline.createInterface({ input, output, terminal: true });
   return new Promise<string | undefined>((resolve) => {
     let settled = false;
@@ -255,6 +257,12 @@ export async function readTerminalTextWithEscape(
     input.once("close", onEnd);
     input.once("error", onError);
     rl.question(questionPrompt, (value) => finish(value.trim()));
+  });
+}
+
+function writeTerminalPrompt(output: WriteStream, value: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    output.write(value, (error) => error ? reject(error) : resolve());
   });
 }
 

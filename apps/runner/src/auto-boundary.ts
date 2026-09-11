@@ -38,6 +38,11 @@ import { exploreBoundaryVocabularyGaps, exploreFieldSemanticStatus, exploreVocab
 import { RELATIVE_TIME_WINDOWS, RELATIVE_TIME_COMPARISONS } from "./relative-time-window.js";
 import { checkReadDiscoveryContracts, readDiscoveryConcernLines, type ReadDiscoveryConcern } from "./read-discovery-compatibility.js";
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
+import {
+  assertReadCurrentStatePrerequisiteShape,
+  assertReviewedReadCurrentStatePrerequisite,
+  type ReviewedReadCurrentStatePrerequisite,
+} from "./read-prerequisite.js";
 import type { ControlPolicyPointer, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 import { assertGovernedReadActivationDecision, type GovernedReadActivationDecision } from "./control-policy-activation.js";
 import { openBoundProjectControlPolicies, assertProjectControlPolicyBinding, commitImmutableControlPolicies,
@@ -504,6 +509,8 @@ export type ExplorationBoundaryDraft = {
    * organization. Absent means the existing per-resource tenant requirement.
    */
   organization_scope?: SingleOrganizationScope;
+  /** Optional private, reviewed current-state gate for every runtime Read query. */
+  read_prerequisite?: ReviewedReadCurrentStatePrerequisite;
   trusted_context:
     | {
       provider: "environment";
@@ -2593,6 +2600,7 @@ export async function activateExplorationBoundary(input: {
     trusted_context: candidate.trusted_context,
     generation_lock_fingerprint: candidate.generation_lock_fingerprint,
     role_posture_fingerprint: candidate.role_posture_fingerprint,
+    ...(candidate.read_prerequisite ? { read_prerequisite: structuredClone(candidate.read_prerequisite) } : {}),
     pack: candidate.pack,
     budgets: candidate.budgets,
     activation: {
@@ -2660,6 +2668,9 @@ export function assertCurrentExplorationBoundaryAuthority(input: {
       compatibility.authority ?? input.inspection,
       "automatic_numeric_bands",
     );
+  }
+  if (input.candidate.read_prerequisite) {
+    assertReviewedReadCurrentStatePrerequisite(input.candidate.read_prerequisite, input.inspection);
   }
   assertExploreRolePosture(input.inspection, input.candidate);
   if (input.candidate.organization_scope) {
@@ -3029,6 +3040,7 @@ function validateActivatedExplorationBoundary(
       throw new Error("Activated exploration boundary has an invalid single-organization scope declaration.");
     }
   }
+  if (active.read_prerequisite) assertReadCurrentStatePrerequisiteShape(active.read_prerequisite);
   const resources = new Map(active.pack.resources.map((resource) => [resource.id, resource]));
   for (const resource of active.pack.resources) {
     assertReviewedResourceScope(
@@ -4765,6 +4777,13 @@ function assertBoundaryCandidateMetadata(
   if (canonicalJsonDigest(candidate.organization_scope ?? null) !== canonicalJsonDigest(draft.organization_scope ?? null)) {
     throw new Error("organization_scope cannot change during boundary review.");
   }
+  if (candidate.read_prerequisite) assertReadCurrentStatePrerequisiteShape(candidate.read_prerequisite);
+  if (draft.read_prerequisite) {
+    if (!candidate.read_prerequisite
+      || canonicalJsonDigest(candidate.read_prerequisite) !== canonicalJsonDigest(draft.read_prerequisite)) {
+      throw new Error("A reviewed Read current-state prerequisite cannot be removed or changed during narrowing review.");
+    }
+  }
   if (candidate.organization_scope) singleOrganizationScope(candidate.organization_scope.organization_id);
   if (candidate.organization_scope
     && (candidate.organization_scope.mode !== "single_organization"
@@ -5978,22 +5997,22 @@ function emitDraftDsl(graph: AutoBoundaryEvidenceGraph, sourceName: string): str
       for (let suffix = 2; occupied.has(lookupArg); suffix++) lookupArg = `${base}_${suffix}`;
     }
     const trustedScopeReadableFields = reviewedTrustedScopeReadableFields(resource);
+    const keptOut = unique([
+      ...resource.fields.filter((field) => field.sensitive_suggestion || !field.raw_visible_suggestion).map((field) => field.name),
+      ...[...trustedScopeFields].filter((field) => !trustedScopeReadableFields.has(field)),
+    ]);
     const visible = unique([
       ...(!trustedScopeFields.has(primaryKey) || trustedScopeReadableFields.has(primaryKey) ? [primaryKey] : []),
       ...resource.fields
         .filter((field) => field.raw_visible_suggestion
           && (!trustedScopeFields.has(field.name) || trustedScopeReadableFields.has(field.name)))
         .map((field) => field.name),
-    ]);
+    ]).filter((field) => !keptOut.includes(field));
     const modelWithheld = resource.fields
       .filter((field) =>
         field.review_override?.exposure === "withhold_from_model"
         && visible.includes(field.name))
       .map((field) => field.name);
-    const keptOut = unique([
-      ...resource.fields.filter((field) => field.sensitive_suggestion || !field.raw_visible_suggestion).map((field) => field.name),
-      ...[...trustedScopeFields].filter((field) => !trustedScopeReadableFields.has(field)),
-    ]);
     lines.push(
       `CREATE CAPABILITY ${capabilityName}`,
       `  DESCRIPTION '${escapeDslString(`Inspect one ${humanize(object)} inside the reviewed trusted tenant boundary.`)}'`,

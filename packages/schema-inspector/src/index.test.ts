@@ -7,10 +7,12 @@ import {
   deriveSchemaDeclaredEnumValues,
   generateRunnerConfigFromSpec,
   inspectDatabase,
+  inspectDatabaseWithConnection,
   mysqlGrantPosture,
   schemaFingerprintForInspection,
   summarizeInspection,
   type SchemaInspection,
+  type SchemaInspectionConnection,
   type TableInfo,
 } from "./index.js";
 
@@ -170,6 +172,46 @@ describe("schema inspector helpers", () => {
     }
   });
 
+  it.each(["28P01", "ECONNREFUSED", "ER_ACCESS_DENIED_ERROR", "UNRECOGNIZED"])(
+    "retains safe driver code %s without retaining its raw cause", async code => {
+      const error = Object.assign(new Error("postgresql://user:private-password@private-host/db"), { code });
+      const connect = vi.spyOn(Pool.prototype, "connect").mockRejectedValue(error);
+      const end = vi.spyOn(Pool.prototype, "end").mockResolvedValue(undefined);
+      try {
+        const result = await inspectDatabase({ engine: "postgres", databaseUrlEnv: "TEST_DATABASE_URL",
+          env: { TEST_DATABASE_URL: "postgresql://example.invalid/test" } }).catch(error => error);
+        expect(result).toBeInstanceOf(Error);
+        expect(result).toHaveProperty("code", code);
+        expect(result).not.toHaveProperty("cause");
+        expect(result.message).not.toContain("private-password");
+        expect(end).toHaveBeenCalledOnce();
+      } finally { connect.mockRestore(); end.mockRestore(); }
+    });
+
+  it.each(["postgres", "mysql"] as const)("retains authentication classification for a borrowed %s connection", async engine => {
+    const code = engine === "postgres" ? "28P01" : "ER_ACCESS_DENIED_ERROR";
+    const query = vi.fn().mockRejectedValue(Object.assign(new Error("credential rejected"), { code }));
+    const source = { engine, connection: { query } } as unknown as SchemaInspectionConnection;
+    await expect(inspectDatabaseWithConnection({ engine, databaseUrlEnv: "TEST_DATABASE_URL",
+      env: { TEST_DATABASE_URL: `${engine}://example.invalid/test` } }, source)).rejects.toHaveProperty("code", code);
+    expect(query).toHaveBeenCalledTimes(engine === "postgres" ? 2 : 3);
+  });
+
+  it.each([
+    "CHECK ((drop_reason IS NULL) OR (drop_reason = ANY (ARRAY['student_request'::text,'prerequisite_error'::text])))",
+    "CHECK ((drop_reason IN ('student_request','prerequisite_error')) OR ((drop_reason)::text IS NULL))",
+  ])("retains the non-null vocabulary of a nullable CHECK: %s", definition => {
+    expect(deriveSchemaDeclaredEnumValues({ engine: "postgres", column_name: "drop_reason", check_definitions: [definition] }))
+      .toEqual(["student_request", "prerequisite_error"]);
+  });
+  it.each([
+    "CHECK (other_field IS NULL OR drop_reason IN ('prerequisite_error'))",
+    "CHECK (drop_reason IS NOT NULL OR drop_reason IN ('prerequisite_error'))",
+    "CHECK (drop_reason IS NULL OR unrestricted OR drop_reason IN ('prerequisite_error'))",
+    "CHECK ((drop_reason IS NULL OR unrestricted) OR drop_reason IN ('prerequisite_error'))",
+  ])("does not turn an arbitrary OR into a complete vocabulary: %s", definition => {
+    expect(deriveSchemaDeclaredEnumValues({ engine: "postgres", column_name: "drop_reason", check_definitions: [definition] })).toBeUndefined();
+  });
   it("derives complete bounded categorical vocabularies from schema metadata", () => {
     expect(deriveSchemaDeclaredEnumValues({
       engine: "postgres",

@@ -73,6 +73,7 @@ type ChoiceInput = {
   initialValue?: string;
   exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: ReviewSection[] };
   explainOnRequest?: boolean;
+  onModelQuestion?: (question: string) => Promise<"revise">;
   explanationContext?: string[];
 };
 
@@ -573,9 +574,20 @@ export function createBoundaryAuthoringChat(input: {
   ) => {
     if (!lines.length) return;
     const continueTurn = speaker === "model" && lastTranscriptTurn === "model";
-    writeTranscript(`${lines.flatMap((line, index) =>
+    if (speaker === "model" && lines.some((line) => /^ {0,3}\|/u.test(line))) {
+      writeModelTableTurn(lines).forEach(writeTranscript);
+    } else writeTranscript(`${lines.flatMap((line, index) =>
       roleLines(speaker, line, index, firstStyle, continueTurn)).join("\n")}\n`);
     lastTranscriptTurn = speaker;
+  };
+  const writeModelTableTurn = (lines: string[]): string[] => {
+    const chunks: string[] = [];
+    const continuation = `${transcriptIndent}${" ".repeat(7)}`;
+    const renderer = createTerminalModelStream({ width: transcriptWidth,
+      prefix: lastTranscriptTurn === "model" ? continuation : `${transcriptIndent}${role("model")} `,
+      continuation, bold: theme.bold, code: theme.value, write: (chunk) => chunks.push(chunk) });
+    renderer.push(lines.join("\n")); renderer.finish();
+    return chunks;
   };
   const rememberPendingQuestion = (
     speaker: BoundaryAuthoringSpeaker,
@@ -767,6 +779,14 @@ export function createBoundaryAuthoringChat(input: {
     io.clearStatus?.();
     if (streamLineDelayMs <= 0 || io.isTerminal?.() !== true) {
       writeRole(speaker, lines, firstStyle);
+      return;
+    }
+    if (speaker === "model" && lines.some((line) => /^ {0,3}\|/u.test(line))) {
+      for (const text of writeModelTableTurn(lines)) for (const chunk of terminalOutputChunks(text)) {
+        writeTranscript(chunk);
+        await waitForNextStreamChunk();
+      }
+      lastTranscriptTurn = speaker;
       return;
     }
     const continueTurn = speaker === "model" && lastTranscriptTurn === "model";
@@ -1055,7 +1075,7 @@ export function createBoundaryAuthoringChat(input: {
       }
     };
 
-    if (!choice.explainOnRequest) await explain();
+    if (!choice.explainOnRequest && !choice.onModelQuestion) await explain();
     if (failure && choice.exactDetails?.sections) {
       checkpoint("Showing Runner's verified review", ["Only the model explanation is unavailable. Retry or inspect diagnostics if needed; the draft is still available."], "normal");
     }
@@ -1071,7 +1091,7 @@ export function createBoundaryAuthoringChat(input: {
           ...choice.options.slice(0, 1),
           ...(failure?.retryable ? [{ value: "__retry_boundary_explanation__", label: "Retry model explanation",
             detail: "Retry only the explanation; keep the same pending authority revision." }] : []),
-          ...(permissionGuide
+          ...(permissionGuide || choice.onModelQuestion
             ? [{
                 value: askModelChoiceValue,
                 label: "Ask the model before deciding",
@@ -1114,6 +1134,7 @@ export function createBoundaryAuthoringChat(input: {
       // A changed attachment still invalidates the prior review as usual.
       const operatorQuestion = await readAnswer(undefined, false);
       if (operatorQuestion === undefined || !operatorQuestion.trim()) continue;
+      if (choice.onModelQuestion) return choice.onModelQuestion(operatorQuestion.trim());
       await explain(operatorQuestion.trim());
       if (!explanationShown) continue;
     }
@@ -1219,12 +1240,13 @@ export function createBoundaryAuthoringChat(input: {
         title: permission && !options?.reviewOnly ? "PERMISSION REQUIRED" : title,
         message: permission && !options?.reviewOnly
           ? permissionQuestion(title)
-          : options?.displayContext && options.context?.length ? meaningfulContext(options.context).join(" ")
+          : options?.displayContext && options.context?.length ? meaningfulContext(options.context).join("\n")
           : "Choose one path. The highlighted choice is not applied until you press Enter.",
         options: choices,
         ...(options?.initialValue ? { initialValue: options.initialValue } : {}),
         ...(options?.exactDetails ? { exactDetails: options.exactDetails } : {}),
         ...(options?.explainOnRequest ? { explainOnRequest: true } : {}),
+        ...(options?.onModelQuestion ? { onModelQuestion: options.onModelQuestion } : {}),
         ...(options?.explanationContext ? { explanationContext: options.explanationContext } : {}),
       } satisfies ChoiceInput;
       return permission

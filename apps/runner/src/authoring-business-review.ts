@@ -1,7 +1,10 @@
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
 
-export function automaticApprovalBusinessSummary(compiled: { approval_class: Pick<CompiledActionRuleModelDraftV1["approval_class"], "shared_limits"> }, read: ExplorationBoundaryDraft): string {
+export function automaticApprovalBusinessSummary(compiled: {
+  approval_class: Pick<CompiledActionRuleModelDraftV1["approval_class"], "shared_limits">;
+  rule?: Pick<CompiledActionRuleModelDraftV1["rule"], "outcome">;
+}, read: ExplorationBoundaryDraft): string {
   // Name the business scope only when the reviewed tenant binding selects that
   // resource's primary identity. Similar-looking column names are not proof.
   const roots = read.pack.resources.filter((resource) => !resource.shared_reference_scope
@@ -13,9 +16,14 @@ export function automaticApprovalBusinessSummary(compiled: { approval_class: Pic
   const limits = [...compiled.approval_class.shared_limits].sort((a, b) =>
     Number(!["boundary", "capability"].includes(a.scope)) - Number(!["boundary", "capability"].includes(b.scope)));
   for (const limit of limits) {
-    const area = ({ boundary: "across this action bundle", capability: "for this outcome overall", tenant: `per ${scope}`,
-      tenant_principal: `per signed-in user within the ${scope}`, tenant_object: `per selected record within the ${scope}` })[limit.scope];
-    const quantity = limit.kind === "count" ? `${limit.maximum} automatic approvals` : `${limit.maximum} total ${limit.field ?? "reviewed value"} for automatic approvals`;
+    if (limit.capability && compiled.rule && limit.capability !== compiled.rule.outcome) continue;
+    const outcome = limit.capability && !compiled.rule ? `outcome ${limit.capability}` : "this outcome";
+    const outcomeFilter = limit.capability ? ` for ${outcome}` : "";
+    const area = ({ boundary: limit.capability ? `for ${outcome} overall` : "across this action bundle",
+      capability: `for ${outcome} overall`, tenant: `per ${scope}${outcomeFilter}`,
+      tenant_principal: `per signed-in user within the ${scope}${outcomeFilter}`,
+      tenant_object: `per selected record within the ${scope}${outcomeFilter}` })[limit.scope];
+    const quantity = limit.kind === "count" ? `${limit.maximum} automatic approval${limit.maximum === 1 ? "" : "s"}` : `${limit.maximum} total ${limit.field ?? "reviewed value"} for automatic approvals`;
     const items = windows.get(limit.window_seconds) ?? [];
     items.push(`${quantity} ${area}`); windows.set(limit.window_seconds, items);
   }

@@ -11,6 +11,9 @@ import {
   buildPostgresReconciliationRead,
   buildPostgresUpdate,
   inspectPostgresRlsTarget,
+  assertPostgresRlsTarget,
+  PostgresRlsPrerequisiteError,
+  postgresRlsPrerequisiteErrors,
   inspectPostgresWritebackSource,
   normalizeVersionValue,
   postgresPoolConfig,
@@ -444,6 +447,17 @@ describe("postgres adapter", () => {
       tenant_setting: "app.tenant_id",
     });
     expect(report).not.toHaveProperty("principal_setting");
+  });
+
+  it("retains identical FORCE RLS validation with a typed setup-recovery failure", async () => {
+    const client = new HardenedPostgresClient({ force: false });
+    const target = { schema: "public", table: "tickets",
+      scope: { tenantSetting: "app.tenant_id", principalSetting: "app.principal_id" }, operations: ["SELECT" as const] };
+    const report = await inspectPostgresRlsTarget(client, target);
+    expect(report.errors).toEqual(["POSTGRES_RLS_FORCE_DISABLED"]);
+    expect(postgresRlsPrerequisiteErrors(report)).toEqual(report.errors);
+    await expect(assertPostgresRlsTarget(client, target)).rejects.toBeInstanceOf(PostgresRlsPrerequisiteError);
+    expect(client.sqlLog.every(sql => sql.trim().startsWith("SELECT"))).toBe(true);
   });
 
   it("attests a security-invoker read view only when every base relation passes hardened RLS", async () => {

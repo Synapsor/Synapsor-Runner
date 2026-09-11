@@ -5,6 +5,7 @@ import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js";
+import { hasReviewedCustomerReadEntry, reviewedReadEntryPaths } from "./read-relationship-access.js";
 
 /** Evidence for authoring review, derived from the current typed candidates. No
  * runtime identities, rows, credentials or model assertions belong here. */
@@ -47,6 +48,9 @@ export function policyCoverageDraft(input: {
           trusted_tenant_field: raw.tenant_key ?? null, trusted_principal_field: raw.principal_key ?? null,
           database_session_scope: raw.rls_session ?? null,
           principal_scope_configured: hasReviewedPrincipalScope(raw),
+          independently_queryable: !raw.relationship_only,
+          reviewed_entry_paths: reviewedReadEntryPaths(input.read, raw.id),
+          customer_scoped_access: hasReviewedCustomerReadEntry(input.read, raw.id),
           fields: Object.fromEntries(resource.fields.map((field) => [field.id, { field: field.id, label: field.label ?? null, description: field.description ?? null,
             actual_values_returned: field.raw_return, model_analysis: field.model_operations,
             private_read_selection: field.row_selection && !field.raw_return, kept_out: field.current_exposure === "kept_out",
@@ -109,6 +113,20 @@ export function policyCoverageDraft(input: {
         },
       }])),
       runtime_contract: {
+        read_eligibility: {
+          trusted_record_scope_configured: input.read.pack.resources.length > 0
+            && input.read.pack.resources.every((resource) => hasReviewedCustomerReadEntry(input.read, resource.id)
+              && Boolean(resource.tenant_key || resource.rls_session?.tenant_setting || resource.tenant_scope)),
+          record_scope_meaning: "customer_scoped_access and the reviewed tenant/principal mappings establish the configured restriction to the customer's permitted records. Runtime enforces these bindings on queries; actual session wiring is a separate deployment check. This is distinct from an additional current business fact such as admission, entitlement status or unrevoked consent. Do not infer that extra fact merely from the words authorized or permitted.",
+          runner_private_source_predicates_supported: true,
+          configured_current_state_prerequisite: input.read.read_prerequisite ?? null,
+          supported_shape: "One private authoritative status register with a non-null unique trusted tenant/person pair, a reviewed positive enum status, and inclusive-start/exclusive-end UTC effective dates. Other business Read predicates remain unsupported here.",
+          action_requirements_apply_to_reads: false,
+          database_business_predicates_verified: false,
+          database_business_predicates_meaning: "This flag makes no general claim about arbitrary business predicates. It does not negate trusted record-scope enforcement or the exact configured_current_state_prerequisite. Check the specific additional condition required by the source policy, if any, against that exact configuration.",
+          meaning: "Read scope proves whose records may be accessed, not current eligibility. Only configured_current_state_prerequisite supplies Runner's private current-state Read condition: every data query transaction checks trusted subject, reviewed positive status and the current half-open effective interval; missing or non-qualifying evidence denies. A null configuration means this check is NOT implemented, despite engine support. Field filters, relationships, authentication and Action require conditions do not supply Read eligibility. Tenant/principal RLS metadata is not proof of extra business enforcement.",
+          next_step: "If required Read evidence matches the supported shape but the configured prerequisite is null, use the model-guided Read revision to review its private source metadata and business meaning. Missing evidence keeps setup pending; unsupported shapes need a concrete support gap. Do not expose the register publicly, infer eligibility, waive the requirement or activate broader access. The disabled prerequisite still needs separate Read activation.",
+        },
         approval: "Automatic approval counts are taken atomically from Runner's proposal/approval ledger with the configured scope, capability and window. Limits govern automatic approval, not authorized human fallback. Invalid eligibility is refused before approval.",
         approval_counter_selection: {
           evidence: "Each automatic_limits entry supplies its exact history_selector and applies_to_outcome, derived from the current compiled authority. Null selectors mean no filter, not missing configuration. Tenant/principal/object selectors reference the current trusted proposal; no runtime identity values are supplied here.",
@@ -138,7 +156,7 @@ export function policyCoverageDraft(input: {
           },
           authenticated_identity: {
             reviewed_customer_scope: input.read.pack.resources.length > 0
-              && input.read.pack.resources.every((resource) => hasReviewedPrincipalScope(resource)
+              && input.read.pack.resources.every((resource) => hasReviewedCustomerReadEntry(input.read, resource.id)
                 && Boolean(resource.tenant_key || resource.rls_session?.tenant_setting || resource.tenant_scope)),
             verified: false,
             meaning: "Only connecting an authenticated application session to the already reviewed tenant/principal bindings remains a deployment step. Runtime refuses missing identity. This does not settle which customers are authorized or permit weakening database scope. Metadata-only drafting needs no actual identity values.",

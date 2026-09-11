@@ -19,6 +19,7 @@ import { resolveOperatorIdentity, type OperatorIdentityConfig } from "./operator
 import { type SynapsorProjectResolution } from "./project-resolution.js";
 import { readOperatorExecutionConfig } from "./control-policy-execution.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
+import { openProjectControlPolicies } from "./control-policy-store.js";
 
 export const activeProjectResolutionState: { current: SynapsorProjectResolution | undefined } = { current: undefined };
 
@@ -131,6 +132,27 @@ export async function optionalRuntimeConfig(configPath: string): Promise<Runtime
   return await fileExists(configPath) ? await readRuntimeConfig(configPath) : undefined;
 }
 
+export async function optionalLedgerRuntimeConfig(configPath: string): Promise<RuntimeConfig | undefined> {
+  return await fileExists(configPath) ? await readLedgerRuntimeConfig(configPath) : undefined;
+}
+
+/** Ledger inspection needs the current project/store binding, never execution authority. */
+export async function readLedgerRuntimeConfig(configPath: string,
+  options: { env?: NodeJS.ProcessEnv; storePath?: string } = {}): Promise<RuntimeConfig> {
+  return withResolvedConfigAdmission(configPath, async (config) => config, options, async (config, file, selected) => {
+    const { supervised_worker: _execution, ...ledgerConfig } = config;
+    assertRuntimeConfigValid(ledgerConfig, file);
+    const directory = path.dirname(path.resolve(file));
+    const binding = await openProjectControlPolicies({
+      projectRoot: ledgerConfig.action_rules?.project_root ?? ledgerConfig.production_explore?.project_root ?? directory,
+      config: ledgerConfig, env: selected.env,
+      storePath: selected.storePath ?? path.resolve(directory, ledgerConfig.storage?.sqlite_path ?? ".synapsor/local.db"),
+    });
+    await binding?.close();
+    return ledgerConfig;
+  });
+}
+
 
 export async function operatorIdentityForDecision(input: {
   args: string[];
@@ -224,6 +246,13 @@ export async function readRuntimeConfig(
 export async function withRuntimeConfigAdmission<T>(configPath: string,
   operation: (config: RuntimeConfig, canonicalRoot: string) => Promise<T>,
   options: { env?: NodeJS.ProcessEnv; storePath?: string } = {}): Promise<T> {
+  return withResolvedConfigAdmission(configPath, operation, options, readResolvedRuntimeConfig);
+}
+
+async function withResolvedConfigAdmission<T>(configPath: string,
+  operation: (config: RuntimeConfig, canonicalRoot: string) => Promise<T>,
+  options: { env?: NodeJS.ProcessEnv; storePath?: string },
+  resolve: typeof readResolvedRuntimeConfig): Promise<T> {
   const directory = path.dirname(path.resolve(configPath));
   const locate = (config: RuntimeConfig) => config.action_rules?.project_root ?? config.production_explore?.project_root ?? directory;
   const hint = resolveRuntimeConfig(await readJsonFileWithLocation<RuntimeConfig>(configPath, "Runner config"), directory);
@@ -237,7 +266,7 @@ export async function withRuntimeConfigAdmission<T>(configPath: string,
     }
     if (normalized.action_rules?.project_root) normalized.action_rules.project_root = root;
     if (normalized.production_explore?.project_root) normalized.production_explore.project_root = root;
-    return operation(await readResolvedRuntimeConfig(normalized, configPath, options), root);
+    return operation(await resolve(normalized, configPath, options), root);
   });
 }
 
@@ -250,7 +279,12 @@ async function readResolvedRuntimeConfig(normalized: RuntimeConfig, configPath: 
     env: options.env,
     storePath: options.storePath ?? path.resolve(directory, normalized.storage?.sqlite_path ?? ".synapsor/local.db"),
   })).config;
-  const validation = validateRunnerCapabilityConfig(resolved);
+  assertRuntimeConfigValid(resolved, configPath);
+  return resolved;
+}
+
+function assertRuntimeConfigValid(config: RuntimeConfig, configPath: string): void {
+  const validation = validateRunnerCapabilityConfig(config);
   if (!validation.ok) {
     const first = validation.errors[0]!;
     throw new Error(
@@ -259,7 +293,6 @@ async function readResolvedRuntimeConfig(normalized: RuntimeConfig, configPath: 
       `Next: run ${cliCommandName()} config validate --config ${shellQuote(configPath)} --json.`,
     );
   }
-  return resolved;
 }
 
 
@@ -270,6 +303,9 @@ export function isSynapsorContractLike(value: unknown): boolean {
 
 
 export function envWithDemoDefaults(config: RuntimeConfig, configPath: string): NodeJS.ProcessEnv {
+  // Reviewed authority must never acquire credentials or trusted identity from
+  // a legacy example's source name or config filename.
+  if (config.production_explore || config.action_rules) return process.env;
   if (!isReferenceDemoConfig(config, configPath)) return process.env;
   return { ...referenceDemoEnv, ...process.env };
 }

@@ -4,6 +4,9 @@ import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } fro
 import { assertGovernedReadEditDecision, type GovernedReadEditDecision } from "./control-policy-read-edit.js";
 import { Buffer } from "node:buffer";
 import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
+import { reviewedReadEntryPaths } from "./read-relationship-access.js";
+import { assertReadPrerequisiteRetained } from "./read-prerequisite-preservation.js";
+import { assertReviewedReadCurrentStatePrerequisite, type ReviewedReadCurrentStatePrerequisite } from "./read-prerequisite.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   assertDatabaseGrammarFeature,
@@ -260,6 +263,7 @@ export type BoundaryResourceReviewRequest = {
   max_derived_scope_hops?: 1 | 2 | 3;
   max_analysis_relationship_hops?: 1 | 2 | 3;
   relationship_ids?: string[];
+  relationship_only?: true;
   nullable_relationship?: {
     relationship_id: string;
     unmatched_rows: "exclude" | "keep_null";
@@ -602,6 +606,7 @@ export type BoundaryReviewSemanticDiff = {
   max_queries_per_session_after: number;
   rate_limit_per_minute_before: number;
   rate_limit_per_minute_after: number;
+  independent_access_change?: { before: boolean; after: boolean };
   reviewed_budget_changes: Array<{
     name: string;
     before: number;
@@ -1100,6 +1105,7 @@ export async function prepareBoundaryReviewMutationBatch(
   requests: BoundaryResourceReviewRequest[],
   schemaInspector: typeof inspectDatabase = inspectDatabase,
   expectedBindings?: BoundaryReviewMutationBindings,
+  privateCondition?: ReviewedReadCurrentStatePrerequisite,
 ): Promise<BoundaryReviewMutationBatchPreview> {
   if (requests.length < 1 || requests.length > 500) {
     throw new Error("Boundary-review decision files must contain 1-500 resource decisions.");
@@ -1126,6 +1132,10 @@ export async function prepareBoundaryReviewMutationBatch(
   const unknown = requests.filter((request) => !knownResources.has(request.resource_id));
   if (unknown.length) {
     throw new Error(`Boundary-review decision file references unknown resource ${unknown[0]!.resource_id}.`);
+  }
+  const removedResources = requests.filter(request => request.exclude).map(request => request.resource_id);
+  for (const resourceId of removedResources) {
+    assertBoundaryResourceRemovalAllowed(boundaryResourceRemovalImpact(state.candidate, resourceId, { also_removing: removedResources }));
   }
   for (const request of requests) {
     validateBoundaryRequestAgainstResource(
@@ -1206,6 +1216,13 @@ export async function prepareBoundaryReviewMutationBatch(
     boundaryWideSettings,
   );
   let candidate = state.candidate;
+  if (removedResources.length) {
+    // Membership changes are atomic: do not validate a transient dangling path
+    // between two removals that the operator submitted in the same batch.
+    candidate = structuredClone(candidate);
+    candidate.pack.resources = candidate.pack.resources.filter(resource => !removedResources.includes(resource.id));
+    pruneRelationshipsOutsideBoundary(candidate);
+  }
   for (const request of requests) {
     // Boundary-wide settings are carried through every resource mutation in
     // the atomic batch. Otherwise a later resource rebuild can restore the
@@ -1223,6 +1240,11 @@ export async function prepareBoundaryReviewMutationBatch(
   for (const request of requests) {
     if (request.private_model_fields?.length) restrictPrivateFieldAnalysis(candidate, request.resource_id, request.private_model_fields);
   }
+  if (privateCondition) {
+    assertReviewedReadCurrentStatePrerequisite(privateCondition, inspection);
+    candidate = { ...candidate, read_prerequisite: structuredClone(privateCondition) };
+    assertReadPrerequisiteRetained(state.candidate, candidate);
+  }
   const reviewed = reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
   // Every request must survive later resource rebuilds and final normalization.
   // The generated baseline already includes the whole batch, so intermediate
@@ -1238,6 +1260,7 @@ export async function prepareBoundaryReviewMutationBatch(
     schema_version: "synapsor.boundary-review-mutation-batch-decision.v1",
     bindings,
     requests: requests.map(canonicalReviewRequest),
+    ...(privateCondition ? { read_prerequisite: privateCondition } : {}),
     next: {
       generated_contract_digest: build.contract_digest,
       generation_lock_fingerprint: build.exploration_boundary.generation_lock_fingerprint,
@@ -1323,6 +1346,7 @@ export async function prepareExactBoundaryCandidateMutation(
     throw new Error("Exact boundary candidate review accepts only disabled candidate authority.");
   }
   const state = await loadBoundaryReviewFiles(projectRoot);
+  assertReadPrerequisiteRetained(state.candidate, input.candidate);
   const bindings = reviewBindings(state);
   if (input.expected_bindings) assertBindingsEqual(input.expected_bindings, bindings);
   const currentDraftDigest = explorationBoundaryCandidateDigest(state.draft);
@@ -1343,6 +1367,7 @@ export async function prepareExactBoundaryCandidateMutation(
     schema: state.lock.inspected_schema,
     env: process.env,
   });
+  if (input.candidate.read_prerequisite) assertReviewedReadCurrentStatePrerequisite(input.candidate.read_prerequisite, inspection);
   for (const resource of input.candidate.pack.resources) {
     assertCurrentInspectedResource(inspection, resource.id);
   }
@@ -1727,6 +1752,7 @@ async function commitPreparedBoundaryReviewMutationUnlocked(input: Parameters<ty
   permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewMutationCommit> {
   const current = await loadBoundaryReviewFiles(input.projectRoot);
   assertBindingsEqual(input.bindings, reviewBindings(current));
+  assertReadPrerequisiteRetained(current.candidate, input.candidate);
 
   const decisions = boundaryReviewDecisions(input.candidate);
   const currentById = new Map(decisions.map((decision) => [decision.id, decision]));
@@ -1976,6 +2002,7 @@ function buildReviewedCandidate(input: {
   request: BoundaryResourceReviewRequest;
 }): ExplorationBoundaryDraft {
   const candidate = structuredClone(input.generated);
+  if (input.previous.read_prerequisite) candidate.read_prerequisite = structuredClone(input.previous.read_prerequisite);
   candidate.pack.name = input.previous.pack.name;
   candidate.budgets = preserveReviewedBudgets(input.generated, input.previous);
   if (input.request.max_ranked_groups !== undefined) {
@@ -2111,6 +2138,7 @@ function buildReviewedCandidate(input: {
     const allowed = new Set(input.request.relationship_ids);
     resource.relationships = resource.relationships.filter((relationship) => allowed.has(relationship.id));
   }
+  if (input.request.relationship_only) resource.relationship_only = true;
   if (input.request.nullable_relationship) {
     const relationship = resource.relationships.find(
       (item) => item.id === input.request.nullable_relationship!.relationship_id,
@@ -2443,11 +2471,11 @@ function hasAuthorityNarrowing(request: BoundaryResourceReviewRequest): boolean 
     request.field_metadata?.map((metadata) => metadata.field),
   ].some((value) => value !== undefined)
     || request.minimum_cohort_size !== undefined
-    || request.max_ranked_groups !== undefined
-    || request.max_queries_per_session !== undefined
-    || request.rate_limit_per_minute !== undefined
-    || REVIEWABLE_BUDGET_REQUEST_KEYS.some((key) => request[key] !== undefined)
-    || request.nullable_relationship !== undefined;
+    // Atomic batches carry shared budgets through every rebuild, including a
+    // removal. These are not edits to the removed resource's field authority.
+    || (!request.exclude && BOUNDARY_WIDE_REVIEW_REQUEST_KEYS.some((key) => request[key] !== undefined))
+    || request.nullable_relationship !== undefined
+    || request.relationship_only !== undefined;
 }
 
 function canStageIncompleteScopeResolution(
@@ -2487,7 +2515,8 @@ function canStageIncompleteScopeResolution(
     || request.rate_limit_per_minute !== undefined
     || REVIEWABLE_BUDGET_REQUEST_KEYS.some((key) => request[key] !== undefined)
     || request.nullable_relationship !== undefined
-    || request.exclude === true;
+    || request.exclude === true
+    || request.relationship_only !== undefined;
   return hasScopeChoice && !hasNonScopeChoice;
 }
 
@@ -2583,6 +2612,8 @@ function semanticDiff(
     analytical_operation_changes: analyticalOperationChanges,
     added_relationships: relationships.added,
     removed_relationships: relationships.removed,
+    ...(Boolean(beforeResource?.relationship_only) !== Boolean(afterResource?.relationship_only)
+      ? { independent_access_change: { before: !beforeResource?.relationship_only, after: !afterResource?.relationship_only } } : {}),
     minimum_cohort_before: beforeResource?.minimum_cohort_size ?? null,
     minimum_cohort_after: afterResource?.minimum_cohort_size ?? null,
     minimum_cohort_overridden: afterResource?.minimum_cohort_overridden === true,
@@ -2718,6 +2749,9 @@ function assertBindingsEqual(
 }
 
 function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest): void {
+  if (request.relationship_only !== undefined && request.relationship_only !== true) {
+    throw new Error("relationship_only can only remove independent query access; restoring it requires a separate scope review.");
+  }
   if (!request.resource_id.trim()) throw new Error("Boundary resource review requires a resource ID.");
   if (request.preserve_unselected_fields !== undefined && (!Array.isArray(request.preserve_unselected_fields)
     || request.preserve_unselected_fields.some((field) => typeof field !== "string"
@@ -3027,6 +3061,9 @@ function assertRequestedExposureState(
 ): void {
   const resource = candidate.pack.resources.find((item) => item.id === request.resource_id);
   if (!resource) return;
+  if (request.relationship_only && (!resource.relationship_only || !reviewedReadEntryPaths(candidate, resource.id).length)) {
+    throw new Error(`Cannot restrict ${resource.id} to related records: no usable reviewed path from an independently readable resource remains. Review that relationship first; no access was changed.`);
+  }
   if (request.principal_rls_setting !== undefined
     && (resource.rls_session?.principal_setting ?? null) !== request.principal_rls_setting) {
     throw new Error(
@@ -3212,6 +3249,7 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
       request[key] ?? null,
     ])),
     relationship_ids: sortedOrNull(request.relationship_ids),
+    relationship_only: request.relationship_only ?? null,
     nullable_relationship: request.nullable_relationship ?? null,
     actor: request.actor,
     reason: request.reason,

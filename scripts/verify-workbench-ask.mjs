@@ -9,7 +9,7 @@ import {
   writeAutoBoundaryArtifacts,
 } from "../apps/runner/dist/auto-boundary.js";
 import { initializeGuidedProject } from "../apps/runner/dist/guided-project.js";
-import { saveInstantBoundaryReviewBaseline } from "../apps/runner/dist/boundary-review-domain.js";
+import { saveInstantBoundaryReviewBaseline } from "../apps/runner/dist/boundary-review-persistence.js";
 import { startLocalUiServer } from "../apps/runner/dist/local-ui.js";
 import { AskError } from "../apps/runner/dist/model-ask.js";
 import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";

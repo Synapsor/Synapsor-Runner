@@ -42,6 +42,7 @@ import { readProjectReadAuthoring } from "./control-policy-read-authoring-projec
 import { assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 import { readAuthoringCatalog } from "./control-policy-read-authoring.js";
 import { rebindActionCatalogForReadPolicyRevision } from "./action-rule-read-revision.js";
+import { loadActionRuleIntentSkeletons } from "./action-rule-intent-skeleton.js";
 import { openBoundProjectControlPolicies } from "./control-policy-store.js";
 import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
@@ -175,6 +176,22 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
       preserveVerificationFields: true,
     });
   }) ?? [];
+  const actionSkeletons = await loadActionRuleIntentSkeletons({
+    projectRoot,
+    binding: {
+      boundary_name: context.candidate.pack.name,
+      generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
+      schema_fingerprint: context.lock.schema_fingerprint,
+      role_posture_fingerprint: context.lock.role_posture_fingerprint,
+    },
+    builtCatalog: catalog,
+    readBoundaryDigest: context.bundle.candidate_digest,
+    preparedDrafts: baselineActions.map((draft) => ({
+      outcome: draft.outcome,
+      digest: canonicalJsonDigest(draft),
+      draft,
+    })),
+  });
   const bootstrapResource = context.candidate.pack.resources.length === 0
     ? exportReadCatalog?.resources[0]?.id
     : undefined;
@@ -192,6 +209,9 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
       })),
     },
     actions: baselineActions,
+    // Incomplete context from a current saved model job. It is not an input to
+    // the submission parser and cannot become Action authority by itself.
+    action_skeletons: actionSkeletons.skeletons,
     read_request_json_schema: structuredReadRequestJsonSchema(),
     action_rule_draft_json_schema: actionRuleModelDraftJsonSchema(),
     action_authoring_catalog: compactActionRuleAuthoringCatalog(catalog.authoring),
@@ -200,7 +220,7 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
       state: "template_only",
       provenance: EXTERNAL_DRAFT_ACTOR,
       activation: "not_available_from_this_input",
-      instructions: "Edit typed read.resources and actions only. The export contains no identity values, confirmations, activation authority, credentials, source rows, or runtime grants. A submission must request at least one real Read or Action change; all saved revisions remain disabled for separate human review.",
+      instructions: "Edit typed read.resources and actions only. action_skeletons are view-only incomplete context, not ready actions; Runner ignores them on submission. The export contains no identity values, confirmations, activation authority, credentials, source rows, or runtime grants. A submission must request at least one real Read or Action change; all saved revisions remain disabled for separate human review.",
     },
   };
   return payload;
@@ -493,7 +513,7 @@ function parseStructuredDraftInput(value: unknown): StructuredBoundaryDraftInput
   const root = record(value, "structured boundary draft");
   assertKeys(root, [
     "schema_version", "review_bundle_digest", "bindings", "read", "actions",
-    "read_request_json_schema", "action_rule_draft_json_schema", "action_authoring_catalog", "read_authoring_catalog", "notes",
+    "action_skeletons", "read_request_json_schema", "action_rule_draft_json_schema", "action_authoring_catalog", "read_authoring_catalog", "notes",
   ], "structured boundary draft");
   if (root.schema_version !== INPUT_VERSION) throw new Error(`structured boundary draft must use ${INPUT_VERSION}.`);
   const read = record(root.read, "read");
@@ -503,6 +523,10 @@ function parseStructuredDraftInput(value: unknown): StructuredBoundaryDraftInput
   }
   if (!Array.isArray(root.actions) || root.actions.length > 12) {
     throw new Error("structured boundary draft actions must contain at most 12 ActionRuleModelDraftV1 entries.");
+  }
+  if (root.action_skeletons !== undefined
+    && (!Array.isArray(root.action_skeletons) || root.action_skeletons.length > 12)) {
+    throw new Error("structured boundary draft action_skeletons must be an export-only array of at most 12 entries.");
   }
   return {
     schema_version: INPUT_VERSION,

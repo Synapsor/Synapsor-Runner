@@ -1465,7 +1465,7 @@ export function formatPostgresReceiptMigration(schema?: string, tableName = "syn
     return [
       "-- Synapsor Runner direct SQL writeback receipt table.",
       "-- Run this once as a database owner before doctor/apply. The steady-state writer does not need schema CREATE.",
-      `${postgresReceiptMigration.replace("synapsor_writeback_receipts", quotedTable)};`,
+      `${postgresReceiptMigration.replaceAll("synapsor_writeback_receipts", quotedTable)};`,
       "",
     ].join("\n");
   }
@@ -1475,7 +1475,7 @@ export function formatPostgresReceiptMigration(schema?: string, tableName = "syn
     "-- Synapsor Runner direct SQL writeback receipt table.",
     "-- Run this once as a database owner. If you use a dedicated schema, ensure the writer connection search_path includes it.",
     `CREATE SCHEMA IF NOT EXISTS ${quotedSchema};`,
-    `${postgresReceiptMigration.replace("synapsor_writeback_receipts", qualified)};`,
+    `${postgresReceiptMigration.replaceAll("synapsor_writeback_receipts", qualified)};`,
     "",
     "-- Example writer URL option for this schema:",
     `-- postgresql://writer:...@host/db?options=-csearch_path%3D${encodeURIComponent(`${schema},public`)}`,

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createServer } from "node:http";
 import { PassThrough } from "node:stream";
+import { Terminal } from "@xterm/headless";
 import {
   createBoundaryAuthoringChat,
 } from "./boundary-authoring-chat.js";
@@ -10,6 +11,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { readBoundaryReviewSections } from "./read-boundary-review-view.js";
 import { terminalTheme } from "./boundary-cli-picker.js";
+import { renderRunnerResultPanel } from "./runner-result-panel.js";
 
 function memoryIo(input: {
   reads?: Array<string | undefined>;
@@ -252,8 +254,33 @@ describe("Boundary authoring chat", () => {
     });
     expect(memory.choices[0]!.message).toContain("lacks private row-lock permissions");
     expect(memory.choices[0]!.message).toContain("Use a dedicated writer");
-    expect(memory.choices[0]!.message).not.toContain("\n");
+    expect(memory.choices[0]!.message).toBe("Writer has extra access and lacks private row-lock permissions.\nUse a dedicated writer; authority records are preserved.");
     expect(guide).not.toHaveBeenCalled(); chat.close();
+  });
+  it.each([54, 120])("preserves result-panel rows in the actual recovery picker (%s columns)", async (columns) => {
+    const readable = Object.assign(new PassThrough(), { isTTY: true, isRaw: false, setRawMode(value: boolean) { this.isRaw = value; } });
+    const writable = Object.assign(new PassThrough(), { isTTY: true, columns, rows: 40 });
+    const terminal = new Terminal({ cols: columns, rows: 40, allowProposedApi: true });
+    writable.on("data", (chunk) => terminal.write(String(chunk)));
+    const chat = createBoundaryAuthoringChat({ io: createTerminalAnalyticsShellIo({ readable, writable, terminal: true }), color: false });
+    const guide = vi.fn(); chat.setPermissionGuide!(guide);
+    const context = renderRunnerResultPanel({ result: "Database changes are not enabled.", checked: "The reader remains read-only.",
+      changed: "No authority or source data changed.", notChecked: "Writer permissions still need verification.", next: "Prepare administrator instructions or pause." }, columns - 4);
+    const screen = () => Array.from({ length: terminal.rows }, (_, row) => terminal.buffer.active.getLine(row)?.translateToString(true) ?? "");
+    try {
+      const pending = chat.session.chooseOption!("Set up database changes", [{ value: "prepare", label: "Prepare administrator instructions" }, { value: "pause", label: "Save and pause" }],
+        { initialValue: "pause", displayContext: true, context });
+      await vi.waitFor(() => expect(screen().join("\n")).toContain("Save and pause"));
+      const lines = screen();
+      for (const label of ["Result", "Runner confirmed", "What changes now", "Not checked", "Next step"]) {
+        expect(lines.some((line) => line.trimStart().startsWith(label))).toBe(true);
+      }
+      expect(lines.some((line) => line.includes("Result") && line.includes("Runner confirmed"))).toBe(false);
+      for (const line of context) expect(lines.some((rendered) => rendered.trimEnd() === "  " + line)).toBe(true);
+      readable.write("\r");
+      await expect(pending).resolves.toBe("pause");
+      expect(guide).not.toHaveBeenCalled();
+    } finally { chat.close(); readable.destroy(); writable.destroy(); terminal.dispose(); }
   });
   it("renders exact Action facts once and leaves explanation optional", async () => {
     const memory = memoryIo({ choices: ["no"] });
@@ -266,6 +293,33 @@ describe("Boundary authoring chat", () => {
     expect(memory.writes.join("").match(/At most 10 overall/gu)).toHaveLength(1);
     expect(memory.choices[0]!.labels).toContain("Ask the model before deciding"); chat.close();
   });
+  it.each([false, true])("routes a mapping correction to the draft model instead of a read-only explanation (guide: %s)", async installedGuide => {
+    const question = "The institution and student are reversed. Correct this mapping; I have not approved it.";
+    const memory = memoryIo({ reads: [question], choices: ["__view_runner_details__", "__ask_boundary_model__"] });
+    memory.io.review = vi.fn(async () => undefined);
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const guide = vi.fn(async () => "This is explanation only.");
+    if (installedGuide) chat.setPermissionGuide!(guide);
+    const onModelQuestion = vi.fn(async () => "revise" as const);
+    const recordPolicy = vi.fn(async () => undefined);
+    chat.setSourceAnswerRecorder!(recordPolicy);
+    const exact = { title: "Exact pending mapping", lines: ["Unconfirmed source and scope; revision abc."] };
+    const before = structuredClone(exact);
+    const result = await chat.session.chooseOption!("CONFIRM ACCESS CONDITION", [
+      { value: "confirm", label: "Use this exact private access condition" },
+      { value: "revise", label: "Correct this mapping with the model" },
+      { value: "pending", label: "Keep this mapping pending" },
+    ], { initialValue: "pending", requireExplicitSelection: true, exactDetails: exact, onModelQuestion });
+    expect(result).toBe("revise");
+    expect(guide).not.toHaveBeenCalled();
+    expect(onModelQuestion).toHaveBeenCalledExactlyOnceWith(question);
+    expect(recordPolicy).not.toHaveBeenCalled();
+    expect(exact).toEqual(before);
+    expect(memory.choices[0]!.labels).toContain("Ask the model before deciding");
+    expect(memory.io.review).toHaveBeenCalledOnce();
+    chat.close();
+  });
+
   it.each([false, true])("opens named privacy evidence directly and keeps the pending gate after explanation failure=%s", async (fail) => {
     const memory = memoryIo({ reads: ["Which field was flagged? Don't change anything."],
       choices: ["__ask_boundary_model__", "privacy_details", "finish"] });

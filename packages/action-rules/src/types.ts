@@ -31,6 +31,8 @@ export type ActionRuleCatalogResourceV1 = {
   tenant_key?: string;
   principal_scope_key?: string;
   version_field?: string;
+  /** Private fact source only; no primary or companion effect may target it. */
+  verification_only?: true;
   storage_engine?: string;
   collation?: string;
   fields: ActionRuleCatalogFieldV1[];

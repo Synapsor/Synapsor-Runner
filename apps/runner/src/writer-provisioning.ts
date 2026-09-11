@@ -3,25 +3,14 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import type { SupervisedWriterPostureAssessment } from "./worker-policy.js";
-
-export type WriterProvisioningPlan = {
-  version: 1;
-  outcome: string;
-  action_digest: string;
-  writer_env: string;
-  suggested_role: string;
-  engine: string;
-  relations: Array<NonNullable<SupervisedWriterPostureAssessment["required_relations"]>[number] & {
-    schema: string; table: string;
-    policies: NonNullable<SchemaInspection["tables"][number]["row_level_security_policies"]>;
-    triggers: NonNullable<SchemaInspection["tables"][number]["write_triggers"]>;
-  }>;
-};
+import { writerPolicyRepair } from "./writer-rls-repair.js";
+import type { WriterProvisioningPlan } from "./writer-provisioning-types.js";
+export type { WriterProvisioningPlan } from "./writer-provisioning-types.js";
 
 /** Administrator evidence, never an authority artifact or a model tool. */
 export function writerProvisioningPlan(input: {
   assessment: SupervisedWriterPostureAssessment; inspection: SchemaInspection;
-  outcome: string; actionDigest: string; writerEnv: string;
+  outcome: string; outcomes?: string[]; actionDigest: string; writerEnv: string; readEnv?: string;
 }): WriterProvisioningPlan | undefined {
   if (input.inspection.engine !== "postgres" || !input.assessment.required_relations?.length) return undefined;
   const relations: WriterProvisioningPlan["relations"] = [];
@@ -30,10 +19,18 @@ export function writerProvisioningPlan(input: {
     if (!table || table.type !== "table" || !required.privileges.every((value) => ["select", "insert", "update"].includes(value))) return undefined;
     const columns = new Set(table.columns.map((column) => column.name));
     if ([...required.update_columns, ...(required.lock_column ? [required.lock_column] : [])].some((column) => !columns.has(column))) return undefined;
+    if (required.row_scope?.some(item => !columns.has(item.field))) return undefined;
     relations.push({ ...required, schema: table.schema, table: table.name,
+      ...(required.rls_required ? { row_security: { enabled: table.row_level_security ?? "unknown",
+        forced: typeof table.role_posture?.row_security_forced === "boolean" ? table.role_posture.row_security_forced : "unknown" } } : {}),
       policies: structuredClone(table.row_level_security_policies ?? []), triggers: structuredClone(table.write_triggers ?? []) });
   }
-  return { version: 1, outcome: input.outcome, action_digest: input.actionDigest, writer_env: input.writerEnv,
+  const readEnv = input.readEnv ?? "DATABASE_URL";
+  // The inspected connection may be the reader that failed a writer check.
+  // A provisioning plan must never instruct replacing that reader credential.
+  const writerEnv = input.writerEnv !== readEnv ? input.writerEnv
+    : readEnv !== "SYNAPSOR_DATABASE_WRITE_URL" ? "SYNAPSOR_DATABASE_WRITE_URL" : "SYNAPSOR_EXECUTION_DATABASE_URL";
+  return { version: 1, outcome: input.outcome, ...(input.outcomes ? { outcomes: [...input.outcomes].sort() } : {}), action_digest: input.actionDigest, writer_env: writerEnv, read_env: readEnv,
     suggested_role: `runner_writer_${createHash("sha256").update(input.actionDigest + input.outcome).digest("hex").slice(0, 12)}`,
     engine: input.inspection.engine, relations };
 }
@@ -67,10 +64,21 @@ export function writerProvisioningSql(plan: WriterProvisioningPlan): string {
     `ALTER ROLE ${role} SET lock_timeout = '2s';`,
     "COMMIT;", "",
     "-- STILL REQUIRED: review scoped policies, helper-function access, defaults/sequences and triggers.",
+    "-- RLS-backed targets require ENABLE and FORCE ROW LEVEL SECURITY. See requirements.json; this file does not change RLS.",
     "-- Do not copy an unrestricted policy or grant membership in the shared writer role.",
     "-- After review, configure authentication and LOGIN separately. Never put credentials in this file.",
     "-- Recheck this connection in Runner. Execution consent and a running worker are still required.", "",
   ].join("\n");
+}
+
+export function writerPolicyRepairSummary(plan: WriterProvisioningPlan): string[] {
+  const repair = writerPolicyRepair(plan);
+  return repair.sql ? [
+    "Scoped filter repair: review scoped-policies.sql after grants.sql. It adds only missing policies for the dedicated writer, using the exact reviewed identity filters.",
+    "Existing policies stay unchanged. An administrator must apply the repair; then rescan and revalidate this saved job before rechecking execution.",
+  ] : repair.blockers.length ? [
+    "A filter repair was not generated. README.md names each policy prerequisite needing administrator input; grants alone will not complete setup.",
+  ] : ["The inspected simple policies need no additional policy file; live writer verification is still required."];
 }
 
 export async function exportWriterProvisioning(projectRoot: string, plan: WriterProvisioningPlan): Promise<string> {
@@ -81,17 +89,28 @@ export async function exportWriterProvisioning(projectRoot: string, plan: Writer
   const write = (name: string, value: string) => fs.writeFile(path.join(directory, name), value, { mode: 0o600, flag: "wx" });
   await write("requirements.json", JSON.stringify(plan, null, 2) + "\n");
   await write("grants.sql", writerProvisioningSql(plan));
+  const policyRepair = writerPolicyRepair(plan);
+  if (policyRepair.sql) await write("scoped-policies.sql", policyRepair.sql);
   await write("README.md", [
-    "# Dedicated Writer Review", "", `Outcome: ${plan.outcome}`, `Action revision: ${plan.action_digest}`, "",
+    "# Dedicated Writer Review", "", `Outcomes: ${(plan.outcomes ?? [plan.outcome]).join(", ")}`, `Action revision: ${plan.action_digest}`, "",
     "This export is a deployment plan, not execution permission. No database command has run.",
     "1. An authorized database administrator reviews requirements.json: exact effect columns, private locking columns, current RLS policies and triggers.",
     "2. Review grants.sql. It creates only a new NOLOGIN role with the exact relation privileges. Existing role names cause a transaction rollback; never replace a shared role.",
     "3. Provision scoped policies and required helper-function access for the new role. Policy predicates cannot be inferred safely for an arbitrary database. Do not disable RLS, inherit the shared writer, or grant source receipt tables not listed in requirements.json.",
+    "   Every relation marked rls_required needs ENABLE and FORCE ROW LEVEL SECURITY, applicable SELECT and write/locking policies using the reviewed identity settings, and non-owner/non-bypass reader and writer roles. requirements.json records the inspected enabled/forced state; unknown is not verified. Review the effect on other application roles before an administrator changes RLS. grants.sql deliberately does not make that change.",
     "4. Review defaults/sequences for INSERT and trigger side effects. Authentication and LOGIN are separate administrator steps; use a secret manager or psql's password prompt, not a saved plaintext password.",
-    `5. Configure the new connection in ${plan.writer_env}. If RLS/schema changed, resume the same start command with --rescan and choose Revalidate the saved job against changed database before execution review. Otherwise reopen the same project and recheck the writer. No fingerprint check is bypassed.`,
+    `5. Keep ${plan.read_env ?? "the saved read connection"} unchanged. Configure the new connection ONLY in ${plan.writer_env}; never replace the reader with this restricted writer. If RLS/schema changed, resume the same start command through the READER with --rescan and choose Revalidate the saved job against changed database before execution review. Otherwise run synapsor-runner action review --project-root . in this project, select Verified Action Boundary and its execution setup, and recheck ${plan.writer_env}. No job re-entry is needed and no fingerprint check is bypassed.`,
     "6. Confirm execution only after live verification succeeds. Start the worker in the guided handoff. Approval is not completion; only a successful execution receipt proves a change completed.", "",
     "The lock-column UPDATE privilege permits PostgreSQL row locking. It does not authorize an agent to change that identity; Runner still enforces its reviewed effect and conflict guards.",
-    "For the shipped telecom fixture, use the separately reviewed dedicated-writer fixture repair with this requirements.json. The broad shared writer is intentionally not reused.", "",
+    ...(policyRepair.sql ? ["", "## Reviewed Simple Row Filters", "",
+      "The inspected policies match the exact reviewed identity columns. After grants.sql, an administrator can review and apply scoped-policies.sql to add only the missing policies for this dedicated role. Existing application policies are not altered. The script checks the entire prior policy snapshot and forced-RLS state before any change; drift, unsafe role attributes or role memberships roll back the repair.",
+      "If this exact dedicated role was already provisioned from these grants, do not rerun grants.sql or replace it. Verify its existing grants against requirements.json before applying only scoped-policies.sql. Do not use this repair for an unrelated shared application role.",
+      ...policyRepair.changes.map(change => `- ${change}`),
+      "After this policy change, rescan through the reader, revalidate the SAME saved job and recheck execution. This is administrator-assisted provisioning, not automatic Runner authority."]
+      : policyRepair.blockers.length ? ["", "## Row-Filter Repair Needs Administrator Input", "",
+        "No scoped-policies.sql was generated; additional grants alone do not resolve these prerequisites.",
+        ...policyRepair.blockers.map(blocker => `- ${blocker}`)] : []),
+    "",
   ].join("\n"));
   return directory;
 }

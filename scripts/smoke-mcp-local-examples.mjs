@@ -3,6 +3,7 @@ import net from "node:net";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { demoScenarioAtPublishedPort, withDemoComposeFixture } from "./demo-compose-fixture.mjs";
 import { Client } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js";
 import { StdioClientTransport } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js";
 import mysql from "../packages/mysql/node_modules/mysql2/promise.js";
@@ -445,11 +446,17 @@ function assert(condition, message, detail) {
 }
 
 async function exerciseMcpScenario(scenario) {
+  return withDemoComposeFixture(scenario, run, () => {
+    const connected = scenario.key === "support-plan-credit" ? demoScenarioAtPublishedPort(scenario, run) : scenario;
+    if (scenario.key === "support-plan-credit") console.log(`Plan-credit fixture published host port: ${new URL(connected.readUrl).port}`);
+    return exerciseStartedMcpScenario(connected);
+  });
+}
+
+async function exerciseStartedMcpScenario(scenario) {
   fs.rmSync(scenario.tmpDir, { recursive: true, force: true });
   fs.mkdirSync(scenario.tmpDir, { recursive: true });
 
-  run("docker", ["compose", "down", "-v"], { cwd: scenario.exampleDir, allowFailure: true });
-  run("docker", ["compose", "up", "-d"], { cwd: scenario.exampleDir });
   try {
     await waitForDatabase(scenario);
     const doctor = runner(scenario, ["doctor", "--config", scenario.configPath, "--check-writeback", "--json"]);
@@ -613,7 +620,6 @@ async function exerciseMcpScenario(scenario) {
     assert(proposalJson(scenario, staleProposalId).proposal?.state === "conflict", "Original conflict history was rewritten");
     console.log("ACCEPT conflict retained and fresh successor applied");
   } finally {
-    run("docker", ["compose", "down", "-v"], { cwd: scenario.exampleDir, allowFailure: true });
     fs.rmSync(scenario.tmpDir, { recursive: true, force: true });
   }
 }

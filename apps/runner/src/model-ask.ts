@@ -12,6 +12,8 @@ import {
   isClearlyOpaqueExploreIdentifier,
 } from "./explore-vocabulary.js";
 import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
+import { askPlanSyntaxRepair, matchesAskPlanSyntaxRepair, type AskPlanSyntaxRepair } from "./ask-plan-recovery.js";
+import { isFixedOpenRouterModel, OPENROUTER_CHAT_ENDPOINT } from "./hosted-provider-settings.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
 const DEFAULT_LOOPBACK_TIMEOUT_SECONDS = 120;
@@ -53,7 +55,7 @@ const FINAL_ANSWER_INSTRUCTION = [
 ].join(" ");
 const CATALOG_TO_QUERY_CORRECTION = [
   "The catalog response is metadata only and did not answer the user's data question.",
-  "Call app.explore_data now, starting from the matching resource's valid_plan_examples.rows or valid_plan_examples.aggregate shape and changing only exact reviewed ids needed by the question.",
+  "Call app.explore_data now using its tool schema and the matching resource's reviewed contract. Use valid_plan_examples when supplied; compact contracts may omit examples without omitting permissions. Use only exact reviewed ids needed by the question.",
   "Do not paraphrase fields, capabilities, or example metadata as a data result.",
   "If the question is outside the reviewed boundary, attempt the smallest relevant plan so Runner can return the exact refusal.",
 ].join(" ");
@@ -88,7 +90,7 @@ const LOCAL_PLAN_EXECUTED_RUNNER_ANSWER = [
 ].join(" ");
 const LOCAL_PLAN_JSON_INSTRUCTION = [
   "Return exactly one JSON object containing arguments for app.explore_data; no prose or Markdown.",
-  "Start from the matching resource's valid_plan_examples.rows or valid_plan_examples.aggregate shape already present in the catalog result. The legacy valid_plan_example is the aggregate shape.",
+  "Use the tool schema and matching resource's reviewed contract. If supplied, valid_plan_examples.rows or valid_plan_examples.aggregate provide starting shapes; compact contracts may omit examples. The legacy valid_plan_example is the aggregate shape.",
   "Copy exact resource and field ids. Change only exact reviewed ids needed by the user's question.",
   "The shape is {\"plan\":{\"kind\":\"aggregate\"|\"rows\",...}} with an optional string boundary.",
   "Filters use plan.where with entries {\"field\":\"<exact id>\",\"op\":\"eq\",\"value\":...}; never use filters or operator keys.",
@@ -99,7 +101,7 @@ const LOCAL_PLAN_JSON_INSTRUCTION = [
   "Never send empty ids, tenant, principal, SQL, formulas, or unknown keys.",
 ].join(" ");
 
-export type AskProvider = "openai" | "anthropic" | "openai_compatible";
+export type AskProvider = "openai" | "anthropic" | "openrouter" | "openai_compatible";
 
 export type AskProviderConfigurationInput = {
   provider: AskProvider;
@@ -531,10 +533,13 @@ export function resolveAskProviderConfiguration(
       "Acknowledge that reviewed visible data may be sent directly to the selected provider.",
     );
   }
-  if (!["openai", "anthropic", "openai_compatible"].includes(input.provider)) {
-    throw new AskError("ASK_PROVIDER_UNSUPPORTED", "Choose OpenAI, Anthropic, or a custom OpenAI-compatible provider.");
+  if (!["openai", "anthropic", "openrouter", "openai_compatible"].includes(input.provider)) {
+    throw new AskError("ASK_PROVIDER_UNSUPPORTED", "Choose OpenAI, Anthropic, OpenRouter, or a custom OpenAI-compatible provider.");
   }
   const model = safeModel(input.model);
+  if (input.provider === "openrouter" && !isFixedOpenRouterModel(model)) {
+    throw new AskError("ASK_MODEL_INVALID", "Choose a specific OpenRouter text/tool model (publisher/model), not an automatic router, online plugin, or batch model.");
+  }
   if (!/^sha256:[a-f0-9]{64}$/.test(input.authority_digest)) {
     throw new AskError("ASK_AUTHORITY_DIGEST_INVALID", "Ask requires the exact current reviewed tool-surface digest.");
   }
@@ -957,6 +962,8 @@ function openAiChatStreamAssembler(
   let done = false;
   let content = "";
   let usage: Record<string, unknown> | undefined;
+  const reasoningDetails: unknown[] = [];
+  let reasoningBytes = 0;
   const tools = new Map<number, { id?: string; name?: string; arguments: string }>();
   const start = () => {
     if (started) return;
@@ -979,8 +986,19 @@ function openAiChatStreamAssembler(
       if (!Array.isArray(event.choices)) return;
       for (const choice of event.choices) {
         if (!isRecord(choice)) continue;
+        if (choice.error || ["error", "length", "content_filter"].includes(String(choice.finish_reason))) {
+          throw new AskError("ASK_PROVIDER_RESPONSE_INCOMPLETE", "The provider stopped or refused the response before completion. No incomplete tool call was accepted; retry or choose a compatible model.", 502);
+        }
         if (choice.finish_reason !== undefined && choice.finish_reason !== null) done = true;
         if (!isRecord(choice.delta)) continue;
+        if (Array.isArray(choice.delta.reasoning_details)) {
+          reasoningBytes += Buffer.byteLength(JSON.stringify(choice.delta.reasoning_details));
+          if (reasoningBytes > 65_536) {
+            throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider's tool-continuation data exceeded the bounded size.", 502);
+          }
+          // Retain private continuation blocks in order; never emit them to the UI.
+          reasoningDetails.push(...choice.delta.reasoning_details);
+        }
         if (typeof choice.delta.content === "string" && choice.delta.content) {
           content += choice.delta.content;
           emitProviderStream(onEvent, { phase: "text_delta", characters: choice.delta.content.length, text: choice.delta.content });
@@ -1030,6 +1048,7 @@ function openAiChatStreamAssembler(
           message: {
             role: "assistant",
             content: content || null,
+            ...(reasoningDetails.length ? { reasoning_details: reasoningDetails } : {}),
             ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
           },
         }],
@@ -1152,6 +1171,8 @@ async function runOpenAiCompatibleTurn(input: {
   let localDirectCatalogTrace: AskToolTrace | undefined;
   let intentRepairAttempts = 0;
   let authoringEmptyCorrectionSent = false;
+  let pendingSyntaxRepair: AskPlanSyntaxRepair | undefined;
+  let syntaxRepairAttempted = false;
 
   for (let iteration = 0; iteration < (input.conversationalAuthoring ? 12 : MAX_TOOL_ITERATIONS); iteration += 1) {
     assertAskNotCancelled(input.signal);
@@ -1162,7 +1183,7 @@ async function runOpenAiCompatibleTurn(input: {
     const forcedDescribeProviderName = dataToolGroundingCorrectionSent && traces.length === 0
       ? providerToolName(input.prepared, "app.describe_data")
       : undefined;
-    const forcedExploreProviderName = ((catalogCorrectionSent
+    const forcedExploreProviderName = (pendingSyntaxRepair || (catalogCorrectionSent
       && !traces.some((trace) => trace.tool === "app.explore_data"))
       || (intentRepairAttempts > 0
         && !traces.some((trace) => trace.tool === "app.explore_data" && trace.status === "ok")))
@@ -1208,8 +1229,27 @@ async function runOpenAiCompatibleTurn(input: {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
     }
     const message = openAiMessage(response.body);
+    if (input.configuration.provider === "openrouter" && Array.isArray(response.body.choices)) {
+      for (const choice of response.body.choices) {
+        if (isRecord(choice) && (choice.error || ["error", "length", "content_filter"].includes(String(choice.finish_reason)))) {
+          throw new AskError("ASK_PROVIDER_RESPONSE_INCOMPLETE", "OpenRouter stopped or refused the response before completion. No incomplete tool call was accepted; retry or choose a compatible model.", 502);
+        }
+      }
+    }
     usage = mergeUsage(usage, openAiUsage(response.body));
     const toolCalls = openAiToolCalls(message);
+    assertAskNotCancelled(input.signal);
+    const correctingSyntax = pendingSyntaxRepair !== undefined;
+    if (pendingSyntaxRepair) {
+      if (toolCalls.length !== 1
+        || input.prepared.canonicalByProvider.get(toolCalls[0]!.name) !== "app.explore_data"
+        || !matchesAskPlanSyntaxRepair(pendingSyntaxRepair, safeToolArguments(toolCalls[0]!.arguments))) {
+        return rememberProviderHistory(completeAskResult(input.configuration,
+          "The model did not correct the query syntax without changing the request. The replacement was not executed; retry the question. No additional access is needed to correct syntax.",
+          traces, usage, "runner"), providerHistory);
+      }
+      pendingSyntaxRepair = undefined;
+    }
     if (iteration === 0 && input.requiredInitialToolName) {
       const requiredProviderTool = providerToolName(input.prepared, input.requiredInitialToolName);
       if (toolCalls.length !== 1 || toolCalls[0]?.name !== requiredProviderTool) {
@@ -1223,6 +1263,7 @@ async function runOpenAiCompatibleTurn(input: {
     messages.push({
       role: "assistant",
       content: safeOptionalText(message.content),
+      ...(input.configuration.provider === "openrouter" ? openRouterContinuation(message) : {}),
       ...(toolCalls.length ? { tool_calls: toolCalls.map((call) => call.raw) } : {}),
     });
     if (toolCalls.length === 0) {
@@ -1425,7 +1466,7 @@ async function runOpenAiCompatibleTurn(input: {
             return rememberProviderHistory(
               completeAskResult(
                 input.configuration,
-                LOCAL_PLAN_EXECUTED_RUNNER_ANSWER,
+                trace.status === "ok" ? LOCAL_PLAN_EXECUTED_RUNNER_ANSWER : runnerBoundaryRefusalAnswer(traces, undefined),
                 traces,
                 usage,
                 "runner",
@@ -1756,6 +1797,17 @@ async function runOpenAiCompatibleTurn(input: {
         tool_call_id: call.id,
         content: boundedToolResult(executed.providerResult),
       });
+      if (correctingSyntax && trace.status === "refused") {
+        return rememberProviderHistory(completeAskResult(input.configuration,
+          runnerBoundaryRefusalAnswer(traces, undefined), traces, usage, "runner"), providerHistory);
+      }
+      if (!syntaxRepairAttempted && toolCalls.length === 1 && !input.conversationalAuthoring) {
+        pendingSyntaxRepair = askPlanSyntaxRepair(trace);
+        if (pendingSyntaxRepair) {
+          syntaxRepairAttempted = true;
+          messages.push({ role: "user", content: pendingSyntaxRepair.instruction });
+        }
+      }
     }
     if (input.completeAfterRequiredTool
       && input.requiredInitialToolName
@@ -2089,6 +2141,8 @@ async function runAnthropicTurn(input: {
   let catalogCorrectionSent = false;
   let dataToolGroundingCorrectionSent = false;
   let intentRepairAttempts = 0;
+  let pendingSyntaxRepair: AskPlanSyntaxRepair | undefined;
+  let syntaxRepairAttempted = false;
 
   for (let iteration = 0; iteration < (input.conversationalAuthoring ? 12 : MAX_TOOL_ITERATIONS); iteration += 1) {
     assertAskNotCancelled(input.signal);
@@ -2099,7 +2153,7 @@ async function runAnthropicTurn(input: {
     const forcedDescribeProviderName = dataToolGroundingCorrectionSent && traces.length === 0
       ? providerToolName(input.prepared, "app.describe_data")
       : undefined;
-    const forcedExploreProviderName = ((catalogCorrectionSent
+    const forcedExploreProviderName = (pendingSyntaxRepair || (catalogCorrectionSent
       && !traces.some((trace) => trace.tool === "app.explore_data"))
       || (intentRepairAttempts > 0
         && !traces.some((trace) => trace.tool === "app.explore_data" && trace.status === "ok")))
@@ -2152,6 +2206,18 @@ async function runAnthropicTurn(input: {
     const blocks = anthropicBlocks(response.body);
     usage = mergeUsage(usage, anthropicUsage(response.body));
     const calls = blocks.filter((block) => block.type === "tool_use");
+    assertAskNotCancelled(input.signal);
+    const correctingSyntax = pendingSyntaxRepair !== undefined;
+    if (pendingSyntaxRepair) {
+      if (calls.length !== 1
+        || input.prepared.canonicalByProvider.get(String(calls[0]!.name)) !== "app.explore_data"
+        || !matchesAskPlanSyntaxRepair(pendingSyntaxRepair, calls[0]!.input)) {
+        return rememberProviderHistory(completeAskResult(input.configuration,
+          "The model did not correct the query syntax without changing the request. The replacement was not executed; retry the question. No additional access is needed to correct syntax.",
+          traces, usage, "runner"), providerHistory);
+      }
+      pendingSyntaxRepair = undefined;
+    }
     if (iteration === 0 && input.requiredInitialToolName) {
       const requiredProviderTool = providerToolName(input.prepared, input.requiredInitialToolName);
       if (calls.length !== 1 || calls[0]?.name !== requiredProviderTool) {
@@ -2306,6 +2372,17 @@ async function runAnthropicTurn(input: {
         content: boundedToolResult(executed.providerResult),
         is_error: trace.status === "refused",
       });
+      if (correctingSyntax && trace.status === "refused") {
+        return rememberProviderHistory(completeAskResult(input.configuration,
+          runnerBoundaryRefusalAnswer(traces, undefined), traces, usage, "runner"), providerHistory);
+      }
+      if (!syntaxRepairAttempted && calls.length === 1 && !input.conversationalAuthoring) {
+        pendingSyntaxRepair = askPlanSyntaxRepair(trace);
+        if (pendingSyntaxRepair) {
+          syntaxRepairAttempted = true;
+          results.push({ type: "text", text: pendingSyntaxRepair.instruction });
+        }
+      }
     }
     if (input.completeAfterRequiredTool
       && input.requiredInitialToolName
@@ -4463,7 +4540,9 @@ function openAiRequestBody(input: {
   if (input.configuration.provider !== "openai") {
     return {
       model: input.configuration.model,
-      temperature: 0,
+      ...(input.configuration.provider === "openrouter"
+        ? { provider: { require_parameters: true, allow_fallbacks: false, data_collection: "deny" } }
+        : { temperature: 0 }),
       ...(input.configuration.endpoint_scope === "custom_loopback"
         && /^qwen3(?::|$)/iu.test(input.configuration.model)
         ? { reasoning_effort: "none" }
@@ -4485,10 +4564,12 @@ function openAiRequestBody(input: {
           tool_choice: input.forcedToolName
             ? { type: "function", function: { name: input.forcedToolName } }
             : "auto",
-          parallel_tool_calls: false,
+          ...(input.configuration.provider === "openrouter" ? {} : { parallel_tool_calls: false }),
         }
         : {}),
-      max_completion_tokens: input.maxOutputTokens,
+      ...(input.configuration.provider === "openrouter"
+        ? { max_tokens: input.maxOutputTokens }
+        : { max_completion_tokens: input.maxOutputTokens }),
     };
   }
 
@@ -4569,6 +4650,10 @@ function openAiResponsesInput(
 }
 
 function providerEndpoint(provider: AskProvider, baseUrl: string | undefined): URL {
+  if (provider === "openrouter") {
+    if (baseUrl?.trim()) throw new AskError("ASK_OFFICIAL_ENDPOINT_FIXED", "OpenRouter uses its fixed API endpoint; do not supply a base URL.");
+    return new URL(OPENROUTER_CHAT_ENDPOINT);
+  }
   if (provider === "openai") {
     if (baseUrl?.trim()) throw new AskError("ASK_OFFICIAL_ENDPOINT_FIXED", "Use the custom OpenAI-compatible provider for a non-OpenAI endpoint.");
     return new URL("https://api.openai.com/v1/responses");
@@ -6266,6 +6351,13 @@ function runnerBoundaryRefusalAnswer(
   traces: AskToolTrace[],
   description: Record<string, unknown> | undefined,
 ): string {
+  const lastRefusal = [...traces].reverse().find(trace => trace.tool === "app.explore_data" && trace.status === "refused");
+  if (lastRefusal?.error_code === "EXPLORE_PLAN_INVALID" || lastRefusal?.error_code === "MCP_TOOL_ARGUMENTS_INVALID") {
+    return `The model's query could not pass validation (${lastRefusal.error_code}). That plan was not executed. Retry the question; correcting a malformed query does not require broader access. Exact validation details are available below.`;
+  }
+  if (lastRefusal?.error_code === "EXPLORE_SOURCE_UNAVAILABLE") {
+    return "The database connection is unavailable (EXPLORE_SOURCE_UNAVAILABLE), so this query did not produce a result. Ask the operator to check the connection and credentials before retrying. Access permissions have not changed.";
+  }
   const coverage = safeBoundaryCoverage(description);
   const codes = [...new Set(traces
     .filter((trace) => trace.status === "refused" && trace.error_code)
@@ -6658,7 +6750,16 @@ export function resolveAskRequestTimeoutSeconds(
 }
 
 function providerLabel(provider: AskProvider): string {
-  return provider === "openai" ? "OpenAI" : provider === "anthropic" ? "Anthropic" : "The custom provider";
+  return provider === "openai" ? "OpenAI" : provider === "anthropic" ? "Anthropic" : provider === "openrouter" ? "OpenRouter" : "The custom provider";
+}
+
+function openRouterContinuation(message: Record<string, unknown>): Record<string, unknown> {
+  if (message.reasoning_details === undefined) return {};
+  if (!Array.isArray(message.reasoning_details)
+    || Buffer.byteLength(JSON.stringify(message.reasoning_details)) > 65_536) {
+    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider's tool-continuation data is invalid or exceeds the bounded size.", 502);
+  }
+  return { reasoning_details: message.reasoning_details };
 }
 
 function normalizedHostname(hostname: string): string {
@@ -6672,6 +6773,12 @@ function safeProviderError(error: unknown, aborted: boolean): AskError {
 }
 
 function providerHttpError(status: number, responseBody = ""): AskError {
+  if (status === 402) {
+    return new AskError("ASK_PROVIDER_CREDIT_REQUIRED", "The provider requires account credit. Check its billing settings; Runner has not changed providers or authority.", 502);
+  }
+  if (status === 404) {
+    return new AskError("ASK_PROVIDER_MODEL_UNAVAILABLE", "No compatible model endpoint is available with the required parameters and privacy restrictions. Refresh the model list or retry later. Runner has not relaxed those restrictions.", 502);
+  }
   if (status === 401) {
     return new AskError(
       "ASK_PROVIDER_AUTHENTICATION_FAILED",

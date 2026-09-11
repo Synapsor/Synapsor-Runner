@@ -31,6 +31,9 @@ describe("Scoped Explore MySQL executor session state", () => {
       if (sql === "SELECT @@SESSION.time_zone AS time_zone") {
         return [[{ time_zone: "SYSTEM" }], []];
       }
+      if (sql === "SELECT 1 AS __synapsor_prerequisite_satisfied") {
+        return [[{ __synapsor_prerequisite_satisfied: 1 }], []];
+      }
       if (sql === "SELECT 1 AS value") return [[{ value: 1 }], []];
       return [[], []];
     });
@@ -84,6 +87,42 @@ describe("Scoped Explore MySQL executor session state", () => {
 
     await executor.close();
     expect(mocks.end).toHaveBeenCalledOnce();
+  });
+
+  it("sets UTC for a private TIMESTAMP prerequisite even without a reporting timezone", async () => {
+    const executor = createScopedExploreDatabaseExecutor({
+      engine: "mysql",
+      databaseUrl: "mysql://reader:secret@example.test/app",
+    });
+    const context = { tenant: "acme", principal: "rep-1" };
+
+    await expect(executor.execute({
+      sql: "SELECT 1 AS value",
+      params: [],
+      resources: [],
+      read_prerequisite: {
+        authority_fingerprint: "sha256:reviewed-current-state-prerequisite",
+        gate_sql: "SELECT 1 AS __synapsor_prerequisite_satisfied",
+        gate_params: [],
+      },
+      context,
+      timeoutMs: 1000,
+    })).resolves.toEqual([{ value: 1 }]);
+
+    expect(mocks.query.mock.calls.map(([sql, params]) => [sql, params])).toEqual([
+      ["SELECT @@SESSION.time_zone AS time_zone", undefined],
+      ["SET SESSION time_zone = ?", ["+00:00"]],
+      ["SET TRANSACTION ISOLATION LEVEL REPEATABLE READ", undefined],
+      ["SET TRANSACTION READ ONLY", undefined],
+      ["START TRANSACTION READ ONLY", undefined],
+      ["SET SESSION max_execution_time = ?", [1000]],
+      ["SET @synapsor_read_prerequisite_now = UTC_TIMESTAMP(6)", undefined],
+      ["SELECT 1 AS __synapsor_prerequisite_satisfied", []],
+      ["SELECT 1 AS value", []],
+      ["COMMIT", undefined],
+      ["SET SESSION time_zone = ?", ["SYSTEM"]],
+    ]);
+    await executor.close();
   });
 
   it("borrows schema inspections from the same bounded pool as reviewed queries", async () => {

@@ -17,7 +17,7 @@ import {
 } from "./managed-mcp-project.js";
 import { audit, fetchStdioMcpToolsCommand, mcpAuditToolNames } from "./mcp-audit.js";
 import { isManagedAuthoringEntry } from "./mcp-project-domain.js";
-import { defaultBlockedToolSurface, inspectMcpToolBoundary, mcpConfig, mcpConfigure, mcpServe, mcpServeHttp, mcpServeStreamableHttp, mcpSmoke } from "./mcp-runtime.js";
+import { defaultBlockedToolSurface, inspectMcpToolBoundary, mcpConfig, mcpConfigure, mcpServe, mcpServeHttp, mcpServeStreamableHttp, mcpSmoke, readLocalExploreRuntimeConfig } from "./mcp-runtime.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { padTerminalLine, terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
 
@@ -108,10 +108,10 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
       );
     }
     assertLocalMcpBoundaryProfile(activeBoundaries, definition.displayName);
+    await readLocalExploreRuntimeConfig(projectRoot, path.resolve(projectRoot, configPath));
     toolNames = ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"];
   } else {
     const absoluteConfig = path.resolve(projectRoot, configPath);
-    await readRuntimeConfig(absoluteConfig);
     const boundary = await inspectMcpToolBoundary(["--config", absoluteConfig, "--store", ":memory:"]);
     if (!boundary.ok) {
       throw new Error(`${definition.displayName} install refused because the reviewed model-facing boundary failed: ${boundary.checks.filter((check) => !check.ok).map((check) => check.name).join(", ")}`);
@@ -581,7 +581,7 @@ function formatManagedMcpProjectSetStatus(report: {
       `  Model-facing tools: ${runtime.tools.join(", ") || "none"}`,
       `  Launch: ${runtime.launch.message}`,
     ]),
-    "Trusted tenant and principal values are inherited at launch and are not stored in the client config.",
+    "Trusted tenant and principal values are resolved by Runner from the reviewed runtime context and are not stored in the client config.",
     "Operator powers (approval, apply, revert, policy editing, credentials, SQL, and boundary activation) are not model-facing.",
     "",
   ].join("\n");

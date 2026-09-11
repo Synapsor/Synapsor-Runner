@@ -17,7 +17,7 @@ import { isRecord } from "./cli-format.js";
 import { usage } from "./cli-help.js";
 import { operationalLog, safeOperationalErrorCode } from "./cli-logging.js";
 import { assertKnownOptions, envValue, optionalArg, positiveIntOption, runtimeStoreBridgeFlag, waitFor } from "./cli-options.js";
-import { openLocalStore, optionalRuntimeConfig, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
+import { openLocalStore, optionalLedgerRuntimeConfig, optionalRuntimeConfig, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
 import { storePruneAllowedOptions, storeResetAllowedOptions, storeSharedPostgresAllowedOptions, storeStatsAllowedOptions, storeVacuumAllowedOptions } from "./ledger-options.js";
 import { SharedPostgresLedgerMirror, sharedPostgresLedgerMirrorOptions, sharedPostgresLedgerTableCounts } from "./shared-ledger-domain.js";
 import { quoteSqlIdentifier } from "./sql-identifiers.js";
@@ -689,7 +689,7 @@ export async function maybeSharedPostgresRuntimeStoreRead<T>(
   callback: (storePath: string) => Promise<T>,
 ): Promise<T | undefined> {
   const configPath = runnerConfigPath(args);
-  const config = await optionalRuntimeConfig(configPath);
+  const config = await optionalLedgerRuntimeConfig(configPath);
   if (!config || !runtimeStoreBridgeRequired(args, config)) return undefined;
   return withSharedPostgresRuntimeStoreReadBridge(args, config, command, callback);
 }

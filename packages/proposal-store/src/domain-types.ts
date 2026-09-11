@@ -1071,6 +1071,8 @@ export type WorkerQueueItem = {
   status: WorkerQueueStatus;
   execution_mode: WorkerExecutionMode;
   contract_digest?: `sha256:${string}`;
+  /** Undefined is a pre-snapshot queue row; null is a reviewed policy with no cancellation role. */
+  cancellation_control_role?: string | null;
   attempts: number;
   max_attempts: number;
   next_attempt_at: string;
@@ -1240,6 +1242,7 @@ export type ProposalRuntimeStore = {
     proposal_id: string;
     execution_mode?: WorkerExecutionMode;
     contract_digest?: `sha256:${string}`;
+    cancellation_control_role?: string | null;
     max_attempts?: number;
     queue_limit?: number;
     now?: string;

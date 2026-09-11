@@ -5,7 +5,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$ROOT/.synapsor/logs"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_FILE="$LOG_DIR/try-synapsor-$TIMESTAMP.log"
+PLAN_CREDIT_PORT="${SYNAPSOR_DEMO_PLAN_CREDIT_PORT:-55438}"
+if [[ ! "$PLAN_CREDIT_PORT" =~ ^(0|[1-9][0-9]{0,4})$ ]] || (( PLAN_CREDIT_PORT > 65535 )); then
+  printf '%s\n' "SYNAPSOR_DEMO_PLAN_CREDIT_PORT must be 0 (Docker allocated) or an integer from 1 to 65535." >&2
+  exit 1
+fi
 PORTS=(55433 55434 55435 53307)
+if [[ "$PLAN_CREDIT_PORT" != "0" ]]; then PORTS+=("$PLAN_CREDIT_PORT"); fi
 
 say() { printf '%s\n' "$*"; }
 fail() {
@@ -92,7 +98,7 @@ say
 
 for port in "${PORTS[@]}"; do
   if (echo >"/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1; then
-    fail "Port $port is already in use. Stop that process, or run ./scripts/try-synapsor.sh --reset."
+    fail "Port $port is already in use. The demo requires an unoccupied port; no existing process or container was changed."
   fi
 done
 
@@ -110,7 +116,7 @@ say
 say "Running the disposable Docker proof. This can take a few minutes..."
 
 if ! "$ROOT/scripts/demo-docker.sh" >>"$LOG_FILE" 2>&1; then
-  fail "The Docker demo command failed. See the log for the raw error and rerun ./scripts/try-synapsor.sh --reset if stale containers remain."
+  fail "The Docker demo command failed. See the log for the exact startup or assertion failure. Review resource ownership before any manual cleanup; do not reset unrelated containers."
 fi
 
 require_log "ACCEPT semantic tools present" "MCP tools list did not show semantic tools."

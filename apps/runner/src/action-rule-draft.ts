@@ -21,6 +21,7 @@ import type {
   RuleVerificationBoundarySpecV1,
 } from "@synapsor/spec";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { actionRuleDiagnosticRepair, type ActionRuleDiagnosticRepair, type ActionRuleRepairContext } from "./action-rule-diagnostic-repair.js";
 import type {
   ActionRuleAuthoringCatalogV1,
   BuiltActionRuleAuthoringCatalogV1,
@@ -37,6 +38,7 @@ export type ActionRuleVerificationDraftResourceV1 = {
   fields: string[];
   max_rows?: number;
   overflow?: "ineligible" | "unsupported";
+  collection_consistency?: "complete_locked";
   deterministic_order?: Array<{ field: string; direction: "asc" | "desc" }>;
 };
 
@@ -113,6 +115,10 @@ export function actionRuleModelDraftFromAuthority(input: {
   /** Unchanged resume must round-trip reviewed private reads, not minimize them. */
   preserveVerificationFields?: boolean;
 }): ActionRuleModelDraftV1 {
+  const storedReviewOutcome = (input.review as ActionRuleModelDraftV1["review"] & { outcome?: unknown }).outcome;
+  if (storedReviewOutcome !== undefined && storedReviewOutcome !== input.outcome) {
+    invalid(`The stored review belongs to another outcome, not ${input.outcome}. Reopen the matching reviewed Action.`);
+  }
   const source = input.authority.rules.find((candidate) =>
     candidate.rule.outcome === input.outcome);
   if (!source) invalid(`Outcome ${input.outcome} is not present in the reviewed Action Rule authority.`);
@@ -121,6 +127,15 @@ export function actionRuleModelDraftFromAuthority(input: {
     && candidate.rules.some((rule) => rule.outcome === input.outcome));
   if (!approval) invalid(`Outcome ${input.outcome} has no reviewed approval class.`);
   const approvalRule = approval.rules.find((rule) => rule.outcome === input.outcome)!;
+  const resources = new Map(source.verification_boundary.resources.map(resource => [resource.binding, resource]));
+  const order = source.verification_boundary.lock_order;
+  if (resources.size !== source.verification_boundary.resources.length || order.length !== resources.size
+    || new Set(order).size !== order.length || order.some(binding => !resources.has(binding))) {
+    invalid(`Outcome ${input.outcome} has an inconsistent reviewed verification order; reopen its exact authority details.`);
+  }
+  // Canonical resources are alphabetized, not dependency ordered. Reuse the
+  // reviewed lock order so unchanged resume cannot place a child before its parent.
+  const orderedResources = order.map(binding => resources.get(binding)!);
   const referencedFields = new Map<string, Set<string>>();
   for (const expression of [
     source.rule.require,
@@ -141,7 +156,7 @@ export function actionRuleModelDraftFromAuthority(input: {
     }),
     verification: {
       name: source.verification_boundary.name,
-      resources: source.verification_boundary.resources.map((resource) => ({
+      resources: orderedResources.map((resource) => ({
         binding: resource.binding,
         resource: resource.resource,
         source: resource.source.kind === "subject_ref"
@@ -164,6 +179,7 @@ export function actionRuleModelDraftFromAuthority(input: {
           ? {
               max_rows: resource.max_rows,
               overflow: resource.overflow,
+              ...(resource.collection_consistency ? { collection_consistency: resource.collection_consistency } : {}),
               ...(resource.deterministic_order
                 ? { deterministic_order: structuredClone(resource.deterministic_order) }
                 : {}),
@@ -209,7 +225,11 @@ export function actionRuleModelDraftFromAuthority(input: {
       shared_limits: structuredClone(approval.shared_limits),
     },
     ttl_seconds: source.rule.ttl_seconds,
-    review: structuredClone(input.review),
+    // Stored reviews carry their outcome linkage outside the model draft's
+    // review contract. Export only its defined fields, keeping import strict.
+    review: structuredClone({ when: input.review.when, then: input.review.then,
+      refused: input.review.refused, human_review: input.review.human_review,
+      examples: input.review.examples }),
   });
 }
 
@@ -223,7 +243,7 @@ function collectActionRuleFieldReferences(
   }
   if (!value || typeof value !== "object") return;
   const record = value as Record<string, unknown>;
-  if (record.kind === "field"
+  if ((record.kind === "field" || record.kind === "aggregate")
     && typeof record.binding === "string"
     && typeof record.field === "string") {
     const fields = references.get(record.binding) ?? new Set<string>();
@@ -289,6 +309,23 @@ export function compileActionRuleModelDraft(input: {
     verification: RuleVerificationBoundarySpecV1["resources"][number];
   }>();
   const verificationResources: RuleVerificationBoundarySpecV1["resources"] = [];
+  const completeCollections = new Set<string>();
+  const visitConsistency = (value: unknown, positive = true, completePredicate = false): void => {
+    if (!value || typeof value !== "object") return;
+    const node = value as Record<string, unknown>;
+    if (node.kind === "not") { visitConsistency(node.expression, !positive, completePredicate); return; }
+    if (node.kind === "exists") {
+      if ((!positive || completePredicate) && typeof node.binding === "string") completeCollections.add(node.binding);
+      visitConsistency(node.where, true, completePredicate || !positive); return;
+    }
+    if (node.kind === "aggregate" && typeof node.binding === "string") {
+      completeCollections.add(node.binding);
+      visitConsistency(node.where, true, true); return;
+    }
+    for (const item of Object.values(node)) visitConsistency(item, positive, completePredicate);
+  };
+  visitConsistency(draft.require); visitConsistency(draft.derive); visitConsistency(draft.approval.auto_approve_when);
+  visitConsistency(draft.effect);
 
   for (const resourceDraft of draft.verification.resources) {
     if (bindings.has(resourceDraft.binding)) invalid(`Verification binding ${resourceDraft.binding} is duplicated.`);
@@ -337,6 +374,8 @@ export function compileActionRuleModelDraft(input: {
       fields,
       scope,
       cardinality,
+      ...(completeCollections.has(resourceDraft.binding) || resourceDraft.collection_consistency
+        ? { collection_consistency: resourceDraft.collection_consistency ?? "complete_locked" as const } : {}),
       max_rows: maxRows,
       overflow: resourceDraft.overflow ?? (cardinality === "one" ? "unsupported" : "ineligible"),
       ...(deterministicOrder ? { deterministic_order: deterministicOrder } : {}),
@@ -444,7 +483,8 @@ export function compileActionRuleModelDraft(input: {
     generation_lock_fingerprint: catalog.generation_lock_fingerprint,
     resources: verificationResources,
     lock_order: verificationResources.map((resource) => resource.binding),
-    transaction: { isolation: "repeatable_read", timezone: "UTC" },
+    transaction: { isolation: catalog.resources[0]?.engine === "postgres" && verificationResources.some(resource => resource.collection_consistency)
+      ? "read_committed" : "repeatable_read", timezone: "UTC" },
   };
   const subjects = verificationResources
     .filter((resource) => resource.source.kind === "subject_ref")
@@ -541,18 +581,19 @@ function assertNoUndefined(value: unknown, path: string): void {
   }
 }
 
-export function actionRuleDraftDiagnostics(error: unknown): Array<{
+export function actionRuleDraftDiagnostics(error: unknown, context?: ActionRuleRepairContext): Array<{
   code: string;
   path?: string;
   message: string;
   repair: "model" | "operator";
-}> {
+} & Partial<ActionRuleDiagnosticRepair>> {
   if (error instanceof ActionRuleError) {
     return [{
       code: error.code,
       ...(error.path ? { path: error.path } : {}),
       message: error.message,
       repair: actionRuleDiagnosticNeedsOperator(error.code, error.message) ? "operator" : "model",
+      ...(context ? actionRuleDiagnosticRepair(error, context) : {}),
     }];
   }
   const message = error instanceof Error ? error.message : String(error);
@@ -561,6 +602,7 @@ export function actionRuleDraftDiagnostics(error: unknown): Array<{
     code,
     message: message.replace(/^[A-Z][A-Z0-9_]+:\s*/u, ""),
     repair: actionRuleDiagnosticNeedsOperator(code, message) ? "operator" : "model",
+    ...(context ? actionRuleDiagnosticRepair({ code, message }, context) : {}),
   }];
 }
 
@@ -704,9 +746,10 @@ function validateEffectBounds(
     invalid(`Effect bounds for ${field.name} are reversed.`);
   }
   if (field.values !== undefined) {
-    if (type.kind !== "string" && type.kind !== "boolean") invalid(`Allowed values are not valid for ${field.name} (${type.kind}).`);
+    const nonNullValues = field.values.filter(value => value !== null);
+    if (nonNullValues.length && type.kind !== "string" && type.kind !== "boolean") invalid(`Allowed values are not valid for ${field.name} (${type.kind}).`);
     if (type.kind === "string" && type.enum
-      && field.values.some((value) => typeof value !== "string" || !type.enum!.includes(value))) {
+      && nonNullValues.some((value) => typeof value !== "string" || !type.enum!.includes(value))) {
       invalid(`Effect values for ${field.name} exceed the schema-declared allowlist.`);
     }
   }

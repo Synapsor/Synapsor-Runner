@@ -37,11 +37,24 @@ export function bindSemanticReviewedReadScope(
         throw new Error("SEMANTIC_ACTION_READ_SCOPE_UNSUPPORTED: this Action runtime requires a reviewed tenant RLS setting alongside principal-only RLS. Review the source binding; no setting was invented.");
       }
       const binding = { mode: "postgres_rls" as const, ...reviewed, tenant_setting: reviewed.tenant_setting };
-      const existing = bindings.get(rule.verification_boundary.source) ?? source.database_scope;
-      if (existing !== undefined && canonicalJsonDigest(existing) !== canonicalJsonDigest(binding)) {
+      const existing = bindings.get(rule.verification_boundary.source);
+      if (existing && (existing.tenant_setting !== binding.tenant_setting
+        || existing.principal_setting && binding.principal_setting && existing.principal_setting !== binding.principal_setting)) {
         throw new Error("SEMANTIC_ACTION_READ_SCOPE_MISMATCH: the Action source has conflicting reviewed RLS session settings. Review that source binding; no configuration was changed.");
       }
-      bindings.set(rule.verification_boundary.source, binding);
+      // Shared reference rows can require tenant scope only. They do not erase
+      // the principal setting required by customer rows in the same transaction.
+      bindings.set(rule.verification_boundary.source, { ...existing, ...binding,
+        ...(existing?.principal_setting ? { principal_setting: existing.principal_setting } : {}),
+      });
+    }
+  }
+  for (const [name, binding] of bindings) {
+    const configured = sources![name]!.database_scope;
+    if (configured !== undefined && (configured === null || typeof configured !== "object" || Array.isArray(configured)
+      || canonicalJsonDigest({ ...configured, ...(binding.principal_setting && !("principal_setting" in configured)
+        ? { principal_setting: binding.principal_setting } : {}) }) !== canonicalJsonDigest(binding))) {
+      throw new Error("SEMANTIC_ACTION_READ_SCOPE_MISMATCH: the Action source has conflicting reviewed RLS session settings. Review that source binding; no configuration was changed.");
     }
   }
   const aliases: typeof bindings = new Map();

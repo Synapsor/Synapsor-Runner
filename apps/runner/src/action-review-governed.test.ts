@@ -7,15 +7,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as schema from "@synapsor-runner/schema-inspector";
 import { onboard } from "./guided-start.js";
 import { structuredBoundaryAuthoringCommand } from "./boundary-structured-authoring.js";
-import { actionCommand, boundaryReviewCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
+import { actionCommand, boundaryActivateCommand, boundaryReviewCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import * as actionTui from "./action-tui.js";
-import { listActionRuleAuthorityDrafts, readActionRuleAuthorityActivation } from "./action-rule-authority.js";
+import type { BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
+import { listActionRuleAuthorityDrafts, readActionRuleAuthorityActivation, loadActiveActionRuleAuthority,
+  buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft } from "./action-rule-authority.js";
+import * as readAuthoring from "./control-policy-read-authoring-project.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { runPostActivationAskHandoff } from "./post-activation-ask.js";
+import * as clientHandoff from "./post-activation-ask.js";
+import { main } from "./cli.js";
 import * as semanticDeployment from "./semantic-action-deployment.js";
 import { readPausedExecutionSetup } from "./semantic-execution-setup.js";
 import { terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
+import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { prepareBoundaryRescan, commitBoundaryRescan } from "./boundary-rescan.js";
+import { revalidateSavedActionReadDependencies } from "./action-read-recovery.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -24,6 +32,178 @@ afterEach(async () => {
 });
 
 describe("public governed Action review", () => {
+  it("wires the public action command to client setup and returns without activating again", async () => {
+    const root = await savedProject();
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    vi.spyOn(schema, "inspectDatabase").mockResolvedValue(inspection());
+    let visits = 0;
+    const readSession = { chooseResource: async () => visits++ === 0 ? { action: "confirm" } : undefined,
+      editFieldTiers: async () => undefined, promptText: async () => "fixture_reviewer", confirm: async () => true,
+      confirmActivation: async () => true } as BoundaryReviewInteractiveSession;
+    await boundaryReviewCommand(["--project-root", root, "--access"], async () => inspection(), readSession);
+    const draft = (await listActionRuleAuthorityDrafts(root))[0]!;
+    await semanticDeployment.activateSemanticActionRuntime({ projectRoot: root, draft, actor: "fixture_reviewer" });
+    const reads = await loadActivatedExplorationBoundaries(root), action = await readActionRuleAuthorityActivation(root);
+    const drafts = await listActionRuleAuthorityDrafts(root);
+    const setup = vi.spyOn(clientHandoff, "continueClientSetup").mockResolvedValue(0);
+    const noQuestion = vi.fn(async () => { throw new Error("No new job or authority decision is needed"); });
+    let homes = 0, reviews = 0;
+    const prompter: actionTui.ActionControlPrompter = {
+      choose: async (title, choices) => {
+        if (title === "ACTION BOUNDARY") return homes++ === 0 ? "verified_action" : "quit";
+        expect(title).toBe("VERIFIED ACTION BOUNDARY");
+        expect(choices.some(choice => choice.value === "client_setup")).toBe(true);
+        return reviews++ === 0 ? "client_setup" : "back";
+      }, text: noQuestion, confirm: noQuestion, message: async () => undefined,
+    };
+    const run = actionTui.runActionControlPlane;
+    vi.spyOn(actionTui, "runActionControlPlane").mockImplementation(input => run({ ...input, prompter }));
+    expect(await main(["action", "review", "--project-root", root])).toBe(0);
+    expect(setup).toHaveBeenCalledExactlyOnceWith(root);
+    expect(reviews).toBe(2); expect(noQuestion).not.toHaveBeenCalled();
+    expect(await loadActivatedExplorationBoundaries(root)).toEqual(reads);
+    expect(await readActionRuleAuthorityActivation(root)).toEqual(action);
+    expect(await listActionRuleAuthorityDrafts(root)).toEqual(drafts);
+  }, 20_000);
+
+  it("shows an already active Read revision truthfully and preserves it when repeated activation is declined", async () => {
+    const root = await savedProject("proposal_only", false);
+    const writes = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    let visits = 0;
+    const session = { chooseResource: async () => visits++ === 0 ? { action: "confirm" } : undefined,
+      editFieldTiers: async () => undefined, promptText: async () => "fixture_reviewer", confirm: async () => true,
+      confirmActivation: async () => true, close: vi.fn() } as BoundaryReviewInteractiveSession;
+    expect(await boundaryReviewCommand(["--project-root", root, "--access"], async () => inspection(), session)).toBe(0);
+    const before = await loadActivatedExplorationBoundaries(root);
+    writes.mockClear();
+    expect(await boundaryActivateCommand(["--project-root", root], async () => inspection(),
+      { ...session, confirm: async () => false })).toBe(0);
+    const summary = writes.mock.calls.map(call => String(call[0])).join("");
+    expect(summary).toMatch(/reviewed_staging\s+ACTIVE\s+1\s+Complete/u);
+    expect(summary).toContain("Authority active: yes, this exact revision");
+    expect(summary).not.toContain("REVIEWED - NOT ACTIVE");
+    expect(summary).not.toContain("Next: synapsor-runner boundary activate");
+    expect(summary).toContain("Existing active Read authority is unchanged");
+    expect(summary).not.toMatch(/reviewed and inactive|Authority active: no|REVIEWED - NOT ACTIVE/u);
+    expect(await loadActivatedExplorationBoundaries(root)).toEqual(before);
+  }, 20_000);
+
+  it("opens model-guided first-action setup before manual Read sign-off, without compatibility controls", async () => {
+    const root = await savedProject("proposal_only", false);
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const before = await loadBoundaryReviewContext(root);
+    const prompts: string[] = [];
+    const noLegacy = vi.fn(async () => { throw new Error("Compatibility action controls must not open"); });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => ({ action: "actions", boundary_name: before.candidate.pack.name }),
+      editFieldTiers: async () => undefined,
+      promptText: async () => undefined,
+      confirm: async () => false,
+      chooseOption: async (title) => {
+        prompts.push(title);
+        if (title === "DESCRIBE A CHANGE") return "guided";
+        expect(title).toBe("START BOUNDARY DRAFTING");
+        return undefined;
+      },
+    };
+    const chat: BoundaryAuthoringChat = {
+      session: { ...session, presentationMode: "conversation" },
+      actionPrompter: { choose: noLegacy, text: noLegacy, confirm: noLegacy, message: noLegacy },
+      setModel: vi.fn(), runner: vi.fn(), model: vi.fn(), checkpoint: vi.fn(),
+      streamRunner: async () => {}, streamCheckpoint: async () => {}, streamModel: async () => {},
+      rememberDetails: vi.fn(), showDetails: vi.fn(), providerStream: vi.fn(),
+      progress: (_message, operation) => operation(), close: vi.fn(),
+    };
+    expect(await boundaryReviewCommand(["--project-root", root, "--access"], async () => inspection(), session,
+      undefined, { exitAfterAgentJob: true, boundaryAuthoringChatFactory: () => chat,
+        runDelegationActionReview: noLegacy })).toBe(0);
+    expect(prompts).toEqual(["DESCRIBE A CHANGE", "START BOUNDARY DRAFTING"]);
+    expect(noLegacy).not.toHaveBeenCalled();
+    expect(await listActionRuleAuthorityDrafts(root)).toEqual([]);
+    await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active");
+    expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(before.bundle.candidate_digest);
+  }, 20_000);
+
+  it("starts the first action from saved Read authority without entering legacy proposal controls", async () => {
+    const root = await savedProject("proposal_only", false);
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    let visits = 0;
+    const session = { chooseResource: async () => visits++ === 0 ? { action: "confirm" } : undefined,
+      editFieldTiers: async () => undefined, promptText: async () => "fixture_reviewer", confirm: async () => true,
+      confirmActivation: async () => true, close: vi.fn() } as BoundaryReviewInteractiveSession;
+    expect(await boundaryReviewCommand(["--project-root", root, "--access"], async () => inspection(), session)).toBe(0);
+    const before = await loadActivatedExplorationBoundaries(root);
+    expect(before).toHaveLength(1);
+    const review = vi.fn(async () => ({ tone: "success" as const, title: "Drafting paused", lines: [] }));
+    const noLegacy = vi.fn(async () => { throw new Error("Legacy controls must not open for a fresh governed project"); });
+    expect(await actionTui.runActionControlPlane({ projectRoot: root, inspection: inspection(),
+      modelGuidedVerifiedActionRevision: review,
+      prompter: { choose: noLegacy, text: noLegacy, confirm: noLegacy, message: noLegacy },
+    })).toMatchObject({ state: "closed", activated_actions: [] });
+    expect(review).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ projectRoot: root, boundaryName: before[0]!.pack.name }));
+    expect(noLegacy).not.toHaveBeenCalled();
+    expect(await loadActivatedExplorationBoundaries(root)).toEqual(before);
+    expect(await listActionRuleAuthorityDrafts(root)).toEqual([]);
+    await expect(fs.stat(path.join(root, ".synapsor/generation-lock.json"))).rejects.toHaveProperty("code", "ENOENT");
+  }, 20_000);
+
+  it("routes the empty Action case from Boundary access into the manual semantic editor", async () => {
+    const root = await savedProject("proposal_only", false);
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const prompts: string[] = [];
+    const actionPrompter: actionTui.ActionControlPrompter = {
+      choose: async (title) => {
+        prompts.push(title);
+        if (title === "MANUAL SEMANTIC ACTIONRULE") return "back";
+        throw new Error(`Unexpected Action prompt: ${title}`);
+      },
+      text: async () => undefined,
+      confirm: async () => undefined,
+      message: async () => undefined,
+    };
+    const actionControlPlane = vi.fn(async (input: Parameters<typeof actionTui.runActionControlPlane>[0]) =>
+      actionTui.runActionControlPlane({ ...input, prompter: actionPrompter, env: {} }));
+    const selections = [
+      { action: "confirm" as const },
+      { action: "actions" as const, boundary_name: "reviewed_staging" },
+      undefined,
+    ];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => selections.shift(),
+      editFieldTiers: async () => undefined,
+      promptText: async () => "fixture_reviewer",
+      chooseOption: async (title, choices) => {
+        expect(title).toBe("DESCRIBE A CHANGE");
+        expect(choices.map((choice) => choice.value)).toEqual(["guided", "manual", "back"]);
+        return "manual";
+      },
+      confirm: async () => true,
+      confirmActivation: async () => true,
+    };
+
+    expect(await boundaryReviewCommand(
+      ["--project-root", root, "--access"],
+      async () => inspection(),
+      session,
+      undefined,
+      {
+        actionProjectInspector: async () => inspection(),
+        runDelegationActionReview: actionControlPlane,
+      },
+    )).toBe(0);
+
+    expect(actionControlPlane).toHaveBeenCalledOnce();
+    expect(actionControlPlane).toHaveBeenCalledWith(expect.objectContaining({
+      projectRoot: root,
+      boundaryName: "reviewed_staging",
+      initialManualSemantic: true,
+    }));
+    expect(prompts).toEqual(["MANUAL SEMANTIC ACTIONRULE"]);
+    await expect(readActionRuleAuthorityActivation(root)).resolves.toBeUndefined();
+    expect(await listActionRuleAuthorityDrafts(root)).toEqual([]);
+    expect(await loadActivatedExplorationBoundaries(root)).toHaveLength(1);
+  }, 20_000);
+
   it("uses the governed Read URL then the separately configured writer without consulting a legacy lock", async () => {
     const root = await savedProject();
     const configPath = path.join(root, "synapsor.runner.json");
@@ -50,6 +230,308 @@ describe("public governed Action review", () => {
     expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
     expect(JSON.parse(await fs.readFile(legacyPath, "utf8")).source_env).toBe("UNREVIEWED_EXPORT_URL");
   });
+
+  it("opens the manual editor for an existing disabled outcome before Read activation", async () => {
+    const root = await savedProject();
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const before = await listActionRuleAuthorityDrafts(root);
+    const readBefore = await loadBoundaryReviewContext(root);
+    const menus: string[] = [];
+    let visit = 0;
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => visit++ === 0 ? { action: "actions", boundary_name: "reviewed_staging" } : undefined,
+      editFieldTiers: async () => undefined, promptText: async () => undefined, confirm: async () => false,
+      chooseOption: async (title, choices) => {
+        expect(title).toBe("VERIFIED ACTION BOUNDARY");
+        expect(choices.find(choice => choice.value === "activate")?.disabled).toBe(true);
+        expect(choices.find(choice => choice.value === "manual_revision")?.disabled).not.toBe(true);
+        return "manual_revision";
+      },
+    };
+    const runManual = vi.fn(async (input: Parameters<typeof actionTui.runActionControlPlane>[0]) =>
+      actionTui.runActionControlPlane({ ...input, env: {}, prompter: {
+        choose: async title => { menus.push(title); expect(title).toBe("MANUAL SEMANTIC ACTIONRULE"); return "back"; },
+        text: async () => undefined, confirm: async () => false, message: async () => {},
+      } }));
+    expect(await boundaryReviewCommand(["--project-root", root, "--access"], async () => inspection(), session, undefined,
+      { runDelegationActionReview: runManual, actionProjectInspector: async () => inspection() })).toBe(0);
+    expect(runManual).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ initialManualSemantic: true }));
+    expect(menus).toEqual(["MANUAL SEMANTIC ACTIONRULE"]);
+    expect(await listActionRuleAuthorityDrafts(root)).toEqual(before);
+    expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(readBefore.bundle.candidate_digest);
+    expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+    await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active");
+  }, 20_000);
+
+  it("shows unfinished saved work and returns to the same disabled Action review without new egress or authority", async () => {
+    const root = await savedProject();
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const before = await listActionRuleAuthorityDrafts(root);
+    const context = await loadBoundaryReviewContext(root);
+    const binding = { boundary_name: context.candidate.pack.name,
+      generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
+      schema_fingerprint: context.lock.schema_fingerprint, role_posture_fingerprint: context.lock.role_posture_fingerprint };
+    const saved = buildBoundaryAuthoringResumeState({ binding, stage: "action_drafting",
+      jobIntent: "Help with enrollment and release completed advising holds.", provider: "openai", model: "gpt-test",
+      action: { intent: "Enroll in an eligible course.", intents: ["Enroll in an eligible course.", "Release a completed advising hold."],
+        completed_outcomes: ["university.enroll"] } });
+    await writeBoundaryAuthoringResumeState(root, saved);
+    let visit = 0, review = 0;
+    const noModel = vi.fn(async () => { throw new Error("No model request is allowed while viewing local saved work."); });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => visit++ === 0 ? { action: "actions", boundary_name: binding.boundary_name } : undefined,
+      editFieldTiers: async () => undefined, promptText: noModel, confirm: async () => false,
+      chooseOption: async (title, choices, options) => {
+        if (title === "UNFINISHED SAVED WORK") {
+          expect(options?.context?.join("\n")).toContain("Release a completed advising hold.");
+          expect(options?.context?.join("\n")).toContain("not removed or treated as implemented");
+          return "back";
+        }
+        expect(title).toBe("VERIFIED ACTION BOUNDARY");
+        expect(options?.context?.join("\n")).toContain("1 requested change remains unfinished");
+        expect(choices.some(choice => choice.value === "details_pending_job")).toBe(true);
+        expect(choices.find(choice => choice.value === "activate")?.disabled).toBe(true);
+        return review++ === 0 ? "details_pending_job" : "back";
+      },
+    };
+    expect(await boundaryReviewCommand(["--project-root", root, "--access"], async () => inspection(), session, undefined,
+      { actionProjectInspector: async () => inspection() })).toBe(0);
+    expect(review).toBe(2);
+    expect(noModel).not.toHaveBeenCalled();
+    expect(await listActionRuleAuthorityDrafts(root)).toEqual(before);
+    expect((await loadBoundaryReviewContext(root)).bundle).toEqual(context.bundle);
+    expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: saved });
+    expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+    await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active");
+  }, 20_000);
+
+  it.each([true, false, "inspection_failure"] as const)("returns directly from linked Read approval to the saved actions (accepted=%s)", async accepted => {
+    const root = await savedProject();
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const before = await listActionRuleAuthorityDrafts(root);
+    const readBefore = await loadBoundaryReviewContext(root);
+    let failInspection = false;
+    const confirmActivation = vi.fn(async () => { failInspection = accepted === "inspection_failure"; return accepted !== false; });
+    const showReviewDetails = vi.fn(async (title: string, lines: string[]) => {
+      expect(title).toBe("Read access needs attention");
+      expect(lines.join("\n")).toContain("fixture connection unavailable");
+    });
+    let visits = 0, reviews = 0;
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => visits++ === 0 ? { action: "actions", boundary_name: "reviewed_staging" } : undefined,
+      editFieldTiers: async () => undefined, promptText: async () => "fixture_reviewer",
+      confirm: async () => true, confirmActivation, showReviewDetails,
+      chooseOption: async (title, choices) => {
+        expect(title).toBe("VERIFIED ACTION BOUNDARY");
+        if (reviews++ === 0) {
+          expect(choices.some(choice => choice.value === "revalidate_read")).toBe(false);
+          expect(choices.some(choice => choice.value === "review_read")).toBe(true);
+          return "review_read";
+        }
+        expect(choices.find(choice => choice.value === "activate")?.disabled).toBe(accepted !== true);
+        return "back";
+      },
+    };
+    expect(await boundaryReviewCommand(["--project-root", root, "--access"], async () => {
+      if (failInspection) throw new Error("fixture connection unavailable");
+      return inspection();
+    }, session)).toBe(0);
+    expect(reviews).toBe(2);
+    expect(confirmActivation).toHaveBeenCalledOnce();
+    expect(await listActionRuleAuthorityDrafts(root)).toEqual(before);
+    expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+    expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(readBefore.bundle.candidate_digest);
+    expect(showReviewDetails).toHaveBeenCalledTimes(accepted === "inspection_failure" ? 1 : 0);
+    if (accepted === true) expect((await loadActivatedExplorationBoundaries(root))[0]!.activation.digest).toBe(readBefore.bundle.candidate_digest);
+    else await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active");
+  }, 30_000);
+
+  it.each([true, false])("wires standalone action review to the exact Read decision without restarting setup (accepted=%s)", async accepted => {
+    const root = await savedProject();
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const before = await listActionRuleAuthorityDrafts(root);
+    const readBefore = await loadBoundaryReviewContext(root);
+    const inspector = vi.spyOn(schema, "inspectDatabase").mockResolvedValue(inspection());
+    let homes = 0, reviews = 0, readDecisions = 0;
+    const prompter: actionTui.ActionControlPrompter = {
+      choose: async (title, choices) => {
+        if (title === "ACTION BOUNDARY") return homes++ === 0 ? "verified_action" : "quit";
+        if (title === "ACTIVATE READ BOUNDARY") {
+          readDecisions++;
+          expect(choices.some(choice => choice.value === "activate")).toBe(true);
+          expect(choices.some(choice => choice.value === "revise_model")).toBe(true);
+          return accepted ? "activate" : "finish";
+        }
+        expect(title).toBe("VERIFIED ACTION BOUNDARY");
+        if (reviews++ === 0) return "review_read";
+        expect(choices.find(choice => choice.value === "activate")?.disabled).toBe(!accepted);
+        return "back";
+      },
+      text: async () => { throw new Error("Do not restart the job or request model input"); },
+      confirm: async () => { throw new Error("Read decision was already made in its exact permission menu"); },
+      message: async (title, lines) => { throw new Error(`${title}: ${lines.join("\n")}`); },
+    };
+    const run = actionTui.runActionControlPlane;
+    vi.spyOn(actionTui, "runActionControlPlane").mockImplementation(input => run({ ...input, prompter }));
+    expect(await actionCommand(["review", "--project-root", root], async () => inspection())).toBe(0);
+    expect(reviews).toBe(2); expect(readDecisions).toBe(1);
+    expect(await listActionRuleAuthorityDrafts(root)).toEqual(before);
+    expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+    if (accepted) {
+      expect((await loadActivatedExplorationBoundaries(root))[0]!.activation.digest).toBe(readBefore.bundle.candidate_digest);
+      expect(inspector).toHaveBeenCalledWith(expect.objectContaining({ databaseUrlEnv: "GOVERNED_REVIEW_READ_URL" }));
+    } else await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active");
+  }, 30_000);
+
+  it("does not start a model revision for a Read selection changed during linked Action review", async () => {
+    const root = await savedProject();
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    vi.spyOn(schema, "inspectDatabase").mockResolvedValue(inspection());
+    const before = await listActionRuleAuthorityDrafts(root);
+    let homes = 0, reviews = 0;
+    let revisedDigest: string | undefined;
+    const messages: string[] = [];
+    const noQuestion = vi.fn(async () => { throw new Error("No model request or new job is allowed for a stale selection"); });
+    const prompter: actionTui.ActionControlPrompter = {
+      choose: async (title, choices) => {
+        if (title === "ACTION BOUNDARY") return homes++ === 0 ? "verified_action" : "quit";
+        if (title === "VERIFIED ACTION BOUNDARY") return reviews++ === 0 ? "review_read" : "back";
+        expect(title).toBe("ACTIVATE READ BOUNDARY");
+        expect(choices.some(choice => choice.value === "revise_model")).toBe(true);
+        const changed = inspection();
+        changed.tables[0]!.columns.find(column => column.name === "credits")!.nullable = true;
+        await commitBoundaryRescan(await prepareBoundaryRescan({ projectRoot: root, inspection: changed }));
+        revisedDigest = (await loadBoundaryReviewContext(root)).bundle.candidate_digest;
+        return "revise_model";
+      }, text: noQuestion, confirm: noQuestion,
+      message: async (title, lines) => { messages.push(title, ...lines); },
+    };
+    const run = actionTui.runActionControlPlane;
+    vi.spyOn(actionTui, "runActionControlPlane").mockImplementation(input => run({ ...input, prompter }));
+    expect(await actionCommand(["review", "--project-root", root], async () => inspection())).toBe(0);
+    expect(reviews).toBe(2); expect(noQuestion).not.toHaveBeenCalled();
+    expect(messages.join("\n")).toContain("READ_BOUNDARY_REVISION_CHANGED");
+    expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(revisedDigest);
+    expect(await listActionRuleAuthorityDrafts(root)).toEqual(before);
+    expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+    await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active");
+  }, 20_000);
+
+  it.each(["repair", "repair_disabled", "inspection_drift", "structural_change", "stale_selection", "existing_edit", "read_changed", "read_pending", "read_declined"] as const)("keeps stale Read dependencies repairable without authorizing old rules (%s)", async mode => {
+    const root = await savedProject();
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const activateRead = async (source: schema.SchemaInspection) => {
+      let visits = 0;
+      const session: BoundaryReviewInteractiveSession = { chooseResource: async () => visits++ === 0 ? { action: "confirm" } : undefined,
+        editFieldTiers: async () => undefined, promptText: async () => "fixture_reviewer",
+        confirm: async () => true, confirmActivation: async () => true };
+      expect(await boundaryReviewCommand(["--project-root", root, "--access"], async () => source, session)).toBe(0);
+    };
+    await activateRead(inspection());
+    const original = (await listActionRuleAuthorityDrafts(root))[0]!;
+    const activated = await semanticDeployment.activateSemanticActionRuntime({ projectRoot: root, draft: original, actor: "fixture_reviewer" });
+    const oldRead = await loadActivatedExplorationBoundaries(root);
+    const changed = inspection();
+    changed.tables[0]!.row_level_security_policies = [{ name: "dedicated_writer", command: "UPDATE", permissive: true,
+      roles: ["dedicated_writer"], using_expression: "tenant_id = current_setting('app.tenant_id')::uuid" }];
+    if (mode === "structural_change") changed.tables[0]!.columns.find(field => field.name === "credits")!.nullable = true;
+    await commitBoundaryRescan(await prepareBoundaryRescan({ projectRoot: root, inspection: changed }));
+    const pendingRead = mode === "read_pending" || mode === "read_declined";
+    if (!pendingRead) await activateRead(changed);
+    const newRead = await loadActivatedExplorationBoundaries(root);
+    if (pendingRead) expect(newRead).toEqual(oldRead);
+    else {
+      expect(newRead[0]!.activation.digest).not.toBe(oldRead[0]!.activation.digest);
+      await expect(loadActiveActionRuleAuthority(root)).rejects.toHaveProperty("code", "ACTION_RULE_READ_AUTHORITY_STALE");
+    }
+    const edited = buildActionRuleAuthorityDraft({ name: original.authority.name,
+      action_boundary_name: original.authority.action_boundary.name, catalog: structuredClone(original.authority.catalog),
+      rules: original.authority.rules.map(rule => ({ ...structuredClone(rule), rule: { ...structuredClone(rule.rule), ttl_seconds: 120 } })),
+      approval_classes: structuredClone(original.authority.approval_classes), reviews: structuredClone(original.reviews) });
+    if (mode === "repair_disabled" || mode === "existing_edit") await writeActionRuleAuthorityDraft(root, edited);
+    const draftsBefore = await listActionRuleAuthorityDrafts(root);
+    const configs = await Promise.all(["synapsor.runner.json", "synapsor.actions.runner.json"].map(file => fs.readFile(path.join(root, file), "utf8")));
+    const source = mode === "inspection_drift" ? inspection() : changed;
+    const inspect = vi.spyOn(schema, "inspectDatabase").mockResolvedValue(source);
+    const repaired = mode === "repair" || mode === "repair_disabled";
+    if (mode === "stale_selection") {
+      await expect(revalidateSavedActionReadDependencies({ projectRoot: root, boundaryName: "reviewed_staging",
+        current: { ...activated.activation, actor: "different_review" }, inspect: schema.inspectDatabase })).rejects.toThrow("selected Action revision changed");
+      expect(inspect).not.toHaveBeenCalled();
+    } else if (mode === "existing_edit") {
+      await expect(revalidateSavedActionReadDependencies({ projectRoot: root, boundaryName: "reviewed_staging",
+        current: activated.activation, inspect: schema.inspectDatabase })).rejects.toThrow("disabled replacement already exists");
+      expect(inspect).not.toHaveBeenCalled();
+    } else if (mode === "read_changed") {
+      const snapshot = await readAuthoring.readProjectReadAuthoring(root);
+      vi.spyOn(readAuthoring, "readProjectReadAuthoring").mockResolvedValueOnce(snapshot).mockResolvedValue(undefined);
+      await expect(revalidateSavedActionReadDependencies({ projectRoot: root, boundaryName: "reviewed_staging",
+        current: activated.activation, inspect: schema.inspectDatabase })).rejects.toThrow("Read draft changed while checking metadata");
+    } else {
+      const seen: string[] = [];
+      let home = 0, review = 0;
+      const reviewRead = vi.fn(async () => { if (mode === "read_pending") await activateRead(changed); });
+      await actionTui.runActionControlPlane({ projectRoot: root, inspection: changed,
+        ...(pendingRead ? { reviewLinkedRead: reviewRead } : {}), prompter: {
+        choose: async (title, choices, context) => {
+          seen.push(title);
+          if (title === "ACTION BOUNDARY") {
+            if (!pendingRead) expect(context?.join("\n")).toContain("ACCESS RECHECK REQUIRED");
+            return home++ === 0 ? "verified_action" : "quit";
+          }
+          expect(title).toBe("VERIFIED ACTION BOUNDARY");
+          if (pendingRead) {
+            if (review++ === 0) {
+              expect(choices.some(choice => choice.value === "revalidate_read")).toBe(false);
+              expect(choices.some(choice => choice.value === "review_read")).toBe(true);
+              expect(context?.join("\n")).toContain("Review the saved read access first");
+              return "review_read";
+            }
+            expect(choices.some(choice => choice.value === "revalidate_read")).toBe(mode === "read_pending");
+            return "back";
+          }
+          if (review++ === 0) {
+            expect(choices.some(choice => choice.value === "revalidate_read")).toBe(true);
+            return "revalidate_read";
+          }
+          if (repaired) {
+            expect(choices.find(choice => choice.value === "activate")?.disabled).not.toBe(true);
+            expect(context?.join("\n")).toContain("REPLACEMENT DRAFT - NOT ACTIVE");
+          }
+          return "back";
+        },
+        text: async () => { throw new Error("No repeated business question expected"); },
+        confirm: async () => { throw new Error("This test grants no new Action or execution permission"); },
+        message: async (title, lines) => {
+          expect(["inspection_drift", "structural_change"]).toContain(mode);
+          expect(title).toBe("Saved changes need review");
+          expect(lines.join("\n")).toContain(mode === "inspection_drift" ? "database changed again" : "type or nullability");
+        },
+      } });
+      expect(seen.filter(title => title === "VERIFIED ACTION BOUNDARY")).toHaveLength(2);
+      if (pendingRead) {
+        expect(reviewRead).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ boundaryName: "reviewed_staging" }));
+        expect(inspect).not.toHaveBeenCalled();
+      } else expect(inspect).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ databaseUrlEnv: "GOVERNED_REVIEW_READ_URL" }));
+    }
+    const drafts = await listActionRuleAuthorityDrafts(root);
+    if (repaired) {
+      expect(drafts).toHaveLength(1);
+      expect(drafts[0]!.authority.rules[0]!.read_boundary_digest).toBe(newRead[0]!.activation.digest);
+      expect(drafts[0]!.authority.rules[0]!.rule).toEqual((mode === "repair_disabled" ? edited : original).authority.rules[0]!.rule);
+      expect(drafts[0]!.authority.rules[0]!.effect_envelope).toEqual(original.authority.rules[0]!.effect_envelope);
+      expect(drafts[0]!.authority.rules[0]!.rule.ttl_seconds).toBe(mode === "repair_disabled" ? 120 : original.authority.rules[0]!.rule.ttl_seconds);
+      expect(drafts[0]!.authority.approval_classes).toEqual(original.authority.approval_classes);
+      expect(drafts[0]!.reviews).toEqual(original.reviews);
+    } else expect(drafts).toEqual(draftsBefore);
+    expect(await readActionRuleAuthorityActivation(root)).toEqual(activated.activation);
+    if (mode !== "read_declined") await expect(loadActiveActionRuleAuthority(root)).rejects.toHaveProperty("code", "ACTION_RULE_READ_AUTHORITY_STALE");
+    if (mode === "read_pending") expect((await loadActivatedExplorationBoundaries(root))[0]!.activation.digest).not.toBe(oldRead[0]!.activation.digest);
+    else {
+      expect(await loadActivatedExplorationBoundaries(root)).toEqual(newRead);
+      expect(await Promise.all(["synapsor.runner.json", "synapsor.actions.runner.json"].map(file => fs.readFile(path.join(root, file), "utf8")))).toEqual(configs);
+    }
+  }, 60_000);
 
   it("does not fall back to a legacy lock when the governed repository is unavailable", async () => {
     const root = await savedProject();
@@ -263,7 +745,7 @@ describe("public governed Action review", () => {
   });
 });
 
-async function savedProject(writeback: "proposal_only" | "supervised" = "proposal_only"): Promise<string> {
+async function savedProject(writeback: "proposal_only" | "supervised" = "proposal_only", includeAction = true): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-governed-action-review-")); roots.push(root);
   vi.stubEnv("GOVERNED_REVIEW_READ_URL", "postgresql://fixture.invalid/not-used");
   vi.stubEnv("SYNAPSOR_DATABASE_WRITE_URL", undefined);
@@ -290,6 +772,7 @@ async function savedProject(writeback: "proposal_only" | "supervised" = "proposa
       review: { when: "Reviewed credits do not exceed 16", then: "Propose enrollment", refused: ["Credit limit exceeded"],
         human_review: "A registrar reviews each valid request", examples: [{ kind: "eligible", scenario: "12 credits", result: "Create proposal" },
           { kind: "ineligible", scenario: "18 credits", result: "Refuse" }] } }];
+    if (!includeAction) request.actions = [];
     await fs.writeFile(path.join(root, "draft.json"), JSON.stringify(request));
     expect(await structuredBoundaryAuthoringCommand(["--project-root", root, "--draft", "draft.json", "--json"], async () => inspection()),
       output.mock.calls.map(([chunk]) => String(chunk)).join("")).toBe(0);

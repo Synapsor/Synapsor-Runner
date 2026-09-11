@@ -36,6 +36,7 @@ import type {
 import { semanticActionInputSchema } from "./semantic-action-schema.js";
 import { ScopedCatalogIndex, ScopedCatalogSession, type CatalogRequest } from "./scoped-catalog.js";
 import { OwnerRuntimeError } from "./owner-runtime-identity.js";
+import { PostgresRlsPrerequisiteError } from "@synapsor-runner/postgres";
 
 export const DESCRIBE_ACTIONS_TOOL = "app.describe_actions";
 export const REQUEST_CHANGE_TOOL = "app.request_change";
@@ -263,10 +264,18 @@ export function createSemanticActionRuntime(input: {
         }
       } catch (error) {
         if (error instanceof McpRuntimeError) throw error;
+        if (error instanceof PostgresRlsPrerequisiteError) {
+          throw new McpRuntimeError("SEMANTIC_ACTION_DATABASE_REVIEW_REQUIRED",
+            "Database row-filtering prerequisites are not satisfied. An operator must recheck database access in the saved setup before retrying. No proposal or source change was created.");
+        }
         if (error instanceof OwnerRuntimeError) {
           throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "Current delegated authority could not be verified. No source change was executed. Refresh the authorized catalog before retrying.");
         }
         if (error instanceof ActionRuleError) {
+          if (error.code === "ACTION_RULE_NOT_ELIGIBLE" && error.path === "outcome") {
+            throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE",
+              "The requested outcome is not available in the current authorized catalog. Refresh the action list before retrying. No proposal or source change was created.");
+          }
           throw new McpRuntimeError(
             error.code === "ACTION_RULE_NOT_ELIGIBLE"
               ? "SEMANTIC_ACTION_NOT_ELIGIBLE"

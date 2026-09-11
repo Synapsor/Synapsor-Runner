@@ -6063,7 +6063,7 @@ describe("Workbench BYOM Ask", () => {
     ]);
   });
 
-  it("recovers an empty first response from a local model through the reviewed catalog", async () => {
+  it.each(["ok", "refused"] as const)("recovers an empty local response without misreporting execution (%s)", async (status) => {
     const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
     const gateway: AskToolGateway = {
       mode: "authoring",
@@ -6089,7 +6089,11 @@ describe("Workbench BYOM Ask", () => {
               source_database_changed: false,
             },
           }
-          : {
+          : status === "refused" ? {
+            ok: false, error_code: "EXPLORE_PLAN_INVALID",
+            value: { ok: false, error_code: "EXPLORE_PLAN_INVALID", source_database_changed: false,
+              message: "The selected plan is invalid; no query ran." },
+          } : {
             ok: true,
             value: {
               ok: true,
@@ -6122,7 +6126,7 @@ describe("Workbench BYOM Ask", () => {
       tool_calls: [
         { tool: "app.describe_data", status: "ok" },
         { tool: "app.describe_data", status: "ok" },
-        { tool: "app.explore_data", status: "ok" },
+        { tool: "app.explore_data", status },
       ],
     });
     expect(calls).toEqual([
@@ -6140,6 +6144,11 @@ describe("Workbench BYOM Ask", () => {
         },
       },
     ]);
+    if (status === "refused") {
+      expect(result.answer).toContain("That plan was not executed");
+      expect(result.answer).not.toContain("Runner executed");
+      expect(result.source_database_changed).toBe(false);
+    }
   });
 
   it("does not reintroduce question-to-plan validation during Boundary-only local-model recovery", async () => {

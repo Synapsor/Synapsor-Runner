@@ -346,6 +346,20 @@ function parseSimpleMembershipCheck(
   }
   tokens = stripOuterParentheses(tokens);
 
+  // The NULL branch admits no additional non-null vocabulary. Other OR branches do.
+  const orIndex = findTopLevelToken(tokens, token => token.kind === "word" && token.value.toLowerCase() === "or");
+  if (orIndex >= 0) {
+    const left = stripOuterParentheses(tokens.slice(0, orIndex));
+    const right = stripOuterParentheses(tokens.slice(orIndex + 1));
+    const permitsNull = (branch: SqlMetadataToken[]) => branch.at(-2)?.kind === "word"
+      && branch.at(-2)?.value.toLowerCase() === "is" && branch.at(-1)?.kind === "word"
+      && branch.at(-1)?.value.toLowerCase() === "null" && isColumnOperand(branch.slice(0, -2), expectedColumn);
+    if (permitsNull(left)) tokens = right;
+    else if (permitsNull(right)) tokens = left;
+    else return undefined;
+    if (findTopLevelToken(tokens, token => token.kind === "word" && token.value.toLowerCase() === "or") >= 0) return undefined;
+  }
+
   const inIndex = findTopLevelToken(tokens, (token) =>
     token.kind === "word" && token.value.toLowerCase() === "in");
   if (inIndex > 0) {
@@ -592,6 +606,8 @@ export type ForeignKeyInfo = {
   referenced_columns: string[];
   delete_rule: "NO ACTION" | "RESTRICT" | "CASCADE" | "SET NULL" | "SET DEFAULT" | string;
   action_rule_issue?: "unvalidated_foreign_key" | "non_exact_collation";
+  /** Deferred foreign keys cannot prove complete collection locking. */
+  deferrable?: true;
 };
 
 export type ReferencingForeignKeyInfo = {
@@ -664,6 +680,7 @@ export type RelationRolePosture = {
   row_security_effective_for_current_role: boolean | "unsupported" | "unknown";
   /** A permissive UPDATE/ALL policy applies; predicates still need runtime checks. */
   row_security_update_permitted?: boolean;
+  row_security_applicable_policies?: string[];
 };
 
 export type TableInfo = {
@@ -1030,7 +1047,7 @@ export async function inspectDatabase(options: InspectOptions): Promise<SchemaIn
   try {
     return engine === "postgres" ? await inspectPostgres({ ...options, env, engine, url }) : await inspectMysql({ ...options, env, engine, url });
   } catch (error) {
-    throw new Error(`schema inspection failed for ${engine} using ${options.databaseUrlEnv}: ${sanitizeError(error)}`);
+    throw schemaInspectionFailure(engine, options.databaseUrlEnv, error);
   }
 }
 
@@ -1062,8 +1079,17 @@ export async function inspectDatabaseWithConnection(
       ? await inspectPostgres({ ...options, env, engine: "postgres", url }, source.connection)
       : await inspectMysql({ ...options, env, engine: "mysql", url }, source.connection);
   } catch (error) {
-    throw new Error(`schema inspection failed for ${engine} using ${options.databaseUrlEnv}: ${sanitizeError(error)}`);
+    throw schemaInspectionFailure(engine, options.databaseUrlEnv, error);
   }
+}
+
+function schemaInspectionFailure(engine: string, urlEnv: string, error: unknown): Error {
+  const failure = new Error(`schema inspection failed for ${engine} using ${urlEnv}: ${sanitizeError(error)}`);
+  // Preserve only a bounded machine code, not the driver's raw cause, URL or
+  // query. Runtime callers use it to distinguish credential/connection repair.
+  const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
+  return typeof code === "string" && /^[A-Z0-9_]{2,64}$/u.test(code)
+    ? Object.assign(failure, { code }) : failure;
 }
 
 export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): GeneratedOnboardingFiles {
@@ -1358,7 +1384,7 @@ async function inspectPostgres(
               con.conname AS constraint_name, source_attr.attname AS column_name,
               target_ns.nspname AS referenced_schema, target.relname AS referenced_table,
               target_attr.attname AS referenced_column, key_column.ordinal_position,
-              con.convalidated AS validated,
+              con.convalidated AS validated, con.condeferrable AS deferrable,
               (NOT EXISTS (SELECT 1 FROM pg_catalog.pg_collation coll
                 WHERE coll.oid IN (source_attr.attcollation, target_attr.attcollation)
                   AND NOT coll.collisdeterministic)) AS exact_equality,
@@ -1918,6 +1944,7 @@ type RawColumn = {
 type RawKeyColumn = { schema: string; table_name: string; constraint_name: string; constraint_type: string; column_name: string; ordinal_position: number };
 type RawForeignKey = {
   validated?: boolean;
+  deferrable?: boolean;
   exact_equality?: boolean;
   schema: string;
   table_name: string;
@@ -2045,6 +2072,9 @@ function normalizeInspection(input: {
     const applicable = new Set((policiesByTable.get(key) ?? []).filter((policy) => policy.applies_to_current_role === true).map((policy) => policy.name));
     const updatePolicy = policies.some((policy) => applicable.has(policy.name) && policy.permissive && (policy.command === "ALL" || policy.command === "UPDATE"));
     const rolePosture = role ? normalizeRelationRolePosture(role, rowSecurityEnabled, policies, superuser, bypassRls, updatePolicy) : undefined;
+    if (rolePosture && input.engine === "postgres" && rowSecurityEnabled) {
+      rolePosture.row_security_applicable_policies = [...applicable].sort();
+    }
     return {
       schema: raw.schema,
       name: raw.name,
@@ -2454,6 +2484,7 @@ function normalizeForeignKeys(rows: RawForeignKey[]): ForeignKeyInfo[] {
       referenced_table: sorted[0]?.referenced_table ?? "",
       referenced_columns: sorted.map((item) => item.referenced_column),
       delete_rule: sorted[0]?.delete_rule ?? "NO ACTION",
+      ...(sorted.some(item => item.deferrable === true) ? { deferrable: true as const } : {}),
       ...(sorted.some((item) => item.validated === false) ? { action_rule_issue: "unvalidated_foreign_key" as const }
         : sorted.some((item) => item.exact_equality === false) ? { action_rule_issue: "non_exact_collation" as const } : {}),
     };

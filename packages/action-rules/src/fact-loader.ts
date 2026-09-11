@@ -38,6 +38,13 @@ export type ActionRuleFactLoaderAdapterV1 = {
   engine: "postgres" | "mysql";
   assertResourceCompatible?(binding: CompiledRuleBindingV1): Promise<void>;
   assertRelationshipCompatible?(binding: CompiledRuleBindingV1, parent: CompiledRuleBindingV1): Promise<void>;
+  assertCompleteCollection?(input: {
+    binding: CompiledRuleBindingV1;
+    parent: CompiledRuleBindingV1;
+    parentRows: ActionRuleFactRowV1[];
+    trusted: ActionRuleFactSetV1["trusted"];
+    mode: "proposal_snapshot" | "transaction_reverify";
+  }): Promise<void>;
   load(query: ActionRuleFactQueryV1): Promise<Record<string, unknown>[]>;
 };
 
@@ -235,9 +242,17 @@ export async function loadActionRuleFacts(input: LoadActionRuleFactsInputV1): Pr
     if (binding === undefined) fail("ACTION_RULE_LOAD_PLAN_INVALID", `Compiled lock binding ${bindingName} is unavailable.`);
     if (binding.resource.engine !== input.adapter.engine) fail("ACTION_RULE_ENGINE_MISMATCH", `Verification resource ${binding.resource.name} uses another database engine.`);
     await input.adapter.assertResourceCompatible?.(binding);
-    if (binding.verification.source.kind === "relationship" && binding.relationship?.field_pairs) {
+    if (binding.verification.source.kind === "relationship" && (binding.relationship?.field_pairs || binding.verification.collection_consistency)) {
       const parent = input.compiled.bindings.find((candidate) => candidate.binding === (binding.verification.source.kind === "relationship" ? binding.verification.source.from_binding : ""));
       if (!parent) return fail("ACTION_RULE_LOAD_PLAN_INVALID", "A composite relationship requires its reviewed parent binding.");
+      if (binding.verification.collection_consistency) {
+        if (!input.adapter.assertCompleteCollection || !input.adapter.assertRelationshipCompatible) {
+          return fail("ACTION_RULE_LOAD_PLAN_INVALID", "The source adapter cannot prove complete collection visibility and phantom protection.");
+        }
+        const parentRows = bindings[parent.binding]?.rows;
+        if (!parentRows || parentRows.length !== 1) return fail("ACTION_RULE_FACTS_UNKNOWN", "Complete collection requires its exact existing parent.");
+        await input.adapter.assertCompleteCollection({ binding, parent, parentRows, trusted: input.trusted, mode: input.mode });
+      }
       await input.adapter.assertRelationshipCompatible?.(binding, parent);
     }
     const sourcePredicate = binding.verification.source.kind === "subject_ref"

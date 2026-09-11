@@ -68,6 +68,7 @@ docker run --rm \
   -e SYNAPSOR_RUNNER_TMP_ROOT=/tmp/synapsor-runner-local-demo \
   -e SYNAPSOR_RUNNER_SKIP_RELEASE_ASSETS=1 \
   -e SYNAPSOR_LOCAL_DB_HOST=host.docker.internal \
+  -e SYNAPSOR_DEMO_PLAN_CREDIT_PORT="${SYNAPSOR_DEMO_PLAN_CREDIT_PORT:-55438}" \
   -e XDG_CACHE_HOME=/tmp/synapsor-demo-cache \
   -v "$DOCKER_SOCK:/var/run/docker.sock" \
   -v "$ROOT:$ROOT" \

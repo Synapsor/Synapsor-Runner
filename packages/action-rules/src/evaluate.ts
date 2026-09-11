@@ -192,9 +192,23 @@ function scalar(
     case "derived":
       return context.derived.get(expression.name) ?? unknownScalar(`${path} derived value is unavailable.`);
     case "aggregate": {
-      const rows = context.rows[expression.binding];
-      if (rows === undefined) return unknownScalar(`${path} binding is unavailable.`);
+      const sourceRows = context.rows[expression.binding];
+      if (sourceRows === undefined) return unknownScalar(`${path} binding is unavailable.`);
+      const rows: ActionRuleFactRowV1[] = [];
+      for (const [index, row] of sourceRows.entries()) {
+        const previous = context.currentRows.get(expression.binding);
+        context.currentRows.set(expression.binding, row);
+        try {
+          const selected = expression.where ? truth(expression.where, context, `${path}.where[${index}]`) : true;
+          if (selected === "unknown") return unknownScalar(`${path} contains an uncertain collection predicate.`);
+          if (selected) rows.push(row);
+        } finally {
+          if (previous) context.currentRows.set(expression.binding, previous);
+          else context.currentRows.delete(expression.binding);
+        }
+      }
       if (expression.operation === "count") {
+        if (expression.field !== undefined && rows.some(row => row[expression.field!] === undefined)) return unknownScalar(`${path} count field is unavailable.`);
         const value = expression.field === undefined
           ? rows.length
           : rows.filter((row) => row[expression.field!] !== null && row[expression.field!] !== undefined).length;
@@ -203,8 +217,8 @@ function scalar(
       if (expression.field === undefined) return unknownScalar(`${path} aggregate field is unavailable.`);
       const type = fieldType(context.compiled, expression.binding, expression.field);
       if (type === undefined) return unknownScalar(`${path} aggregate field type is unavailable.`);
-      const values = rows.map((row) => row[expression.field!]).filter((value): value is Exclude<JsonScalar, null> => value !== null && value !== undefined);
-      if (values.length === 0 || values.some((value) => !scalarMatchesType(value, type, false))) return unknownScalar(`${path} has no complete bounded values.`);
+      const values = rows.map((row) => row[expression.field!]);
+      if (values.some((value) => value === undefined || !scalarMatchesType(value, type, false))) return unknownScalar(`${path} has incomplete bounded values.`);
       if (expression.operation === "sum") {
         let sum = 0;
         for (const value of values) {
@@ -213,8 +227,10 @@ function scalar(
         }
         return { known: true, value: sum, type };
       }
+      if (values.length === 0) return unknownScalar(`${path} has no minimum or maximum in an empty collection.`);
       let selected = values[0]!;
       for (const value of values.slice(1)) {
+        if (value === undefined || value === null) return unknownScalar(`${path} contains an unavailable ordered value.`);
         const comparison = compareScalars(value, selected, type);
         if ((expression.operation === "min" && comparison < 0) || (expression.operation === "max" && comparison > 0)) selected = value;
       }
@@ -255,6 +271,13 @@ function scalar(
       if (!maximum.known) return maximum;
       if (typeof input.value !== "number" || typeof minimum.value !== "number" || typeof maximum.value !== "number" || minimum.value > maximum.value) return unknownScalar(`${path} has invalid numeric clamp values.`);
       return { known: true, value: Math.min(maximum.value, Math.max(minimum.value, input.value)), type: input.type };
+    }
+    case "date_of": {
+      const timestamp = scalar(expression.timestamp, context, `${path}.timestamp`);
+      if (!timestamp.known) return timestamp;
+      if (typeof timestamp.value !== "string" || !isCanonicalTimestamp(timestamp.value)) return unknownScalar(`${path} requires a canonical UTC timestamp.`);
+      const value = timestamp.value.slice(0, 10);
+      return isCanonicalDate(value) ? { known: true, value, type: { kind: "date" } } : unknownScalar(`${path} calendar date is outside the supported range.`);
     }
     case "add_duration": {
       const timestamp = scalar(expression.timestamp, context, `${path}.timestamp`);
@@ -313,11 +336,13 @@ function truth(expression: ActionRuleBooleanExpressionV1, context: EvaluationCon
       const rows = context.rows[expression.binding];
       if (rows === undefined) return "unknown";
       const values = rows.map((row, index) => {
+        const previous = context.currentRows.get(expression.binding);
         context.currentRows.set(expression.binding, row);
         try {
           return truth(expression.where, context, `${path}.where[${index}]`);
         } finally {
-          context.currentRows.delete(expression.binding);
+          if (previous) context.currentRows.set(expression.binding, previous);
+          else context.currentRows.delete(expression.binding);
         }
       });
       if (values.includes(true)) return true;
@@ -484,7 +509,7 @@ function unknownEvaluation(
 }
 
 function assertEffectValue(value: JsonScalar, type: ActionRuleScalarTypeSpecV1, minimum: number | undefined, maximum: number | undefined, values: JsonScalar[] | undefined, field: string): void {
-  if (!scalarMatchesType(value, type, false)) throw new ActionRuleError("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Derived ${field} does not match its reviewed effect type.`);
+  if (!scalarMatchesType(value, type, values?.includes(null) ?? false)) throw new ActionRuleError("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Derived ${field} does not match its reviewed effect type.`);
   if (typeof value === "number" && ((minimum !== undefined && value < minimum) || (maximum !== undefined && value > maximum))) throw new ActionRuleError("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Derived ${field} is outside its reviewed effect bounds.`);
   if (values !== undefined && !values.some((candidate) => candidate === value)) throw new ActionRuleError("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Derived ${field} is outside its reviewed effect allowlist.`);
 }
@@ -496,7 +521,7 @@ function deriveSingleEffect(input: EvaluateActionRuleInputV1, context: Evaluatio
   const set: Record<string, JsonScalar> = {};
   for (const [fieldName, expression] of Object.entries(compiled.rule.effect.set).sort(([left], [right]) => left.localeCompare(right))) {
     const value = scalar(expression, context, `rule.effect.set.${fieldName}`);
-    if (!value.known || value.value === null) throw new ActionRuleError("ACTION_RULE_FACTS_UNKNOWN", `Exact derived effect value ${fieldName} is unavailable.`);
+    if (!value.known) throw new ActionRuleError("ACTION_RULE_FACTS_UNKNOWN", `Exact derived effect value ${fieldName} is unavailable.`);
     const field = envelope.allowed_fields.find((item) => item.name === fieldName)!;
     assertEffectValue(value.value, field.type, field.minimum, field.maximum, field.values, fieldName);
     set[fieldName] = value.value;

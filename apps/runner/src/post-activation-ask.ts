@@ -9,7 +9,7 @@ import {
   createInPlaceTerminalRenderer,
   readTerminalTextWithEscape,
 } from "./terminal-prompt.js";
-import { ProviderCredentialInputCancelledError } from "./secret-input.js";
+import { ProviderCredentialInputCancelledError, readHiddenLocalIdentity } from "./secret-input.js";
 import {
   padTerminalLine,
   terminalContentWidth,
@@ -29,6 +29,7 @@ import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { readSemanticSupervisedExecutionState, restoreReviewedSemanticReadScope } from "./semantic-action-deployment.js";
 import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { loadLocalTestRuntimeIdentity, saveLocalTestRuntimeIdentity, type LocalTestRuntimeBinding } from "./local-test-runtime-identity.js";
 import { clientHandoffMatchesActiveAuthority, pendingClientResponsibilities, readPostActivationReadiness,
   type PostActivationReadiness } from "./authoring-client-readiness.js";
 export { readPostActivationReadiness, type PostActivationReadiness } from "./authoring-client-readiness.js";
@@ -38,6 +39,7 @@ export { discoverOpenAiCompatibleModels } from "./openai-compatible-models.js";
 export type PostActivationAskRoute =
   | "openai"
   | "anthropic"
+  | "openrouter"
   | "openai-compatible"
   | "mcp-client"
   | "mcp-http"
@@ -50,6 +52,7 @@ export type PostActivationAskRoute =
   | "later";
 
 export type PostActivationAskSelection =
+  | { route: "openrouter"; model: string }
   | {
       route: "openai";
       model: string;
@@ -102,16 +105,31 @@ export type PostActivationAskDependencies = {
     defaultValue: string,
   ) => Promise<string | undefined>;
   listOpenAiCompatibleModels?: (baseUrl: string) => Promise<string[]>;
+  listHostedModels?: typeof discoverHostedProviderModels;
+  chooseHostedModel?: (models: string[], current: string) => Promise<string | undefined>;
   chooseMcpClient?: () => Promise<ManagedMcpProjectClient | undefined>;
   hasActiveActions?: (projectRoot: string) => Promise<boolean>;
   runMcpInstall?: (args: string[]) => Promise<number>;
   confirmLaunchCheck?: () => Promise<boolean | undefined>;
   checkClientLaunch?: (projectRoot: string, client: ManagedMcpProjectClient) => Promise<{ ok: boolean; messages: string[] }>;
+  readClientInstallation?: typeof managedMcpProjectStatus;
   readExecutionState?: typeof readSemanticSupervisedExecutionState;
   readReadiness?: typeof readPostActivationReadiness;
   readActionDrafts?: typeof listActionRuleAuthorityDrafts;
   readRuntimeBindings?: typeof reviewedRuntimeBindingNames;
   readRuntimeIdentity?: typeof reviewedRuntimeIdentity;
+  /** Collects reviewed fixture identities locally. Values are never sent to a provider. */
+  collectLocalTestIdentity?: (input: {
+    projectRoot: string;
+    client: ManagedMcpProjectClient;
+    bindings: ReviewedRuntimeBinding[];
+  }) => Promise<Record<string, string> | undefined>;
+  loadLocalTestIdentity?: typeof loadLocalTestRuntimeIdentity;
+  saveLocalTestIdentity?: (input: {
+    projectRoot: string;
+    bindings: LocalTestRuntimeBinding[];
+    values: Record<string, string>;
+  }) => Promise<{ path: string; bindings: LocalTestRuntimeBinding[] }>;
   confirmWorkerStart?: (context: string[]) => Promise<boolean | undefined>;
   runWorker?: (args: string[]) => Promise<number>;
   runBoundaryReview?: (args: string[]) => Promise<number>;
@@ -165,6 +183,7 @@ const routeOptions: RouteOption[] = [
     label: "Anthropic",
     detail: "Start the terminal chat with Claude Sonnet",
   },
+  { id: "openrouter", label: "OpenRouter", detail: "Choose a text/tool model; requests pass through OpenRouter to a serving provider" },
   {
     id: "openai-compatible",
     label: "Local model",
@@ -217,6 +236,11 @@ const routeOptions: RouteOption[] = [
   },
 ];
 
+export function continueClientSetup(projectRoot: string, dependencies: PostActivationAskDependencies = {}): Promise<number> {
+  return runPostActivationAskHandoff({ projectRoot, includeActions: true,
+    autoStartConfiguredProvider: false, initialRoute: "mcp-client" }, dependencies);
+}
+
 export async function runPostActivationAskHandoff(
   input: {
     projectRoot: string;
@@ -227,6 +251,8 @@ export async function runPostActivationAskHandoff(
     sessionTokenBudget?: number;
     maxOutputTokens?: number;
     selection?: PostActivationAskSelection;
+    /** Navigation preference only; saved authority and readiness are still checked. */
+    initialRoute?: PostActivationAskRoute;
     /** Ephemeral presentation state for returns within this client handoff. */
     displayedExecutionReview?: string;
     usedIntendedClient?: boolean;
@@ -254,11 +280,16 @@ export async function runPostActivationAskHandoff(
   const hasSavedActionDrafts = savedActionDrafts.length > 0;
   let needsFirstOutcome = firstOutcome && readiness.legacy_actions === "active";
   if (readiness.read === "active") {
-    write(`Read: active. Verified outcomes: ${readiness.semantic_actions === "active" ? "active" : "OFF"}. Legacy named actions: ${readiness.legacy_actions}.\n`);
+    write(`Read: active. Verified outcomes: ${readiness.semantic_actions === "active" ? "active" : "OFF"}.${readiness.legacy_actions === "active" ? " Legacy named actions: active." : ""}\n`);
     if (readiness.semantic_outcomes.length) {
       const automatic = readiness.semantic_outcomes.filter((outcome) => outcome.approval_mode === "policy").length;
+      const humanOnly = readiness.semantic_outcomes.length - automatic;
       const executable = readiness.semantic_outcomes.filter((outcome) => outcome.execution_enabled).length;
-      write(`Approval: ${automatic} reviewed policy, ${readiness.semantic_outcomes.length - automatic} human review. Execution enabled: ${executable}/${readiness.semantic_outcomes.length} outcomes.\n`);
+      const approvals = [
+        ...(automatic ? [`${automatic} automatic ${automatic === 1 ? "policy" : "policies"} with human fallback`] : []),
+        ...(humanOnly ? [`${humanOnly} human-only ${humanOnly === 1 ? "outcome" : "outcomes"}`] : []),
+      ];
+      write(`Approval: ${approvals.join(", ")}. Execution enabled: ${executable}/${readiness.semantic_outcomes.length} outcomes.\n`);
       write(`Worker: not checked. Approval is not completion. ${cliCommandName()} action status shows each outcome.\n`);
     }
   }
@@ -323,11 +354,19 @@ export async function runPostActivationAskHandoff(
     write("You can connect a client now or resume execution setup.\n");
     input = { ...input, displayedExecutionReview: executionReviewKey };
   }
+  let intendedClientInstalled = false;
+  if (intendedClient && !input.selection && !input.usedIntendedClient) {
+    try {
+      intendedClientInstalled = (await (dependencies.readClientInstallation ?? managedMcpProjectStatus)(intendedClient, input.projectRoot, "explore")).state === "installed";
+    } catch {
+      write("The saved client installation could not be inspected. Choose client setup to review it, or edit the saved rules; connection remains unverified.\n");
+    }
+  }
   const selection = input.selection
-    ?? (intendedClient && !input.usedIntendedClient && !savedActionReviewPending && !needsFirstOutcome ? { route: "mcp-client" as const, client: intendedClient } : undefined)
+    ?? (intendedClient && !intendedClientInstalled && !input.usedIntendedClient && !savedActionReviewPending && !needsFirstOutcome ? { route: "mcp-client" as const, client: intendedClient } : undefined)
     ?? configuredSelection
     ?? await choosePostActivationAskSelection(dependencies,
-      savedActionReviewPending ? "review-outcomes" : needsFirstOutcome ? "create-outcome" : guidedClientSetup || executionReviewPending ? "mcp-client" : undefined,
+      input.initialRoute ?? (savedActionReviewPending ? "review-outcomes" : needsFirstOutcome ? "create-outcome" : guidedClientSetup || executionReviewPending ? "mcp-client" : undefined),
       firstOutcome && !savedActionReviewPending, hasSavedActionDrafts);
   if (!selection) {
     write(`${await savedSetupReceipt(input.projectRoot, executionReviewPending, paused)}\n`);
@@ -340,7 +379,7 @@ export async function runPostActivationAskHandoff(
     const args = ["review", "--project-root", input.projectRoot];
     if (dependencies.runActionReview) return dependencies.runActionReview(args);
     const { actionCommand } = await import("./boundary-commands.js");
-    return actionCommand(args);
+    return actionCommand(args, undefined, projectRoot => continueClientSetup(projectRoot, dependencies));
   }
 
   if (route === "owner-rules") {
@@ -408,7 +447,7 @@ export async function runPostActivationAskHandoff(
         requestTimeoutSeconds: input.requestTimeoutSeconds,
         sessionTokenBudget: input.sessionTokenBudget,
         maxOutputTokens: input.maxOutputTokens,
-      }, dependencies));
+      }, dependencies), { clientSetup: projectRoot => continueClientSetup(projectRoot, dependencies) });
   }
 
   if (route === "later") {
@@ -452,6 +491,41 @@ export async function runPostActivationAskHandoff(
         runtimeBindingFailure = true;
         return [];
       });
+      let localTestRuntimeBindings: LocalTestRuntimeBinding[] = [];
+      if (!runtimeBindingFailure && runtimeIdentity === "local_environment" && runtimeBindings.length) {
+        let existingIdentity: Record<string, string> | undefined;
+        try {
+          existingIdentity = await (dependencies.loadLocalTestIdentity ?? loadLocalTestRuntimeIdentity)({ projectRoot: input.projectRoot });
+        } catch (error) {
+          write(`Saved local test identity cannot be reused: ${safeErrorMessage(error)}\nReview the current identity requirements before replacing it; client configuration is preserved.\n`);
+        }
+        if (existingIdentity) {
+          localTestRuntimeBindings = runtimeBindings;
+          write("Reviewed local test runtime already matches the current boundary. Reusing it without collecting identity values again.\n");
+        } else {
+          const collected = await (dependencies.collectLocalTestIdentity ?? collectLocalTestIdentity)({
+            projectRoot: input.projectRoot,
+            client: selection.client,
+            bindings: runtimeBindings,
+          });
+          if (collected) {
+            const values = validateLocalTestIdentity(runtimeBindings, collected);
+            const saved = await (dependencies.saveLocalTestIdentity ?? saveLocalTestRuntimeIdentity)({
+              projectRoot: input.projectRoot,
+              bindings: runtimeBindings,
+              values,
+            });
+            localTestRuntimeBindings = saved.bindings;
+            write("Reviewed local test runtime configured. Values were not printed, copied to client configuration, sent to a provider, or added to authority. Local applications and programs running as your user can read this local test file; it is not production authentication.\n");
+          } else {
+            write("Local test identity setup was skipped. Client configuration is preserved; no scoped client test or worker start will be inferred.\n");
+          }
+        }
+      }
+      const configuredRuntimeBindings = new Set([
+        ...runtimeBindings.filter((binding) => env[binding.environment]?.trim()).map((binding) => binding.environment),
+        ...localTestRuntimeBindings.map((binding) => binding.environment),
+      ]);
       const approvedCheck = await (dependencies.confirmLaunchCheck ?? (async () => {
         if (!process.stdin.isTTY || !stdout.isTTY) return false;
         return createBoundaryReviewInteractiveSession().confirm("Verify this configured client connection now?", {
@@ -463,7 +537,8 @@ export async function runPostActivationAskHandoff(
       let connectionFailed = false;
       if (approvedCheck) {
         try {
-          const checked = await (dependencies.checkClientLaunch ?? checkConfiguredClientLaunch)(input.projectRoot, selection.client);
+          const check = dependencies.checkClientLaunch ?? checkConfiguredClientLaunch;
+          const checked = await check(input.projectRoot, selection.client);
           connectionFailed = !checked.ok;
           if (checked.ok) connection = "verified MCP handshake and tool catalog; test connection closed";
           else write(`Connection check: ${formatMcpLaunchFailure(checked.messages.join("\n"))}\n`);
@@ -498,7 +573,8 @@ export async function runPostActivationAskHandoff(
           includeActions,
           runtimeBindings,
           runtimeIdentity,
-          runtimeBindings.filter((binding) => env[binding.environment]?.trim()).map((binding) => binding.environment),
+          [...configuredRuntimeBindings],
+          localTestRuntimeBindings.map((binding) => binding.environment),
         ));
       }
       if (execution) {
@@ -512,7 +588,7 @@ export async function runPostActivationAskHandoff(
           ]);
           reviewedWorkerCommands = workerArgs.map((args) => `${cliCommandName()} worker ${formatRetryArgs(args)}`);
           const missing = [...new Set(execution.policies.map((policy) => policy.write_url_env))].filter((name) => !env[name]?.trim());
-          const missingIdentity = runtimeBindings.filter((binding) => !env[binding.environment]?.trim());
+          const missingIdentity = runtimeBindings.filter((binding) => !configuredRuntimeBindings.has(binding.environment));
           if (missing.length) {
             write(`Next: provide the reviewed writer environment ${missing.join(", ")} before starting the worker. Client configuration and boundaries are preserved.\n`);
           } else if (runtimeBindingFailure) {
@@ -599,6 +675,8 @@ export async function runPostActivationAskHandoff(
     askArgs.push("--provider", "openai", "--model", selection.model);
   } else if (route === "anthropic") {
     askArgs.push("--provider", "anthropic", "--model", selection.model);
+  } else if (route === "openrouter") {
+    askArgs.push("--provider", "openrouter", "--model", selection.model);
   } else {
     askArgs.push(
       "--provider", "openai-compatible",
@@ -620,6 +698,7 @@ export async function runPostActivationAskHandoff(
     ? "OpenAI"
     : route === "anthropic"
       ? "Anthropic"
+      : route === "openrouter" ? OPENROUTER_EGRESS
       : "local OpenAI-compatible model";
   if (configuredSelection && !input.selection) {
     write(
@@ -692,23 +771,26 @@ export async function runPostActivationAskHandoff(
 export function preferredRoute(env: NodeJS.ProcessEnv): PostActivationAskRoute {
   if (env.OPENAI_API_KEY?.trim()) return "openai";
   if (env.ANTHROPIC_API_KEY?.trim()) return "anthropic";
+  if (env.OPENROUTER_API_KEY?.trim()) return "openrouter";
   return "openai";
 }
 
 export function soleConfiguredHostedRoute(
   env: NodeJS.ProcessEnv,
-): "openai" | "anthropic" | undefined {
+): HostedProvider | undefined {
   const configured = [
     ...(env.OPENAI_API_KEY?.trim() ? ["openai" as const] : []),
     ...(env.ANTHROPIC_API_KEY?.trim() ? ["anthropic" as const] : []),
+    ...(env.OPENROUTER_API_KEY?.trim() ? ["openrouter" as const] : []),
   ];
   return configured.length === 1 ? configured[0] : undefined;
 }
 
 export function defaultPostActivationAskSelection(
   env: NodeJS.ProcessEnv,
-): Extract<PostActivationAskSelection, { route: "openai" | "anthropic" }> {
+): Extract<PostActivationAskSelection, { route: HostedProvider }> {
   const route = preferredRoute(env);
+  if (route === "openrouter") return { route, model: DEFAULT_OPENROUTER_MODEL };
   return route === "anthropic"
     ? {
       route,
@@ -722,12 +804,10 @@ export function defaultPostActivationAskSelection(
 
 export function soleConfiguredHostedSelection(
   env: NodeJS.ProcessEnv,
-): Extract<PostActivationAskSelection, { route: "openai" | "anthropic" }> | undefined {
+): Extract<PostActivationAskSelection, { route: HostedProvider }> | undefined {
   const route = soleConfiguredHostedRoute(env);
   if (!route) return undefined;
-  return route === "anthropic"
-    ? { route, model: DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL }
-    : { route, model: DEFAULT_TERMINAL_OPENAI_ASK_MODEL };
+  return { route, model: defaultHostedModel(route) };
 }
 
 export function formatPostActivationAskSelection(
@@ -744,13 +824,14 @@ export function formatPostActivationAskSelection(
   if (selection.route === "later") return "Choose later";
   if (selection.route === "openai") return `OpenAI / ${selection.model}`;
   if (selection.route === "anthropic") return `Anthropic / ${selection.model}`;
+  if (selection.route === "openrouter") return `OpenRouter + serving provider / ${selection.model}`;
   return `Local OpenAI-compatible / ${selection.model}`;
 }
 
 export async function choosePostActivationAskSelection(
   dependencies: Pick<
     PostActivationAskDependencies,
-    "chooseRoute" | "chooseMcpClient" | "promptWithDefault" | "listOpenAiCompatibleModels" | "env"
+    "chooseRoute" | "chooseMcpClient" | "promptWithDefault" | "listOpenAiCompatibleModels" | "listHostedModels" | "chooseHostedModel" | "env"
   > = {},
   initialRoute?: PostActivationAskRoute,
   createFirstOutcome = false,
@@ -794,6 +875,24 @@ export async function choosePostActivationAskSelection(
       if (model === undefined) continue;
       return { route, model };
     }
+    if (route === "openrouter") {
+      const models = await (dependencies.listHostedModels ?? discoverHostedProviderModels)({
+        provider: route, apiKey: env[defaultProviderKeyEnv(route)] ?? "",
+      }).catch(() => []);
+      const model = models.length
+        ? await (dependencies.chooseHostedModel ?? (async (available, current) => {
+          const session = createBoundaryReviewInteractiveSession();
+          if (!session.chooseOption) return prompt("OpenRouter model (publisher/model)", current);
+          const selected = await session.chooseOption("OpenRouter model", [
+            ...[...new Set([current, ...available])].map((id) => ({ value: id, label: id })),
+            { value: "manual", label: "Enter another exact model ID" },
+          ], { initialValue: current, requireExplicitSelection: true, context: [OPENROUTER_EGRESS, "Listed models advertise text and tool support. Availability is checked on the first request."] });
+          return selected === "manual" ? prompt("OpenRouter model (publisher/model)", current) : selected;
+        }))(models, DEFAULT_OPENROUTER_MODEL)
+        : await prompt("OpenRouter model (catalog unavailable; checked on first request)", DEFAULT_OPENROUTER_MODEL);
+      if (model === undefined) continue;
+      return { route, model };
+    }
     while (true) {
       const baseUrl = await prompt(
         "Local OpenAI-compatible base URL",
@@ -820,6 +919,7 @@ export function formatMcpClientHandoff(
   runtimeBindings: ReviewedRuntimeBinding[] = [],
   runtimeIdentity: ReviewedRuntimeIdentity = runtimeBindings.length ? "local_environment" : "unavailable",
   configuredBindings: readonly string[] = [],
+  localTestRuntimeBindings: readonly string[] = [],
 ): string {
   const root = shellToken(projectRoot);
   const launch = client === "claude-code"
@@ -827,29 +927,85 @@ export function formatMcpClientHandoff(
     : client === "cursor"
       ? `cursor ${root}`
       : `code ${root}`;
+  const localTestRuntime = new Set(localTestRuntimeBindings);
   const missingBindings = runtimeBindings.filter((binding) => !configuredBindings.includes(binding.environment));
+  const localTestRuntimeConfigured = runtimeBindings.some((binding) => localTestRuntime.has(binding.environment));
   return [
-    runtimeIdentity !== "production_authentication" && missingBindings.length
+    localTestRuntimeConfigured
+      ? "LOCAL STDIO MCP CONFIGURED; LOCAL TEST RUNTIME CONFIGURED"
+      : runtimeIdentity !== "production_authentication" && missingBindings.length
       ? "LOCAL STDIO MCP CONFIGURED; NOT READY FOR CUSTOMER USE"
       : "LOCAL STDIO MCP CONFIGURED; CUSTOMER USE NOT VERIFIED",
     `${managedMcpClientLabel(client)} launches Runner with the four fixed tools. Do not start a separate MCP server.`,
     ...(!includeActions ? ["Read only: no Action is active; change requests remain refused."] : []),
     ...(runtimeIdentity === "production_authentication"
       ? ["Production identity comes from the reviewed authenticated session. Do not copy fixture values or accept identity from a client prompt or model."]
+      : localTestRuntimeConfigured
+        ? [
+            "The reviewed fixture identity is in an owner-only local project runtime file. It is not copied to .mcp.json, authority, source, provider request, or normal output.",
+            "The managed client and reviewed worker load this fixed local reference; start or restart the client normally. Local applications and programs running as your user can read these values. This is not production authentication.",
+          ]
       : runtimeBindings.length
       ? missingBindings.length ? [
           `Local test identity still needed: ${missingBindings.map((binding) => binding.environment).join(", ")}.`,
-          "Provide trusted local test identities below, never model-provided values; production requires authenticated session identity.",
-          ...missingBindings.map((binding) =>
-            `  export ${binding.environment}='<${binding.role}>'`),
+          "Return to the local-test identity review; Runner never accepts identity values from MCP tool arguments or a model. Production requires authenticated session identity.",
         ]
-        : ["Local test identity is configured in this terminal; values stay private. Launch the client here. Other terminals or already-running clients need their own trusted environment.",
-            "Identity values are configured, not authenticated or proven by the MCP handshake; every tool use still enforces the reviewed scope."]
+        : ["Local test identity is supplied by the reviewed local runtime environment. Identity values are not authenticated or proven by the MCP handshake; every tool use still enforces the reviewed scope."]
       : ["Start or restart the client from the trusted runtime environment required by this reviewed boundary. Identity is not supplied by the model or client config."]),
     `  cd ${root}`,
     `  ${launch}`,
     "",
   ].join("\n");
+}
+
+async function collectLocalTestIdentity(input: {
+  projectRoot: string;
+  client: ManagedMcpProjectClient;
+  bindings: ReviewedRuntimeBinding[];
+}): Promise<Record<string, string> | undefined> {
+  if (!process.stdin.isTTY || !process.stderr.isTTY) return undefined;
+  const session = createBoundaryReviewInteractiveSession();
+  const accepted = await session.confirm("Use a trusted local test identity for this setup session?", {
+    defaultValue: false,
+    context: [
+      `${managedMcpClientLabel(input.client)} is configured. Save a reviewed fixture identity for this project's managed local client and supervised worker.`,
+      `Required reviewed bindings: ${input.bindings.map((binding) => `${binding.role} (${binding.environment})`).join(", ")}.`,
+      "Values are stored only in an owner-only local project runtime file, not in .mcp.json, authority, model/provider requests, or client configuration.",
+      "Local applications and programs running as your user can read this file. This is local test setup, not production authentication. Esc keeps setup pending without changing generated client configuration.",
+    ],
+  });
+  if (!accepted) return undefined;
+  const values: Record<string, string> = {};
+  for (const binding of input.bindings) {
+    try {
+      values[binding.environment] = await readHiddenLocalIdentity(
+        `Trusted local test ${binding.role} value for ${binding.environment} (hidden) [Esc Back]: `,
+      );
+    } catch (error) {
+      if (error instanceof ProviderCredentialInputCancelledError) return undefined;
+      throw error;
+    }
+  }
+  return values;
+}
+
+function validateLocalTestIdentity(
+  bindings: ReviewedRuntimeBinding[],
+  values: Record<string, string>,
+): Record<string, string> {
+  const allowed = new Set(bindings.map((binding) => binding.environment));
+  if (Object.keys(values).some((key) => !allowed.has(key))) {
+    throw new Error("LOCAL_TEST_IDENTITY_INVALID: local test setup supplied an unreviewed environment binding.");
+  }
+  const result: Record<string, string> = {};
+  for (const binding of bindings) {
+    const value = values[binding.environment];
+    if (typeof value !== "string" || !value.trim() || value.length > 1024 || /[\x00-\x1f\x7f]/u.test(value)) {
+      throw new Error(`LOCAL_TEST_IDENTITY_INVALID: provide one nonblank printable ${binding.role} identity for this local test session.`);
+    }
+    result[binding.environment] = value.trim();
+  }
+  return result;
 }
 
 async function checkConfiguredClientLaunch(projectRoot: string, client: ManagedMcpProjectClient) {
@@ -1004,13 +1160,13 @@ async function chooseRouteInTerminal(
   if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
     throw new Error("The post-activation Ask choice requires a real terminal.");
   }
-  const primary = ["mcp-client", "execution-setup", "later", ...(createFirstOutcome ? ["create-outcome"] : []),
+  const primary = ["mcp-client", "edit-rules", "execution-setup", "later", ...(createFirstOutcome ? ["create-outcome"] : []),
     ...(reviewSavedOutcomes ? ["review-outcomes"] : [])];
   let more = !primary.includes(defaultRoute);
   const options = () => [...routeOptions.filter((option) => (option.id !== "create-outcome" || createFirstOutcome)
     && (option.id !== "review-outcomes" || reviewSavedOutcomes)
     && (more ? !primary.includes(option.id) : primary.includes(option.id))),
-    { id: "more" as const, label: more ? "Back to client setup" : "More options", detail: more ? "" : "Terminal chat, production HTTP, rule editing and manual controls" }];
+    { id: "more" as const, label: more ? "Back to client setup" : "More options", detail: more ? "" : "Terminal chat, production HTTP and manual controls" }];
   let selected = Math.max(0, options().findIndex((option) => option.id === defaultRoute));
   const wasRaw = input.isRaw;
   const wasFlowing = input.readableFlowing === true;
@@ -1198,3 +1354,5 @@ function safeErrorMessage(error: unknown): string {
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
     .slice(0, 500);
 }
+import { defaultHostedModel, defaultProviderKeyEnv, DEFAULT_OPENROUTER_MODEL, OPENROUTER_EGRESS, type HostedProvider } from "./hosted-provider-settings.js";
+import { discoverHostedProviderModels } from "./hosted-provider-models.js";

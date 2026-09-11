@@ -2711,6 +2711,10 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const inspection = structuredClone(source.inspection);
         const inspect = vi.fn(async () => inspection);
         const input = { projectRoot, outcome: "inventory.replenish", activeReads: reads, inspect };
+        await fs.writeFile(path.join(projectRoot, "synapsor.actions.runner.json"), JSON.stringify({
+          version: 1, mode: "review", capabilities: [],
+          sources: { [source.build.exploration_boundary.source]: { engine: "postgres", read_url_env: source.build.lock.source_env } },
+        }));
         await expect(verifySemanticExecutionReadPosture(input)).resolves.toBeUndefined();
         expect(inspect).toHaveBeenCalledWith(expect.objectContaining({ databaseUrlEnv: source.build.lock.source_env }));
         inspection.tables[0]!.row_level_security_policies = [ ...(inspection.tables[0]!.row_level_security_policies ?? []),

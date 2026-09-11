@@ -218,6 +218,7 @@ export interface ProposalStoreWorkerMethods {
       proposal_id: string;
       execution_mode?: WorkerExecutionMode;
       contract_digest?: `sha256:${string}`;
+      cancellation_control_role?: string | null;
       max_attempts?: number;
       queue_limit?: number;
       now?: string;

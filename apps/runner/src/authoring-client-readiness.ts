@@ -2,7 +2,7 @@ import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { loadActiveActionRuleAuthority, readActionRuleAuthorityActivation } from "./action-rule-authority.js";
 import type { BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { activePolicySource, loadPolicySources } from "./authoring-policy-source.js";
-import { policyReadinessItems } from "./authoring-review-readiness.js";
+import { applicationObligationAssigned, policyReadinessItems } from "./authoring-review-readiness.js";
 import { needsDeploymentCoverageClassification } from "./authoring-policy-coverage.js";
 import { guidedActionStatus } from "./guided-action.js";
 import { readSemanticSupervisedExecutionState } from "./semantic-action-deployment.js";
@@ -62,12 +62,18 @@ export async function pendingClientResponsibilities(root: string, saved: Boundar
   }
   return policyReadinessItems(sources.coverage, sources).filter((item) => item.kind === "deployment_prerequisite"
     || item.passages.some(needsDeploymentCoverageClassification))
-    .flatMap((item) => [
-      `${item.title}: ${item.passages.some(needsDeploymentCoverageClassification) ? "setup classification pending"
-        : item.passages.some((passage) => passage.deployment_prerequisite === "runner_client_connection")
-        ? "Runner client connection setup pending"
-        : item.passages.some((passage) => passage.deployment_prerequisite === "authenticated_identity")
-          ? "runtime identity setup pending" : item.blocksReview ? "assignment pending" : "assigned to your client application"}; not verified.`,
-      item.nextStep,
-    ]);
+    .flatMap((item) => {
+      const assignedClientDuty = item.passages.length > 0
+        && item.passages.every((passage) => applicationObligationAssigned(sources.coverage!, passage, sources));
+      return [
+        `${item.title}: ${item.passages.some(needsDeploymentCoverageClassification) ? "setup classification pending"
+          : item.passages.some((passage) => passage.deployment_prerequisite === "runner_client_connection")
+          ? "Runner client connection setup pending"
+          : item.passages.some((passage) => passage.deployment_prerequisite === "authenticated_identity")
+            ? "runtime identity setup pending" : item.blocksReview ? "assignment pending" : "assigned to your client application"}; not verified.`,
+        assignedClientDuty
+          ? "Verify the assigned client behavior for this requirement before customer use."
+          : item.nextStep,
+      ];
+    });
 }

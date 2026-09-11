@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { makeRunnerDeclarationsPortable } from "./make-runner-declarations-portable.mjs";
+import { copyReleaseAsset } from "./copy-release-asset.mjs";
 import { execFileSync } from "node:child_process";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -229,6 +230,11 @@ const publicDocs = [
   "fresh-developer-usability.md",
   "getting-started-own-database.md",
   "guided-onboarding.md",
+  "openrouter.md",
+  "action-rule-complete-collections.md",
+  "action-rule-shared-reference-scope.md",
+  "action-capability-qualification.md",
+  "onboarding-domain-audit.md",
   "legacy-onboarding.md",
   "guarded-crud-writeback.md",
   "graduated-trust.md",
@@ -358,7 +364,7 @@ for (const [source, destination] of releaseAssets) {
   const from = resolve(root, source);
   const to = resolve(packageRoot, destination);
   await mkdir(dirname(to), { recursive: true });
-  await cp(from, to, { recursive: true });
+  await copyReleaseAsset(from, to);
 }
 
 await build({

@@ -632,6 +632,18 @@ async function toolResult(
     };
     return options.withOperation ? await options.withOperation(prepare) : await prepare();
   } catch (error) {
+    // Connection diagnostics can contain credentials, hosts and role names.
+    // Classify only known driver codes; never forward their raw message.
+    const sourceCode = error instanceof Error && "code" in error ? error.code : undefined;
+    if (["28P01", "28000", "ER_ACCESS_DENIED_ERROR"].includes(String(sourceCode))) {
+      error = new ScopedExploreError("EXPLORE_SOURCE_UNAVAILABLE",
+        "The database connection could not authenticate. Ask the operator to recheck the connection and restart this client after updating its credentials.",
+        { category: "connection_authentication", recovery: "operator_connection_review", retryable: false });
+    } else if (["ECONNREFUSED", "ETIMEDOUT", "ECONNRESET", "EHOSTUNREACH", "ENOTFOUND", "08006", "08001", "57P01", "53300", "PROTOCOL_CONNECTION_LOST"].includes(String(sourceCode))) {
+      error = new ScopedExploreError("EXPLORE_SOURCE_UNAVAILABLE",
+        "The database connection is unavailable. Ask the operator to check database availability before retrying; permissions have not changed.",
+        { category: "connection_unavailable", recovery: "operator_connection_review", retryable: true });
+    }
     const catalogDetails = error instanceof McpRuntimeError && error.code === "CATALOG_CONTRACT_TOO_LARGE"
       && error.details && Number.isSafeInteger(error.details.measured_bytes) && Number.isSafeInteger(error.details.limit_bytes)
       ? { kind: error.details.kind, measured_bytes: error.details.measured_bytes, limit_bytes: error.details.limit_bytes,

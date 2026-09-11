@@ -1,0 +1,857 @@
+[
+  {
+    "aggregate_measure_functions": {},
+    "aggregate_measures": [],
+    "count_distinct_fields": [
+      "section_id",
+      "course_id"
+    ],
+    "field_enums": {},
+    "field_types": {
+      "course_id": "uuid",
+      "institution_id": "uuid",
+      "instructor_name": "text",
+      "meeting_days": "text",
+      "section_id": "uuid",
+      "section_label": "text",
+      "term_code": "text"
+    },
+    "filterable_fields": {
+      "course_id": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "instructor_name": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "meeting_days": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "section_id": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "section_label": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "term_code": [
+        "eq",
+        "neq",
+        "in"
+      ]
+    },
+    "groupable_fields": [
+      "section_label",
+      "meeting_days",
+      "term_code",
+      "instructor_name"
+    ],
+    "id": "university.class_sections",
+    "kept_out_fields": [
+      "institution_id"
+    ],
+    "minimum_cohort_size": 5,
+    "presence_measure_fields": [
+      "section_id",
+      "course_id",
+      "section_label",
+      "meeting_days",
+      "term_code",
+      "instructor_name"
+    ],
+    "primary_key": "section_id",
+    "relationships": [
+      {
+        "cardinality": "many_to_one",
+        "counted_entity": "section_id",
+        "id": "class_sections_institution_id_course_id_fkey",
+        "local_columns": [
+          "institution_id",
+          "course_id"
+        ],
+        "max_fan_out": 1,
+        "nullable": false,
+        "path_depth": 1,
+        "proof": {
+          "digest": "sha256:7807d93108bcaf3474ed843af7127bf75f1850f4e7c7a8b954b99a787a1f2692",
+          "links": [
+            {
+              "cardinality": "many_to_one",
+              "constraint_name": "class_sections_institution_id_course_id_fkey",
+              "max_fan_out": 1,
+              "nullable": false,
+              "source_columns": [
+                "institution_id",
+                "course_id"
+              ],
+              "source_resource": "university.class_sections",
+              "target_columns": [
+                "institution_id",
+                "course_id"
+              ],
+              "target_resource": "university.courses",
+              "target_uniqueness": {
+                "columns": [
+                  "institution_id",
+                  "course_id"
+                ],
+                "kind": "unique_constraint",
+                "name": "courses_institution_id_course_id_key"
+              }
+            }
+          ],
+          "source": "database_catalog"
+        },
+        "target_columns": [
+          "institution_id",
+          "course_id"
+        ],
+        "target_resource": "university.courses",
+        "unmatched_rows": "exclude"
+      }
+    ],
+    "rls_session": {
+      "tenant_setting": "synapsor.tenant_id"
+    },
+    "schema": "university",
+    "selectable_fields": [
+      "section_id",
+      "course_id",
+      "section_label",
+      "meeting_days",
+      "term_code",
+      "instructor_name"
+    ],
+    "sortable_fields": [
+      "section_id",
+      "course_id",
+      "section_label",
+      "meeting_days",
+      "term_code",
+      "instructor_name"
+    ],
+    "suppression_aware_totals": true,
+    "table": "class_sections",
+    "tenant_key": "institution_id",
+    "time_bucket_fields": {}
+  },
+  {
+    "aggregate_measure_functions": {
+      "credits": [
+        "sum",
+        "avg",
+        "stddev_samp",
+        "stddev_pop",
+        "var_samp",
+        "var_pop"
+      ]
+    },
+    "aggregate_measures": [
+      "credits"
+    ],
+    "count_distinct_fields": [
+      "course_id"
+    ],
+    "field_enums": {},
+    "field_types": {
+      "course_code": "text",
+      "course_id": "uuid",
+      "course_title": "text",
+      "credits": "integer",
+      "institution_id": "uuid"
+    },
+    "filterable_fields": {
+      "course_code": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "course_id": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "course_title": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "credits": [
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "in"
+      ]
+    },
+    "groupable_fields": [
+      "course_code",
+      "course_title"
+    ],
+    "id": "university.courses",
+    "kept_out_fields": [
+      "institution_id"
+    ],
+    "minimum_cohort_size": 5,
+    "presence_measure_fields": [
+      "course_id",
+      "course_code",
+      "course_title",
+      "credits"
+    ],
+    "primary_key": "course_id",
+    "relationships": [],
+    "rls_session": {
+      "tenant_setting": "synapsor.tenant_id"
+    },
+    "schema": "university",
+    "selectable_fields": [
+      "course_id",
+      "course_code",
+      "course_title",
+      "credits"
+    ],
+    "sortable_fields": [
+      "course_id",
+      "course_code",
+      "course_title",
+      "credits"
+    ],
+    "suppression_aware_totals": true,
+    "table": "courses",
+    "tenant_key": "institution_id",
+    "time_bucket_fields": {}
+  },
+  {
+    "aggregate_measure_functions": {
+      "credits": [
+        "sum",
+        "avg",
+        "stddev_samp",
+        "stddev_pop",
+        "var_samp",
+        "var_pop"
+      ]
+    },
+    "aggregate_measures": [
+      "credits"
+    ],
+    "count_distinct_fields": [
+      "registration_id",
+      "section_id"
+    ],
+    "field_enums": {
+      "registration_state": [
+        "waitlisted",
+        "enrolled",
+        "dropped",
+        "withdrawn"
+      ]
+    },
+    "field_types": {
+      "credits": "integer",
+      "drop_reason": "text",
+      "dropped_at": "timestamp with time zone",
+      "institution_id": "uuid",
+      "registration_id": "uuid",
+      "registration_state": "text",
+      "row_version": "bigint",
+      "section_id": "uuid",
+      "student_id": "uuid",
+      "term_code": "text",
+      "updated_at": "timestamp with time zone",
+      "waitlist_position": "integer"
+    },
+    "filterable_fields": {
+      "credits": [
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "in"
+      ],
+      "drop_reason": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "dropped_at": [
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "in"
+      ],
+      "registration_id": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "registration_state": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "row_version": [
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "in"
+      ],
+      "section_id": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "term_code": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "updated_at": [
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "in"
+      ],
+      "waitlist_position": [
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "in"
+      ]
+    },
+    "groupable_fields": [
+      "term_code",
+      "registration_state",
+      "drop_reason"
+    ],
+    "id": "university.registration_cases",
+    "kept_out_fields": [
+      "institution_id",
+      "student_id"
+    ],
+    "minimum_cohort_size": 5,
+    "presence_measure_fields": [
+      "registration_id",
+      "section_id",
+      "term_code",
+      "registration_state",
+      "waitlist_position",
+      "credits",
+      "drop_reason",
+      "dropped_at",
+      "row_version",
+      "updated_at"
+    ],
+    "primary_key": "registration_id",
+    "principal_key": "student_id",
+    "relationships": [
+      {
+        "cardinality": "many_to_one",
+        "counted_entity": "registration_id",
+        "id": "registration_cases_institution_id_section_id_fkey",
+        "local_columns": [
+          "institution_id",
+          "section_id"
+        ],
+        "max_fan_out": 1,
+        "nullable": false,
+        "path_depth": 1,
+        "proof": {
+          "digest": "sha256:ee1111c366be48d6edbad038b5480e722c027a89a50c1f2fbd7b01223ff96e75",
+          "links": [
+            {
+              "cardinality": "many_to_one",
+              "constraint_name": "registration_cases_institution_id_section_id_fkey",
+              "max_fan_out": 1,
+              "nullable": false,
+              "source_columns": [
+                "institution_id",
+                "section_id"
+              ],
+              "source_resource": "university.registration_cases",
+              "target_columns": [
+                "institution_id",
+                "section_id"
+              ],
+              "target_resource": "university.class_sections",
+              "target_uniqueness": {
+                "columns": [
+                  "institution_id",
+                  "section_id"
+                ],
+                "kind": "unique_constraint",
+                "name": "class_sections_institution_id_section_id_key"
+              }
+            }
+          ],
+          "source": "database_catalog"
+        },
+        "target_columns": [
+          "institution_id",
+          "section_id"
+        ],
+        "target_resource": "university.class_sections",
+        "unmatched_rows": "exclude"
+      },
+      {
+        "cardinality": "many_to_one",
+        "counted_entity": "registration_id",
+        "id": "registration_cases_institution_id_section_id_fkey__class_sections_institution_id_course_id_fkey",
+        "local_columns": [
+          "institution_id",
+          "section_id"
+        ],
+        "max_fan_out": 1,
+        "nullable": false,
+        "path_depth": 2,
+        "proof": {
+          "digest": "sha256:84901f9e1d54fb2ac269d084119759ed331026fe12d09d95e54b028f2668299b",
+          "links": [
+            {
+              "cardinality": "many_to_one",
+              "constraint_name": "registration_cases_institution_id_section_id_fkey",
+              "max_fan_out": 1,
+              "nullable": false,
+              "source_columns": [
+                "institution_id",
+                "section_id"
+              ],
+              "source_resource": "university.registration_cases",
+              "target_columns": [
+                "institution_id",
+                "section_id"
+              ],
+              "target_resource": "university.class_sections",
+              "target_uniqueness": {
+                "columns": [
+                  "institution_id",
+                  "section_id"
+                ],
+                "kind": "unique_constraint",
+                "name": "class_sections_institution_id_section_id_key"
+              }
+            },
+            {
+              "cardinality": "many_to_one",
+              "constraint_name": "class_sections_institution_id_course_id_fkey",
+              "max_fan_out": 1,
+              "nullable": false,
+              "source_columns": [
+                "institution_id",
+                "course_id"
+              ],
+              "source_resource": "university.class_sections",
+              "target_columns": [
+                "institution_id",
+                "course_id"
+              ],
+              "target_resource": "university.courses",
+              "target_uniqueness": {
+                "columns": [
+                  "institution_id",
+                  "course_id"
+                ],
+                "kind": "unique_constraint",
+                "name": "courses_institution_id_course_id_key"
+              }
+            }
+          ],
+          "source": "database_catalog"
+        },
+        "target_columns": [
+          "institution_id",
+          "course_id"
+        ],
+        "target_resource": "university.courses",
+        "unmatched_rows": "exclude"
+      }
+    ],
+    "rls_session": {
+      "principal_setting": "synapsor.principal",
+      "tenant_setting": "synapsor.tenant_id"
+    },
+    "schema": "university",
+    "selectable_fields": [
+      "registration_id",
+      "section_id",
+      "term_code",
+      "registration_state",
+      "waitlist_position",
+      "credits",
+      "drop_reason",
+      "dropped_at",
+      "row_version",
+      "updated_at"
+    ],
+    "sortable_fields": [
+      "registration_id",
+      "section_id",
+      "term_code",
+      "registration_state",
+      "waitlist_position",
+      "credits",
+      "drop_reason",
+      "dropped_at",
+      "row_version",
+      "updated_at"
+    ],
+    "suppression_aware_totals": true,
+    "table": "registration_cases",
+    "tenant_key": "institution_id",
+    "time_bucket_fields": {
+      "dropped_at": [
+        "hour",
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year",
+        "day_of_week"
+      ],
+      "updated_at": [
+        "hour",
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year",
+        "day_of_week"
+      ]
+    }
+  },
+  {
+    "aggregate_measure_functions": {},
+    "aggregate_measures": [],
+    "count_distinct_fields": [
+      "offer_id",
+      "registration_id",
+      "section_id"
+    ],
+    "field_enums": {
+      "offer_state": [
+        "active",
+        "expired",
+        "accepted",
+        "withdrawn"
+      ]
+    },
+    "field_types": {
+      "expires_at": "timestamp with time zone",
+      "institution_id": "uuid",
+      "offer_id": "uuid",
+      "offer_state": "text",
+      "opens_at": "timestamp with time zone",
+      "registration_id": "uuid",
+      "seat_reserved": "boolean",
+      "section_id": "uuid",
+      "student_id": "uuid"
+    },
+    "filterable_fields": {
+      "expires_at": [
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "in"
+      ],
+      "offer_id": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "offer_state": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "opens_at": [
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "in"
+      ],
+      "registration_id": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "seat_reserved": [
+        "eq",
+        "neq",
+        "in"
+      ],
+      "section_id": [
+        "eq",
+        "neq",
+        "in"
+      ]
+    },
+    "groupable_fields": [
+      "offer_state",
+      "seat_reserved"
+    ],
+    "id": "university.waitlist_offers",
+    "kept_out_fields": [
+      "institution_id",
+      "student_id"
+    ],
+    "minimum_cohort_size": 5,
+    "presence_measure_fields": [
+      "offer_id",
+      "registration_id",
+      "section_id",
+      "offer_state",
+      "seat_reserved",
+      "opens_at",
+      "expires_at"
+    ],
+    "primary_key": "offer_id",
+    "principal_key": "student_id",
+    "relationships": [
+      {
+        "cardinality": "many_to_one",
+        "counted_entity": "offer_id",
+        "id": "waitlist_offers_institution_id_registration_id_fkey",
+        "local_columns": [
+          "institution_id",
+          "registration_id"
+        ],
+        "max_fan_out": 1,
+        "nullable": false,
+        "path_depth": 1,
+        "proof": {
+          "digest": "sha256:4d1f4274db4e2b463a8e0f46b21b0b3c440eebd34c68d0ea79d33fcd6a2df50c",
+          "links": [
+            {
+              "cardinality": "many_to_one",
+              "constraint_name": "waitlist_offers_institution_id_registration_id_fkey",
+              "max_fan_out": 1,
+              "nullable": false,
+              "source_columns": [
+                "institution_id",
+                "registration_id"
+              ],
+              "source_resource": "university.waitlist_offers",
+              "target_columns": [
+                "institution_id",
+                "registration_id"
+              ],
+              "target_resource": "university.registration_cases",
+              "target_uniqueness": {
+                "columns": [
+                  "institution_id",
+                  "registration_id"
+                ],
+                "kind": "unique_constraint",
+                "name": "registration_cases_institution_id_registration_id_key"
+              }
+            }
+          ],
+          "source": "database_catalog"
+        },
+        "target_columns": [
+          "institution_id",
+          "registration_id"
+        ],
+        "target_resource": "university.registration_cases",
+        "unmatched_rows": "exclude"
+      },
+      {
+        "cardinality": "many_to_one",
+        "counted_entity": "offer_id",
+        "id": "waitlist_offers_institution_id_section_id_fkey",
+        "local_columns": [
+          "institution_id",
+          "section_id"
+        ],
+        "max_fan_out": 1,
+        "nullable": false,
+        "path_depth": 1,
+        "proof": {
+          "digest": "sha256:fc4003227124f45ffe384552981ffead1a5bcfddc7515b54f52d971083f424f5",
+          "links": [
+            {
+              "cardinality": "many_to_one",
+              "constraint_name": "waitlist_offers_institution_id_section_id_fkey",
+              "max_fan_out": 1,
+              "nullable": false,
+              "source_columns": [
+                "institution_id",
+                "section_id"
+              ],
+              "source_resource": "university.waitlist_offers",
+              "target_columns": [
+                "institution_id",
+                "section_id"
+              ],
+              "target_resource": "university.class_sections",
+              "target_uniqueness": {
+                "columns": [
+                  "institution_id",
+                  "section_id"
+                ],
+                "kind": "unique_constraint",
+                "name": "class_sections_institution_id_section_id_key"
+              }
+            }
+          ],
+          "source": "database_catalog"
+        },
+        "target_columns": [
+          "institution_id",
+          "section_id"
+        ],
+        "target_resource": "university.class_sections",
+        "unmatched_rows": "exclude"
+      },
+      {
+        "cardinality": "many_to_one",
+        "counted_entity": "offer_id",
+        "id": "waitlist_offers_institution_id_section_id_fkey__class_sections_institution_id_course_id_fkey",
+        "local_columns": [
+          "institution_id",
+          "section_id"
+        ],
+        "max_fan_out": 1,
+        "nullable": false,
+        "path_depth": 2,
+        "proof": {
+          "digest": "sha256:64462da8c1498be478d8c74f42215368c79c4a87c8b1e6feb926bf4db98eea1e",
+          "links": [
+            {
+              "cardinality": "many_to_one",
+              "constraint_name": "waitlist_offers_institution_id_section_id_fkey",
+              "max_fan_out": 1,
+              "nullable": false,
+              "source_columns": [
+                "institution_id",
+                "section_id"
+              ],
+              "source_resource": "university.waitlist_offers",
+              "target_columns": [
+                "institution_id",
+                "section_id"
+              ],
+              "target_resource": "university.class_sections",
+              "target_uniqueness": {
+                "columns": [
+                  "institution_id",
+                  "section_id"
+                ],
+                "kind": "unique_constraint",
+                "name": "class_sections_institution_id_section_id_key"
+              }
+            },
+            {
+              "cardinality": "many_to_one",
+              "constraint_name": "class_sections_institution_id_course_id_fkey",
+              "max_fan_out": 1,
+              "nullable": false,
+              "source_columns": [
+                "institution_id",
+                "course_id"
+              ],
+              "source_resource": "university.class_sections",
+              "target_columns": [
+                "institution_id",
+                "course_id"
+              ],
+              "target_resource": "university.courses",
+              "target_uniqueness": {
+                "columns": [
+                  "institution_id",
+                  "course_id"
+                ],
+                "kind": "unique_constraint",
+                "name": "courses_institution_id_course_id_key"
+              }
+            }
+          ],
+          "source": "database_catalog"
+        },
+        "target_columns": [
+          "institution_id",
+          "course_id"
+        ],
+        "target_resource": "university.courses",
+        "unmatched_rows": "exclude"
+      }
+    ],
+    "rls_session": {
+      "principal_setting": "synapsor.principal",
+      "tenant_setting": "synapsor.tenant_id"
+    },
+    "schema": "university",
+    "selectable_fields": [
+      "offer_id",
+      "registration_id",
+      "section_id",
+      "offer_state",
+      "seat_reserved",
+      "opens_at",
+      "expires_at"
+    ],
+    "sortable_fields": [
+      "offer_id",
+      "registration_id",
+      "section_id",
+      "offer_state",
+      "seat_reserved",
+      "opens_at",
+      "expires_at"
+    ],
+    "suppression_aware_totals": true,
+    "table": "waitlist_offers",
+    "tenant_key": "institution_id",
+    "time_bucket_fields": {
+      "expires_at": [
+        "hour",
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year",
+        "day_of_week"
+      ],
+      "opens_at": [
+        "hour",
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year",
+        "day_of_week"
+      ]
+    }
+  }
+]

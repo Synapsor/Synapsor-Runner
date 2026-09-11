@@ -355,7 +355,7 @@ function withinLiteralValues(
 }
 
 function providerConfiguration(session: BoundaryJobPlanningSession, authorityDigest: `sha256:${string}`, egressAcknowledged: boolean, env?: NodeJS.ProcessEnv) {
-  const defaultKeyEnv = session.provider === "openai" ? "OPENAI_API_KEY" : session.provider === "anthropic" ? "ANTHROPIC_API_KEY" : undefined;
+  const defaultKeyEnv = session.provider === "openai_compatible" ? undefined : defaultProviderKeyEnv(session.provider);
   return resolveAskProviderConfiguration({ provider: session.provider, model: session.model,
     ...(session.baseUrl ? { base_url: session.baseUrl } : {}), ...(session.apiKey ? { api_key: session.apiKey }
       : session.apiKeyEnv ?? defaultKeyEnv ? { api_key_env: session.apiKeyEnv ?? defaultKeyEnv } : {}),
@@ -391,3 +391,4 @@ function refused(message: string): Awaited<ReturnType<AskToolGateway["callTool"]
   return { ok: false, value: { error_code: "PARENT_MODEL_DRAFT_REFUSED", message, authority_granted: false, source_database_changed: false },
     error_code: "PARENT_MODEL_DRAFT_REFUSED" };
 }
+import { defaultProviderKeyEnv } from "./hosted-provider-settings.js";

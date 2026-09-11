@@ -122,6 +122,7 @@ export type BoundaryRescanEntry = {
   removed_relationships: BoundaryRescanRelationshipChange[];
   newly_proven_value_allowlists?: BoundaryRescanValueAllowlistChange[];
   pruned_review_inputs: string[];
+  private_access_proof_refreshed?: { source: string };
 };
 
 export type BoundaryRescanReport = {
@@ -337,6 +338,9 @@ export async function prepareBoundaryRescan(input: {
       ...buildInput,
       overrides: withoutAdvancedAggregateOverrides(pruned.overrides),
     });
+    const prerequisite = previous.candidate.read_prerequisite;
+    const previousPrerequisitePolicyNames = prerequisite ? storedEntry?.catalog?.review.resources.find(resource =>
+      resource.schema === prerequisite.source.schema && resource.table === prerequisite.source.table)?.rls.policy_names : undefined;
     const previousFoundation = withoutAdvancedAggregates(previous.candidate);
     const foundationCandidate = previousFoundation.pack.resources.length === 0
       ? rebaseEmptyDisabledBoundary(
@@ -348,6 +352,8 @@ export async function prepareBoundaryRescan(input: {
           generatedDraft: foundationBuild.exploration_boundary,
           previousCandidate: previousFoundation,
           boundaryName,
+          inspection,
+          previousPrerequisitePolicyNames,
         });
     const reviewedAggregates = pruneInvalidAdvancedAggregateOverrides(
       foundationCandidate,
@@ -366,6 +372,8 @@ export async function prepareBoundaryRescan(input: {
           generatedDraft: build.exploration_boundary,
           previousCandidate: previous.candidate,
           boundaryName,
+          inspection,
+          previousPrerequisitePolicyNames,
         });
     const retained = retainedReviewDecisions(previous, candidate);
     const progress = createBoundaryReviewProgress({
@@ -582,6 +590,9 @@ export function formatBoundaryRescanReport(report: BoundaryRescanReport): string
   ];
   for (const boundary of report.boundaries) {
     const details = [
+      ...(boundary.private_access_proof_refreshed ? [
+        `Private access condition preserved: ${boundary.private_access_proof_refreshed.source}. Refreshed only for new policies that do not apply to the reader; review the disabled revision before activation.`,
+      ] : []),
       ...boundary.invalidated_decisions.map((decision) =>
         `${decision.id}: ${decision.reason === "decision_removed" ? "reviewed input no longer exists" : "reviewed input changed"}`),
       ...boundary.changed_field_types.map((field) =>
@@ -1134,6 +1145,9 @@ function rescanEntry(input: {
     deployment_profile: input.progress.candidate.deployment_profile,
     previous_candidate_digest: input.previous.candidate_digest,
     candidate_digest: input.progress.candidate_digest,
+    ...(input.previous.candidate.read_prerequisite && input.progress.candidate.read_prerequisite
+      && input.previous.candidate.read_prerequisite.dependency.fingerprint !== input.progress.candidate.read_prerequisite.dependency.fingerprint
+      ? { private_access_proof_refreshed: { source: `${input.progress.candidate.read_prerequisite.source.schema}.${input.progress.candidate.read_prerequisite.source.table}` } } : {}),
     kept_confirmations: input.progress.confirmations.length,
     preserved_authority: preservedAuthorityCounts(beforeResources, afterResources),
     safely_carried_confirmations: [...input.safelyCarried].sort(),

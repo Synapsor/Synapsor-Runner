@@ -57,7 +57,39 @@ function plan(): WriterProvisioningPlan {
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 
 describe("dedicated writer provisioning handoff", () => {
-  it.each([false, true])("exports a separately reviewed telecom writer without broadening the old one (consume=%s)", async (consume) => {
+  it("records missing FORCE RLS and explains administrator review without changing it in grants", async () => {
+    const data = inspection();
+    data.tables[0]!.row_level_security = true;
+    data.tables[0]!.role_posture = { row_security_forced: false } as NonNullable<SchemaInspection["tables"][number]["role_posture"]>;
+    const reviewed = writerProvisioningPlan({ assessment: assessment(), inspection: data,
+      outcome: "telecom.plan_change_offer_switch", actionDigest, writerEnv: "WRITER_URL" })!;
+    expect(reviewed.relations[0]!.row_security).toEqual({ enabled: true, forced: false });
+    expect(reviewed.relations[1]!.row_security).toEqual({ enabled: "unknown", forced: "unknown" });
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-writer-rls-")); roots.push(root);
+    const directory = await exportWriterProvisioning(root, reviewed);
+    expect(await fs.readFile(path.join(directory, "README.md"), "utf8")).toContain("ENABLE and FORCE ROW LEVEL SECURITY");
+    expect(writerProvisioningSql(reviewed)).not.toMatch(/ALTER TABLE/);
+    expect(writerProvisioningSql(reviewed)).toContain("this file does not change RLS");
+  });
+  it.each([
+    ["DATABASE_URL", "DATABASE_URL", "SYNAPSOR_DATABASE_WRITE_URL"],
+    ["CUSTOM_READ_URL", "CUSTOM_READ_URL", "SYNAPSOR_DATABASE_WRITE_URL"],
+    ["SYNAPSOR_DATABASE_WRITE_URL", "SYNAPSOR_DATABASE_WRITE_URL", "SYNAPSOR_EXECUTION_DATABASE_URL"],
+    ["CUSTOM_READ_URL", "CUSTOM_WRITE_URL", "CUSTOM_WRITE_URL"],
+  ])("keeps reader %s separate from failed writer %s in the administrator recovery", async (readEnv, writerEnv, expected) => {
+    const reviewed = writerProvisioningPlan({ assessment: assessment(), inspection: inspection(),
+      outcome: "telecom.plan_change_offer_switch", actionDigest, readEnv, writerEnv })!;
+    expect(reviewed).toMatchObject({ read_env: readEnv, writer_env: expected });
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-writer-separation-")); roots.push(root);
+    const directory = await exportWriterProvisioning(root, reviewed);
+    const instructions = await fs.readFile(path.join(directory, "README.md"), "utf8");
+    expect(instructions).toContain(`Keep ${readEnv} unchanged`);
+    expect(instructions).toContain(`ONLY in ${expected}`);
+    expect(instructions).toContain("synapsor-runner action review --project-root .");
+    expect(instructions).not.toContain("fixture");
+    expect((await fs.readdir(directory)).sort()).toEqual(["README.md", "grants.sql", "requirements.json"]);
+  });
+  it.each([false, true])("runs the explicitly selected telecom example separately from generic provisioning (consume=%s)", async (consume) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-telecom-writer-"));
     roots.push(root);
     const reviewed = plan();
@@ -80,6 +112,16 @@ describe("dedicated writer provisioning handoff", () => {
     expect(await fs.readFile(path.join(handoff, "requirements.json"), "utf8")).toBe(inputBefore);
     await expect(promisify(execFile)(process.execPath, [recipe, handoff, output])).rejects.toThrow();
     expect(await fs.readFile(output, "utf8")).toBe(sql);
+    const retryOutput = path.join(root, "new-writer-retry.sql");
+    await promisify(execFile)(process.execPath, [recipe, handoff, retryOutput, "--fresh-role"]);
+    const retrySql = await fs.readFile(retryOutput, "utf8");
+    const retryRole = retrySql.match(/CREATE ROLE "(runner_writer_[a-f0-9]{12})"/u)?.[1];
+    expect(retryRole).toBeDefined();
+    expect(retryRole).not.toBe(reviewed.suggested_role);
+    expect(retrySql).not.toContain(`"${reviewed.suggested_role}"`);
+    expect(retrySql).not.toMatch(/DROP ROLE|ALTER ROLE "synapsor_writer"|\bBYPASSRLS;/u);
+    expect(retrySql).toContain("Fixture policies changed after export");
+    expect(await fs.readFile(path.join(handoff, "requirements.json"), "utf8")).toBe(inputBefore);
     reviewed.relations[1]!.update_columns = ["status", "version", "plan_code"];
     const unrelated = await exportWriterProvisioning(root, reviewed), refusedOutput = path.join(root, "refused.sql");
     await expect(promisify(execFile)(process.execPath, [recipe, unrelated, refusedOutput])).rejects.toThrow(/not the supported two-relation/);

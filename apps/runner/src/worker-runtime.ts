@@ -14,6 +14,7 @@ import {
   ProposalStore,
   workerControlDecisionSubject,
   type OperationalMetricRow,
+  type StoredProposal,
   type WorkerControlAction,
   type WorkerControlTarget,
   type WorkerQueueItem
@@ -22,6 +23,8 @@ import process from "node:process";
 import { recordUnhealthySupervisionSinkAttention, requiredAttentionSinksHealthy, resolveHealthySupervisionSinkAttention, updateSupervisedProposalExpiryAttention, updateSupervisedWorkerBacklogAttention, workbenchAttentionPath } from "./attention-domain.js";
 import { usage } from "./cli-help.js";
 import { operationalLog, safeOperationalErrorCode } from "./cli-logging.js";
+import { cliCommandName } from "./cli-command-meta.js";
+import { shellQuote } from "./cli-format.js";
 import { optionalArg, positional, positiveIntOption, runtimeStoreBridgeFlag, waitFor } from "./cli-options.js";
 import { confirmDangerousAction, openLocalStoreAt, operatorIdentityForDecision, optionalRuntimeConfig, readRuntimeConfig, requireLocalProposal, resolveProposalIdFromStore, resolvedRuntimeStorePath, runnerConfigPath } from "./cli-project.js";
 import { runnerProcessStartedAt } from "./cli-runtime.js";
@@ -31,11 +34,13 @@ import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, assertNoRu
 import { assertSemanticSupervisedWriterPosture, assertSupervisedWriterPosture, currentSupervisedApprovalPolicy, workerControlAllowsPolicy, workerControlOperatorDecisionAction, workerPolicyError } from "./worker-policy.js";
 import { findProposalCapability, loadSemanticProposalAuthority, loadSemanticRuntimeAuthority } from "./writeback-execution.js";
 import { executionBindingDigest } from "./control-policy-execution.js";
+import { withLocalTestRuntimeIdentity } from "./local-test-runtime-identity.js";
+import { workerCancellationRequiredRole } from "./worker-cancellation-authority.js";
 
 
 export async function workerCommand(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
-  if (subcommand === "run") return workerRun(rest);
+  if (subcommand === "run") return withWorkerLocalTestRuntime(rest, () => workerRun(rest));
   if (subcommand === "status" || subcommand === "list") return workerStatus(rest);
   if (subcommand === "pause" || subcommand === "resume" || subcommand === "drain") {
     return workerControlMutate(subcommand, rest);
@@ -47,6 +52,14 @@ export async function workerCommand(args: string[]): Promise<number> {
   if (subcommand === "dead-letter") return workerDeadLetter(rest);
   usage(["worker"]);
   return 2;
+}
+
+async function withWorkerLocalTestRuntime<T>(args: string[], operation: () => Promise<T>): Promise<T> {
+  const config = await optionalRuntimeConfig(runnerConfigPath(args));
+  const projectRoot = config?.action_rules?.project_root;
+  return projectRoot
+    ? withLocalTestRuntimeIdentity({ projectRoot }, operation)
+    : operation();
 }
 
 
@@ -63,6 +76,12 @@ async function workerStatus(args: string[]): Promise<number> {
     await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath: store.path, store, readOnly: true });
     const status = optionalArg(args, "--status") as Parameters<ProposalStore["listWorkerQueue"]>[0];
     const items = store.listWorkerQueue(status);
+    const authorityAssessments = await inspectWorkerQueueAuthorityAssessments({
+      items,
+      config,
+      configPath,
+      proposalForId: (proposalId) => store.getProposal(proposalId),
+    });
     const control = store.workerControlState();
     const now = Date.now();
     const summary = {
@@ -79,7 +98,8 @@ async function workerStatus(args: string[]): Promise<number> {
     };
     if (args.includes("--json")) {
       process.stdout.write(`${JSON.stringify({ worker_control: control, worker_health: "unknown", summary,
-        worker_queue: items.map((item) => ({ ...item, recovery: workerFailureRecovery(item.last_error_code, item.status) })) }, null, 2)}\n`);
+        worker_queue: items.map((item) => ({ ...item, recovery: workerFailureRecovery(item.last_error_code, item.status),
+          ...(authorityAssessments.get(item.proposal_id) ? { authority_assessment: authorityAssessments.get(item.proposal_id) } : {}) })) }, null, 2)}\n`);
     } else {
       process.stdout.write(`Supervised execution: ${control.mode} (control revision ${control.revision})\n`);
       process.stdout.write("Worker health: unknown. Queue state and lease counts do not prove that a worker process is running.\n");
@@ -95,6 +115,10 @@ async function workerStatus(args: string[]): Promise<number> {
           + `${item.lease_owner ? ` lease=${item.lease_owner} until=${item.lease_expires_at}` : ""}`
           + `${item.last_error_code ? ` error=${item.last_error_code}` : ""}\n`,
         );
+        const authority = authorityAssessments.get(item.proposal_id);
+        if (authority) for (const line of workerQueueAuthorityHumanLines(authority, item.proposal_id, configPath)) {
+          process.stdout.write(`  ${line}\n`);
+        }
         const recovery = workerFailureRecovery(item.last_error_code, item.status);
         if (recovery) process.stdout.write(`  Next: ${recovery}\n`);
       }
@@ -103,6 +127,70 @@ async function workerStatus(args: string[]): Promise<number> {
   } finally {
     store.close();
   }
+}
+
+export type WorkerQueueAuthorityAssessment =
+  | { state: "blocked_by_changed_rules"; queued_action_boundary_digest: `sha256:${string}`; current_action_boundary_digest: `sha256:${string}` }
+  | { state: "current_authority_digest_matches"; queued_action_boundary_digest: `sha256:${string}`; current_action_boundary_digest: `sha256:${string}` }
+  | { state: "unknown"; reason: "CURRENT_SEMANTIC_AUTHORITY_UNAVAILABLE" };
+
+/**
+ * This is intentionally narrower than worker eligibility: it only compares an
+ * unleased semantic queue item's preserved digest with the current authority.
+ */
+export function assessUnstartedSemanticQueueAuthority(
+  item: WorkerQueueItem,
+  proposal: Pick<StoredProposal, "change_set"> | undefined,
+  currentActionBoundaryDigest: `sha256:${string}` | undefined,
+): WorkerQueueAuthorityAssessment | undefined {
+  if (item.status !== "queued" || item.attempts !== 0 || item.execution_mode !== "supervised_worker"
+    || item.contract_digest === undefined || proposal?.change_set.schema_version !== "synapsor.change-set.v4") return undefined;
+  if (currentActionBoundaryDigest === undefined) return { state: "unknown", reason: "CURRENT_SEMANTIC_AUTHORITY_UNAVAILABLE" };
+  if (item.contract_digest === currentActionBoundaryDigest) {
+    return { state: "current_authority_digest_matches", queued_action_boundary_digest: item.contract_digest,
+      current_action_boundary_digest: currentActionBoundaryDigest };
+  }
+  return { state: "blocked_by_changed_rules", queued_action_boundary_digest: item.contract_digest,
+    current_action_boundary_digest: currentActionBoundaryDigest };
+}
+
+async function inspectWorkerQueueAuthorityAssessments(input: {
+  items: WorkerQueueItem[];
+  config: RuntimeConfig | undefined;
+  configPath: string;
+  proposalForId: (proposalId: string) => StoredProposal | undefined;
+}): Promise<Map<string, WorkerQueueAuthorityAssessment>> {
+  const candidates = input.items.map((item) => ({ item, proposal: input.proposalForId(item.proposal_id) }))
+    .filter(({ item, proposal }) => item.status === "queued" && item.attempts === 0
+      && item.execution_mode === "supervised_worker" && item.contract_digest !== undefined
+      && proposal?.change_set.schema_version === "synapsor.change-set.v4");
+  if (candidates.length === 0) return new Map();
+  let registry: Awaited<ReturnType<typeof loadSemanticRuntimeAuthority>>["registry"] | undefined;
+  if (input.config) {
+    try { registry = (await loadSemanticRuntimeAuthority(input.config, input.configPath)).registry; } catch { /* Unknown is safer than guessing current authority. */ }
+  }
+  return new Map(candidates.map(({ item, proposal }) => {
+    let currentDigest: `sha256:${string}` | undefined;
+    if (registry && proposal) {
+      try { currentDigest = resolveActivatedActionRule(registry, proposal.action).action_boundary_digest; } catch { /* The current outcome is not established. */ }
+    }
+    return [item.proposal_id, assessUnstartedSemanticQueueAuthority(item, proposal, currentDigest)!];
+  }));
+}
+
+export function workerQueueAuthorityHumanLines(assessment: WorkerQueueAuthorityAssessment, proposalId: string, configPath: string): string[] {
+  if (assessment.state === "blocked_by_changed_rules") {
+    return [
+      "Blocked: the rules changed before this request started.",
+      `Next: ${cliCommandName()} worker cancel ${proposalId} --yes --config ${shellQuote(configPath)}`,
+      "Then read again and submit a fresh request under the current rules.",
+      "Warning: do not cancel leased, dispatched, or reconciliation-required work; inspect its receipt instead.",
+    ];
+  }
+  if (assessment.state === "current_authority_digest_matches") {
+    return ["Current Action Boundary digest matches; this does not establish current execution eligibility."];
+  }
+  return ["Current semantic Action Boundary could not be established; no execution conclusion was made."];
 }
 
 
@@ -253,7 +341,11 @@ async function workerCancel(args: string[]): Promise<number> {
       actor: optionalArg(args, "--actor"),
       identity: optionalArg(args, "--identity"),
       privateKeyPath: optionalArg(args, "--identity-key"),
-      requiredRole: policy?.control_role,
+      requiredRole: workerCancellationRequiredRole({
+        queue,
+        exactCurrentPolicy: policy,
+        production: config.supervised_worker?.profile === "production",
+      }),
     });
     const cancelled = store.cancelWorkerItem({
       proposalId,
@@ -423,6 +515,7 @@ export async function enqueueApprovedForSupervisedWorker(
         proposal_id: proposal.proposal_id,
         execution_mode: "supervised_worker",
         contract_digest: authorityDigest,
+        cancellation_control_role: policy.control_role ?? null,
         max_attempts: policy.max_attempts,
         queue_limit: policy.queue_limit,
       });

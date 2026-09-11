@@ -59,7 +59,7 @@ run node "$ROOT/scripts/verify-packed-first-run-cli.mjs"
 run node "$ROOT/scripts/check-license-content.mjs"
 
 log "No install-looking @synapsor/handler references in public docs/examples"
-if grep -R -n "@synapsor/handler" \
+if grep -R -n --exclude-dir=.synapsor "@synapsor/handler" \
   "$ROOT/README.md" \
   "$ROOT/apps/runner/README.md" \
   "$ROOT/docs" \

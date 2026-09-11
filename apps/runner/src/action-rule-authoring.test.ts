@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { buildAutoBoundary, persistGenerationLockSnapshot } from "./auto-boundary.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { rebindActionCatalogForReadPolicyRevision, buildActionCatalogForSavedReadRevision } from "./action-rule-read-revision.js";
+import { rebindActionCatalogForReadPolicyRevision, rebuildActionCatalogAfterMetadataRefresh, buildActionCatalogForSavedReadRevision, combineReviewedActionCatalogs } from "./action-rule-read-revision.js";
 import {
   actionRuleTypeForColumn,
   buildActionRuleAuthoringCatalog,
@@ -15,6 +15,86 @@ import {
 const lock = `sha256:${"a".repeat(64)}` as const;
 
 describe("Action Rule authoring catalog", () => {
+  it("combines complete prepared catalogs without adding private sources to public reads", () => {
+    const read = boundary(), source = inspection();
+    const complete = buildActionRuleAuthoringCatalog({ boundary: read, inspection: source }).catalog;
+    const first = { ...complete, resources: complete.resources.slice(0, 1), relationships: [] };
+    first.resources = first.resources.map(resource => ({ ...resource, fields: [...resource.fields].reverse() }));
+    const combined = combineReviewedActionCatalogs([first, complete])!;
+    expect(combined).toEqual(complete);
+    read.pack.resources = read.pack.resources.slice(0, 1);
+    const before = structuredClone(read);
+    const built = buildActionRuleAuthoringCatalog({ boundary: read, inspection: source, retainedCatalog: combined });
+    expect(built.catalog).toEqual(complete);
+    expect(built.authoring.resources[1]!.fields.every(field => field.role !== "model_visible")).toBe(true);
+    expect(read).toEqual(before);
+    expect(combineReviewedActionCatalogs([])).toBeUndefined();
+  });
+
+  it.each(["generation", "scope", "field", "version", "private_only", "relationship"])("rejects conflicting prepared catalogs instead of choosing a proof (%s)", change => {
+    const catalog = buildActionRuleAuthoringCatalog({ boundary: boundary(), inspection: inspection() }).catalog;
+    const original = structuredClone(catalog), changed = structuredClone(catalog);
+    if (change === "generation") changed.generation_lock_fingerprint = canonicalJsonDigest("another inspection");
+    if (change === "scope") changed.resources[0]!.tenant_key = "other_account";
+    if (change === "field") changed.resources[0]!.fields[0]!.nullable = !changed.resources[0]!.fields[0]!.nullable;
+    if (change === "version") changed.resources[0]!.version_field = "different_revision";
+    if (change === "private_only") changed.resources[0]!.verification_only = true;
+    if (change === "relationship") changed.relationships[0]!.target_unique = false;
+    expect(() => combineReviewedActionCatalogs([catalog, changed])).toThrow("ACTION_RULE_REVALIDATION_REQUIRED");
+    expect(catalog).toEqual(original);
+  });
+
+  it.each(["writer_rls", "context", "missing_field", "type", "missing_relationship", "identity", "stale_inspection"])("rebuilds a saved private catalog after metadata refresh without reusing obsolete proofs (%s)", change => {
+    const source = inspection();
+    const make = (inspection: SchemaInspection) => buildAutoBoundary({ inspection, sourceEnv: "DATABASE_URL", inspectedSchema: "support",
+      project: { root: "/tmp/action-metadata-refresh", package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+    const before = make(source);
+    const reviewed = { ...boundary(), generation_lock_fingerprint: canonicalJsonDigest(before.lock) };
+    const catalog = buildActionRuleAuthoringCatalog({ boundary: reviewed, inspection: source }).catalog;
+    expect(catalog.resources).toHaveLength(2);
+    expect(catalog.relationships).toHaveLength(1);
+    const original = structuredClone(catalog);
+    const nextInspection = structuredClone(source);
+    nextInspection.tables[1]!.row_level_security_policies = [{ name: "new_writer_policy", command: "UPDATE", permissive: true,
+      roles: ["separate_writer"], using_expression: "tenant_id = current_setting('app.tenant')", check_expression: "tenant_id = current_setting('app.tenant')" }];
+    if (change === "missing_field") nextInspection.tables[1]!.columns = nextInspection.tables[1]!.columns.filter(field => field.name !== "risk_score");
+    if (change === "type") nextInspection.tables[1]!.columns.find(field => field.name === "risk_score")!.data_type = "boolean";
+    if (change === "missing_relationship") nextInspection.tables[1]!.foreign_keys = [];
+    if (change === "identity") nextInspection.tables[1]!.primary_key = [];
+    const next = make(nextInspection);
+    if (change === "context") next.lock.trusted_context_fingerprint = canonicalJsonDigest("different customer identity source");
+    const nextBoundary = { ...structuredClone(reviewed), generation_lock_fingerprint: canonicalJsonDigest(next.lock) };
+    // An Action-private resource need not become visible in the Read revision.
+    nextBoundary.pack.resources = nextBoundary.pack.resources.filter(resource => resource.id !== "support.refund_requests");
+    const nextOriginal = structuredClone(nextBoundary);
+    const rebuild = () => rebuildActionCatalogAfterMetadataRefresh({ catalog, previousLock: before.lock,
+      nextLock: next.lock, nextBoundary, inspection: change === "stale_inspection" ? source : nextInspection });
+    if (change === "writer_rls") {
+      const actual = rebuild();
+      expect(actual.resources).toEqual(catalog.resources);
+      expect(actual.relationships).toEqual(catalog.relationships);
+      expect(actual.generation_lock_fingerprint).toBe(nextBoundary.generation_lock_fingerprint);
+      expect(actual.generation_lock_fingerprint).not.toBe(catalog.generation_lock_fingerprint);
+    } else expect(rebuild).toThrow("ACTION_RULE_REVALIDATION_REQUIRED");
+    expect(catalog).toEqual(original);
+    expect(nextBoundary).toEqual(nextOriginal);
+  });
+  it("retains reviewed field meanings for Action chat without exposing unreviewed comments or changing authority", () => {
+    const source = inspection(), read = boundary();
+    const resource = read.pack.resources.find(resource => resource.id === "support.refund_requests")!;
+    resource.field_metadata = { risk_score: { label: "Reviewed score", description: "1 identifies the next request for review." } };
+    source.tables[1]!.columns.find(column => column.name === "risk_score")!.comment = "Unreviewed contradictory comment";
+    const before = structuredClone(read);
+    const built = buildActionRuleAuthoringCatalog({ boundary: read, inspection: source });
+    const field = built.authoring.resources[1]!.fields.find(field => field.name === "risk_score")!;
+    expect(field).toMatchObject({ label: "Reviewed score", description: "1 identifies the next request for review.", role: "runner_verification_only" });
+    expect(JSON.stringify(built)).not.toContain("Unreviewed contradictory comment");
+    expect(read).toEqual(before);
+    delete resource.field_metadata;
+    const unlabeled = buildActionRuleAuthoringCatalog({ boundary: read, inspection: source });
+    expect(unlabeled.catalog).toEqual(built.catalog);
+    expect(unlabeled.authoring.digest).not.toEqual(built.authoring.digest);
+  });
   it.each(["evidence", "schema", "role", "context", "missing_snapshot"])("binds final Read minimization through exact saved evidence without a wizard restart (%s)", async (change) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-action-evidence-rebind-"));
     try {
@@ -165,17 +245,36 @@ describe("Action Rule authoring catalog", () => {
     expect(authoring.version_candidates).toEqual(["updated_version", "version"]);
   });
 
-  it("uses a conventional integer version when the only alternative is a timestamp freshness hint", () => {
+  it("keeps unversioned verification resources available and scopes conflict diagnostics to UPDATE", () => {
+    const source = inspection();
+    const accounts = source.tables.find((table) => table.name === "accounts")!;
+    accounts.suggestions.conflict_columns = [];
+    accounts.columns = accounts.columns.filter((field) => field.name !== "version");
+    const result = buildActionRuleAuthoringCatalog({ boundary: boundary(), inspection: source });
+    const resource = result.authoring.resources.find((entry) => entry.name === "support.accounts")!;
+    expect(resource.operations.update).toBe(false);
+    expect(resource.selected_version_field).toBeUndefined();
+    expect(result.catalog.resources.find((entry) => entry.name === resource.name)).toBeDefined();
+    expect(result.catalog.relationships).toHaveLength(1);
+    expect(result.authoring.diagnostics).toContainEqual(expect.objectContaining({
+      code: "ACTION_RULE_VERSION_REQUIRED", resource: resource.name, applies_to: "update",
+      message: expect.stringContaining("Private verification remains supported without a version"),
+    }));
+    expect(result.authoring.resources.find((entry) => entry.name === "support.refund_requests")?.operations.update).toBe(true);
+  });
+
+  it.each(["version", "row_version", "lock_version"])("uses the unique inspected integer counter %s, not a timestamp freshness hint", (name) => {
     const source = inspection();
     const refunds = source.tables.find((table) => table.name === "refund_requests")!;
-    refunds.suggestions.conflict_columns = ["updated_at", "version"];
+    refunds.columns.find((field) => field.name === "version")!.name = name;
+    refunds.suggestions.conflict_columns = ["updated_at", name];
     refunds.columns.push(column("updated_at", "timestamp with time zone"));
 
     const result = buildActionRuleAuthoringCatalog({ boundary: boundary(), inspection: source });
     const authoring = result.authoring.resources.find((resource) =>
       resource.name === "support.refund_requests")!;
 
-    expect(authoring.selected_version_field).toBe("version");
+    expect(authoring.selected_version_field).toBe(name);
     expect(authoring.operations.update).toBe(true);
   });
 
@@ -232,6 +331,44 @@ describe("Action Rule authoring catalog", () => {
       inspection: inspection(),
       retainedCatalog: original.catalog,
     })).toThrow(/ACTION_RULE_REVISION_STALE/);
+  });
+
+  it("preserves explicit verification-only purpose on rebuild without disabling legacy retained writable targets", () => {
+    const source = inspection(), fullBoundary = boundary();
+    const original = buildActionRuleAuthoringCatalog({ boundary: fullBoundary, inspection: source });
+    original.catalog.resources.find(resource => resource.name === "support.accounts")!.verification_only = true;
+    const before = structuredClone(original.catalog);
+    const minimized = structuredClone(fullBoundary);
+    minimized.pack.resources = [];
+    const rebuilt = buildActionRuleAuthoringCatalog({ boundary: minimized, inspection: source, retainedCatalog: original.catalog });
+    expect(original.catalog).toEqual(before);
+    expect(rebuilt.catalog.resources.find(resource => resource.name === "support.accounts")!.verification_only).toBe(true);
+    const privateSource = rebuilt.authoring.resources.find(resource => resource.name === "support.accounts")!;
+    expect(privateSource).toMatchObject({ verification_only: true, operations: { insert: false, update: false } });
+    expect(privateSource.fields.every(field => !field.writable)).toBe(true);
+    const legacy = rebuilt.authoring.resources.find(resource => resource.name === "support.refund_requests")!;
+    expect(legacy.verification_only).toBeUndefined();
+    expect(legacy.operations).toEqual({ insert: true, update: true });
+    expect(legacy.fields.find(field => field.name === "amount_cents")!.writable).toBe(true);
+  });
+
+  it("preserves verification-only purpose through generation-lock metadata refresh", () => {
+    const source = inspection();
+    const make = (inspection: SchemaInspection) => buildAutoBoundary({ inspection, sourceEnv: "DATABASE_URL", inspectedSchema: "support",
+      project: { root: "/tmp/private-source-refresh", package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+    const before = make(source), reviewed = { ...boundary(), generation_lock_fingerprint: canonicalJsonDigest(before.lock) };
+    const catalog = buildActionRuleAuthoringCatalog({ boundary: reviewed, inspection: source }).catalog;
+    catalog.resources.find(resource => resource.name === "support.refund_requests")!.verification_only = true;
+    const nextInspection = structuredClone(source);
+    nextInspection.tables[1]!.row_level_security_policies = [{ name: "reader_policy", command: "SELECT", permissive: true,
+      roles: ["support_reader"], using_expression: "tenant_id = current_setting('app.tenant')" }];
+    const next = make(nextInspection), nextBoundary = { ...structuredClone(reviewed), generation_lock_fingerprint: canonicalJsonDigest(next.lock) };
+    nextBoundary.pack.resources = nextBoundary.pack.resources.filter(resource => resource.id !== "support.refund_requests");
+    const refreshed = rebuildActionCatalogAfterMetadataRefresh({ catalog, previousLock: before.lock, nextLock: next.lock, nextBoundary, inspection: nextInspection });
+    expect(refreshed.resources.find(resource => resource.name === "support.refund_requests")!.verification_only).toBe(true);
+    const rebuilt = buildActionRuleAuthoringCatalog({ boundary: nextBoundary, inspection: nextInspection, retainedCatalog: refreshed });
+    expect(rebuilt.authoring.resources.find(resource => resource.name === "support.refund_requests")!.operations).toEqual({ update: false, insert: false });
+    expect(rebuilt.authoring.resources.find(resource => resource.name === "support.accounts")!.operations.update).toBe(true);
   });
 
   it("maps only portable bounded scalar types", () => {

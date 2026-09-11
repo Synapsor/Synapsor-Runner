@@ -37,12 +37,18 @@ import { initializeGuidedProject } from "./guided-project.js";
 import { actionCommand } from "./boundary-commands.js";
 import {
   boundaryReviewDecisions,
+  createBoundaryReviewProgress,
 } from "./boundary-review-domain.js";
 import {
   readBoundaryReviewProgress,
+  saveBoundaryReviewProgress,
   saveInstantBoundaryReviewBaseline,
 } from "./boundary-review-persistence.js";
 import { readActionBoundaryActivation, readActionBoundaryDraft } from "./action-boundary.js";
+import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { initializeFreshGovernedAuthoring } from "./control-policy-fresh-authoring.js";
+import { readRuntimeConfig } from "./cli-project.js";
+import { runActionControlPlane, type ActionControlPrompter } from "./action-tui.js";
 
 const temporaryRoots: string[] = [];
 
@@ -1092,6 +1098,124 @@ describe("guided write actions", () => {
       await fs.readFile(path.join(fixture.root, "synapsor.actions.runner.json"), "utf8"),
     );
     expect(runtimeConfig.contracts).toHaveLength(2);
+  }, 30_000);
+
+  it("uses the governed reviewed-disabled Read revision without a legacy generated-tree fallback", async () => {
+    const fixture = await governedPendingFixture(true);
+    const boundaryName = fixture.candidate.pack.name;
+    const before = (await readProjectReadAuthoring(fixture.root))!;
+    const selected = before.selected!;
+    expect(selected.progress.confirmed_decisions).toEqual(selected.progress.candidate.unresolved_decisions);
+    await expect(fs.stat(path.join(fixture.root, "synapsor", "generated"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(path.join(fixture.root, ".synapsor", "generation-lock.json"))).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(guidedActionOptions({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      boundaryName,
+      allowReviewedPending: true,
+    })).resolves.toMatchObject({
+      boundary_name: boundaryName,
+      boundary_state: "reviewed_pending",
+      boundary_digest: explorationBoundaryCandidateDigest(selected.progress.candidate),
+    });
+    await expect(guidedActionOptions({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      boundaryName,
+    })).rejects.toThrow(/GUIDED_ACTION_READ_DEPENDENCY_INACTIVE/);
+  }, 30_000);
+
+  it("refuses an incomplete governed Read revision even when no legacy files remain", async () => {
+    const fixture = await governedPendingFixture(false);
+    const boundaryName = fixture.candidate.pack.name;
+    const selected = (await readProjectReadAuthoring(fixture.root))!.selected!;
+    expect(selected.progress.confirmed_decisions).toEqual([]);
+
+    await expect(guidedActionOptions({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      boundaryName,
+      allowReviewedPending: true,
+    })).rejects.toThrow(/GUIDED_ACTION_READ_BOUNDARY_REQUIRED/);
+  }, 30_000);
+
+  it("enters the manual semantic editor from a reviewed-disabled governed Read without activation", async () => {
+    const fixture = await governedPendingFixture(true);
+    const prompts: string[] = [];
+    let actionMenuVisits = 0;
+    const prompter: ActionControlPrompter = {
+      choose: async (title) => {
+        prompts.push(title);
+        if (title === "ACTION BOUNDARY") return actionMenuVisits++ === 0 ? "manual_semantic" : "quit";
+        if (title === "MANUAL SEMANTIC ACTIONRULE") return "back";
+        throw new Error(`Unexpected prompt: ${title}`);
+      },
+      text: async () => undefined,
+      confirm: async () => undefined,
+      message: async () => undefined,
+    };
+
+    await expect(runActionControlPlane({
+      projectRoot: fixture.root,
+      boundaryName: fixture.candidate.pack.name,
+      inspection: fixture.inspection,
+      prompter,
+      operatorService: {} as never,
+      env: {},
+    })).resolves.toEqual({ state: "closed", source_database_changed: false, activated_actions: [] });
+
+    expect(prompts).toContain("ACTION BOUNDARY");
+    expect(prompts).toContain("MANUAL SEMANTIC ACTIONRULE");
+    await expect(readActionBoundaryActivation(fixture.root)).resolves.toBeUndefined();
+    expect((await readProjectReadAuthoring(fixture.root))!.selected!.progress.confirmed_decisions)
+      .toEqual(fixture.candidate.unresolved_decisions);
+  }, 30_000);
+
+  it("uses the governed candidate lock after activating the same reviewed Read revision", async () => {
+    const fixture = await governedPendingFixture(true);
+    const saved = (await readProjectReadAuthoring(fixture.root))!;
+    const selected = saved.selected!;
+    const digest = explorationBoundaryCandidateDigest(fixture.candidate);
+    await activateExplorationBoundary({
+      projectRoot: fixture.root,
+      candidate: fixture.candidate,
+      reviewDraft: selected.draft,
+      generationLock: selected.candidate_lock,
+      expectedAuthoring: saved.bindings,
+      expectedDigest: digest,
+      actor: "reviewer@example.test",
+      confirmation: `ACTIVATE ${digest}`,
+      confirmedDecisions: fixture.candidate.unresolved_decisions,
+      currentInspection: fixture.inspection,
+    });
+    await expect(fs.stat(path.join(fixture.root, ".synapsor", "generation-lock.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+
+    const prompts: string[] = [];
+    let actionMenuVisits = 0;
+    const prompter: ActionControlPrompter = {
+      choose: async (title) => {
+        prompts.push(title);
+        if (title === "ACTION BOUNDARY") return actionMenuVisits++ === 0 ? "manual_semantic" : "quit";
+        if (title === "MANUAL SEMANTIC ACTIONRULE") return "back";
+        throw new Error(`Unexpected prompt: ${title}`);
+      },
+      text: async () => undefined,
+      confirm: async () => undefined,
+      message: async () => undefined,
+    };
+
+    await expect(runActionControlPlane({
+      projectRoot: fixture.root,
+      boundaryName: fixture.candidate.pack.name,
+      inspection: fixture.inspection,
+      prompter,
+      operatorService: {} as never,
+      env: {},
+    })).resolves.toEqual({ state: "closed", source_database_changed: false, activated_actions: [] });
+
+    expect(prompts).toEqual(expect.arrayContaining(["ACTION BOUNDARY", "MANUAL SEMANTIC ACTIONRULE"]));
   }, 30_000);
 
   it("preserves semantic outcome worker authority when a proposal-only legacy action is activated", async () => {
@@ -2420,6 +2544,46 @@ async function activatedFitFlowFixture(options: {
     currentInspection: inspection,
   });
   return { root, inspection, candidate };
+}
+
+async function governedPendingFixture(complete: boolean): Promise<{
+  root: string;
+  inspection: SchemaInspection;
+  candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"];
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-governed-pending-"));
+  temporaryRoots.push(root);
+  const inspection = fitFlowInspection();
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: ["nextjs", "prisma"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+  });
+  const guided = await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.8.0", instantOnboarding: true });
+  const config = await readRuntimeConfig(guided.config_path);
+  await initializeFreshGovernedAuthoring({ projectRoot: root, config, storePath: guided.store_path,
+    build, actor: "reviewer@example.test" });
+  const saved = (await readProjectReadAuthoring(root))!;
+  const selected = saved.selected!;
+  await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
+    draft: selected.draft,
+    candidate: selected.progress.candidate,
+    previous: selected.progress,
+    confirmedDecisions: complete ? selected.progress.candidate.unresolved_decisions : [],
+    actor: "reviewer@example.test",
+    reason: complete
+      ? "Keep the exact reviewed Read revision disabled for proposal authoring."
+      : "Leave this exact Read revision incomplete.",
+    revision: selected.progress.revision + 1,
+    now: complete ? "2026-09-10T18:00:00.000Z" : "2026-09-10T18:01:00.000Z",
+  }), saved.bindings);
+  return { root, inspection, candidate: selected.progress.candidate };
 }
 
 async function activatedDerivedPrincipalWriteFixture(): Promise<{

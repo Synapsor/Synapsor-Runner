@@ -109,6 +109,12 @@ import {
   assessDatabaseRolePosture,
   formatUnsafeDatabaseRoleMessage,
 } from "./database-role-posture.js";
+import {
+  assertConsistentCompiledReadPrerequisite,
+  assertReviewedReadCurrentStatePrerequisite,
+  compileReadPrerequisitePredicate,
+  type CompiledReadPrerequisite,
+} from "./read-prerequisite.js";
 
 export const SCOPED_EXPLORE_DESCRIBE_TOOL = "app.describe_data";
 export const SCOPED_EXPLORE_QUERY_TOOL = "app.explore_data";
@@ -263,6 +269,7 @@ export type ScopedExploreErrorCode =
   | "EXPLORE_PRIVACY_BUDGET_EXHAUSTED"
   | "EXPLORE_RATE_LIMITED"
   | "EXPLORE_RESPONSE_TOO_LARGE"
+  | "EXPLORE_READ_PREREQUISITE_NOT_SATISFIED"
   | "EXPLORE_SERVER_VERSION_UNSUPPORTED"
   | "EXPLORE_SOURCE_UNAVAILABLE";
 
@@ -345,7 +352,28 @@ export type CompiledExploreQuery = {
     primary_key_alias: string;
     version_alias?: string;
   };
+  /** Runner-only source gate; never returned through model metadata or results. */
+  read_prerequisite?: CompiledReadPrerequisite;
 };
+
+function captureScopedExploreParameterizedSql(input: {
+  engine: "postgres" | "mysql";
+  statements: CompiledExploreQuery[];
+}): CapturedExploreParameterizedSql {
+  return captureExploreParameterizedSql({
+    engine: input.engine,
+    statements: input.statements.map((statement) => statement.read_prerequisite
+      ? {
+        // The normal capture is available to operator audit only, but validate
+        // can be projected through MCP. Do not persist or surface private gate
+        // relation/field names, parameter counts, or types through either path.
+        sql: "<reviewed Explore statement with private current-state prerequisite redacted>",
+        params: [],
+        ...(statement.period ? { period: statement.period } : {}),
+      }
+      : statement),
+  });
+}
 
 type CompiledReviewedValueControl = {
   kind: "bucket_unreviewed_values" | "exclude_unreviewed_rows";
@@ -434,17 +462,26 @@ export async function prepareScopedExplore(input: {
       },
     );
   }
+  const inspectionResources = new Map<string, { schema: string; table: string }>();
+  for (const dependency of Object.values(lock.authority_dependencies?.resources ?? {})) {
+    inspectionResources.set(`${dependency.schema}.${dependency.table}`, {
+      schema: dependency.schema,
+      table: dependency.table,
+    });
+  }
+  if (boundary.read_prerequisite) {
+    inspectionResources.set(
+      `${boundary.read_prerequisite.source.schema}.${boundary.read_prerequisite.source.table}`,
+      { ...boundary.read_prerequisite.source },
+    );
+  }
   const inspection = await (input.inspectDatabaseFn ?? inspectDatabase)({
     engine: lock.engine,
     databaseUrlEnv: lock.source_env,
     ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}),
-    ...(lock.authority_dependencies
+    ...(inspectionResources.size
       ? {
-        resources: Object.values(lock.authority_dependencies.resources)
-          .map((dependency) => ({
-            schema: dependency.schema,
-            table: dependency.table,
-          }))
+        resources: [...inspectionResources.values()]
           .sort((left, right) => left.schema.localeCompare(right.schema)
             || left.table.localeCompare(right.table)),
         ...(boundary.organization_scope ? { verifySingleOrganization: true } : {}),
@@ -545,6 +582,19 @@ export async function prepareScopedExplore(input: {
       throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", "Database role, grant, ownership, or RLS posture changed after boundary activation.");
     }
     assertReadOnlyPosture(inspection, boundary);
+  }
+  if (boundary.read_prerequisite) {
+    try {
+      assertReviewedReadCurrentStatePrerequisite(boundary.read_prerequisite, inspection);
+    } catch (error) {
+      throw new ScopedExploreError(
+        "EXPLORE_LOCK_STALE",
+        withGenerationLockRemediation(
+          "Reviewed Read current-state prerequisite is stale or no longer safely inspectable.",
+          lock,
+        ),
+      );
+    }
   }
   return { boundary, lock, inspection };
 }
@@ -713,6 +763,15 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
   let timeCoveragePromise: Promise<ReviewedTimeCoverage> | undefined;
 
   const reviewedTimeCoverage = (): Promise<ReviewedTimeCoverage> => {
+    // Current-state eligibility is checked by the source transaction. Its result
+    // must not be reused after the subject's status changes.
+    if (prepared.boundary.read_prerequisite) {
+      return loadReviewedTimeCoverage({
+        prepared,
+        executor,
+        context: { tenant: trustedTenant, principal },
+      });
+    }
     timeCoveragePromise ??= loadReviewedTimeCoverage({
       prepared,
       executor,
@@ -811,7 +870,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
         currentPrepared.lock.engine,
         subjectRequirement,
       );
-      const parameterizedSql = captureExploreParameterizedSql({
+      const parameterizedSql = captureScopedExploreParameterizedSql({
         engine: currentPrepared.lock.engine,
         statements,
       });
@@ -1079,7 +1138,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
         });
         throw refusal;
       }
-      const parameterizedSql = captureExploreParameterizedSql({
+      const parameterizedSql = captureScopedExploreParameterizedSql({
         engine: prepared.lock.engine,
         statements: compiledQueries,
       });
@@ -1120,6 +1179,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
           suppressed: 0,
           now: clock(),
         });
+        if (error instanceof ScopedExploreError) throw error;
         throw new ScopedExploreError("EXPLORE_SOURCE_UNAVAILABLE", `Scoped Explore source query failed: ${redactedDatabaseError(error)}`);
       }
       let response: ReturnType<typeof shapeExploreResponse>;
@@ -2473,6 +2533,7 @@ function compileRowPlan(
     sql: `SELECT ${columns.join(", ")} FROM ${qualified(resource, engine)} ${alias}${joined.sql}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
     params,
     resources: uniqueResources([...scope.resources, ...joined.resources]),
+    ...(scope.read_prerequisite ? { read_prerequisite: scope.read_prerequisite } : {}),
     ...(subjectProjection ? { subject_projection: subjectProjection } : {}),
     ...(enumUses.length
       ? {
@@ -2706,6 +2767,7 @@ function compileAggregatePlan(
       ]
       : params,
     resources: uniqueResources([...joined.resources, ...rootScope.resources, ...derivedResources]),
+    ...(rootScope.read_prerequisite ? { read_prerequisite: rootScope.read_prerequisite } : {}),
     ...(reviewedValueControls.length
       ? { reviewed_value_controls: uniqueReviewedValueControls(reviewedValueControls) }
       : {}),
@@ -3011,6 +3073,7 @@ function compileAutoBandAggregatePlan(
     sql: `WITH ${scopedCte}, ${bandedCte}${labeledCte} SELECT ${select.join(", ")} FROM ${bandedSource} ab${groupBy.length ? ` GROUP BY ${groupBy.join(", ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
     params: queryParams,
     resources: uniqueResources([...joined.resources, ...rootScope.resources, ...derivedResources]),
+    ...(rootScope.read_prerequisite ? { read_prerequisite: rootScope.read_prerequisite } : {}),
     ...(reviewedValueControls.length
       ? { reviewed_value_controls: uniqueReviewedValueControls(reviewedValueControls) }
       : {}),
@@ -3952,6 +4015,7 @@ async function loadReviewedTimeCoverage(input: {
       sql: `SELECT MIN(${column}) AS ${quote("__coverage_start", input.prepared.lock.engine)}, MAX(${column}) AS ${quote("__coverage_end", input.prepared.lock.engine)}, COUNT(${column}) AS ${quote("__coverage_cohort", input.prepared.lock.engine)} FROM ${qualified(resource, input.prepared.lock.engine)} ${alias} WHERE ${where.join(" AND ")}`,
       params,
       resources: scope.resources,
+      ...(scope.read_prerequisite ? { read_prerequisite: scope.read_prerequisite } : {}),
       ...(input.prepared.boundary.reporting_timezone
         ? { reporting_timezone: input.prepared.boundary.reporting_timezone }
         : {}),
@@ -3964,7 +4028,9 @@ async function loadReviewedTimeCoverage(input: {
       context: input.context,
       timeoutMs: input.prepared.boundary.budgets.statement_timeout_ms,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ScopedExploreError
+      && error.code === "EXPLORE_READ_PREREQUISITE_NOT_SATISFIED") throw error;
     const unavailable: ReviewedTimeCoverage = {};
     for (const { resource, field } of descriptors) {
       unavailable[resource.id] ??= {};
@@ -5245,7 +5311,11 @@ function compileScopePredicates(
   context: { tenant: string; principal: string },
   params: Scalar[],
   engine: "postgres" | "mysql",
-): { predicates: string[]; resources: BoundaryResource[] } {
+): {
+  predicates: string[];
+  resources: BoundaryResource[];
+  read_prerequisite?: CompiledReadPrerequisite;
+} {
   const predicates: string[] = [];
   const resources = new Map<string, BoundaryResource>([[resource.id, resource]]);
   if (resource.tenant_key) {
@@ -5287,7 +5357,22 @@ function compileScopePredicates(
       resources,
     }));
   }
-  return { predicates, resources: [...resources.values()] };
+  const prerequisite = boundary.read_prerequisite
+    ? compileReadPrerequisitePredicate({
+      prerequisite: boundary.read_prerequisite,
+      context,
+      params,
+      engine,
+      quote,
+      placeholder,
+    })
+    : undefined;
+  if (prerequisite) predicates.push(prerequisite.predicate);
+  return {
+    predicates,
+    resources: [...resources.values()],
+    ...(prerequisite ? { read_prerequisite: prerequisite.compiled } : {}),
+  };
 }
 
 function derivedScopePredicate(input: {
@@ -5423,9 +5508,17 @@ export function createScopedExploreDatabaseExecutor(input: {
         if (batch.queries.some((query) => query.reporting_timezone === "UTC")) {
           await client.query("SET LOCAL TIME ZONE 'UTC'");
         }
+        const prerequisite = assertedBatchReadPrerequisite(batch.queries);
+        if (prerequisite) {
+          await applyPostgresRlsSettings(client, [], batch.context, prerequisite.rls_session);
+          const gate = await client.query(prerequisite.gate_sql, prerequisite.gate_params);
+          if (!readPrerequisiteSatisfied(gate.rows[0]?.__synapsor_prerequisite_satisfied)) {
+            throw readPrerequisiteRefusal();
+          }
+        }
         const results: Array<Record<string, unknown>[]> = [];
         for (const query of batch.queries) {
-          await applyPostgresRlsSettings(client, query.resources, batch.context);
+          await applyPostgresRlsSettings(client, query.resources, batch.context, prerequisite?.rls_session);
           const result = await client.query(query.sql, query.params);
           results.push(result.rows as Record<string, unknown>[]);
         }
@@ -5463,13 +5556,16 @@ export function createScopedExploreDatabaseExecutor(input: {
   };
   const executeBatch: ScopedExploreExecutor["executeBatch"] = async (batch) => {
     const connection = await pool.getConnection();
+    const prerequisite = assertedBatchReadPrerequisite(batch.queries);
+    const needsUtcSession = Boolean(prerequisite)
+      || batch.queries.some((query) => query.reporting_timezone === "UTC");
     let previousTimeZone: string | undefined;
     let results: Array<Record<string, unknown>[]> | undefined;
     let failure: unknown;
     let failed = false;
     let discardConnection = false;
     try {
-      if (batch.queries.some((query) => query.reporting_timezone === "UTC")) {
+      if (needsUtcSession) {
         const [timeZoneRows] = await connection.query("SELECT @@SESSION.time_zone AS time_zone");
         const timeZone = Array.isArray(timeZoneRows)
           ? (timeZoneRows[0] as { time_zone?: unknown } | undefined)?.time_zone
@@ -5484,6 +5580,17 @@ export function createScopedExploreDatabaseExecutor(input: {
       await connection.query("SET TRANSACTION READ ONLY");
       await connection.query("START TRANSACTION READ ONLY");
       await connection.query("SET SESSION max_execution_time = ?", [Math.max(1, Math.floor(batch.timeoutMs))]);
+      if (prerequisite) {
+        // MySQL TIMESTAMP gates use a UTC session and one transaction-local
+        // instant. The user variable is reset for every batch and never reaches
+        // result shaping.
+        await connection.query("SET @synapsor_read_prerequisite_now = UTC_TIMESTAMP(6)");
+        const [gateRows] = await connection.query(prerequisite.gate_sql, prerequisite.gate_params);
+        const gate = Array.isArray(gateRows)
+          ? (gateRows[0] as Record<string, unknown> | undefined)?.__synapsor_prerequisite_satisfied
+          : undefined;
+        if (!readPrerequisiteSatisfied(gate)) throw readPrerequisiteRefusal();
+      }
       results = [];
       for (const query of batch.queries) {
         const [rows] = await connection.query(query.sql, query.params);
@@ -5528,13 +5635,40 @@ async function applyPostgresRlsSettings(
   client: PoolClient,
   resources: BoundaryResource[],
   context: { tenant: string; principal: string },
+  prerequisiteSettings?: { tenant_setting?: string; principal_setting?: string },
 ): Promise<void> {
   const settings = new Map<string, string>();
   for (const resource of resources) {
     if (resource.rls_session?.tenant_setting) settings.set(resource.rls_session.tenant_setting, context.tenant);
     if (resource.rls_session?.principal_setting) settings.set(resource.rls_session.principal_setting, context.principal);
   }
+  if (prerequisiteSettings?.tenant_setting) settings.set(prerequisiteSettings.tenant_setting, context.tenant);
+  if (prerequisiteSettings?.principal_setting) settings.set(prerequisiteSettings.principal_setting, context.principal);
   for (const [key, value] of settings) await client.query("SELECT set_config($1, $2, true)", [key, value]);
+}
+
+function assertedBatchReadPrerequisite(
+  queries: CompiledExploreQuery[],
+): CompiledReadPrerequisite | undefined {
+  try {
+    return assertConsistentCompiledReadPrerequisite(queries);
+  } catch {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      "Reviewed Read prerequisite authority is inconsistent across the compiled query batch.",
+    );
+  }
+}
+
+function readPrerequisiteSatisfied(value: unknown): boolean {
+  return value === true || value === 1 || value === "1" || value === "true";
+}
+
+function readPrerequisiteRefusal(): ScopedExploreError {
+  return new ScopedExploreError(
+    "EXPLORE_READ_PREREQUISITE_NOT_SATISFIED",
+    "Current authorization requirements for this data are not satisfied.",
+  );
 }
 
 function assertReadOnlyPosture(inspection: SchemaInspection, boundary: ActivatedExplorationBoundary): void {
@@ -6272,7 +6406,12 @@ function isIsoTime(value: string): boolean {
 
 function assertKeys(value: Record<string, unknown>, allowed: string[], label: string): void {
   const unexpected = Object.keys(value).filter((key) => !allowed.includes(key));
-  if (unexpected.length) throw planError(`${label} contains unsupported fields: ${unexpected.join(", ")}`);
+  if (unexpected.length) throw new ScopedExploreError("EXPLORE_PLAN_INVALID",
+    `${label} contains unsupported fields: ${unexpected.join(", ")}`, {
+      category: "plan_syntax", recovery: "correct_plan_keys", location: label,
+      allowed_keys: allowed, unexpected_keys: unexpected,
+      source_query_executed: false, explore_budget_consumed: false,
+    });
 }
 
 function isScalar(value: unknown): value is Scalar {

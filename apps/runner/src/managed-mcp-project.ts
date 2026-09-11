@@ -516,6 +516,8 @@ async function managedEntry(
         path.posix.dirname(configPath),
         "--config",
         configPath,
+        "--local-test-runtime",
+        ".synapsor/local-test-runtime.json",
       ]
       : [...launcher.args, "mcp", "serve", "--config", configPath, "--store", storePath],
   };

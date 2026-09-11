@@ -34,6 +34,7 @@ import {
 import { projectLocalResourceForModel } from "./local-resources.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { OwnerRuntimeError } from "./owner-runtime-identity.js";
+import { PostgresRlsPrerequisiteError } from "@synapsor-runner/postgres";
 import type { SemanticActionRequestContext } from "./runtime-types.js";
 
 const lock = `sha256:${"a".repeat(64)}` as const;
@@ -218,6 +219,7 @@ function createFixtureRuntime(options: {
   onProposalReady?: NonNullable<Parameters<typeof createSemanticActionRuntime>[0]["onProposalReady"]>;
   delegation?: SemanticActionRequestContext["delegation"];
   delegationRequired?: boolean;
+  resourceFailure?: Error;
 } = {}) {
   const store = new ProposalStore();
   const { registry, activated } = semanticFixture({
@@ -256,6 +258,7 @@ function createFixtureRuntime(options: {
         subject_authority: authorityContext(),
         fact_loader: {
           engine: "postgres",
+          async assertResourceCompatible() { if (options.resourceFailure) throw options.resourceFailure; },
           async load(query) {
             queries.push(query);
             const identityPredicate = query.predicates.find((predicate) =>
@@ -356,6 +359,21 @@ describe("fixed semantic Action MCP", () => {
       expect(onProposalReady).toHaveBeenCalledTimes(1); expect(f.queries).toHaveLength(1);
     } finally { f.store.close(); }
   });
+  it("reports a retired or unknown outcome as unavailable without loading customer facts", async () => {
+    const fixture = semanticFixture(), store = new ProposalStore(":memory:");
+    const claim = vi.fn(), resolveContext = vi.fn();
+    const runtime = createSemanticActionRuntime({ store, registry: fixture.registry,
+      subjectReferences: { claim } as unknown as Parameters<typeof createSemanticActionRuntime>[0]["subjectReferences"],
+      resolveContext, resolveCatalogAuthorization: () => ({ scope_key: "tenant-a", revision: "current" }) });
+    try {
+      await expect(runtime.callTool(REQUEST_CHANGE_TOOL, { outcome: "billing.retired", subject_refs: { preference: `obj_${"x".repeat(40)}` } }))
+        .rejects.toMatchObject({ code: "SEMANTIC_ACTION_UNAVAILABLE", message: expect.stringContaining("Refresh the action list") });
+      expect(claim).not.toHaveBeenCalled();
+      expect(resolveContext).not.toHaveBeenCalled();
+      expect(await store.listProposals()).toHaveLength(0);
+    } finally { store.close(); }
+  });
+
   it.each(["authority", "scope", "availability"] as const)("does not disclose a catalog withdrawn during asynchronous %s loading", async (change) => {
     const fixture = semanticFixture();
     let revision = "before";
@@ -548,11 +566,16 @@ describe("fixed semantic Action MCP", () => {
       expect(JSON.stringify(described)).not.toMatch(/sha256:|account_id|principal_id|SELECT\s/iu);
 
       const ref = await issueSubject(fixture);
-      await expect(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, {
-        outcome: "billing.pause_notifications",
-        subject_refs: { preference: ref },
-        patch: { status: "paused" },
-      })).rejects.toMatchObject({ code: "ARGUMENT_INVALID" });
+      for (const untrustedField of [
+        { patch: { status: "paused" } },
+        { cancellation_control_role: "attacker_operator" },
+      ]) {
+        await expect(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, {
+          outcome: "billing.pause_notifications",
+          subject_refs: { preference: ref },
+          ...untrustedField,
+        })).rejects.toMatchObject({ code: "ARGUMENT_INVALID" });
+      }
       expect(await fixture.store.listProposals()).toHaveLength(0);
     } finally {
       fixture.store.close();
@@ -843,6 +866,21 @@ describe("fixed semantic Action MCP", () => {
     } finally {
       unknown.store.close();
     }
+  });
+
+  it("reports an actionable database setup failure without exposing private RLS diagnostics or making a proposal", async () => {
+    const fixture = createFixtureRuntime({ resourceFailure: new PostgresRlsPrerequisiteError([
+      "POSTGRES_RLS_FORCE_DISABLED", "POSTGRES_RLS_SELECT_SETTING_MISSING:private.setting",
+    ]) });
+    try {
+      const ref = await issueSubject(fixture);
+      await expect(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, {
+        outcome: "billing.pause_notifications", subject_refs: { preference: ref },
+      })).rejects.toMatchObject({ code: "SEMANTIC_ACTION_DATABASE_REVIEW_REQUIRED",
+        message: "Database row-filtering prerequisites are not satisfied. An operator must recheck database access in the saved setup before retrying. No proposal or source change was created." });
+      expect(fixture.queries).toEqual([]);
+      expect(await fixture.store.listProposals()).toHaveLength(0);
+    } finally { fixture.store.close(); }
   });
 
   it.each([false, true])("exposes the exact two-tool contract through the official MCP client (business inputs: %s)", async (businessInput) => {

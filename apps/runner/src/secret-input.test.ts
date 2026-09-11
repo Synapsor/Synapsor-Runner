@@ -3,6 +3,7 @@ import type { ReadStream, WriteStream } from "node:tty";
 import { describe, expect, it } from "vitest";
 import {
   ProviderCredentialInputCancelledError,
+  readHiddenLocalIdentity,
   readHiddenSecret,
 } from "./secret-input.js";
 
@@ -26,6 +27,14 @@ describe("hidden provider credential input", () => {
     const secret = readHiddenSecret("Provider key: ", input, output);
     input.write("owner-secret-value\n");
     await expect(secret).resolves.toBe("owner-secret-value");
+  });
+
+  it("accepts a short hidden local identity without echoing it", async () => {
+    const { input, output } = fakeTerminal();
+    const identity = readHiddenLocalIdentity("Fixture tenant (hidden): ", input, output);
+    input.write("a\n");
+    await expect(identity).resolves.toBe("a");
+    expect(output.read()?.toString() ?? "").not.toContain("a\n");
   });
 });
 

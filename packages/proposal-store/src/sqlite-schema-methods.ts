@@ -516,6 +516,8 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
           status TEXT NOT NULL,
           execution_mode TEXT DEFAULT 'legacy',
           contract_digest TEXT,
+          cancellation_control_role TEXT,
+          cancellation_control_role_present INTEGER NOT NULL DEFAULT 0,
           attempts INTEGER NOT NULL DEFAULT 0,
           max_attempts INTEGER NOT NULL,
           next_attempt_at TEXT NOT NULL,
@@ -597,6 +599,8 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
       this.ensureColumn("attention_items", "acknowledgement_integrity_hash", "TEXT");
       this.ensureColumn("worker_queue", "execution_mode", "TEXT DEFAULT 'legacy'");
       this.ensureColumn("worker_queue", "contract_digest", "TEXT");
+      this.ensureColumn("worker_queue", "cancellation_control_role", "TEXT");
+      this.ensureColumn("worker_queue", "cancellation_control_role_present", "INTEGER NOT NULL DEFAULT 0");
       this.ensureColumn("worker_queue", "lease_id", "TEXT");
       this.ensureColumn("worker_queue", "terminal_outcome", "TEXT");
     },

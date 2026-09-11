@@ -17,7 +17,7 @@ import { cliCommandName } from "./cli-command-meta.js";
 import { isRecord, safeErrorMessage, showDetails, storeOptionSuffix, stringField } from "./cli-format.js";
 import { operationalLog } from "./cli-logging.js";
 import { assertKnownOptions, envValue, exportFormat, limitFromArgs, optionalArg, optionalPositiveIntegerArg, outputArg, positional, positiveIntOption, runtimeStoreBridgeFlag, waitFor } from "./cli-options.js";
-import { confirmDangerousAction, localStorePath, openLocalStore, operatorIdentityForDecision, optionalRuntimeConfig, requireLocalProposal, resolveProposalIdFromStore, runnerConfigPath } from "./cli-project.js";
+import { activeProjectResolutionState, confirmDangerousAction, localStorePath, openLocalStore, operatorIdentityForDecision, optionalLedgerRuntimeConfig, optionalRuntimeConfig, requireLocalProposal, resolveProposalIdFromStore, runnerConfigPath } from "./cli-project.js";
 import { activitySearchAllowedOptions, eventFiltersFromArgs, eventTailAllowedOptions, eventWebhookAllowedOptions, evidenceFiltersFromActivityArgs, evidenceFiltersFromArgs, evidenceListAllowedOptions, exportAllowedOptions, proposalFiltersFromActivityArgs, proposalFiltersFromArgs, proposalFiltersFromReplayArgs, proposalListAllowedOptions, queryAuditFiltersFromActivityArgs, queryAuditFiltersFromArgs, queryAuditListAllowedOptions, receiptFiltersFromActivityArgs, receiptFiltersFromArgs, receiptListAllowedOptions, replayExportAllowedOptions, replayListAllowedOptions, replayShowAllowedOptions, resolveReplayProposalId, showAllowedOptions } from "./ledger-options.js";
 import { resolveExploreLedgerFilters } from "./ledger-search.js";
 import { TrustedOperatorInvocation } from "./operator-authority.js";
@@ -33,10 +33,108 @@ type LedgerReadSource =
   | { kind: "local_sqlite"; path: string }
   | { kind: "shared_postgres"; schema: string; url_env: string };
 
+type RuntimeConfigSelection = {
+  config: RuntimeConfig | undefined;
+  configPath: string;
+};
+
+function hasExplicitRuntimeConfig(args: string[]): boolean {
+  return Boolean(
+    optionalArg(args, "--config")
+    || process.env.SYNAPSOR_RUNNER_CONFIG
+    || process.env.SYNAPSOR_MCP_CONFIG,
+  );
+}
+
+function resolvedConfigStorePath(config: RuntimeConfig, configPath: string): string {
+  const configured = config.storage?.sqlite_path ?? ".synapsor/local.db";
+  return configured === ":memory:" ? configured : path.resolve(path.dirname(path.resolve(configPath)), configured);
+}
+
+function resolvedStorePath(storePath: string): string {
+  return storePath === ":memory:" ? storePath : path.resolve(storePath);
+}
+
+function companionSelectionError(code: string, message: string): Error {
+  return new Error(`${code}: ${message} Pass --config <reviewed Action config> explicitly after checking its project and store binding.`);
+}
+
+/**
+ * A discovered Read config intentionally has no semantic write authority. For
+ * semantic approval only, use the generated Action companion when it proves it
+ * belongs to the same discovered project and the same proposal store.
+ */
+async function semanticApprovalRuntimeConfig(
+  args: string[],
+  selection: RuntimeConfigSelection,
+  storePath: string,
+): Promise<RuntimeConfigSelection> {
+  if (hasExplicitRuntimeConfig(args)) return selection;
+  // A discovered project can already resolve a generated Action config under a
+  // non-canonical filename. Its binding is validated by the authority loader.
+  if (selection.config?.action_rules?.project_root) return selection;
+  const discovered = activeProjectResolutionState.current;
+  if (discovered?.source !== "discovered" || !discovered.project_root
+    || path.resolve(selection.configPath) !== path.resolve(discovered.config_path)) return selection;
+
+  const projectRoot = await fs.realpath(discovered.project_root);
+  const companionPath = path.join(projectRoot, "synapsor.actions.runner.json");
+  let companion: RuntimeConfig | undefined;
+  try {
+    companion = await optionalRuntimeConfig(companionPath);
+  } catch (error) {
+    throw companionSelectionError(
+      "SEMANTIC_ACTION_CONFIG_COMPANION_INVALID",
+      `Generated Action companion ${companionPath} cannot be read: ${safeErrorMessage(error)}.`,
+    );
+  }
+  if (!companion) {
+    throw companionSelectionError(
+      "SEMANTIC_ACTION_CONFIG_COMPANION_REQUIRED",
+      `No generated Action companion exists at ${companionPath}.`,
+    );
+  }
+  if (!companion.action_rules?.project_root) {
+    throw companionSelectionError(
+      "SEMANTIC_ACTION_CONFIG_COMPANION_INVALID",
+      `Generated Action companion ${companionPath} has no action_rules.project_root binding.`,
+    );
+  }
+
+  let companionProjectRoot: string;
+  try {
+    companionProjectRoot = await fs.realpath(path.resolve(path.dirname(companionPath), companion.action_rules.project_root));
+  } catch (error) {
+    throw companionSelectionError(
+      "SEMANTIC_ACTION_CONFIG_COMPANION_INVALID",
+      `Generated Action companion ${companionPath} has an unreadable project binding: ${safeErrorMessage(error)}.`,
+    );
+  }
+  if (companionProjectRoot !== projectRoot) {
+    throw companionSelectionError(
+      "SEMANTIC_ACTION_CONFIG_COMPANION_FOREIGN",
+      `Generated Action companion ${companionPath} binds ${companionProjectRoot}, not discovered project ${projectRoot}.`,
+    );
+  }
+  if (resolvedConfigStorePath(companion, companionPath) !== resolvedStorePath(storePath)) {
+    throw companionSelectionError(
+      "SEMANTIC_ACTION_CONFIG_COMPANION_STORE_MISMATCH",
+      `Generated Action companion ${companionPath} selects ${resolvedConfigStorePath(companion, companionPath)} but this request uses ${resolvedStorePath(storePath)}.`,
+    );
+  }
+  if (runtimeStoreBridgeRequired(args, companion)) {
+    throw companionSelectionError(
+      "SEMANTIC_ACTION_CONFIG_COMPANION_RUNTIME_STORE",
+      `Generated Action companion ${companionPath} requires the guarded shared-store bridge and cannot be substituted after this request opened its local store.`,
+    );
+  }
+  return { config: companion, configPath: companionPath };
+}
+
 
 async function ledgerReadSource(args: string[]): Promise<LedgerReadSource> {
   if (args.includes(runtimeStoreBridgeFlag)) {
-    const config = await optionalRuntimeConfig(runnerConfigPath(args));
+    const config = await optionalLedgerRuntimeConfig(runnerConfigPath(args));
     const shared = sharedPostgresLedgerMirrorOptions(args, config);
     return { kind: "shared_postgres", schema: shared.schema, url_env: shared.urlEnv };
   }
@@ -1438,8 +1536,8 @@ export async function proposalsApprove(
   const proposalId = positional(args, 0);
   if (!proposalId) throw new Error("proposals approve requires <proposal_id>");
   const storePath = localStorePath(args);
-  const configPath = runnerConfigPath(args);
-  const config = await optionalRuntimeConfig(configPath);
+  let configPath = runnerConfigPath(args);
+  let config = await optionalRuntimeConfig(configPath);
   assertLocalGovernanceMutationAllowed(config, "proposals approve");
   if (config && runtimeStoreBridgeRequired(args, config)) {
     return withSharedPostgresRuntimeStoreBridge(
@@ -1465,6 +1563,15 @@ export async function proposalsApprove(
     const proposal = requireLocalProposal(store, resolvedProposalId);
     if (invocation.expectedProposalHash && proposal.proposal_hash !== invocation.expectedProposalHash) {
       throw new Error("PROPOSAL_CHANGED: reload the proposal before recording this approval decision.");
+    }
+    if (proposal.change_set.schema_version === "synapsor.change-set.v4") {
+      ({ config, configPath } = await semanticApprovalRuntimeConfig(args, { config, configPath }, storePath));
+      if (!config) throw new Error("SEMANTIC_ACTION_CONFIG_REQUIRED: review this request with its current project configuration before approving it.");
+      assertLocalGovernanceMutationAllowed(config, "proposals approve");
+      assertNoRuntimeStoreForLocalMutation(config, "proposals approve", args);
+      // A human decision cannot revive an outcome removed or replaced since
+      // preparation. Check before recording approval, not just before queuing.
+      await loadSemanticProposalAuthority(config, configPath, proposal);
     }
     if (!invocation.quiet && !args.includes("--json")) {
       const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
@@ -1581,6 +1688,7 @@ async function enqueueApprovedProposalForSupervisedWorker(
       proposal_id: proposal.proposal_id,
       execution_mode: "supervised_worker",
       contract_digest: eligibility.action_boundary_digest,
+      cancellation_control_role: eligibility.policy.control_role ?? null,
       max_attempts: eligibility.policy.max_attempts,
       queue_limit: eligibility.policy.queue_limit,
     });
@@ -1593,6 +1701,7 @@ async function enqueueApprovedProposalForSupervisedWorker(
     proposal_id: proposal.proposal_id,
     execution_mode: "supervised_worker",
     contract_digest: eligibility.contract_digest,
+    cancellation_control_role: eligibility.policy.control_role ?? null,
     max_attempts: eligibility.policy.max_attempts,
     queue_limit: eligibility.policy.queue_limit,
   });

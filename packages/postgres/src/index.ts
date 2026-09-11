@@ -1,4 +1,8 @@
 import crypto from "node:crypto";
+import { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
+export { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
+import { postgresActionRuleVerificationScope } from "./action-rule-rls-scope.js";
+export { postgresActionRuleVerificationScope } from "./action-rule-rls-scope.js";
 import { ActionRuleError, actionRuleRelationshipPairs } from "@synapsor-runner/action-rules";
 import { Pool, types as pgTypes, type PoolClient, type PoolConfig } from "pg";
 import type {
@@ -180,18 +184,19 @@ export function createPostgresActionRuleFactLoader(
   return {
     engine: "postgres",
     async assertResourceCompatible(binding: CompiledRuleBindingV1): Promise<void> {
-      const key = `${binding.resource.schema}.${binding.resource.table}`;
+      const scope = databaseScope && postgresActionRuleVerificationScope(binding, databaseScope);
+      const key = JSON.stringify([binding.resource.schema, binding.resource.table, scope]);
       if (compatible.has(key)) return;
       const result = await client.query(
         `SELECT c.relkind AS relation_kind\nFROM pg_catalog.pg_class c\nJOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace\nWHERE n.nspname = $1 AND c.relname = $2\nLIMIT 1`,
         [binding.resource.schema, binding.resource.table],
       );
       if (!result.rows[0] || !["r", "p"].includes(String(result.rows[0].relation_kind))) throw new Error("ACTION_RULE_POSTGRES_LOCKABLE_TABLE_REQUIRED");
-      if (databaseScope !== undefined) {
+      if (scope !== undefined) {
         await assertPostgresRlsTarget(client, {
           schema: binding.resource.schema,
           table: binding.resource.table,
-          scope: databaseScope,
+          scope,
           operations: ["SELECT"],
         });
       }
@@ -200,6 +205,42 @@ export function createPostgresActionRuleFactLoader(
     async load(query: ActionRuleFactQueryV1): Promise<Record<string, unknown>[]> {
       const compiled = buildPostgresActionRuleFactQuery(query);
       return (await client.query(compiled.sql, compiled.values)).rows;
+    },
+    async assertCompleteCollection({ binding, parent, parentRows, trusted, mode }): Promise<void> {
+      const reject = (message: string): never => { throw new ActionRuleError("ACTION_RULE_SCOPE_UNPROVEN", message); };
+      if (mode === "transaction_reverify") {
+        const isolation = await client.query("SHOW transaction_isolation");
+        if (isolation.rows[0]?.transaction_isolation !== "read committed") reject("Complete PostgreSQL collections require READ COMMITTED execution.");
+        // An empty locking read takes ROW SHARE without LOCK TABLE's broader table-level grants.
+        // It stabilizes relation/FK/policy metadata without reading rows or widening the writer.
+        await client.query(`SELECT ${quotePostgresIdentifier(binding.resource.primary_key)} FROM ${quotePostgresIdentifier(binding.resource.schema)}.${quotePostgresIdentifier(binding.resource.table)} WHERE FALSE FOR UPDATE`);
+      }
+      const metadata = await client.query(`SELECT c.relrowsecurity AS row_security_enabled
+        FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r', 'p')`, [binding.resource.schema, binding.resource.table]);
+      if (metadata.rows.length !== 1) reject("The complete collection must be a current base table.");
+      if (metadata.rows[0]!.row_security_enabled === false) return;
+      const scope = binding.verification.scope;
+      const parentScope = parent.verification.scope;
+      if (!databaseScope || scope.mode !== "columns" || parentScope.mode !== "columns") return reject("Complete collection RLS visibility requires exact reviewed customer scope; it cannot be inferred from an empty result.");
+      if (trusted.tenant !== databaseScope.tenantId || String(parentRows[0]?.[parentScope.tenant_field]) !== trusted.tenant
+        || (scope.principal_field !== undefined && (trusted.principal !== databaseScope.principal
+          || String(parentRows[0]?.[parentScope.principal_field!]) !== trusted.principal))) {
+        reject("The complete collection scope does not match canonical parent facts and the bound database identity.");
+      }
+      const settings = new Map([[scope.tenant_field, databaseScope.tenantSetting]]);
+      if (scope.principal_field !== undefined) {
+        if (!databaseScope.principalSetting) return reject("The complete collection principal setting is not configured.");
+        settings.set(scope.principal_field, databaseScope.principalSetting);
+      }
+      const operations: PostgresRlsOperation[] = mode === "transaction_reverify" ? ["SELECT", "UPDATE"] : ["SELECT"];
+      const report = await assertPostgresRlsTarget(client, { schema: binding.resource.schema, table: binding.resource.table, scope: databaseScope, operations });
+      for (const operation of operations) {
+        const policies = report.policies.filter(policy => policy.command === "ALL" || policy.command === operation);
+        if (!policies.length || policies.some(policy => !policy.using_expression || !isCompleteCollectionScopeExpression(policy.using_expression, settings))) {
+          reject(`Complete collection ${binding.binding} cannot prove that ${operation} row security includes every record for the reviewed customer. Extra or unsupported policy predicates need a supported completeness strategy, not broader agent access.`);
+        }
+      }
     },
     async assertRelationshipCompatible(binding, parent): Promise<void> {
       if (!binding.relationship || binding.verification.source.kind !== "relationship") throw new Error("ACTION_RULE_LOAD_PLAN_INVALID");
@@ -211,6 +252,7 @@ export function createPostgresActionRuleFactLoader(
         `SELECT local_attr.attname AS local_field, target_attr.attname AS target_field,
                 (idx.indisunique AND idx.indisvalid AND idx.indisready AND idx.indimmediate
                   AND idx.indexprs IS NULL AND idx.indpred IS NULL AND con.convalidated
+                  AND (NOT $6::boolean OR NOT con.condeferrable)
                   AND local_coll.collisdeterministic IS NOT FALSE AND target_coll.collisdeterministic IS NOT FALSE) AS usable
          FROM pg_catalog.pg_constraint con
          JOIN pg_catalog.pg_class src ON src.oid = con.conrelid
@@ -226,7 +268,7 @@ export function createPostgresActionRuleFactLoader(
          WHERE con.contype = 'f' AND con.conname = $1 AND src_ns.nspname = $2 AND src.relname = $3
            AND dst_ns.nspname = $4 AND dst.relname = $5
          ORDER BY keys.position LIMIT 17`,
-        [binding.relationship.name, from.schema, from.table, to.schema, to.table],
+        [binding.relationship.name, from.schema, from.table, to.schema, to.table, binding.verification.collection_consistency === "complete_locked"],
       );
       if (result.rows.length !== pairs.length || result.rows.some((row, index) => row.usable !== true
         || row.local_field !== pairs[index]!.local_field || row.target_field !== pairs[index]!.target_field)) {
@@ -458,20 +500,32 @@ async function inspectPostgresRlsTargetInternal(
     ...(typeof policy.using_expression === "string" ? { using_expression: policy.using_expression } : {}),
     ...(typeof policy.with_check_expression === "string" ? { with_check_expression: policy.with_check_expression } : {}),
   }));
-  if (!report.row_security_enabled) report.errors.push("POSTGRES_RLS_DISABLED");
-  if (!report.force_row_security) report.errors.push("POSTGRES_RLS_FORCE_DISABLED");
-  if (report.role_is_superuser) report.errors.push("POSTGRES_RLS_ROLE_SUPERUSER");
-  if (report.role_has_bypassrls) report.errors.push("POSTGRES_RLS_ROLE_BYPASSRLS");
-  if (report.role_is_table_owner) report.errors.push("POSTGRES_RLS_ROLE_TABLE_OWNER");
-  if (report.role_can_assume_table_owner) report.errors.push("POSTGRES_RLS_ROLE_CAN_ASSUME_TABLE_OWNER");
-  for (const operation of requiredOperations) {
+  report.errors.push(...postgresRlsPrerequisiteErrors(report));
+  report.errors = [...new Set(report.errors)];
+  report.ok = report.errors.length === 0;
+  return report;
+}
+
+/** The same base-table prerequisites are used by metadata preflight and live requests. */
+export function postgresRlsPrerequisiteErrors(report: Pick<PostgresRlsInspection,
+  "row_security_enabled" | "force_row_security" | "role_is_superuser" | "role_has_bypassrls"
+  | "role_is_table_owner" | "role_can_assume_table_owner" | "policies" | "required_operations"
+  | "tenant_setting" | "principal_setting">): string[] {
+  const errors: string[] = [];
+  if (!report.row_security_enabled) errors.push("POSTGRES_RLS_DISABLED");
+  if (!report.force_row_security) errors.push("POSTGRES_RLS_FORCE_DISABLED");
+  if (report.role_is_superuser) errors.push("POSTGRES_RLS_ROLE_SUPERUSER");
+  if (report.role_has_bypassrls) errors.push("POSTGRES_RLS_ROLE_BYPASSRLS");
+  if (report.role_is_table_owner) errors.push("POSTGRES_RLS_ROLE_TABLE_OWNER");
+  if (report.role_can_assume_table_owner) errors.push("POSTGRES_RLS_ROLE_CAN_ASSUME_TABLE_OWNER");
+  for (const operation of report.required_operations) {
     const applicable = report.policies.filter((policy) => policy.command === "ALL" || policy.command === operation);
     if (!applicable.length) {
-      report.errors.push(`POSTGRES_RLS_${operation}_POLICY_MISSING`);
+      errors.push(`POSTGRES_RLS_${operation}_POLICY_MISSING`);
       continue;
     }
     if (!applicable.some((policy) => policy.permissive)) {
-      report.errors.push(`POSTGRES_RLS_${operation}_PERMISSIVE_POLICY_MISSING`);
+      errors.push(`POSTGRES_RLS_${operation}_PERMISSIVE_POLICY_MISSING`);
     }
     const expressions = operation === "INSERT"
       ? applicable.map((policy) => policy.with_check_expression)
@@ -479,20 +533,25 @@ async function inspectPostgresRlsTargetInternal(
         ? applicable.flatMap((policy) => [policy.using_expression, policy.with_check_expression])
         : applicable.map((policy) => policy.using_expression);
     if (expressions.some((expression) => !expression)) {
-      report.errors.push(`POSTGRES_RLS_${operation}_${operation === "INSERT" ? "WITH_CHECK" : operation === "UPDATE" ? "USING_OR_WITH_CHECK" : "USING"}_MISSING`);
+      errors.push(`POSTGRES_RLS_${operation}_${operation === "INSERT" ? "WITH_CHECK" : operation === "UPDATE" ? "USING_OR_WITH_CHECK" : "USING"}_MISSING`);
       continue;
     }
-    for (const setting of [input.scope.tenantSetting, input.scope.principalSetting].filter(
+    for (const setting of [report.tenant_setting, report.principal_setting].filter(
       (value): value is string => Boolean(value),
     )) {
       if (expressions.some((expression) => !expression!.includes(setting))) {
-        report.errors.push(`POSTGRES_RLS_${operation}_SETTING_MISSING:${setting}`);
+        errors.push(`POSTGRES_RLS_${operation}_SETTING_MISSING:${setting}`);
       }
     }
   }
-  report.errors = [...new Set(report.errors)];
-  report.ok = report.errors.length === 0;
-  return report;
+  return [...new Set(errors)];
+}
+
+export class PostgresRlsPrerequisiteError extends Error {
+  constructor(readonly reasons: readonly string[]) {
+    super(`POSTGRES_RLS_PREREQUISITE_FAILED:${reasons.join(",")}`);
+    this.name = "PostgresRlsPrerequisiteError";
+  }
 }
 
 export async function assertPostgresRlsTarget(
@@ -500,7 +559,7 @@ export async function assertPostgresRlsTarget(
   input: Parameters<typeof inspectPostgresRlsTarget>[1],
 ): Promise<PostgresRlsInspection> {
   const report = await inspectPostgresRlsTarget(client, input);
-  if (!report.ok) throw new Error(`POSTGRES_RLS_PREREQUISITE_FAILED:${report.errors.join(",")}`);
+  if (!report.ok) throw new PostgresRlsPrerequisiteError(report.errors);
   return report;
 }
 

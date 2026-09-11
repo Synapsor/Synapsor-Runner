@@ -93,7 +93,7 @@ npx -y @synapsor/runner start --from-env DATABASE_URL --cli
 
 Runner performs the same deterministic inspection and project generation, then
 asks for one agent job. The recommended route maps that job with a configured
-OpenAI, Anthropic, or loopback local model after explicit structural-metadata
+OpenAI, Anthropic, OpenRouter, or loopback local model after explicit structural-metadata
 egress consent. Runner-guided exact plan cards require no model; full manual
 table and field review remains available.
 
@@ -119,6 +119,19 @@ Answer missing business questions in chat. An explicitly requested, validated
 privacy reduction saves to the disabled draft without another Save screen;
 unrequested changes and additional access retain their review. Read, Action,
 execution, client installation, and worker startup keep their separate consent.
+If a useful Read relationship was excluded, ask the model to restore the
+association in this same draft. Runner offers only complete, uniquely proven
+paths from the inspected catalog, with exact keys available for review. You do
+not need to invent an internal relationship identifier. A missing or ambiguous
+database relationship remains a real prerequisite, not an inferred join.
+
+Administrator instructions for a dedicated action writer use an action-specific
+connection variable. Keep other actions' writer variables and the read connection
+unchanged. A configured shared connection is checked against every action using
+it; if repair requires a new role, the dedicated instructions do not silently
+replace that shared connection. Each writer still needs live verification and
+separate execution consent.
+
 After review, the selected client's setup collects trusted local test identity
 and offers a protocol/tool check. Configuration ready for a client to launch,
 a verified connection, and a completed source change with a receipt are distinct
@@ -126,6 +139,37 @@ states. Client behavior and production authentication still need integration
 testing; assignment alone is not verification.
 
 ## Typed Headless Authoring
+
+### Manual Semantic Editor
+
+For a no-model edit, open the manual Boundary editor from `start --cli`.
+Select the saved boundary and use `Y` (Safe actions). For a first action, choose
+**Use the manual rule editor**; for existing actions, choose **Edit business
+rules manually**. No Read activation is needed to edit a disabled rule. Choose a saved
+business intent or enter one, select inspected fields and allowed values, and
+review the resulting behavior before saving. Existing outcomes are retained;
+editing prepares a disabled replacement, not a change to active authority.
+
+After selecting a supported existing rule, its current-rule summary offers
+**Automatic approval maximum**, **Edit all settings**, and **Back**. The focused
+threshold path asks for the bounded maximum and review of the human-fallback
+wording, without repeating the target, eligibility, hard bounds, or rolling
+counter questions. Other rule components and examples stay exact; check retained
+examples in the separate activation review. Use **Edit all settings** for a
+multi-setting change. Esc leaves the current draft and live authority unchanged.
+
+The current typed editor covers a single, proposal-only UPDATE with one bounded
+integer input, one inspected integer/boolean/declared-enum equality condition,
+and human approval or an automatic input threshold with overall and trusted
+account/person rolling limits. Existing input aliases and explicit checks that
+repeat the exact input range are retained, as are shared counter identities and
+scope. It preserves the field's unit and conflict guard. It does not
+translate a multi-record action, derived effect, collection condition, or
+supervised execution into that simpler shape. Use guided authoring or the
+advanced typed format below for those constructs; unsupported manual edits
+leave the original rule unchanged. This is not legacy DSL parity.
+
+### Advanced Export
 
 Both public entry points initialize the same current Auto Boundary without a
 TTY or model API:
@@ -140,6 +184,17 @@ Keep its exact review bundle digest and mutation bindings. Read changes and
 Action definitions can be submitted as structured data; a job description is
 not automatically parsed into policy. Replace illustrative placeholders before
 validation. Input/output files must be inside the selected project.
+
+`action_skeletons` contains one incomplete scaffold per captured business intent,
+with exact current components or explicitly unresolved placeholders. These are
+review context, not validated actions, and submission never activates or compiles
+a skeleton implicitly. No intent is invented from a table name. Runner supplies
+the revision bindings and computes validated rule digests; do not fabricate or
+manually rewire them. After a Read edit, retained unfinished components are
+marked `needs_revalidation`, not silently erased or declared ready. Guided
+resume checks them against the current catalog before a complete rule can pass
+validation. Changed business intents and unreviewed private-source proofs cannot
+be substituted into that checkpoint.
 
 ```bash
 synapsor-runner onboard db --project-root . --draft ./boundary-authoring.json --dry-run --json
@@ -171,6 +226,29 @@ Actions menu. The Action remains blocked until its exact linked Read digest is
 active. Do not choose the optional model-revision command merely to review a
 saved draft. Execution requires its own later review; these gestures execute no
 source request.
+
+If the latest saved Read revision still needs approval, Action review offers
+**Review saved read access**. It opens that exact existing review and returns to
+the saved actions after approval, decline, or an acknowledged connection failure.
+It does not start a model conversation. Only an already active reviewed Read
+revision can be offered as the target of a saved-action dependency recheck;
+an older activation with the same name is not sufficient.
+
+That linked Read review also offers **Revise saved read access with a model**.
+It restores the saved conversation, business rules and client choice and asks
+only what access should change. Any required provider permission is still
+explicit. Saved actions are revalidated against the changed access, unfinished
+business decisions stay pending, and the conversation returns to the actions.
+Viewing or revising access does not activate it. If the selected revision changes
+while its review is open, reopen the current review before starting the edit.
+
+After Action activation, **Continue client setup** opens the saved client,
+trusted identity and execution-worker setup directly. It does not repeat the
+job or require another Read activation. Returning or choosing Later preserves
+active authority and any disabled changes; connection and execution permissions
+still have their own explicit reviews. This entry is available when the active
+actions have available non-production Read dependencies. A configured client
+is not reported as connected until its handshake succeeds.
 
 ## Legacy Compatibility
 
@@ -382,6 +460,30 @@ The three related commands have different jobs:
   standalone `boundary rescan`, use the same `start` command without
   `--rescan`; the saved reconciliation is already waiting for review.
 
+If a newer Read review leaves saved actions unavailable, open
+`synapsor-runner action review --project-root .` and choose **Recheck saved
+changes against reviewed access**. Runner inspects metadata and recompiles the
+same business rules into a disabled replacement. It preserves existing edits,
+approval limits and source data. A changed field, key, relationship or customer
+scope stops the repair with a named reason. Review the replacement explicitly;
+execution and its writer connections still need their separate review. Opening
+the repair screen does not make stale rules usable or resume a worker.
+
+For a requirement such as "only currently admitted students may read their
+records," the model can map a private current-status source without making its
+rows customer-readable. Runner first asks permission to send its exact structural
+metadata. Existing reviewed identity columns, or a complete supported foreign key
+to them, constrain the organization/person mapping; field names are not proof.
+Missing source evidence keeps setup pending rather than treating authentication
+or registrations as admission.
+
+At **Confirm access condition**, **Correct this mapping with the model** and
+**Ask the model before deciding** return to the structured mapping conversation.
+A question does not confirm the old mapping. Runner labels a changed or unchanged
+proposal explicitly, keeps exact details available, and requires confirmation of
+the new exact selection. A provider failure or changed draft preserves existing
+access and rules. Saving the condition still does not activate it.
+
 When standalone review activates a boundary, Runner prints the exact command
 to resume the guided Ask flow. It also prints a direct `try ask` command for an
 operator who has already selected a provider and model.
@@ -486,12 +588,23 @@ activation:
 
 ```bash
 synapsor-runner mcp install claude-code --project --authoring --project-root . --dry-run
+synapsor-runner mcp install claude-code --project --authoring --project-root .
 ```
 
 It exposes `app.describe_data`, `app.explore_data`, `app.describe_actions`, and
 `app.request_change`. Before Action activation, discovery is empty and change
 requests are refused. Adding or revising outcomes does not require a client
 configuration rewrite.
+
+The dry run is optional; installation reviews the project-local client entry
+before writing it. Claude Code launches the generated stdio command. To launch
+the same reviewed local service directly, use `synapsor-runner mcp serve
+--config ./synapsor.runner.json`. Both routes select and validate the project's
+Action companion when present. Do not point an ordinary client at
+`synapsor.actions.runner.json` alone: that explicit companion surface contains
+only the two Action tools. A changed Action binding is refused, never bypassed
+by falling back to the Read file. Client installation does not enable execution
+or start the worker.
 
 ## Legacy Named-Capability Explore Workflow
 
@@ -818,6 +931,55 @@ synapsor-runner writeback setup \
 
 Never reuse the model/read credential as the elevated setup connection.
 
+## When A Write Connection Is Not Ready
+
+Start drafting with a read-only connection. A table's structural support for an
+update is not evidence that this connection can write it. Runner can prepare
+version-guarded drafts before a writer exists; execution remains off.
+
+At execution review, **Choose a write connection**, **Prepare administrator
+instructions**, and **Save and continue later** keep the same job and rules.
+The administrator handoff contains `README.md`, `requirements.json`, and
+`grants.sql`, derived from the saved rule and inspected metadata. It includes
+verification reads, version advances, row-lock requirements and all targets of
+an atomic change, not just business-facing fields. Export runs no grant or
+source-data statement. The proposed role starts `NOLOGIN`; an administrator
+must review scoped policies, helpers, triggers and credential provisioning.
+
+After provisioning, select the write connection and let Runner inspect it.
+Saying "the catalog is refreshed" is not evidence of permissions. If the
+database structure or RLS changed, resume the same `start` command with
+`--rescan` and review the changed saved job. Separate execution authorization
+and worker startup still follow a successful connection check. No model can
+perform those confirmations.
+
+For provider setup, see [OpenRouter](openrouter.md). Terminal authoring renders
+pipe-led Markdown tables with wrapped cells and uses labeled rows in narrow
+terminals; fenced examples remain literal. Exact authority details and Runner
+result panels remain deterministic and available without a model.
+
+### Complete Discovery Contracts
+
+Review completion does not guarantee activation readiness. Before offering Read
+activation, Runner checks both the focused catalog entry and the complete MCP
+response, including its text and structured copies. Oversized contracts cannot
+activate; C opens the exact size failure and recovery steps, and Enter/Esc
+returns to the same saved draft. Model-assisted revision and the manual field
+editor remain available. No contract is truncated and no disclosure limit is
+raised to make a review pass.
+
+Large focused details may use `contract_encoding: grouped_operations.v1` to
+factor repeated permission data. The contract carries its own interpretation:
+merge `empty_operation_defaults`, then `relationship_defaults` for relationship
+entries only, then the entry. A grouped operation map contains `{use, fields}`
+records: `use` names an exact array in `operation_sets`, applied only to those
+listed fields. Field metadata inherits `field_defaults`, with explicit values
+overriding defaults. Explicit field-level constraints still restrict access.
+Empty defaults grant no operation. Private fields, complete relationship paths,
+review requirements, enums, cohort safeguards and limits remain in the contract.
+This is discovery encoding, not a change to `app.explore_data` plan grammar or
+authority. Unsupported contracts remain a visible, actionable refusal.
+
 ## Connect An MCP Client
 
 Workbench generates ready-to-copy Cursor, Claude Code/Desktop, VS Code, Codex,
@@ -916,7 +1078,22 @@ outcomes without expanding a shared role.
 For an incompatible database role, execution setup exports a scoped
 administrator handoff and resumes after a recheck. Runner never runs grants or
 changes RLS automatically. Schema/RLS changes may require rescanning and
-revalidating the same saved job. The dedicated telecom fixture add-on in
+revalidating the same saved job. When all relevant policies are simple, exact
+reviewed identity filters, the handoff includes `scoped-policies.sql` for separate
+administrator review after grants. It adds only missing policies for the dedicated
+writer, checks for drift and unsafe role memberships, and never changes an existing
+policy. Custom conditions, helpers or ambiguous identity mappings instead receive
+named prerequisites in the README; they are not replaced with broader filters.
+Keep the reader credential and existing work intact throughout refresh/review.
+Revalidation uses the exact saved business rules, even when the current chat
+contains only a separate unfinished request. It rebuilds disabled dependencies
+instead of asking the model to create those rules again. A saved replacement
+takes precedence over its older active bundle; removed outcomes are not restored.
+Unfinished requests remain pending, and missing policy decisions are not waived.
+The review still requires current Read, Action and execution checks and separate
+operator authorization. A failed planning attempt can resume this same recovery;
+there is no need to reset the project or invent another action name.
+The dedicated telecom fixture add-on in
 `examples/telecom-writer-repair` includes its own scoped lock policies and
 rolled-back verifier; the older broad tutorial writer is not a compatible
 substitute for an exact offered-plan-change writer.

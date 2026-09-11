@@ -126,7 +126,59 @@ function compactCatalogResourceDetail(resource: Record<string, unknown>, vocabul
       });
     }
   }
-  return result;
+  return compactLargeContract(result);
+}
+
+/** Factor repeated grammar, not permissions. Small existing contracts keep their
+ * original shape; large contracts describe their exact shared-value encoding. */
+function compactLargeContract(resource: Record<string, unknown>): Record<string, unknown> {
+  if (Buffer.byteLength(JSON.stringify(resource)) < 6_000) return resource;
+  const result = structuredClone(resource);
+  const relationships = modelRecords(result.relationships);
+  const entries = [result, ...relationships];
+  const operationSets: Record<string, string[]> = {};
+  for (const entry of entries) for (const key of ["filter_operators", "time_bucket_fields"] as const) {
+    if (!modelRecord(entry[key])) continue;
+    const map = entry[key] as Record<string, unknown>;
+    if (!Object.values(map).every((value) => Array.isArray(value) && value.every((item) => typeof item === "string"))) continue;
+    const groups: Array<{ use: string; fields: string[] }> = [];
+    for (const [field, values] of Object.entries(map) as Array<[string, string[]]>) {
+      let name = Object.keys(operationSets).find((id) => isDeepStrictEqual(operationSets[id], values));
+      if (!name) operationSets[name = `s${Object.keys(operationSets).length + 1}`] = values;
+      let group = groups.find((item) => item.use === name);
+      if (!group) groups.push(group = { use: name, fields: [] });
+      group.fields.push(field);
+    }
+    if (groups.length) entry[key] = groups;
+  }
+  const relationshipDefaults: Record<string, unknown> = {};
+  if (relationships.length >= 2) for (const [key, value] of Object.entries(relationships[0]!)) {
+    if (!relationships.every((entry) => Object.hasOwn(entry, key) && isDeepStrictEqual(entry[key], value))) continue;
+    relationshipDefaults[key] = value;
+    for (const entry of relationships) delete entry[key];
+  }
+  const emptyKeys = ["filter_operators", "sortable_fields", "groupable_fields", "aggregate_measure_functions",
+    "derived_measures", "numeric_bands", "auto_bands", "count_distinct_fields", "time_bucket_fields",
+    "relative_time_window_fields", "time_coverage", "field_enums"];
+  // These explicitly empty maps/lists grant nothing. Unknown properties and
+  // missing-versus-explicit privacy/relationship state are never defaulted.
+  const emptyDefaults: Record<string, unknown> = {};
+  for (const key of emptyKeys) for (const entry of entries) {
+    if (isDeepStrictEqual(entry[key], []) || isDeepStrictEqual(entry[key], {})) {
+      emptyDefaults[key] = entry[key];
+      delete entry[key];
+    }
+  }
+  result.contract_encoding = "grouped_operations.v1";
+  result.operation_sets = operationSets;
+  result.empty_operation_defaults = emptyDefaults;
+  result.relationship_defaults = relationshipDefaults;
+  result.field_contract = "Only listed permissions/values apply; model_withheld_fields stay private. "
+    + "Merge empty_operation_defaults, relationship_defaults (relationships only), then entry. "
+    + "Groups use operation_sets for named fields only. Fields inherit field_defaults; explicit properties override. Field operations also restrict access.";
+  // Examples are illustrative duplicates of the retained grammar, not grants.
+  delete result.valid_plan_examples;
+  return Buffer.byteLength(JSON.stringify(result)) < Buffer.byteLength(JSON.stringify(resource)) ? result : resource;
 }
 
 function modelResourceIndex(resource: Record<string, unknown>): Record<string, unknown> {

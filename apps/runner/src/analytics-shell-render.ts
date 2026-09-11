@@ -142,7 +142,7 @@ export function renderAnalyticsTurn(
     ),
     turn.answer_source === "runner" || runnerBoundaryExplanation
       ? explanation
-      : styledModelProse(explanation, options.ansi === true),
+      : styledModelOutput(explanation, options.ansi === true, width),
     ...(suppressedShareWarning
       ? ["", styledNotice(suppressedShareWarning, options.ansi === true)]
       : []),
@@ -916,6 +916,27 @@ function styledHeading(
     : `\u001b[1;35m${value}\u001b[0m`;
 }
 
+function styledModelOutput(value: string, ansi: boolean, width: number): string {
+  if (!/^ {0,3}\|/mu.test(value)) return styledModelProse(value, ansi);
+  const parts: string[] = [];
+  let prose = "";
+  const flush = () => { if (prose) { parts.push(styledModelProse(prose, ansi)); prose = ""; } };
+  const blocks = createTerminalTableBlocks({
+    prose: (text) => { prose += text; },
+    table: (source) => {
+      const table = renderTerminalModelTable(source, width, {
+        bold: (text) => ansi ? `\u001b[1m${text}\u001b[0m` : text,
+        code: (text) => ansi ? `\u001b[36m${text}\u001b[0m` : text,
+      });
+      if (!table) { prose += source; return; }
+      flush();
+      parts.push(table.join("\n") + "\n");
+    },
+  });
+  blocks.push(value); blocks.finish(); flush();
+  return parts.join("");
+}
+
 function styledModelProse(value: string, ansi: boolean): string {
   const emphasis = /\*\*([^*\n]+)\*\*|__([^_\n]+)__/g;
   if (!ansi) return value.replace(emphasis, (_match, stars, underscores) => stars ?? underscores);
@@ -995,3 +1016,4 @@ function truncate(value: string, width: number): string {
 function pad(value: string, width: number): string {
   return `${value}${" ".repeat(Math.max(0, width - displayWidth(value)))}`;
 }
+import { createTerminalTableBlocks, renderTerminalModelTable } from "./terminal-model-table.js";

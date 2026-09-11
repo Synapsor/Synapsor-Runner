@@ -650,8 +650,8 @@ const postgresPort = await availablePort();
 let mysqlPort = await availablePort();
 while (mysqlPort === postgresPort) mysqlPort = await availablePort();
 const composeEnv = {
-  SYNAPSOR_FLEET_POSTGRES_PORT: String(postgresPort),
-  SYNAPSOR_FLEET_MYSQL_PORT: String(mysqlPort),
+  SYNAPSOR_FLEET_POSTGRES_PORT: `127.0.0.1:${postgresPort}`,
+  SYNAPSOR_FLEET_MYSQL_PORT: `127.0.0.1:${mysqlPort}`,
 };
 const composeArgs = ["compose", "-p", composeProject, "-f", composeFile];
 const urls = {

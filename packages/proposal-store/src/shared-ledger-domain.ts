@@ -83,6 +83,8 @@ export const sharedLedgerRestoreSpecs: Record<string, SharedLedgerRestoreSpec> =
       "status",
       "execution_mode",
       "contract_digest",
+      "cancellation_control_role",
+      "cancellation_control_role_present",
       "attempts",
       "max_attempts",
       "next_attempt_at",

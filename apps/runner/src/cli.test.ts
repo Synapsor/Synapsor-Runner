@@ -6419,8 +6419,16 @@ END
 
     await expect(main(["writeback", "migration", "--engine", "postgres", "--schema", "synapsor"])).resolves.toBe(0);
     expect(output.join("")).toContain("CREATE SCHEMA IF NOT EXISTS \"synapsor\"");
-    expect(output.join("")).toContain("synapsor_writeback_receipts");
+    expect(output.join("")).toContain('CREATE TABLE IF NOT EXISTS "synapsor".synapsor_writeback_receipts');
+    expect(output.join("")).toContain('ALTER TABLE "synapsor".synapsor_writeback_receipts');
+    expect(output.join("")).not.toContain("ALTER TABLE synapsor_writeback_receipts");
     expect(output.join("")).toContain("search_path");
+
+    output.length = 0;
+    await expect(main(["writeback", "migration", "--engine", "postgres", "--schema", "audit", "--table", "custom_receipts"])).resolves.toBe(0);
+    expect(output.join("")).toContain('CREATE TABLE IF NOT EXISTS "audit"."custom_receipts"');
+    expect(output.join("")).toContain('ALTER TABLE "audit"."custom_receipts"');
+    expect(output.join("")).not.toContain("ALTER TABLE synapsor_writeback_receipts");
 
     output.length = 0;
     await expect(main(["writeback", "grants", "--engine", "postgres", "--schema", "synapsor", "--writer-role", "app_writer"])).resolves.toBe(0);

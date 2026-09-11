@@ -19,6 +19,7 @@ export type PolicyPassage = { start: number; end: number;
   issue_kind?: "business_choice" | "schema_meaning" | "missing_configuration" | "unsupported_requirement" | "contradiction" | "coverage_link";
   next_step?: string;
   evidence_checks?: Array<{ path: string; equals: string | number | boolean | null }>;
+  counter_requirements?: Array<{ path: string; current_capability: string | null; required_capability: string | null }>;
   field_checks?: Array<{ resource: string; field: string; expectation: "private" | "business_visible" }>;
   application_obligations?: Array<"customer_selection" | "status_presentation">;
   /** Later setup, not verification or an assignment of business controls to the client. */
@@ -115,7 +116,8 @@ export function bindPolicyCoverage(session: PolicySourceSession, report: PolicyC
 
 export function authoringDestination(session: AuthoringDestination): string {
   const endpoint = session.baseUrl ?? (session.provider === "openai" ? "https://api.openai.com/v1"
-    : session.provider === "anthropic" ? "https://api.anthropic.com/v1" : "http://127.0.0.1:11434/v1");
+    : session.provider === "anthropic" ? "https://api.anthropic.com/v1"
+      : session.provider === "openrouter" ? "https://openrouter.ai/api/v1" : "http://127.0.0.1:11434/v1");
   const url = new URL(endpoint);
   if (url.username || url.password || url.search || url.hash) throw new Error("Policy destination must not contain URL credentials, query parameters or fragments.");
   return `${session.provider}[${session.model}] at ${url.href.replace(/\/$/u, "")}`;
@@ -257,6 +259,9 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
       && (passage.field_checks === undefined || Array.isArray(passage.field_checks) && passage.field_checks.length <= 160
         && passage.field_checks.every((check) => check && typeof check.resource === "string" && check.resource.length <= 256
           && typeof check.field === "string" && check.field.length <= 128 && ["private", "business_visible"].includes(check.expectation)))
+      && (passage.counter_requirements === undefined || Array.isArray(passage.counter_requirements) && passage.counter_requirements.length > 0
+        && passage.counter_requirements.length <= 16 && passage.counter_requirements.every((check) => check && typeof check.path === "string"
+          && check.path.length <= 500 && [check.current_capability, check.required_capability].every((value) => value === null || typeof value === "string" && value.length <= 256)))
       && (passage.application_obligations === undefined || validApplicationObligations(passage.application_obligations))
       && (passage.deployment_prerequisite === undefined || isDeferredPolicyDeployment(passage))
       && (passage.operator_override === undefined || typeof passage.operator_override === "string" && passage.operator_override.length <= 4_000)));

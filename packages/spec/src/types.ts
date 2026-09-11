@@ -151,6 +151,7 @@ export type ActionRuleScalarExpressionV1 = ExtensionFields & (
     operation: "count" | "sum" | "min" | "max";
     binding: string;
     field?: string;
+    where?: ActionRuleBooleanExpressionV1;
   }
   | {
     kind: "math";
@@ -169,6 +170,11 @@ export type ActionRuleScalarExpressionV1 = ExtensionFields & (
     input: ActionRuleScalarExpressionV1;
     minimum: ActionRuleScalarExpressionV1;
     maximum: ActionRuleScalarExpressionV1;
+  }
+  | {
+    kind: "date_of";
+    timestamp: ActionRuleScalarExpressionV1;
+    timezone: "UTC";
   }
   | {
     kind: "add_duration";
@@ -259,6 +265,8 @@ export type RuleVerificationResourceSpecV1 = ExtensionFields & {
   fields: RuleVerificationFieldSpecV1[];
   scope: RuleVerificationScopeSpecV1;
   cardinality: "one" | "many";
+  /** Complete relationship range, with reviewed phantom and visibility protection. */
+  collection_consistency?: "complete_locked";
   max_rows: number;
   overflow: "ineligible" | "unsupported";
   deterministic_order?: Array<{ field: string; direction: "asc" | "desc" }>;

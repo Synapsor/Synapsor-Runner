@@ -37,6 +37,7 @@ import { proposalsApprove } from "./proposal-ledger.js";
 import { withSharedPostgresRuntimeStoreBridge, withSharedPostgresRuntimeStoreReadBridge } from "./store-shared.js";
 import { sharedPostgresLedgerMirrorOptions } from "./shared-ledger-domain.js";
 import { workerControlOperatorDecisionAction } from "./worker-policy.js";
+import { workerCancellationRequiredRole } from "./worker-cancellation-authority.js";
 import { inspectWritebackSourceContext, reconciliationReceipt, reconciliationSupportedOutcome, workbenchReconciliationView } from "./writeback-setup.js";
 
 
@@ -213,7 +214,11 @@ export async function ui(args: string[]): Promise<number> {
           reason: input.reason,
           actor: input.actor,
           token: input.identityToken,
-          requiredRole: policy?.control_role,
+          requiredRole: workerCancellationRequiredRole({
+            queue: queue!,
+            exactCurrentPolicy: policy,
+            production: config.supervised_worker?.profile === "production",
+          }),
         });
         await workbenchStore("write", "worker-cancel-authority-write", (store) => {
           store.cancelWorkerItem({

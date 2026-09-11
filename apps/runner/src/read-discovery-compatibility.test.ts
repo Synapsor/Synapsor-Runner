@@ -3,16 +3,19 @@ import fs from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CATALOG_LIMITS, catalogResponseBytes, createInactiveSemanticActionRuntime } from "@synapsor-runner/mcp-server";
-import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
-import { describeBoundary, type ScopedExploreRuntime } from "./scoped-explore.js";
+import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ActivatedExplorationBoundary, type ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { describeBoundary, validateExplorePlan, type ScopedExploreRuntime } from "./scoped-explore.js";
 import { createScopedExploreMcpServer, projectDescribeDataForModel } from "./authoring-mcp.js";
 import { readDiscoveryCompatibility } from "./auto-boundary.js";
 import { readDiscoveryConcernLines } from "./read-discovery-compatibility.js";
+import { askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, type AskToolGateway } from "./model-ask.js";
+import { askToolResultViews } from "./ask-mcp-gateway.js";
 const telecomOffer = JSON.parse(fs.readFileSync(new URL("./test-fixtures/telecom-offer-discovery.json", import.meta.url), "utf8")) as {
   context: Record<string, unknown>; resource: Record<string, unknown> & { id: string };
 };
 const telecomInvoice = JSON.parse(fs.readFileSync(new URL("./test-fixtures/telecom-invoice-discovery.json", import.meta.url), "utf8")) as typeof telecomOffer;
 const universityRegistration = JSON.parse(fs.readFileSync(new URL("./test-fixtures/university-registration-discovery-resource.json", import.meta.url), "utf8")) as ExplorationBoundaryDraft["pack"]["resources"][number];
+const universityWaitlist = JSON.parse(fs.readFileSync(new URL("./test-fixtures/university-waitlist-discovery-resource.json", import.meta.url), "utf8")) as ExplorationBoundaryDraft["pack"]["resources"];
 
 const digest = `sha256:${"a".repeat(64)}` as const;
 function fixture(count = 32): ExplorationBoundaryDraft {
@@ -38,6 +41,117 @@ function rawContract(boundary: ExplorationBoundaryDraft) {
 function resource(value: Record<string, unknown>): any { return (value.resources as unknown[])[0]; }
 
 describe("complete bounded Read contracts", () => {
+  const localConsumer = process.env.SYNAPSOR_TEST_DISCOVERY_CONSUMER_OLLAMA === "1";
+  it.skipIf(process.env.SYNAPSOR_TEST_DISCOVERY_CONSUMER_LIVE !== "1" && !localConsumer)(`live ${localConsumer ? "Ollama" : "Terra"} consumes grouped permissions into an exact composite plan (metadata/validation only)`, async () => {
+    if (!localConsumer && !process.env.OPENAI_API_KEY) throw new Error("Explicit live qualification requires OPENAI_API_KEY");
+    const boundary = fixture();
+    boundary.pack.name = "reviewed_staging";
+    boundary.pack.resources = structuredClone(universityWaitlist);
+    const id = "university.waitlist_offers";
+    // In-memory validation fixture only: no authority is persisted or activated.
+    const validationBoundary: ActivatedExplorationBoundary = { ...boundary, activation: {
+      state: "active", digest, actor: "contract-test", activated_at: "2026-09-10T00:00:00Z",
+      generation_lock_fingerprint: digest, reviewed_decisions: [],
+    } };
+    const raw = describeBoundary(boundary, { resource: id });
+    const runtime = { boundary: { ...boundary, activation: { digest } }, session_fingerprint: digest,
+      model_authority_metadata: "semantic", describe: async () => structuredClone(raw) } as unknown as ScopedExploreRuntime;
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "live-grouped-contract-consumer", version: "1" });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    const plans: Record<string, unknown>[] = [];
+    const attempts: unknown[] = [];
+    let described = false;
+    try {
+      await server.connect(st); await client.connect(ct);
+      const tools = (await client.listTools()).tools.map(tool => ({ name: tool.name, description: tool.description ?? "", input_schema: tool.inputSchema }));
+      expect(tools.map(tool => tool.name).sort()).toEqual(["app.describe_actions", "app.describe_data", "app.explore_data", "app.request_change"]);
+      const gateway: AskToolGateway = { mode: "authoring", listTools: () => tools, close: async () => {}, callTool: async (name, args) => {
+        if (name === "app.describe_data") {
+          const response = await client.callTool({ name, arguments: { resource: id } });
+          expect(response.isError).not.toBe(true);
+          expect(resource(response.structuredContent as Record<string, unknown>)).toHaveProperty("contract_encoding", "grouped_operations.v1");
+          described = true;
+          return { ok: true, value: response.structuredContent as Record<string, unknown> };
+        }
+        if (name !== "app.explore_data") throw new Error("Only Read discovery and plan validation are part of this test");
+        expect(described).toBe(true);
+        const plan = args.plan as Record<string, unknown>;
+        try {
+          validateExplorePlan(plan, validationBoundary);
+          attempts.push({ plan, validated: true });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Runtime plan validation failed";
+          attempts.push({ arguments: args, error: message });
+          // Use the real MCP schema refusal, including its exact key/path diagnostics.
+          const refused = await client.callTool({ name, arguments: args });
+          expect(refused.isError).toBe(true);
+          const value = askToolResultViews(refused).provider;
+          return { ok: false, error_code: typeof value.error_code === "string" ? value.error_code : "MCP_TOOL_ARGUMENTS_INVALID", value };
+        }
+        plans.push(plan);
+        return { ok: true, value: { plan_validated: true, source_query_executed: false, source_database_changed: false,
+          message: "This contract-consumer test validates the plan only; it does not read source rows." } };
+      } };
+      const authorityDigest = askToolSurfaceDigest(tools);
+      const configuration = resolveAskProviderConfiguration({ ...(localConsumer
+        ? { provider: "openai_compatible" as const, model: "qwen2.5:7b", base_url: "http://127.0.0.1:11434/v1", request_timeout_seconds: 120 }
+        : { provider: "openai" as const, model: "gpt-5.6-terra", api_key_env: "OPENAI_API_KEY" }),
+        egress_acknowledged: true, authority_digest: authorityDigest }, process.env, new Date());
+      const turn = await runAskProviderTurn({ configuration, question: `Inspect the exact contract for ${id}, then submit a rows plan for offered seats showing offer state, related registration state, section label, and course code/title. Filter offer_state to active. Do not select internal IDs or any unrelated information. This is a metadata and plan-validation test, not a source-data query.`,
+        history: [], gateway, tools, authorityDigest, signal: new AbortController().signal, requiredInitialToolName: "app.describe_data" });
+      expect(plans, JSON.stringify({ attempts, answer: turn.answer })).toHaveLength(1);
+      expect(plans[0]).toMatchObject({ resource: id, kind: "rows", select: ["offer_state"], where: [{ field: "offer_state", op: "eq", value: "active" }] });
+      const related = plans[0]!.related as Array<{ relationship: string; select: string[] }>;
+      expect(related).toHaveLength(3);
+      expect(related.flatMap(entry => entry.select).sort()).toEqual(["course_code", "course_title", "registration_state", "section_label"]);
+    } finally { await client.close(); await server.close(); }
+  }, 240_000);
+
+  it.each(["semantic", "exact"] as const)("returns the captured three-link waitlist contract completely (%s)", async (mode) => {
+    const boundary = fixture();
+    boundary.pack.name = "reviewed_staging";
+    boundary.pack.resources = structuredClone(universityWaitlist);
+    const id = "university.waitlist_offers";
+    const before = structuredClone(boundary);
+    const raw = describeBoundary(boundary, { resource: id });
+    const baseline = resource(projectDescribeDataForModel(raw, true, mode));
+    const runtime = { boundary: { ...boundary, activation: { digest } }, session_fingerprint: digest,
+      model_authority_metadata: mode, describe: async () => structuredClone(raw) } as unknown as ScopedExploreRuntime;
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "waitlist-complete-contract", version: "1" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport); await client.connect(clientTransport);
+      const response = await client.callTool({ name: "app.describe_data", arguments: { resource: id } });
+      expect(response.isError).not.toBe(true);
+      const contract = resource(response.structuredContent as Record<string, unknown>);
+      const expand = (entry: any, relationship = false) => {
+        const resolved = { ...contract.empty_operation_defaults, ...(relationship ? contract.relationship_defaults : {}), ...entry };
+        for (const key of ["filter_operators", "time_bucket_fields"]) if (Array.isArray(resolved[key])) {
+          resolved[key] = Object.fromEntries(resolved[key].flatMap((group: any) => group.fields.map((field: string) => [field, contract.operation_sets[group.use]])));
+        }
+        return resolved;
+      };
+      const entries = [expand(contract), ...contract.relationships.map((entry: any) => expand(entry, true))];
+      expect(entries).toHaveLength(4);
+      for (const [index, original] of [baseline, ...baseline.relationships].entries()) {
+        const actual = entries[index];
+        for (const key of ["id", "selectable_fields", "filter_operators", "sortable_fields", "groupable_fields", "aggregate_measure_functions",
+          "presence_measure_fields", "presence_measure_functions", "derived_measures", "count_distinct_fields", "time_bucket_fields", "relative_time_window_fields",
+          "field_enums", "model_withheld_fields", "minimum_cohort_size", "maximum_rows", "maximum_groups", "primary_key",
+          "activation", "operator_review_required", "target_resource", "cardinality", "counted_entity", "path_depth", "path", "nullable", "unmatched_rows"]) {
+          if (Object.hasOwn(original, key)) expect(actual[key], `${index}.${key}`).toEqual(original[key]);
+        }
+        expect(actual.fields.map((field: any) => ({ ...contract.field_defaults, ...field })).map(({ operations, allowed_values, plan_reference, ...field }: any) => field))
+          .toEqual(original.fields.map(({ operations, allowed_values, plan_reference, ...field }: any) => field));
+      }
+      expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThanOrEqual(CATALOG_LIMITS.responseBytes);
+      expect(readDiscoveryCompatibility(boundary, digest)).toEqual([]);
+      expect(boundary).toEqual(before);
+    } finally { await client.close(); await server.close(); }
+  });
+
   it("returns the university registration contract without the reported field-narrowing workaround", async () => {
     const boundary = fixture();
     // Metadata captured from the lab's generated revision, before the operator

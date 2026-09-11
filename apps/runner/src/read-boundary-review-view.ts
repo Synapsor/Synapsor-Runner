@@ -2,8 +2,9 @@ import { EXPLORATION_PRESENCE_MEASURE_FUNCTIONS, type ExplorationBoundaryDraft, 
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { readBoundaryRevisionCatalog, reviewedModelAnalysisOperations } from "./read-boundary-revision-model.js";
-import { readPrivacyReview, readPrivacyFindingLines, readPrivacySummary, type ReadPrivacyReview } from "./read-boundary-privacy-review.js";
+import { readPrivacyReview, readPrivacyFindingLines, readPrivacyPassageConcernLines, readPrivacySummary, type ReadPrivacyReview } from "./read-boundary-privacy-review.js";
 
 import type { ReviewSection, ReadChangeCounts } from "./read-boundary-review-types.js";
 export type { ReviewSection } from "./read-boundary-review-types.js";
@@ -118,6 +119,15 @@ export function readRevisionDiff(
     rawAdded: 0, analysisAdded: 0, selectionAdded: 0, selectionRemoved: 0, exclusions: 0, representation: 0, other: 0 };
   const hidden: string[] = [], analysisRestricted: string[] = [], privateAdded: string[] = [];
   let exclusionsOpenedForSelection = 0;
+  const prerequisiteChanged = canonicalJsonDigest(before.read_prerequisite ?? null) !== canonicalJsonDigest(after.read_prerequisite ?? null);
+  if (prerequisiteChanged) {
+    counts.other++;
+    groups.other!.push({ id: "private_access_condition", title: "Private access condition changed", lines: [
+      "Before:", ...JSON.stringify(before.read_prerequisite ?? null, null, 2).split("\n"),
+      "After:", ...JSON.stringify(after.read_prerequisite ?? null, null, 2).split("\n"),
+      "These are private verification permissions, not customer-readable fields. Every data query checks current evidence before returning records or analysis.",
+    ] });
+  }
   for (const resource of after.pack.resources) {
     const previous = before.pack.resources.find((item) => item.id === resource.id);
     if (!previous) continue;
@@ -190,6 +200,9 @@ export function readRevisionDiff(
   const titles: Record<string, string> = { reductions: "Less information available to the agent", expansions: "More information available to the agent",
     private: "Runner row-selection changes", exclusions: "Field exclusions", representation: "Classification only (access unchanged)", other: "Other query/relationship changes" };
   return { id: "changes", title: "Changes only", changeCounts: counts, lines: [
+    ...(prerequisiteChanged ? [after.read_prerequisite
+      ? "Access condition: check the reviewed current status before every data query. Missing, inactive or expired evidence denies access. Runner gains this private verification permission only after activation."
+      : "Access condition removed: the previous current-status check would no longer protect reads. Review this change before activation."] : []),
     ...(hidden.length ? [hidden.length <= 4 ? `Hidden from the agent: ${hidden.join(", ")}.`
       : `Hidden from the agent: ${hidden.length} fields. Open Less information available to the agent for the complete list.`] : []),
     ...(analysisRestricted.length ? [analysisRestricted.length <= 4 ? `Fewer ways to query information: ${analysisRestricted.join(", ")}. Exact changes list the removed analysis permissions.`
@@ -197,7 +210,7 @@ export function readRevisionDiff(
     ...(counts.rawAdded || counts.analysisAdded ? [`Additional agent access: ${counts.rawAdded} newly visible fields; ${counts.analysisAdded} new ways to query information. Review More information available to the agent.`] : []),
     ...(privateAdded.length ? [`Additional private Read access: ${privateAdded.length} fields${privateAdded.length <= 3 ? ` (${privateAdded.join(", ")})` : "; open Runner row-selection changes"}. This requires a separate reason; scope filtering and Action verification alone do not require it.`] : []),
     ...(exclusionsOpenedForSelection ? [`Existing exclusions removed for ${exclusionsOpenedForSelection} of these same newly readable fields, not ${exclusionsOpenedForSelection} additional fields.`] : []),
-    ...(!counts.selectionAdded && !counts.rawAdded && !counts.analysisAdded ? ["No new information becomes readable by Runner or the agent."] : []),
+    ...(!counts.selectionAdded && !counts.rawAdded && !counts.analysisAdded && !prerequisiteChanged ? ["No new information becomes readable by Runner or the agent."] : []),
     ...(counts.selectionRemoved ? [`Runner can no longer select ${counts.selectionRemoved} fields.`] : []),
     ...(counts.other ? [`Related query settings changed: ${counts.other}; inspect Other query/relationship changes.`] : []),
     ...(counts.representation && !counts.permissions ? ["Classification only; effective access is unchanged."] : []),
@@ -261,6 +274,7 @@ export function readBoundaryReviewSections(input: {
       ...(!privacy.findings.length ? ["No advisory field findings in this revision. This is not a general certification of privacy."] : []),
       "Inspection only: no model request, permission change, or activation.",
       ...privacy.findings.flatMap((finding) => ["", ...readPrivacyFindingLines(finding)]),
+      ...readPrivacyPassageConcernLines(privacy).flatMap((line) => ["", line]),
       `Exact fingerprint: ${input.digest}`,
     ] },
     { id: "resources", title: `Resources and fields (${resources.length})`, lines: [
@@ -276,6 +290,14 @@ export function readBoundaryReviewSections(input: {
           principal_scope: resource.principal_scope, rls_session: resource.rls_session, shared_reference_scope: resource.shared_reference_scope,
         })) }, null, 2).split("\n"), `Exact fingerprint: ${input.digest}`,
     ] },
+    ...(boundary.read_prerequisite ? [{ id: "private_access_condition", title: "Private access condition", lines: [
+      `Evidence meaning: ${boundary.read_prerequisite.semantic_consent.source_description}`,
+      `Positive condition: ${boundary.read_prerequisite.semantic_consent.positive_state_description}`,
+      "Every data query, including counts and analysis, requires matching trusted identity, the reviewed positive status and a currently effective interval.",
+      "Missing, negative, not-yet-effective or expired evidence denies access. The private check does not add a customer-readable resource or permit source changes.",
+      "Exact status, dates, scope and inspected dependency:", ...JSON.stringify(boundary.read_prerequisite, null, 2).split("\n"),
+      `Exact Read fingerprint: ${input.digest}`,
+    ] }] : []),
     { id: "dependencies", title: "Private Action verification dependencies", lines: input.privateDependencies ?? ["No dependent Action record is attached to this Read-only review. No Action authority is granted here."] },
     { id: "json", title: "Raw JSON (complete reviewed revision)", lines: [
       "This is the candidate document, not the activation ledger. disabled_unreviewed means it grants no active authority; reviewed readiness and explicit activation are tracked separately.",

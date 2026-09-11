@@ -7,6 +7,6 @@ services:
       POSTGRES_USER: synapsor_admin
       POSTGRES_PASSWORD: synapsor_admin_password
     ports:
-      - "55438:5432"
+      - "${SYNAPSOR_DEMO_PLAN_CREDIT_PORT:-55438}:5432"
     volumes:
       - ./seed:/docker-entrypoint-initdb.d:ro

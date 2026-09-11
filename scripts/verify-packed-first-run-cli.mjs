@@ -3,8 +3,10 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { withDemoComposeFixture } from "./demo-compose-fixture.mjs";
+import { assertActiveStatus, assertDisabledStatus, createPackedCliSession } from "./packed-first-run-cli-harness.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "synapsor-packed-first-run-cli-"));
@@ -34,31 +36,42 @@ const fixtures = [
 ];
 
 const results = [];
+let completed = false;
 
 try {
   const cli = await resolvePackedCli();
   for (const fixture of fixtures) {
-    await resetFixture(fixture);
+    await withDemoComposeFixture({ ...fixture, exampleDir: path.dirname(fixture.compose) }, run, async () => {
+    await waitForFixture(fixture);
     const before = sourceSnapshot(fixture);
     const projectRoot = await fsp.mkdtemp(path.join(tempRoot, `${fixture.engine}-project-`));
     const proof = await runFirstUseJourney({ cli, fixture, projectRoot });
     const after = sourceSnapshot(fixture);
     assert.equal(after, before, `${fixture.engine} first-run journey changed source data`);
 
-    const activePath = path.join(projectRoot, ".synapsor", "exploration-boundary.active.json");
-    const active = JSON.parse(await fsp.readFile(activePath, "utf8"));
-    const resource = active.pack.resources.find((item) => item.id === fixture.resource);
+    const status = cliJson(cli, ["boundary", "status", "--json"], projectRoot, proof.env);
+    assertActiveStatus(status, fixture.resource);
+    const review = cliJson(cli, ["boundary", "review", "--json"], projectRoot, proof.env);
+    assert.equal(review.candidate_digest, status.active_digest);
+    assert.deepEqual(review.candidate, proof.reviewedCandidate, "Activation or runtime checks changed the reviewed definition");
+    assert.deepEqual(review.candidate.trusted_context, {
+      provider: "environment", tenant_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL",
+    });
+    const resource = review.candidate.pack.resources.find((item) => item.id === fixture.resource);
     assert.ok(resource, `${fixture.engine} did not activate ${fixture.resource}`);
     assert.equal(resource.primary_key, fixture.identity);
     assert.equal(resource.tenant_key, fixture.tenant);
-    assert.equal(active.deployment_profile, "staging");
+    assert.equal(review.candidate.deployment_profile, "staging");
     assertProjectHasNoCredential(projectRoot, fixture.databaseUrl);
 
     results.push({
       engine: fixture.engine,
       fresh_project: true,
       packed_artifact: true,
-      missing_trusted_scope_paused_with_guidance: true,
+      identity_free_drafting_remains_disabled_until_explicit_activation: true,
+      permission_configuration_does_not_require_concrete_identity: true,
+      missing_trusted_scope_runtime_refused: true,
+      write_runtime_identity_qualification: "not exercised: this first-run fixture activates Read only",
       trusted_scope_supplied_outside_model: true,
       job_first_entry: true,
       manual_controls_reachable: true,
@@ -68,15 +81,12 @@ try {
       source_database_changed: false,
       elapsed_ms: proof.elapsedMs,
     });
-  }
-  process.stdout.write(`${JSON.stringify({ ok: true, results }, null, 2)}\n`);
-} finally {
-  for (const fixture of fixtures) {
-    run("docker", ["compose", "-f", fixture.compose, "down", "-v", "--remove-orphans"], {
-      allowFailure: true,
     });
   }
-  if (process.env.SYNAPSOR_KEEP_PACKED_FIRST_RUN_TEMP !== "1") {
+  completed = true;
+  process.stdout.write(`${JSON.stringify({ ok: true, results }, null, 2)}\n`);
+} finally {
+  if (completed && process.env.SYNAPSOR_KEEP_PACKED_FIRST_RUN_TEMP !== "1") {
     await fsp.rm(tempRoot, { recursive: true, force: true });
   } else {
     process.stderr.write(`Packed first-run artifacts retained at ${tempRoot}\n`);
@@ -112,11 +122,7 @@ function packCurrent(packageRoot) {
   return path.join(packRoot, path.basename(filename));
 }
 
-async function resetFixture(fixture) {
-  run("docker", ["compose", "-f", fixture.compose, "down", "-v", "--remove-orphans"], {
-    allowFailure: true,
-  });
-  run("docker", ["compose", "-f", fixture.compose, "up", "-d", fixture.service]);
+async function waitForFixture(fixture) {
   const started = Date.now();
   while (Date.now() - started < 60_000) {
     const ready = fixture.engine === "postgres"
@@ -136,122 +142,85 @@ async function resetFixture(fixture) {
   throw new Error(`${fixture.engine} fixture did not become query-ready within 60 seconds`);
 }
 
-async function runFirstUseJourney({ cli, fixture, projectRoot }) {
-  const started = Date.now();
-  const baseEnv = {
-    ...process.env,
-    DATABASE_URL: fixture.databaseUrl,
-    TERM: "xterm-256color",
-    COLUMNS: "120",
-    LINES: "40",
-  };
-  delete baseEnv.SYNAPSOR_TENANT_ID;
-  delete baseEnv.SYNAPSOR_PRINCIPAL;
-  delete baseEnv.OPENAI_API_KEY;
-  delete baseEnv.ANTHROPIC_API_KEY;
-  delete baseEnv.NO_COLOR;
-
-  const command = `stty cols 120 rows 40; ${shellQuote(cli)} start --from-env DATABASE_URL --cli`;
-  const missingBindingSession = spawnCliSession({ command, projectRoot, env: baseEnv });
-  await waitForValue(
-    () => /Missing operator binding:\s*SYNAPSOR_TENANT_ID/i.test(missingBindingSession.transcript())
-      ? true
-      : undefined,
-    60_000,
-    () => `${fixture.engine} first-run did not identify its missing trusted binding.\n${tail(missingBindingSession.transcript())}`,
-  );
-  assert.match(missingBindingSession.transcript(), /Quick Start paused\. Nothing was activated\./i);
-  assert.match(missingBindingSession.transcript(), /export SYNAPSOR_TENANT_ID='<trusted value>'/i);
-  assert.match(missingBindingSession.transcript(), /start --from-env DATABASE_URL --cli/i);
-  assert.doesNotMatch(missingBindingSession.transcript(), /Opening the detailed boundary editor/i);
-  const paused = await waitForExit(
-    missingBindingSession.child,
-    15_000,
-    () => `${fixture.engine} first-run did not pause cleanly for its missing trusted binding.\n${tail(missingBindingSession.transcript())}`,
-  );
-  assert.equal(paused.code, 0, `${fixture.engine} missing-binding pause exited with ${paused.code ?? paused.signal}`);
-  await assert.rejects(
-    fsp.access(path.join(projectRoot, ".synapsor", "exploration-boundary.active.json")),
-    (error) => error?.code === "ENOENT",
-    `${fixture.engine} activated authority without its trusted tenant binding`,
-  );
-
-  const env = { ...baseEnv, SYNAPSOR_TENANT_ID: "acme" };
-  const session = spawnCliSession({ command, projectRoot, env });
-  const { child, transcript } = session;
-
-  const checkpoint = async (pattern, label, timeoutMs = 60_000) => {
-    await waitForValue(
-      () => pattern.test(transcript()) ? true : undefined,
-      timeoutMs,
-      () => `${fixture.engine} first-run did not reach ${label}.\n${tail(transcript())}`,
-    );
-  };
-
-  try {
-    await checkpoint(/SET UP ONE AGENT JOB[\s\S]*What job are you giving this agent\?/i, "job-first Boundary prompt");
-    child.stdin.write("m\r");
-
-    await checkpoint(new RegExp(`EDIT ACCESS - reviewed_staging[\\s\\S]*${escapeRegExp(fixture.resource)}`), "focused boundary editor");
-    child.stdin.write("\r");
-
-    await checkpoint(new RegExp(`REVIEW COLUMNS - ${escapeRegExp(fixture.resource)}`), "column review");
-    child.stdin.write("\r");
-
-    await checkpoint(
-      /Agent authority (?:is unchanged|changed: no)\.[\s\S]*EDIT ACCESS - reviewed_staging/i,
-      "parent table editor after column review",
-    );
-    child.stdin.write("c");
-
-    await checkpoint(/REVIEW EXACT BOUNDARY/i, "whole-boundary review");
-    await checkpoint(
-      /Activate "reviewed_staging" exactly as shown(?: now\? You will stay in \/access\.| and continue to Ask\?) \[y\/N\]/i,
-      "explicit activation prompt",
-    );
-    child.stdin.write("y\r");
-
-    await checkpoint(/Reviewed boundary "reviewed_staging" is active/i, "exact boundary activation");
-    await checkpoint(/\/access is still open\./i, "access editor after activation");
-    child.stdin.write("q");
-
-    await checkpoint(/USE YOUR REVIEWED BOUNDARIES/i, "model and MCP continuation chooser");
-    child.stdin.write("\u001b[B\u001b[B\u001b[B\u001b[B\u001b[B\r");
-    await checkpoint(/Your reviewed boundaries remain active\./i, "Later handoff");
-
-    const result = await waitForExit(child, 15_000, () =>
-      `${fixture.engine} first-run did not exit cleanly after the Later handoff.\n${tail(transcript())}`);
-    assert.equal(result.code, 0, `${fixture.engine} first-run exited with ${result.code ?? result.signal}`);
-    assert.doesNotMatch(transcript(), /cannot be added because record identity or trusted scope is unresolved/i);
-    assert.doesNotMatch(transcript(), /Ask did not start:/i);
-    assert.doesNotMatch(transcript(), new RegExp(escapeRegExp(fixture.databaseUrl)));
-    return { elapsedMs: Date.now() - started };
-  } finally {
-    if (child.exitCode === null) {
-      killProcessGroup(child.pid, "SIGTERM");
-      await waitForExit(child, 3_000, () => "").catch(() => {
-        killProcessGroup(child.pid, "SIGKILL");
-      });
-    }
-  }
+function cliJson(cli, args, projectRoot, env) {
+  return JSON.parse(run(process.execPath, [cli, ...args], { cwd: projectRoot, env }).stdout);
 }
 
-function spawnCliSession({ command, projectRoot, env }) {
-  const child = spawn("script", ["-qefc", command, "/dev/null"], {
-    cwd: projectRoot,
-    env,
-    stdio: ["pipe", "pipe", "pipe"],
-    detached: true,
-  });
-  let output = "";
-  let stderr = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => { output += chunk; });
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
+async function runFirstUseJourney({ cli, fixture, projectRoot }) {
+  const started = Date.now();
+  const baseEnv = { ...process.env, DATABASE_URL: fixture.databaseUrl,
+    TERM: "xterm-256color", COLUMNS: "120", LINES: "40" };
+  for (const key of ["SYNAPSOR_TENANT_ID", "SYNAPSOR_PRINCIPAL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "NO_COLOR"]) delete baseEnv[key];
+  const command = "stty cols 120 rows 40; " + shellQuote(process.execPath) + " " + shellQuote(cli) + " start --from-env DATABASE_URL --cli";
+  const open = (env, label) => createPackedCliSession({ command, projectRoot, env,
+    evidencePath: path.join(tempRoot, fixture.engine + "-" + label + "-session.json") });
+  const manual = async (session) => {
+    await session.waitForScreen(/START BOUNDARY DRAFTING/, "disabled drafting chooser");
+    await session.choose("Open the manual Boundary editors");
+    await session.waitForScreen(/EDIT ACCESS/, "manual table editor");
+    session.send("\r");
+    await session.waitForScreen(new RegExp("REVIEW COLUMNS - " + escapeRegExp(fixture.resource)), "column review");
+    session.send("\r");
+    await session.waitFor(/Agent authority (?:is unchanged|changed: no)\.[\s\S]*EDIT ACCESS/, "parent editor after column review");
+    await session.waitForScreen(/EDIT ACCESS/, "visible parent editor after column review");
+  };
 
-  const transcript = () => stripTerminal(`${output}\n${stderr}`);
-  return { child, transcript };
+  const missing = open(baseEnv, "missing-binding");
+  try {
+    await manual(missing);
+    assertDisabledStatus(cliJson(cli, ["boundary", "status", "--json"], projectRoot, baseEnv));
+    assert.doesNotMatch(missing.transcript(), /ACTIVATION SUCCEEDED/);
+    missing.send("q");
+    const paused = await missing.waitForExit();
+    assert.equal(paused.code, 0, "Identity-free authoring must exit without activating authority");
+  } finally { await missing.close(); }
+  assertDisabledStatus(cliJson(cli, ["boundary", "status", "--json"], projectRoot, baseEnv));
+
+  const env = { ...baseEnv, SYNAPSOR_TENANT_ID: "acme" };
+  const session = open(baseEnv, "authority-review-without-identity");
+  let reviewedCandidate;
+  try {
+    await manual(session);
+    reviewedCandidate = cliJson(cli, ["boundary", "review", "--json"], projectRoot, baseEnv).candidate;
+    session.send("c");
+    await session.waitFor(/Activate "reviewed_staging" exactly as shown now\? You will stay in \/access\. \[y\/N\]/,
+      "explicit exact activation prompt");
+    assert.match(session.transcript(), /REVIEW EXACT BOUNDARY/);
+    session.send("y");
+    await session.waitFor(/ACTIVATION SUCCEEDED/, "persisted Read activation");
+    await session.waitForScreen(/EDIT ACCESS[\s\S]*ACTIVE\s+1 table/, "access editor remains open after activation");
+    session.send("q");
+    await session.waitForScreen(/MORE OPTIONS[\s\S]*OpenAI/, "model continuation chooser");
+    await session.choose("Back to client setup");
+    await session.waitForScreen(/CONNECT YOUR CLIENT/, "client continuation chooser");
+    await session.choose("Later");
+    const result = await session.waitForExit();
+    assert.equal(result.code, 0, "Later handoff must exit cleanly");
+    assert.match(session.transcript(), /Your reviewed boundaries remain active/);
+    assert.doesNotMatch(session.transcript(), /Ask did not start:/);
+    assert.doesNotMatch(session.transcript(), new RegExp(escapeRegExp(fixture.databaseUrl)));
+  } finally { await session.close(); }
+
+  const active = cliJson(cli, ["boundary", "status", "--json"], projectRoot, env);
+  assertActiveStatus(active, fixture.resource);
+  const planPath = path.join(tempRoot, fixture.engine + "-count-plan.json");
+  await fsp.writeFile(planPath, JSON.stringify({ kind: "aggregate", resource: fixture.resource,
+    measures: [{ function: "count" }], order_by: { kind: "measure", index: 0, direction: "desc" }, top_n: 1 }));
+  const args = [cli, "explore", "run", "--plan", planPath, "--json"];
+  const refused = run(process.execPath, args, { cwd: projectRoot, env: baseEnv, allowFailure: true });
+  await fsp.writeFile(path.join(tempRoot, fixture.engine + "-missing-runtime-binding.json"),
+    JSON.stringify({ status: refused.status, stdout: refused.stdout, stderr: refused.stderr }, null, 2));
+  assert.notEqual(refused.status, 0, "Active authority must not execute a query without trusted identity");
+  const refusal = JSON.parse(refused.stdout);
+  assert.equal(refusal.ok, false);
+  assert.equal(refusal.error.code, "EXPLORE_SCOPE_FORBIDDEN");
+  assert.match(refusal.error.message, /trusted runtime bindings outside model arguments: SYNAPSOR_TENANT_ID/);
+  assertActiveStatus(cliJson(cli, ["boundary", "status", "--json"], projectRoot, env), fixture.resource);
+  const explored = run(process.execPath, args, { cwd: projectRoot, env });
+  await fsp.writeFile(path.join(tempRoot, fixture.engine + "-trusted-runtime-read.json"), explored.stdout);
+  const result = JSON.parse(explored.stdout);
+  assert.equal(result.ok, true, "The exact same plan must work with the externally supplied trusted tenant");
+  return { elapsedMs: Date.now() - started, env, reviewedCandidate };
 }
 
 function sourceSnapshot(fixture) {
@@ -259,13 +228,13 @@ function sourceSnapshot(fixture) {
     return run("docker", [
       "exec", fixture.container,
       "psql", "-U", "synapsor_admin", "-d", "synapsor_runner_mcp_billing", "-Atc",
-      "SELECT string_agg(id || '|' || tenant_id || '|' || status || '|' || late_fee_cents::text || '|' || coalesce(waiver_reason, ''), E'\\n' ORDER BY id) FROM public.invoices",
+      "SELECT jsonb_build_object('invoices', (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.invoices t), 'receipts', (SELECT jsonb_agg(to_jsonb(t) ORDER BY idempotency_key) FROM public.synapsor_writeback_receipts t))",
     ]).stdout.trim();
   }
   return run("docker", [
     "exec", "-e", "MYSQL_PWD=root_password", fixture.container,
     "mysql", "-uroot", "-N", "-B", "synapsor_runner_mcp_orders", "-e",
-    "SELECT GROUP_CONCAT(CONCAT_WS('|', id, tenant_id, status, refund_review_status, COALESCE(refund_note, '')) ORDER BY id SEPARATOR '\\n') FROM orders",
+    "SELECT JSON_OBJECT('id', id, 'tenant_id', tenant_id, 'customer_name', customer_name, 'status', status, 'status_change_reason', status_change_reason, 'refund_review_status', refund_review_status, 'refund_note', refund_note, 'updated_at', updated_at) FROM orders ORDER BY id; SELECT * FROM synapsor_writeback_receipts ORDER BY idempotency_key",
   ]).stdout.trim();
 }
 
@@ -286,60 +255,12 @@ function collectText(rootPath) {
     .join("\n");
 }
 
-function stripTerminal(value) {
-  return value
-    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
-    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\r/g, "");
-}
-
-function tail(value, lines = 100) {
-  return value.split("\n").slice(-lines).join("\n");
-}
-
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", `'\\''`)}'`;
 }
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function killProcessGroup(pid, signal) {
-  try {
-    process.kill(-pid, signal);
-  } catch (error) {
-    if (error?.code !== "ESRCH") throw error;
-  }
-}
-
-async function waitForExit(child, timeoutMs, failure) {
-  if (child.exitCode !== null) return { code: child.exitCode, signal: child.signalCode };
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error(failure()));
-    }, timeoutMs);
-    const onExit = (code, signal) => {
-      cleanup();
-      resolve({ code, signal });
-    };
-    const cleanup = () => {
-      clearTimeout(timeout);
-      child.off("exit", onExit);
-    };
-    child.on("exit", onExit);
-  });
-}
-
-async function waitForValue(read, timeoutMs, failure) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const value = read();
-    if (value !== undefined) return value;
-    await delay(50);
-  }
-  throw new Error(failure());
 }
 
 function delay(milliseconds) {

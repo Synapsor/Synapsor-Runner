@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Client } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js";
 import { StdioClientTransport } from "../packages/mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js";
+import { copyReleaseAsset } from "./copy-release-asset.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const configDir = path.join(root, "examples", "mcp-client-configs");
@@ -63,7 +64,7 @@ function inspectSecretValues(value, pathParts = []) {
   }
 }
 
-function normalizedArgs(entry, storePath) {
+async function normalizedArgs(entry, storePath, tempDir) {
   if (!Array.isArray(entry.args)) throw new Error("server args must be an array");
   const args = entry.args.map(String);
   const joined = args.join(" ");
@@ -77,6 +78,13 @@ function normalizedArgs(entry, storePath) {
     throw new Error("--store requires a path");
   }
   args[storeIndex + 1] = storePath;
+  const configIndex = args.indexOf("--config");
+  if (configIndex < 0 || configIndex === args.length - 1) throw new Error("--config requires a path");
+  const configPath = path.resolve(root, args[configIndex + 1]);
+  // --store alone does not isolate config-relative control-policy state.
+  const isolatedProject = path.join(tempDir, "project");
+  await copyReleaseAsset(path.dirname(configPath), isolatedProject);
+  args[configIndex + 1] = path.join(isolatedProject, path.basename(configPath));
   return args;
 }
 
@@ -86,7 +94,7 @@ async function verifyServer(file, entry) {
     const storePath = path.join(tempDir, "local.db");
     const transport = new StdioClientTransport({
       command: String(entry.command),
-      args: normalizedArgs(entry, storePath),
+      args: await normalizedArgs(entry, storePath, tempDir),
       cwd: root,
       env: {
         ...process.env,
@@ -102,8 +110,8 @@ async function verifyServer(file, entry) {
       serverStderr += String(chunk);
     });
     const client = new Client({ name: "synapsor-client-config-verifier", version: "0.1.0" });
-    await client.connect(transport);
     try {
+      await client.connect(transport);
       const tools = await client.listTools();
       const names = tools.tools.map((tool) => tool.name);
       if (!names.includes("billing.inspect_invoice") || !names.includes("billing.propose_late_fee_waiver")) {
@@ -129,11 +137,13 @@ async function verifyServer(file, entry) {
 async function verifyFlagshipTools() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-mcp-client-support-plan-credit-"));
   try {
+    const isolatedProject = path.join(tempDir, "project");
+    await copyReleaseAsset(path.join(root, "examples", "support-plan-credit"), isolatedProject);
     const transport = new StdioClientTransport({
       command: "corepack",
       args: [
         "pnpm", "runner", "mcp", "serve",
-        "--config", path.join(root, "examples", "support-plan-credit", "synapsor.runner.json"),
+        "--config", path.join(isolatedProject, "synapsor.runner.json"),
         "--store", path.join(tempDir, "local.db"),
       ],
       cwd: root,

@@ -98,9 +98,10 @@ import {
   type ActionRuleAuthorityDraftV1,
 } from "./action-rule-authority.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
-import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+import { explorationBoundaryCandidateDigest, loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { reviewVerifiedActionAuthority } from "./verified-action-review.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { runManualSemanticActionEditor } from "./manual-semantic-action-editor.js";
 
 export { rankActionIntent } from "./guided-action-quick.js";
 
@@ -200,20 +201,11 @@ export type GuidedRehearsalTargetContext = {
 export function conventionalModelAuthoringSession(
   env: NodeJS.ProcessEnv,
 ): ActionModelSuggestionSession | undefined {
-  const openAiReady = Boolean(env.OPENAI_API_KEY?.trim());
-  const anthropicReady = Boolean(env.ANTHROPIC_API_KEY?.trim());
-  if (openAiReady === anthropicReady) return undefined;
-  return openAiReady
-    ? {
-        provider: "openai",
-        model: DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
-        apiKeyEnv: "OPENAI_API_KEY",
-      }
-    : {
-        provider: "anthropic",
-        model: DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
-        apiKeyEnv: "ANTHROPIC_API_KEY",
-      };
+  const configured = (["openai", "anthropic", "openrouter"] as const)
+    .filter((provider) => Boolean(env[defaultProviderKeyEnv(provider)]?.trim()));
+  if (configured.length !== 1) return undefined;
+  const provider = configured[0]!;
+  return { provider, model: defaultHostedModel(provider), apiKeyEnv: defaultProviderKeyEnv(provider) };
 }
 
 export function actionAuthorityRevisionNeedsVersionAdvance(
@@ -413,9 +405,13 @@ export async function runActionControlPlane(input: {
     boundaryName: string;
     modelSuggestionSession?: ActionModelSuggestionSession;
   }) => Promise<BoundaryAccessNotice>;
+  reviewLinkedRead?: (input: { boundaryName: string; session: BoundaryReviewInteractiveSession }) => Promise<void>;
+  clientSetup?: () => Promise<number>;
   modelInterviewEgressAcknowledged?: boolean;
   initialIntent?: string;
   initialDraftCapability?: string;
+  /** Explicit manual entry uses the current semantic editor, not compatibility controls. */
+  initialManualSemantic?: boolean;
   exitAfterInitialDraft?: boolean;
   prepareOnly?: boolean;
   actionBoundaryJobIntent?: string;
@@ -436,6 +432,21 @@ export async function runActionControlPlane(input: {
       }
     : undefined;
   const inspection = input.inspection ?? await inspectActionProject(projectRoot, env);
+  if (input.modelGuidedVerifiedActionRevision && !input.initialSuggestionId
+    && !input.initialIntent && !input.initialDraftCapability && !input.initialManualSemantic) {
+    const governed = await readProjectReadAuthoring(projectRoot);
+    if (governed?.selected) {
+      const verified = await verifiedActionStatus(projectRoot);
+      const legacy = await guidedActionStatus(projectRoot);
+      if (!verified.active && !verified.draft && !legacy.activations.length && !legacy.drafts.length) {
+        await input.modelGuidedVerifiedActionRevision({ projectRoot,
+          boundaryName: governed.selected.progress.candidate.pack.name,
+          ...(modelSuggestionSession ? { modelSuggestionSession } : {}),
+        });
+        return { state: "closed", source_database_changed: false, activated_actions: [] };
+      }
+    }
+  }
   const operatorService = input.operatorService ?? createActionOperatorService({
     configPath: path.join(projectRoot, "synapsor.actions.runner.json"),
     storePath: input.storePath ?? path.join(projectRoot, ".synapsor/local.db"),
@@ -443,6 +454,14 @@ export async function runActionControlPlane(input: {
   const activatedActions = new Set<string>();
   const operatorSession: ActionOperatorSession = {};
   const execute = async (prompter: ActionControlPrompter) => {
+    if (input.initialManualSemantic) {
+      const status = await verifiedActionStatus(projectRoot);
+      const current = status.draft ?? status.active;
+      const result = await runManualSemanticActionEditor({ projectRoot, prompter, inspection, env,
+        ...(current ? { existingAuthority: current } : {}) });
+      await prompter.message(result.title, result.lines, "Return to saved review");
+      return;
+    }
     let notice: string[] = [];
     let initialSuggestionId = input.initialSuggestionId;
     let initialIntent = input.initialIntent?.trim();
@@ -576,6 +595,18 @@ export async function runActionControlPlane(input: {
       notice = [];
       if (!choice || choice === "quit") break;
       try {
+        if (choice === "manual_semantic") {
+          const current = verifiedStatus.draft ?? verifiedStatus.active;
+          const result = await runManualSemanticActionEditor({
+            projectRoot,
+            prompter,
+            inspection,
+            ...(current ? { existingAuthority: current } : {}),
+            env,
+          });
+          notice = [result.title, ...result.lines];
+          continue;
+        }
         if (choice === "verified_model_revision" && input.modelGuidedVerifiedActionRevision) {
           const current = verifiedStatus.draft ?? verifiedStatus.active;
           const boundaryName = current?.authority.rules[0]?.read_boundary_name;
@@ -613,6 +644,19 @@ export async function runActionControlPlane(input: {
             ...(verifiedStatus.draft ? { draft: verifiedStatus.draft } : {}),
             ...(verifiedStatus.active ? { active: verifiedStatus.active } : {}),
             env,
+            clientSetup: input.clientSetup,
+            ...(input.reviewLinkedRead ? { reviewRead: () => input.reviewLinkedRead!({
+              boundaryName, session: boundarySessionForActionPrompter(prompter),
+            }) } : {}),
+            manualRevision: {
+              run: () => runManualSemanticActionEditor({
+                projectRoot,
+                prompter,
+                inspection,
+                env,
+                existingAuthority: current,
+              }),
+            },
             ...(input.modelGuidedVerifiedActionRevision
               ? {
                   modelRevision: {
@@ -1197,9 +1241,10 @@ function actionProposalDetailLines(detail: ActionProposalDetail): string[] {
     "REQUESTED EFFECT",
     ...(fields.length
       ? fields.map((field) => {
-          const before = changeSet.before?.[field];
-          const after = changeSet.after?.[field] ?? changeSet.patch?.[field];
-          return `  ${field}: ${formatActionValue(before)} -> ${formatActionValue(after)}`;
+          const after = changeSet.after && Object.hasOwn(changeSet.after, field)
+            ? changeSet.after
+            : changeSet.patch;
+          return `  ${field}: ${formatObservedActionValue(changeSet.before, field)} -> ${formatObservedActionValue(after, field)}`;
         })
       : ["  Hard-delete the exact reviewed subject. Stored row values are not expanded in this summary."]),
     "",
@@ -4605,7 +4650,7 @@ async function collectAuthority(
   };
 }
 
-function actionHomeChoices(
+export function actionHomeChoices(
   status: Awaited<ReturnType<typeof guidedActionStatus>>,
   suggestions: ActionSuggestionView[],
   options: Awaited<ReturnType<typeof guidedActionOptions>>,
@@ -4638,6 +4683,11 @@ function actionHomeChoices(
     ...(hasModelGuidedVerifiedActionRevision && (!verifiedStatus?.active || verifiedStatus.draft) && verifiedModelRevisionChoice
       ? [verifiedModelRevisionChoice]
       : []),
+    {
+      value: "manual_semantic",
+      label: "Edit business rules manually",
+      detail: "Create or edit one supported proposal-only rule. Changes stay disabled until separate review; unsupported rules remain unchanged.",
+    },
     {
       value: "boundary",
       label: `${verifiedStatus?.active || verifiedStatus?.draft ? "Caller-supplied " : ""}Action Boundary [${actionBoundaryStateLabel(status)}]`,
@@ -4695,11 +4745,12 @@ function actionHomeChoices(
 type VerifiedActionStatus = {
   active?: ActionRuleAuthorityActivationV1;
   draft?: ActionRuleAuthorityDraftV1;
+  unavailableOutcomes?: string[];
 };
 
 async function verifiedActionStatus(projectRoot: string): Promise<VerifiedActionStatus> {
   const [loadedActive, drafts] = await Promise.all([
-    loadActiveActionRuleAuthority(projectRoot).catch((error) => {
+    loadActiveActionRuleAuthority(projectRoot, { dependency_check: "report" }).catch((error) => {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
     }),
@@ -4709,6 +4760,7 @@ async function verifiedActionStatus(projectRoot: string): Promise<VerifiedAction
   return {
     ...(active ? { active } : {}),
     ...(drafts[0] ? { draft: drafts[0] } : {}),
+    ...(loadedActive?.unavailable_outcomes?.length ? { unavailableOutcomes: loadedActive.unavailable_outcomes } : {}),
   };
 }
 
@@ -4719,11 +4771,22 @@ async function verifiedActionFallbackOptions(
   const current = status.draft ?? status.active!;
   const dependency = current.authority.rules[0];
   if (!dependency) throw new Error("Verified Action authority has no Read Boundary dependency.");
-  const reads = await loadActivatedExplorationBoundaries(projectRoot);
+  const reads = await loadActivatedExplorationBoundaries(projectRoot).catch(error => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  });
   const read = reads.find((boundary) =>
     boundary.pack.name === dependency.read_boundary_name
-    && boundary.activation.digest === dependency.read_boundary_digest);
+    && (!!status.unavailableOutcomes?.length || boundary.activation.digest === dependency.read_boundary_digest));
   if (!read) {
+    const saved = (await readProjectReadAuthoring(projectRoot))?.selected?.progress.candidate;
+    if (saved?.pack.name === dependency.read_boundary_name) {
+      // Navigation context only: no callable proposal targets are supplied by
+      // this fallback. Exact Read and Action authority are still checked later.
+      return { boundary_name: saved.pack.name, boundary_state: "reviewed_pending",
+        boundary_digest: explorationBoundaryCandidateDigest(saved), source: saved.source,
+        deployment_profile: saved.deployment_profile, resources: [], blocked_resources: [], safe_defaults: {} };
+    }
     throw new Error(
       `Verified Action authority requires exact active Read Boundary ${dependency.read_boundary_name}.`,
     );
@@ -4741,6 +4804,7 @@ async function verifiedActionFallbackOptions(
 }
 
 function verifiedActionStateLabel(status: VerifiedActionStatus): string {
+  if (status.unavailableOutcomes?.length) return "SAVED - ACCESS RECHECK REQUIRED";
   if (status.active && status.draft) return "ACTIVE + DISABLED CHANGES";
   if (status.active) return "ACTIVE";
   return "DISABLED DRAFT";
@@ -4758,6 +4822,7 @@ function verifiedActionHomeLines(status: VerifiedActionStatus): string[] {
   const count = current.authority.rules.length;
   return [
     `Verified Action Boundary ${verifiedActionStateLabel(status)} (${count} outcome${count === 1 ? "" : "s"}) | fixed app.describe_actions + app.request_change surface.`,
+    ...(status.unavailableOutcomes?.length ? ["Some saved changes cannot be used until their access dependencies are rechecked. Open their review to repair the disabled revision."] : []),
   ];
 }
 
@@ -5174,29 +5239,26 @@ async function collectModelActionSuggestion(input: {
   const selectedProvider = input.session?.provider ?? await input.prompter.choose("MODEL PROVIDER", [
     { value: "openai", label: "OpenAI" },
     { value: "anthropic", label: "Anthropic" },
+    { value: "openrouter", label: "OpenRouter" },
     { value: "openai_compatible", label: "OpenAI-compatible endpoint" },
   ]);
   if (!selectedProvider) return undefined;
   const provider = selectedProvider as AskProvider;
   const model = input.session?.model ?? await input.prompter.text("Model", {
-    defaultValue: provider === "openai"
-      ? DEFAULT_TERMINAL_OPENAI_ASK_MODEL
-      : provider === "anthropic"
-        ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL
-        : undefined,
+    defaultValue: provider === "openai_compatible" ? undefined : defaultHostedModel(provider),
   });
   if (!model) return undefined;
   const apiKeyEnv = input.session?.apiKeyEnv ?? (provider === "openai_compatible"
     ? await input.prompter.text("API key environment name (leave blank when the endpoint needs none)")
     : await input.prompter.text("API key environment name", {
-        defaultValue: provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY",
+        defaultValue: defaultProviderKeyEnv(provider),
       }));
   const baseUrl = input.session?.baseUrl ?? (provider === "openai_compatible"
     ? await input.prompter.text("OpenAI-compatible base URL")
     : undefined);
   if (provider === "openai_compatible" && !baseUrl) return undefined;
   const acknowledged = await input.prompter.confirm(
-    `Send the business intent plus exact structural candidates to ${provider}/${model}? No source rows, credentials, trusted tenant/principal values, active policy, executor, or active authority are sent. The model may return a non-authoritative deterministic policy proposal for your review.`,
+    `Send the business intent plus exact structural candidates to ${provider === "openrouter" ? OPENROUTER_EGRESS : provider}/${model}? No source rows, credentials, trusted tenant/principal values, active policy, executor, or active authority are sent. The model may return a non-authoritative deterministic policy proposal for your review.`,
     false,
   );
   if (!acknowledged) return undefined;
@@ -5767,6 +5829,10 @@ function formatActionValue(value: unknown): string {
   }
 }
 
+function formatObservedActionValue(record: Record<string, unknown> | undefined, field: string): string {
+  return !record || !Object.hasOwn(record, field) ? "not observed (not read)" : formatActionValue(record[field]);
+}
+
 function formatActionTimestamp(value: string): string {
   const instant = new Date(value);
   if (!Number.isFinite(instant.getTime())) return safeTerminalText(value);
@@ -5886,3 +5952,4 @@ function isBooleanType(dataType: string): boolean {
 export function actionTerminalWidth(output: Pick<WriteStream, "columns">): number {
   return terminalContentWidth(output.columns);
 }
+import { defaultProviderKeyEnv, defaultHostedModel, OPENROUTER_EGRESS } from "./hosted-provider-settings.js";

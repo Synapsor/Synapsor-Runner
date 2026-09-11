@@ -787,7 +787,7 @@ function formatRuntimeReceiptMigration(
   const migration = engine === "postgres" ? postgresReceiptMigration : mysqlReceiptMigration;
   return [
     "-- Exact idempotent receipt migration used by the configured Runner writer.",
-    `${migration.replace("synapsor_writeback_receipts", qualified)};`,
+    `${migration.replaceAll("synapsor_writeback_receipts", qualified)};`,
     "",
   ].join("\n");
 }

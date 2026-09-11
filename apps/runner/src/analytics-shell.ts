@@ -1307,7 +1307,7 @@ export function createTerminalAnalyticsShellIo(input: {
       );
       const lines = [
         theme.title(safeTerminalText(choice.title)),
-        theme.dim(safeTerminalText(choice.message)),
+        ...choice.message.split(/\r?\n/u).map((line) => theme.dim(safeTerminalText(line))),
         ...(choice.options.length > windowSize
           ? [theme.dim(
             `Showing ${windowStart + 1}-${windowStart + visibleOptions.length} of ${choice.options.length}`,

@@ -472,6 +472,7 @@ export async function callConfiguredTool(input: {
         proposal_id: approvalResult.proposal.proposal_id,
         execution_mode: "supervised_worker",
         contract_digest: eligibility.contract_digest,
+        cancellation_control_role: eligibility.policy.control_role ?? null,
         max_attempts: eligibility.policy.max_attempts,
         queue_limit: eligibility.policy.queue_limit,
       });

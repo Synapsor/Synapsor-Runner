@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { DatabaseSync } from "node:sqlite";
+import { Pool } from "pg";
 import { withProjectRuntimeCutover } from "./project-runtime-admission.js";
 import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -12,6 +13,7 @@ import { createInactiveSemanticActionRuntime } from "@synapsor-runner/mcp-server
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
+import { ACTION_RULE_CATALOG_VERSION } from "@synapsor-runner/action-rules";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
@@ -19,6 +21,7 @@ import {
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
+  loadActivatedExplorationBoundary,
   readDiscoveryCompatibility,
   writeAutoBoundaryArtifacts,
   type ActivatedExplorationBoundary,
@@ -45,6 +48,8 @@ import { readBoundaryReviewSections, readRevisionDiff } from "./read-boundary-re
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "./read-workload-assist.js";
+import { prepareReviewedReadCurrentStatePrerequisite, type ReadPrerequisiteBoundaryContext } from "./read-prerequisite.js";
+import { actionRuleTypeForColumn } from "./action-rule-schema-metadata.js";
 
 const temporaryRoots: string[] = [];
 
@@ -53,6 +58,109 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
+  it("compiles the private current-state predicate for rows and aggregates without exposing gate values", async () => {
+    const inspection = rlsOnlyPrincipalInspection();
+    const fixture = await activatedFixture(
+      undefined,
+      inspection,
+      undefined,
+      undefined,
+      { principal_rls_setting: "app.viewer_context" },
+    );
+    inspection.tables.push(admissionPrerequisiteTable());
+    const boundary = structuredClone(fixture.boundary);
+    boundary.read_prerequisite = prepareReviewedReadCurrentStatePrerequisite({
+      source: { schema: "public", table: "student_admissions" },
+      subject: { tenant_column: "tenant_id", principal_column: "principal_id", unique_constraint: "student_admissions_subject_key" },
+      current_state: {
+        state_column: "status", positive_state: "admitted", effective_from_column: "effective_from",
+        effective_until_column: "effective_until", interval: "[effective_from,effective_until)", clock: "database_utc",
+      },
+      semantic_consent: {
+        source_description: "Registrar-maintained current admission state for one authenticated student.",
+        positive_state_description: "Only admitted permits access while the interval is current.",
+        confirmed: true,
+      },
+    }, inspection, privateAdmissionScopeFixture(boundary, inspection));
+    const rowPlan = validateExplorePlan({
+      kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 1,
+    }, boundary);
+    const aggregatePlan = validateExplorePlan({
+      kind: "aggregate", resource: "public.subscriptions", measures: [{ function: "count" }], top_n: 1,
+    }, boundary);
+    for (const [plan, engine] of [[rowPlan, "postgres"], [aggregatePlan, "mysql"]] as const) {
+      const [query] = compileExplorePlan(plan, boundary, { tenant: "tenant-acme", principal: "pm-1" }, engine);
+      expect(query?.read_prerequisite).toBeDefined();
+      expect(query?.sql).toContain(engine === "postgres" ? "CURRENT_TIMESTAMP" : "@synapsor_read_prerequisite_now");
+      expect(query?.sql).toContain(engine === "postgres" ? '"student_admissions"' : "`student_admissions`");
+      const captured = captureExploreParameterizedSql({ engine, statements: [query!] });
+      expect(JSON.stringify(captured)).not.toContain("tenant-acme");
+      expect(JSON.stringify(captured)).not.toContain("pm-1");
+      expect(JSON.stringify(captured)).not.toContain("admitted");
+    }
+  });
+
+  it("rechecks a private current-state prerequisite for every time-coverage request", async () => {
+    const inspection = rlsOnlyPrincipalInspection();
+    inspection.tables.push(admissionPrerequisiteTable());
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources = candidate.pack.resources.filter((resource) => resource.id !== "public.student_admissions");
+      candidate.read_prerequisite = prepareReviewedReadCurrentStatePrerequisite({
+        source: { schema: "public", table: "student_admissions" },
+        subject: { tenant_column: "tenant_id", principal_column: "principal_id", unique_constraint: "student_admissions_subject_key" },
+        current_state: {
+          state_column: "status", positive_state: "admitted", effective_from_column: "effective_from",
+          effective_until_column: "effective_until", interval: "[effective_from,effective_until)", clock: "database_utc",
+        },
+        semantic_consent: {
+          source_description: "Registrar-maintained current admission state for one authenticated student.",
+          positive_state_description: "Only admitted permits access while the interval is current.",
+          confirmed: true,
+        },
+      }, inspection, privateAdmissionScopeFixture(candidate, inspection));
+    }, inspection, undefined, undefined, { principal_rls_setting: "app.viewer_context" });
+    await expect(loadActivatedExplorationBoundary(fixture.root)).resolves.toBeDefined();
+    let admissionState: "admitted" | "withdrawn" = "admitted";
+    let coverageBatches = 0;
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => {
+          coverageBatches += 1;
+          expect(queries.every((query) => query.read_prerequisite)).toBe(true);
+          if (admissionState !== "admitted") {
+            throw new ScopedExploreError(
+              "EXPLORE_READ_PREREQUISITE_NOT_SATISFIED",
+              "Current authorization requirements for this data are not satisfied.",
+            );
+          }
+          return queries.map(() => [{
+            __coverage_start: "2026-06-01T00:00:00.000Z",
+            __coverage_end: "2026-06-30T00:00:00.000Z",
+            __coverage_cohort: 30,
+          }]);
+        },
+        close: async () => undefined,
+      },
+    });
+    try {
+      await expect(runtime.describe({ include_time_coverage: true })).resolves.toMatchObject({
+        resources: [{ time_coverage: { churned_at: { status: "available" } } }],
+      });
+      admissionState = "withdrawn";
+      await expect(runtime.describe({ include_time_coverage: true })).rejects.toMatchObject({
+        code: "EXPLORE_READ_PREREQUISITE_NOT_SATISFIED",
+      });
+      expect(coverageBatches).toBe(2);
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("discovers and returns two-hop composite row details without granting independent target reads", async () => {
     const inspection = relationshipInspection();
     const [root, region] = inspection.tables;
@@ -181,6 +289,68 @@ describe("Scoped Explore", () => {
       confirmedDecisions: candidate.unresolved_decisions, currentInspection: inspection,
     })).rejects.toThrow(/Discovery compatibility/u);
     expect(await fs.readFile(activePath, "utf8")).toBe(before);
+  });
+
+  it.each(["28P01", "ER_ACCESS_DENIED_ERROR", "ECONNREFUSED", "ETIMEDOUT", "UNRECOGNIZED"])("returns useful sanitized database diagnostics for %s without retrying a query", async (code) => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection, executor: fixedExecutor([]) });
+    const explore = vi.spyOn(runtime, "explore").mockRejectedValue(Object.assign(
+      new Error("private-role secret-password postgres://private-host/private-db"), { code }));
+    const server = createScopedExploreMcpServer(runtime);
+    const client = new Client({ name: "connection-diagnostic-test", version: "1" });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(st); await client.connect(ct);
+      const result = await client.callTool({ name: "app.explore_data", arguments: {
+        plan: { kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 1 },
+      } });
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toMatchObject({ source_database_changed: false,
+        error_code: code === "UNRECOGNIZED" ? "EXPLORE_INTERNAL" : "EXPLORE_SOURCE_UNAVAILABLE" });
+      expect(JSON.stringify(result)).not.toMatch(/private-role|secret-password|private-host|private-db/u);
+      if (code !== "UNRECOGNIZED") expect(result.structuredContent).toHaveProperty("details.recovery", "operator_connection_review");
+      expect(explore).toHaveBeenCalledOnce();
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
+  it("maps a real deferred schema-inspection authentication failure to a sanitized MCP connection diagnostic", async () => {
+    const fixture = await activatedFixture();
+    const connect = vi.spyOn(Pool.prototype, "connect").mockRejectedValue(Object.assign(
+      new Error("postgresql://r17_reader:private-password@private-host/warehouse"), { code: "28P01" },
+    ));
+    const end = vi.spyOn(Pool.prototype, "end").mockResolvedValue(undefined);
+    const runtime = await createScopedExploreBoundarySetRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      deferTrustedScope: true,
+      env: {
+        ...fixture.env,
+        DATABASE_URL: "postgresql://r17_reader:private-password@private-host/warehouse",
+      },
+    });
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "deferred-schema-inspection-authentication-test", version: "1" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport); await client.connect(clientTransport);
+      expect((await client.listTools()).tools.map(tool => tool.name)).toEqual([
+        "app.describe_actions", "app.request_change", "app.describe_data", "app.explore_data",
+      ]);
+      const result = await client.callTool({ name: "app.describe_data", arguments: {} });
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        error_code: "EXPLORE_SOURCE_UNAVAILABLE",
+        details: { category: "connection_authentication", recovery: "operator_connection_review", retryable: false },
+        source_database_changed: false,
+      });
+      expect(JSON.stringify(result)).not.toMatch(/r17_reader|private-password|private-host|warehouse/u);
+      expect(connect).toHaveBeenCalledOnce();
+      expect(end).toHaveBeenCalledOnce();
+    } finally {
+      await client.close(); await server.close(); await runtime.close();
+      connect.mockRestore(); end.mockRestore();
+    }
   });
 
   it("holds the MCP lifecycle through model projection and refuses calls after close", async () => {
@@ -8050,6 +8220,60 @@ function rlsOnlyPrincipalInspection(): SchemaInspection {
     "AND app.can_view_subscription(tenant_id, current_setting('app.viewer_context')))" ,
   ].join(" ");
   return inspection;
+}
+
+function admissionPrerequisiteTable(): SchemaInspection["tables"][number] {
+  return {
+    schema: "public",
+    name: "student_admissions",
+    type: "table",
+    writable: true,
+    columns: [
+      column("admission_id", "uuid", { immutable: true }),
+      column("tenant_id", "uuid", { tenant: true, immutable: true }),
+      column("principal_id", "uuid", { immutable: true }),
+      { ...column("status", "admission_status"), enum_values: ["admitted", "not_admitted", "withdrawn"] },
+      column("effective_from", "timestamp with time zone"),
+      column("effective_until", "timestamp with time zone"),
+    ],
+    primary_key: ["admission_id"],
+    unique_constraints: [{ name: "student_admissions_subject_key", columns: ["tenant_id", "principal_id"] }],
+    check_constraints: [],
+    foreign_keys: [],
+    row_level_security: true,
+    row_level_security_policies: [{
+      name: "student_admissions_scope",
+      command: "SELECT",
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid AND app.can_view_subscription(tenant_id, current_setting('app.viewer_context')))" ,
+    }],
+    role_posture: {
+      owner: "app_owner",
+      current_role_is_owner: false,
+      current_role_can_assume_owner: false,
+      privileges: { select: true, insert: false, update: false, delete: false, truncate: false, references: false, trigger: false },
+      row_security_forced: true,
+      row_security_effective_for_current_role: true,
+    },
+    indexes: [{ name: "student_admissions_subject_key", columns: ["tenant_id", "principal_id"], unique: true }],
+    suggestions: { tenant_columns: ["tenant_id"], conflict_columns: [], sensitive_columns: [], default_visible_columns: [] },
+  };
+}
+
+// Exact synthetic retained Action guards, not an inference from the custom RLS function.
+// Host-only evidence never becomes a public Read resource or persisted scopeEvidence.
+function privateAdmissionScopeFixture(boundary: ExplorationBoundaryDraft | ActivatedExplorationBoundary, inspection: SchemaInspection): ReadPrerequisiteBoundaryContext {
+  const table = inspection.tables.find(table => table.schema === "public" && table.name === "student_admissions")!;
+  return { ...boundary, scopeEvidence: { retained_action_catalogs: [{
+    schema_version: ACTION_RULE_CATALOG_VERSION,
+    generation_lock_fingerprint: boundary.generation_lock_fingerprint,
+    resources: [{ name: "public.student_admissions", source: boundary.source, engine: "postgres",
+      schema: table.schema, table: table.name, primary_key: "admission_id",
+      tenant_key: "tenant_id", principal_scope_key: "principal_id", verification_only: true,
+      fields: table.columns.map(column => ({ name: column.name, nullable: column.nullable, type: actionRuleTypeForColumn(column)! })),
+    }], relationships: [],
+  }] } };
 }
 
 function exactNumericGroupingInspection(): SchemaInspection {

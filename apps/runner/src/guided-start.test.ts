@@ -681,7 +681,7 @@ describe("guided start surfaces", () => {
       )).resolves.toBe(0);
       expect(schemaInspector).toHaveBeenCalledTimes(1);
       expect(runBoundaryReview).toHaveBeenLastCalledWith(
-        ["--project-root", projectRoot, "--access"],
+        ["--project-root", projectRoot, "--access", "--job-first"],
         schemaInspector,
         expect.any(Function),
       );
@@ -701,6 +701,11 @@ describe("guided start surfaces", () => {
       )).resolves.toBe(0);
       expect(schemaInspector).toHaveBeenCalledTimes(2);
       expect(runBoundaryReview).toHaveBeenCalledOnce();
+      expect(runBoundaryReview).toHaveBeenLastCalledWith(
+        ["--project-root", projectRoot, "--access", "--job-first"],
+        schemaInspector,
+        expect.any(Function),
+      );
       await expect(fs.access(path.join(projectRoot, ".synapsor/guided-onboarding.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
     } finally {

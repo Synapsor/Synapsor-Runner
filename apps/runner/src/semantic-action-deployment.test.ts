@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { resolveActivatedActionRule, type ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import { loadRuntimeConfigFromFile, resolveRuntimeConfig, resolveSemanticSupervisedWorkerEligibility } from "@synapsor-runner/mcp-server";
@@ -9,11 +10,15 @@ import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import type { ActionRuleSpecV1, DerivedEffectEnvelopeSpecV1, RuleVerificationBoundarySpecV1 } from "@synapsor/spec";
 import { activateSemanticActionRuntime, restoreReviewedSemanticReadScope, previewSemanticSupervisedExecution,
   enableSemanticSupervisedExecution, executionReReviewOutcomesForActionActivation, semanticExecutionConfirmation } from "./semantic-action-deployment.js";
-import { inspectDraftSemanticWriter } from "./semantic-action-deployment.js";
+import { inspectDraftSemanticWriter, prepareSemanticWriterHandoff } from "./semantic-action-deployment.js";
+import { SemanticWriterPostureError } from "./semantic-execution-setup.js";
 import { buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, loadActiveActionRuleAuthority,
+  writeActionRuleAuthorityDraftIfCurrent, readActionRuleAuthorityDraft,
   type ActionRuleAuthorityActivationV1, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
 import { readPostActivationReadiness } from "./post-activation-ask.js";
+import { prepareSavedActionRuleRemoval } from "./action-rule-removal.js";
+import { createOptionalActionRuleRuntimeServices } from "./semantic-action-runtime.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -101,6 +106,57 @@ describe("mixed-state semantic Read scope repair", () => {
 });
 
 describe("complete Action Boundary execution re-review", () => {
+  it("retires one action from the same client only after activation and cannot resurrect it from the active baseline", async () => {
+    const fixture = await activeProject("human", true);
+    const original = await loadActiveActionRuleAuthority(fixture.root);
+    const readBefore = await fs.readFile(fixture.readPath, "utf8");
+    const store = new ProposalStore(":memory:");
+    const facts = vi.fn(async () => { throw new Error("Removed action must not access source facts"); });
+    try {
+      const services = await createOptionalActionRuleRuntimeServices({ projectRoot: fixture.root,
+        config: { version: 1, mode: "review", sources: {}, trusted_context: { provider: "environment" } },
+        env: { SYNAPSOR_TENANT_ID: "test-account", SYNAPSOR_PRINCIPAL: "test-customer" },
+        store, key: Buffer.alloc(32, 7), factSessionFactory: facts });
+      const client = services!.semanticActions;
+      const list = async () => (await client.callTool("app.describe_actions", {})).actions as Array<{ outcome: string }>;
+      expect((await list()).map(action => action.outcome)).toEqual(["billing.pause_notifications", "billing.set_priority"]);
+      const prepared = await prepareSavedActionRuleRemoval(fixture.root, "billing.set_priority");
+      expect(prepared.draft.authority.rules.map(({ activated_at: _activatedAt, ...rule }) => rule)).toEqual(original.authority.rules.filter(rule => rule.rule.outcome !== "billing.set_priority")
+        .map(({ activated_at: _activatedAt, ...rule }) => rule));
+      await writeActionRuleAuthorityDraftIfCurrent(fixture.root, prepared.draft, prepared.baseline);
+      expect((await list()).map(action => action.outcome)).toContain("billing.set_priority");
+      expect((await loadActiveActionRuleAuthority(fixture.root)).authority).toEqual(original.authority);
+      const repeated = await prepareSavedActionRuleRemoval(fixture.root, "billing.set_priority");
+      expect(repeated.alreadyRemoved).toBe(true);
+      expect(repeated.draft).toEqual(prepared.draft);
+      const config = JSON.parse(await fs.readFile(fixture.configPath, "utf8"));
+      config.supervised_worker = { enabled: true, profile: "staging", capabilities: [],
+        outcomes: ["billing.pause_notifications", "billing.set_priority"].map(outcome => ({ outcome,
+          action_boundary_digest: original.authority.action_boundary.digest, mode: "supervised_worker", write_url_env: "WRITER_URL",
+          concurrency: 1, queue_limit: 100, lease_seconds: 300, max_attempts: 5, proposal_ttl_seconds: 3600,
+          rate_limit: { executions: 10, window_seconds: 60 } })) };
+      await fs.writeFile(fixture.configPath, JSON.stringify(config));
+      await activateSemanticActionRuntime({ projectRoot: fixture.root, draft: prepared.draft, actor: "test reviewer" });
+      expect((await list()).map(action => action.outcome)).toEqual(["billing.pause_notifications"]);
+      await expect(client.callTool("app.request_change", { outcome: "billing.set_priority", subject_refs: { preference: `obj_${"x".repeat(40)}` } }))
+        .rejects.toMatchObject({ code: "SEMANTIC_ACTION_UNAVAILABLE" });
+      expect(facts).not.toHaveBeenCalled();
+      expect(JSON.parse(await fs.readFile(fixture.configPath, "utf8")).supervised_worker).toBeUndefined();
+      expect(await fs.readFile(fixture.readPath, "utf8")).toBe(readBefore);
+    } finally { store.close(); }
+  });
+
+  it("refuses a removal publication if another reviewer changes the saved bundle", async () => {
+    const fixture = await activeProject("human", true);
+    const prepared = await prepareSavedActionRuleRemoval(fixture.root, "billing.set_priority");
+    const competing = { ...fixture.draft, reviews: fixture.draft.reviews.map(review => ({ ...review, when: `${review.when}; revised explanation` })) };
+    await writeActionRuleAuthorityDraft(fixture.root, competing);
+    await expect(writeActionRuleAuthorityDraftIfCurrent(fixture.root, prepared.draft, prepared.baseline))
+      .rejects.toMatchObject({ code: "ACTION_BOUNDARY_REVISION_CHANGED" });
+    expect(await readActionRuleAuthorityDraft(fixture.root, competing.authority.name)).toEqual(competing);
+    expect((await loadActiveActionRuleAuthority(fixture.root)).authority.rules).toHaveLength(2);
+  });
+
   it("identifies only current enabled outcomes retained by a replacement bundle", () => {
     const oldDigest = `sha256:${"a".repeat(64)}` as const;
     const nextDigest = `sha256:${"b".repeat(64)}` as const;
@@ -130,7 +186,7 @@ describe("metadata-only writer preflight before activation", () => {
     const draftBefore = JSON.stringify(fixture.draft);
     const inspection = writerInspection("dedicated", "status");
     inspection.tables[0]!.row_level_security = true;
-    Object.assign(inspection.tables[0]!.role_posture!, { row_security_effective_for_current_role: true, row_security_update_permitted: true });
+    reviewedRls(inspection);
     if (multiple) inspection.tables[0]!.role_posture!.column_privileges!.update!.push("priority");
     const inspect = vi.fn(async () => inspection);
     const input = { draft: fixture.draft, reads: [fixture.reviewedRead], engine: "postgres" as const,
@@ -144,6 +200,13 @@ describe("metadata-only writer preflight before activation", () => {
     expect(await fs.readFile(fixture.configPath, "utf8")).toBe(configBefore);
     expect(JSON.stringify(fixture.draft)).toBe(draftBefore);
     await expect(fs.stat(fixture.activePath)).rejects.toHaveProperty("code", "ENOENT");
+
+    inspection.tables[0]!.role_posture!.row_security_forced = false;
+    const unforced = await inspectDraftSemanticWriter(input);
+    expect(unforced!.assessment.reasons).toContain("writer_rls_prerequisite_failed");
+    expect(unforced!.rls_issues).toEqual(expect.arrayContaining([expect.objectContaining({ reason: expect.stringContaining("FORCE ROW LEVEL SECURITY") })]));
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(configBefore);
+    inspection.tables[0]!.role_posture!.row_security_forced = true;
 
     inspection.tables[0]!.role_posture!.column_privileges!.update!.push("unrelated_secret");
     inspection.tables[0]!.role_posture!.row_security_update_permitted = false;
@@ -162,6 +225,52 @@ describe("metadata-only writer preflight before activation", () => {
     expect(inspect).not.toHaveBeenCalled();
   });
 
+  it("does not call the reader a checked writer, but still derives requirements through it", async () => {
+    const fixture = await activeProject();
+    const inspection = writerInspection("reader", "status");
+    reviewedRls(inspection);
+    const inspect = vi.fn(async () => inspection);
+    const input = { draft: fixture.draft, reads: [fixture.reviewedRead], engine: "postgres" as const,
+      readUrlEnv: "DATABASE_URL", env: { DATABASE_URL: "postgresql://reader-private", SYNAPSOR_DATABASE_WRITE_URL: "postgresql://reader-private" }, inspect };
+    await expect(inspectDraftSemanticWriter(input)).rejects.toThrow(/WRITER_READER_CONNECTION/);
+    expect(inspect).not.toHaveBeenCalled();
+    expect(await inspectDraftSemanticWriter({ ...input, requirementsOnly: true })).toMatchObject({
+      writer_status: "not_checked", inspected_connection_env: "DATABASE_URL", assessment: { ok: false },
+    });
+  });
+
+  it.each([false, true])("derives complete requirements through a read-only connection without claiming writer readiness (multiple=%s)", async (multiple) => {
+    const fixture = await activeProject("human", multiple);
+    await fs.rm(fixture.activePath);
+    const before = await fs.readFile(fixture.configPath, "utf8");
+    const inspection = writerInspection("reader", "status");
+    inspection.role_posture!.read_only = true;
+    inspection.role_posture!.writable_relations = [];
+    const table = inspection.tables[0]!;
+    table.type = "table";
+    table.columns = fixture.draft.authority.catalog.resources[0]!.fields.map((field) => ({ name: field.name })) as typeof table.columns;
+    table.role_posture!.column_privileges = {};
+    const inspect = vi.fn(async () => inspection);
+    const input = { draft: fixture.draft, reads: [fixture.reviewedRead], engine: "postgres" as const,
+      readUrlEnv: "DATABASE_URL", env: { DATABASE_URL: "postgres://reader-secret" }, inspect };
+    const result = await inspectDraftSemanticWriter(input);
+    expect(result).toMatchObject({ writer_status: "not_checked", inspected_connection_env: "DATABASE_URL",
+      assessment: { ok: false, reasons: ["writer_connection_not_checked"] } });
+    expect(result!.plan!.outcomes).toHaveLength(multiple ? 2 : 1);
+    expect(result!.plan!).toMatchObject({ read_env: "DATABASE_URL", writer_env: "SYNAPSOR_DATABASE_WRITE_URL" });
+    expect(result!.plan!.relations[0]!.update_columns).toEqual(multiple ? ["priority", "status", "version"] : ["status", "version"]);
+    expect(result!.plan!.relations[0]!.privileges).toEqual(["select", "update"]);
+    expect(inspect).toHaveBeenCalledWith(expect.objectContaining({ databaseUrlEnv: "DATABASE_URL" }));
+    expect(JSON.stringify(result)).not.toContain("reader-secret");
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(before);
+    await expect(fs.stat(fixture.activePath)).rejects.toHaveProperty("code", "ENOENT");
+    if (multiple) {
+      const single = await inspectDraftSemanticWriter({ ...input, outcome: "billing.set_priority" });
+      expect(single!.plan!.outcomes).toEqual(["billing.set_priority"]);
+      expect(single!.plan!.relations[0]!.update_columns).toEqual(["priority", "version"]);
+    }
+  });
+
   it.each([false, true])("retains exact foreign Read dependencies only for executable outcomes (executable=%s)", async (executable) => {
     const fixture = await activeProject("human", true);
     const foreign = { pack: { ...fixture.reviewedRead.pack, name: "other_reviewed_read" }, digest: `sha256:${"d".repeat(64)}` };
@@ -172,8 +281,7 @@ describe("metadata-only writer preflight before activation", () => {
         read_boundary_name: foreign.pack.name, read_boundary_digest: foreign.digest as `sha256:${string}`,
         effect_envelope: { ...rule.effect_envelope, writeback: executable ? rule.effect_envelope.writeback : { mode: "none", supervised_worker: "disabled" } } })) });
     const inspection = writerInspection("dedicated", "status");
-    inspection.tables[0]!.row_level_security = true;
-    Object.assign(inspection.tables[0]!.role_posture!, { row_security_effective_for_current_role: true, row_security_update_permitted: true });
+    reviewedRls(inspection);
     if (executable) inspection.tables[0]!.role_posture!.column_privileges!.update!.push("priority");
     const inspect = vi.fn(async () => inspection);
     const input = { draft, engine: "postgres" as const, readUrlEnv: "DATABASE_URL",
@@ -189,6 +297,84 @@ describe("metadata-only writer preflight before activation", () => {
 });
 
 describe("separate exact semantic writers", () => {
+  it.each(["same_reference", "same_value"])("refuses the reader as a writer before inspection or publication (%s)", async (kind) => {
+    const fixture = await activeProject("human", true);
+    const configBefore = await fs.readFile(fixture.configPath, "utf8");
+    const reader = JSON.parse(configBefore).sources.local_postgres.read_url_env;
+    const writeUrlEnv = kind === "same_reference" ? reader : "DUPLICATE_READER_URL";
+    const env = { [reader]: "postgresql://reader-private", [writeUrlEnv]: "postgresql://reader-private" };
+    const inspect = vi.fn(async () => writerInspection("narrow-but-shared", "priority"));
+    const input = { projectRoot: fixture.root, outcome: "billing.set_priority", profile: "staging" as const,
+      writeUrlEnv, env, inspect };
+    await expect(previewSemanticSupervisedExecution(input)).rejects.toThrow(/SEMANTIC_ACTION_WRITER_READER_CONNECTION/);
+    await expect(enableSemanticSupervisedExecution({ ...input,
+      expectedActionBoundaryDigest: fixture.draft.authority.action_boundary.digest,
+      expectedConfigDigest: canonicalJsonDigest(JSON.parse(configBefore)),
+      expectedWriterPostureFingerprint: canonicalJsonDigest({}), confirmation: "not reached" })).rejects.toThrow(/SEMANTIC_ACTION_WRITER_READER_CONNECTION/);
+    expect(inspect).not.toHaveBeenCalled();
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(configBefore);
+  });
+
+  it("exports a stable action-specific writer instead of replacing a connection used by another action", async () => {
+    const fixture = await activeProject("human", true);
+    const inspection = writerInspection("reader", "priority");
+    reviewedRls(inspection);
+    const env = { DATABASE_URL: "postgresql://reader", SYNAPSOR_DATABASE_WRITE_URL: "postgresql://first" };
+    const input = { projectRoot: fixture.root, outcome: "billing.set_priority",
+      reads: [fixture.reviewedRead], env, inspect: async () => inspection };
+    const before = await prepareSemanticWriterHandoff(input);
+    expect(before.plan.writer_env).not.toBe("SYNAPSOR_DATABASE_WRITE_URL");
+    expect(before.plan.relations[0]!.update_columns).toEqual(["priority", "version"]);
+    await enableWriter(fixture.root, "billing.pause_notifications", "SYNAPSOR_DATABASE_WRITE_URL", writerInspection("first", "status"), env);
+    const configBefore = await fs.readFile(fixture.configPath, "utf8");
+    const after = await prepareSemanticWriterHandoff({ ...input, writeUrlEnv: "SYNAPSOR_DATABASE_WRITE_URL" });
+    expect(after.plan.writer_env).toBe(before.plan.writer_env);
+    expect(after.plan.relations).toEqual(before.plan.relations);
+    expect(after.plan.outcomes).toEqual(["billing.set_priority"]);
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(configBefore);
+  });
+
+  it("rejects rebinding another action's writer and offers a per-action repair that can enable both", async () => {
+    const fixture = await activeProject("human", true);
+    const env = { SYNAPSOR_DATABASE_WRITE_URL: "postgresql://first" };
+    const first = await enableWriter(fixture.root, "billing.pause_notifications", "SYNAPSOR_DATABASE_WRITE_URL", writerInspection("first", "status"), env);
+    const configBefore = await fs.readFile(fixture.configPath, "utf8");
+    const rebound = writerInspection("replacement", "priority");
+    reviewedRls(rebound);
+    // The replacement has enough grants for both, but is not the reviewed credential.
+    rebound.tables[0]!.role_posture!.column_privileges!.update!.push("status");
+    const error = await previewSemanticSupervisedExecution({ projectRoot: fixture.root, outcome: "billing.set_priority",
+      profile: "staging", writeUrlEnv: "SYNAPSOR_DATABASE_WRITE_URL", env, inspect: async () => rebound }).catch(value => value);
+    expect(error).toBeInstanceOf(SemanticWriterPostureError);
+    expect(error.problem.details.join("\n")).toContain("writer_shared_connection_changed");
+    expect(error.provisioning.relations[0].update_columns).toEqual(["priority", "version"]);
+    expect(error.provisioning.writer_env).not.toBe("SYNAPSOR_DATABASE_WRITE_URL");
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(configBefore);
+    const ownEnv = error.provisioning.writer_env;
+    const second = await enableWriter(fixture.root, "billing.set_priority", ownEnv, writerInspection("second", "priority"),
+      { ...env, [ownEnv]: "postgresql://second" });
+    const config = resolveRuntimeConfig(await loadRuntimeConfigFromFile(fixture.configPath));
+    expect(config.supervised_worker!.outcomes).toEqual([first.policy, second.policy]);
+    const { registry } = await loadActiveActionRuleAuthority(fixture.root);
+    expect(assessSemanticSupervisedWriterPosture(config, first.policy, registry, writerInspection("first", "status")).ok).toBe(true);
+    expect(assessSemanticSupervisedWriterPosture(config, second.policy, registry, writerInspection("second", "priority")).ok).toBe(true);
+  });
+
+  it("keeps shared-connection failure requirements distinct from dedicated replacement instructions", async () => {
+    const fixture = await activeProject("human", true);
+    const env = { SYNAPSOR_DATABASE_WRITE_URL: "postgresql://first" };
+    const inspection = writerInspection("first", "status");
+    reviewedRls(inspection);
+    await enableWriter(fixture.root, "billing.pause_notifications", "SYNAPSOR_DATABASE_WRITE_URL", inspection, env);
+    const error = await previewSemanticSupervisedExecution({ projectRoot: fixture.root, outcome: "billing.set_priority",
+      profile: "staging", writeUrlEnv: "SYNAPSOR_DATABASE_WRITE_URL", env, inspect: async () => inspection }).catch(value => value);
+    expect(error).toBeInstanceOf(SemanticWriterPostureError);
+    expect(error.problem.details.join("\n")).toContain("priority, status, version");
+    expect(error.provisioning.relations[0].update_columns).toEqual(["priority", "version"]);
+    expect(error.provisioning.outcomes).toEqual(["billing.set_priority"]);
+    expect(error.problem.details.join("\n")).toContain(error.provisioning.writer_env);
+  });
+
   it("preserves the first enabled outcome after missing credentials, declined consent, posture drift, or stale config", async () => {
     const fixture = await activeProject("human", true);
     const env = { FIRST_WRITER_URL: "postgresql://first-test-writer", SECOND_WRITER_URL: "postgresql://second-test-writer" };
@@ -257,6 +443,19 @@ function writerInspection(role: string, field: string): SchemaInspection {
       role_posture: { privileges: { select: true, insert: false, update: false, delete: false, truncate: false, references: false, trigger: false },
         column_privileges: { update: [field, "version"] } } } as SchemaInspection["tables"][number]],
   };
+}
+
+function reviewedRls(inspection: SchemaInspection): void {
+  const table = inspection.tables[0]!;
+  table.type = "table";
+  table.columns = ["preference_id", "account_id", "principal_id", "status", "version", "priority"].map(name => ({ name })) as typeof table.columns;
+  table.row_level_security = true;
+  const expression = "account_id = current_setting('synapsor.tenant_id')";
+  table.row_level_security_policies = ["SELECT", "UPDATE"].map(command => ({ name: command, command,
+    permissive: true, roles: ["public"], using_expression: expression, check_expression: expression }));
+  Object.assign(table.role_posture!, { current_role_is_owner: false, current_role_can_assume_owner: false,
+    row_security_forced: true, row_security_effective_for_current_role: true, row_security_update_permitted: true,
+    row_security_applicable_policies: ["SELECT", "UPDATE"] });
 }
 
 async function activeProject(approvalMode: "human" | "policy" = "human", twoOutcomes = false) {

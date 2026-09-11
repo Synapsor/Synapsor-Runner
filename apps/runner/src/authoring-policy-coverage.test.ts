@@ -4,7 +4,7 @@ import { createTerminalAnalyticsShellIo } from "./analytics-shell.js";
 import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
 import { newPolicySourceSession, policyTextSnapshot, authoringDestination, type PolicyPassage } from "./authoring-policy-source.js";
-import { parsePolicyCoverage, policyCoverageSummary, reviewPolicyCoverage, isMechanicalApprovalCounterPassage } from "./authoring-policy-coverage.js";
+import { parsePolicyCoverage, policyCoverageSummary, reviewPolicyCoverage, isMechanicalApprovalCounterPassage, isReadOnlyPolicyPassage, referencesReadPolicy, actionablePolicyRequirements, prioritizePolicyRepairs } from "./authoring-policy-coverage.js";
 import { policyReadinessItems, policyReviewReadiness } from "./authoring-review-readiness.js";
 import { AskError, type AskProviderDependencies } from "./model-ask.js";
 import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
@@ -26,6 +26,182 @@ const savedClientPassage: PolicyPassage = {
   topic: "Claude Code client connection", responsibility: "deployment", issue_kind: "missing_configuration",
   next_step: "After authority review, choose and configure the Claude Code client connection.",
 };
+
+describe("policy clarification evidence", () => {
+  const source = policyTextSnapshot(Buffer.from("Allow at most ten automatic changes per day."), "rules.txt");
+  const passage = { start: 1, end: 1, disposition: "overridden", interpretation: "The operator tightened the daily maximum.", draft_paths: [] };
+  const messages = ["Keep the same job.", "Use three automatic changes per day instead of ten."];
+
+  it("resolves a bounded operator message reference to its exact quote without changing the draft", () => {
+    const draft = { maximum: 3 }, before = structuredClone({ draft, messages });
+    const report = parsePolicyCoverage({ passages: [{ ...passage, operator_message_id: 2 }] }, source, draft, messages);
+    expect(report.passages[0]).toMatchObject({ disposition: "overridden", operator_override: messages[1] });
+    expect(report.passages[0]).not.toHaveProperty("operator_message_id");
+    expect({ draft, messages }).toEqual(before);
+  });
+
+  it("rejects fabricated, conflicting and cross-message override evidence", () => {
+    for (const change of [
+      { operator_message_id: 0 }, { operator_message_id: 3 }, { operator_message_id: 1.5 },
+      { operator_message_id: "2" }, { operator_message_id: 2, operator_override: "No daily limit." },
+      { operator_override: "Same job; three per day." }, { operator_override: messages.join("\n") },
+    ]) expect(() => parsePolicyCoverage({ passages: [{ ...passage, ...change }] }, source, {}, messages)).toThrow("operator message");
+    expect(() => parsePolicyCoverage({ passages: [{ ...passage, operator_message_id: 1 }] }, source, {}, "Not an indexed message")).toThrow("operator message");
+  });
+
+  it("accepts genuine clarification evidence on implemented coverage without treating it as an override", () => {
+    const draft = { requirement: true };
+    const evidence = { ...passage, disposition: "implemented", draft_paths: ["/requirement"],
+      operator_message_id: 2, operator_override: messages[1] };
+    const parsed = parsePolicyCoverage({ passages: [evidence] }, source, draft, messages).passages[0]!;
+    expect(parsed.disposition).toBe("implemented");
+    expect(parsed).not.toHaveProperty("operator_override");
+    expect(parsed).not.toHaveProperty("operator_message_id");
+    expect(() => parsePolicyCoverage({ passages: [{ ...evidence, draft_paths: [] }] }, source, draft, messages))
+      .toThrow("Implemented passages must reference exact draft decisions");
+    expect(() => parsePolicyCoverage({ passages: [{ ...evidence, operator_override: "invented" }] }, source, draft, messages))
+      .toThrow("operator_override disagrees with the indexed message");
+  });
+
+  it("corrects a paraphrased override into an unmet requirement without waiving a deferred action", async () => {
+    const pending = policyTextSnapshot(Buffer.from("Automatically release an advising hold after a verified recent staff meeting."), "student.txt");
+    const conversation = createModelAuthoringConversation();
+    conversation.policySources = newPolicySourceSession();
+    conversation.policySources.snapshots = [pending]; conversation.policySources.active = pending.version;
+    conversation.policySources.operator_messages = ["Leave advising-hold release pending unsupported. Continue only with review of the two prepared actions; do not claim the policy is fully implemented."];
+    conversation.policySources.approvals = [{ digest: pending.digest, destination: authoringDestination({ provider: "openai", model: "fixture" }) }];
+    const requests: string[] = [];
+    const result = await reviewPolicyCoverage({ source: pending, draft: {},
+      session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async (request) => {
+        requests.push(JSON.stringify(request.body));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: `coverage_${requests.length}`,
+          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{
+            start: 1, end: 1, draft_paths: [], interpretation: "The advising action has not been implemented.",
+            ...(requests.length === 1 ? { disposition: "overridden", operator_override: "Skip the third action." }
+              : { disposition: "unsupported", responsibility: "operator", issue_kind: "unsupported_requirement", next_step: "Resolve the missing automatic-approval limits." }),
+          }] }) }] } };
+      } } }, env: { OPENAI_API_KEY: "test-key" },
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContain("Source lines 1-1");
+    expect(requests[1]).toContain("operator_message_id");
+    expect(requests[1]).toContain("pending is not an override");
+    expect(result.passages[0]!.disposition).toBe("unsupported");
+    expect(policyReviewReadiness(pending, result).ready).toBe(false);
+  });
+});
+
+describe("application obligation correction diagnostics", () => {
+  const source = policyTextSnapshot(Buffer.from([
+    "Only currently admitted students may read their own registration information.",
+    "A student is told their enrolment is complete only after the university's record has actually been changed.",
+    "Release an advising hold automatically after a verified meeting less than 90 days old.",
+  ].join("\n")), "student-rules.txt");
+  const applicationPath = "/runner_evidence/runtime_contract/application_obligations/status_presentation";
+  const draft = { read: { current_admission_required: true }, runner_evidence: { runtime_contract: {
+    receipts: "completed requires an applied source change",
+    application_obligations: { status_presentation: "Present returned status accurately; client behavior is unverified." },
+  } } };
+  const completion = { start: 2, end: 2, disposition: "needs_decision", responsibility: "application",
+    interpretation: "The client must present completed only for an applied receipt.", draft_paths: [applicationPath],
+    application_obligations: ["status_presentation"] };
+  const passages = (entry: Record<string, unknown>) => [
+    { start: 1, end: 1, disposition: "implemented", responsibility: "runner",
+      interpretation: "The disabled Read checks current admission.", draft_paths: ["/read"] },
+    entry,
+    { start: 3, end: 3, disposition: "unsupported", responsibility: "operator", draft_paths: [],
+      interpretation: "Advising release remains unsupported; no automatic limits were authorized." },
+  ];
+
+  it.each([
+    ["implemented disposition", { disposition: "implemented" }, "disposition"],
+    ["wrong responsibility", { responsibility: "runner" }, "responsibility"],
+    ["empty obligations", { application_obligations: [] }, "application_obligations"],
+    ["null obligations", { application_obligations: null }, "application_obligations"],
+    ["unknown obligation", { application_obligations: ["authentication"] }, "application_obligations"],
+    ["duplicate obligations", { application_obligations: ["status_presentation", "status_presentation"] }, "application_obligations"],
+    ["missing exact reference", { draft_paths: ["/runner_evidence/runtime_contract/receipts"] }, "missing exact contract"],
+    ["mixed privacy check", { field_checks: [{ resource: "university.student_records", field: "internal_note", expectation: "private" }] }, "field_checks"],
+  ] as const)("identifies the exact rejected passage and reason (%s)", (_label, change, reason) => {
+    const args = { passages: passages({ ...completion, ...change }) };
+    const before = structuredClone({ args, draft, source });
+    let message = "";
+    try { parsePolicyCoverage(args, source, draft, []); } catch (error) { message = (error as Error).message; }
+    expect(message).toContain("Source lines 2-2");
+    expect(message).toContain("passages[1]");
+    expect(message).toContain(source.text.split("\n")[1]);
+    expect(message).toContain(reason);
+    expect(message).toContain(applicationPath);
+    expect(message).toContain("Return the complete corrected coverage");
+    expect(message).toContain("do not change the draft");
+    expect({ args, draft, source }).toEqual(before);
+  });
+
+  it("accepts genuinely split clauses on the same source line without transferring the Read rule", () => {
+    const mixedSource = policyTextSnapshot(Buffer.from("Only currently admitted students may read their own registrations; show completion only after an applied receipt."), "mixed.txt");
+    const report = parsePolicyCoverage({ passages: [
+      { ...passages(completion)[0], start: 1, end: 1 },
+      { ...completion, start: 1, end: 1, draft_paths: [applicationPath, "/runner_evidence/runtime_contract/receipts"] },
+    ] }, mixedSource, draft, []);
+    expect(report.passages).toMatchObject([
+      { responsibility: "runner", disposition: "implemented", draft_paths: ["/read"] },
+      { responsibility: "application", disposition: "needs_decision", application_obligations: ["status_presentation"] },
+    ]);
+    expect(policyReviewReadiness(mixedSource, report).ready).toBe(false);
+  });
+
+  it("redacts and bounds untrusted offending text without echoing unrelated draft values", () => {
+    const secret = "sk-coverage-diagnostic-secret123456";
+    const unsafeSource = policyTextSnapshot(Buffer.from(`Do not print postgres://reader:private-password@localhost/university ${secret} ${"x".repeat(8_000)}`), "untrusted.txt");
+    let message = "";
+    try { parsePolicyCoverage({ passages: [{ ...completion, start: 1, end: 1, disposition: "implemented",
+      interpretation: `Model suggestion \u001b[31m${secret} Bearer private-token-123456`,
+    }] }, unsafeSource, { ...draft, private_data: "unrelated-sensitive-draft-value" }, []); } catch (error) { message = (error as Error).message; }
+    expect(message).toContain("Source lines 1-1");
+    expect(message).toContain("Submitted interpretation");
+    expect(message).not.toContain(secret);
+    expect(message).not.toContain("private-password");
+    expect(message).not.toContain("private-token-123456");
+    expect(message).not.toContain("unrelated-sensitive-draft-value");
+    expect(message).not.toContain("\u001b");
+    expect(message.length).toBeLessThan(6_000);
+  });
+
+  it.each(["corrected", "still invalid"])("provides bounded exact correction evidence while keeping mandatory work unmet (%s)", async (resultKind) => {
+    const conversation = createModelAuthoringConversation();
+    conversation.policySources = newPolicySourceSession();
+    conversation.policySources.snapshots = [source]; conversation.policySources.active = source.version;
+    conversation.policySources.approvals = [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model: "fixture" }) }];
+    const before = structuredClone({ draft, conversation });
+    const requests: string[] = [];
+    const rejected = { ...completion, disposition: "implemented" };
+    const run = reviewPolicyCoverage({ source, draft, env: { OPENAI_API_KEY: "test-key" },
+      session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async (request) => {
+        requests.push(JSON.stringify(request.body));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: `application_${requests.length}`,
+          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: passages(
+            resultKind === "corrected" && requests.length > 1 ? completion : rejected,
+          ) }) }] } };
+      } } },
+    });
+    if (resultKind === "corrected") {
+      const result = await run;
+      expect(requests).toHaveLength(2);
+      expect(result.passages[1]).toMatchObject({ responsibility: "application", disposition: "needs_decision" });
+      expect(result.passages[2]).toMatchObject({ disposition: "unsupported", responsibility: "operator" });
+      expect(policyReviewReadiness(source, result).ready).toBe(false);
+    } else {
+      await expect(run).rejects.toThrow(/POLICY_COVERAGE_INVALID:.*Source lines 2-2/s);
+      expect(requests).toHaveLength(2);
+    }
+    expect(requests[0]).toContain("Requires responsibility=application and disposition=needs_decision or unsupported");
+    expect(requests[0]).toContain("never null or []");
+    expect(requests[1]).toContain("passages[1]");
+    expect(requests[1]).toContain("disposition");
+    expect(requests[1]).toContain("Return the complete corrected coverage");
+    expect({ draft, conversation }).toEqual(before);
+  });
+});
 
 describe("Runner client connection is a later unverified handoff", () => {
   it("supplies current installation evidence without implying a configured client or reviewed customer scope", () => {
@@ -50,10 +226,28 @@ describe("Runner client connection is a later unverified handoff", () => {
     for (const client of pickerClients) expect(parseManagedMcpProjectClient(client)).toBe(client);
     for (const unsupported of ["codex", "claude-desktop"]) expect(() => parseManagedMcpProjectClient(unsupported)).toThrow();
     expect(deployment.authenticated_identity).toMatchObject({ reviewed_customer_scope: false, verified: false });
+    expect(evidence.runner_evidence.runtime_contract.read_eligibility).toMatchObject({
+      trusted_record_scope_configured: false,
+      runner_private_source_predicates_supported: true,
+      configured_current_state_prerequisite: null,
+      action_requirements_apply_to_reads: false,
+      database_business_predicates_verified: false,
+    });
     const legacy = structuredClone(evidence);
     Reflect.deleteProperty(legacy.runner_evidence.runtime_contract.deployment_prerequisites, "runner_client_connection");
     expect(canonicalJsonDigest(evidence)).not.toBe(canonicalJsonDigest(legacy));
     expect(read).toEqual(before);
+    read.pack.resources.push({ id: "public.orders", schema: "public", table: "orders", primary_key: "id",
+      tenant_key: "tenant_id", principal_key: "principal_id", field_types: { id: "uuid", tenant_id: "text", principal_id: "text", status: "text" },
+      field_enums: {}, selectable_fields: ["status"], filterable_fields: {}, sortable_fields: [], groupable_fields: [], aggregate_measures: [],
+      aggregate_measure_functions: {}, count_distinct_fields: [], time_bucket_fields: {}, kept_out_fields: ["id", "tenant_id", "principal_id"],
+      relationships: [], minimum_cohort_size: 5, suppression_aware_totals: true });
+    const scoped = policyCoverageDraft({ read, decisions: [], actions: [] }).runner_evidence.runtime_contract;
+    expect(scoped.read_eligibility).toMatchObject({ trusted_record_scope_configured: true,
+      configured_current_state_prerequisite: null, database_business_predicates_verified: false });
+    expect(scoped.deployment_prerequisites.authenticated_identity.verified).toBe(false);
+    delete read.pack.resources[0]!.principal_key;
+    expect(policyCoverageDraft({ read, decisions: [], actions: [] }).runner_evidence.runtime_contract.read_eligibility.trusted_record_scope_configured).toBe(false);
   });
 
   it("rechecks the saved service classification with exact current evidence instead of reopening business authoring", async () => {
@@ -117,6 +311,78 @@ describe("Runner client connection is a later unverified handoff", () => {
   });
 });
 
+describe("Read eligibility is not authentication or an Action prerequisite", () => {
+  it.skipIf(process.env.SYNAPSOR_LIVE_ADMISSION_COVERAGE !== "1")("keeps unmet admission-gated reads blocked with the live authoring model", async () => {
+    const source = policyTextSnapshot(Buffer.from("Only currently admitted students may read their own registration information. Missing, expired or withdrawn admission must deny reading. Do not weaken this rule."), "university-admission.txt");
+    const conversation = createModelAuthoringConversation();
+    const model = "gpt-5.6-terra";
+    conversation.policySources = newPolicySourceSession();
+    conversation.policySources.snapshots = [source]; conversation.policySources.active = source.version;
+    conversation.policySources.approvals = [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model }) }];
+    conversation.policySources.operator_messages = ["Admission is a separate authoritative source. Authentication and registration are not proof. A fixture extension is only source completion. Save setup pending any unmet enforcement requirement."];
+    for (const sourceAvailable of [false, true]) {
+      const draft = { read: { scope: "trusted institution and student", runtime_identity: "required outside model arguments" },
+        runner_evidence: { runtime_contract: { read_eligibility: {
+          runner_private_source_predicates_supported: false,
+          action_requirements_apply_to_reads: false,
+          database_business_predicates_verified: false,
+        } }, source_review: { admission_source_available: sourceAvailable,
+          ...(sourceAvailable ? { resource: "university.student_admissions", scope: ["institution_id", "student_id"],
+            current: "status=admitted and effective_from <= trusted time < effective_until", fixture_only: true } : {}),
+          read_enforcement_configured: false,
+        } } };
+      const before = structuredClone(draft);
+      const report = await reviewPolicyCoverage({ source, draft, session: { provider: "openai", model, conversation } });
+      expect(policyReviewReadiness(source, report).ready).toBe(false);
+      expect(report.passages.some((passage) => ["unsupported", "needs_decision", "conflict"].includes(passage.disposition)
+        && !passage.deployment_prerequisite)).toBe(true);
+      expect(report.passages.some((passage) => passage.disposition === "overridden")).toBe(false);
+      expect(draft).toEqual(before);
+    }
+  }, 300_000);
+
+  it("keeps a missing current-admission Read condition pending after source completion without waiving policy", async () => {
+    const source = policyTextSnapshot(Buffer.from("Only currently admitted students may read their registration information."), "university.txt");
+    const pointer = "/runner_evidence/runtime_contract/read_eligibility";
+    const draft = { runner_evidence: { runtime_contract: { read_eligibility: {
+      runner_private_source_predicates_supported: false, action_requirements_apply_to_reads: false,
+      database_business_predicates_verified: false,
+    } } } };
+    const conversation = createModelAuthoringConversation();
+    conversation.policySources = newPolicySourceSession();
+    conversation.policySources.snapshots = [source]; conversation.policySources.active = source.version;
+    conversation.policySources.operator_messages = ["The new admission fixture supplies current status and effective dates, but does not enforce reads. Preserve the original policy and save pending enforcement."];
+    conversation.policySources.approvals = [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model: "fixture" }) }];
+    const before = structuredClone({ draft, conversation }), requests: string[] = [];
+    const report = await reviewPolicyCoverage({ source, draft,
+      session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async (request) => {
+        requests.push(JSON.stringify(request.body));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: "admission_read",
+          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{
+            start: 1, end: 1, disposition: "unsupported", responsibility: "operator", issue_kind: "unsupported_requirement",
+            topic: "Current admission before viewing records", draft_paths: [pointer],
+            interpretation: "Admission source data exists, but current admission is not enforced on reads. The Read requirement remains unmet.",
+            evidence_checks: [{ path: `${pointer}/runner_private_source_predicates_supported`, equals: false }],
+            next_step: "Keep setup pending until an authoritative admission check is enforced for reads.",
+          }] }) }] } };
+      } } }, env: { OPENAI_API_KEY: "test-key" },
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain("Read eligibility is distinct from identity");
+    expect(requests[0]).toContain("A fixture extension is not proof of integration or enforcement");
+    expect(report.passages[0]).not.toHaveProperty("operator_override");
+    expect(report.passages[0]).not.toHaveProperty("deployment_prerequisite");
+    expect(policyReviewReadiness(source, report).ready).toBe(false);
+    expect(policyReadinessItems(report)).toMatchObject([{ blocksReview: true }]);
+    const serialized = JSON.parse(JSON.stringify(report));
+    expect(policyReviewReadiness(source, serialized).ready).toBe(false);
+    expect(() => parsePolicyCoverage({ passages: [{ ...report.passages[0], disposition: "implemented",
+      evidence_checks: [{ path: `${pointer}/runner_private_source_predicates_supported`, equals: true }],
+    }] }, source, draft, [])).toThrow("Mechanical evidence mismatch");
+    expect({ draft, conversation }).toEqual(before);
+  });
+});
+
 describe("attached-rules cancellation", () => {
   it.each(["escape", "ctrl-c"])("awaits provider cleanup on %s without coverage retry or publication", async (key) => {
     const readable = Object.assign(new PassThrough(), { isTTY: true, isRaw: false, setRawMode(value: boolean) { this.isRaw = value; } });
@@ -174,6 +440,53 @@ function counterCoverageFixture(filtered = false) {
 }
 
 describe("exact approval counter evidence and full-bundle targets", () => {
+  it("distinguishes a real outcome-history mismatch from an invented diagnostic-ID problem", () => {
+    const source = policyTextSnapshot(Buffer.from("Limit automatic archival approvals, not other actions, to three per customer per day."), "policy.txt");
+    const draft = counterCoverageFixture();
+    const pointer = "/runner_evidence/actions/service.archive/automatic_limits/0/history_selector/capability";
+    const passage: PolicyPassage = { start: 1, end: 1, responsibility: "runner", issue_kind: "contradiction", disposition: "conflict",
+      interpretation: "The source counts archival only, but the current selector counts all outcomes.",
+      draft_paths: ["/runner_evidence/actions/service.archive/automatic_limits"],
+      counter_requirements: [{ path: pointer, current_capability: null, required_capability: "service.archive" }],
+    };
+    const parse = (item: PolicyPassage) => parsePolicyCoverage({ passages: [item] }, source, draft, []);
+    expect(isMechanicalApprovalCounterPassage(parse(passage).passages[0]!)).toBe(false);
+    expect(policyReadinessItems(parse(passage))).toMatchObject([{ kind: "mechanical_correction", blocksReview: true }]);
+    expect(parse(passage).passages[0]?.counter_requirements).toEqual(passage.counter_requirements);
+    expect(() => parse({ ...passage, disposition: "implemented" })).toThrow("differing selectors cannot be called implemented");
+    for (const replacement of [
+      { path: pointer.replace("history_selector/capability", "id"), current_capability: null, required_capability: "service.archive" },
+      { path: pointer, current_capability: "service.archive", required_capability: null },
+      { path: pointer, current_capability: null, required_capability: "absent.action" },
+      { path: pointer, current_capability: null, required_capability: null },
+    ]) expect(() => parse({ ...passage, counter_requirements: [replacement] })).toThrow();
+    const readPassage: PolicyPassage = { ...passage, counter_requirements: undefined, draft_paths: ["/read/pack/resources/1", "/runner_evidence/read_access/university.courses"],
+      interpretation: "Course details must only be reached through the student's registrations." };
+    const diagnostics = { ...passage, counter_requirements: undefined };
+    const items = actionablePolicyRequirements([{ title: "Mixed findings", passages: [diagnostics, readPassage, passage] }]);
+    expect(items[0]?.passages).toEqual([readPassage, passage]);
+    const pending = [{ title: "Scope interpretation", passages: [readPassage] },
+      { title: "Exact counter mismatch", passages: [passage] }, { title: "Diagnostic grouping", passages: [diagnostics] }];
+    const before = structuredClone(pending);
+    const prioritized = prioritizePolicyRepairs(pending);
+    expect(prioritized.map(item => item.title)).toEqual(["Exact counter mismatch", "Scope interpretation", "Diagnostic grouping"]);
+    expect(prioritized).toHaveLength(pending.length);
+    expect(pending).toEqual(before);
+    expect(prioritized.flatMap(item => item.passages).every(passage => passage.disposition === "conflict")).toBe(true);
+    expect(isReadOnlyPolicyPassage(readPassage)).toBe(true);
+    expect(isReadOnlyPolicyPassage({ ...readPassage, draft_paths: [
+      "/read", "/runner_evidence/runtime_contract/read_eligibility/configured_current_state_prerequisite",
+    ] })).toBe(true);
+    expect(isReadOnlyPolicyPassage({ ...readPassage, draft_paths: [
+      "/runner_evidence/runtime_contract/read_eligibility", "/actions/0/require",
+    ] })).toBe(false);
+    expect(isReadOnlyPolicyPassage({ ...readPassage, draft_paths: [...readPassage.draft_paths, "/actions/0/require"] })).toBe(false);
+    expect(isReadOnlyPolicyPassage({ ...readPassage, draft_paths: [] })).toBe(false);
+    expect(referencesReadPolicy({ ...readPassage, draft_paths: ["/runner_evidence/runtime_contract/read_eligibility", "/actions/0/require"] })).toBe(true);
+    expect(referencesReadPolicy({ ...readPassage, draft_paths: ["/actions/0/require", "/runner_evidence/actions/example/read_boundary"] })).toBe(false);
+    expect(referencesReadPolicy({ ...readPassage, draft_paths: ["/reading", "/runner_evidence/runtime_contract/read_eligibility_other"] })).toBe(false);
+  });
+
   const source = policyTextSnapshot(Buffer.from("Across all three actions allow 3 automatic approvals per company in 24 hours."), "joint-rules.txt");
   const conflict: PolicyPassage = { start: 1, end: 1, disposition: "conflict", responsibility: "runner", issue_kind: "contradiction",
     topic: "Joint automatic-approval limits", interpretation: "Different limit IDs were interpreted as separate history pools.",

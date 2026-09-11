@@ -159,7 +159,7 @@ export function formatChangeLines(proposal: StoredProposal, memberLimit = 10): s
       const identity = `${member.primary_key.column}=${formatScalar(member.primary_key.value)}`;
       if (changeSet.operation === "batch_insert") return [`  ${identity}: create ${JSON.stringify(member.after)}`];
       if (changeSet.operation === "set_delete") return [`  ${identity}: delete ${JSON.stringify(member.before)}`];
-      return Object.keys(changeSet.patch).map((column) => `  ${identity} ${column}: ${formatScalar(member.before[column])} -> ${formatScalar(member.after[column])}`);
+      return Object.keys(changeSet.patch).map((column) => `  ${identity} ${column}: ${formatObservedChangeValue(member.before, column)} -> ${formatObservedChangeValue(member.after, column)}`);
     });
     const remaining = changeSet.frozen_set.members.length - members.length;
     if (remaining > 0) lines.push(`  ... ${remaining} more exact members; use --details to review all`);
@@ -168,10 +168,14 @@ export function formatChangeLines(proposal: StoredProposal, memberLimit = 10): s
   const columns = Object.keys(changeSet.patch);
   if (columns.length === 0) return ["  (no changed columns)"];
   return columns.map((column) => {
-    const before = changeSet.before[column as keyof typeof changeSet.before];
-    const proposed = changeSet.after[column as keyof typeof changeSet.after];
-    return `  ${column}: ${formatScalar(before)} -> ${formatScalar(proposed)}`;
+    return `  ${column}: ${formatObservedChangeValue(changeSet.before, column)} -> ${formatObservedChangeValue(changeSet.after, column)}`;
   });
+}
+
+
+/** A missing evidence key is not an observed null or an old value. */
+export function formatObservedChangeValue(record: Record<string, unknown> | undefined, column: string): string {
+  return !record || !Object.hasOwn(record, column) ? "not observed (not read)" : formatScalar(record[column]);
 }
 
 

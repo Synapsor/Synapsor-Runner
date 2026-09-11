@@ -1,5 +1,12 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 
+export type ReviewedPrivateActionSource = {
+  resource: string;
+  parent_resource: string;
+  relationship: string;
+  proof_digest: `sha256:${string}`;
+};
+
 export type ActionRuleAuthoringCheckpoint = {
   schema_version: "synapsor.action-authoring-checkpoint.v1";
   intent_digest: `sha256:${string}`;
@@ -7,6 +14,7 @@ export type ActionRuleAuthoringCheckpoint = {
   components: Partial<Record<"verification" | "effect" | "rule" | "approval", Record<string, unknown>>>;
   operator_messages?: string[];
   reviewed_relationships?: string[];
+  reviewed_private_sources?: ReviewedPrivateActionSource[];
   reopened_draft?: { outcome: string; digest: `sha256:${string}`; covered_intent_indexes: number[] };
   digest: `sha256:${string}`;
 };
@@ -23,7 +31,7 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const record = value as Record<string, unknown>;
   if (record.schema_version !== "synapsor.action-authoring-checkpoint.v1"
-    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "reviewed_relationships", "reopened_draft", "digest"].includes(key))
+    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "reviewed_relationships", "reviewed_private_sources", "reopened_draft", "digest"].includes(key))
     || ![record.intent_digest, record.context_digest, record.digest].every((digest) => typeof digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(digest))
     || !record.components || typeof record.components !== "object" || Array.isArray(record.components)) throw fail();
   if (record.operator_messages !== undefined && (!Array.isArray(record.operator_messages)
@@ -48,6 +56,20 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
     || record.reviewed_relationships.length > 64
     || new Set(record.reviewed_relationships).size !== record.reviewed_relationships.length
     || record.reviewed_relationships.some((name) => typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)))) throw fail();
+  if (record.reviewed_private_sources !== undefined) {
+    const sources = record.reviewed_private_sources;
+    if (!Array.isArray(sources) || sources.length > 16) throw fail();
+    const names = new Set<string>();
+    for (const source of sources) {
+      if (!source || typeof source !== "object" || Array.isArray(source)
+        || Object.keys(source).some(key => !["resource", "parent_resource", "relationship", "proof_digest"].includes(key))
+        || [source.resource, source.parent_resource, source.relationship].some(name => typeof name !== "string"
+          || name.length > 256 || !/^[A-Za-z_][A-Za-z0-9_.]*$/u.test(name))
+        || typeof source.proof_digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(source.proof_digest)
+        || names.has(source.resource)) throw fail();
+      names.add(source.resource);
+    }
+  }
   if (Buffer.byteLength(JSON.stringify(record), "utf8") > 96 * 1024) throw fail();
   const { digest, ...core } = record;
   if (canonicalJsonDigest(core) !== digest) throw fail();

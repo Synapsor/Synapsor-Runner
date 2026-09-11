@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildBoundaryAuthoringResumeState,
+  prepareBoundaryActionRevision,
   clearBoundaryAuthoringResumeState,
   readBoundaryAuthoringResumeState,
   revalidateBoundaryAuthoringResume,
@@ -20,6 +21,125 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it("retains an unclassified edit separately from the job through resume and rescan", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-job-edit-resume-"));
+    try {
+      const input = { binding, stage: "planning" as const, jobIntent: "Review visits and complete approved follow-ups.",
+        provider: "openai" as const, model: "gpt-test", intendedClient: "claude-code" as const };
+      const pendingJobRevision = "Keep internal identifiers private and reduce automatic approval to one per day.";
+      const state = buildBoundaryAuthoringResumeState({ ...input, pendingJobRevision });
+      await writeBoundaryAuthoringResumeState(root, state);
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
+      const refreshed = revalidateBoundaryAuthoringResume(state, { ...binding, schema_fingerprint: `sha256:${"f".repeat(64)}` });
+      expect(refreshed).toMatchObject({ job_intent: input.jobIntent, pending_job_revision: pendingJobRevision, intended_client: "claude-code" });
+      expect(() => revalidateBoundaryAuthoringResume({ ...state, pending_job_revision: "A different edit" }, binding)).toThrow("digest");
+      expect(buildBoundaryAuthoringResumeState({ ...input, previous: state }).pending_job_revision).toBeUndefined();
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it("retains only a bound custom destination fingerprint and drops it on revalidation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-custom-destination-resume-"));
+    try {
+      const input = { binding, stage: "planning" as const, jobIntent: "Review records.", provider: "openai_compatible" as const, model: "local" };
+      const metadataDestinationDigest = `sha256:${"d".repeat(64)}` as const;
+      const state = buildBoundaryAuthoringResumeState({ ...input, metadataDestinationDigest });
+      await writeBoundaryAuthoringResumeState(root, state);
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
+      expect(() => revalidateBoundaryAuthoringResume({ ...state, metadata_destination_digest: `sha256:${"e".repeat(64)}` }, binding)).toThrow("digest");
+      expect(revalidateBoundaryAuthoringResume(state, { ...binding, schema_fingerprint: `sha256:${"f".repeat(64)}` }).metadata_destination_digest).toBeUndefined();
+      expect(buildBoundaryAuthoringResumeState({ ...input, previous: state }).metadata_destination_digest).toBeUndefined();
+      expect(JSON.stringify(state)).not.toContain("http");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it("binds private Read metadata permission to the saved mapping and discards it on rescan", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-private-read-consent-resume-"));
+    try {
+      const input = { binding, stage: "authority_review" as const, jobIntent: "Require current admission.", provider: "openai" as const, model: "gpt-test" };
+      const privateReadMetadataDigest = `sha256:${"a".repeat(64)}` as const;
+      const state = buildBoundaryAuthoringResumeState({ ...input, privateReadMetadataDigest });
+      await writeBoundaryAuthoringResumeState(root, state);
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
+      expect(state.private_read_metadata_digest).toBe(privateReadMetadataDigest);
+      expect(() => revalidateBoundaryAuthoringResume({ ...state, private_read_metadata_digest: `sha256:${"b".repeat(64)}` }, binding)).toThrow("digest");
+      expect(revalidateBoundaryAuthoringResume(state, { ...binding, schema_fingerprint: `sha256:${"c".repeat(64)}` })
+        .private_read_metadata_digest).toBeUndefined();
+      expect(() => buildBoundaryAuthoringResumeState({ ...input, privateReadMetadataDigest: "unbound" as never })).toThrow("private Read metadata permission");
+      expect(buildBoundaryAuthoringResumeState({ ...input, previous: state }).private_read_metadata_digest).toBeUndefined();
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it("saves an in-progress policy edit separately from initial action drafting and drops stale components on rescan", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-action-revision-resume-"));
+    try {
+      const pendingActionRevision = { outcome: "university.accept_offer", instruction: "Require current admission without changing the other rules.",
+        baseline_digest: `sha256:${"4".repeat(64)}` as const,
+        checkpoint: actionRuleAuthoringCheckpoint({ intent_digest: `sha256:${"5".repeat(64)}`,
+          context_digest: `sha256:${"6".repeat(64)}`, components: {}, operator_messages: ["Save pending"] }),
+      };
+      const input = { binding, stage: "authority_review" as const, jobIntent: "Help students with registration.", provider: "openai" as const, model: "gpt-5.6-terra" };
+      const state = buildBoundaryAuthoringResumeState({ ...input, pendingActionRevision, intendedClient: "claude-code" });
+      await writeBoundaryAuthoringResumeState(root, state);
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
+      expect(state.pending_action_revision).toEqual(pendingActionRevision);
+      expect(prepareBoundaryActionRevision(pendingActionRevision, pendingActionRevision)).toEqual(pendingActionRevision);
+      const newInstruction = "Map the reviewed admission source; preserve existing limits.";
+      expect(prepareBoundaryActionRevision({ ...pendingActionRevision, instruction: newInstruction }, pendingActionRevision))
+        .toEqual({ outcome: pendingActionRevision.outcome, baseline_digest: pendingActionRevision.baseline_digest, instruction: newInstruction });
+      expect(() => prepareBoundaryActionRevision({ ...pendingActionRevision, outcome: "university.other" }, pendingActionRevision))
+        .toThrow("ACTION_REVISION_BASELINE_CHANGED");
+      expect(() => prepareBoundaryActionRevision({ ...pendingActionRevision, baseline_digest: `sha256:${"f".repeat(64)}` }, pendingActionRevision))
+        .toThrow("ACTION_REVISION_BASELINE_CHANGED");
+      expect(state.action?.checkpoint).toBeUndefined();
+      expect(state.authority_granted).toBe(false);
+      const refreshed = revalidateBoundaryAuthoringResume(state, { ...binding, schema_fingerprint: `sha256:${"7".repeat(64)}` });
+      expect(refreshed.pending_action_revision).toEqual({ ...pendingActionRevision, checkpoint: undefined });
+      expect(refreshed.intended_client).toBe("claude-code");
+      expect(() => revalidateBoundaryAuthoringResume({ ...state, pending_action_revision: { ...pendingActionRevision,
+        outcome: "university.other" } }, binding)).toThrow("digest");
+      expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingActionRevision: {
+        ...pendingActionRevision, baseline_digest: "unbound" as never,
+      } })).toThrow();
+      expect(buildBoundaryAuthoringResumeState({ ...input, previous: state }).pending_action_revision).toBeUndefined();
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("binds pending removal to the exact replacement instead of just a missing outcome name", () => {
+    const input = { binding, stage: "authority_review" as const, jobIntent: "Stop offering the obsolete action.", provider: "openai" as const, model: "gpt-test" };
+    const pendingActionRemoval = { outcome: "clinic.obsolete", authority_name: "clinic_rules", draft_digest: `sha256:${"4".repeat(64)}` as const };
+    const state = buildBoundaryAuthoringResumeState({ ...input, pendingActionRemoval });
+    expect(state.pending_action_removal).toEqual(pendingActionRemoval);
+    expect(() => revalidateBoundaryAuthoringResume({ ...state, pending_action_removal: { ...pendingActionRemoval,
+      draft_digest: `sha256:${"5".repeat(64)}` } }, binding)).toThrow("digest");
+    expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingActionRemoval: "clinic.obsolete" as never })).toThrow("removal review");
+  });
+  it("retains a cited missing Action request and its exact existing identities through rescan", () => {
+    const input = { binding, stage: "planning" as const, jobIntent: "Help admitted students manage enrollment.",
+      provider: "openai" as const, model: "gpt-test" };
+    const pendingActionAddition = {
+      policy_source_digest: `sha256:${"a".repeat(64)}` as const,
+      source_ranges: [{ start: 12, end: 14 }, { start: 28, end: 28 }],
+      retained_action: {
+        intent: "Update an eligible enrollment.",
+        intents: ["Update an eligible enrollment.", "Record an approved withdrawal."],
+        completed_outcomes: ["university.update_enrollment", "university.record_withdrawal"],
+        outcome: "university.record_withdrawal",
+        strategy: "rule_derived" as const,
+      },
+    };
+    const state = buildBoundaryAuthoringResumeState({ ...input, pendingActionAddition });
+    expect(state.pending_action_addition).toEqual(pendingActionAddition);
+    const refreshed = revalidateBoundaryAuthoringResume(state, {
+      ...binding,
+      schema_fingerprint: `sha256:${"b".repeat(64)}`,
+    });
+    expect(refreshed.pending_action_addition).toEqual(pendingActionAddition);
+    expect(() => revalidateBoundaryAuthoringResume({
+      ...state,
+      pending_action_addition: { ...pendingActionAddition, source_ranges: [{ start: 12, end: 15 }] },
+    }, binding)).toThrow("digest");
+    expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingActionAddition: {
+      ...pendingActionAddition,
+      source_ranges: [{ start: 12, end: 14 }, { start: 12, end: 14 }],
+    } })).toThrow("source ranges must be unique");
+  });
   it("validates client preferences and includes them in the integrity digest", () => {
     const input = { binding, stage: "planning" as const, jobIntent: "Review customer records.", provider: "openai" as const, model: "gpt-test" };
     const state = buildBoundaryAuthoringResumeState({ ...input, intendedClient: "claude-code" });
@@ -27,7 +147,7 @@ describe("Boundary authoring resume state", () => {
     expect(() => buildBoundaryAuthoringResumeState({ ...input, intendedClient: "unreviewed-launcher" as never })).toThrow("client preference");
     expect(buildBoundaryAuthoringResumeState({ ...input, previous: state }).intended_client).toBeUndefined();
   });
-  it("revalidates business context and exact completed outcomes without carrying stale analysis, Action checkpoints or consent", () => {
+  it("retains untrusted unfinished components and exact completed outcomes without carrying stale analysis or consent", () => {
     const state = buildBoundaryAuthoringResumeState({ binding, stage: "client_setup",
       jobIntent: "Review visits and propose rescheduling.", provider: "openai", model: "gpt-5.6-terra",
       intendedClient: "claude-code",
@@ -41,7 +161,8 @@ describe("Boundary authoring resume state", () => {
         checkpoint: actionRuleAuthoringCheckpoint({
           intent_digest: `sha256:${"7".repeat(64)}`,
           context_digest: `sha256:${"8".repeat(64)}`,
-          components: {},
+          components: { verification: { name: "clinic.verify_notification", resources: [] } },
+          operator_messages: ["Notification approval limits are still undecided."],
         }),
       },
       clientHandoff: { read_digest: `sha256:${"5".repeat(64)}` },
@@ -55,8 +176,9 @@ describe("Boundary authoring resume state", () => {
       intent: "Reschedule visits.", outcome: "clinic.reschedule", strategy: "rule_derived",
       intents: ["Reschedule visits.", "Notify the clinic."],
       completed_outcomes: ["clinic.reschedule"],
+      checkpoint: state.action!.checkpoint,
     });
-    expect(next.action?.checkpoint).toBeUndefined();
+    expect(next.action?.checkpoint?.context_digest).toBe(`sha256:${"8".repeat(64)}`);
     expect(next.client_handoff).toBeUndefined();
     expect(next.intended_client).toBe("claude-code");
     expect(state.stage).toBe("client_setup");

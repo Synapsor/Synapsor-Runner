@@ -153,7 +153,7 @@ const RECEIPT_KEYS = new Set(["id", "proposal_id", "status", "idempotency_key", 
 const REPLAY_KEYS = new Set(["id", "proposal_id", "run_id", "events"]);
 const EXTERNAL_ACTION_KEYS = new Set(["id", "action", "handler", "idempotency_key", "receipt"]);
 const VERIFICATION_BOUNDARY_KEYS = new Set(["schema_version", "name", "source", "context", "generation_lock_fingerprint", "resources", "lock_order", "transaction"]);
-const VERIFICATION_RESOURCE_KEYS = new Set(["binding", "resource", "source", "primary_key", "version_field", "fields", "scope", "cardinality", "max_rows", "overflow", "deterministic_order", "lock"]);
+const VERIFICATION_RESOURCE_KEYS = new Set(["binding", "resource", "source", "primary_key", "version_field", "fields", "scope", "cardinality", "collection_consistency", "max_rows", "overflow", "deterministic_order", "lock"]);
 const VERIFICATION_FIELD_KEYS = new Set(["name", "type", "nullable", "model_visible"]);
 const VERIFICATION_SOURCE_KEYS = new Set(["kind", "from_binding", "relationship", "local_field", "target_field", "field_pairs", "direction"]);
 const VERIFICATION_SCOPE_KEYS = new Set(["mode", "tenant_field", "principal_field", "from_binding", "organization_id"]);
@@ -170,7 +170,7 @@ const ACTION_RULE_KEYS = new Set(["schema_version", "name", "outcome", "context"
 const ACTION_RULE_SUBJECT_KEYS = new Set(["binding", "resource", "input"]);
 const ACTION_RULE_EFFECT_KEYS = new Set(["operation", "target_resource", "target_binding", "set"]);
 const ACTION_RULE_SCALAR_TYPE_KEYS = new Set(["kind", "unit", "currency", "max_length", "enum", "comparison"]);
-const ACTION_RULE_SCALAR_EXPR_KEYS = new Set(["kind", "value", "value_type", "binding", "field", "name", "operation", "inputs", "input", "constant", "rounding", "minimum", "maximum", "timestamp", "seconds"]);
+const ACTION_RULE_SCALAR_EXPR_KEYS = new Set(["kind", "value", "value_type", "binding", "field", "name", "operation", "inputs", "input", "constant", "rounding", "minimum", "maximum", "timestamp", "seconds", "where", "timezone"]);
 const ACTION_RULE_BOOLEAN_EXPR_KEYS = new Set(["kind", "expressions", "expression", "operator", "left", "right", "value", "values", "binding", "where"]);
 const ACTION_RULE_SCALAR_TYPE_VARIANT_KEYS = {
   boolean: new Set(["kind"]),
@@ -186,11 +186,12 @@ const ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS = {
   trusted: new Set(["kind", "binding"]),
   field: new Set(["kind", "binding", "field"]),
   derived: new Set(["kind", "name"]),
-  aggregate: new Set(["kind", "operation", "binding", "field"]),
+  aggregate: new Set(["kind", "operation", "binding", "field", "where"]),
   math: new Set(["kind", "operation", "inputs"]),
   scale: new Set(["kind", "operation", "input", "constant", "rounding"]),
   clamp: new Set(["kind", "input", "minimum", "maximum"]),
   add_duration: new Set(["kind", "timestamp", "seconds"]),
+  date_of: new Set(["kind", "timestamp", "timezone"]),
 } as const;
 const ACTION_RULE_BOOLEAN_EXPR_VARIANT_KEYS = {
   all: new Set(["kind", "expressions"]),
@@ -2420,6 +2421,9 @@ function validateVerificationResources(value: unknown, boundaryPath: string, res
     if (raw.cardinality !== "one" && raw.cardinality !== "many") errors.push({ path: `${itemPath}.cardinality`, code: "INVALID_VERIFICATION_CARDINALITY", message: "cardinality must be one or many." });
     if (!Number.isSafeInteger(raw.max_rows) || Number(raw.max_rows) < 1 || Number(raw.max_rows) > 100 || (raw.cardinality === "one" && raw.max_rows !== 1)) errors.push({ path: `${itemPath}.max_rows`, code: "INVALID_VERIFICATION_ROW_BOUND", message: "one bindings require 1 row; many bindings require an explicit maximum no greater than 100." });
     if (raw.overflow !== "ineligible" && raw.overflow !== "unsupported") errors.push({ path: `${itemPath}.overflow`, code: "INVALID_VERIFICATION_OVERFLOW", message: "overflow must fail as ineligible or unsupported." });
+    if (raw.collection_consistency !== undefined && (raw.collection_consistency !== "complete_locked" || raw.cardinality !== "many")) {
+      errors.push({ path: `${itemPath}.collection_consistency`, code: "INVALID_COLLECTION_CONSISTENCY", message: "complete_locked requires a bounded many-row collection." });
+    }
     if (raw.lock !== "for_update") errors.push({ path: `${itemPath}.lock`, code: "VERIFICATION_LOCK_REQUIRED", message: "first-release rule facts require for_update locking." });
     if (raw.deterministic_order !== undefined) {
       if (!Array.isArray(raw.deterministic_order) || raw.deterministic_order.length === 0) errors.push({ path: `${itemPath}.deterministic_order`, code: "INVALID_VERIFICATION_ORDER", message: "deterministic_order must be a non-empty bounded list." });
@@ -2668,7 +2672,8 @@ function validateRuleScalarExpression(value: unknown, path: string, errors: Vali
       return;
     case "aggregate":
       checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.aggregate, path, errors);
-      if (!["count", "sum", "min", "max"].includes(String(value.operation)) || !isSafeIdentifier(value.binding) || (value.operation !== "count" && !isSafeIdentifier(value.field))) errors.push({ path, code: "INVALID_ACTION_RULE_AGGREGATE", message: "aggregate requires a supported operation and fixed bounded binding." });
+      if (!["count", "sum", "min", "max"].includes(String(value.operation)) || !isSafeIdentifier(value.binding) || ((value.operation !== "count" || value.field !== undefined) && !isSafeIdentifier(value.field))) errors.push({ path, code: "INVALID_ACTION_RULE_AGGREGATE", message: "aggregate requires a supported operation and fixed bounded binding." });
+      if (value.where !== undefined) validateRuleBooleanExpression(value.where, `${path}.where`, errors, depth + 1);
       return;
     case "math":
       checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.math, path, errors);
@@ -2687,6 +2692,11 @@ function validateRuleScalarExpression(value: unknown, path: string, errors: Vali
       validateRuleScalarExpression(value.input, `${path}.input`, errors, depth + 1);
       validateRuleScalarExpression(value.minimum, `${path}.minimum`, errors, depth + 1);
       validateRuleScalarExpression(value.maximum, `${path}.maximum`, errors, depth + 1);
+      return;
+    case "date_of":
+      checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.date_of, path, errors);
+      if (value.timezone !== "UTC") errors.push({ path: `${path}.timezone`, code: "INVALID_ACTION_RULE_TIMEZONE", message: "date_of requires the explicit reviewed UTC calendar day." });
+      validateRuleScalarExpression(value.timestamp, `${path}.timestamp`, errors, depth + 1);
       return;
     case "add_duration":
       checkVariantKeys(value, ACTION_RULE_SCALAR_EXPR_KEYS, ACTION_RULE_SCALAR_EXPR_VARIANT_KEYS.add_duration, path, errors);

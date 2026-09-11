@@ -24,6 +24,12 @@ function approved(text?: string) {
 }
 
 describe("complete operator-selected policy text", () => {
+  it("binds OpenRouter rules transfer to its actual service, not the local provider default", () => {
+    const remote = { provider: "openrouter", model: "openai/gpt-5.6-terra" };
+    expect(authoringDestination(remote)).toBe("openrouter[openai/gpt-5.6-terra] at https://openrouter.ai/api/v1");
+    expect(authoringDestination({ ...remote, baseUrl: "https://openrouter.ai/api/v1/" })).toBe(authoringDestination(remote));
+    expect(authoringDestination({ provider: "openai_compatible", model: "local" })).toContain("http://127.0.0.1:11434/v1");
+  });
   it("refuses an oversized saved session without replacing the previous readable snapshot", async () => {
     const root = await directory(), session = approved();
     await savePolicySources(root, session);

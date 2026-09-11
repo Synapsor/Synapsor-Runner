@@ -82,6 +82,146 @@ describe("structured Action draft schema", () => {
 });
 
 describe("conversational Action authoring tools", () => {
+  it("revalidates retained partial components after a host-mediated Read edit without asking answered questions", async () => {
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const first = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+      call("runner.submit_action_rule_draft"), say("Who reviews this request?")];
+    await expect(converseActionRuleDraft({ ...requestInput(async () => first.shift()!),
+      onCheckpoint: async value => { checkpoint = value; }, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    const before = structuredClone(checkpoint);
+    const resumed = [call("runner.inspect_action_draft", {}), call("runner.submit_approval_policy_draft"),
+      call("runner.validate_action_draft", {}), say("The updated access and saved action validate.")];
+    const requests: string[] = [];
+    const result = await converseActionRuleDraft({ ...requestInput(async request => {
+      requests.push(JSON.stringify(request.body)); return resumed.shift()!;
+    }), checkpoint, revalidateSavedComponents: true, readBoundaryDigest: `sha256:${"f".repeat(64)}` });
+    expect(result.state).toBe("ready");
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(requests[0]).toContain("needs_revalidation");
+    expect(requests[0]).toContain("untrusted drafting input");
+    expect(checkpoint).toEqual(before);
+    expect(resumed).toEqual([]);
+    const noRequest = vi.fn();
+    await expect(converseActionRuleDraft({ ...requestInput(noRequest), checkpoint, revalidateSavedComponents: true,
+      intent: "An unrelated new action" })).rejects.toThrow("CHECKPOINT_STALE");
+    expect(noRequest).not.toHaveBeenCalled();
+  });
+
+  it("restores a reviewed private source before checkpoint validation and carries it through later components", async () => {
+    const expanded = structuredClone(builtCatalog());
+    expanded.catalog.resources.push({ ...structuredClone(expanded.catalog.resources[0]!), name: "billing.admission", table: "admission" });
+    expanded.authoring.resources.push({ ...structuredClone(expanded.authoring.resources[0]!), name: "billing.admission", operations: { insert: false, update: false } });
+    const review = { resource: "billing.admission", parent_resource: "billing.accounts", relationship: "admission_account",
+      proof_digest: `sha256:${"c".repeat(64)}` as const };
+    const reviewPrivateSource = vi.fn(async (_request: Parameters<NonNullable<Parameters<typeof converseActionRuleDraft>[0]["reviewPrivateSource"]>>[0]) => ({ builtCatalog: expanded, readBoundary: boundary(), readBoundaryDigest: readDigest, review }));
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const steps = [call("runner.review_private_action_source", { resource: review.resource, parent_resource: review.parent_resource }),
+      call("runner.submit_verification_boundary_draft"), say("What admission rule applies?")];
+    await expect(converseActionRuleDraft({ ...requestInput(async () => steps.shift()!), reviewPrivateSource,
+      onCheckpoint: async value => { checkpoint = value; }, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    expect(checkpoint?.reviewed_private_sources).toEqual([review]);
+    expect(checkpoint?.components.verification).toBeDefined();
+    const resumedSteps = [call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Draft ready.")];
+    const prepareResources = vi.fn(async ({ context }: Parameters<NonNullable<Parameters<typeof converseActionRuleDraft>[0]["prepareResources"]>>[0]) => context);
+    const result = await converseActionRuleDraft({ ...requestInput(async () => resumedSteps.shift()!), reviewPrivateSource, checkpoint, prepareResources });
+    expect(reviewPrivateSource.mock.calls[1]?.[0]).toMatchObject({ previousReview: review });
+    expect(prepareResources.mock.calls[0]?.[0].context.builtCatalog).toEqual(expanded);
+    expect(result.compiled.loaded.authority.catalog.resources.map(resource => resource.name)).toContain("billing.admission");
+    const expected = modelDraft();
+    expected.verification.resources[0]!.fields = ["account_id", "risk_hold", "status", "version"];
+    expect(result.compiled.draft).toEqual(expected);
+    await expect(converseActionRuleDraft({ ...requestInput(vi.fn()), checkpoint,
+      reviewPrivateSource: async () => ({ builtCatalog: expanded, readBoundary: boundary(), readBoundaryDigest: readDigest,
+        review: { ...review, proof_digest: `sha256:${"e".repeat(64)}` } }),
+    })).rejects.toThrow("CHECKPOINT_STALE");
+    await expect(converseActionRuleDraft({ ...requestInput(vi.fn()), checkpoint })).rejects.toThrow("CHECKPOINT_STALE");
+  });
+
+  it("cannot turn a retained checkpoint into authority when the current catalog no longer supports its fields", async () => {
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const first = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"), say("Pause this draft?")];
+    await expect(converseActionRuleDraft({ ...requestInput(async () => first.shift()!),
+      onCheckpoint: async value => { checkpoint = value; }, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    const changed = structuredClone(builtCatalog());
+    changed.catalog.resources[0]!.fields = changed.catalog.resources[0]!.fields.filter(field => field.name !== "status");
+    changed.authoring.resources[0]!.fields = changed.authoring.resources[0]!.fields.filter(field => field.name !== "status");
+    const requests: string[] = [];
+    const steps = [call("runner.validate_action_draft", {}), say("The saved status field is no longer available. Keep setup pending?")];
+    await expect(converseActionRuleDraft({ ...requestInput(async request => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), builtCatalog: changed, checkpoint, revalidateSavedComponents: true,
+      askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    expect(requests[1]).toContain("needs_repair");
+    expect(requests.join("\n")).not.toContain('"status":"ready_for_review"');
+    expect(steps).toEqual([]);
+  });
+
+  it.each(["reviewed", "declined", "public_read_changed", "unrelated_intent"])("retains partial business work but requires the current private proof after rescan (%s)", async scenario => {
+    const review = { resource: "billing.private_facts", parent_resource: "billing.accounts", relationship: "facts_account",
+      proof_digest: canonicalJsonDigest("previous reviewed proof") };
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const first = [call("runner.review_private_action_source", { resource: review.resource, parent_resource: review.parent_resource }),
+      call("runner.submit_verification_boundary_draft"), say("Who reviews exceptions?")];
+    await expect(converseActionRuleDraft({ ...requestInput(async () => first.shift()!),
+      reviewPrivateSource: async ({ context }) => ({ ...context, review }),
+      onCheckpoint: async value => { checkpoint = value; }, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    const before = structuredClone(checkpoint);
+    const currentReview = { ...review, proof_digest: canonicalJsonDigest("fresh explicitly reviewed proof") };
+    const sourceReview = vi.fn(async ({ context, revalidatePreviousReview }: Parameters<NonNullable<Parameters<typeof converseActionRuleDraft>[0]["reviewPrivateSource"]>>[0]) => {
+      expect(revalidatePreviousReview).toBe(true);
+      if (scenario === "declined") return undefined;
+      return { ...context, review: currentReview,
+        ...(scenario === "public_read_changed" ? { readBoundaryDigest: canonicalJsonDigest("unauthorized new public access") } : {}) };
+    });
+    const steps = [call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Ready for review.")];
+    const request = vi.fn(async () => steps.shift()!);
+    let saved: ActionRuleAuthoringCheckpoint | undefined;
+    const result = converseActionRuleDraft({ ...requestInput(request), checkpoint, revalidateSavedComponents: true,
+      readBoundaryDigest: canonicalJsonDigest("current read"), reviewPrivateSource: sourceReview,
+      ...(scenario === "unrelated_intent" ? { intent: "Create a different business operation" } : {}),
+      onCheckpoint: async value => { saved = value; } });
+    if (scenario === "reviewed") {
+      expect(await result).toMatchObject({ state: "ready", authority_granted: false, source_database_changed: false });
+      expect(saved?.reviewed_private_sources).toEqual([currentReview]);
+      expect(saved?.components.verification).toEqual(before?.components.verification);
+      expect(steps).toEqual([]);
+    } else {
+      await expect(result).rejects.toThrow(scenario === "public_read_changed" ? "PRIVATE_SOURCE_READ_CHANGED" : "CHECKPOINT_STALE");
+      expect(request).not.toHaveBeenCalled();
+      expect(saved).toBeUndefined();
+    }
+    expect(sourceReview).toHaveBeenCalledTimes(scenario === "unrelated_intent" ? 0 : 1);
+    expect(checkpoint).toEqual(before);
+  });
+
+  it("does not repeat a declined source transfer or send its metadata into later model turns", async () => {
+    const requests: string[] = [];
+    const steps = [call("runner.review_private_action_source", { resource: "billing.admission", parent_resource: "billing.accounts" }),
+      call("runner.review_private_action_source", { resource: "billing.admission", parent_resource: "billing.accounts" }), say("Setup remains pending this source.")];
+    const reviewPrivateSource = vi.fn(async () => undefined);
+    await expect(converseActionRuleDraft({ ...requestInput(async request => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), reviewPrivateSource, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    expect(reviewPrivateSource).toHaveBeenCalledOnce();
+    expect(requests.at(-1)).toContain("do not ask for the same permission repeatedly");
+    expect(requests.at(-1)).not.toContain("private_source_prepared");
+  });
+
+  it("rejects an alleged private mapping that changes public reads", async () => {
+    const changed = structuredClone(boundary()); changed.pack.name = "broadened";
+    const requests: string[] = [];
+    const steps = [call("runner.review_private_action_source", { resource: "billing.admission", parent_resource: "billing.accounts" }), say("Mapping remains pending.")];
+    await expect(converseActionRuleDraft({ ...requestInput(async request => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), reviewPrivateSource: async () => ({ builtCatalog: builtCatalog(), readBoundary: changed, readBoundaryDigest: readDigest,
+      review: { resource: "billing.admission", parent_resource: "billing.accounts", relationship: "admission_account", proof_digest: `sha256:${"c".repeat(64)}` } }),
+    askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    expect(requests.at(-1)).toContain("PRIVATE_SOURCE_READ_CHANGED");
+  });
   it.skipIf(!process.env.SYNAPSOR_LIVE_AUTHORING_PROVIDER)("qualifies live creation and a day-two edit through the same tools", async () => {
     const provider = process.env.SYNAPSOR_LIVE_AUTHORING_PROVIDER as "openai" | "openai_compatible" | "anthropic";
     const progress: string[] = [];
@@ -122,6 +262,124 @@ describe("conversational Action authoring tools", () => {
     body: { output: [{ type: "function_call", call_id: `call_${name}`, name: name.replaceAll(".", "__"), arguments: JSON.stringify(args) }] },
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
+
+  it("preserves setup pending an authoritative source without treating the operator answer as a source fact", async () => {
+    const question = "I cannot verify current admission from these records. Is there an authoritative admission source to connect, or should I save setup pending that source?";
+    const answer = "No existing field proves admission. Keep the requirement; do not infer it from authentication or registrations. Save setup pending that source.";
+    const requests: string[] = [];
+    const steps = [call("runner.submit_verification_boundary_draft"), say(question),
+      call("runner.pause_action_draft", { operator_message: answer })];
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const askClarification = vi.fn().mockResolvedValueOnce(answer);
+    const input = requestInput(async request => { requests.push(JSON.stringify(request.body)); return steps.shift()!; });
+    const before = structuredClone(input.builtCatalog);
+    await expect(converseActionRuleDraft({ ...input, intent: "Only currently admitted students may make this request.", askClarification,
+      onCheckpoint: async value => { checkpoint = value; },
+    })).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    expect(askClarification).toHaveBeenCalledOnce();
+    expect(requests[0]).toContain("map an existing authoritative source");
+    expect(requests[0]).toContain("missing, expired or withdrawn evidence");
+    expect(requests.at(-1)).toContain(answer);
+    expect(checkpoint!.operator_messages).toContain(answer);
+    expect(Object.keys(checkpoint!.components)).toEqual(["verification"]);
+    expect(input.builtCatalog).toEqual(before);
+    expect(steps).toEqual([]);
+  });
+
+  it("does not honor a fabricated pause or claim a failed checkpoint was saved", async () => {
+    const answer = "Save pending";
+    const steps = [call("runner.pause_action_draft", { operator_message: answer }), say("An authoritative source is still missing."),
+      call("runner.pause_action_draft", { operator_message: answer })];
+    const requests: string[] = [];
+    const onCheckpoint = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("checkpoint storage unavailable"));
+    await expect(converseActionRuleDraft({ ...requestInput(async request => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), askClarification: async () => answer, onCheckpoint })).rejects.toThrow("checkpoint storage unavailable");
+    expect(requests.join("\n")).toContain("Quote the actual operator message asking to pause");
+    expect(onCheckpoint).toHaveBeenCalledTimes(2);
+    expect(steps).toEqual([]);
+  });
+
+  it.each(["valid", "nonnullable", "unknown_enum", "timestamp_value"])("validates explicit nullable clears through conversational effect submission (%s)", async failure => {
+    const built = builtCatalog();
+    const effect = { status: "draft", ...modelDraft().effect };
+    for (const [name, type] of [["drop_reason", { kind: "string", max_length: 32, comparison: "exact", enum: ["prerequisite_error"] }],
+      ["dropped_at", { kind: "timestamp" }]] as const) {
+      const field = { name, type: structuredClone(type) as ActionRuleScalarTypeSpecV1, nullable: true };
+      built.catalog.resources[0]!.fields.push(field);
+      built.authoring.resources[0]!.fields.push({ ...field, role: "runner_verification_only", writable: true });
+      effect.allowed_fields.push({ name, values: [null] });
+      effect.set[name] = { kind: "literal", value: null, value_type: field.type };
+    }
+    const invalidEffect = structuredClone(effect);
+    const invalidIndex = invalidEffect.allowed_fields.findIndex(field => field.name === "drop_reason");
+    if (failure === "nonnullable") invalidEffect.allowed_fields[0]!.values = [null];
+    if (failure === "unknown_enum") invalidEffect.allowed_fields[invalidIndex]!.values = ["made_up"];
+    if (failure === "timestamp_value") invalidEffect.allowed_fields.find(field => field.name === "dropped_at")!.values = ["2026-09-01T00:00:00Z"];
+    const steps = [call("runner.submit_verification_boundary_draft"),
+      call("runner.submit_effect_envelope_draft", failure === "valid" ? effect : invalidEffect),
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"),
+      ...(failure === "valid" ? [] : [call("runner.validate_action_draft", {}), call("runner.submit_effect_envelope_draft", effect)]),
+      call("runner.validate_action_draft", {}), say("The disabled revision is ready for review.")];
+    const requests: string[] = [];
+    const result = await converseActionRuleDraft({ ...requestInput(async request => {
+      requests.push(JSON.stringify(request.body));
+      if (!steps.length) throw new Error("Unexpected correction after valid nullable clear");
+      return steps.shift()!;
+    }), builtCatalog: built });
+    expect(result.compiled.draft.effect.set).toEqual(effect.set);
+    expect(result.compiled.draft.effect.allowed_fields).toEqual(effect.allowed_fields);
+    const diagnostic: Record<string, string | undefined> = { valid: undefined, nonnullable: "ACTION_RULE_EFFECT_NULL_FORBIDDEN",
+      unknown_enum: "ACTION_RULE_EFFECT_VALUE_UNREVIEWED", timestamp_value: "ACTION_RULE_EFFECT_VALUE_TYPE_INVALID" };
+    if (diagnostic[failure]) expect(requests.some(request => request.includes(diagnostic[failure]!))).toBe(true);
+    else expect(requests.some(request => request.includes("ACTION_RULE_EFFECT_VALUE_UNREVIEWED"))).toBe(false);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(steps).toEqual([]);
+  });
+
+  it.each([false, true])("scopes private linked facts separately from subjects and every changed record (atomic=%s)", async (atomic) => {
+    const built = builtCatalog();
+    const account = built.catalog.resources[0]!;
+    account.fields.push({ name: "policy_id", type: stringId, nullable: false });
+    built.authoring.resources[0]!.fields.push({ name: "policy_id", type: stringId, nullable: false, role: "guard", writable: false });
+    const policy = structuredClone(account);
+    policy.name = "billing.policies"; policy.table = "policies"; policy.primary_key = "policy_id";
+    delete policy.principal_scope_key;
+    policy.fields = policy.fields.filter((field) => !["account_id", "principal_id"].includes(field.name));
+    built.catalog.resources.push(policy);
+    built.catalog.relationships.push({ name: "accounts_policy_fk", from_resource: account.name, to_resource: policy.name,
+      field_pairs: [{ local_field: "tenant_id", target_field: "tenant_id" }, { local_field: "policy_id", target_field: "policy_id" }],
+      cardinality: "many_to_one", nullable: false, target_unique: true });
+    built.authoring.relationships = structuredClone(built.catalog.relationships);
+    const description = structuredClone(built.authoring.resources[0]!);
+    description.name = policy.name; description.primary_key = policy.primary_key;
+    description.principal_scope = "none"; delete description.principal_key;
+    description.fields = description.fields.filter((field) => !["account_id", "principal_id"].includes(field.name));
+    built.authoring.resources.push(description);
+    const verification = { status: "draft", ...modelDraft().verification };
+    verification.resources.push({ binding: "policy", resource: policy.name,
+      source: { kind: "relationship", from_binding: "account", relationship: "accounts_policy_fk", direction: "forward" },
+      fields: ["status", "risk_hold"] });
+    const effect = payloadFor("runner.submit_effect_envelope_draft");
+    if (atomic) effect.atomic_updates = [{ operation: "update", target_resource: policy.name, target_binding: "policy",
+      allowed_fields: effect.allowed_fields, set: effect.set }];
+    const prepareResources = vi.fn(async () => ({ builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest }));
+    const steps = [call("runner.submit_verification_boundary_draft", verification), call("runner.submit_effect_envelope_draft", effect),
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"),
+      call("runner.validate_action_draft", {}), say("The requested draft is ready for review.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async () => steps.shift()!), builtCatalog: built, prepareResources });
+    expect(prepareResources).toHaveBeenNthCalledWith(1, { context: { builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest }, phase: "verification", resourceIds: [account.name, policy.name], principalScopeResourceIds: [account.name] });
+    expect(prepareResources).toHaveBeenNthCalledWith(2, { context: { builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest }, phase: "effect", resourceIds: atomic ? [account.name, policy.name] : [account.name],
+      principalScopeResourceIds: atomic ? [account.name, policy.name] : [account.name] });
+    expect(result.compiled.verification_boundary.resources.find((entry) => entry.binding === "account")!.scope)
+      .toMatchObject({ mode: "columns", tenant_field: "tenant_id", principal_field: "principal_id" });
+    expect(result.compiled.verification_boundary.resources.find((entry) => entry.binding === "policy")!.source)
+      .toMatchObject({ kind: "relationship", from_binding: "account", relationship: "accounts_policy_fk" });
+    expect(result.compiled.draft.effect.atomic_updates?.length ?? 0).toBe(atomic ? 1 : 0);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+  });
 
   it("authors public discovery vocabulary through the same bounded rule tool", async () => {
     const discovery = { title: "Pause billing", summary: "Request a temporary billing pause with human review.",
@@ -207,6 +465,82 @@ describe("conversational Action authoring tools", () => {
       .rejects.toThrow("ACTION_RULE_MODEL_DRAFT_INCOMPLETE");
     expect(requestJson).toHaveBeenCalledTimes(3);
     expect(askClarification).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "The reviewed relationship paths are prepared in the disabled draft; no authority is active.",
+    "The seat draft is partially prepared. The remaining business rules are not yet prepared.",
+    "The restoration draft is partially prepared; the prerequisite, 30-day rule and approval still need preparation.",
+  ])("continues saved drafting progress without asking for another operator turn: %s", async (progress) => {
+    const steps = [call("runner.submit_verification_boundary_draft"), say(progress),
+      call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Ready for review.")];
+    const requests: string[] = [];
+    const onStream = vi.fn();
+    const askClarification = vi.fn(async () => { throw new Error("Progress is not a business question"); });
+    const input = requestInput(async (request) => {
+      requests.push(JSON.stringify(request.body));
+      const next = steps.shift()!;
+      if (requests.length === 2) request.stream?.onEvent?.({ phase: "text_delta", text: progress });
+      return next;
+    });
+    const result = await converseActionRuleDraft({ ...input,
+      session: { ...input.session, dependencies: { ...input.session.dependencies, onStream } }, askClarification });
+    expect(result.state).toBe("ready");
+    expect(result.clarification_count).toBe(0);
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(onStream).toHaveBeenCalledWith(expect.objectContaining({ text: progress, operator_text: false }));
+    expect(requests.join("\n")).toContain("not a new operator decision");
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(steps).toEqual([]);
+  });
+
+  it.each([false, true])("still asks a genuine business question after saving a component (structured: %s)", async (structured) => {
+    const question = structured ? "Please specify how many customer-service reviewers must approve valid exceptions." : "Which team should review valid exceptions?";
+    const steps = [call("runner.submit_verification_boundary_draft"),
+      ...(structured ? [call("runner.submit_approval_policy_draft", { status: "clarification", question })] : []), say(question)];
+    const askClarification = vi.fn(async () => undefined);
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    await expect(converseActionRuleDraft({ ...requestInput(async () => steps.shift()!),
+      askClarification, onCheckpoint: async (value) => { checkpoint = value; } })).rejects.toThrow("CANCELLED");
+    expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+    expect(checkpoint!.components.verification).toBeDefined();
+    expect(checkpoint!.components.approval).toBeUndefined();
+    expect(steps).toEqual([]);
+  });
+
+  it("continues relationship-only progress without treating inspection or unchanged saves as new progress", async () => {
+    const built = builtCatalog();
+    const relationship = { name: "account_parent_fk", from_resource: "billing.accounts", to_resource: "billing.accounts",
+      field_pairs: [{ local_field: "tenant_id", target_field: "tenant_id" }, { local_field: "account_id", target_field: "account_id" }],
+      cardinality: "many_to_one" as const, nullable: false, target_unique: true };
+    built.catalog.relationships = [relationship]; built.authoring.relationships = [relationship];
+    const args = { from_resource: "billing.accounts", to_resource: "billing.accounts", relationship: relationship.name };
+    const steps = [call("runner.review_action_relationship", args), say("The reviewed path is prepared."),
+      call("runner.inspect_action_draft", {}), call("runner.review_action_relationship", args), say("The reviewed path is prepared."),
+      call("runner.inspect_action_draft", {}), say("The reviewed path is prepared.")];
+    const askClarification = vi.fn(async () => { throw new Error("Progress is not a business question"); });
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    await expect(converseActionRuleDraft({ ...requestInput(async () => steps.shift()!), builtCatalog: built, askClarification,
+      onCheckpoint: async (value) => { checkpoint = value; } })).rejects.toThrow("after two internal corrections");
+    expect(checkpoint!.reviewed_relationships).toEqual([relationship.name]);
+    expect(checkpoint!.components).toEqual({});
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(steps).toEqual([]);
+  });
+
+  it("bounds progress-only continuation and retains the partial draft for resume", async () => {
+    const steps = [call("runner.submit_verification_boundary_draft"), say("The first component has been saved."),
+      say("Preparation is ongoing."), say("Preparation is ongoing.")];
+    const askClarification = vi.fn(async () => { throw new Error("Progress is not a business question"); });
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    await expect(converseActionRuleDraft({ ...requestInput(async () => steps.shift()!), askClarification,
+      onCheckpoint: async (value) => { checkpoint = value; } })).rejects.toThrow("after two internal corrections");
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(checkpoint!.components.verification).toBeDefined();
+    expect(checkpoint!.components.approval).toBeUndefined();
+    expect(steps).toEqual([]);
   });
 
   it.each([
@@ -441,8 +775,30 @@ describe("conversational Action authoring tools", () => {
     const result = await converseActionRuleDraft({ ...requestInput(requestJson), askClarification });
     expect(result.clarification_count).toBe(4);
     expect(askClarification).toHaveBeenCalledTimes(4);
-    expect(requests[4]).toContain("I have not supplied a decision");
+    expect(requests[4]).not.toContain("I have not supplied a decision");
+    expect(requests[4]).toContain("The input was empty");
+    expect(requests[4]).toContain("changes none of the recorded business answers");
     expect(requests[4]).toContain("billing.pause_account_verification");
+  });
+
+  it("finishes clarification of an already-correct baseline without requiring a fake edit or another answer", async () => {
+    const baseline = (await generateModelActionRuleDraft(requestInput(phaseResponder([])))).compiled.draft;
+    const before = structuredClone(baseline);
+    const requests: string[] = [];
+    const steps = [call("runner.validate_action_draft", {}), say("The existing draft already uses one billing reviewer; no rule changed.")];
+    const askClarification = vi.fn(async () => { throw new Error("The business answer is already supplied."); });
+    const result = await converseActionRuleDraft({ ...requestInput(async request => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), existingDraft: baseline, intent: "Yes, retain one billing reviewer. Do not change any other rules.", askClarification });
+    expect(result.compiled.draft).toEqual(before);
+    expect(baseline).toEqual(before);
+    expect(result.revision?.changed_phases).toEqual([]);
+    expect(result.clarification_count).toBe(0);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(requests.at(-1)).toContain('draft_changed');
+    expect(requests.at(-1)).toContain("No revision was saved");
+    expect(askClarification).not.toHaveBeenCalled();
   });
 
   it("edits only the selected component of an existing rule, without recreating its effect", async () => {
@@ -678,7 +1034,7 @@ describe("model-guided Action Rule authoring", () => {
     expect(requestBodies[0]).not.toContain("$defs");
     expect(requestBodies[1]).toContain("$defs");
     expect(requestBodies[0]).toContain("Do not nest the draft under object, boundary");
-    expect(requestBodies[1]).toContain("Never put numeric bounds on strings or values on money fields");
+    expect(requestBodies[1]).toContain("Never put numeric bounds on strings or non-null values on money fields");
     expect(requestBodies[1]).toContain('\\"fields\\":[\\"account_id\\",\\"risk_hold\\",\\"status\\",\\"version\\"]');
     expect(result.compiled.draft.verification.resources[0]!.fields).toEqual([
       "account_id",
@@ -1649,12 +2005,16 @@ describe("model-guided Action Rule authoring", () => {
     });
 
     expect(prepareResources).toHaveBeenNthCalledWith(1, {
+      context: { builtCatalog: unreviewedCatalog, readBoundary: unreviewedBoundary, readBoundaryDigest: readDigest },
       phase: "verification",
       resourceIds: ["billing.accounts"],
+      principalScopeResourceIds: ["billing.accounts"],
     });
     expect(prepareResources).toHaveBeenNthCalledWith(2, {
+      context: { builtCatalog: unreviewedCatalog, readBoundary: unreviewedBoundary, readBoundaryDigest: readDigest },
       phase: "effect",
       resourceIds: ["billing.accounts"],
+      principalScopeResourceIds: ["billing.accounts"],
     });
     expect(result.compiled.draft.effect.allowed_fields).toEqual([
       { name: "status", values: ["paused"] },
@@ -2783,8 +3143,8 @@ function builtCatalog(): BuiltActionRuleAuthoringCatalogV1 {
       supported_language: {
         comparisons: ["eq", "neq", "lt", "lte", "gt", "gte"],
         predicates: ["all", "any", "not", "null_check", "in", "exists"],
-        aggregates: [],
-        arithmetic: ["add", "subtract", "min", "max", "multiply", "divide", "clamp", "add_duration"],
+        aggregates: ["count", "sum", "min", "max"],
+        arithmetic: ["add", "subtract", "min", "max", "multiply", "divide", "clamp", "add_duration", "date_of"],
         effects: ["single_row_update", "single_row_insert"],
       },
       diagnostics: [],

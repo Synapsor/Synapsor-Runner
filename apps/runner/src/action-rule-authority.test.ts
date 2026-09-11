@@ -15,7 +15,7 @@ import type {
 } from "@synapsor/spec";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ActivatedExplorationBoundary } from "./auto-boundary.js";
+import { deactivateExplorationBoundary, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { reviewVerifiedActionAuthority } from "./boundary-commands.js";
 import { reviewSemanticSupervisedExecution, verifiedActionAuthorityDetails } from "./verified-action-review.js";
@@ -33,6 +33,7 @@ import {
   readActionRuleAuthorityActivation,
   readActionRuleAuthorityDraft,
   readActionRuleAuthorityRevisionBaseline,
+  removeOutcomeActionRuleAuthorityDraft,
   writeActionRuleAuthorityDraft,
   writeActionRuleAuthorityDraftIfCurrent,
 } from "./action-rule-authority.js";
@@ -48,6 +49,7 @@ import {
 import { inspectMcpToolBoundary, toolsPreview } from "./mcp-runtime.js";
 import { mcp } from "./mcp-project.js";
 import { runPostActivationAskHandoff } from "./post-activation-ask.js";
+import * as clientHandoff from "./post-activation-ask.js";
 import { createOptionalActionRuleRuntimeServices } from "./semantic-action-runtime.js";
 import { decodeOperatorAuthority, encodeOperatorAuthority, validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
 
@@ -67,6 +69,77 @@ afterEach(async () => {
 });
 
 describe("semantic Action Rule authority persistence", () => {
+  it.each(["return", "failure", "nonzero"] as const)("continues directly from active Action review to client setup without another activation (%s)", async mode => {
+    const root = await temporaryRoot(), read = activeReadBoundary();
+    await writeActiveReadSet(root, read);
+    const source = authoritySource(read.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: read.pack.name, read_boundary_digest: read.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }], reviews: [authorityReview()] });
+    await writeActionRuleAuthorityDraft(root, draft);
+    const active = (await activateSemanticActionRuntime({ projectRoot: root, draft, actor: "fixture reviewer" })).activation;
+    const before = await readActionRuleAuthorityActivation(root);
+    const execution = await semanticDeployment.readSemanticSupervisedExecutionState({ projectRoot: root });
+    const pending = await listActionRuleAuthorityDrafts(root);
+    const handoff = vi.spyOn(clientHandoff, "runPostActivationAskHandoff").mockImplementation(async () => {
+      if (mode === "failure") throw new Error("Fixture client launch unavailable");
+      return mode === "nonzero" ? 1 : 0;
+    });
+    const confirm = vi.fn(async () => { throw new Error("No repeated authority confirmation"); });
+    const showReviewDetails = vi.fn(async () => {});
+    let visits = 0;
+    const session = { chooseResource: async () => undefined, editFieldTiers: async () => "back",
+      promptText: async () => { throw new Error("No repeated job or model question"); }, confirm, confirmActivation: confirm,
+      showReviewDetails,
+      chooseOption: async (title, choices) => {
+        expect(title).toBe("VERIFIED ACTION BOUNDARY");
+        expect(choices).toContainEqual(expect.objectContaining({ value: "client_setup", label: "Continue client setup" }));
+        return visits++ === 0 ? "client_setup" : "back";
+      },
+    } as BoundaryReviewInteractiveSession;
+    await reviewVerifiedActionAuthority({ projectRoot: root, boundaryName: read.pack.name, session, active, env: {},
+      clientSetup: () => clientHandoff.runPostActivationAskHandoff({ projectRoot: root, includeActions: true,
+        autoStartConfiguredProvider: false, initialRoute: "mcp-client" }, { env: {} }) });
+    expect(visits).toBe(2);
+    expect(handoff).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ projectRoot: root, includeActions: true,
+      autoStartConfiguredProvider: false, initialRoute: "mcp-client" }), expect.objectContaining({ env: {} }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(showReviewDetails).toHaveBeenCalledTimes(mode === "return" ? 0 : 1);
+    if (mode === "failure") expect(showReviewDetails).toHaveBeenCalledWith("Client setup needs attention",
+      expect.arrayContaining([expect.stringContaining("Fixture client launch unavailable")]));
+    expect(await readActionRuleAuthorityActivation(root)).toEqual(before);
+    expect(await listActionRuleAuthorityDrafts(root)).toEqual(pending);
+    expect(await semanticDeployment.readSemanticSupervisedExecutionState({ projectRoot: root })).toEqual(execution);
+  });
+
+  it.each(["disabled", "missing_read"] as const)("does not enter client setup before current authority is usable (%s)", async mode => {
+    const root = await temporaryRoot(), read = activeReadBoundary();
+    await writeActiveReadSet(root, read);
+    const source = authoritySource(read.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: read.pack.name, read_boundary_digest: read.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }], reviews: [authorityReview()] });
+    await writeActionRuleAuthorityDraft(root, draft);
+    const active = mode === "disabled" ? undefined : (await activateSemanticActionRuntime({ projectRoot: root, draft, actor: "fixture reviewer" })).activation;
+    if (mode === "missing_read") await deactivateExplorationBoundary(root, read.pack.name);
+    const handoff = vi.spyOn(clientHandoff, "runPostActivationAskHandoff").mockResolvedValue(0);
+    let visits = 0;
+    const session = { chooseResource: async () => undefined, editFieldTiers: async () => "back",
+      promptText: async () => undefined, confirm: async () => false,
+      chooseOption: async (title, choices) => {
+        expect(title).toBe("VERIFIED ACTION BOUNDARY");
+        expect(choices.some(choice => choice.value === "client_setup")).toBe(false);
+        return visits++ === 0 ? "client_setup" : "back";
+      },
+    } as BoundaryReviewInteractiveSession;
+    const before = await readActionRuleAuthorityActivation(root);
+    await reviewVerifiedActionAuthority({ projectRoot: root, boundaryName: read.pack.name, session, env: {},
+      clientSetup: () => clientHandoff.runPostActivationAskHandoff({ projectRoot: root }),
+      ...(active ? { active } : { draft }) });
+    expect(handoff).not.toHaveBeenCalled();
+    expect(await readActionRuleAuthorityActivation(root)).toEqual(before);
+  });
+
   it.each((["legacy", "sqlite"] as const).flatMap((backend) =>
     (["create", "review", "rules", "active"] as const).map((change) => ({ backend, change })),
   ))("checks the exact Action baseline under the publication permit ($backend, $change)", async ({ backend, change }) => {
@@ -915,6 +988,7 @@ describe("semantic Action Rule authority persistence", () => {
         return true;
       },
       chooseOption: async (title) => {
+        if (title === "Set up database changes") return "choose";
         expect(title).toBe("VERIFIED ACTION BOUNDARY");
         return "enable_execution:billing.pause_notifications";
       },
@@ -966,7 +1040,7 @@ describe("semantic Action Rule authority persistence", () => {
     const code = state === "unconfirmed" ? "POLICY_EXECUTION_COMMIT_UNCONFIRMED" : "POLICY_CONFIG_RECOVERY_CLEANUP_PENDING";
     const fault = vi.spyOn(semanticDeployment, "enableSemanticSupervisedExecution").mockRejectedValue(
       Object.assign(new Error(`${code}: simulated publication outcome`), { code, publication_state: state }));
-    const chooseOption = vi.fn().mockResolvedValueOnce("details").mockResolvedValueOnce("pause");
+    const chooseOption = vi.fn().mockResolvedValueOnce("choose").mockResolvedValueOnce("details").mockResolvedValueOnce("pause");
     const showReviewDetails = vi.fn(async () => {}), confirmActivation = vi.fn(async () => true);
     try {
       const notice = await reviewSemanticSupervisedExecution({ projectRoot: root, outcome: source.rule.outcome,
@@ -974,7 +1048,8 @@ describe("semantic Action Rule authority persistence", () => {
         session: { promptText: async () => "BILLING_WRITER_URL", confirmActivation, chooseOption, showReviewDetails } as unknown as BoundaryReviewInteractiveSession });
       expect(notice).toMatchObject({ tone: "warning", title: "Execution review paused." });
       expect(JSON.stringify(notice)).not.toMatch(/remain off|updates are off|not enabled/);
-      expect(chooseOption.mock.calls[0]![0]).toBe("Execution save needs recovery");
+      expect(chooseOption.mock.calls[0]![0]).toBe("Set up database changes");
+      expect(chooseOption.mock.calls[1]![0]).toBe("Execution save needs recovery");
       expect(JSON.stringify(chooseOption.mock.calls)).not.toMatch(/grants externally|completion stays off/);
       expect(showReviewDetails).toHaveBeenCalledWith("Execution save recovery", expect.any(Array));
       expect((await readPausedExecutionSetup(root, active.authority.action_boundary.digest))?.problem.publication_state).toBe(state);
@@ -1452,6 +1527,77 @@ describe("semantic Action Rule authority persistence", () => {
       "billing.pause_notifications",
       "billing.resume_notifications",
     ]);
+  });
+  it("builds a disabled replacement that removes one exact outcome and preserves retained authority", () => {
+    const boundary = activeReadBoundary();
+    const source = authoritySource(boundary.activation.digest);
+    const entry = (outcome: string, approvalClass: string) => {
+      const effect = { ...source.envelope, name: `${outcome}.effect`, approval_classes: [approvalClass] };
+      return {
+        read_boundary_name: boundary.pack.name,
+        read_boundary_digest: boundary.activation.digest,
+        verification_boundary: source.verification,
+        effect_envelope: effect,
+        rule: { ...source.rule, name: outcome, outcome, effect_envelope_ref: effect.name, approval_class: approvalClass },
+      };
+    };
+    const pause = entry("billing.pause_notifications", "billing.standard_change");
+    const resume = entry("billing.resume_notifications", "billing.standard_change");
+    const archive = entry("billing.archive_notifications", "billing.exception_change");
+    const original = buildActionRuleAuthorityDraft({
+      name: "billing_active_rules",
+      action_boundary_name: "billing_actions",
+      catalog: source.catalog,
+      rules: [pause, resume, archive],
+      reviews: [pause, resume, archive].map(({ rule }) => ({ ...authorityReview(), outcome: rule.outcome })),
+      now: "2026-09-02T20:00:00.000Z",
+    });
+
+    const replacement = removeOutcomeActionRuleAuthorityDraft({
+      existing: original,
+      outcome: archive.rule.outcome,
+      now: original.created_at,
+    });
+
+    expect(replacement.state).toBe("disabled");
+    expect(replacement.authority.name).toBe(original.authority.name);
+    expect(replacement.authority.action_boundary.name).toBe(original.authority.action_boundary.name);
+    expect(replacement.authority.catalog).toEqual(original.authority.catalog);
+    expect(replacement.authority.rules).toEqual(original.authority.rules.filter((rule) => rule.rule.outcome !== archive.rule.outcome));
+    expect(replacement.reviews).toEqual(original.reviews.filter((review) => review.outcome !== archive.rule.outcome));
+    expect(replacement.authority.approval_classes).toEqual([
+      expect.objectContaining({
+        name: "billing.standard_change",
+        rules: [{ outcome: pause.rule.outcome }, { outcome: resume.rule.outcome }],
+      }),
+    ]);
+    expect(replacement.digest).not.toBe(original.digest);
+  });
+
+  it("refuses an unknown outcome and removal of the final outcome", () => {
+    const boundary = activeReadBoundary();
+    const source = authoritySource(boundary.activation.digest);
+    const single = buildActionRuleAuthorityDraft({
+      name: "billing_active_rules",
+      action_boundary_name: "billing_actions",
+      catalog: source.catalog,
+      rules: [{
+        read_boundary_name: boundary.pack.name,
+        read_boundary_digest: boundary.activation.digest,
+        verification_boundary: source.verification,
+        effect_envelope: source.envelope,
+        rule: source.rule,
+      }],
+      reviews: [authorityReview()],
+      now: "2026-09-02T20:00:00.000Z",
+    });
+
+    expect(() => removeOutcomeActionRuleAuthorityDraft({ existing: single, outcome: "billing.unknown" }))
+      .toThrow("ACTION_RULE_OUTCOME_NOT_FOUND");
+    expect(() => removeOutcomeActionRuleAuthorityDraft({ existing: single, outcome: source.rule.outcome }))
+      .toThrow("ACTION_RULE_LAST_OUTCOME_REMOVAL_UNSUPPORTED");
+    expect(() => removeOutcomeActionRuleAuthorityDraft({ existing: single, outcome: source.rule.outcome }))
+      .toThrow("Deactivate the verified Action Boundary instead");
   });
 });
 

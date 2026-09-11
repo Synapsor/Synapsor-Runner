@@ -661,11 +661,7 @@ function interviewConfiguration(
   egressAcknowledged: boolean,
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  const defaultKeyEnv = session.provider === "openai"
-    ? "OPENAI_API_KEY"
-    : session.provider === "anthropic"
-      ? "ANTHROPIC_API_KEY"
-      : undefined;
+  const defaultKeyEnv = session.provider === "openai_compatible" ? undefined : defaultProviderKeyEnv(session.provider);
   return resolveAskProviderConfiguration({
     provider: session.provider,
     model: session.model,
@@ -1543,3 +1539,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function humanizeIdentifier(value: string): string {
   return value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
 }
+import { defaultProviderKeyEnv } from "./hosted-provider-settings.js";

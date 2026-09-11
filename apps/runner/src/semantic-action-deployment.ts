@@ -27,6 +27,8 @@ import {
   type ActionRuleAuthorityDraftV1,
 } from "./action-rule-authority.js";
 import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
+import { actionRuleCollectionReadiness } from "./action-rule-collection-readiness.js";
+import { actionRuleRlsReadiness } from "./action-rule-rls-readiness.js";
 import { compareGenerationLock, loadGenerationLockForActivatedBoundary, generationLockRemediation,
   loadActivatedExplorationBoundaries, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { bindSemanticReadScope, bindSemanticReviewedReadScope } from "./semantic-action-read-scope.js";
@@ -39,6 +41,19 @@ import { openBoundProjectControlPolicies, openProjectControlPolicies,
 import { assertNoPendingPolicyConfiguration, publishPolicyConfiguration, recoverPolicyConfiguration } from "./control-policy-config-publication.js";
 
 export const SEMANTIC_ACTION_RUNTIME_CONFIG = "synapsor.actions.runner.json";
+
+/** A dedicated credential reference is stable across rule and database reviews. */
+export function semanticDedicatedWriterEnvironment(outcome: string): string {
+  const label = outcome.replace(/[^a-z0-9]/giu, "_").toUpperCase().slice(0, 48);
+  return `SYNAPSOR_WRITE_${label}_${canonicalJsonDigest({ outcome }).slice(7, 15).toUpperCase()}`;
+}
+
+function assertSeparateWriterConnection(readUrlEnv: string | undefined, writeUrlEnv: string, env: NodeJS.ProcessEnv): void {
+  if (readUrlEnv && (writeUrlEnv === readUrlEnv || (stringValue(env[writeUrlEnv])
+    && stringValue(env[readUrlEnv]) === stringValue(env[writeUrlEnv])))) {
+    throw new Error("SEMANTIC_ACTION_WRITER_READER_CONNECTION: The selected write connection is the saved reader. Keep the read connection unchanged; choose a separate write credential or prepare administrator instructions for this action. No writer was inspected and execution was not enabled.");
+  }
+}
 
 export type SemanticActionRuntimeActivation = {
   activation: ActionRuleAuthorityActivationV1;
@@ -107,16 +122,22 @@ export async function inspectDraftSemanticWriter(input: {
   engine: "postgres" | "mysql";
   readUrlEnv: string;
   writeUrlEnv?: string;
+  outcome?: string;
+  requirementsOnly?: boolean;
   env?: NodeJS.ProcessEnv;
   inspect?: typeof inspectDatabase;
 }) {
   const { authority, registry } = parseActionRuleAuthority(input.draft.authority, input.draft.digest);
-  const executable = registry.rules.filter(({ compiled }) => compiled.effect_envelope.writeback.mode === "direct_sql"
+  const executable = registry.rules.filter(({ compiled }) => (!input.outcome || compiled.outcome === input.outcome)
+    && compiled.effect_envelope.writeback.mode === "direct_sql"
     && compiled.effect_envelope.writeback.supervised_worker === "allowed");
   if (!executable.length) return undefined;
   const writeUrlEnv = environmentName(input.writeUrlEnv ?? "SYNAPSOR_DATABASE_WRITE_URL");
   const env = input.env ?? process.env;
-  if (!stringValue(env[writeUrlEnv])) throw new Error("SEMANTIC_ACTION_WRITER_URL_MISSING: configure a separate writer during execution setup; Read and proposal progress can continue.");
+  const writerConfigured = Boolean(stringValue(env[writeUrlEnv])) && !input.requirementsOnly;
+  if (writerConfigured) assertSeparateWriterConnection(environmentName(input.readUrlEnv), writeUrlEnv, env);
+  const inspectionEnv = writerConfigured ? writeUrlEnv : environmentName(input.readUrlEnv);
+  if (!stringValue(env[inspectionEnv])) throw new Error("SEMANTIC_ACTION_WRITER_URL_MISSING: no selected writer or read connection is available to inspect administrator requirements. Restore the read connection and resume this saved job.");
   // A single configured writer is checked against the complete planned bundle.
   // Actual per-outcome deployment still rechecks its selected credential separately.
   const sources = Object.fromEntries(executable.map(({ compiled }) => [compiled.source, {
@@ -128,7 +149,7 @@ export async function inspectDraftSemanticWriter(input: {
   const scoped = bindSemanticReviewedReadScope({ version: 1, mode: "review", sources },
     authority.rules.filter((rule) => outcomes.has(rule.rule.outcome)), input.reads);
   const inspection = await (input.inspect ?? inspectDatabase)({ engine: input.engine,
-    databaseUrlEnv: writeUrlEnv, statementTimeoutMs: 5_000, env });
+    databaseUrlEnv: inspectionEnv, statementTimeoutMs: 5_000, env });
   if (inspection.engine !== input.engine) throw new Error("SEMANTIC_ACTION_WRITER_ENGINE_MISMATCH: the writer must connect to the reviewed database engine.");
   const fingerprint = rolePostureFingerprint(inspection);
   const policies: RuntimeSupervisedWorkerOutcomePolicy[] = executable.map(({ compiled }) => ({
@@ -138,11 +159,48 @@ export async function inspectDraftSemanticWriter(input: {
   }));
   const candidate: RuntimeConfig = { ...scoped, version: 1, mode: "review",
     supervised_worker: { enabled: false, profile: "development", capabilities: [], outcomes: policies } };
-  const assessment = assessSemanticSupervisedWriterPosture(candidate, policies[0]!, registry, inspection);
-  const plan = policies.length === 1 ? writerProvisioningPlan({ assessment, inspection, outcome: policies[0]!.outcome,
-    actionDigest: authority.action_boundary.digest, writerEnv: writeUrlEnv }) : undefined;
+  const checked = assessSemanticSupervisedWriterPosture(candidate, policies[0]!, registry, inspection);
+  const collectionIssues = executable.flatMap(({ compiled }) => actionRuleCollectionReadiness({ compiled, inspection,
+    source: candidate.sources![compiled.source]!, connection: writerConfigured ? "writer" : "reader" }));
+  const rlsIssues = executable.flatMap(({ compiled }) => actionRuleRlsReadiness({ compiled, inspection,
+    source: candidate.sources![compiled.source]!, connection: writerConfigured ? "writer" : "reader" }));
+  // Reader evidence establishes requirements, never the writer's readiness.
+  const assessment = writerConfigured ? checked : { ...checked, ok: false,
+    reasons: ["writer_connection_not_checked"], relation_issues: [] };
+  const plan = writerProvisioningPlan({ assessment, inspection, outcome: policies[0]!.outcome,
+    outcomes: policies.map((policy) => policy.outcome),
+    actionDigest: authority.action_boundary.digest, writerEnv: writeUrlEnv, readEnv: input.readUrlEnv });
   return { assessment, outcomes: policies.map((policy) => policy.outcome),
-    action_digest: authority.action_boundary.digest, ...(plan ? { plan } : {}) };
+    writer_status: writerConfigured ? "checked" as const : "not_checked" as const,
+    inspected_connection_env: inspectionEnv,
+    action_digest: authority.action_boundary.digest, collection_issues: collectionIssues, rls_issues: rlsIssues, ...(plan ? { plan } : {}) };
+}
+
+/** Derive an administrator handoff from the exact saved rule, without a writer
+ * credential, execution authorization, or a source-row query. */
+export async function prepareSemanticWriterHandoff(input: {
+  projectRoot: string; outcome: string;
+  reads: Parameters<typeof bindSemanticReviewedReadScope>[2];
+  writeUrlEnv?: string; env?: NodeJS.ProcessEnv; inspect?: typeof inspectDatabase;
+}) {
+  const active = await executionReviewActionAuthority(input.projectRoot, input.env, { outcome: input.outcome });
+  const rule = active.registry.rules.find((entry) => entry.compiled.outcome === input.outcome);
+  if (!rule) throw new Error("SEMANTIC_ACTION_OUTCOME_NOT_ACTIVE: the saved outcome is not available for execution review.");
+  const configPath = path.join(input.projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG);
+  const review = await executionConfigForReview(input.projectRoot, configPath, await readJsonObject(configPath), undefined, input.env);
+  const source = currentConfigSource(review.config, rule.compiled.source);
+  if (typeof source.read_url_env !== "string") throw new Error("SEMANTIC_ACTION_SOURCE_CONFIG_MISSING: restore the saved read connection before preparing administrator instructions.");
+  const config = resolveRuntimeConfig(review.config as RuntimeConfig, input.projectRoot);
+  const requestedEnv = input.writeUrlEnv;
+  const usedByAnother = config.supervised_worker?.outcomes?.some((policy) => policy.outcome !== input.outcome
+    && policy.write_url_env === requestedEnv);
+  const writeUrlEnv = requestedEnv && !usedByAnother && requestedEnv !== source.read_url_env
+    ? requestedEnv : semanticDedicatedWriterEnvironment(input.outcome);
+  const result = await inspectDraftSemanticWriter({ draft: active.activation, reads: input.reads,
+    engine: source.engine, readUrlEnv: source.read_url_env, writeUrlEnv,
+    outcome: input.outcome, requirementsOnly: true, env: input.env, inspect: input.inspect });
+  if (!result?.plan) throw new Error("SEMANTIC_ACTION_WRITER_HANDOFF_UNAVAILABLE: complete administrator instructions could not be derived for this database. Exact execution requirements remain available; no grant or execution was enabled.");
+  return { ...result, plan: result.plan };
 }
 
 /**
@@ -334,6 +392,7 @@ export async function previewSemanticSupervisedExecution(input: {
   const currentReview = await executionConfigForReview(projectRoot, configPath, await readJsonObject(configPath), undefined, env);
   const currentConfig = currentReview.config;
   const source = currentConfigSource(currentConfig, activated.compiled.source);
+  assertSeparateWriterConnection(stringValue(source.read_url_env), writeUrlEnv, env);
   const inspection = await (input.inspect ?? inspectDatabase)({
     engine: source.engine as "postgres" | "mysql",
     databaseUrlEnv: writeUrlEnv,
@@ -362,9 +421,23 @@ export async function previewSemanticSupervisedExecution(input: {
     active.registry,
     inspection,
   );
+  const otherPolicies = (nextConfig.supervised_worker as RuntimeConfig["supervised_worker"])?.outcomes
+    ?.filter((entry) => entry.outcome !== policy.outcome && entry.write_url_env === writeUrlEnv) ?? [];
+  if (otherPolicies.some((entry) => entry.writer_posture_fingerprint !== fingerprint)) {
+    assessment.ok = false;
+    assessment.reasons.push("writer_shared_connection_changed");
+  }
   if (!assessment.ok) {
-    throw new SemanticWriterPostureError(assessment, writeUrlEnv, writerProvisioningPlan({ assessment, inspection,
-      outcome: input.outcome, actionDigest: active.authority.action_boundary.digest, writerEnv: writeUrlEnv }));
+    // Recovery provisions one dedicated credential, not a replacement for a
+    // shared connection. Its grant envelope must survive unrelated re-review.
+    const dedicatedConfig = { ...nextConfig, supervised_worker: {
+      ...(nextConfig.supervised_worker as RuntimeConfig["supervised_worker"]), outcomes: [policy],
+    } } as RuntimeConfig;
+    const dedicated = assessSemanticSupervisedWriterPosture(dedicatedConfig, policy, active.registry, inspection);
+    throw new SemanticWriterPostureError(assessment, writeUrlEnv, writerProvisioningPlan({ assessment: dedicated, inspection,
+      outcome: input.outcome, outcomes: [input.outcome], actionDigest: active.authority.action_boundary.digest,
+      writerEnv: semanticDedicatedWriterEnvironment(input.outcome),
+      readEnv: typeof source.read_url_env === "string" ? source.read_url_env : undefined }));
   }
   await validateRuntimeConfig(nextConfig, configPath);
   return {
@@ -446,6 +519,10 @@ export async function verifySemanticExecutionReadPosture(input: {
     databaseUrlEnv: lock.source_env, ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}), env: input.env ?? process.env });
   const comparison = compareGenerationLock(lock, inspection);
   if (!comparison.current) throw new Error(`SEMANTIC_ACTION_READ_REVIEW_REQUIRED: ${comparison.changes.join("; ")}.\n${generationLockRemediation(lock)}\nResume the saved job to revalidate the same business rules, then review Read, Action and execution separately. Do not reset the project.`);
+  const config = await readJsonObject(path.join(input.projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG));
+  const source = resolveRuntimeConfig(config as RuntimeConfig, input.projectRoot).sources![rule.compiled.source]!;
+  const issues = actionRuleRlsReadiness({ compiled: rule.compiled, inspection, source, connection: "reader" });
+  if (issues.length) throw new Error(`SEMANTIC_ACTION_DATABASE_REVIEW_REQUIRED: The read connection cannot yet verify these changes.\n${issues.map(issue => `${issue.relation}: ${issue.reason}`).join("\n")}`);
 }
 
 export async function readSemanticSupervisedExecutionState(input: {
@@ -826,9 +903,9 @@ function pruneStaleSemanticWorkerPolicies(
   const worker = structuredClone(config.supervised_worker);
   const outcomes = new Set(draft.authority.rules.map((rule) => rule.rule.outcome));
   const retainedOutcomes = Array.isArray(worker.outcomes)
-    ? worker.outcomes.filter((entry) => !isRecord(entry)
-      || !outcomes.has(String(entry.outcome))
-      || entry.action_boundary_digest === draft.authority.action_boundary.digest)
+    ? worker.outcomes.filter((entry) => isRecord(entry)
+      && outcomes.has(String(entry.outcome))
+      && entry.action_boundary_digest === draft.authority.action_boundary.digest)
     : [];
   const capabilities = Array.isArray(worker.capabilities) ? worker.capabilities : [];
   worker.capabilities = capabilities;

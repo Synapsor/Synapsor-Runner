@@ -25,6 +25,145 @@ const reusableState: BoundaryJobCurrentState = {
 };
 
 describe("model Boundary job planning", () => {
+  it.each([
+    { fully_reviewed: false, revision_eligible: true },
+    { fully_reviewed: true, revision_eligible: false },
+    { fully_reviewed: true, revision_eligible: undefined },
+  ])("advertises mode-specific Read intent bounds for $fully_reviewed/$revision_eligible", async (readState) => {
+    const state = { ...reusableState, read: { ...reusableState.read, ...readState, resumable_draft_count: 1 } };
+    const before = structuredClone(state);
+    const requestJson = vi.fn(async (request) => {
+      const tool = (request.body.tools as Array<Record<string, unknown>>).find(candidate => candidate.name === "runner__plan_boundary_job")!;
+      const schema = tool.parameters as { oneOf: Array<{ required: string[]; properties: Record<string, { enum?: string[]; maxLength?: number }> }> };
+      const plans = schema.oneOf.filter(branch => branch.properties.action_mode?.enum?.includes("none"));
+      expect(plans.find(branch => branch.properties.read_mode?.enum?.includes("create"))).toMatchObject({
+        required: expect.arrayContaining(["read_intent"]),
+        properties: { read_mode: { enum: ["create"] }, read_intent: { maxLength: 500 } },
+      });
+      const revise = plans.find(branch => branch.properties.read_mode?.enum?.includes("revise"));
+      if (readState.revision_eligible ?? readState.fully_reviewed) {
+        expect(revise).toMatchObject({ required: expect.arrayContaining(["read_intent"]),
+          properties: { read_mode: { enum: ["revise"] }, read_intent: { maxLength: 2000 } } });
+      } else expect(revise).toBeUndefined();
+      expect(plans.flatMap(branch => branch.properties.read_mode?.enum ?? [])).toEqual(
+        expect.arrayContaining(["create", "resume", "reuse", "none"]));
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "schema", name: "runner__plan_boundary_job",
+        arguments: JSON.stringify({ status: "planned", read_mode: "create", read_intent: "x".repeat(500), action_mode: "none", summary: "Map the requested reads." }) }] } };
+    });
+    await expect(planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: { requestJson } },
+      jobIntent: "Prepare the requested reads.", currentState: state, egressAcknowledged: true })).resolves.toMatchObject({ state: "planned", read_mode: "create" });
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(state).toEqual(before);
+  });
+
+  it.each([500, 505])("diagnoses unavailable revise then a %i-character create correction without changing saved state", async length => {
+    const state: BoundaryJobCurrentState = { ...reusableState,
+      read: { ...reusableState.read, fully_reviewed: true, revision_eligible: false, exact_reusable_revision_count: 0, resumable_draft_count: 0 },
+      actions: ["student.accept_offer", "student.restore_drop"].map(outcome => ({ capability: "app.request_change", kind: "rule_derived", outcome, authority: "disabled" })) };
+    const before = structuredClone(state);
+    const requests: string[] = [];
+    const privateText = "Private fixture business wording must not appear in diagnostics. ";
+    let diagnostic: BoundaryJobPlanningDiagnostic | undefined;
+    const result = planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: {
+      requestJson: async request => {
+        requests.push(JSON.stringify(request.body));
+        return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: `attempt_${requests.length}`,
+          name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned",
+            read_mode: requests.length === 1 ? "revise" : "create", read_intent: privateText.padEnd(length, "x"), action_mode: "reuse",
+            summary: "Preserve both prepared actions and the unanswered advising limits." }) }] } };
+      },
+    } }, jobIntent: "Correct only Read privacy. Preserve both prepared actions and leave advising limits unanswered.",
+      currentState: state, egressAcknowledged: true, onDiagnostic: value => { diagnostic = value; } });
+    if (length === 505) await expect(result).rejects.toThrow("read_mode=create read_intent is 505 characters; maximum is 500");
+    else await expect(result).resolves.toMatchObject({ state: "planned", read_mode: "create", action_mode: "reuse", correction_used: true });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContain("read_mode=create requires read_intent of at most 500 characters");
+    expect(diagnostic).toMatchObject({ model_requests: 2, authority_changed: false, source_database_changed: false,
+      attempts: [{ phase: "initial", category: "contract_validation", message: expect.stringContaining("read_mode=revise requires an exact current Read revision") },
+        { phase: "correction", category: length === 505 ? "contract_validation" : "accepted", response: { http_status: 200, status: "completed" } }] });
+    expect(JSON.stringify(diagnostic)).not.toContain(privateText.trim());
+    expect(state).toEqual(before);
+  });
+
+  it("keeps correction guidance consistent with an eligible incomplete Read revision", async () => {
+    const state = { ...reusableState, read: { ...reusableState.read, fully_reviewed: false, revision_eligible: true,
+      exact_reusable_revision_count: 0, resumable_draft_count: 1, resumable_resource_ids: ["telecom.accounts"] } };
+    const requests: string[] = [];
+    const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: {
+      requestJson: async request => {
+        requests.push(JSON.stringify(request.body));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: `mode_${requests.length}`, name: "runner__plan_boundary_job",
+          arguments: JSON.stringify({ status: "planned", read_mode: requests.length === 1 ? "resume" : "revise",
+            read_intent: "Read telecom.accounts and telecom.billing_preferences.", action_mode: "none", summary: "Correct the saved access." }) }] } };
+      },
+    } }, jobIntent: "Read telecom.accounts and telecom.billing_preferences.", availableResourceIds: ["telecom.accounts", "telecom.billing_preferences"],
+      currentState: state, egressAcknowledged: true });
+    expect(result).toMatchObject({ state: "planned", read_mode: "revise", correction_used: true });
+    expect(requests[1]).toContain("Choose revise or create.");
+    expect(requests[1]).not.toContain("revise is unavailable until");
+  });
+
+  it.each([566, 611, 631, 683, 2000])("retains a %i-character access revision without forcing it into a read-question limit", async (length) => {
+    const read_intent = "Keep the original student privacy policy and current admission check. ".padEnd(length, "x");
+    const state = { ...reusableState, actions: [{ capability: "app.request_change", kind: "rule_derived" as const,
+      outcome: "student.accept_offer", authority: "disabled" as const }] };
+    const before = structuredClone(state);
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "privacy",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "revise", read_intent,
+        action_mode: "reuse", summary: "Revise access; preserve both saved business rules and unfinished advising work." }) }] } }));
+    const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: { requestJson } },
+      jobIntent: "Keep only the public fields from the original policy, preserving admission and all three behaviors.", currentState: state, egressAcknowledged: true });
+    expect(result).toMatchObject({ state: "planned", read_mode: "revise", read_intent, action_mode: "reuse", correction_used: false });
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(state).toEqual(before);
+  });
+
+  it.each([["revise", 2001, 2000], ["create", 501, 500]] as const)("keeps %s text bounded without truncating its content", async (read_mode, length, maximum) => {
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "long",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode, read_intent: "x".repeat(length),
+        action_mode: "none", summary: "Prepare access." }) }] } }));
+    await expect(planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: { requestJson } },
+      jobIntent: "Adjust customer access.", currentState: reusableState, egressAcknowledged: true })).rejects.toThrow(`maximum is ${maximum}`);
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
+  it("revises an exact incomplete candidate without remapping or claiming review readiness", async () => {
+    const state: BoundaryJobCurrentState = { ...reusableState, read: { ...reusableState.read,
+      fully_reviewed: false, revision_eligible: true, exact_reusable_revision_count: 0, resumable_draft_count: 1 },
+      actions: [{ capability: "app.request_change", kind: "rule_derived", outcome: "billing.change", authority: "disabled" }] };
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "edit",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "revise",
+        read_intent: "Keep internal identifiers private without changing customer-facing references.", action_mode: "reuse",
+        summary: "Change only saved access settings; retain the billing rule." }) }] } }));
+    const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: { requestJson } },
+      jobIntent: "Keep internal identifiers private. Preserve the billing rule.", currentState: state, egressAcknowledged: true });
+    expect(result).toMatchObject({ state: "planned", read_mode: "revise", action_mode: "reuse", correction_used: false });
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(state.read.fully_reviewed).toBe(false);
+  });
+  it("repairs an incomplete resumed mapping using an available mode, not an impossible reviewed revision", async () => {
+    const requests: string[] = [];
+    const state = { ...reusableState, read: { ...reusableState.read, fully_reviewed: false,
+      exact_reusable_revision_count: 0, resumable_draft_count: 1, resumable_resource_ids: ["telecom.accounts"] } };
+    const before = structuredClone(state);
+    const result = await planModelBoundaryJob({
+      session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: {
+        requestJson: async (request) => {
+          requests.push(JSON.stringify(request.body));
+          return { status: 200, body: { output: [{ type: "function_call", call_id: `plan_${requests.length}`, name: "runner__plan_boundary_job",
+            arguments: JSON.stringify({ status: "planned", read_mode: requests.length === 1 ? "resume" : "create",
+              read_intent: "Read the customer's telecom.accounts and telecom.billing_preferences.", action_mode: "none", summary: "Prepare both requested customer read areas." }) }] } };
+        },
+      } },
+      jobIntent: "Read the customer's telecom.accounts and telecom.billing_preferences.", availableResourceIds: ["telecom.accounts", "telecom.billing_preferences"],
+      currentState: state, egressAcknowledged: true,
+    });
+    expect(result).toMatchObject({ state: "planned", read_mode: "create", correction_used: true });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContain("Use read_mode=create to prepare the corrected disabled mapping; revise is unavailable");
+    expect(requests[1]).not.toContain("Choose revise or create.");
+    expect(state).toEqual(before);
+  });
   it.each(["Customer account, subscription and recent usage.", "Read the customer's account, subscription and recent usage."])("accepts a concise typed Read intent without requiring a particular verb: %s", async (read_intent) => {
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "plan", name: "runner__plan_boundary_job",
       arguments: JSON.stringify({ status: "planned", read_mode: "create", read_intent, action_mode: "none", summary: "Prepare the requested customer information." }),
@@ -832,6 +971,125 @@ describe("model Boundary job planning", () => {
       egressAcknowledged: true,
     });
     expect(result).not.toHaveProperty("read_intent");
+  });
+
+  it("exposes a bounded removal route and prepares only one exact disabled outcome replacement", async () => {
+    let removalSchema: Record<string, unknown> | undefined;
+    const requestJson = vi.fn(async (request) => {
+      const tool = (request.body.tools as Array<Record<string, unknown>>).find((candidate) =>
+        candidate.name === "runner__plan_boundary_job")!;
+      const schema = tool.parameters as { oneOf: Array<Record<string, unknown>> };
+      removalSchema = schema.oneOf.find((candidate) =>
+        (candidate.properties as Record<string, { enum?: string[] }>).action_mode?.enum?.includes("remove"));
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "remove",
+        name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "reuse",
+          action_mode: "remove", action_outcome: "billing.pause_account",
+          summary: "Prepare a disabled replacement without the pause-account outcome." }) }] } };
+    });
+    const state: BoundaryJobCurrentState = {
+      ...reusableState,
+      actions: [
+        { capability: "app.request_change", kind: "rule_derived", outcome: "billing.pause_account", authority: "active" },
+        { capability: "app.request_change", kind: "rule_derived", outcome: "billing.request_refund", authority: "active" },
+      ],
+    };
+
+    await expect(planModelBoundaryJob({
+      session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      jobIntent: "Remove the existing pause-account outcome and keep the other action.", currentState: state,
+      egressAcknowledged: true,
+    })).resolves.toMatchObject({
+      state: "planned",
+      read_mode: "reuse",
+      action_mode: "remove",
+      action_outcome: "billing.pause_account",
+      correction_used: false,
+      authority_granted: false,
+      source_database_changed: false,
+    });
+    expect(removalSchema).toMatchObject({
+      additionalProperties: false,
+      required: ["status", "read_mode", "action_mode", "action_outcome", "summary"],
+      properties: {
+        read_mode: { enum: ["none", "reuse"] },
+        action_mode: { enum: ["remove"] },
+        action_outcome: { enum: ["billing.pause_account", "billing.request_refund"] },
+      },
+    });
+    expect((removalSchema!.properties as Record<string, unknown>)).not.toHaveProperty("action_intent");
+    expect((removalSchema!.properties as Record<string, unknown>)).not.toHaveProperty("action_intents");
+    expect((removalSchema!.properties as Record<string, unknown>)).not.toHaveProperty("action_strategy");
+  });
+
+  it.each(["unknown", "missing", "read_create", "action_intent", "action_intents", "action_strategy"])("repairs a refused removal route without substituting create (%s)", async (failure) => {
+    let attempt = 0;
+    const requestJson = vi.fn(async () => {
+      attempt += 1;
+      const first = attempt === 1;
+      const invalid = failure === "unknown"
+        ? { action_outcome: "billing.unknown" }
+        : failure === "missing"
+          ? { action_outcome: undefined }
+            : failure === "read_create"
+              ? { read_mode: "create" }
+              : failure === "action_intent"
+                ? { action_intent: "Remove the pause outcome." }
+                : failure === "action_intents"
+                  ? { action_intents: ["Remove the pause outcome."] }
+                  : { action_strategy: "rule_derived" };
+      return { status: 200, body: { output: [{ type: "function_call", call_id: `remove_${attempt}`,
+        name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned",
+          read_mode: "reuse", action_mode: "remove", action_outcome: "billing.pause_account",
+          summary: "Prepare the exact disabled removal replacement.", ...(first ? invalid : {}) }) }] } };
+    });
+    const state: BoundaryJobCurrentState = {
+      ...reusableState,
+      actions: [{ capability: "app.request_change", kind: "rule_derived", outcome: "billing.pause_account", authority: "active" }],
+    };
+
+    await expect(planModelBoundaryJob({
+      session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      jobIntent: "Remove the existing pause-account outcome.", currentState: state, egressAcknowledged: true,
+    })).resolves.toMatchObject({ state: "planned", read_mode: "reuse", action_mode: "remove",
+      action_outcome: "billing.pause_account", correction_used: true });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks for clarification instead of guessing which semantic outcome to remove", async () => {
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "clarify_remove",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "clarification",
+        question: "Which current semantic outcome should be removed?" }) }] } }));
+    const state: BoundaryJobCurrentState = {
+      ...reusableState,
+      actions: [
+        { capability: "app.request_change", kind: "rule_derived", outcome: "billing.pause_account", authority: "active" },
+        { capability: "app.request_change", kind: "rule_derived", outcome: "billing.request_refund", authority: "active" },
+      ],
+    };
+
+    await expect(planModelBoundaryJob({
+      session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      jobIntent: "Remove one billing outcome.", currentState: state, egressAcknowledged: true,
+    })).resolves.toMatchObject({ state: "clarification", correction_used: false });
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
+
+  it("does not let the sole-outcome revision shortcut preempt an explicit removal", async () => {
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "remove_sole",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "reuse",
+        action_mode: "remove", action_outcome: "support.refund_request_submitted",
+        summary: "Prepare the disabled removal replacement and leave activation separate." }) }] } }));
+    const state: BoundaryJobCurrentState = {
+      ...reusableState,
+      actions: [{ capability: "app.request_change", kind: "rule_derived", outcome: "support.refund_request_submitted", authority: "active" }],
+    };
+
+    await expect(planModelBoundaryJob({
+      session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
+      jobIntent: "Remove the existing refund outcome, but keep the Read boundary unchanged.", currentState: state,
+      egressAcknowledged: true,
+    })).resolves.toMatchObject({ state: "planned", action_mode: "remove", correction_used: false });
+    expect(requestJson).toHaveBeenCalledOnce();
   });
 
   it("routes an explicit policy-only edit of the sole semantic outcome without a fragile model split", async () => {

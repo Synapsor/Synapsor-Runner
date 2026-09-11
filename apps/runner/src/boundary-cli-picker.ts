@@ -142,6 +142,7 @@ export type BoundaryResourceSelection =
     };
 
 export type BoundaryReviewOverview = {
+  discovery_concerns?: Array<{ resource: string; entry_bytes: number; response_bytes: number }>;
   confirmed_decisions: number;
   outstanding_decisions: number;
   outstanding_resource_decisions: number;
@@ -183,7 +184,7 @@ export type BoundaryAccessNotice = {
 
 type BoundaryPromptOptions = {
   context?: string[];
-  exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: import("./read-boundary-review-view.js").ReviewSection[] };
+  exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: import("./read-boundary-review-types.js").ReviewSection[] };
 };
 
 export type BoundaryPromptChoice = {
@@ -200,6 +201,8 @@ type BoundaryChoicePromptOptions = BoundaryPromptOptions & {
   reviewOnly?: boolean;
   /** The concise deterministic decision is already presented. Narrate only on request. */
   explainOnRequest?: boolean;
+  /** Route an operator question back to a draft model; never an activation decision. */
+  onModelQuestion?: (question: string) => Promise<"revise">;
   /** Keep a prerequisite/blocker visible in the choice, not only in /details. */
   displayContext?: boolean;
   initialValue?: string;
@@ -221,7 +224,7 @@ export type BoundaryReviewInteractiveSession = {
   /** Render the retained details without duplicating them as a new Runner turn. */
   showRememberedDetails?(): void;
   showReviewDetails?(title: string, lines: string[]): Promise<void>;
-  showReviewSections?(title: string, sections: import("./read-boundary-review-view.js").ReviewSection[]): Promise<void>;
+  showReviewSections?(title: string, sections: import("./read-boundary-review-types.js").ReviewSection[]): Promise<void>;
   chooseResource(
     resources: BoundaryResourceReviewSummary[],
     overview?: BoundaryReviewOverview,
@@ -418,7 +421,7 @@ function linkedActionBoundaryLines(
       + "W opens model chat to create or edit Read + Action authority.",
     ));
   } else {
-    lines.push("  Y prepares one proposal action after the Read Boundary review is complete.");
+    lines.push("  Y drafts business changes with a model or the manual rule editor. Activation requires separate review.");
   }
   return lines;
 }
@@ -1232,7 +1235,8 @@ async function chooseResource(
             : highlightedBoundary.outstanding_decisions)
           : highlightedBoundary.outstanding_decisions;
         const highlightedActionAvailable = highlightedBoundary.active
-          || (highlightedBoundary.selected && highlightedOutstanding === 0);
+          || (highlightedBoundary.selected && (highlightedOutstanding === 0
+            || (highlightedBoundary.proposal_action_state === "none" && !highlightedBoundary.verified_action_state)));
         const selectedBoundaryHasPendingChange = highlightedBoundary.selected
           && (highlightedBoundary.policy_review_required
             || !highlightedBoundary.active
@@ -1274,8 +1278,9 @@ async function chooseResource(
             ...modelGuidedSetupHint(theme),
             "",
             theme.bold(
-              `${theme.key("Enter/C")} Review + activate`,
+              `${theme.key("Enter/C")} ${overview?.discovery_concerns?.length ? "Inspect activation blocker" : "Review + activate"}`,
             ),
+            ...discoveryReadinessLines(overview, theme),
             ...packTerminalActions([
               `${theme.key("E")} Edit access`,
               `${theme.key("A")} New boundary`,
@@ -1284,7 +1289,7 @@ async function chooseResource(
               `${theme.key("W")} Model chat - create/edit Read + Action`,
               `${theme.key("Y")} ${safeActionAccessLabel(
                 highlightedBoundary.proposal_action_state,
-                reviewLeft === "Complete" && !highlightedBoundary.policy_review_required,
+                highlightedActionAvailable,
                 highlightedBoundary.proposal_action_active_count,
               )}`,
               `${theme.key("T")} Ask plan check`,
@@ -1338,7 +1343,7 @@ async function chooseResource(
           if (key.name === "l") return { action: "limits" };
           if (key.name === "w") return { action: "workloads" };
           if (key.name === "y") {
-            if (reviewLeft === "Complete" && !highlightedBoundary.policy_review_required) {
+            if (highlightedActionAvailable) {
               return { action: "actions", boundary_name: candidateBoundaryName };
             }
             actionNotice = "Finish the read review first. Proposal drafting can begin before read activation, but only from a fully reviewed exact revision.";
@@ -1396,6 +1401,7 @@ async function chooseResource(
           "",
           theme.bold(savedBoundaryRow("KEY", "NAME", "TYPE", "STATUS", "CONTENT", "AI ACCESS", boundaryRowLayout)),
           ...rows,
+          ...discoveryReadinessLines(overview, theme),
           ...linkedActionBoundaryLines(overview, highlightedBoundary, theme, boundaryRowLayout),
           "",
           highlightedBoundary.ask_intent_check_mode === "boundary_only"
@@ -1426,7 +1432,9 @@ async function chooseResource(
                   "Runner preserved this boundary's exact revision and did not assign the old project-wide settings to it.",
                   theme.bold("Open this boundary and save a reviewed setting, or Rescan, to isolate its policy before activation."),
                 ]
-                : [theme.bold(`${theme.key("C")} reviews and activates the exact disabled update.`)]),
+                : [theme.bold(overview?.discovery_concerns?.length
+                  ? `${theme.key("C")} shows why this saved revision is not ready to activate.`
+                  : `${theme.key("C")} reviews and activates the exact disabled update.`)]),
             ]
             : []),
           "",
@@ -1436,7 +1444,7 @@ async function chooseResource(
             `${theme.key("Enter")} ${highlightedBoundary.selected
               ? (focusedAccess ? "Edit" : "Review")
               : "Open"}`,
-            `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
+            `${theme.key("C")} ${overview?.discovery_concerns?.length ? "Inspect activation blocker" : focusedAccess ? "Review + activate" : "Complete review"}`,
             `${theme.key("A")} New boundary`,
             `${theme.key("P")} Privacy for all tables`,
             `${theme.key("L")} Limits`,
@@ -1612,6 +1620,7 @@ async function chooseResource(
       const candidateHasPendingChange = selectedBoundaryEntry?.active === true
         && selectedBoundaryEntry.matches_active_digest === false;
       const candidateActionAvailable = selectedBoundaryEntry?.active === true
+        || (selectedBoundaryEntry?.proposal_action_state === "none" && !selectedBoundaryEntry.verified_action_state)
         || (reviewLeft === "Complete" && selectedBoundaryEntry?.policy_review_required !== true);
       const candidateStatus = candidateIsActive
         ? theme.success("ACTIVE")
@@ -1675,7 +1684,7 @@ async function chooseResource(
         )}`,
         `${theme.key("T")} Ask plan check`,
         `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
-        `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
+        `${theme.key("C")} ${overview?.discovery_concerns?.length ? "Inspect activation blocker" : focusedAccess ? "Review + activate" : "Complete review"}`,
         `${theme.key("Q")} Quit`,
       ];
       render([
@@ -1684,8 +1693,9 @@ async function chooseResource(
             ? `EDIT ACCESS - ${safeTerminalText(highlighted.candidate_boundary_name)}`
             : safeTerminalText(highlighted.candidate_boundary_name),
         ),
-        `${candidateStatus}  ${includedCount} ` +
+        `${overview?.discovery_concerns?.length ? theme.warning("DRAFT - ACTIVATION BLOCKED") : candidateStatus}  ${includedCount} ` +
           `${plural(includedCount, "table", "tables")}  ${displayedReviewLeft}`,
+        ...discoveryReadinessLines(overview, theme),
         ...(selectedCompatibility ? [selectedCompatibility] : []),
         ...(() => {
           const boundaryName = highlighted.candidate_boundary_name;
@@ -1702,7 +1712,9 @@ async function chooseResource(
         ...(candidateHasPendingChange
           ? [
             theme.warning("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),
-            theme.bold(`${theme.key("C")} reviews and activates the exact disabled update.`),
+            theme.bold(overview?.discovery_concerns?.length
+              ? `${theme.key("C")} shows why this saved update is not ready to activate.`
+              : `${theme.key("C")} reviews and activates the exact disabled update.`),
           ]
           : []),
         ...(focusedAccess
@@ -1721,7 +1733,9 @@ async function chooseResource(
                   ? "This advanced view also includes tables unrelated to the current boundary."
                   : "Enter edits columns. A shows tables with proven paths into this boundary.",
             ),
-            theme.bold(`${theme.key("C")} reviews and activates this whole boundary once. No separate table sign-off.`),
+            theme.bold(overview?.discovery_concerns?.length
+              ? `${theme.key("C")} inspects the blocker before activation can be offered.`
+              : `${theme.key("C")} reviews and activates this whole boundary once. No separate table sign-off.`),
           ]
           : [
             theme.bold(
@@ -4327,6 +4341,12 @@ function styleTier(
 
 function styleTierConsequence(theme: TerminalTheme, tier: BoundaryFieldTier): string {
   return styleTier(theme, tier, tierConsequence(tier));
+}
+
+function discoveryReadinessLines(overview: BoundaryReviewOverview | undefined, theme: TerminalTheme): string[] {
+  if (!overview?.discovery_concerns?.length) return [];
+  return [theme.warning("CLIENT READINESS: BLOCKED - complete access details exceed the supported size."),
+    theme.dim("Recorded review decisions are not activation readiness. C inspects the blocker; W revises with the model. No access is granted.")];
 }
 
 function noticeStyle(

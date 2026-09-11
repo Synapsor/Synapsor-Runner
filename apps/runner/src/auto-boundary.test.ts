@@ -12,6 +12,7 @@ import {
   CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
+  assertCurrentExplorationBoundaryAuthority,
   buildAutoBoundary,
   compareGenerationLock,
   databaseServerCompatibilityForLock,
@@ -30,6 +31,7 @@ import {
   writeAutoBoundaryArtifacts,
   type AutoBoundaryReviewOverrides,
 } from "./auto-boundary.js";
+import { prepareReviewedReadCurrentStatePrerequisite } from "./read-prerequisite.js";
 import {
   applyManagedBoundaryReviewDecision,
   boundaryReviewDecisions,
@@ -39,6 +41,55 @@ import { reconstructBoundaryReviewOverrides } from "./boundary-review-policy.js"
 import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
 
 describe("Auto Boundary compiler", () => {
+  it("binds a reviewed current-state prerequisite into the candidate digest and refuses later removal", () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.columns.push(column("principal_id", "uuid", { immutable: true }));
+    inspection.tables[0]!.suggestions.default_visible_columns.push("principal_id");
+    inspection.tables.push(admissionTable());
+    const build = buildAutoBoundary({ inspection, project: projectSummary("/workspace/read-prerequisite"), sourceEnv: "DATABASE_URL" });
+    build.exploration_boundary.pack.resources[0]!.principal_key = "principal_id";
+    const candidate = structuredClone(build.exploration_boundary);
+    candidate.read_prerequisite = prepareReviewedReadCurrentStatePrerequisite({
+      source: { schema: "public", table: "student_admissions" },
+      subject: { tenant_column: "tenant_id", principal_column: "principal_id", unique_constraint: "student_admissions_subject_key" },
+      current_state: {
+        state_column: "status", positive_state: "admitted", effective_from_column: "effective_from",
+        effective_until_column: "effective_until", interval: "[effective_from,effective_until)", clock: "database_utc",
+      },
+      semantic_consent: {
+        source_description: "Registrar-maintained current admission record.",
+        positive_state_description: "Only admitted is current admission.",
+        confirmed: true,
+      },
+    }, inspection, candidate);
+    const reviewed = reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
+    expect(reviewed.digest).not.toBe(explorationBoundaryCandidateDigest(build.exploration_boundary));
+    expect(reviewed.candidate.read_prerequisite?.dependency.fingerprint).toMatch(/^sha256:/);
+    assertCurrentExplorationBoundaryAuthority({ lock: build.lock, inspection, candidate: reviewed.candidate });
+    const removed = structuredClone(reviewed.candidate);
+    delete removed.read_prerequisite;
+    expect(() => reviewExplorationBoundaryCandidate(reviewed.candidate, removed))
+      .toThrow(/cannot be removed or changed/i);
+  });
+
+  it("keeps an explicitly excluded record identity out of the generated review contract", () => {
+    const inspection = churnInspection();
+    const overrides = applyManagedBoundaryReviewDecision(emptyReviewOverrides(), {
+      kind: "field_exposure", resource_id: "public.subscriptions", field: "id", exposure: "keep_out",
+      actor: "reviewer", reason: "No public identifier access.", decided_at: "2026-09-10T00:00:00.000Z",
+    });
+    const build = buildAutoBoundary({ inspection, project: projectSummary("/workspace/private-identity"),
+      sourceEnv: "DATABASE_URL", overrides });
+    const resource = build.exploration_boundary.pack.resources.find(resource => resource.id === "public.subscriptions")!;
+    expect(resource.primary_key).toBe("id");
+    expect(resource.kept_out_fields).toContain("id");
+    expect(resource.selectable_fields).not.toContain("id");
+    const capability = build.contract.capabilities[0]!;
+    expect(capability.kept_out_fields).toContain("id");
+    expect(capability.visible_fields).not.toContain("id");
+    expect(build.contract).toEqual(compileAgentDsl(build.dsl));
+  });
+
   it("emits deterministic disabled DSL-first candidates without source data or secrets", () => {
     const inspection = churnInspection();
     const project = projectSummary("/workspace/app");
@@ -3767,6 +3818,38 @@ function relationTable(
       sensitive_columns: [],
       default_visible_columns: ["id", "tenant_id", "name", ...localColumns],
     },
+  };
+}
+
+function admissionTable(): SchemaInspection["tables"][number] {
+  return {
+    schema: "public",
+    name: "student_admissions",
+    type: "table",
+    writable: true,
+    columns: [
+      column("admission_id", "uuid", { immutable: true }),
+      column("tenant_id", "uuid", { tenant: true, immutable: true }),
+      column("principal_id", "uuid", { immutable: true }),
+      { ...column("status", "admission_status"), enum_values: ["admitted", "not_admitted", "withdrawn"] },
+      column("effective_from", "timestamp with time zone"),
+      column("effective_until", "timestamp with time zone"),
+    ],
+    primary_key: ["admission_id"],
+    unique_constraints: [{ name: "student_admissions_subject_key", columns: ["tenant_id", "principal_id"] }],
+    check_constraints: [],
+    foreign_keys: [],
+    row_level_security: true,
+    row_level_security_policies: [{
+      name: "student_admissions_scope",
+      command: "SELECT",
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid)",
+    }],
+    role_posture: readOnlyRelation("app_owner"),
+    indexes: [{ name: "student_admissions_subject_key", columns: ["tenant_id", "principal_id"], unique: true }],
+    suggestions: { tenant_columns: ["tenant_id"], conflict_columns: [], sensitive_columns: [], default_visible_columns: [] },
   };
 }
 

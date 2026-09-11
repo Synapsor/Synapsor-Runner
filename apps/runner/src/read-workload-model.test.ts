@@ -7,6 +7,7 @@ import {
 import { AskError, type AskProviderDependencies } from "./model-ask.js";
 import {
   createModelAuthoringConversation,
+  rememberModelAuthoringClarification,
   rememberModelAuthoringTurn,
 } from "./model-authoring-conversation.js";
 import { generateModelReadWorkload, readWorkloadCatalog } from "./read-workload-model.js";
@@ -31,6 +32,57 @@ function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malforme
 }
 
 describe("model-assisted Read workload mapping", () => {
+  it("corrects shared-table reads into owned-root related projections without a scope-review detour", async () => {
+    const boundary = generatedBoundary();
+    const orders = boundary.pack.resources[0]!;
+    const products = { ...structuredClone(orders), id: "public.products", table: "products", label: "Product details",
+      description: "Shared product information attached to a purchase." };
+    delete products.principal_key;
+    orders.field_types.product_id = "uuid";
+    const link = { constraint_name: "orders_product_fkey", source_resource: orders.id, target_resource: products.id,
+      source_columns: ["tenant_id", "product_id"], target_columns: ["tenant_id", "id"],
+      target_uniqueness: { kind: "unique_constraint" as const, name: "products_tenant_id_key", columns: ["tenant_id", "id"] },
+      nullable: false, cardinality: "many_to_one" as const, max_fan_out: 1 as const };
+    orders.relationships.push({ id: link.constraint_name, target_resource: products.id,
+      local_columns: link.source_columns, target_columns: link.target_columns, counted_entity: orders.id,
+      cardinality: "many_to_one", max_fan_out: 1, path_depth: 1,
+      proof: { source: "database_catalog", links: [link], digest: canonicalJsonDigest([link]) } });
+    boundary.pack.resources.push(products);
+    const before = structuredClone(boundary);
+    const response = (plan: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "scope_fix",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [{ id: "my_purchases",
+        description: "My purchases with related product details", plan }], forbidden: [] }) }] } });
+    const requestJson = vi.fn().mockResolvedValueOnce(response({ kind: "rows", resource: products.id, select: ["status"] }))
+      .mockResolvedValueOnce(response({ kind: "rows", resource: orders.id, select: ["status"],
+        related: [{ relationship: link.constraint_name, select: ["amount"] }] }));
+    const clarificationHandler = vi.fn();
+    const result = await generateModelReadWorkload({ name: "my_purchases", allowedQuestions: ["Show my purchases with product details"],
+      provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, principalScopedRootResources: [orders.id],
+      egressAcknowledged: true, env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+    expect(result.analysis.status).toBe("ready");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(requestJson.mock.calls[1])).toContain("READ_WORKLOAD_OWN_RECORD_ROOT_REQUIRED");
+    expect(clarificationHandler).not.toHaveBeenCalled();
+    expect(result.analysis.candidate?.pack.resources.find(resource => resource.id === products.id)).toMatchObject({ relationship_only: true });
+    expect(result.analysis.candidate?.pack.resources.find(resource => resource.id === orders.id)?.relationships).toEqual(orders.relationships);
+    expect(result.authority_granted).toBe(false);
+    expect(boundary).toEqual(before);
+  });
+
+  it("refuses a repeated independent read of a related-only resource without dropping the job or weakening scope", async () => {
+    const boundary = generatedBoundary();
+    const before = structuredClone(boundary);
+    const requestJson = vi.fn().mockResolvedValue(diagnosticResponse("valid"));
+    await expect(generateModelReadWorkload({ name: "owned_only", allowedQuestions: ["My orders"], provider: "openai",
+      model: "gpt-5.6-terra", generatedBoundary: boundary, principalScopedRootResources: [], egressAcknowledged: true,
+      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson } }))
+      .rejects.toMatchObject({ message: expect.stringContaining("READ_WORKLOAD_OWN_RECORD_ROOT_REQUIRED") });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(boundary).toEqual(before);
+    expect(readWorkloadCatalog(boundary).resources[0]).not.toHaveProperty("relationship_only");
+    expect(readWorkloadCatalog(boundary, []).resources[0]).toMatchObject({ relationship_only: true });
+  });
+
   it("does not let a table-only clarification establish an unexplained coded field meaning", async () => {
     const boundary = opaqueGeneratedBoundary();
     const before = structuredClone(boundary);
@@ -52,19 +104,22 @@ describe("model-assisted Read workload mapping", () => {
     expect(boundary).toEqual(before);
   });
 
-  it.each(["approved_attachment", "unapproved_attachment", "model_summary"])("uses only actual authorized operator naming sources: %s", async (source) => {
+  it.each(["approved_attachment", "unapproved_attachment", "model_summary", "saved_answer", "saved_model_question", "saved_model_answer"])("uses only actual authorized operator naming sources: %s", async (source) => {
     const boundary = opaqueGeneratedBoundary();
     boundary.pack.resources[0]!.label = "Orders";
     const before = structuredClone(boundary);
     const quote = "col_2 means the order lifecycle status";
     const conversation = createModelAuthoringConversation();
-    if (source !== "model_summary") {
+    if (source.endsWith("attachment")) {
       const policy = newPolicySourceSession(), snapshot = policyTextSnapshot(Buffer.from(quote), "Rules.txt");
       policy.snapshots.push(snapshot); policy.active = snapshot.version;
       if (source === "approved_attachment") policy.approvals.push({ digest: snapshot.digest,
         destination: authoringDestination({ provider: "openai", model: "gpt-5.6-terra" }) });
       conversation.policySources = policy;
     }
+    if (source === "saved_answer") rememberModelAuthoringClarification(conversation, "What does the coded field represent?", quote);
+    if (source === "saved_model_question") rememberModelAuthoringClarification(conversation, quote, "I do not know.");
+    if (source === "saved_model_answer") rememberModelAuthoringTurn(conversation, "Read my records", quote);
     const requestJson = vi.fn().mockResolvedValue({ status: 200, body: { output: [{ type: "function_call", call_id: "source",
       name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read lifecycle",
         plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
@@ -73,7 +128,7 @@ describe("model-assisted Read workload mapping", () => {
       operatorNamingContext: "Read my orders", provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary,
       egressAcknowledged: true, env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, conversation,
       dependencies: { requestJson } }).catch(error => error);
-    if (source === "approved_attachment") {
+    if (source === "approved_attachment" || source === "saved_answer") {
       expect(result.analysis.status).toBe("ready");
       expect(requestJson).toHaveBeenCalledOnce();
     } else {

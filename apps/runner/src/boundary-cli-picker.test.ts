@@ -1078,6 +1078,21 @@ describe("boundary review terminal picker", () => {
     });
   });
 
+  it.each([false, true])("opens new semantic action drafting before Read sign-off from the saved table/list view (%s)", async (list) => {
+    const terminal = fakeTerminal(120, 30);
+    const selected = createBoundaryReviewInteractiveSession(terminal.input, terminal.output).chooseResource(
+      [summary("public.orders", 1)],
+      { confirmed_decisions: 0, outstanding_decisions: 1, outstanding_resource_decisions: 1,
+        outstanding_boundary_decisions: 0, resources_requiring_signoff: 1,
+        boundaries: [{ name: "reviewed_staging", selected: true, active: false, matches_active_digest: false,
+          table_count: 1, outstanding_decisions: 1, proposal_action_state: "none" }] },
+      { initialView: "access", startAtBoundaryList: list },
+    );
+    expect(stripAnsi(terminal.output.read()?.toString() ?? "")).toContain("Safe actions - prepare proposal [AVAILABLE]");
+    await send(terminal.input, "y");
+    await expect(selected).resolves.toEqual({ action: "actions", boundary_name: "reviewed_staging" });
+  });
+
   it("shows active Action Boundary authority separately from the Read Boundary list", async () => {
     const terminal = fakeTerminal(120, 30);
     const resource = summary("public.orders", 0);

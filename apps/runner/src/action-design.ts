@@ -47,7 +47,7 @@ export type ActionSuggestion = {
   approval_policy_proposal?: ActionApprovalPolicySuggestion;
   suggested_by: {
     kind: "operator" | "model";
-    provider?: "openai" | "anthropic" | "openai_compatible";
+    provider?: "openai" | "anthropic" | "openrouter" | "openai_compatible";
     model?: string;
   };
 };
@@ -188,7 +188,7 @@ export function normalizeActionSuggestion(value: unknown): ActionSuggestion {
   const kind = value.suggested_by.kind;
   if (kind !== "operator" && kind !== "model") throw new Error("ACTION_SUGGESTION_SOURCE_INVALID: suggested_by.kind must be operator or model.");
   const provider = value.suggested_by.provider;
-  if (provider !== undefined && provider !== "openai" && provider !== "anthropic" && provider !== "openai_compatible") {
+  if (provider !== undefined && provider !== "openai" && provider !== "anthropic" && provider !== "openrouter" && provider !== "openai_compatible") {
     throw new Error("ACTION_SUGGESTION_PROVIDER_INVALID: unsupported model provider.");
   }
   const model = value.suggested_by.model === undefined

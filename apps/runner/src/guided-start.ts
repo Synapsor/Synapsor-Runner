@@ -43,6 +43,7 @@ import {
   type BoundaryActivationHandoff,
 } from "./boundary-commands.js";
 import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { listActionRuleAuthorityDrafts } from "./action-rule-authority.js";
 import { clientHandoffMatchesActiveAuthority } from "./authoring-client-readiness.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { fileExists, readJsonFileWithLocation } from "./cli-files.js";
@@ -90,6 +91,7 @@ import {
 import { displayPath, init, isScriptedOnboardingArgs, runInitWizard } from "./onboarding.js";
 import { detectProjectContext, formatProjectDetection } from "./project-detection.js";
 import {
+  continueClientSetup,
   runPostActivationAskHandoff,
   type PostActivationAskSelection,
 } from "./post-activation-ask.js";
@@ -367,7 +369,7 @@ async function startAutoBoundary(
     });
   const runBoundaryReview = dependencies.runBoundaryReview
     ?? ((reviewArgs, inspector, handoff) =>
-      boundaryReviewCommand(reviewArgs, inspector, undefined, handoff));
+      boundaryReviewCommand(reviewArgs, inspector, undefined, handoff, { clientSetup: continueClientSetup }));
   // Kept as an injected secondary-surface seam for the compact Quick Start
   // component's focused tests. The shipped CLI does not provide this
   // dependency and therefore always enters job-first Boundary setup.
@@ -529,8 +531,10 @@ async function startAutoBoundary(
           activationHandoff,
         );
       }
+      const hasSavedActionDraft = (await listActionRuleAuthorityDrafts(project.root)).some((draft) =>
+        draft.authority.rules.some((rule) => rule.read_boundary_name === context.candidate.pack.name));
       return runBoundaryReview(
-        ["--project-root", project.root, "--access"],
+        ["--project-root", project.root, "--access", ...(hasSavedActionDraft ? [] : ["--job-first"])],
         schemaInspector,
         activationHandoff,
       );
@@ -598,8 +602,10 @@ async function startAutoBoundary(
           ...terminalAskLimits,
         });
       }
+      const hasSavedActionDraft = !hasGuidedJob && (await listActionRuleAuthorityDrafts(project.root)).some((draft) =>
+        draft.authority.rules.some((rule) => rule.read_boundary_name === prepared.selectedProgress.candidate.pack.name));
       return runBoundaryReview(
-        ["--project-root", project.root, "--access", ...(hasGuidedJob ? ["--job-first"] : [])],
+        ["--project-root", project.root, "--access", ...(hasSavedActionDraft ? [] : ["--job-first"])],
         schemaInspector,
         activationHandoff,
       );
@@ -1035,7 +1041,7 @@ export async function boundaryCommand(
   const activationHandoff = (input: { projectRoot: string }) =>
     runPostActivationAskHandoff(input);
   if (subcommand === "review") {
-    return boundaryReviewCommand(rest, schemaInspector, undefined, activationHandoff);
+    return boundaryReviewCommand(rest, schemaInspector, undefined, activationHandoff, { clientSetup: continueClientSetup });
   }
   if (subcommand === "assist") {
     return boundaryAssistCommand(rest, schemaInspector);

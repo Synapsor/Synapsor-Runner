@@ -67,6 +67,7 @@ function walkHumanFiles(entries) {
 
 function walkDirectory(relative, files) {
   for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
+    if (entry.name === ".synapsor") continue;
     const child = path.join(relative, entry.name);
     if (entry.isDirectory()) {
       walkDirectory(child, files);

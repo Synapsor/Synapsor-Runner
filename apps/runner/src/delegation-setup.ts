@@ -12,7 +12,7 @@ import {
 export const DELEGATION_DRAFT_VERSION = "synapsor.delegation-draft.v1" as const;
 
 export type DelegationModelAssist = {
-  provider: "openai" | "anthropic" | "openai_compatible";
+  provider: "openai" | "anthropic" | "openrouter" | "openai_compatible";
   model: string;
   structural_metadata_egress_acknowledged: true;
 };
@@ -115,32 +115,65 @@ export function buildDelegationDraft(input: {
   }
   const requestedActions = (input.actionIntents ?? []).map((intent) =>
     reviewedText(intent, "action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS));
-  const draftByIntent = new Map(
-    (input.actionDrafts ?? []).map(({ intent, draft }) => [normalizeComparableText(intent), draft]),
-  );
-  const semanticByIntent = new Map(
-    (input.semanticActions ?? []).map((action) => [normalizeComparableText(action.intent), action]),
-  );
-  const actions = requestedActions.map((intent): DelegationActionDraft => {
-    const draft = draftByIntent.get(normalizeComparableText(intent));
-    const semantic = semanticByIntent.get(normalizeComparableText(intent));
-    return {
+  const requestedCounts = new Map<string, number>();
+  for (const intent of requestedActions) {
+    const key = normalizeComparableText(intent);
+    requestedCounts.set(key, (requestedCounts.get(key) ?? 0) + 1);
+  }
+  const semanticByOutcome = new Map<string, DelegationActionDraft>();
+  const semanticIntentCounts = new Map<string, number>();
+  for (const semantic of input.semanticActions ?? []) {
+    const outcome = reviewedName(semantic.outcome, "verified Action outcome", 200);
+    if (semanticByOutcome.has(outcome)) {
+      throw new Error(`DELEGATION_ACTION_OUTCOME_COLLISION: multiple entries bind verified Action outcome ${outcome}. Review the exact outcome before recording the job.`);
+    }
+    const intent = reviewedText(semantic.intent, "action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS);
+    semanticByOutcome.set(outcome, {
       intent,
-      ...(semantic ? {
-        kind: "rule_derived" as const,
-        outcome: reviewedName(semantic.outcome, "verified Action outcome", 200),
-        action_boundary_name: reviewedName(semantic.action_boundary_name, "Action Boundary name", 128),
-        authority_digest: reviewedDigest(semantic.authority_digest, "verified Action authority digest"),
-        rehearsal: "passed" as const,
-      } : draft ? {
-        kind: "discretionary" as const,
-        capability: draft.capability,
-        contract_digest: draft.contract_digest,
-        rehearsal: draft.effect_preview ? "passed" as const : "required" as const,
-      } : { rehearsal: "not_started" as const }),
+      kind: "rule_derived",
+      outcome,
+      action_boundary_name: reviewedName(semantic.action_boundary_name, "Action Boundary name", 128),
+      authority_digest: reviewedDigest(semantic.authority_digest, "verified Action authority digest"),
+      rehearsal: "passed",
       state: "disabled",
-    };
-  });
+    });
+    const key = normalizeComparableText(intent);
+    semanticIntentCounts.set(key, (semanticIntentCounts.get(key) ?? 0) + 1);
+  }
+  const draftByIntent = new Map<string, GuidedActionDraft>();
+  for (const { intent, draft } of input.actionDrafts ?? []) {
+    const key = normalizeComparableText(reviewedText(intent, "action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS));
+    if (draftByIntent.has(key) || semanticIntentCounts.has(key) || requestedCounts.get(key) !== 1) {
+      throw new Error("DELEGATION_ACTION_BINDING_AMBIGUOUS: a legacy Action draft does not have one distinct requested intent. Review its exact binding; Runner will not choose, duplicate or drop a draft.");
+    }
+    draftByIntent.set(key, draft);
+  }
+  if (input.actionIntents !== undefined) {
+    for (const [key, count] of semanticIntentCounts) {
+      if (requestedCounts.get(key) !== count) {
+        throw new Error("DELEGATION_ACTION_BINDING_AMBIGUOUS: the unbound intent list does not account for each outcome-bound Action exactly once. Review the requested Actions; Runner will not infer a missing pairing.");
+      }
+    }
+  }
+  // Outcome-bound entries carry their own descriptions. Intent text only
+  // reconciles legacy placeholders; it must never select a semantic outcome.
+  const actions = [
+    ...semanticByOutcome.values(),
+    ...requestedActions.filter((intent) => !semanticIntentCounts.has(normalizeComparableText(intent)))
+      .map((intent): DelegationActionDraft => {
+        const draft = draftByIntent.get(normalizeComparableText(intent));
+        return {
+          intent,
+          ...(draft ? {
+            kind: "discretionary" as const,
+            capability: draft.capability,
+            contract_digest: draft.contract_digest,
+            rehearsal: draft.effect_preview ? "passed" as const : "required" as const,
+          } : { rehearsal: "not_started" as const }),
+          state: "disabled",
+        };
+      }),
+  ];
   const read: DelegationReadDraft = {
     boundary_name: boundaryName,
     analysis_id: input.workload.analysis_id,
@@ -307,6 +340,7 @@ function assertDelegationDraft(value: unknown): asserts value is DelegationDraft
 function normalizeModelAssist(value: DelegationModelAssist): DelegationModelAssist {
   if (value.provider !== "openai"
     && value.provider !== "anthropic"
+    && value.provider !== "openrouter"
     && value.provider !== "openai_compatible") {
     throw new Error("DELEGATION_MODEL_PROVIDER_INVALID: model assistance provider is not supported.");
   }

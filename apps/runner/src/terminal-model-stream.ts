@@ -1,5 +1,6 @@
 import { stripVTControlCharacters as stripTerminalAnsi } from "node:util";
 import { createTerminalProseReflow } from "./terminal-prose.js";
+import { createTerminalTableBlocks, renderTerminalModelTable } from "./terminal-model-table.js";
 
 /** Incremental prose renderer. Tool arguments must never be passed to this surface. */
 export function createTerminalModelStream(input: {
@@ -79,9 +80,23 @@ export function createTerminalModelStream(input: {
     }
     if (final) flushWord();
   };
-  const prose = createTerminalProseReflow((text) => { pending += text; consume(false); });
+  const makeProse = () => createTerminalProseReflow((text) => { pending += text; consume(false); });
+  let prose = makeProse();
+  const blocks = createTerminalTableBlocks({
+    prose: (text) => prose.push(text),
+    table: (source) => {
+      const indent = Array.from(stripTerminalAnsi(started ? input.continuation : input.prefix)).length;
+      const lines = renderTerminalModelTable(source, input.width() - indent - 1, input);
+      if (!lines) { prose.push(source); return; }
+      prose.finish(); consume(true);
+      if (column) newline();
+      for (const line of lines) { prefix(); input.write(line); newline(); }
+      bold = false; code = false;
+      prose = makeProse();
+    },
+  });
   return {
-    push(text: string) { prose.push(text); },
-    finish() { prose.finish(); consume(true); if (column) newline(); },
+    push(text: string) { blocks.push(text); },
+    finish() { blocks.finish(); prose.finish(); consume(true); if (column) newline(); },
   };
 }

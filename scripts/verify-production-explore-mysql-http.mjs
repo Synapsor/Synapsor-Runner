@@ -35,9 +35,11 @@ import {
 } from "../apps/runner/dist/boundary-review-mutation.js";
 import {
   createBoundaryReviewProgress,
+} from "../apps/runner/dist/boundary-review-domain.js";
+import {
   readBoundaryReviewProgress,
   saveBoundaryReviewProgress,
-} from "../apps/runner/dist/boundary-review-domain.js";
+} from "../apps/runner/dist/boundary-review-persistence.js";
 import {
   commitBoundaryRescan,
   prepareBoundaryRescan,

@@ -7,7 +7,7 @@ const numericLimits = {
   ...Object.fromEntries(["max_rows", "max_groups", "max_top_n", "max_response_cells", "max_response_bytes", "statement_timeout_ms", "max_measures", "max_dimensions"].map((key) => [key, EXPLORATION_BUDGET_REVIEW_CEILINGS[key as keyof typeof EXPLORATION_BUDGET_REVIEW_CEILINGS]])),
 };
 
-type PolicyKey = typeof fieldLists[number] | "metadata" | "field_metadata" | "relationship_ids"
+type PolicyKey = typeof fieldLists[number] | "metadata" | "field_metadata" | "relationship_ids" | "relationship_only" | "exclude"
   | "minimum_cohort_size" | "max_ranked_groups" | "max_queries_per_session" | "rate_limit_per_minute"
   | "max_rows" | "max_groups" | "max_top_n" | "max_response_cells" | "max_response_bytes"
   | "statement_timeout_ms" | "max_measures" | "max_dimensions";
@@ -21,9 +21,15 @@ const metadataProperties = {
 export const READ_POLICY_SETTINGS_SCHEMA = {
   type: "object", additionalProperties: false, minProperties: 1,
   properties: {
-    ...Object.fromEntries([...fieldLists, "relationship_ids"].map((name) => [name, {
+    exclude: { type: "boolean", const: true, description: "Remove this resource and its incoming Read paths from discovery and all Read queries, including counts. Use alone, only when the operator requests no Read access to this resource. Private Action dependencies are separately revalidated; this does not revoke them." },
+    relationship_only: { type: "boolean", const: true, description: "Remove independent queries; retain only existing reviewed incoming paths. Cannot restore independent access." },
+    ...Object.fromEntries(fieldLists.map((name) => [name, {
       type: "array", maxItems: 128, uniqueItems: true, items: { type: "string", maxLength: 256 },
     }])),
+    relationship_ids: {
+      type: "array", maxItems: 128, uniqueItems: true, items: { type: "string", maxLength: 256 },
+      description: "Replace this root resource's outgoing Read paths with a subset of its current relationship ids. Retain unrequested paths. Empty removes all outgoing paths, not the root's own access or private Action verification. Narrow incoming access to a target by editing each unwanted root, not the target's list.",
+    },
     ...Object.fromEntries(Object.entries(numericLimits).map(([name, maximum]) => [name, { type: "integer", minimum: 1, maximum }])),
     metadata: { type: "object", additionalProperties: false, minProperties: 1, properties: metadataProperties },
     field_metadata: {
@@ -39,6 +45,9 @@ export function parseReadPolicySettings(value: unknown, resource: {
   relationships: string[];
 }): ReadBoundaryPolicySettings {
   if (!record(value) || !Object.keys(value).length) throw new Error("settings must contain a reviewed Read policy change.");
+  if (value.exclude !== undefined && (value.exclude !== true || Object.keys(value).length !== 1)) {
+    throw new Error("exclude must be true and used alone to remove this resource from Read access. Restoring a resource requires a separate scope review.");
+  }
   const keys = new Set(Object.keys(READ_POLICY_SETTINGS_SCHEMA.properties));
   const fields = new Map(resource.fields.map((field) => [field.id, field]));
   for (const [key, setting] of Object.entries(value)) {
@@ -48,6 +57,10 @@ export function parseReadPolicySettings(value: unknown, resource: {
       if (!Number.isSafeInteger(setting) || Number(setting) < 1 || Number(setting) > Number(ceiling)) {
         throw new Error(`${key} must be an integer from 1 through ${ceiling}.`);
       }
+    } else if (key === "exclude") {
+      // Validated above: resource removal cannot also replace field policy.
+    } else if (key === "relationship_only") {
+      if (setting !== true) throw new Error("relationship_only can only remove independent query access; restoring it requires a separate scope review.");
     } else if (key === "metadata") {
       validateMetadata(setting, false);
     } else if (key === "field_metadata") {

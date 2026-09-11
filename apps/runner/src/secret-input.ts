@@ -16,6 +16,24 @@ export async function readHiddenSecret(
   input: ReadStream = process.stdin,
   output: WriteStream = process.stderr,
 ): Promise<string> {
+  return readHiddenTerminalValue(prompt, input, output, validateSecret);
+}
+
+/** Trusted local identifiers are hidden too, but may legitimately be short. */
+export async function readHiddenLocalIdentity(
+  prompt: string,
+  input: ReadStream = process.stdin,
+  output: WriteStream = process.stderr,
+): Promise<string> {
+  return readHiddenTerminalValue(prompt, input, output, validateLocalIdentity);
+}
+
+async function readHiddenTerminalValue(
+  prompt: string,
+  input: ReadStream,
+  output: WriteStream,
+  validate: (value: string) => string,
+): Promise<string> {
   if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
     throw new Error("Hidden provider credential input requires an interactive terminal.");
   }
@@ -35,7 +53,7 @@ export async function readHiddenSecret(
         input.off("data", onData);
         output.write("\n");
         if (error) reject(error);
-        else resolve(validateSecret(value));
+        else resolve(validate(value));
       };
       const onData = (chunk: string | Buffer) => {
         for (const character of String(chunk)) {
@@ -80,4 +98,15 @@ function validateSecret(value: string): string {
     throw new Error("Provider credential contains a control character.");
   }
   return secret;
+}
+
+function validateLocalIdentity(value: string): string {
+  const identity = value.trim();
+  if (!identity || Buffer.byteLength(identity, "utf8") > 1024) {
+    throw new Error("Trusted local identity is missing or outside the safe input limit.");
+  }
+  if (/[\u0000-\u001f\u007f]/.test(identity)) {
+    throw new Error("Trusted local identity contains a control character.");
+  }
+  return identity;
 }

@@ -24,8 +24,12 @@ export class SemanticWriterPostureError extends Error {
     const missing = assessment.relation_issues?.filter((issue) => issue.issue === "missing") ?? [];
     const extra = assessment.relation_issues?.filter((issue) => issue.issue !== "missing") ?? [];
     const locking = assessment.reasons.some((reason) => reason === "writer_row_lock_privilege_missing" || reason === "writer_row_lock_rls_policy_missing");
-    const summary = `The configured writer does not match this action: ${missing.length && extra.length ? "missing and extra access detected"
-      : missing.length ? "required access is missing" : extra.length ? "extra access detected" : "role safety checks failed"}.${locking ? " Private row-lock permissions are missing." : ""} Use a dedicated writer for this reviewed action. Execution was not enabled by this check.`;
+    const filtering = assessment.reasons.includes("writer_rls_prerequisite_failed");
+    const rebound = assessment.reasons.includes("writer_shared_connection_changed");
+    const summary = rebound
+      ? "This connection is already assigned to another action, but its database role or permissions changed. Keep that action's connection unchanged and use the dedicated replacement instructions for this action. This check enabled no execution."
+      : `The configured writer does not match this action: ${missing.length && extra.length ? "missing and extra access detected"
+      : missing.length ? "required access is missing" : extra.length ? "extra access detected" : "role safety checks failed"}.${filtering ? " Database row-filtering prerequisites need administrator review; additional grants alone cannot fix them." : locking ? " Private row-lock permissions are missing." : ""} Use a dedicated writer for this reviewed action. Execution was not enabled by this check.`;
     super(`SEMANTIC_ACTION_WRITER_POSTURE_INVALID: ${summary}`);
     this.problem = { code: this.code, summary, details: [
       `Code: ${this.code}`, `Checked connection: ${writerEnv} (value hidden)`,
@@ -33,16 +37,23 @@ export class SemanticWriterPostureError extends Error {
       ...(missing.length ? missing.map((issue) => `${issue.relation}: ${issue.privileges.join("; ")}`) : ["None detected."]),
       "", "EXTRA ACCESS",
       ...(extra.length ? extra.map((issue) => `${issue.relation}: ${issue.privileges.join("; ")}`) : ["None detected."]),
-      "", "EXACT ADMINISTRATOR HANDOFF",
+      "", provisioning ? "CHECKED CONNECTION REQUIREMENTS" : "EXACT ADMINISTRATOR HANDOFF",
+      ...(provisioning ? ["These checks cover all execution policies using the checked connection. They are not the grants for a new dedicated role."] : []),
       "Use a dedicated, non-owner, non-superuser writer without RLS bypass. Do not revoke a shared role's access needed by other workflows.",
       ...(assessment.required_relations ?? []).flatMap((item) => [
         item.relation,
         `  Required: ${item.privileges.map((privilege) => privilege === "update" && item.update_columns.length
           ? `UPDATE (${item.update_columns.join(", ")})` : privilege.toUpperCase()).join("; ")}`,
         ...(item.lock_column ? [`  Private row locking: ${item.update_columns.length ? "the required UPDATE columns above suffice" : `UPDATE (${item.lock_column}) is required`}; an applicable permissive UPDATE/ALL policy is also needed when RLS is enabled.`] : []),
-        ...(item.rls_required ? ["  Preserve the reviewed authenticated tenant/principal RLS; do not replace it with unrestricted access."] : []),
+        ...(item.rls_required ? ["  ENABLE and FORCE ROW LEVEL SECURITY are required, with the reviewed authenticated tenant/principal policies. Do not replace filtering with unrestricted access."] : []),
       ]),
       "Receipt and event tables are required only if listed above by the selected completion path. Runner-ledger receipts do not require a source receipt table.",
+      ...(provisioning ? ["", "EXACT ADMINISTRATOR HANDOFF",
+        `Dedicated action: ${provisioning.outcome}`,
+        `New connection variable: ${provisioning.writer_env}. Do not replace a variable used by another action.`,
+        ...provisioning.relations.map((relation) => `${relation.relation}: ${relation.privileges.map((privilege) =>
+          privilege === "update" && relation.update_columns.length ? `UPDATE (${relation.update_columns.join(", ")})` : privilege.toUpperCase()).join("; ")}`),
+        "Prepare administrator instructions exports the complete dedicated grant and policy requirements; other actions keep their existing writers."] : []),
       "An administrator must review and provision this role. Runner does not execute grants, revoke privileges, or change RLS.",
       "Then select the configured connection and recheck. Enabling execution remains a separate confirmation; no request has executed.",
     ].map(safeDiagnosticLine) };
@@ -65,6 +76,10 @@ export function executionSetupProblem(error: unknown): ExecutionSetupProblem {
   }
   const summary = code === "SEMANTIC_ACTION_READ_REVIEW_REQUIRED"
     ? "The database access contract changed. Resume the saved job to revalidate its Read/Action dependencies before execution; no new job or reset is needed."
+    : code === "SEMANTIC_ACTION_DATABASE_REVIEW_REQUIRED"
+    ? "Database row-filtering prerequisites need administrator review. Inspect the exact requirements, then rescan and revalidate this saved job; no new job or reset is needed."
+    : code === "SEMANTIC_ACTION_WRITER_READER_CONNECTION"
+    ? "That is the saved read connection. Keep it unchanged and choose a separate write credential, or prepare administrator instructions. No execution was enabled."
     : code === "SEMANTIC_ACTION_WRITER_URL_MISSING"
     ? "The separate write connection is not configured. Set its environment variable, then recheck."
     : code === "SEMANTIC_ACTION_WRITER_POSTURE_INVALID"

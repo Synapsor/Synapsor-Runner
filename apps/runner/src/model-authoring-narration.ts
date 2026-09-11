@@ -43,11 +43,7 @@ export async function narrateValidatedAuthoringStep(input: {
   if (!input.session.conversation) return unavailable("NARRATION_CONTEXT_MISSING");
   const tools: [] = [];
   const authorityDigest = askToolSurfaceDigest(tools);
-  const defaultKeyEnv = input.session.provider === "openai"
-    ? "OPENAI_API_KEY"
-    : input.session.provider === "anthropic"
-      ? "ANTHROPIC_API_KEY"
-      : undefined;
+  const defaultKeyEnv = input.session.provider === "openai_compatible" ? undefined : defaultProviderKeyEnv(input.session.provider);
   const gateway: AskToolGateway = {
     mode: "authoring",
     listTools: () => tools,
@@ -214,3 +210,4 @@ function narrationContradictsValidatedRecord(answer: string, facts: string[]): s
   const claimsSourceChanged = affirmative(/\b(?:source (?:database|data|row|rows)|database)\s+(?:(?:is|was|are|has been|have been|now|already)\s+)*(?:changed|updated|written|mutated)\b/gu);
   return sourceUnchanged && claimsSourceChanged ? "Explanation claimed a source change without a source-write receipt." : undefined;
 }
+import { defaultProviderKeyEnv } from "./hosted-provider-settings.js";

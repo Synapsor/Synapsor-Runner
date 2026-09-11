@@ -15,6 +15,8 @@ import type { PolicyManagementParent } from "../../../packages/mcp-server/src/ow
 import * as actionAuthority from "./action-rule-authority.js";
 import * as semanticRuntime from "./semantic-action-runtime.js";
 import * as authoringMcp from "./authoring-mcp.js";
+import * as autoBoundary from "./auto-boundary.js";
+import * as localTestIdentity from "./local-test-runtime-identity.js";
 import { createProjectRuntimeStore, migrateProjectControlPolicies } from "./control-policy-store.js";
 import { encodeOperatorExecutionPolicy, executionBindingDigest, readOperatorExecutionConfig } from "./control-policy-execution.js";
 import { ownerPolicyCommand } from "./owner-policy-commands.js";
@@ -143,6 +145,52 @@ describe("selected execution configuration through public MCP callers", () => {
     expect(create).toHaveBeenCalledOnce();
     expect(create.mock.calls[0]![0]).toMatchObject({ configPath: selection === "companion" ? canonicalPath : configPath,
       config: { mode: selection === "companion" ? "review" : "read_only" } });
+  });
+
+  it.each([false, true])("default local launch uses the reviewed identity and preserves read-only override: %s", async (readOnly) => {
+    const root = await temporaryProject(), configPath = path.join(root, "synapsor.runner.json");
+    const actionPath = path.join(root, "synapsor.actions.runner.json");
+    const primary: RuntimeConfig = { version: 1, mode: "read_only", capabilities: [],
+      trusted_context: { provider: "environment" },
+      sources: { local_postgres: { engine: "postgres", read_url_env: "READ_URL", read_only: true } },
+      action_rules: { project_root: root } };
+    await fs.writeFile(configPath, JSON.stringify(primary));
+    await fs.writeFile(actionPath, JSON.stringify({ ...primary, mode: "review" }));
+    vi.spyOn(autoBoundary, "loadActivatedExplorationBoundaries").mockResolvedValue([
+      { activation: { state: "active" }, deployment_profile: "staging" },
+    ] as never);
+    const create = vi.spyOn(semanticRuntime, "createOptionalReadActionRuleRuntimeServices").mockResolvedValue(undefined);
+    const serve = vi.spyOn(authoringMcp, "serveScopedExploreStdio").mockResolvedValue(undefined);
+    const identity = vi.spyOn(localTestIdentity, "withLocalTestRuntimeIdentity");
+    await expect(mcpServe(["--config", configPath, "--local-test-runtime", ".synapsor/local-test-runtime.json",
+      ...(readOnly ? ["--read-only"] : [])])).resolves.toBe(0);
+    expect(identity).toHaveBeenCalledExactlyOnceWith({ projectRoot: root, runtimePath: ".synapsor/local-test-runtime.json" }, expect.any(Function));
+    expect(serve).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledTimes(readOnly ? 0 : 1);
+    if (!readOnly) expect(create.mock.calls[0]![0]).toMatchObject({ configPath: actionPath, config: { mode: "review" } });
+  });
+
+  it("refuses a local identity option on an explicit action-only service", async () => {
+    const root = await temporaryProject(), configPath = path.join(root, "synapsor.actions.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({ version: 1, mode: "review", capabilities: [], action_rules: { project_root: root },
+      trusted_context: { provider: "environment" },
+      sources: { local_postgres: { engine: "postgres", read_url_env: "READ_URL", read_only: true } } }));
+    await expect(mcpServe(["--config", configPath, "--local-test-runtime", ".synapsor/local-test-runtime.json"]))
+      .rejects.toThrow("local reviewed stdio service");
+    expect(mcp.serveStdio).not.toHaveBeenCalled();
+  });
+
+  it("starts an empty authoring project with the optional local runtime reference", async () => {
+    const root = await temporaryProject();
+    const configPath = path.join(root, "synapsor.runner.json");
+    const serve = vi.spyOn(authoringMcp, "serveScopedExploreStdio").mockResolvedValue(undefined);
+    await expect(mcpServe([
+      "--authoring", "--project-root", root, "--config", configPath,
+      "--local-test-runtime", ".synapsor/local-test-runtime.json",
+    ])).resolves.toBe(0);
+    expect(serve).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ projectRoot: root, modelAuthorityMetadata: "semantic" }));
+    await expect(fs.lstat(configPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.lstat(path.join(root, ".synapsor"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it.each([true, false])("propagates production factory path provenance only when supplied: %s", async (hasPath) => {

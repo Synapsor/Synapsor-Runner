@@ -19,7 +19,7 @@ import { encodeOperatorExecutionPolicy, executionBindingDigest, readOperatorExec
 import { OPERATOR_EXECUTION_POLICY_KEY } from "./control-policy-record.js";
 import { migrateProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
 import { readRuntimeConfig } from "./cli-project.js";
-import { readLocalExploreRuntimeConfig } from "./mcp-runtime.js";
+import { inspectMcpToolBoundary, mcpConfigure, readLocalExploreRuntimeConfig, readMcpLaunchConfig } from "./mcp-runtime.js";
 import { ownerPolicyCommand } from "./owner-policy-commands.js";
 import { prepareOwnerConnectionReview } from "./owner-policy-connection.js";
 import type { OwnerPolicyReviewIo } from "./owner-policy-review-ui.js";
@@ -409,6 +409,58 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
       expect(await f.state()).toEqual(before);
       expect(await fs.readFile(f.configPath, "utf8")).toBe(text);
       expect(await fs.readFile(actionPath, "utf8")).toBe(f.configText);
+    }, { initialOwners: true });
+  });
+
+  it("previews and configures four tools from the generated primary after execution migration", async () => {
+    await withFixture(backend, async (f) => {
+      await fs.rename(f.configPath, path.join(f.root, "synapsor.actions.runner.json"));
+      const readConfig = structuredClone(f.config);
+      readConfig.mode = "read_only";
+      readConfig.capabilities = [];
+      delete readConfig.action_rules;
+      delete readConfig.supervised_worker;
+      readConfig.sources!.local_postgres!.read_only = true;
+      delete readConfig.sources!.local_postgres!.write_url_env;
+      await f.writeConfig(readConfig);
+      const before = await f.state();
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        const preview = await inspectMcpToolBoundary(["--config", f.configPath, "--store", ":memory:"]);
+        expect(preview.surface).toBe("local_explore");
+        expect(preview.names).toEqual(["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"]);
+        const direct = await inspectMcpToolBoundary(["--config", path.join(f.root, "synapsor.actions.runner.json"), "--store", ":memory:"]);
+        expect(direct.surface).toBe("semantic_actions");
+        expect(direct.names).toEqual(["app.describe_actions", "app.request_change"]);
+        expect((await readMcpLaunchConfig(f.configPath, f.env)).localExploreProjectRoot).toBe(f.root);
+        await expect(mcpConfigure(["--client", "claude-code", "--config", f.configPath])).resolves.toBe(0);
+        expect(JSON.parse(stdout.mock.calls.at(-1)![0] as string).mcpServers.synapsor.args).toContain("--authoring");
+        expect(stderr.mock.calls.map(([text]) => String(text)).join("")).toContain("four fixed tools");
+        expect(await f.state()).toEqual(before);
+      } finally { stdout.mockRestore(); stderr.mockRestore(); }
+    });
+  });
+
+  it.each(["source", "context", "authentication"])("default local launch rejects a changed Action %s binding without falling back to Read", async (field) => {
+    await withFixture(backend, async (f) => {
+      const actionPath = path.join(f.root, "synapsor.actions.runner.json");
+      await fs.rename(f.configPath, actionPath);
+      const readConfig = structuredClone(f.config);
+      readConfig.mode = "read_only"; readConfig.capabilities = [];
+      delete readConfig.action_rules; delete readConfig.supervised_worker;
+      readConfig.sources!.local_postgres!.read_only = true;
+      delete readConfig.sources!.local_postgres!.write_url_env;
+      await f.writeConfig(readConfig);
+      const changed = structuredClone(f.config);
+      if (field === "source") changed.sources!.local_postgres!.read_url_env = "CHANGED_READER";
+      else if (field === "authentication") changed.action_rules!.owner_management!.authentication.audience = "changed-audience";
+      else changed.trusted_context = { provider: "static_dev", values: { tenant_id: "different-tenant" } };
+      await fs.writeFile(actionPath, JSON.stringify(changed));
+      const before = await f.state();
+      await expect(readMcpLaunchConfig(f.configPath, f.env)).rejects.toMatchObject({ code: "POLICY_EXECUTION_BINDING_CHANGED" });
+      expect(await f.state()).toEqual(before);
+      expect(await fs.readFile(actionPath, "utf8")).toBe(JSON.stringify(changed));
     }, { initialOwners: true });
   });
 

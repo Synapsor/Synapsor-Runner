@@ -34,12 +34,22 @@ the configured writer is refused. Runner creates a private directory containing
 `requirements.json`, `grants.sql` and administrator instructions. Nothing in the
 database changes. Exact requirements and retry remain in the same review.
 
+Generic onboarding does not select or export this recipe based on table names.
+It is an optional tool for this specific example, not a requirement for other
+databases. Similar names do not establish compatibility. The generated SQL still
+checks the exact fixture policies, ownership and helper definitions.
+
 Set `HANDOFF` to the directory displayed by Runner and `REPAIR` to a new local SQL
 file. Run this script from the packaged example directory:
 
 ```bash
 node prepare.mjs "$HANDOFF" "$REPAIR"
 ```
+
+Review this combined repair **instead of** applying the exported `grants.sql`,
+not after it. If its dedicated role already exists, leave that role untouched.
+For a deliberately separate provisioning attempt, pass `--fresh-role` and
+review the newly generated role and unchanged privilege requirements before use.
 
 The generator checks the actual compiled effect: eight subscription columns,
 SELECT on subscriptions and offers, and either the offer identity privilege for

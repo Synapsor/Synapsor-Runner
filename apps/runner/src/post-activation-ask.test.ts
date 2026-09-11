@@ -27,6 +27,40 @@ import { ProviderCredentialInputCancelledError } from "./secret-input.js";
 import * as managedLauncher from "./managed-mcp-project.js";
 
 describe("post-activation Ask handoff", () => {
+  it("keeps an explicit client-setup entry focused on clients even with a configured model", async () => {
+    const chooseRoute = vi.fn(async () => "later" as const), ask = vi.fn(async () => 0);
+    const install = vi.fn(async () => 0), worker = vi.fn(async () => 0);
+    expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", initialRoute: "mcp-client",
+      autoStartConfiguredProvider: false }, {
+      env: { OPENAI_API_KEY: "private-unused-fixture-key" }, chooseRoute, runAsk: ask, runMcpInstall: install, runWorker: worker,
+      readActionDrafts: async () => [],
+      readReadiness: async () => ({ read: "active", legacy_actions: "inactive", worker: "not_checked", semantic_actions: "active",
+        semantic_outcomes: [{ outcome: "university.accept_offer", approval_mode: "policy", execution_enabled: false }] }),
+      stdout: { write: () => true }, stderr: { write: () => true },
+    })).toBe(0);
+    expect(chooseRoute).toHaveBeenCalledExactlyOnceWith("mcp-client", expect.any(Array));
+    expect(ask).not.toHaveBeenCalled(); expect(install).not.toHaveBeenCalled(); expect(worker).not.toHaveBeenCalled();
+  });
+
+  it("describes automatic policy fallback separately from human-only outcomes and omits inactive legacy actions", async () => {
+    const writes: string[] = [];
+    await expect(runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", selection: { route: "later" } }, {
+      env: {}, readActionDrafts: async () => [],
+      readReadiness: async () => ({ read: "active", legacy_actions: "inactive", worker: "not_checked", semantic_actions: "active",
+        semantic_outcomes: [
+          { outcome: "telecom.subscription.plan_change", approval_mode: "policy", execution_enabled: true },
+          { outcome: "telecom.subscription.exception", approval_mode: "human", execution_enabled: false },
+        ],
+      }),
+      stdout: { write: (value) => { writes.push(String(value)); return true; } }, stderr: { write: () => true },
+    })).resolves.toBe(0);
+    const output = writes.join("");
+    expect(output).toContain("Read: active. Verified outcomes: active.");
+    expect(output).not.toContain("Legacy named actions: inactive");
+    expect(output).toContain("Approval: 1 automatic policy with human fallback, 1 human-only outcome. Execution enabled: 1/2 outcomes.");
+    expect(output).not.toContain("0 human review");
+  });
+
   it.each(["current", "read_only", "stale", "later", "used", "explicit"] as const)("continues the intended client once without changing authority (%s)", async (mode) => {
     const boundary = await import("./boundary-commands.js");
     const resume = await import("./boundary-authoring-resume.js");
@@ -119,14 +153,14 @@ describe("post-activation Ask handoff", () => {
     } finally { for (const mock of mocks) mock.mockRestore(); }
   });
 
-  it.each(["matched", "matched_no_drafts", "explicit_review", "mismatched", "stale", "authority_review", "first_outcome", "matching_failed"] as const)(
+  it.each(["matched", "matched_no_drafts", "installed_edit", "explicit_review", "mismatched", "stale", "authority_review", "first_outcome", "matching_failed"] as const)(
     "uses only an exact current-job client checkpoint to make retained drafts optional (%s)", async (mode) => {
       const boundary = await import("./boundary-commands.js");
       const resume = await import("./boundary-authoring-resume.js");
       const readiness = await import("./authoring-client-readiness.js");
       const authority = await import("./action-rule-authority.js");
       const writes: string[] = [];
-      const matched = ["matched", "matched_no_drafts", "explicit_review"].includes(mode);
+      const matched = ["matched", "matched_no_drafts", "installed_edit", "explicit_review"].includes(mode);
       const drafts = mode === "matched_no_drafts" ? [] : [
         { state: "disabled", authority: { name: "prepared_quantity" } },
         { state: "disabled", authority: { name: "prepared_reorder" } },
@@ -135,6 +169,7 @@ describe("post-activation Ask handoff", () => {
       const outcomes = ["warehouse.correct_quantity", "warehouse.set_reorder_point"];
       const digest = `sha256:${"a".repeat(64)}` as const;
       const saved = { stage: mode === "authority_review" ? "authority_review" : "client_setup",
+        ...(mode === "installed_edit" ? { intended_client: "claude-code" } : {}),
         client_handoff: { action_digest: digest }, action: { completed_outcomes: outcomes } };
       const beforeSaved = structuredClone(saved);
       const mocks = [
@@ -158,7 +193,7 @@ describe("post-activation Ask handoff", () => {
       const chooseRoute = vi.fn(async (initial: PostActivationAskRoute, options?: readonly { id: string }[]) => {
         expect(initial).toBe(matched ? "mcp-client" : "review-outcomes");
         expect(options?.some((option) => option.id === "review-outcomes")).toBe(drafts.length > 0);
-        return initial;
+        return mode === "installed_edit" ? "edit-rules" : initial;
       });
       try {
         expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", autoStartConfiguredProvider: true,
@@ -172,6 +207,7 @@ describe("post-activation Ask handoff", () => {
             })),
           }),
           readActionDrafts: async () => drafts as never,
+          readClientInstallation: async () => ({ state: "installed" }) as never,
           readExecutionState: async () => ({ enabled: true, config_path: "synapsor.actions.runner.json", policies: outcomes.map((outcome) => ({
             outcome, action_boundary_digest: digest, write_url_env: "WRITER_URL", mode: "supervised_worker",
             concurrency: 1, queue_limit: 100, lease_seconds: 300, max_attempts: 5,
@@ -183,10 +219,11 @@ describe("post-activation Ask handoff", () => {
           stdout: { write: (value) => { writes.push(String(value)); return true; } }, stderr: { write: () => true },
         })).toBe(0);
         expect(chooseRoute).toHaveBeenCalledTimes(mode === "explicit_review" ? 0 : 1);
-        expect(install).toHaveBeenCalledTimes(matched && mode !== "explicit_review" ? 1 : 0);
+        expect(install).toHaveBeenCalledTimes(matched && mode !== "explicit_review" && mode !== "installed_edit" ? 1 : 0);
         expect(review).toHaveBeenCalledTimes(!matched || mode === "explicit_review" ? 1 : 0);
         expect(runAsk).not.toHaveBeenCalled();
-        expect(author).not.toHaveBeenCalled();
+        if (mode === "installed_edit") expect(author).toHaveBeenCalledExactlyOnceWith(["--project-root", "/tmp/not-created-project", "--access", "--job-first"]);
+        else expect(author).not.toHaveBeenCalled();
         expect(runWorker).not.toHaveBeenCalled();
         if (matched && drafts.length) {
           expect(writes.join("")).toContain("available for optional review");
@@ -639,15 +676,110 @@ describe("post-activation Ask handoff", () => {
     if (mode === "missing") {
       expect(output).toContain("LOCAL STDIO MCP CONFIGURED; NOT READY FOR CUSTOMER USE");
       expect(output).toContain("Local test identity still needed: ACCOUNT_ENV, USER_ENV.");
-      expect(output.indexOf(executionStatus)).toBeLessThan(output.indexOf("  export "));
-      expect(output.indexOf("NOT READY FOR CUSTOMER USE")).toBeLessThan(output.indexOf("  export "));
-      expect(output.indexOf("Local test identity still needed:")).toBeLessThan(output.indexOf("  export "));
-      expect(output.split("never model-provided values")).toHaveLength(2);
+      expect(output).toContain("Return to the local-test identity review");
+      expect(output).not.toContain("  export ");
+      expect(output.indexOf(executionStatus)).toBeLessThan(output.indexOf("Local test identity still needed:"));
+      expect(output.split("Runner never accepts identity values from MCP tool arguments or a model")).toHaveLength(2);
       expect(output).not.toContain("Use trusted test identities locally;");
     } else {
       expect(output).toContain("LOCAL STDIO MCP CONFIGURED; CUSTOMER USE NOT VERIFIED");
       expect(output).not.toContain("  export ");
     }
+  });
+
+  it("keeps installed local MCP setup pending when the operator declines the guided test identity", async () => {
+    const writes: string[] = [];
+    const install = vi.fn(async () => 0);
+    const collect = vi.fn(async () => undefined);
+    const start = vi.fn(async () => true);
+    const worker = vi.fn(async () => 0);
+    await expect(runPostActivationAskHandoff({ projectRoot: "/tmp/local-identity-declined", includeActions: true,
+      selection: { route: "mcp-client", client: "claude-code" } }, {
+      env: { WRITER_URL: "private-writer" }, readRuntimeIdentity: async () => "local_environment",
+      readRuntimeBindings: async () => [{ role: "tenant", environment: "FIXTURE_TENANT" }, { role: "principal", environment: "FIXTURE_PERSON" }],
+      collectLocalTestIdentity: collect, runMcpInstall: install, confirmLaunchCheck: async () => false,
+      confirmWorkerStart: start, runWorker: worker,
+      readExecutionState: async () => ({ enabled: true, config_path: "synapsor.actions.runner.json", policies: [{
+        outcome: "telecom.change_plan", write_url_env: "WRITER_URL", action_boundary_digest: `sha256:${"a".repeat(64)}`,
+        mode: "supervised_worker", concurrency: 1, queue_limit: 100, lease_seconds: 300, max_attempts: 5,
+        proposal_ttl_seconds: 3600, rate_limit: { executions: 10, window_seconds: 60 },
+      }] }),
+      stdout: { write: (value) => { writes.push(String(value)); return true; } },
+    })).resolves.toBe(0);
+    expect(install).toHaveBeenCalledOnce();
+    expect(collect).toHaveBeenCalledExactlyOnceWith({
+      projectRoot: "/tmp/local-identity-declined", client: "claude-code",
+      bindings: [{ role: "tenant", environment: "FIXTURE_TENANT" }, { role: "principal", environment: "FIXTURE_PERSON" }],
+    });
+    expect(start).not.toHaveBeenCalled();
+    expect(worker).not.toHaveBeenCalled();
+    expect(writes.join("")).toContain("Local test identity setup was skipped");
+    expect(writes.join("")).toContain("LOCAL STDIO MCP CONFIGURED; NOT READY FOR CUSTOMER USE");
+    expect(writes.join("")).not.toContain("private-writer");
+  });
+
+  it("reuses an exact saved local test identity without prompting again", async () => {
+    const writes: string[] = [];
+    const collect = vi.fn(async () => ({ FIXTURE_TENANT: "unexpected", FIXTURE_PERSON: "unexpected" }));
+    await expect(runPostActivationAskHandoff({ projectRoot: "/tmp/local-identity-reused", selection: { route: "mcp-client", client: "claude-code" } }, {
+      env: {}, readRuntimeIdentity: async () => "local_environment",
+      readRuntimeBindings: async () => [{ role: "tenant", environment: "FIXTURE_TENANT" }, { role: "principal", environment: "FIXTURE_PERSON" }],
+      loadLocalTestIdentity: async () => ({ FIXTURE_TENANT: "fixture-tenant", FIXTURE_PERSON: "fixture-person" }),
+      collectLocalTestIdentity: collect, runMcpInstall: async () => 0, confirmLaunchCheck: async () => false,
+      stdout: { write: (value) => { writes.push(String(value)); return true; } }, stderr: { write: () => true },
+    })).resolves.toBe(0);
+    expect(collect).not.toHaveBeenCalled();
+    const output = writes.join("");
+    expect(output).toContain("Reviewed local test runtime already matches the current boundary");
+    expect(output).toContain("LOCAL TEST RUNTIME CONFIGURED");
+    expect(output).not.toContain("fixture-tenant");
+    expect(output).not.toContain("fixture-person");
+  });
+
+  it("saves an accepted local test identity for the managed client and separately confirmed foreground worker", async () => {
+    const writes: string[] = [];
+    const collect = vi.fn(async () => ({ FIXTURE_TENANT: "fixture-tenant", FIXTURE_PERSON: "fixture-person" }));
+    const save = vi.fn(async (input: { bindings: Array<{ role: "tenant" | "principal"; environment: string }>; values: Record<string, string> }) => ({
+      path: "/tmp/local-identity-accepted/.synapsor/local-test-runtime.json",
+      bindings: input.bindings,
+    }));
+    const check = vi.fn(async () => {
+      expect(process.env.FIXTURE_TENANT).toBeUndefined();
+      expect(process.env.FIXTURE_PERSON).toBeUndefined();
+      return { ok: true, messages: [] };
+    });
+    const worker = vi.fn(async () => {
+      expect(process.env.FIXTURE_TENANT).toBeUndefined();
+      expect(process.env.FIXTURE_PERSON).toBeUndefined();
+      return 0;
+    });
+    await expect(runPostActivationAskHandoff({ projectRoot: "/tmp/local-identity-accepted", includeActions: true,
+      selection: { route: "mcp-client", client: "claude-code" } }, {
+      env: { WRITER_URL: "private-writer" }, readRuntimeIdentity: async () => "local_environment",
+      readRuntimeBindings: async () => [{ role: "tenant", environment: "FIXTURE_TENANT" }, { role: "principal", environment: "FIXTURE_PERSON" }],
+      collectLocalTestIdentity: collect, saveLocalTestIdentity: save, runMcpInstall: async () => 0, confirmLaunchCheck: async () => true, checkClientLaunch: check,
+      confirmWorkerStart: async () => true, runWorker: worker,
+      readExecutionState: async () => ({ enabled: true, config_path: "synapsor.actions.runner.json", policies: [{
+        outcome: "telecom.change_plan", write_url_env: "WRITER_URL", action_boundary_digest: `sha256:${"a".repeat(64)}`,
+        mode: "supervised_worker", concurrency: 1, queue_limit: 100, lease_seconds: 300, max_attempts: 5,
+        proposal_ttl_seconds: 3600, rate_limit: { executions: 10, window_seconds: 60 },
+      }] }),
+      stdout: { write: (value) => { writes.push(String(value)); return true; } },
+    })).resolves.toBe(0);
+    expect(collect).toHaveBeenCalledOnce();
+    expect(save).toHaveBeenCalledExactlyOnceWith({
+      projectRoot: "/tmp/local-identity-accepted",
+      bindings: [{ role: "tenant", environment: "FIXTURE_TENANT" }, { role: "principal", environment: "FIXTURE_PERSON" }],
+      values: { FIXTURE_TENANT: "fixture-tenant", FIXTURE_PERSON: "fixture-person" },
+    });
+    expect(check).toHaveBeenCalledExactlyOnceWith("/tmp/local-identity-accepted", "claude-code");
+    expect(worker).toHaveBeenCalledOnce();
+    const output = writes.join("");
+    expect(output).toContain("LOCAL TEST RUNTIME CONFIGURED");
+    expect(output).toContain("This worker has stopped");
+    expect(output).not.toContain("fixture-tenant");
+    expect(output).not.toContain("fixture-person");
+    expect(output).not.toContain("private-writer");
   });
 
   it.each(["missing_writer", "missing_identity", "unavailable_identity", "decline"] as const)(
@@ -1253,11 +1385,10 @@ describe("post-activation Ask handoff", () => {
         { role: "principal", environment: "SYNAPSOR_PRINCIPAL" },
       ],
     );
-    expect(scopedHandoff).toContain("export SYNAPSOR_TENANT_ID='<tenant>'");
-    expect(scopedHandoff).toContain("export SYNAPSOR_PRINCIPAL='<principal>'");
     expect(scopedHandoff).toContain("Local test identity still needed");
     expect(scopedHandoff).toContain("NOT READY FOR CUSTOMER USE");
-    expect(scopedHandoff.indexOf("Local test identity still needed")).toBeLessThan(scopedHandoff.indexOf("  export "));
+    expect(scopedHandoff).toContain("Return to the local-test identity review");
+    expect(scopedHandoff).not.toContain("export ");
     expect(scopedHandoff).toContain("four fixed tools");
     expect(scopedHandoff.split("\n").length).toBeLessThanOrEqual(10);
     expect(scopedHandoff).not.toContain("Connection diagnostics");
@@ -1294,16 +1425,26 @@ describe("post-activation Ask handoff", () => {
       { role: "principal" as const, environment: "PERSON_CONTEXT" }];
     const partial = formatMcpClientHandoff("/tmp/test-project", "claude-code", true, bindings,
       "local_environment", ["TENANT_CONTEXT"]);
-    expect(partial).not.toContain("export TENANT_CONTEXT");
-    expect(partial).toContain("export PERSON_CONTEXT='<principal>'");
+    expect(partial).not.toContain("export ");
+    expect(partial).toContain("Local test identity still needed: PERSON_CONTEXT.");
     const ready = formatMcpClientHandoff("/tmp/test-project", "claude-code", true, bindings,
       "local_environment", ["TENANT_CONTEXT", "PERSON_CONTEXT"]);
     expect(ready).not.toContain("export ");
-    expect(ready).toContain("values stay private");
+    expect(ready).toContain("reviewed local runtime environment");
     expect(ready).toContain("not authenticated or proven by the MCP handshake");
-    expect(ready).toContain("Other terminals or already-running clients");
     expect(ready).toContain("CUSTOMER USE NOT VERIFIED");
     expect(ready).not.toContain("NOT READY FOR CUSTOMER USE");
+  });
+
+  it("labels a collected local identity as a persistent local test runtime and never renders its values", () => {
+    const handoff = formatMcpClientHandoff("/tmp/test-project", "claude-code", true,
+      [{ role: "tenant", environment: "TENANT_CONTEXT" }, { role: "principal", environment: "PERSON_CONTEXT" }],
+      "local_environment", ["TENANT_CONTEXT", "PERSON_CONTEXT"], ["TENANT_CONTEXT", "PERSON_CONTEXT"]);
+    expect(handoff).toContain("LOCAL TEST RUNTIME CONFIGURED");
+    expect(handoff).toContain("owner-only local project runtime file");
+    expect(handoff).toContain("managed client and reviewed worker load this fixed local reference");
+    expect(handoff).toContain("programs running as your user can read these values");
+    expect(handoff).not.toContain("export ");
   });
 
   it("requires an explicit local MCP client choice", async () => {

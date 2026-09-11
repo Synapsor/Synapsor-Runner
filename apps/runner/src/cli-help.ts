@@ -78,6 +78,7 @@ Examples:
   ${cmd} explore run --plan ./explore-plan.json --project-root .
   ${cmd} start --from-env DATABASE_URL
   ${cmd} start --from-env DATABASE_URL --cli
+  ${cmd} action review --project-root .
   ${cmd} start --project-root . --export-draft ./boundary-authoring.json --json
   ${cmd} start --project-root . --draft ./boundary-authoring.json --dry-run --json
   ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db --dry-run
@@ -167,6 +168,7 @@ the primary interface.
   ${cmd} try ask --provider openai [--model <model>] [--timeout 30] [--session-token-budget 200000] [--max-output-tokens 4096]
   ${cmd} try ask --provider anthropic [--model <model>] [--timeout 30]
   ${cmd} try ask --provider openai-compatible --model <model> --base-url http://127.0.0.1:11434/v1 [--timeout 120]
+  ${cmd} try ask --provider openrouter --model openai/gpt-5.6-terra --api-key-env OPENROUTER_API_KEY
   ${cmd} try ask "Which reviewed regions changed most by week?" --provider openai
   ${cmd} try protect --last --name analytics.protected_analysis
   ${cmd} try protect --from A2 --name analytics.protected_analysis
@@ -326,7 +328,7 @@ signature verification makes an export tamper-evident; it does not make a local
 SQLite ledger immutable compliance storage.
 `,
     policy: `Usage:
-  ${cmd} policy chat --config ./synapsor.runner.json [--provider openai|anthropic|openai_compatible] [--model <name>]
+  ${cmd} policy chat --config ./synapsor.runner.json [--provider openai|anthropic|openrouter|openai_compatible] [--model <name>]
   ${cmd} policy storage --config ./synapsor.runner.json [--project-root .] [--store ./.synapsor/local.db]
   ${cmd} policy delegation --config ./synapsor.runner.json [--name <parent-name>] [--project-root .]
   ${cmd} policy delegation --config ./synapsor.runner.json --name <parent-name> --input ./owner-delegation.json
@@ -831,7 +833,7 @@ tenant/principal context, and the production budget and rate-limit prerequisites
     action: `Usage:
   ${cmd} action review [--project-root .]
   ${cmd} action suggest --input suggestion.json [--project-root .] [--json]
-  ${cmd} action suggest --intent <business-intent> --provider openai|anthropic|openai-compatible [--model <name>] [--api-key-env <name>] --acknowledge-egress
+  ${cmd} action suggest --intent <business-intent> --provider openai|anthropic|openrouter|openai-compatible [--model <name>] [--api-key-env <name>] --acknowledge-egress
   ${cmd} action suggestions [--project-root .] [--json]
   ${cmd} action review --suggestion <as_digest> [--project-root .]
   ${cmd} action draft --answers action.json [--project-root .] [--json]
@@ -1286,8 +1288,13 @@ Without --config, doctor is the legacy Cloud worker check and requires SYNAPSOR_
 	  ${cmd} proposals check-freshness latest --config ./synapsor.runner.json --store ./.synapsor/local.db
 	  ${cmd} proposals check-freshness latest --details --json --config ./synapsor.runner.json --store ./.synapsor/local.db
 	  ${cmd} proposals approve latest --yes
-	  ${cmd} proposals reject latest --reason "..."
+	  ${cmd} proposals reject latest --reason "..." --yes --config ./synapsor.actions.runner.json
 	  ${cmd} proposals approve latest --yes --shared-ledger-mirror --shared-ledger-url-env SYNAPSOR_LEDGER_DATABASE_URL
+
+	Outside an interactive terminal, rejection requires --yes. This confirms the
+	decision but does not bypass operator identity or current request-state checks.
+	Rejection preserves the earlier proposal and approval history; it never writes
+	source data. Use the generated Action config for current semantic proposals.
 
 	Review decisions happen outside the model-facing MCP tool surface. A freshness-required approval performs the same live check automatically and binds the approval to its immutable proof. Freshness at approval improves review quality; apply rechecks again before mutation. Human output is concise by default; use --details for reviewer metadata or --json for complete records.
 	`,

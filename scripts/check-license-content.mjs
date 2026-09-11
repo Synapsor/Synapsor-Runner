@@ -157,7 +157,7 @@ for (const required of [
 const textFiles = [];
 function walk(dir) {
   for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git") continue;
+    if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git" || entry.name === ".synapsor") continue;
     const rel = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       walk(rel);

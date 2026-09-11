@@ -5,6 +5,16 @@ import { usage } from "./cli-help.js";
 describe("current Boundary onboarding help", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it.each(["proposals", "proposals reject"])("documents complete noninteractive rejection in %j help", command => {
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    usage(command.split(" "));
+    const text = output.mock.calls.map(([chunk]) => String(chunk)).join("").replace(/\s+/gu, " ");
+    expect(text).toContain('proposals reject latest --reason "..." --yes --config ./synapsor.actions.runner.json');
+    expect(text).toContain("Outside an interactive terminal, rejection requires --yes");
+    expect(text).toContain("does not bypass operator identity or current request-state checks");
+    expect(text).toContain("preserves the earlier proposal and approval history");
+  });
+
   it.each(["worker", "worker run"])("shows explicit semantic worker mode and Action config in %j help", (command) => {
     const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     usage(command.split(" "));

@@ -317,6 +317,7 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
             proposal_id: proposal.proposal_id,
             execution_mode: "supervised_worker",
             contract_digest: eligibility.action_boundary_digest,
+            cancellation_control_role: eligibility.policy.control_role ?? null,
             max_attempts: eligibility.policy.max_attempts,
             queue_limit: eligibility.policy.queue_limit,
           });

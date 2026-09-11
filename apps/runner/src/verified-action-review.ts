@@ -16,19 +16,38 @@ import { shellQuote } from "./cli-format.js";
 import { actionRuleDiscoveryMetadata } from "@synapsor-runner/action-rules";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { clearPausedExecutionSetup, executionSetupProblem, savePausedExecutionSetup, SemanticWriterPostureError, type ExecutionSetupProblem } from "./semantic-execution-setup.js";
-import { exportWriterProvisioning, type WriterProvisioningPlan } from "./writer-provisioning.js";
+import { exportWriterProvisioning, writerPolicyRepairSummary, type WriterProvisioningPlan } from "./writer-provisioning.js";
+import { renderRunnerResultPanel } from "./runner-result-panel.js";
+import { reviewActionRevisionImpact } from "./action-revision-impact.js";
+import { readSavedActionJobReview } from "./saved-action-job-review.js";
+import { revalidateSavedActionReadDependencies, savedActionReadReviewState } from "./action-read-recovery.js";
 import {
   verifySemanticExecutionReadPosture,
   activateSemanticActionRuntime,
   disableSemanticSupervisedExecution,
   enableSemanticSupervisedExecution,
   previewSemanticSupervisedExecution,
+  prepareSemanticWriterHandoff,
   readSemanticSupervisedExecutionState,
   readSemanticExecutionReviewDefaults,
+  semanticDedicatedWriterEnvironment,
   recoverSemanticActionRuntime,
   executionReReviewOutcomesForActionActivation,
   semanticExecutionConfirmation,
 } from "./semantic-action-deployment.js";
+
+export type VerifiedActionManualRevision = {
+  /** Opens only disabled manual authoring; it never confirms Read or Action activation. */
+  run: () => Promise<BoundaryAccessNotice>;
+};
+
+export function verifiedActionManualRevisionChoice(manualRevision: VerifiedActionManualRevision | undefined) {
+  return manualRevision ? [{
+    value: "manual_revision",
+    label: "Edit business rules manually",
+    detail: "The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.",
+  }] : [];
+}
 
 export async function reviewVerifiedActionAuthority(input: {
   projectRoot: string;
@@ -44,6 +63,11 @@ export async function reviewVerifiedActionAuthority(input: {
     detail: string;
     run: () => Promise<BoundaryAccessNotice>;
   };
+  manualRevision?: VerifiedActionManualRevision;
+  /** Opens the existing exact Read confirmation, then returns to this review. */
+  reviewRead?: () => Promise<void>;
+  /** Navigation supplied by the CLI composition layer, never an authority grant. */
+  clientSetup?: () => Promise<number>;
 }): Promise<BoundaryAccessNotice> {
   while (true) {
     try {
@@ -86,15 +110,25 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     boundary.pack.name === rule.read_boundary_name && boundary.activation.digest === rule.read_boundary_digest))
     .map((rule) => rule.rule.outcome) ?? []);
   const unavailableNotice = "Verified Action authority is saved; Read dependency unavailable.";
+  const canContinueClientSetup = Boolean(input.clientSetup && input.active && !unavailableOutcomes.size
+    && activeReads.length && activeReads.every(read => read.deployment_profile !== "production"));
   const current = input.draft ?? input.active;
   if (!current) {
+    if (input.modelRevision) return input.modelRevision.run();
     return {
       tone: "warning",
       title: "No verified Action outcome is prepared.",
       lines: ["Use W and describe a job whose exact effect must be derived from current authoritative facts."],
-      footer: "Caller-supplied proposal actions remain available through Y.",
+      footer: "The existing Read permissions and source data are unchanged.",
     };
   }
+  const needsReadRecheck = current.authority.rules.some(rule => !activeReads.some(read =>
+    read.pack.name === rule.read_boundary_name && read.activation.digest === rule.read_boundary_digest));
+  const oneReadDependency = current.authority.rules.every(rule => rule.read_boundary_name === input.boundaryName);
+  const readReviewState = oneReadDependency
+    ? await savedActionReadReviewState(input.projectRoot, input.boundaryName, activeReads) : "unavailable";
+  const canRecheckRead = needsReadRecheck && readReviewState === "active";
+  const needsReadReview = readReviewState === "pending";
   let executionState = await readSemanticSupervisedExecutionState({
     projectRoot: input.projectRoot,
     env: input.env,
@@ -126,10 +160,24 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         input.session.terminalColumns,
       )
     : [];
+  const requestImpact = await reviewActionRevisionImpact(input);
+  const jobReview = await readSavedActionJobReview({ projectRoot: input.projectRoot, boundaryName: input.boundaryName,
+    currentOutcomes: current.authority.rules.map((rule) => rule.rule.outcome) });
+  const reviewedNotice = (value: ActionRuleAuthorityDraftV1 | ActionRuleAuthorityActivationV1, active: boolean, configPath?: string) => {
+    const notice = verifiedActionNotice(value, active, configPath);
+    return { ...notice, lines: [...jobReview.summary, ...notice.lines] };
+  };
   const summary = [
+    ...jobReview.summary,
+    ...(needsReadReview ? ["Review the saved read access first; its latest revision is not active.",
+      "Your business rules stay saved. Read approval is separate and does not enable changes or execution.",
+      ...(input.reviewRead ? [] : [`Open: ${cliCommandName()} boundary review --project-root ${shellQuote(input.projectRoot)} --access`])] : []),
+    ...(canRecheckRead ? ["Access was reviewed at a newer revision. Recheck the saved changes against it before deciding on activation.",
+      "Runner will inspect metadata and preserve every business rule in a disabled replacement. It will not run a request or enable execution."] : []),
     ...activeSummary,
     ...(activeSummary.length && draftSummary.length ? [""] : []),
     ...draftSummary,
+    ...requestImpact.slice(0, 3),
     "The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.",
     ...(unavailableOutcomes.size ? [
       `Read dependency unavailable: ${[...unavailableOutcomes].join(", ")}. These outcomes cannot be used or executed.`,
@@ -146,7 +194,8 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
             : "The active authority remains live until you separately confirm this exact replacement."
           : "Disabled revision is ready for its separate proposal-authority confirmation."
         : input.active
-          ? `The saved activation is unchanged. Activate the exact linked Read Boundary ${input.boundaryName} before reviewing its replacement.`
+          ? canRecheckRead ? "The saved activation is unchanged. Recheck its replacement against the reviewed access before activation."
+            : `The saved activation is unchanged. Activate the exact linked Read Boundary ${input.boundaryName} before reviewing its replacement.`
           : `Activate the exact linked Read Boundary ${input.boundaryName} before this Action revision.`
       : unavailableOutcomes.size ? "Only outcomes with current reviewed Read dependencies remain usable. Approval and apply remain separate."
         : "This verified Action Boundary is active. Approval and apply remain separate.",
@@ -167,7 +216,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
       `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
       { context: summary },
     );
-    if (!accepted) return verifiedActionNotice(input.draft, false);
+    if (!accepted) return reviewedNotice(input.draft, false);
     const activated = await activateSemanticActionRuntime({
       projectRoot: input.projectRoot,
       ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}),
@@ -175,16 +224,23 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
       actor: localInteractiveActor(),
       env: input.env,
     });
-    return verifiedActionNotice(activated.activation, true, activated.config_path);
+    return reviewedNotice(activated.activation, true, activated.config_path);
   }
   while (true) {
     const choice = await input.session.chooseOption(
       "VERIFIED ACTION BOUNDARY",
       [
+        ...(jobReview.details.length ? [{ value: "details_pending_job", label: jobReview.detailsLabel ?? "View unfinished saved work",
+          detail: "Inspect saved job status without changing this review or contacting the model." }] : []),
+        ...(needsReadReview && input.reviewRead ? [{ value: "review_read", label: "Review saved read access",
+          detail: "Review who can see which information, then return to these saved changes. Activation requires your separate confirmation." }] : []),
+        ...(canRecheckRead ? [{ value: "revalidate_read", label: "Recheck saved changes against reviewed access",
+          detail: "Keep the same business rules; verify current metadata and prepare a disabled replacement for review." }] : []),
         ...(input.draft
           ? [{
               value: "activate",
-              label: draftReady ? "Activate this exact proposal authority" : "Activate linked Read Boundary first",
+              label: draftReady ? "Activate this exact proposal authority"
+                : canRecheckRead ? "Recheck saved changes first" : "Activate linked Read Boundary first",
               detail: draftReady
                 ? "Agents may nominate these outcomes; approval and apply remain separate."
                 : `This revision is locked to the exact Read Boundary ${input.boundaryName}.`,
@@ -205,6 +261,9 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
               detail: "Shows the exact saved rules; current Read dependencies still determine availability.",
             }]
           : []),
+        ...(canContinueClientSetup ? [{ value: "client_setup", label: "Continue client setup",
+          detail: "Connect Claude Code, Cursor or VS Code, review trusted identity and worker startup. Pending drafts stay saved; this choice grants no authority." }] : []),
+        ...verifiedActionManualRevisionChoice(input.manualRevision),
         ...(input.modelRevision
           ? [{
               value: "model_revision",
@@ -236,7 +295,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         { value: "back", label: "Back" },
       ],
       {
-        initialValue: input.draft && draftReady
+        initialValue: needsReadReview && input.reviewRead ? "review_read" : canRecheckRead ? "revalidate_read" : input.draft && draftReady
           ? "activate"
           : input.draft
             ? "details_draft"
@@ -255,6 +314,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
             ? "Verified Action Boundary remains active."
             : "Verified Action Boundary remains disabled.",
         lines: [
+          ...jobReview.summary,
           ...(input.active && input.draft
             ? ["The active and replacement revisions remain separate."]
             : []),
@@ -262,13 +322,59 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         ],
       };
     }
+    if (choice === "review_read" && needsReadReview && input.reviewRead) {
+      await input.reviewRead();
+      return reviewVerifiedActionAuthority(input);
+    }
+    if (choice === "client_setup" && canContinueClientSetup && input.clientSetup) {
+      try {
+        const result = await input.clientSetup();
+        if (result !== 0) throw new Error(`Client setup did not finish (exit ${result}). Resolve the reported connection or configuration problem, then retry.`);
+      } catch (error) {
+        const details = [redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+          "Client setup did not finish. Existing rules and pending drafts remain saved; no activation is needed merely to reopen setup.",
+          "Return to this review and choose Continue client setup to retry. Connection and worker readiness remain unverified."];
+        input.session.rememberDetails?.("Client setup needs attention", details);
+        if (input.session.showReviewDetails) await input.session.showReviewDetails("Client setup needs attention", details);
+        else await input.session.chooseOption("CLIENT SETUP NEEDS ATTENTION", [{ value: "back", label: "Back to saved actions" }],
+          { context: details, displayContext: true, initialValue: "back" });
+      }
+      // Setup may include separately confirmed execution changes. Reload rather
+      // than presenting the state captured before that operator interaction.
+      return reviewVerifiedActionAuthority(input);
+    }
+    if (choice === "revalidate_read" && canRecheckRead) {
+      try {
+        const replacement = await revalidateSavedActionReadDependencies({ projectRoot: input.projectRoot,
+          boundaryName: input.boundaryName, current, env: input.env, inspect: input.inspectDatabaseFn });
+        input.session.rememberDetails?.("Saved changes rechecked", [
+          `${replacement.authority.rules.length} saved business rules recompiled against the current reviewed access.`,
+          "Only a disabled replacement was saved. Business conditions, effects and approval limits are preserved.",
+          "Existing activation and execution records are unchanged. Review this replacement and then its execution settings separately.",
+        ]);
+        return reviewVerifiedActionAuthority({ ...input, draft: replacement });
+      } catch (error) {
+        const details = [redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+          "No active permission or source data changed. Keep this work saved and resolve the named dependency before retrying."];
+        input.session.rememberDetails?.("Saved changes need review", details);
+        if (input.session.showReviewDetails) await input.session.showReviewDetails("Saved changes need review", details);
+        else await input.session.chooseOption("SAVED CHANGES NEED REVIEW", [{ value: "back", label: "Back to the saved review" }],
+          { context: details, displayContext: true, initialValue: "back" });
+        continue;
+      }
+    }
+    if (choice === "details_pending_job") {
+      await input.session.chooseOption("UNFINISHED SAVED WORK", [{ value: "back", label: "Back to this Action review" }],
+        { initialValue: "back", context: jobReview.details, displayContext: true });
+      continue;
+    }
     if (choice === "details_draft" && input.draft) {
       await input.session.chooseOption(
         input.active ? "EXACT REPLACEMENT DRAFT DETAILS" : "EXACT VERIFIED ACTION DETAILS",
         [{ value: "back", label: "Back to Action Boundary" }],
         {
           initialValue: "back",
-          context: verifiedActionAuthorityDetails(input.draft, input.session.terminalColumns),
+          context: [...requestImpact, ...verifiedActionAuthorityDetails(input.draft, input.session.terminalColumns)],
         },
       );
       continue;
@@ -283,6 +389,9 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         },
       );
       continue;
+    }
+    if (choice === "manual_revision" && input.manualRevision) {
+      return input.manualRevision.run();
     }
     if (choice === "model_revision" && input.modelRevision) {
       return input.modelRevision.run();
@@ -368,7 +477,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         actor: localInteractiveActor(),
         env: input.env,
       });
-      return verifiedActionNotice(activated.activation, true, activated.config_path);
+      return reviewedNotice(activated.activation, true, activated.config_path);
     }
   }
 }
@@ -388,12 +497,13 @@ export async function reviewSemanticSupervisedExecution(input: {
     const problem = result.problem ?? executionSetupProblem(new Error(result.lines.join("\n")));
     const publication = problem.publication_state !== undefined;
     const revalidation = problem.code === "SEMANTIC_ACTION_READ_REVIEW_REQUIRED";
+    const canPrepareWriter = !publication && !revalidation;
     const detailsTitle = publication ? "Execution save recovery" : revalidation ? "Saved job revalidation" : "Writer requirements";
     input.session.rememberDetails?.(detailsTitle, problem.details);
     let recovery: string | undefined;
     for (;;) {
       recovery = await input.session.chooseOption(publication ? "Execution save needs recovery" : "Execution needs a deployment fix", [
-        ...(result.provisioning ? [{ value: "export", label: "Prepare a dedicated writer handoff",
+        ...(canPrepareWriter ? [{ value: "export", label: "Prepare administrator instructions",
           detail: "Export exact grants and inspected policy/trigger evidence for an administrator. No database permissions change." }] : []),
         { value: "retry", label: publication ? "Recover the saved attempt and reopen review" : revalidation ? "Recheck after saved-job revalidation" : "Recheck the writer and continue setup",
           detail: publication ? "Check the exact saved receipt without replaying activation or executing a request." : "After repair, verify the new configured connection. No request executes." },
@@ -402,12 +512,19 @@ export async function reviewSemanticSupervisedExecution(input: {
           : revalidation ? "Keep the rules and authority records; resume the same job to review the changed database contract."
             : "Preserve the existing activation records. This check enables no execution and runs no request." },
       ], { initialValue: result.provisioning ? "export" : "pause", displayContext: true, context: [`Outcome: ${input.outcome}`, problem.summary, `Diagnostic: ${problem.code}.`] });
-      if (recovery === "export" && result.provisioning) {
+      if (recovery === "export" && canPrepareWriter) {
         try {
-          const directory = await exportWriterProvisioning(input.projectRoot, result.provisioning);
+          const plan = result.provisioning ?? (await prepareSemanticWriterHandoff({
+            projectRoot: input.projectRoot, outcome: input.outcome,
+            reads: input.activeReads.map((read) => ({ pack: read.pack, digest: read.activation.digest })),
+            env: input.env, inspect: input.inspectDatabaseFn,
+          })).plan;
+          const directory = await exportWriterProvisioning(input.projectRoot, plan);
           const lines = [`Administrator handoff: ${directory}`, "Review README.md, requirements.json and grants.sql with your database administrator.",
+            ...writerPolicyRepairSummary(plan),
+            `Keep ${plan.read_env ?? "the saved read connection"} unchanged; configure the dedicated writer in ${plan.writer_env}. Never replace the reader with the restricted writer.`,
             "The new role starts NOLOGIN. Scoped policies and helper access still need review; do not reuse or revoke the shared writer.",
-            "If RLS changes, resume the same start command with --rescan and revalidate the saved Read/Action job. This export changes no authority or database."];
+            "If RLS changes, resume the same start command through the reader with --rescan and revalidate the saved Read/Action job. Otherwise recheck the separate writer here. This export changes no authority or database."];
           problem.details.push("", ...lines);
           input.session.rememberDetails?.(detailsTitle, problem.details);
           await input.session.showReviewDetails?.("Dedicated writer handoff saved", lines);
@@ -441,7 +558,8 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
     const problem = executionSetupProblem(error);
     return { tone: "danger", title: "Execution was not enabled.", lines: [problem.summary], problem };
   }
-  let writeUrlEnv = defaults?.write_url_env
+  const dedicatedEnv = semanticDedicatedWriterEnvironment(input.outcome);
+  let writeUrlEnv = (env[dedicatedEnv]?.trim() ? dedicatedEnv : undefined) ?? defaults?.write_url_env
     ?? (env.SYNAPSOR_DATABASE_WRITE_URL?.trim() ? "SYNAPSOR_DATABASE_WRITE_URL" : undefined);
   const workerIdentity = defaults ? defaults.worker_identity : "semantic_action_worker";
   let configured = Boolean(writeUrlEnv && env[writeUrlEnv]?.trim());
@@ -456,6 +574,44 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
     configured = choice === "check";
   } else configured = false;
   if (!configured) {
+    if ((!writeUrlEnv || !env[writeUrlEnv]?.trim()) && input.session.chooseOption) {
+      for (;;) {
+        const choice = await input.session.chooseOption("Set up database changes", [
+          { value: "choose", label: "Choose a write connection", detail: "Select its environment variable; Runner checks the actual permissions before asking to enable execution." },
+          { value: "export", label: "Prepare administrator instructions", detail: "Inspect metadata through the read connection and export exact requirements for this saved action. No database grants are changed." },
+          { value: "pause", label: "Save and continue later", detail: "Keep this job, its rules and active permissions. No execution is enabled by this setup." },
+        ], { initialValue: "choose", displayContext: true, context: renderRunnerResultPanel({
+          result: "A write connection still needs to be selected and checked.",
+          checked: `The saved action ${input.outcome} has reached execution review.`,
+          changed: "No database permissions or source records changed.",
+          notChecked: "Write grants, scoped policies and worker readiness.",
+          next: "Choose an existing connection, or prepare instructions for your database administrator.",
+        }, reviewTableWidth(input.session.terminalColumns ?? 80)) });
+        if (choice === "choose") break;
+        if (choice !== "export") return undefined;
+        try {
+          const checked = await prepareSemanticWriterHandoff({ projectRoot: input.projectRoot, outcome: input.outcome,
+            reads: input.activeReads.map((read) => ({ pack: read.pack, digest: read.activation.digest })),
+            writeUrlEnv, env: input.env, inspect: input.inspectDatabaseFn });
+          const directory = await exportWriterProvisioning(input.projectRoot, checked.plan);
+          writeUrlEnv = checked.plan.writer_env;
+          const details = [`Administrator handoff: ${directory}`, "Read README.md, requirements.json and grants.sql.",
+            ...writerPolicyRepairSummary(checked.plan),
+            `Inspected metadata using ${checked.inspected_connection_env}; writer access has NOT been verified.`,
+            `Keep ${checked.plan.read_env ?? "the saved read connection"} unchanged. Configure the new writer ONLY in ${checked.plan.writer_env}.`,
+            "Requirements include version advances, verification reads and row-lock privileges, not just business fields.",
+            "After administrator setup, select the write connection here for live verification. If schema/RLS changes, resume the same start command with --rescan and revalidate the saved job.",
+            "No source rows, grants, activation records or rules changed."];
+          input.session.rememberDetails?.("Administrator instructions", details);
+          await input.session.showReviewDetails?.("Administrator instructions prepared", details);
+        } catch (error) {
+          const problem = executionSetupProblem(error);
+          input.session.rememberDetails?.("Administrator instructions unavailable", problem.details);
+          await input.session.showReviewDetails?.("Administrator instructions unavailable", [problem.summary,
+            "The saved job is unchanged. Restore the read connection and retry, or save and continue later.", ...problem.details]);
+        }
+      }
+    }
     const writeUrlAnswer = await input.session.promptText(
       writeUrlEnv ? `Write connection variable (Enter uses ${writeUrlEnv})`
         : "Write connection variable (Enter defers this outcome)",

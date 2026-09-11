@@ -26,7 +26,7 @@ import { cliCommandName } from "./cli-command-meta.js";
 import { fileExists } from "./cli-files.js";
 import { formatScalar, isRecord, shellQuote } from "./cli-format.js";
 import { assertKnownOptions, envValue, firstPositional, optionalArg } from "./cli-options.js";
-import { confirmDangerousAction, defaultConfigPath, defaultStorePath, envWithDemoDefaults, optionalResolvedLocalStorePath, readRuntimeConfig, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
+import { confirmDangerousAction, defaultConfigPath, defaultStorePath, envWithDemoDefaults, optionalResolvedLocalStorePath, readLedgerRuntimeConfig, readRuntimeConfig, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
 import { LocalDoctorGovernance, trustedContextsForDoctor } from "./doctor-domain.js";
 import { formatSmokeCallResult, resultFormatOption } from "./mcp-shared.js";
 import { readModelAuthorityMetadataMode } from "./model-output-config.js";
@@ -42,6 +42,7 @@ import {
   loadActiveActionRuleAuthority,
   type LoadedActiveActionRuleAuthorityV1,
 } from "./action-rule-authority.js";
+import { withLocalTestRuntimeIdentity } from "./local-test-runtime-identity.js";
 
 const EXPLORE_TOOL_NAMES = ["app.describe_data", "app.explore_data"] as const;
 const SEMANTIC_ACTION_TOOL_NAMES = [DESCRIBE_ACTIONS_TOOL, REQUEST_CHANGE_TOOL] as const;
@@ -140,19 +141,21 @@ export async function mcpServe(args: string[]): Promise<number> {
     if (transport !== "stdio") {
       throw new Error("Scoped Explore is authoring-only and may be served only over local stdio.");
     }
-    assertKnownOptions(args, new Set(["--authoring", "--project-root", "--transport", "--config"]), "mcp serve --authoring");
+    assertKnownOptions(args, new Set(["--authoring", "--project-root", "--transport", "--config", "--local-test-runtime"]), "mcp serve --authoring");
     const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
     const explicitConfigPath = optionalArg(args, "--config");
     const configPath = path.resolve(explicitConfigPath ?? path.join(projectRoot, "synapsor.runner.json"));
     const modelAuthorityMetadata = explicitConfigPath || await fileExists(configPath)
       ? await readModelAuthorityMetadataMode(configPath)
       : "semantic";
-    const config = await readLocalExploreRuntimeConfig(projectRoot, configPath);
-    if (config) {
-      await serveLocalExploreStdio({ projectRoot, config, configPath, modelAuthorityMetadata });
-    } else {
-      await serveScopedExploreStdio({ projectRoot, modelAuthorityMetadata });
-    }
+    await withLocalTestRuntimeIdentity({ projectRoot, runtimePath: optionalArg(args, "--local-test-runtime") }, async () => {
+      const config = await readLocalExploreRuntimeConfig(projectRoot, configPath);
+      if (config) {
+        await serveLocalExploreStdio({ projectRoot, config, configPath, modelAuthorityMetadata });
+      } else {
+        await serveScopedExploreStdio({ projectRoot, modelAuthorityMetadata });
+      }
+    });
     return 0;
   }
   if (args.includes("--production-explore") && transport !== "streamable-http") {
@@ -163,10 +166,9 @@ export async function mcpServe(args: string[]): Promise<number> {
   if (transport !== "stdio") throw new Error("--transport must be stdio, streamable-http, or http");
   const configPath = runnerConfigPath(args, defaultConfigPath);
   const readOnly = args.includes("--read-only");
-  const baseConfig = await readRuntimeConfig(configPath);
+  const { config: baseConfig, localExploreProjectRoot } = await readMcpLaunchConfig(configPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   assertProductionExploreTransport(config, configPath, "stdio");
-  const localExploreProjectRoot = await activeLocalExploreProjectRoot(config, configPath);
   if (localExploreProjectRoot) {
     assertLocalExplorePresentation(args);
     const requestedStore = optionalArg(args, "--store");
@@ -180,14 +182,20 @@ export async function mcpServe(args: string[]): Promise<number> {
     process.stderr.write(
       `Active local Read authority selected from ${configPath}; fixed Read and Action tools are available. Only activated outcomes permit proposals.\n`,
     );
-    await serveLocalExploreStdio({
-      projectRoot: localExploreProjectRoot,
-      config,
-      configPath,
-      disableActions: readOnly,
-      modelAuthorityMetadata: modelAuthorityMetadataMode(config),
+    await withLocalTestRuntimeIdentity({ projectRoot: localExploreProjectRoot,
+      runtimePath: optionalArg(args, "--local-test-runtime") }, async () => {
+      await serveLocalExploreStdio({
+        projectRoot: localExploreProjectRoot,
+        config,
+        configPath,
+        disableActions: readOnly,
+        modelAuthorityMetadata: modelAuthorityMetadataMode(config),
+      });
     });
     return 0;
+  }
+  if (args.includes("--local-test-runtime")) {
+    throw new Error("A local test identity requires the local reviewed stdio service. Use the generated client launch command; no identity or authority was changed.");
   }
   if (config.action_rules?.owner_management && !readOnly) {
     assertLocalExplorePresentation(args);
@@ -1019,6 +1027,21 @@ export async function readLocalExploreRuntimeConfig(projectRoot: string,
   return config;
 }
 
+/** Inspect the launch file only to select a surface. Admit the actual runtime
+ * binding before using any authority; never recover by dropping execution. */
+export async function readMcpLaunchConfig(configPath: string, env?: NodeJS.ProcessEnv): Promise<{
+  config: RuntimeConfig; localExploreProjectRoot?: string;
+}> {
+  const launch = await readLedgerRuntimeConfig(configPath, { env });
+  const localExploreProjectRoot = await activeLocalExploreProjectRoot(launch, configPath);
+  if (localExploreProjectRoot) {
+    const config = await readLocalExploreRuntimeConfig(localExploreProjectRoot, configPath, env);
+    if (!config) throw new Error("The reviewed runtime configuration disappeared. Retry client setup; no authority changed.");
+    return { config, localExploreProjectRoot };
+  }
+  return { config: await readRuntimeConfig(configPath, { env }) };
+}
+
 const reportedOptionalActionSubjectFailures = new Set<string>();
 
 function reportOptionalActionSubjectFailure(error: unknown): void {
@@ -1379,11 +1402,10 @@ export async function mcpConfigure(args: string[]): Promise<number> {
   if (transport === "stdio" && (!path.isAbsolute(configPath) || !path.isAbsolute(storePath))) {
     process.stderr.write("Warning: relative paths are resolved by the MCP client working directory. Use --absolute-paths if the client runs from another directory.\n");
   }
-  const existingConfig = await fileExists(rawConfigPath) ? await readRuntimeConfig(rawConfigPath) : undefined;
+  const launch = await fileExists(rawConfigPath) ? await readMcpLaunchConfig(rawConfigPath) : undefined;
+  const existingConfig = launch?.config;
   const productionExplore = existingConfig?.production_explore?.enabled === true;
-  const localExploreProjectRoot = existingConfig
-    ? await activeLocalExploreProjectRoot(existingConfig, rawConfigPath)
-    : undefined;
+  const localExploreProjectRoot = launch?.localExploreProjectRoot;
   const localExplore = Boolean(localExploreProjectRoot);
   if (productionExplore && transport !== "streamable-http") {
     throw new Error(
@@ -1453,7 +1475,9 @@ export async function mcpConfigure(args: string[]): Promise<number> {
   } else {
     process.stderr.write(`Paste this ${client} MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.\n`);
     process.stderr.write(exploreMode
-      ? `${exploreMode === "production" ? "Production" : "Local reviewed"} Explore exposes exactly app.describe_data and app.explore_data; activation, approval, apply, Protect, credentials, and SQL remain outside MCP.\n`
+      ? exploreMode === "local"
+        ? "Local reviewed access exposes four fixed tools: app.describe_data, app.explore_data, app.describe_actions, and app.request_change. Only activated outcomes permit requests; approval, execution, credentials, and SQL remain outside agent authority.\n"
+        : "Production Explore exposes exactly app.describe_data and app.explore_data; activation, approval, apply, Protect, credentials, and SQL remain outside MCP.\n"
       : "Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.\n");
     process.stdout.write(`${JSON.stringify(snippet, null, 2)}\n`);
   }
@@ -1895,13 +1919,11 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
   if (!await fileExists(configPath)) {
     throw new Error(`MCP tool preview could not find ${configPath}.\n\nWhy it matters:\nThe MCP server needs a reviewed config before it can expose semantic tools.\n\nFix:\nRun ${cliCommandName()} onboard db --from-env DATABASE_URL, or pass --config <path>.`);
   }
-  const parsed = await readRuntimeConfig(configPath);
+  const { config: parsed, localExploreProjectRoot } = await readMcpLaunchConfig(configPath);
   const productionExplore = parsed.production_explore?.enabled === true;
   const ownerSettings = !productionExplore && Boolean(parsed.action_rules?.owner_management);
   const productionExploreActive = productionExplore && await hasActiveProductionExploreBoundary(parsed, configPath);
-  const localExplore = !productionExplore
-    && (parsed.capabilities?.length ?? 0) === 0
-    && await hasActiveLocalExploreBoundary(parsed, configPath);
+  const localExplore = !productionExplore && localExploreProjectRoot !== undefined;
   const semanticProjectRoot = configuredActionRuleProjectRoot(parsed);
   const semanticAuthority = !productionExplore && !localExplore && semanticProjectRoot !== undefined
     ? await optionalActiveActionRuleAuthority(semanticProjectRoot)
@@ -2069,11 +2091,6 @@ async function hasActiveProductionExploreBoundary(config: RuntimeConfig, configP
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
-}
-
-
-async function hasActiveLocalExploreBoundary(config: RuntimeConfig, configPath: string): Promise<boolean> {
-  return Boolean(await activeLocalExploreProjectRoot(config, configPath));
 }
 
 

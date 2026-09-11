@@ -7,7 +7,8 @@ import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { readRuntimeConfig } from "./cli-project.js";
 import { applyProposal } from "./guarded-apply.js";
 import { waitFor } from "./cli-options.js";
-import { isRetryableWritebackCode, workerCommand, workerFailureRecovery } from "./worker-runtime.js";
+import { assessUnstartedSemanticQueueAuthority, isRetryableWritebackCode, workerCommand, workerFailureRecovery, workerQueueAuthorityHumanLines } from "./worker-runtime.js";
+import { workerCancellationRequiredRole } from "./worker-cancellation-authority.js";
 
 vi.mock("./cli-project.js", async (original) => ({ ...await original<typeof import("./cli-project.js")>(), readRuntimeConfig: vi.fn() }));
 vi.mock("./guarded-apply.js", () => ({ applyProposal: vi.fn() }));
@@ -119,6 +120,81 @@ describe("controlled delegation worker diagnostics", () => {
     expect(isRetryableWritebackCode("HANDLER_TIMEOUT", "legacy")).toBe(true);
     expect(isRetryableWritebackCode("WORKER_EXECUTION_ERROR", "supervised_worker")).toBe(false);
     expect(workerFailureRecovery("DATABASE_UNAVAILABLE")).toBeUndefined();
+  });
+});
+
+describe("read-only semantic queue authority status", () => {
+  const oldDigest = `sha256:${"a".repeat(64)}` as const;
+  const currentDigest = `sha256:${"b".repeat(64)}` as const;
+  const item = {
+    proposal_id: "wrp_old_rule", status: "queued", execution_mode: "supervised_worker", contract_digest: oldDigest,
+    attempts: 0, max_attempts: 3, next_attempt_at: "2026-09-10T00:00:00.000Z",
+    created_at: "2026-09-10T00:00:00.000Z", updated_at: "2026-09-10T00:00:00.000Z",
+  } as const;
+  const semanticProposal = { change_set: { schema_version: "synapsor.change-set.v4" } } as unknown as import("@synapsor-runner/proposal-store").StoredProposal;
+
+  it("identifies an unstarted old semantic queue digest as blocked without mutating the queue or proposal", () => {
+    const before = structuredClone({ item, semanticProposal });
+    expect(assessUnstartedSemanticQueueAuthority(item, semanticProposal, currentDigest)).toEqual({
+      state: "blocked_by_changed_rules", queued_action_boundary_digest: oldDigest, current_action_boundary_digest: currentDigest,
+    });
+    expect({ item, semanticProposal }).toEqual(before);
+  });
+
+  it("renders the stale rule recovery as a copyable cancellation for the exact request, without digest jargon", () => {
+    const assessment = assessUnstartedSemanticQueueAuthority(item, semanticProposal, currentDigest)!;
+    expect(workerQueueAuthorityHumanLines(assessment, item.proposal_id, "/tmp/generated actions.runner.json")).toEqual([
+      "Blocked: the rules changed before this request started.",
+      "Next: synapsor-runner worker cancel wrp_old_rule --yes --config '/tmp/generated actions.runner.json'",
+      "Then read again and submit a fresh request under the current rules.",
+      "Warning: do not cancel leased, dispatched, or reconciliation-required work; inspect its receipt instead.",
+    ]);
+  });
+
+  it("labels a matching queued digest as current authority only, not execution eligibility", () => {
+    expect(assessUnstartedSemanticQueueAuthority(item, semanticProposal, oldDigest)).toEqual({
+      state: "current_authority_digest_matches", queued_action_boundary_digest: oldDigest, current_action_boundary_digest: oldDigest,
+    });
+  });
+
+  it("returns unknown when current semantic authority is unavailable and does not classify leased or attempted work", () => {
+    expect(assessUnstartedSemanticQueueAuthority(item, semanticProposal, undefined)).toEqual({
+      state: "unknown", reason: "CURRENT_SEMANTIC_AUTHORITY_UNAVAILABLE",
+    });
+    expect(assessUnstartedSemanticQueueAuthority({ ...item, attempts: 1 }, semanticProposal, currentDigest)).toBeUndefined();
+    expect(assessUnstartedSemanticQueueAuthority({ ...item, status: "leased" }, semanticProposal, currentDigest)).toBeUndefined();
+  });
+});
+
+describe("worker cancellation authority continuity", () => {
+  const oldDigest = `sha256:${"a".repeat(64)}` as const;
+  const newDigest = `sha256:${"b".repeat(64)}` as const;
+  const legacyQueue = {
+    proposal_id: "wrp_old", status: "queued" as const, execution_mode: "supervised_worker" as const, contract_digest: oldDigest,
+    attempts: 0, max_attempts: 3, next_attempt_at: "2026-09-10T00:00:00.000Z", created_at: "2026-09-10T00:00:00.000Z", updated_at: "2026-09-10T00:00:00.000Z",
+  };
+
+  it("uses the queue snapshot after an Action digest changes", () => {
+    expect(workerCancellationRequiredRole({
+      queue: { ...legacyQueue, cancellation_control_role: "old_worker_operator" },
+      exactCurrentPolicy: { outcome: "billing.waive_late_fee", action_boundary_digest: newDigest, mode: "supervised_worker", concurrency: 1, queue_limit: 1, lease_seconds: 60, max_attempts: 1, proposal_ttl_seconds: 60, rate_limit: { executions: 1, window_seconds: 60 }, write_url_env: "WRITER", control_role: "new_worker_operator" },
+      production: true,
+    })).toBe("old_worker_operator");
+  });
+
+  it("retains an explicitly reviewed no-role policy after an Action digest changes", () => {
+    expect(workerCancellationRequiredRole({
+      queue: { ...legacyQueue, cancellation_control_role: null },
+      exactCurrentPolicy: undefined,
+      production: true,
+    })).toBeUndefined();
+  });
+
+  it("uses the original exact-digest worker configuration for legacy cancellation or fails closed with recovery guidance", () => {
+    const policy = { capability: "billing.waive_late_fee", contract_digest: oldDigest, mode: "supervised_worker" as const, concurrency: 1, queue_limit: 1, lease_seconds: 60, max_attempts: 1, proposal_ttl_seconds: 60, rate_limit: { executions: 1, window_seconds: 60 }, write_url_env: "WRITER", control_role: "legacy_operator" };
+    expect(workerCancellationRequiredRole({ queue: legacyQueue, exactCurrentPolicy: policy, production: true })).toBe("legacy_operator");
+    expect(() => workerCancellationRequiredRole({ queue: legacyQueue, exactCurrentPolicy: undefined, production: true }))
+      .toThrow(/WORKER_CANCEL_PRIOR_AUTHORITY_UNAVAILABLE.*original reviewed worker --config.*signed operator identity/);
   });
 });
 

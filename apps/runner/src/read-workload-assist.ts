@@ -21,7 +21,7 @@ export const READ_WORKLOAD_ANALYSIS_VERSION = "synapsor.read-workload-analysis.v
 
 export type ReadWorkloadSource = {
   kind: "operator_exact_plan" | "plan_playground" | "model" | "observed_plan" | "existing_capability";
-  provider?: "openai" | "anthropic" | "openai_compatible";
+  provider?: "openai" | "anthropic" | "openrouter" | "openai_compatible";
   model?: string;
 };
 
@@ -1097,8 +1097,8 @@ function normalizeSource(value: unknown): ReadWorkloadSource {
     throw new Error("READ_WORKLOAD_SOURCE_INVALID: unsupported workload source.");
   }
   const provider = value.provider;
-  if (provider !== undefined && provider !== "openai" && provider !== "anthropic" && provider !== "openai_compatible") {
-    throw new Error("READ_WORKLOAD_PROVIDER_INVALID: provider must be openai, anthropic, or openai_compatible.");
+  if (provider !== undefined && provider !== "openai" && provider !== "anthropic" && provider !== "openrouter" && provider !== "openai_compatible") {
+    throw new Error("READ_WORKLOAD_PROVIDER_INVALID: provider must be openai, anthropic, openrouter, or openai_compatible.");
   }
   const model = value.model === undefined ? undefined : boundedText(value.model, "model", 128);
   if (kind === "model" && (!provider || !model)) {

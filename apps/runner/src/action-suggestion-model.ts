@@ -81,11 +81,7 @@ export async function generateModelActionSuggestion(input: {
   }
   const tools: AskToolDefinition[] = [suggestionToolDefinition(catalog)];
   const authorityDigest = askToolSurfaceDigest(tools);
-  const defaultKeyEnv = input.provider === "openai"
-    ? "OPENAI_API_KEY"
-    : input.provider === "anthropic"
-      ? "ANTHROPIC_API_KEY"
-      : undefined;
+  const defaultKeyEnv = input.provider === "openai_compatible" ? undefined : defaultProviderKeyEnv(input.provider);
   const configuration = resolveAskProviderConfiguration({
     provider: input.provider,
     model: input.model,
@@ -250,11 +246,7 @@ export async function generateModelActionSuggestionSet(input: {
   }
   const tools: AskToolDefinition[] = [suggestionSetToolDefinition(catalog)];
   const authorityDigest = askToolSurfaceDigest(tools);
-  const defaultKeyEnv = input.provider === "openai"
-    ? "OPENAI_API_KEY"
-    : input.provider === "anthropic"
-      ? "ANTHROPIC_API_KEY"
-      : undefined;
+  const defaultKeyEnv = input.provider === "openai_compatible" ? undefined : defaultProviderKeyEnv(input.provider);
   const configuration = resolveAskProviderConfiguration({
     provider: input.provider,
     model: input.model,
@@ -752,3 +744,4 @@ function safeIntent(value: string): string {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+import { defaultProviderKeyEnv } from "./hosted-provider-settings.js";

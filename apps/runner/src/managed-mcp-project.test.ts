@@ -227,6 +227,10 @@ describe("managed MCP project client names", () => {
     const installed = parse(await fs.readFile(destination, "utf8"));
     expect(installed.mcpServers.existing.command).toBe("node");
     expect(installed.mcpServers.synapsor.args).toContain("--authoring");
+    expect(installed.mcpServers.synapsor.args).toEqual(expect.arrayContaining([
+      "--local-test-runtime", ".synapsor/local-test-runtime.json",
+    ]));
+    expect(JSON.stringify(installed.mcpServers.synapsor)).not.toMatch(/FIXTURE_(?:TENANT|PERSON)|DATABASE_URL|API_KEY/u);
     expect(installed.mcpServers["synapsor-actions"].args).toContain("./synapsor.actions.runner.json");
     expect(installed.projectSetting).toBe(true);
     expect((await managedMcpProjectStatus("claude-code", root, "explore")).state).toBe("installed");

@@ -53,6 +53,7 @@ import { activation, activity, events, evidence, lifecycle, metrics, proposals, 
 import { type WorkbenchDeploymentProfile } from "./local-ui.js";
 import { audit, benchmark, recipes } from "./mcp-audit.js";
 import { mcp } from "./mcp-project.js";
+import { continueClientSetup } from "./post-activation-ask.js";
 import { propose } from "./mcp-runtime.js";
 import { init, runInitWizard as runInitWizardImpl } from "./onboarding.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
@@ -283,7 +284,7 @@ export async function main(
   if (command === "boundary") {
     return boundaryCommand(rest, dependencies.boundarySchemaInspector);
   }
-  if (command === "action") return actionCommand(rest);
+  if (command === "action") return actionCommand(rest, undefined, continueClientSetup);
   if (command === "up") return up(rest);
   if (command === "runner") return runnerCommand(rest);
   if (command === "cloud") return cloud(rest);

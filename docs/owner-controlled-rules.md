@@ -197,8 +197,25 @@ ordinary tool-execution confirmation is not owner-policy authorization.
 ## Enforcement And Receipts
 
 Each request and queued execution rechecks current parent and required owner
-policies. Revocation blocks new dispatch; it cannot recall an already
-committed external effect. Missing or stale policy layers fail closed.
+policies. Revocation blocks new dispatch. An execution already dispatched may
+finish under the authority admitted at dispatch, even if the rule changes before
+the source transaction commits. The source transaction still rechecks its exact
+facts and effect. Missing or stale policy layers fail closed before admission.
+Replacing rules neither rewrites an earlier approval nor undoes completed data.
+Inspect receipts before retrying uncertain work; a new request needs a fresh
+decision under current rules. Replacement review reports a bounded queue snapshot
+and labels incomplete or unavailable counts explicitly.
+
+`runner worker status` identifies unstarted requests blocked by changed rules.
+Cancellation requires the operator authority recorded when the request was
+queued; a newer policy cannot remove an earlier required cancellation role.
+For older queue entries without that record, production cancellation needs the
+original reviewed worker configuration and its exact policy digest. If that
+trusted history is unavailable, Runner refuses cancellation rather than guessing
+the old permissions. Do not edit queue records or reset approvals to retry work.
+Cancellation applies only before a worker lease, not to already dispatched or
+uncertain execution. Completed changes still require a separate reviewed change
+to reverse their business effect.
 
 Hard shared allowances measure their declared successful effects plus
 outstanding reservations, not merely approvals. Two agents cannot allocate

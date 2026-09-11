@@ -176,11 +176,7 @@ export async function tryAsk(
       ?? path.join(projectRoot, ".synapsor/local.db"),
   );
   const apiKeyEnv = optionalArg(args, "--api-key-env")
-    ?? (provider === "openai"
-      ? "OPENAI_API_KEY"
-      : provider === "anthropic"
-        ? "ANTHROPIC_API_KEY"
-        : undefined);
+    ?? (provider === "openai_compatible" ? undefined : defaultProviderKeyEnv(provider));
   let pastedSecret: string | undefined;
   let actionSuggestionSecret: string | undefined;
   if (provider !== "openai_compatible" && (!apiKeyEnv || !env[apiKeyEnv]?.trim())) {
@@ -1115,21 +1111,24 @@ function assertAnalyticsTools(names: string[]): void {
 }
 
 function providerValue(value: string | undefined): AskProvider {
+  if (value === "openrouter") return "openrouter";
   if (value === "openai") return "openai";
   if (value === "anthropic") return "anthropic";
   if (value === "openai-compatible") return "openai_compatible";
-  throw new Error("try ask requires --provider openai|anthropic|openai-compatible.");
+  throw new Error("try ask requires --provider openai|anthropic|openrouter|openai-compatible.");
 }
 
 export function resolveAskModel(provider: AskProvider, value: string | undefined): string {
   const requested = value?.trim();
   if (requested) return requested;
+  if (provider === "openrouter") return DEFAULT_OPENROUTER_MODEL;
   if (provider === "openai") return DEFAULT_TERMINAL_OPENAI_ASK_MODEL;
   if (provider === "anthropic") return DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL;
   throw new Error("try ask requires --model <value> for an OpenAI-compatible endpoint.");
 }
 
 function providerLabel(provider: AskProvider): string {
+  if (provider === "openrouter") return "OpenRouter";
   if (provider === "openai") return "OpenAI";
   if (provider === "anthropic") return "Anthropic";
   return "OpenAI-compatible";
@@ -1139,6 +1138,7 @@ export function providerDisplayLabel(
   provider: AskProvider,
   endpointScope: "official_remote" | "custom_remote" | "custom_loopback",
 ): string {
+  if (provider === "openrouter") return "OpenRouter + serving provider";
   if (provider !== "openai_compatible") return providerLabel(provider);
   return endpointScope === "custom_loopback"
     ? "OpenAI-compatible (local/loopback)"
@@ -1151,3 +1151,4 @@ function localAskOperator(env: NodeJS.ProcessEnv): string {
     || env.USERNAME?.trim().slice(0, 128)
     || "local-developer";
 }
+import { defaultProviderKeyEnv, DEFAULT_OPENROUTER_MODEL } from "./hosted-provider-settings.js";

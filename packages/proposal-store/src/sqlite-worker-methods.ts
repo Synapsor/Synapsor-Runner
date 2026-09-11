@@ -39,6 +39,7 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
       proposal_id: string;
       execution_mode?: WorkerExecutionMode;
       contract_digest?: `sha256:${string}`;
+      cancellation_control_role?: string | null;
       max_attempts?: number;
       queue_limit?: number;
       now?: string;
@@ -52,6 +53,14 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
       }
       const executionMode = options.execution_mode ?? "legacy";
       const contractDigest = options.contract_digest;
+      const hasCancellationControlRole = Object.hasOwn(options, "cancellation_control_role");
+      const cancellationControlRole = options.cancellation_control_role;
+      if (hasCancellationControlRole && cancellationControlRole === undefined) {
+        throw new ProposalStoreError(
+          "WORKER_CANCEL_CONTROL_ROLE_SNAPSHOT_INVALID",
+          "worker cancellation control role must be omitted for a legacy row or explicitly set to a role or null",
+        );
+      }
       if (executionMode === "supervised_worker" && !contractDigest) {
         throw new ProposalStoreError(
           "SUPERVISED_WORKER_DIGEST_REQUIRED",
@@ -61,13 +70,22 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
       if (contractDigest && !/^sha256:[a-f0-9]{64}$/.test(contractDigest)) {
         throw new ProposalStoreError("WORKER_CONTRACT_DIGEST_INVALID", "worker queue contract digest must be a full lowercase sha256 digest");
       }
+      if (hasCancellationControlRole && cancellationControlRole != null
+        && !/^[A-Za-z_][A-Za-z0-9_.-]{0,127}$/.test(cancellationControlRole)) {
+        throw new ProposalStoreError("WORKER_CANCEL_CONTROL_ROLE_INVALID", "worker cancellation control role must be a safe identifier");
+      }
       const maxAttempts = Math.max(1, Math.min(options.max_attempts ?? 5, 100));
       const queueLimit = Math.max(1, Math.min(options.queue_limit ?? 10_000, 100_000));
       const now = options.now ?? new Date().toISOString();
       this.transaction(() => {
         const existing = this.workerQueueItem(proposal.proposal_id);
         if (existing) {
-          if (existing.execution_mode !== executionMode || existing.contract_digest !== contractDigest) {
+          if (existing.execution_mode !== executionMode || existing.contract_digest !== contractDigest
+            // A legacy row may be retried by a newer trusted caller with an exact
+            // digest and snapshot. Keep the old row unmodified: deriving a role
+            // from a later configuration would rewrite its original authority.
+            || existing.cancellation_control_role !== undefined
+              && (!hasCancellationControlRole || existing.cancellation_control_role !== cancellationControlRole)) {
             throw new ProposalStoreError(
               "WORKER_QUEUE_AUTHORITY_MISMATCH",
               `worker queue item ${proposal.proposal_id} already exists under different execution authority`,
@@ -92,15 +110,18 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
         }
         this.db.prepare(`
           INSERT INTO worker_queue (
-            proposal_id, status, execution_mode, contract_digest, attempts,
+            proposal_id, status, execution_mode, contract_digest, cancellation_control_role,
+            cancellation_control_role_present, attempts,
             max_attempts, next_attempt_at, lease_owner, lease_id,
             lease_expires_at, last_error_code, terminal_outcome, created_at,
             updated_at
-          ) VALUES (?, 'queued', ?, ?, 0, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?)
+          ) VALUES (?, 'queued', ?, ?, ?, ?, 0, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?)
         `).run(
           proposal.proposal_id,
           executionMode,
           contractDigest ?? null,
+          hasCancellationControlRole ? cancellationControlRole ?? null : null,
+          hasCancellationControlRole ? 1 : 0,
           maxAttempts,
           now,
           now,
@@ -673,6 +694,7 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
     }): WorkerQueueItem {
       const now = options.now ?? new Date().toISOString();
       const proposal = this.requireProposal(options.proposalId);
+      const item = this.requireWorkerQueueItem(options.proposalId);
       assertOperatorDecision(
         proposal,
         "worker_cancel",
@@ -680,6 +702,12 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
         options.identity,
         options.require_verified_identity === true,
       );
+      if (item.cancellation_control_role && !options.identity?.roles.includes(item.cancellation_control_role)) {
+        throw new ProposalStoreError(
+          "WORKER_CANCEL_CONTROL_ROLE_REQUIRED",
+          `operator ${options.actor} lacks required worker cancellation control role ${item.cancellation_control_role}`,
+        );
+      }
       this.transaction(() => {
         const item = this.requireWorkerQueueItem(options.proposalId);
         if (item.status !== "queued" && item.status !== "retry_wait") {

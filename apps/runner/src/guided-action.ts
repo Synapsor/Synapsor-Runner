@@ -36,6 +36,8 @@ import {
   extendEnvironmentExample,
   readGuidedOnboardingState,
 } from "./guided-project.js";
+import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import type { PreparedReadEntry } from "./control-policy-read-authoring.js";
 import {
   actionAuthorityForCapability,
   classifyActionAuthorityTransition,
@@ -2750,6 +2752,11 @@ type GuidedActionBoundaryResolution = {
   state: "active" | "reviewed_pending";
 };
 
+type ReviewedPendingActionBoundary = {
+  boundary: ActivatedExplorationBoundary;
+  generationLock: GenerationLock;
+};
+
 type GuidedActionBoundarySelector = {
   boundaryName?: string;
   expectedDigest?: string;
@@ -2772,18 +2779,21 @@ async function loadGuidedActionBoundary(
   const active = await readOptionalGuidedActionActiveBoundary(projectRoot, selector);
   const pending = await readReviewedPendingActionBoundary(projectRoot, selector);
   if (selector.allowReviewedPending && pending
-    && (!active || active.activation.digest !== pending.activation.digest)) {
-    await assertGuidedActionBoundaryCurrent(projectRoot, pending, inspection);
-    return { boundary: pending, state: "reviewed_pending" };
+    && (!active || active.activation.digest !== pending.boundary.activation.digest)) {
+    await assertGuidedActionBoundaryCurrent(projectRoot, pending.boundary, inspection, pending.generationLock);
+    return { boundary: pending.boundary, state: "reviewed_pending" };
   }
   if (active) {
-    await assertGuidedActionBoundaryCurrent(projectRoot, active, inspection);
+    const activeLock = pending?.boundary.activation.digest === active.activation.digest
+      ? pending.generationLock
+      : undefined;
+    await assertGuidedActionBoundaryCurrent(projectRoot, active, inspection, activeLock);
     return { boundary: active, state: "active" };
   }
   if (pending) {
     throw new Error(
-      `GUIDED_ACTION_READ_DEPENDENCY_INACTIVE: reviewed read boundary ${pending.pack.name} `
-      + `at ${pending.activation.digest} must be activated before this proposal action can be activated.`,
+      `GUIDED_ACTION_READ_DEPENDENCY_INACTIVE: reviewed read boundary ${pending.boundary.pack.name} `
+      + `at ${pending.boundary.activation.digest} must be activated before this proposal action can be activated.`,
     );
   }
   throw new Error(
@@ -2813,7 +2823,9 @@ async function readOptionalGuidedActionActiveBoundary(
 async function readReviewedPendingActionBoundary(
   projectRoot: string,
   selector: GuidedActionBoundarySelector,
-): Promise<ActivatedExplorationBoundary | undefined> {
+): Promise<ReviewedPendingActionBoundary | undefined> {
+  const governed = await readProjectReadAuthoring(projectRoot);
+  if (governed) return readGovernedReviewedPendingActionBoundary(governed.selected, selector);
   const journey = await readGuidedOnboardingState(projectRoot);
   const boundaryRoot = path.resolve(
     projectRoot,
@@ -2849,17 +2861,58 @@ async function readReviewedPendingActionBoundary(
     ...authority
   } = candidate;
   return {
-    ...authority,
-    activation: {
-      state: "active",
-      digest,
-      actor: progress.confirmations.at(-1)?.actor ?? "reviewed-pending-boundary",
-      activated_at: progress.updated_at,
-      generation_lock_fingerprint: candidate.generation_lock_fingerprint,
-      reviewed_decisions: decisions.map((decision) => ({
-        decision: decision.decision,
-        confirmed: true as const,
-      })),
+    generationLock: await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")
+      .then((value) => JSON.parse(value) as GenerationLock),
+    boundary: {
+      ...authority,
+      activation: {
+        state: "active",
+        digest,
+        actor: progress.confirmations.at(-1)?.actor ?? "reviewed-pending-boundary",
+        activated_at: progress.updated_at,
+        generation_lock_fingerprint: candidate.generation_lock_fingerprint,
+        reviewed_decisions: decisions.map((decision) => ({
+          decision: decision.decision,
+          confirmed: true as const,
+        })),
+      },
+    },
+  };
+}
+
+function readGovernedReviewedPendingActionBoundary(
+  selected: PreparedReadEntry | undefined,
+  selector: GuidedActionBoundarySelector,
+): ReviewedPendingActionBoundary | undefined {
+  if (!selected || selected.stage === "metadata_only") return undefined;
+  const candidate = selected.progress.candidate;
+  if (selector.boundaryName && candidate.pack.name !== selector.boundaryName) return undefined;
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  if (selector.expectedDigest && selector.expectedDigest !== digest) return undefined;
+  if (selected.progress.policy_migration.status !== "complete") return undefined;
+  const confirmed = new Set(selected.progress.confirmed_decisions);
+  const decisions = boundaryReviewDecisions(candidate);
+  if (decisions.some((decision) => !confirmed.has(decision.decision))) return undefined;
+  const {
+    activation: _disabledActivation,
+    unresolved_decisions: _unresolvedDecisions,
+    ...authority
+  } = candidate;
+  return {
+    generationLock: selected.candidate_lock,
+    boundary: {
+      ...authority,
+      activation: {
+        state: "active",
+        digest,
+        actor: selected.progress.confirmations.at(-1)?.actor ?? "reviewed-pending-boundary",
+        activated_at: selected.progress.updated_at,
+        generation_lock_fingerprint: candidate.generation_lock_fingerprint,
+        reviewed_decisions: decisions.map((decision) => ({
+          decision: decision.decision,
+          confirmed: true as const,
+        })),
+      },
     },
   };
 }
@@ -2868,8 +2921,9 @@ async function assertGuidedActionBoundaryCurrent(
   projectRoot: string,
   boundary: ActivatedExplorationBoundary,
   inspection: SchemaInspection | undefined,
+  expectedLock?: GenerationLock,
 ): Promise<void> {
-  const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
+  const lock = expectedLock ?? JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
   if (inspection) {
     const comparison = compareGenerationLock(lock, inspection);
     if (!comparison.current) throw new Error(`GUIDED_ACTION_SCHEMA_STALE: ${comparison.changes.join("; ")}.`);

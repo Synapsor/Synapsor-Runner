@@ -59,13 +59,16 @@ describe("client setup checkpoint is navigation, never authority or readiness pr
       session.snapshots = [source]; session.active = source.version;
       session.coverage = { source_digest: source.digest, draft_digest: digest("7"), passages: [{ start: 1, end: 1,
         disposition: "needs_decision", responsibility: "application", topic: "Customer confirmation", interpretation: "The client must use receipt state.",
-        draft_paths: ["/runner_evidence/runtime_contract/application_obligations/status_presentation"], application_obligations: ["status_presentation"], next_step: "Verify the client distinguishes approved and completed.",
+        draft_paths: ["/runner_evidence/runtime_contract/application_obligations/status_presentation"], application_obligations: ["status_presentation"], next_step: "Assign the client responsibility for accurate status presentation.",
       }] };
       session.application_assignments = [{ source_digest: source.digest, draft_digest: digest("7"), start: 1, end: 1,
         obligations: ["status_presentation"], assigned_at: new Date().toISOString(), owner: "client_application", verified: false }];
       await savePolicySources(root, session);
       const state = { ...saved(), policy_source_session: session.id };
-      expect((await pendingClientResponsibilities(root, state)).join("\n")).toContain("assigned to your client application; not verified");
+      const assigned = (await pendingClientResponsibilities(root, state)).join("\n");
+      expect(assigned).toContain("assigned to your client application; not verified");
+      expect(assigned).toContain("Verify the assigned client behavior for this requirement before customer use.");
+      expect(assigned).not.toContain("Assign the client responsibility");
       session.coverage_authority_digest = digest("a");
       bindPolicyCoverage(session, { ...session.coverage, draft_digest: digest("b"), passages: [
         { start: 1, end: 1, disposition: "implemented", interpretation: "Runner supplies a receipt, not a customer interface.",

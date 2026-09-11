@@ -23,6 +23,7 @@ import {
   type WorkerControlAction
 } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { collectWriterRowScopes, type WriterRowScope } from "./writer-rls-requirements.js";
 import {
   inspectDatabase,
   rolePostureFingerprint,
@@ -33,6 +34,8 @@ import {
 import { type PolicySpec } from "@synapsor/spec";
 import process from "node:process";
 import { workbenchAttentionId, workbenchAttentionPath } from "./attention-domain.js";
+import { actionRuleCollectionReadiness } from "./action-rule-collection-readiness.js";
+import { actionRuleRlsReadiness } from "./action-rule-rls-readiness.js";
 
 
 export function supervisedWorkerEligibilityCode(reasons: string[]): string {
@@ -136,7 +139,8 @@ export type SupervisedWriterPostureAssessment = {
   allowed_relations: string[];
   writable_relations: string[];
   relation_issues?: Array<{ relation: string; issue: "missing" | "unreviewed" | "excess"; privileges: string[] }>;
-  required_relations?: Array<{ relation: string; privileges: string[]; update_columns: string[]; lock_column?: string; rls_required: boolean }>;
+  required_relations?: Array<{ relation: string; privileges: string[]; update_columns: string[]; lock_column?: string; rls_required: boolean;
+    row_scope?: WriterRowScope }>;
 };
 
 
@@ -280,6 +284,7 @@ export function assessSemanticSupervisedWriterPosture(
   const relationIssues: NonNullable<SupervisedWriterPostureAssessment["relation_issues"]> = [];
   const updateColumns = new Map<string, Set<string>>();
   const lockColumns = new Map<string, string>();
+  const rowScopes = new Map<string, WriterRowScope | null>();
   const fingerprint = rolePostureFingerprint(inspection);
   const role = inspection.role_posture;
   const allowed = new Map<string, Set<keyof NonNullable<TableInfo["role_posture"]>["privileges"]>>();
@@ -318,6 +323,15 @@ export function assessSemanticSupervisedWriterPosture(
       reasons.push("writer_source_mismatch");
       continue;
     }
+    collectWriterRowScopes(compiled, source, rowScopes);
+    for (const issue of actionRuleCollectionReadiness({ compiled, source, inspection, connection: "writer" })) {
+      reasons.push("writer_complete_collection_unproven");
+      relationIssues.push({ relation: issue.relation, issue: "missing", privileges: [issue.reason] });
+    }
+    for (const issue of actionRuleRlsReadiness({ compiled, source, inspection, connection: "writer" })) {
+      reasons.push("writer_rls_prerequisite_failed");
+      relationIssues.push({ relation: issue.relation, issue: "missing", privileges: [issue.reason] });
+    }
     const envelopes = actionRuleEffectEnvelopes(compiled.effect_envelope);
     const targets = [compiled.target_resource, ...(compiled.atomic_updates?.map((effect) => effect.target_resource) ?? [])];
     for (const [index, envelope] of envelopes.entries()) {
@@ -343,7 +357,7 @@ export function assessSemanticSupervisedWriterPosture(
       const relation = `${binding.resource.schema}.${binding.resource.table}`;
       addAllowed(relation, ["select"]);
       addRequired(relation, "select");
-      if (inspection.engine === "postgres") lockColumns.set(relation, binding.resource.primary_key);
+      lockColumns.set(relation, binding.resource.primary_key);
       if (source.database_scope?.mode === "postgres_rls") rlsRequired.add(relation);
     }
     if (source.receipts?.authority === "source_db") {
@@ -443,6 +457,7 @@ export function assessSemanticSupervisedWriterPosture(
     required_relations: [...required].map(([relation, privileges]) => ({ relation, privileges: [...privileges],
       update_columns: [...(updateColumns.get(relation) ?? [])].sort(),
       ...(lockColumns.has(relation) ? { lock_column: lockColumns.get(relation)! } : {}), rls_required: rlsRequired.has(relation),
+      ...(rowScopes.get(relation) ? { row_scope: rowScopes.get(relation)! } : {}),
     })),
   };
 }

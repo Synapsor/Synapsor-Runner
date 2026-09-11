@@ -36,11 +36,12 @@ const SCALAR_EXPRESSION_KEYS = {
   trusted: new Set(["kind", "binding"]),
   field: new Set(["kind", "binding", "field"]),
   derived: new Set(["kind", "name"]),
-  aggregate: new Set(["kind", "operation", "binding", "field"]),
+  aggregate: new Set(["kind", "operation", "binding", "field", "where"]),
   math: new Set(["kind", "operation", "inputs"]),
   scale: new Set(["kind", "operation", "input", "constant", "rounding"]),
   clamp: new Set(["kind", "input", "minimum", "maximum"]),
   add_duration: new Set(["kind", "timestamp", "seconds"]),
+  date_of: new Set(["kind", "timestamp", "timezone"]),
 } as const;
 const BOOLEAN_EXPRESSION_KEYS = {
   all: new Set(["kind", "expressions"]),
@@ -169,7 +170,8 @@ function normalizeScalarExpression(
       onlyKeys(raw, SCALAR_EXPRESSION_KEYS.aggregate, path);
       oneOf(normalized.operation, ["count", "sum", "min", "max"] as const, `${path}.operation`);
       string(normalized.binding, `${path}.binding`);
-      if (normalized.operation !== "count") string(normalized.field, `${path}.field`);
+      if (normalized.operation !== "count" || normalized.field !== undefined) string(normalized.field, `${path}.field`);
+      if (normalized.where !== undefined) normalized.where = normalizeActionRuleBooleanExpression(normalized.where, `${path}.where`, depth + 1);
       return normalized;
     case "math":
       onlyKeys(raw, SCALAR_EXPRESSION_KEYS.math, path);
@@ -198,6 +200,11 @@ function normalizeScalarExpression(
       normalized.input = normalizeScalarExpression(normalized.input, `${path}.input`, depth + 1);
       normalized.minimum = normalizeScalarExpression(normalized.minimum, `${path}.minimum`, depth + 1);
       normalized.maximum = normalizeScalarExpression(normalized.maximum, `${path}.maximum`, depth + 1);
+      return normalized;
+    case "date_of":
+      onlyKeys(raw, SCALAR_EXPRESSION_KEYS.date_of, path);
+      oneOf(normalized.timezone, ["UTC"] as const, `${path}.timezone`);
+      normalized.timestamp = normalizeScalarExpression(normalized.timestamp, `${path}.timestamp`, depth + 1);
       return normalized;
     case "add_duration":
       onlyKeys(raw, SCALAR_EXPRESSION_KEYS.add_duration, path);
@@ -272,6 +279,11 @@ export function normalizeActionRuleBooleanExpression(
 
 export function normalizeActionRuleCatalog(catalog: ActionRuleCatalogV1): ActionRuleCatalogV1 {
   const normalized = canonicalClone(catalog);
+  for (const [index, resource] of normalized.resources.entries()) {
+    if (resource.verification_only !== undefined && resource.verification_only !== true) {
+      invalid(`catalog.resources.${index}.verification_only`, "Verification-only purpose must be true or absent.");
+    }
+  }
   normalized.relationships.forEach(actionRuleRelationshipPairs);
   normalized.resources = normalized.resources
     .map((resource) => ({

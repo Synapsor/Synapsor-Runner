@@ -326,11 +326,18 @@ export function rowToWorkerQueueItem(row: unknown): WorkerQueueItem | undefined 
   ].includes(status)) return undefined;
   const executionMode = row.execution_mode == null ? "legacy" : String(row.execution_mode);
   if (executionMode !== "legacy" && executionMode !== "supervised_worker") return undefined;
+  const cancellationControlRolePresent = Number(row.cancellation_control_role_present ?? 0) === 1;
+  const cancellationControlRole = row.cancellation_control_role;
+  if (cancellationControlRolePresent && cancellationControlRole != null
+    && !/^[A-Za-z_][A-Za-z0-9_.-]{0,127}$/.test(String(cancellationControlRole))) return undefined;
   return {
     proposal_id: String(row.proposal_id),
     status: status as WorkerQueueStatus,
     execution_mode: executionMode,
     contract_digest: row.contract_digest == null ? undefined : String(row.contract_digest) as `sha256:${string}`,
+    ...(cancellationControlRolePresent
+      ? { cancellation_control_role: cancellationControlRole == null ? null : String(cancellationControlRole) }
+      : {}),
     attempts: Number(row.attempts),
     max_attempts: Number(row.max_attempts),
     next_attempt_at: String(row.next_attempt_at),

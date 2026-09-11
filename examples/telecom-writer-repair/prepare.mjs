@@ -1,9 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 
 // This is a recipe for the shipped telecom fixture, not a policy inference engine.
-const [handoff, output] = process.argv.slice(2);
-if (!handoff || !output) throw new Error("Usage: node prepare.mjs <writer-handoff-directory> <new-provisioning.sql>");
+const [handoff, output, option] = process.argv.slice(2);
+if (!handoff || !output || (option !== undefined && option !== "--fresh-role") || process.argv.length > 5) {
+  throw new Error("Usage: node prepare.mjs <writer-handoff-directory> <new-provisioning.sql> [--fresh-role]");
+}
 const plan = JSON.parse(await fs.readFile(path.join(handoff, "requirements.json"), "utf8"));
 const grants = await fs.readFile(path.join(handoff, "grants.sql"), "utf8");
 const fields = ["base_monthly_cents", "data_policy", "effective_from", "included_lines", "international_day_pass", "plan_code", "plan_display_name", "version"];
@@ -25,7 +28,8 @@ if (plan.version !== 1 || plan.engine !== "postgres" || !/^sha256:[a-f0-9]{64}$/
   throw new Error("This is not the supported two-relation offered-plan effect. Keep its authority unchanged; an administrator must review a different writer plan.");
 }
 const literal = (value) => "'" + value.replaceAll("'", "''") + "'";
-const role = plan.suggested_role;
+// An explicit retry creates another new role, never alters an existing attempt.
+const role = option === "--fresh-role" ? `runner_writer_${randomBytes(6).toString("hex")}` : plan.suggested_role;
 const helperBody = (management) => `SELECT EXISTS (SELECT 1 FROM telecom.account_memberships m
  WHERE m.account_id = p_account_id AND m.principal_id = p_principal_id AND m.status = 'active'
  ${management ? "AND m.membership_role IN ('owner', 'manager')" : ""})`;
@@ -54,14 +58,14 @@ const repair = [
 ];
 // Never consume arbitrary statements from the exported grants file. Rebuild the
 // small, allowlisted fixture grant set and compare it with the reviewed export.
-const expectedGrants = [
+const grantStatements = (role) => [
   `GRANT USAGE ON SCHEMA "telecom" TO "${role}";`,
   `GRANT SELECT ON TABLE "telecom"."subscriptions" TO "${role}";`,
   `GRANT UPDATE (${fields.map((field) => `"${field}"`).join(", ")}) ON TABLE "telecom"."subscriptions" TO "${role}";`,
   `GRANT SELECT ON TABLE "telecom"."plan_change_offers" TO "${role}";`,
   `GRANT UPDATE (${consumesOffer ? '"status", "version"' : '"plan_offer_id"'}) ON TABLE "telecom"."plan_change_offers" TO "${role}";`,
 ];
-if (expectedGrants.some((line) => !grants.split("\n").includes(line))) throw new Error("Reviewed grant export does not match the fixture plan; export again.");
+if (grantStatements(plan.suggested_role).some((line) => !grants.split("\n").includes(line))) throw new Error("Reviewed grant export does not match the fixture plan; export again.");
 const sql = [
   "-- TELECOM FIXTURE ONLY. Administrator review and explicit psql execution required.",
   "-- No password, shared-role mutation, source row change, or execution activation.",
@@ -69,7 +73,7 @@ const sql = [
   "\\set ON_ERROR_STOP on", "BEGIN;", "SET LOCAL lock_timeout='5s';", "SET LOCAL statement_timeout='30s';", ...assertions,
   `CREATE ROLE "${role}" NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;`,
   `DO $connect$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), '${role}'); END $connect$;`,
-  ...expectedGrants, ...repair,
+  ...grantStatements(role), ...repair,
   `ALTER ROLE "${role}" SET statement_timeout='5s';`, `ALTER ROLE "${role}" SET lock_timeout='2s';`, "COMMIT;", "",
   `-- Authentication remains separate: use psql's \\password ${role} interactively, then ALTER ROLE "${role}" LOGIN;`,
   "-- Configure the new writer URL privately. Resume start with --rescan in the SAME project; revalidate the saved job, review its authority, then recheck execution.",

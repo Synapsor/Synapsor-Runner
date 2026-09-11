@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import path from "node:path";
+import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -34,6 +35,7 @@ import {
 import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
 import { assertReadAuthoringBindings, readProjectReadAuthoring, saveProjectReadAuthoring,
   type ProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
+import { reconcileReadPrerequisiteForRescan } from "./read-prerequisite.js";
 
 const BOUNDARY_LIBRARY_VERSION = "synapsor.boundary-library.v1" as const;
 
@@ -219,12 +221,30 @@ export function rebaseSavedBoundaryForRescan(input: {
   generatedDraft: ExplorationBoundaryDraft;
   previousCandidate: ExplorationBoundaryDraft;
   boundaryName: string;
+  inspection: SchemaInspection;
+  previousPrerequisitePolicyNames?: readonly string[];
 }): ExplorationBoundaryDraft {
-  return rebaseDisabledBoundary(
+  const rebased = rebaseDisabledBoundary(
     input.generatedDraft,
     input.previousCandidate,
     input.boundaryName,
   );
+  const prerequisite = input.previousCandidate.read_prerequisite;
+  if (!prerequisite) return rebased;
+  try {
+    rebased.read_prerequisite = reconcileReadPrerequisiteForRescan(
+      prerequisite, input.inspection, input.previousPrerequisitePolicyNames,
+    );
+  } catch (error) {
+    throw new Error(
+      `Saved boundary ${input.boundaryName} has a private current-state access condition that no longer matches the inspected source. `
+      + `Rescan stopped without replacing the saved review: ${(error as Error).message} `
+      + `Private source: ${prerequisite.source.schema}.${prerequisite.source.table}. `
+      + "Only newly added policies proven inapplicable to the reader can be refreshed automatically. "
+      + "Ask the database administrator to compare this source's columns, uniqueness, policies and reader access with the reviewed deployment; do not remove the condition or retry unchanged.",
+    );
+  }
+  return reviewExplorationBoundaryCandidate(input.generatedDraft, rebased).candidate;
 }
 
 export async function createSavedBoundary(input: BoundaryLibraryContext & {

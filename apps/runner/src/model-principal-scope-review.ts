@@ -221,11 +221,7 @@ function principalScopeConfiguration(
   egressAcknowledged: boolean,
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  const defaultKeyEnv = session.provider === "openai"
-    ? "OPENAI_API_KEY"
-    : session.provider === "anthropic"
-      ? "ANTHROPIC_API_KEY"
-      : undefined;
+  const defaultKeyEnv = session.provider === "openai_compatible" ? undefined : defaultProviderKeyEnv(session.provider);
   return resolveAskProviderConfiguration({
     provider: session.provider,
     model: session.model,
@@ -269,3 +265,4 @@ function boundedText(value: unknown, label: string, maximum: number): string {
 function optionalText(value: unknown, label: string, maximum: number): string | undefined {
   return value === undefined ? undefined : boundedText(value, label, maximum);
 }
+import { defaultProviderKeyEnv } from "./hosted-provider-settings.js";

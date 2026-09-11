@@ -150,7 +150,6 @@ function assertEffectFieldConstraint(
       fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `${path}.values must be a bounded unique allowlist.`, path);
     }
     field.values.forEach((value, index) => {
-      if (value === null) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `${path}.values[${index}] cannot be null.`, path);
       assertLiteralMatchesType({ kind: "literal", value, value_type: field.type }, `${path}.values[${index}]`);
     });
   }
@@ -316,11 +315,20 @@ function inferScalar(
       return { type, nullable: false };
     }
     case "aggregate": {
-      fail(
-        "ACTION_RULE_UNBOUNDED",
-        `${path} uses an aggregate without a reviewed cross-engine phantom-prevention strategy. Action Rule v1 supports positive bounded exists only.`,
-        path,
+      const binding = context.bindings.get(expression.binding);
+      if (!binding || binding.verification.cardinality !== "many" || binding.verification.collection_consistency !== "complete_locked") {
+        fail("ACTION_RULE_UNBOUNDED", `${path} requires a bounded complete_locked collection with reviewed visibility and phantom-prevention strategy.`, path);
+      }
+      if (expression.where) inferBoolean(expression.where, context, `${path}.where`, expression.binding, true, true);
+      const field = expression.field === undefined ? undefined : inferScalar(
+        { kind: "field", binding: expression.binding, field: expression.field }, context, `${path}.field`, expression.binding,
       );
+      if (expression.operation === "count") return { type: { kind: "integer", unit: "rows" }, nullable: false };
+      if (!field || !["integer", "money_minor", "date", "timestamp"].includes(field.type.kind)
+        || (expression.operation === "sum" && field.type.kind !== "integer" && field.type.kind !== "money_minor")) {
+        fail("ACTION_RULE_TYPE_MISMATCH", `${path} requires a reviewed numeric field for sum or an ordered numeric/date field for min/max.`, path);
+      }
+      return { type: field.type, nullable: field.nullable || expression.operation !== "sum" };
     }
     case "math": {
       const inputs = expression.inputs.map((input, index) => inferScalar(input, context, `${path}.inputs[${index}]`, rowBinding));
@@ -342,6 +350,11 @@ function inferScalar(
       if (input.type.kind !== "integer" && input.type.kind !== "money_minor") fail("ACTION_RULE_TYPE_MISMATCH", `${path} clamp requires a numeric value.`, path);
       return { type: input.type, nullable: input.nullable || minimum.nullable || maximum.nullable };
     }
+    case "date_of": {
+      const input = inferScalar(expression.timestamp, context, `${path}.timestamp`, rowBinding);
+      if (input.type.kind !== "timestamp") fail("ACTION_RULE_TYPE_MISMATCH", `${path} requires a timestamp and explicit UTC calendar day.`, path);
+      return { type: { kind: "date" }, nullable: input.nullable };
+    }
     case "add_duration": {
       const input = inferScalar(expression.timestamp, context, `${path}.timestamp`, rowBinding);
       if (input.type.kind !== "timestamp") fail("ACTION_RULE_TYPE_MISMATCH", `${path} requires a timestamp.`, path);
@@ -356,6 +369,7 @@ function inferBoolean(
   path: string,
   rowBinding?: string,
   positive = true,
+  completePredicate = false,
 ): void {
   switch (expression.kind) {
     case "all":
@@ -366,10 +380,11 @@ function inferBoolean(
         `${path}.expressions[${index}]`,
         rowBinding,
         positive,
+        completePredicate,
       ));
       return;
     case "not":
-      inferBoolean(expression.expression, context, `${path}.expression`, rowBinding, !positive);
+      inferBoolean(expression.expression, context, `${path}.expression`, rowBinding, !positive, completePredicate);
       return;
     case "null_check":
       inferScalar(expression.value, context, `${path}.value`, rowBinding);
@@ -392,35 +407,38 @@ function inferBoolean(
       return;
     }
     case "exists": {
-      if (!positive) {
-        fail(
-          "ACTION_RULE_UNBOUNDED",
-          `${path} uses negative existence without a reviewed cross-engine phantom-prevention strategy. Action Rule v1 supports positive bounded exists only.`,
-          path,
-        );
-      }
       const binding = context.bindings.get(expression.binding);
       if (binding === undefined) fail("ACTION_RULE_INVALID", `${path} references unknown binding ${expression.binding}.`, path);
       if (binding.verification.cardinality !== "many") fail("ACTION_RULE_INVALID", `${path} exists requires a bounded many-row binding.`, path);
-      inferBoolean(expression.where, context, `${path}.where`, expression.binding);
+      if ((!positive || completePredicate) && binding.verification.collection_consistency !== "complete_locked") {
+        fail("ACTION_RULE_UNBOUNDED", `${path} requires a reviewed complete_locked collection for negative existence; ordinary row locks do not prevent new matching rows.`, path);
+      }
+      inferBoolean(expression.where, context, `${path}.where`, expression.binding, true, completePredicate || !positive);
       return;
     }
   }
 }
 
-function collectDerivedReferences(expression: ActionRuleScalarExpressionV1, result: Set<string>): void {
+function expressionChildren(expression: ActionRuleScalarExpressionV1 | ActionRuleBooleanExpressionV1): (ActionRuleScalarExpressionV1 | ActionRuleBooleanExpressionV1)[] {
   switch (expression.kind) {
-    case "derived": result.add(expression.name); return;
-    case "math": expression.inputs.forEach((item) => collectDerivedReferences(item, result)); return;
-    case "scale": collectDerivedReferences(expression.input, result); return;
-    case "clamp":
-      collectDerivedReferences(expression.input, result);
-      collectDerivedReferences(expression.minimum, result);
-      collectDerivedReferences(expression.maximum, result);
-      return;
-    case "add_duration": collectDerivedReferences(expression.timestamp, result); return;
-    default: return;
+    case "math": return expression.inputs;
+    case "scale": return [expression.input];
+    case "clamp": return [expression.input, expression.minimum, expression.maximum];
+    case "add_duration": case "date_of": return [expression.timestamp];
+    case "all": case "any": return expression.expressions;
+    case "not": return [expression.expression];
+    case "compare": return [expression.left, expression.right];
+    case "null_check": return [expression.value];
+    case "in": return [expression.value, ...expression.values];
+    case "exists": return [expression.where];
+    case "aggregate": return expression.where ? [expression.where] : [];
+    default: return [];
   }
+}
+
+function collectDerivedReferences(expression: ActionRuleScalarExpressionV1 | ActionRuleBooleanExpressionV1, result: Set<string>): void {
+  if (expression.kind === "derived") result.add(expression.name);
+  for (const child of expressionChildren(expression)) collectDerivedReferences(child, result);
 }
 
 function derivationOrder(rule: ActionRuleSpecV1): string[] {
@@ -448,16 +466,10 @@ function derivationOrder(rule: ActionRuleSpecV1): string[] {
   return result;
 }
 
-function usesBusinessInput(expression: ActionRuleScalarExpressionV1, rule: ActionRuleSpecV1): boolean {
-  switch (expression.kind) {
-    case "input": return true;
-    case "derived": return usesBusinessInput(rule.derive[expression.name]!, rule);
-    case "math": return expression.inputs.some((input) => usesBusinessInput(input, rule));
-    case "scale": return usesBusinessInput(expression.input, rule);
-    case "clamp": return [expression.input, expression.minimum, expression.maximum].some((input) => usesBusinessInput(input, rule));
-    case "add_duration": return usesBusinessInput(expression.timestamp, rule);
-    default: return false;
-  }
+function usesBusinessInput(expression: ActionRuleScalarExpressionV1 | ActionRuleBooleanExpressionV1, rule: ActionRuleSpecV1): boolean {
+  if (expression.kind === "input") return true;
+  if (expression.kind === "derived") return usesBusinessInput(rule.derive[expression.name]!, rule);
+  return expressionChildren(expression).some(child => usesBusinessInput(child, rule));
 }
 
 function assertFieldTypeMatches(
@@ -493,6 +505,9 @@ function assertEnvelope(
     if (inspected === undefined) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Effect field ${catalogResource.name}.${field.name} is absent from the inspected catalog.`);
     assertFieldTypeMatches(field.type, inspected.type, `effect_envelope.allowed_fields.${field.name}`);
     assertEffectFieldConstraint(field, `effect_envelope.allowed_fields.${field.name}`);
+    if (field.values?.includes(null) && !inspected.nullable) {
+      fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Effect field ${catalogResource.name}.${field.name} is not nullable; clearing it is not allowed.`, `effect_envelope.allowed_fields.${field.name}`);
+    }
     if ([envelope.primary_key, envelope.tenant_key, envelope.principal_scope_key, envelope.conflict_key, envelope.version_advance?.column].includes(field.name)) {
       fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Guard field ${field.name} cannot be a freely derived write field.`, `effect_envelope.allowed_fields.${field.name}`);
     }
@@ -506,7 +521,9 @@ function assertEnvelope(
     if (field === undefined) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Rule attempts to set ${name} outside the effect envelope.`, `rule.effect.set.${name}`);
     const inferred = inferScalar(expression, context, `rule.effect.set.${name}`);
     if (!compatibleTypes(inferred.type, field.type)) fail("ACTION_RULE_TYPE_MISMATCH", `Derived value for ${name} has the wrong type or unit.`, `rule.effect.set.${name}`);
-    if (inferred.nullable) fail("ACTION_RULE_TYPE_MISMATCH", `Derived value for ${name} can be null or unknown.`, `rule.effect.set.${name}`);
+    // Clearing is an explicit reviewed operation, not permission to write unknown facts.
+    const reviewedClear = expression.kind === "literal" && expression.value === null && field.values?.includes(null);
+    if (inferred.nullable && !reviewedClear) fail("ACTION_RULE_TYPE_MISMATCH", `Derived value for ${name} can be null or unknown. To clear a nullable field, use an explicit typed null literal and include null in its reviewed values.`, `rule.effect.set.${name}`);
     result[name] = field.type;
   }
   if (envelope.operation === "update") {
@@ -628,6 +645,30 @@ function compileAgainstCatalog(
       fail("ACTION_RULE_UNBOUNDED", `Lock parent ${binding.verification.source.from_binding} must precede ${binding.binding}.`, "verification_boundary.lock_order");
     }
   }
+  for (const binding of bindings.values()) {
+    if (binding.verification.collection_consistency === undefined) continue;
+    const source = binding.verification.source;
+    const parent = source.kind === "relationship" ? bindings.get(source.from_binding) : undefined;
+    if (binding.verification.collection_consistency !== "complete_locked"
+      || binding.verification.cardinality !== "many" || source.kind !== "relationship"
+      || source.direction !== "inverse" || !binding.relationship?.target_unique
+      || !parent || parent.verification.cardinality !== "one"
+      || parent.verification.scope.mode !== "columns" || binding.verification.scope.mode !== "columns") {
+      fail("ACTION_RULE_UNBOUNDED", `Complete collection ${binding.binding} requires an inverse foreign key from one directly scoped parent and explicit matching child scope.`);
+    }
+    const parentScope = parent.verification.scope;
+    const childScope = binding.verification.scope;
+    const pairs = actionRuleRelationshipPairs(binding.relationship);
+    if (!pairs.some(pair => pair.target_field === parentScope.tenant_field && pair.local_field === childScope.tenant_field)
+      || (parentScope.principal_field === undefined) !== (childScope.principal_field === undefined)
+      || (parentScope.principal_field !== undefined && !pairs.some(pair => pair.target_field === parentScope.principal_field && pair.local_field === childScope.principal_field))) {
+      fail("ACTION_RULE_SCOPE_UNPROVEN", `Complete collection ${binding.binding} must retain the parent's complete trusted scope in its foreign key.`);
+    }
+    const isolation = binding.resource.engine === "postgres" ? "read_committed" : "repeatable_read";
+    if (boundary.transaction.isolation !== isolation) {
+      fail("ACTION_RULE_UNBOUNDED", `Complete collection ${binding.binding} requires ${isolation} on ${binding.resource.engine} for current, phantom-protected verification.`);
+    }
+  }
   for (const member of actionRuleEffectEnvelopes(envelope)) assertAuthorityScope(member, bindings);
 
   const subjects = new Map(rule.subjects.map((subject) => [subject.binding, subject]));
@@ -657,6 +698,10 @@ function compileAgainstCatalog(
   const compiledEffects = actionRuleEffectEnvelopes(envelope).map((member, index) => {
     const target = catalogResources.get(member.target_resource);
     if (!target || target.engine !== targetResource.engine) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", "Every atomic target must exist in the same inspected source and engine.");
+    if (target.verification_only) {
+      fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Verification-only resource ${target.name} cannot be an effect target.`,
+        index === 0 ? "effect_envelope.target_resource" : `effect_envelope.atomic_updates.${index - 1}.target_resource`);
+    }
     const effectRule = { ...rule, effect: effects[index]! };
     const fieldTypes = assertEnvelope(member, effectRule, target, bindings, context);
     for (const relationship of catalog.relationships) {

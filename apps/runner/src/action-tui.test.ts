@@ -3,6 +3,7 @@ import type { ReadStream, WriteStream } from "node:tty";
 import { describe, expect, it, vi } from "vitest";
 import {
   actionAuthorityRevisionNeedsVersionAdvance,
+  actionHomeChoices,
   actionInspectionDatabaseUrlEnv,
   actionBoundaryActivationStatusLine,
   actionBoundaryApprovalStatusLine,
@@ -74,6 +75,17 @@ const options = {
 };
 
 describe("Safe Action terminal control plane", () => {
+  it("offers the typed manual semantic editor without hiding existing control-plane paths", () => {
+    const choices = actionHomeChoices({ activations: [], drafts: [], action_boundary: {} } as never, [], options as never);
+    expect(choices).toContainEqual(expect.objectContaining({
+      value: "manual_semantic",
+      label: "Edit business rules manually",
+      detail: "Create or edit one supported proposal-only rule. Changes stay disabled until separate review; unsupported rules remain unchanged.",
+    }));
+    expect(choices.map(choice => choice.label).join("\n")).not.toContain("Manual semantic ActionRule");
+    expect(choices).toContainEqual(expect.objectContaining({ value: "boundary" }));
+  });
+
   const inspectedTable = (
     name: string,
     privileges: { select?: boolean; insert?: boolean; update?: boolean } = {},
@@ -2565,6 +2577,46 @@ describe("Safe Action terminal control plane", () => {
     expect(lines.join("\n")).toContain("UPDATE public.orders");
   });
 
+  it("labels unread proposal values without conflating them with null or unset", async () => {
+    const pending = proposalDetail("pending_review");
+    const changeSet = pending.proposal.change_set as unknown as {
+      patch: Record<string, unknown>;
+      before: Record<string, unknown>;
+      after: Record<string, unknown>;
+    };
+    changeSet.patch = { base_monthly_cents: 4500, nullable_note: "ignored patch fallback" };
+    changeSet.before = { version: 4, nullable_note: null };
+    changeSet.after = { base_monthly_cents: 4500, nullable_note: null };
+    const operatorService: ActionOperatorService = {
+      async identityPosture() { return { provider: "dev_env", apply_roles: [] }; },
+      async list() { return [{
+        proposal_id: pending.proposal.proposal_id, proposal_hash: pending.proposal.proposal_hash,
+        capability: pending.proposal.action, state: pending.proposal.state,
+        business_object: pending.proposal.business_object, object_id: pending.proposal.object_id,
+        writeback_mode: "read_only", source_database_mutated: false,
+        created_at: pending.proposal.created_at, updated_at: pending.proposal.updated_at,
+      }]; },
+      async count() { return 1; },
+      async page() { return { total: 1, items: await this.list() }; },
+      async detail() { return pending; },
+      async approve() { throw new Error("not expected"); },
+      async reject() { throw new Error("not expected"); },
+      async apply() { throw new Error("not expected"); },
+      async replay() { throw new Error("not expected"); },
+    };
+    const prompter = scriptedPrompter({
+      choices: [`proposal:${pending.proposal.proposal_id}`, "back", "back"], texts: [], confirms: [],
+      onChoose(title, _choices, context) {
+        if (title !== "PROPOSAL REVIEW") return;
+        expect(context).toContain("  base_monthly_cents: not observed (not read) -> 4500");
+        expect(context).toContain("  nullable_note: null -> null");
+        expect(context?.join("\n")).not.toContain("not set -> 4500");
+      },
+    });
+
+    await reviewActionProposalInbox({ operatorService, prompter, env: {} });
+  });
+
   it("binds TUI approval to the exact hash and never offers apply for WRITEBACK NONE", async () => {
     const pending = proposalDetail("pending_review");
     const approved = proposalDetail("approved");
@@ -2759,6 +2811,33 @@ describe("Safe Action terminal control plane", () => {
     await emitKey(terminal.input, { name: "escape", sequence: "\u001b" });
     await expect(selection).resolves.toBeUndefined();
     expect(terminal.input.isRaw).toBe(false);
+  });
+
+  it("renders every sequential manual review summary before accepting its typed input", async () => {
+    const terminal = fakeTerminal(72, 12);
+    const prompter = createTerminalActionPrompter(terminal.input, terminal.output);
+    const summaries = [
+      ["Eligibility summary", "The appointment is confirmed."],
+      ["Proposal summary", "Propose updating reminder hours."],
+      ["Refusal summary", "Refuse values outside the reviewed range."],
+      ["Human review summary", "Requests above the automatic threshold require human review."],
+    ] as const;
+
+    for (const [label, answer] of summaries) {
+      const pending = prompter.text(label, {
+        title: "MANUAL SEMANTIC ACTIONRULE",
+        context: ["State the reviewed business result."],
+      });
+      await nextTurn();
+      const frame = stripAnsi(terminal.output.read()?.toString() ?? "");
+      expect(frame).toContain("MANUAL SEMANTIC ACTIONRULE");
+      expect(frame).toContain(label);
+      expect(frame).toContain("State the reviewed business result.");
+
+      terminal.input.write(`${answer}\n`);
+      await expect(pending).resolves.toBe(answer);
+      expect(terminal.input.isRaw).toBe(false);
+    }
   });
 
   it("lets Q select a visible Quit action without walking the menu", async () => {

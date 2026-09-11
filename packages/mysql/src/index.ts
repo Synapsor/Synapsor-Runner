@@ -106,7 +106,10 @@ export function buildMysqlActionRuleFactQuery(query: ActionRuleFactQueryV1): { s
   };
 }
 
-export function createMysqlActionRuleFactLoader(connection: MysqlApplyConnection): ActionRuleFactLoaderAdapterV1 {
+export function createMysqlActionRuleFactLoader(connection: MysqlApplyConnection, transaction?: {
+  /** Set by the trusted transaction owner, never a model argument or session default. */
+  executionIsolation: CompiledActionRuleV1["verification_boundary"]["transaction"]["isolation"];
+}): ActionRuleFactLoaderAdapterV1 {
   const compatible = new Set<string>();
   return {
     engine: "mysql",
@@ -127,6 +130,15 @@ export function createMysqlActionRuleFactLoader(connection: MysqlApplyConnection
       const compiled = buildMysqlActionRuleFactQuery(query);
       const [rows] = await connection.query<Record<string, unknown>[]>(compiled.sql, compiled.values);
       return rows;
+    },
+    async assertCompleteCollection({ mode }): Promise<void> {
+      // InnoDB current locking reads acquire next-key locks over the complete range.
+      // READ COMMITTED disables the gap protection required for absence and totals.
+      if (mode !== "transaction_reverify") return;
+      // @@transaction_isolation is only the session default: SET TRANSACTION can override it.
+      if (transaction?.executionIsolation !== "repeatable_read") {
+        throw new ActionRuleError("ACTION_RULE_UNBOUNDED", "Complete MySQL collections require InnoDB REPEATABLE READ execution with locking range reads.");
+      }
     },
     async assertRelationshipCompatible(binding, parent): Promise<void> {
       if (!binding.relationship || binding.verification.source.kind !== "relationship") throw new Error("ACTION_RULE_LOAD_PLAN_INVALID");
@@ -929,7 +941,7 @@ async function mutateMysqlSemantic(
   if (config.semanticActionVerifier === undefined) throw new Error("SEMANTIC_REVERIFIER_UNAVAILABLE");
   const semanticVerification = await config.semanticActionVerifier({
     job,
-    factLoader: createMysqlActionRuleFactLoader(connection),
+    factLoader: createMysqlActionRuleFactLoader(connection, { executionIsolation: job.semantic_authority.proof.verification_transaction.isolation }),
   });
   assertSemanticActionReverification(job, semanticVerification);
 

@@ -1213,7 +1213,7 @@ async function handleRequest(input: {
         const intent = workbenchReadWorkloadIntent(body.intent);
         const provider = workbenchReadWorkloadProvider(body.provider);
         const model = optionalWorkbenchText(body.model, "model", 128)
-          ?? (provider === "anthropic" ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL : DEFAULT_TERMINAL_OPENAI_ASK_MODEL);
+          ?? defaultHostedModel(provider);
         const apiKeyEnv = optionalWorkbenchText(body.api_key_env, "API key environment variable", 128);
         const baseUrl = optionalWorkbenchText(body.base_url, "provider base URL", 2_048);
         const mapped = await readWorkloadSuggestion({
@@ -4497,16 +4497,12 @@ async function handleRequest(input: {
         throw new Error("Guided action model suggestion requires intent and provider, or one bounded suggestion object.");
       }
       const provider = body.provider === "openai-compatible" ? "openai_compatible" : body.provider;
-      if (provider !== "openai" && provider !== "anthropic" && provider !== "openai_compatible") {
-        throw new Error("Guided action suggestion provider must be openai, anthropic, or openai-compatible.");
+      if (provider !== "openai" && provider !== "anthropic" && provider !== "openrouter" && provider !== "openai_compatible") {
+        throw new Error("Guided action suggestion provider must be openai, anthropic, openrouter, or openai-compatible.");
       }
       const model = typeof body.model === "string" && body.model.trim()
         ? body.model.trim()
-        : provider === "openai"
-          ? DEFAULT_TERMINAL_OPENAI_ASK_MODEL
-          : provider === "anthropic"
-            ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL
-            : undefined;
+        : provider === "openai_compatible" ? undefined : defaultHostedModel(provider);
       if (!model) throw new Error("OpenAI-compatible action suggestions require an exact model name.");
       const generated = await guidedActionSuggestion({
         intent: body.intent,
@@ -4569,7 +4565,7 @@ async function handleRequest(input: {
     if (!jobIntent) throw new Error("Action-set suggestion requires one agent job.");
     const provider = workbenchReadWorkloadProvider(body.provider);
     const model = optionalWorkbenchText(body.model, "model", 128)
-      ?? (provider === "anthropic" ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL : DEFAULT_TERMINAL_OPENAI_ASK_MODEL);
+      ?? defaultHostedModel(provider);
     const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
     const options = body.authoring_catalog === true
       ? guidedActionOptionsFromCandidate({
@@ -7428,8 +7424,8 @@ function workbenchWorkloadWithActionSupport(
 }
 
 function workbenchReadWorkloadProvider(value: unknown): AskProvider {
-  if (value === "openai" || value === "anthropic" || value === "openai_compatible") return value;
-  throw new Error("Boundary Assist provider must be openai, anthropic, or openai_compatible.");
+  if (value === "openai" || value === "anthropic" || value === "openrouter" || value === "openai_compatible") return value;
+  throw new Error("Boundary Assist provider must be openai, anthropic, openrouter, or openai_compatible.");
 }
 
 function optionalWorkbenchText(value: unknown, label: string, maximum: number): string | undefined {
@@ -7971,8 +7967,8 @@ async function revalidateWorkbenchAskAuthority(input: {
 }
 
 function askProviderValue(value: unknown): AskProvider {
-  if (value === "openai" || value === "anthropic" || value === "openai_compatible") return value;
-  throw new AskError("ASK_PROVIDER_INVALID", "Choose OpenAI, Anthropic, or an OpenAI-compatible provider.");
+  if (value === "openai" || value === "anthropic" || value === "openrouter" || value === "openai_compatible") return value;
+  throw new AskError("ASK_PROVIDER_INVALID", "Choose OpenAI, Anthropic, OpenRouter, or an OpenAI-compatible provider.");
 }
 
 function askStringValue(value: unknown): string {
@@ -10516,3 +10512,4 @@ function asRecord(value: unknown): JsonRecord {
 function stringOrDefault(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
+import { defaultHostedModel } from "./hosted-provider-settings.js";

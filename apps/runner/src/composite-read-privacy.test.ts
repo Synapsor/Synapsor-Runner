@@ -13,7 +13,14 @@ import {
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
-import { commitBoundaryResourceReviewMutation, loadBoundaryResourceReviewCatalog, prepareBoundaryResourceReviewMutation } from "./boundary-review-mutation.js";
+import { commitBoundaryResourceReviewMutation, loadBoundaryResourceReviewCatalog, prepareBoundaryResourceReviewMutation, prepareBoundaryReviewMutationBatch } from "./boundary-review-mutation.js";
+import { generateModelReadBoundaryRevision } from "./read-boundary-revision-model.js";
+import { applyModelReadBoundaryExposureRevision, loadBoundaryReviewContext, prepareModelReadBoundaryExposureRevision } from "./boundary-commands.js";
+import { reviewReadRelationship } from "./read-relationship-review.js";
+import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
+import { rebindActionCatalogForReadPolicyRevision } from "./action-rule-read-revision.js";
+import { policyCoverageDraft } from "./authoring-policy-evidence.js";
+import { hasReviewedCustomerReadEntry, reviewedReadEntryPaths } from "./read-relationship-access.js";
 import { refreshIncompleteReadMappingRelationships } from "./job-mapping-catalog.js";
 import { rebaseSavedBoundaryForRescan } from "./boundary-library.js";
 import { projectDescribeDataForModel } from "./read-catalog-presentation.js";
@@ -35,6 +42,220 @@ const COURSE_LINK = "registration_section__section_course";
 const context = { tenant: "private-institution", principal: "private-student" };
 
 describe("Composite Read independent safety regressions", () => {
+  it("restores one host-reviewed composite path through chat without restoring other access", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-reviewed-path-restore-"));
+    try {
+      const inspection = studentInspection(), build = fixture(inspection, root);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const remove = await prepareBoundaryResourceReviewMutation(root, { resource_id: ROOT,
+        relationship_ids: [], actor: "synthetic-reviewer", reason: "Remove related access for this fixture." }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, remove);
+      const current = await loadBoundaryReviewContext(root);
+      const before = structuredClone(current.candidate);
+      let calls = 0, reviews = 0;
+      const revision = await generateModelReadBoundaryRevision({ instruction: "Restore only the exact section related to my registration. Preserve the other restrictions.",
+        provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: current.candidate, egressAcknowledged: true,
+        reviewRelationship: async request => reviewReadRelationship({ projectRoot: root, boundary: current.candidate,
+          generatedBoundary: current.draft, fromResource: request.from_resource, toResource: request.to_resource,
+          modelLabel: "test provider", assertCurrent: async () => {
+            expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(current.bundle.candidate_digest);
+          }, session: { promptText: async () => undefined, confirm: async () => false,
+            chooseResource: async () => undefined, editFieldTiers: async () => undefined,
+            chooseOption: async (_title, choices, options) => {
+              reviews++;
+              expect(JSON.stringify(options?.exactDetails)).toContain("institution_id");
+              return choices.find(choice => choice.value !== "pending")!.value;
+            } },
+        }), dependencies: { requestJson: async () => ({ status: 200, body: { output: [{ type: "function_call",
+          call_id: `restore_${++calls}`, name: "runner__submit_read_boundary_revision", arguments: JSON.stringify(calls === 1
+            ? { relationship_review_request: { from_resource: ROOT, to_resource: SECTION, reason: "Restore the existing scoped association." } }
+            : { resource_changes: [] }),
+        }] } }) },
+      });
+      expect(reviews).toBe(1);
+      expect(revision.policy_changes).toEqual([{ resource: ROOT, settings: { relationship_ids: [SECTION_LINK] } }]);
+      const args = { projectRoot: root, context: current, schemaInspector: async () => inspection };
+      const { reviewed_relationship, ...withoutReview } = revision;
+      await expect(prepareModelReadBoundaryExposureRevision({ ...args, revision: withoutReview }))
+        .rejects.toThrow("relationship_ids contains an identifier outside the reviewed catalog");
+      await expect(prepareModelReadBoundaryExposureRevision({ ...args, revision: { ...revision,
+        reviewed_relationship: { ...reviewed_relationship!, candidate_digest: `sha256:${"0".repeat(64)}` },
+      } })).rejects.toThrow("READ_RELATIONSHIP_CANDIDATE_STALE");
+      const preview = await prepareModelReadBoundaryExposureRevision({ ...args, revision });
+      const selected = resource(build.exploration_boundary, ROOT).relationships.find(link => link.id === SECTION_LINK)!;
+      expect(resource(preview.candidate, ROOT).relationships).toEqual([selected]);
+      expect(selected.proof!.links[0]!.source_columns.length).toBe(2);
+      for (const entry of preview.candidate.pack.resources) {
+        const { relationships: _links, ...policy } = entry;
+        const { relationships: _previous, ...previousPolicy } = resource(before, entry.id);
+        expect(policy).toEqual(previousPolicy);
+      }
+      expect(preview.candidate.trusted_context).toEqual(before.trusted_context);
+      expect(preview.candidate.budgets).toEqual(before.budgets);
+      expect((await loadBoundaryReviewContext(root)).candidate).toEqual(before);
+      const saved = await applyModelReadBoundaryExposureRevision({ ...args, revision, preview });
+      expect(resource(saved.context.candidate, ROOT).relationships).toEqual([selected]);
+      expect(saved.committed.authority_activated).toBe(false);
+      expect(saved.committed.source_database_changed).toBe(false);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toThrow();
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(["none", "before", "after"] as const)("removes an entire Read resource through chat with a budget edit %s, preserving private Action facts", async budgetOrder => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-resource-exclusion-"));
+    try {
+      const inspection = studentInspection(), build = fixture(inspection, root);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const before = await loadBoundaryResourceReviewCatalog(root);
+      const privateCatalog = buildActionRuleAuthoringCatalog({ boundary: before.candidate, inspection }).catalog;
+      const revision = await generateModelReadBoundaryRevision({
+        instruction: "Keep the course catalog entirely unavailable for customer Read access. Preserve private verification.",
+        provider: "openai", model: "gpt-test", apiKey: "test-key", egressAcknowledged: true,
+        boundary: before.candidate, dependencies: { requestJson: async () => ({ status: 200, body: { output: [{
+          type: "function_call", call_id: "remove_course_read", name: "runner__submit_read_boundary_revision",
+          arguments: JSON.stringify({ resource_changes: [
+            ...(budgetOrder === "before" ? [{ resource: ROOT, settings: { max_queries_per_session: 10 } }] : []),
+            { resource: COURSE, settings: { exclude: true } },
+            ...(budgetOrder === "after" ? [{ resource: ROOT, settings: { max_queries_per_session: 10 } }] : []),
+          ] }),
+        }] } }) },
+      });
+      const preview = await prepareModelReadBoundaryExposureRevision({ projectRoot: root,
+        context: await loadBoundaryReviewContext(root), revision, schemaInspector: async () => inspection });
+      expect(preview.candidate.pack.resources.some(item => item.id === COURSE)).toBe(false);
+      expect(preview.candidate.budgets.max_queries_per_session).toBe(budgetOrder === "none"
+        ? before.candidate.budgets.max_queries_per_session : 10);
+      expect(preview.candidate.pack.resources.flatMap(item => item.relationships).some(link => link.target_resource === COURSE)).toBe(false);
+      expect(() => validateExplorePlan({ kind: "rows", resource: COURSE, select: ["name"] }, facade(preview.candidate))).toThrow();
+      expect(() => validateExplorePlan({ kind: "aggregate", resource: COURSE, measures: [{ op: "count", alias: "total" }] }, facade(preview.candidate))).toThrow();
+      expect(() => validateExplorePlan(displayPlan(), facade(preview.candidate))).toThrow();
+      const retainedCatalog = rebindActionCatalogForReadPolicyRevision({ catalog: privateCatalog, previousLock: build.lock,
+        nextLock: preview.build.lock, nextBoundary: preview.candidate });
+      const after = buildActionRuleAuthoringCatalog({ boundary: preview.candidate, inspection, retainedCatalog }).catalog;
+      expect(after.resources).toEqual(privateCatalog.resources);
+      expect(after.relationships).toEqual(privateCatalog.relationships);
+      await expect(prepareModelReadBoundaryExposureRevision({ projectRoot: root,
+        context: await loadBoundaryReviewContext(root), schemaInspector: async () => inspection,
+        revision: { ...revision, changes: [{ resource: COURSE, field: "name", before: "model_and_runner", after: "runner_only" }] },
+      })).rejects.toThrow("without field-exposure edits for the same resource");
+      expect((await loadBoundaryResourceReviewCatalog(root)).candidate).toEqual(before.candidate);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toThrow();
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("translates related-only policy through the model tool and retains fields, paths and customer scope", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-related-policy-"));
+    try {
+      const inspection = studentInspection(), build = fixture(inspection, root);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const before = await loadBoundaryResourceReviewCatalog(root);
+      const revision = await generateModelReadBoundaryRevision({
+        instruction: "Show course and section details only through this student's permitted registration records. Keep useful fields and private verification unchanged.",
+        privacyOnly: true, provider: "openai", model: "gpt-test", apiKey: "test-key", egressAcknowledged: true,
+        boundary: before.candidate, dependencies: { requestJson: async (request) => {
+          expect(JSON.stringify(request.body)).toContain("reviewed_entry_paths");
+          return { status: 200, body: { output: [{ type: "function_call", call_id: "related_scope",
+            name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [SECTION, COURSE].map((resource) =>
+              ({ resource, settings: { relationship_only: true } })) }) }] } };
+        } },
+      });
+      const preview = await prepareBoundaryReviewMutationBatch(root, revision.policy_changes!.map((change) => ({
+        resource_id: change.resource, ...change.settings, actor: "synthetic-reviewer", reason: "Apply the supplied own-registration policy.",
+      })), async () => inspection);
+      expect(preview.semantic_diff).toEqual(expect.arrayContaining([expect.objectContaining({
+        resource_id: COURSE, independent_access_change: { before: true, after: false },
+      })]));
+      for (const id of [SECTION, COURSE]) {
+        expect(resource(preview.candidate, id)).toEqual({ ...resource(before.candidate, id), relationship_only: true });
+        expect(hasReviewedCustomerReadEntry(preview.candidate, id)).toBe(true);
+        expect(() => validateExplorePlan({ kind: "rows", resource: id, select: ["name"] }, facade(preview.candidate)))
+          .toThrow(/only through reviewed relationships/);
+      }
+      expect(resource(preview.candidate, ROOT)).toEqual(resource(before.candidate, ROOT));
+      expect(() => validateExplorePlan(displayPlan(), facade(preview.candidate))).not.toThrow();
+      expect((await loadBoundaryResourceReviewCatalog(root)).candidate).toEqual(before.candidate);
+      const evidence = policyCoverageDraft({ read: preview.candidate, actions: [], decisions: [] }).runner_evidence;
+      expect(evidence.read_access[COURSE]).toMatchObject({ independently_queryable: false, customer_scoped_access: true });
+      expect(evidence.runtime_contract.deployment_prerequisites.authenticated_identity.reviewed_customer_scope).toBe(true);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("refuses related-only narrowing with no usable root path and cannot restore independent access", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-related-missing-"));
+    try {
+      const inspection = studentInspection(), build = fixture(inspection, root);
+      for (const item of build.exploration_boundary.pack.resources) item.relationships = [];
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const before = await loadBoundaryResourceReviewCatalog(root);
+      const request = { resource_id: COURSE, relationship_only: true as const, actor: "synthetic-reviewer", reason: "Restrict course access." };
+      await expect(prepareBoundaryResourceReviewMutation(root, request, async () => inspection)).rejects.toThrow("no usable reviewed path");
+      await expect(prepareBoundaryResourceReviewMutation(root, { ...request, relationship_only: false } as never, async () => inspection))
+        .rejects.toThrow("restoring it requires a separate scope review");
+      expect((await loadBoundaryResourceReviewCatalog(root)).candidate).toEqual(before.candidate);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(["mock", ...(process.env.SYNAPSOR_TEST_READ_REVISION_LIVE === "1" ? ["terra"] : [])])(
+    "narrows course access to registrations, not offers, without removing private Action verification (%s)", async mode => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-read-entry-narrowing-"));
+    try {
+      const inspection = studentInspection();
+      const offers = structuredClone(inspection.tables[0]!);
+      offers.name = "waitlist_offers";
+      offers.foreign_keys[0]!.name = "offer_section";
+      offers.unique_constraints = offers.unique_constraints.map(key => ({ ...key, name: `offer_${key.name}` }));
+      inspection.tables.push(offers);
+      const build = fixture(inspection, root);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const offerId = "university.waitlist_offers";
+      const include = await prepareBoundaryResourceReviewMutation(root, { resource_id: offerId, include: true,
+        actor: "synthetic-reviewer", reason: "Include the student's offers in the initial disabled fixture." }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, include);
+      const before = await loadBoundaryResourceReviewCatalog(root);
+      const privateCatalog = buildActionRuleAuthoringCatalog({ boundary: before.candidate, inspection }).catalog;
+      expect(reviewedReadEntryPaths(before.candidate, COURSE).map(item => item.root_resource)).toContain(offerId);
+      const changes = [
+        { resource: offerId, settings: { relationship_ids: [] } },
+        ...[SECTION, COURSE].map(resource => ({ resource, settings: { relationship_only: true as const } })),
+      ];
+      const revision = await generateModelReadBoundaryRevision({
+        instruction: "Show courses and sections only through my registrations, not through waitlist offers. Keep my offers readable and private verification unchanged.",
+        provider: "openai", model: mode === "terra" ? "gpt-5.6-terra" : "gpt-test",
+        ...(mode === "mock" ? { apiKey: "test-key" } : {}), egressAcknowledged: true,
+        boundary: before.candidate, ...(mode === "mock" ? { dependencies: { requestJson: async request => {
+          const prompt = JSON.stringify(request.body);
+          expect(prompt).toContain("reviewed_relationships");
+          expect(prompt).toContain("offer_section__section_course");
+          expect(prompt).toContain("also narrow settings.relationship_ids on each unwanted ROOT resource");
+          return { status: 200, body: { output: [{
+            type: "function_call", call_id: "narrow_entry_roots", name: "runner__submit_read_boundary_revision",
+            arguments: JSON.stringify({ resource_changes: changes }),
+          }] } };
+        } } } : {}),
+      });
+      const preview = await prepareBoundaryReviewMutationBatch(root, revision.policy_changes!.map(change => ({
+        resource_id: change.resource, ...change.settings, actor: "synthetic-reviewer", reason: "Limit related details to own registrations.",
+      })), async () => inspection);
+      expect(resource(preview.candidate, offerId)).toEqual({ ...resource(before.candidate, offerId), relationships: [] });
+      expect(resource(preview.candidate, ROOT)).toEqual(resource(before.candidate, ROOT));
+      for (const id of [SECTION, COURSE]) {
+        expect(reviewedReadEntryPaths(preview.candidate, id).map(item => item.root_resource)).toEqual([ROOT]);
+        expect(() => validateExplorePlan({ kind: "rows", resource: id, select: ["name"] }, facade(preview.candidate))).toThrow(/only through reviewed relationships/);
+      }
+      expect(() => validateExplorePlan(displayPlan(), facade(preview.candidate))).not.toThrow();
+      expect(() => validateExplorePlan({ kind: "rows", resource: offerId, select: ["name"] }, facade(preview.candidate))).not.toThrow();
+      expect(() => validateExplorePlan({ kind: "rows", resource: offerId, select: ["name"],
+        related: [{ relationship: "offer_section", select: ["name"] }] }, facade(preview.candidate))).toThrow();
+      const retainedCatalog = rebindActionCatalogForReadPolicyRevision({ catalog: privateCatalog, previousLock: build.lock,
+        nextLock: preview.build.lock, nextBoundary: preview.candidate });
+      const privateAfter = buildActionRuleAuthoringCatalog({ boundary: preview.candidate, inspection, retainedCatalog }).catalog;
+      expect(privateAfter.resources).toEqual(privateCatalog.resources);
+      expect(privateAfter.relationships).toEqual(privateCatalog.relationships);
+      expect((await loadBoundaryResourceReviewCatalog(root)).candidate).toEqual(before.candidate);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toThrow();
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  }, 120_000);
+
   it("retains private tenant tuples and scopes every hop without selecting join keys", () => {
     const { exploration_boundary: draft } = fixture();
     const boundary = facade(draft);
@@ -260,7 +481,7 @@ describe("Composite Read independent safety regressions", () => {
     const build = fixture();
     const { candidate } = narrowedFixture(build);
     const rebased = rebaseSavedBoundaryForRescan({ generatedDraft: build.exploration_boundary,
-      previousCandidate: candidate, boundaryName: candidate.pack.name });
+      previousCandidate: candidate, boundaryName: candidate.pack.name, inspection: studentInspection() });
     for (const id of [SECTION, COURSE]) {
       expect.soft(resource(rebased, id).relationship_only, id).toBe(true);
       expect.soft(() => validateExplorePlan({ kind: "rows", resource: id, select: ["name"] }, facade(rebased)), id)

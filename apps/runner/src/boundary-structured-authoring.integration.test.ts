@@ -13,6 +13,7 @@ import { applyModelReadBoundaryExposureRevision, loadBoundaryReviewContext, prep
 import { commitBoundaryReviewMutationBatch } from "./boundary-review-mutation.js";
 import * as reviewMutation from "./boundary-review-mutation.js";
 import { policyCoverageDraft } from "./authoring-policy-evidence.js";
+import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -79,6 +80,10 @@ describe("public structured Boundary authoring integration", () => {
     const exported = JSON.parse(await fs.readFile(path.join(root, "next.json"), "utf8"));
     expect(exported.actions.map((entry: ActionRuleModelDraftV1) => entry.outcome).sort()).toEqual(["warehouse.quantity", "warehouse.reorder"]);
     expect(exported.actions.every((entry: ActionRuleModelDraftV1) => entry.approval.shared_limits.length === 4)).toBe(true);
+    expect(await run(["--draft", "next.json", "--dry-run", "--json"])).toBe(0);
+    expect(await readProjectReadAuthoring(root)).toEqual(saved);
+    expect(await readActionRuleAuthorityDraft(root, authority!.authority.name)).toEqual(authority);
+    expect(exported.actions.every((entry: ActionRuleModelDraftV1) => !Object.hasOwn(entry.review, "outcome"))).toBe(true);
     const rulesBefore = authority!.authority.rules.map((entry) => ({
       rule: entry.rule, effect: entry.effect_envelope, verification: entry.verification_boundary.resources,
     }));
@@ -230,6 +235,40 @@ describe("public structured Boundary authoring integration", () => {
     expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
     await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active.");
   });
+
+  it("exports incomplete saved intents as view-only skeletons without turning catalog candidates into actions", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-structured-skeleton-")); roots.push(root);
+    vi.stubEnv("TEST_READ_URL", "postgresql://fixture.invalid/not-used");
+    const inspect = vi.fn(async (_input: InspectOptions) => inspection());
+    expect(await onboard(["db", "--project-root", root, "--from-env", "TEST_READ_URL", "--schema", "warehouse", "--json"],
+      { interactive: false, schemaInspector: inspect })).toBe(0);
+    const context = await loadBoundaryReviewContext(root);
+    await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({
+      binding: {
+        boundary_name: context.candidate.pack.name,
+        generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
+        schema_fingerprint: context.lock.schema_fingerprint,
+        role_posture_fingerprint: context.lock.role_posture_fingerprint,
+      },
+      stage: "action_drafting",
+      jobIntent: "Maintain warehouse item settings",
+      provider: "openai",
+      model: "test",
+      action: { intent: "Change the reorder threshold", intents: ["Change the reorder threshold", "Change available quantity"], strategy: "rule_derived" },
+      now: "2026-09-10T00:00:00.000Z",
+    }));
+    expect(await structuredBoundaryAuthoringCommand(["--project-root", root, "--export-draft", "skeleton.json"], inspect)).toBe(0);
+    const exported = JSON.parse(await fs.readFile(path.join(root, "skeleton.json"), "utf8"));
+    expect(exported.action_skeletons).toHaveLength(2);
+    expect(exported.action_skeletons.map((entry: { intent: string }) => entry.intent))
+      .toEqual(["Change the reorder threshold", "Change available quantity"]);
+    expect(exported.action_skeletons.every((entry: { state: string; continuation: { state: string } }) =>
+      entry.state === "incomplete" && entry.continuation.state === "unprepared")).toBe(true);
+    expect(exported.action_skeletons[0].candidates.resources).toEqual(expect.any(Array));
+    expect(exported.action_skeletons[0].candidates.subject_ref_resource_candidates).toEqual(expect.any(Array));
+    expect(exported.actions).toEqual([]);
+    expect(exported.notes.instructions).toContain("action_skeletons are view-only");
+  }, 15_000);
 });
 
 function action(name: string, field: string, maximum: number, automaticMaximum: number): ActionRuleModelDraftV1 {
