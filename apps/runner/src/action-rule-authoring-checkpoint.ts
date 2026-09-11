@@ -7,6 +7,13 @@ export type ReviewedPrivateActionSource = {
   proof_digest: `sha256:${string}`;
 };
 
+export type ReviewedActionVersionField = {
+  resource: string;
+  field: string;
+  maintenance: "all_writers_increment";
+  proof_digest: `sha256:${string}`;
+};
+
 export type ActionRuleAuthoringCheckpoint = {
   schema_version: "synapsor.action-authoring-checkpoint.v1";
   intent_digest: `sha256:${string}`;
@@ -15,6 +22,7 @@ export type ActionRuleAuthoringCheckpoint = {
   operator_messages?: string[];
   reviewed_relationships?: string[];
   reviewed_private_sources?: ReviewedPrivateActionSource[];
+  reviewed_version_fields?: ReviewedActionVersionField[];
   reopened_draft?: { outcome: string; digest: `sha256:${string}`; covered_intent_indexes: number[] };
   digest: `sha256:${string}`;
 };
@@ -31,7 +39,7 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const record = value as Record<string, unknown>;
   if (record.schema_version !== "synapsor.action-authoring-checkpoint.v1"
-    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "reviewed_relationships", "reviewed_private_sources", "reopened_draft", "digest"].includes(key))
+    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "digest"].includes(key))
     || ![record.intent_digest, record.context_digest, record.digest].every((digest) => typeof digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(digest))
     || !record.components || typeof record.components !== "object" || Array.isArray(record.components)) throw fail();
   if (record.operator_messages !== undefined && (!Array.isArray(record.operator_messages)
@@ -68,6 +76,20 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
         || typeof source.proof_digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(source.proof_digest)
         || names.has(source.resource)) throw fail();
       names.add(source.resource);
+    }
+  }
+  if (record.reviewed_version_fields !== undefined) {
+    if (!Array.isArray(record.reviewed_version_fields) || record.reviewed_version_fields.length > 16) throw fail();
+    const names = new Set<string>();
+    for (const review of record.reviewed_version_fields) {
+      if (!review || typeof review !== "object" || Array.isArray(review)
+        || Object.keys(review).some(key => !["resource", "field", "maintenance", "proof_digest"].includes(key))
+        || typeof review.resource !== "string" || review.resource.length > 256 || !/^[A-Za-z_][A-Za-z0-9_.]*$/u.test(review.resource)
+        || typeof review.field !== "string" || review.field.length > 256 || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(review.field)
+        || review.maintenance !== "all_writers_increment"
+        || typeof review.proof_digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(review.proof_digest)
+        || names.has(review.resource)) throw fail();
+      names.add(review.resource);
     }
   }
   if (Buffer.byteLength(JSON.stringify(record), "utf8") > 96 * 1024) throw fail();

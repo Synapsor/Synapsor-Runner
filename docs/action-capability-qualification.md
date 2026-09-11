@@ -16,6 +16,48 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 12:15 UTC implementation checkpoint: explicit existing-counter review
+and resume integration passed 456 tests / 1 optional skip; the final role-drift
+addition passed in a 23-case counter suite. Types passed. Coded and municipal
+jobs are both paused at the same missing-mapping defect in the frozen binary;
+the follow-up must be tested through those public jobs. No source rename, writer
+grant or public-field exposure is used to repair a counter selection.
+
+The duplicate-request repair passed 309 distinct focused runtime/store/MCP tests.
+It serializes matching subject requests sharing a store object and rechecks every
+waiter's authority, scope, reference and inputs. It is not cross-process identical
+request idempotency; separate-store competing requests still retain uniqueness
+and automatic-limit enforcement. Unexpected MCP failures retain only a bounded
+operator error category, not raw messages, arguments or credentials. Frozen
+artifact and actual connected-client retest are still pending.
+
+2026-09-11 11:55 UTC: `6f28649` is committed and backed up privately. Frozen
+`candidate-gJxM04` executable SHA-256
+`6d70286bc0bbd0d7a527e383908dba9fe2bab95eef23155dbdffdd6615612486`.
+Manufacturing recovered the missing structural evidence, completed public writer,
+execution and Claude setup, and applied B1 once with receipt
+`sha256:4a6b646e62fd8e50814b64a1cfbe0ed068bc01bcb9b8320c0bbc6fc5f78f1c94`.
+Independent owner readback found only B1 released, version 2. B2 required human
+review; failed-sample, insufficient-sample and already-released requests refused.
+Eighteen protocol privacy/scope/injection checks passed. A concurrent identical
+request pair instead produced one generic failure and one approval; a real-store
+regression reproduced duplicate approval admission. Narrow shared-path repair is
+under way. The subsequent 50-to-30 rule edit hit a provider failure twice and is
+saved pending; no edit/runtime-change pass is claimed. Worker stopped, B5 queued.
+
+Coded recovery no longer fails checkpoint persistence, but cannot map the
+owner-documented `c09` counter because inspected name suggestions omit it. A
+generic explicit counter-review operation is being implemented and tested;
+integer shape alone never establishes maintenance or authority. Coded setup was
+paused with no authority. Student private-source recovery remains in progress.
+
+A further unseen municipal-notice schema/policy was selected after this freeze
+and provisioned in an owned PostgreSQL container. Public fresh onboarding is in
+progress. It repeated the documented opening-time meaning and authenticated
+person setting; both are recorded as friction, not an unaided qualification.
+No municipal authority or source change yet. Durable evidence stays under the
+external `r13-e07-20260911` directory; original projects and policies unchanged.
+
 2026-09-11 11:33 UTC: final-action retirement fix `acd63fc` is backed up privately.
 Frozen executable `a1310a7bd08f17f44454fb7985301c6a776e556cac263942e609b836bdb723e9`
 (`candidate-KBDw2N`) passed the actual library same-connected-client sequence:

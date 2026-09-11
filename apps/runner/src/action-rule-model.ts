@@ -223,6 +223,14 @@ export type ModelActionRuleDraftInput = {
   }) => Promise<(ActionRuleModelPreparedContext & {
     review: import("./action-rule-authoring-checkpoint.js").ReviewedPrivateActionSource;
   }) | undefined>;
+  reviewVersionField?: (input: {
+    context: ActionRuleModelPreparedContext;
+    resource: string;
+    field: string;
+    previousReview?: import("./action-rule-authoring-checkpoint.js").ReviewedActionVersionField;
+  }) => Promise<(ActionRuleModelPreparedContext & {
+    review: import("./action-rule-authoring-checkpoint.js").ReviewedActionVersionField;
+  }) | undefined>;
   askClarification?: (question: string) => Promise<string | undefined>;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
@@ -254,6 +262,18 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     if (canonicalJsonDigest(restored.readBoundary) !== canonicalJsonDigest(context.readBoundary)
       || restored.readBoundaryDigest !== context.readBoundaryDigest) throw new Error("PRIVATE_SOURCE_READ_CHANGED: Supporting-source review must leave public Read unchanged.");
     reviewedPrivateSources[index] = restored.review;
+    context = restored;
+    serializeAuthoringCatalog(context.builtCatalog);
+  }
+  const reviewedVersionFields = structuredClone(savedCheckpoint?.reviewed_version_fields ?? []);
+  for (let index = 0; index < reviewedVersionFields.length; index += 1) {
+    const review = reviewedVersionFields[index]!;
+    if (!input.egressAcknowledged || !input.reviewVersionField) throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: Resume through guided counter review to revalidate the saved conflict field. No authority changed.");
+    const restored = await input.reviewVersionField({ context, resource: review.resource, field: review.field, previousReview: review });
+    if (!restored || restored.review.resource !== review.resource || restored.review.field !== review.field
+      || canonicalJsonDigest(restored.readBoundary) !== canonicalJsonDigest(context.readBoundary)
+      || restored.readBoundaryDigest !== context.readBoundaryDigest) throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: The saved counter mapping needs review; Read and active authority remain unchanged.");
+    reviewedVersionFields[index] = restored.review;
     context = restored;
     serializeAuthoringCatalog(context.builtCatalog);
   }
@@ -311,7 +331,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     }
   }
   const draftProgressDigest = () => canonicalJsonDigest({ components: submissions,
-    relationships: [...reviewedRelationships].sort(), sources: reviewedPrivateSources, reopened: reopenedDraft ?? null });
+    relationships: [...reviewedRelationships].sort(), sources: reviewedPrivateSources, versions: reviewedVersionFields, reopened: reopenedDraft ?? null });
   let savedProgressDigest = draftProgressDigest();
   let draftProgressRevision = 0;
   const saveCheckpoint = async () => {
@@ -321,6 +341,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       ...(operatorMessages.length ? { operator_messages: operatorMessages } : {}),
       ...(reviewedRelationships.size ? { reviewed_relationships: [...reviewedRelationships].sort() } : {}),
       ...(reviewedPrivateSources.length ? { reviewed_private_sources: reviewedPrivateSources } : {}),
+      ...(reviewedVersionFields.length ? { reviewed_version_fields: reviewedVersionFields } : {}),
       ...(reopenedDraft ? { reopened_draft: reopenedDraft } : {}),
     }));
     const next = draftProgressDigest();
@@ -328,6 +349,12 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   };
   const tools = ACTION_RULE_PHASES.map((phase) => conversationalPhaseTool(phase, input.session.provider === "openai_compatible", !!baseline || preparedDrafts.length > 0));
   tools.push(...actionRelationshipTools);
+  if (input.reviewVersionField) tools.push({ name: "runner.review_version_field", title: "Review an existing conflict counter",
+    description: "Use when the policy/source owner identifies an existing maintained integer conflict counter, including coded names or ambiguous candidates. Select the exact catalog resource and version_field_options field. Runner checks current structure and asks the operator to confirm all writers maintain it. This changes only disabled catalog mapping; never invent maintenance, expose a field, change rows, or activate authority. Ordinary integer business fields are not automatically counters.",
+    input_schema: { type: "object", additionalProperties: false, required: ["resource", "field"], properties: {
+      resource: { type: "string", maxLength: 256 }, field: { type: "string", maxLength: 256 },
+    } },
+  });
   if (input.reviewPrivateSource) tools.push({ name: "runner.review_private_action_source", title: "Review a supporting source privately",
     description: "Use when a source named by the operator was inspected but is outside the Action catalog. Select the exact resource and an already reviewed parent. Runner checks the full inspected relationship and asks permission before sending additional metadata. Admits only private verification, never public Read access or source writes. Missing/ambiguous evidence stays pending; do not ask the operator to expose a public table or invent a join.",
     input_schema: { type: "object", additionalProperties: false, required: ["resource", "parent_resource"], properties: {
@@ -374,6 +401,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let diagnostics: ReturnType<typeof actionRuleDraftDiagnostics> = [];
   let clarification: string | undefined;
   let infrastructureFailure: unknown;
+  const declinedVersionFields = new Set<string>();
   let readOnlyRequest: string | undefined;
   let validationAttempted = false;
   const snapshot = () => ({
@@ -394,6 +422,33 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       if (readOnlyRequest) return phaseRefusal("The operator's no-new-actions request is pending. No later component edit is accepted.");
       if (compiled) return phaseRefusal("The exact draft is ready for operator review. No later model edit is accepted in this turn.");
       try {
+        if (name === "runner.review_version_field" && input.reviewVersionField) {
+          if (!input.egressAcknowledged || Object.keys(args).some(key => !["resource", "field"].includes(key))
+            || [args.resource, args.field].some(value => typeof value !== "string" || value.length > 256
+              || !/^[A-Za-z_][A-Za-z0-9_.]*$/u.test(value))) return phaseRefusal("Select only the exact inspected resource and counter field. No row values or expressions are accepted.");
+          const resource = args.resource as string, field = args.field as string;
+          const key = `${resource}.${field}`;
+          if (declinedVersionFields.has(key)) return phaseRefusal("This counter review was declined. Keep the requirement pending; do not repeat the same confirmation.");
+          const previousReview = reviewedVersionFields.find(review => review.resource === resource && review.field === field);
+          const prepared = await input.reviewVersionField({ context, resource, field, ...(previousReview ? { previousReview } : {}) });
+          if (!prepared) {
+            declinedVersionFields.add(key);
+            return { ok: true, value: { status: "counter_mapping_pending", authority_granted: false,
+              source_database_changed: false, next_step: "The counter's maintenance was not confirmed. Preserve the job and ask only about another genuinely supported mapping, or save pending." } };
+          }
+          if (canonicalJsonDigest(prepared.readBoundary) !== canonicalJsonDigest(context.readBoundary)
+            || prepared.readBoundaryDigest !== context.readBoundaryDigest || prepared.review.resource !== resource || prepared.review.field !== field) {
+            throw new Error("ACTION_VERSION_REVIEW_CHANGED: Counter mapping must not change Read access or the selected field.");
+          }
+          serializeAuthoringCatalog(prepared.builtCatalog);
+          if (baseline) compileActionRuleModelDraft({ draft: baseline, ...prepared });
+          context = prepared;
+          const index = reviewedVersionFields.findIndex(review => review.resource === resource);
+          if (index < 0) reviewedVersionFields.push(prepared.review); else reviewedVersionFields[index] = prepared.review;
+          await saveCheckpoint().catch(error => { infrastructureFailure = error; throw error; });
+          return { ok: true, value: { status: "counter_mapping_prepared", catalog: JSON.parse(serializeAuthoringCatalog(context.builtCatalog)),
+            review: prepared.review, authority_granted: false, source_database_changed: false } };
+        }
         if (name === "runner.review_private_action_source" && input.reviewPrivateSource) {
           if (!input.egressAcknowledged || Object.keys(args).some(key => !["resource", "parent_resource"].includes(key))
             || [args.resource, args.parent_resource].some(value => typeof value !== "string" || value.length > 256
@@ -537,6 +592,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     "Do not create a caller input for a fixed requested effect such as closing a case or submitting a dispute, or for a value already derived from the selected verified offer. Use the exact literal or verified field expression. Inputs represent genuine customer choices, never a redundant confirmation flag or a copy of an existing rule decision.",
     "Never declare expected_version or another input to match a private record version, identity or scope. Runner's opaque subject service captures the observed version and enforces staleness; the worker rechecks it at execution. Configure the reviewed version field in Verification, not a customer-supplied equality predicate in require.",
     "A version field is required for an UPDATE target, not every verification-only resource. Runner reloads and locks all reviewed verification rows in the execution transaction and compares the exact dependency facts to the proposal proof. A verification-only offer without a version column can still be checked for current state and validity; do not demand a schema change or a writer grant merely to read it. If the policy requires consuming the offer itself, it becomes a separate mutation target and needs its own supported conflict guard.",
+    "When a source owner identifies an existing maintained counter that is not selected (including coded names), use runner.review_version_field if available with its exact resource and a listed version_field_options field. These options prove structural suitability only, not counter meaning. Runner reviews maintenance and updates the disabled catalog; no schema rename or extra writer grant can substitute. Do not ask the operator to expose a hidden counter as customer data or invent one from an ordinary integer field. If no suitable maintained field exists, save the concrete source prerequisite pending.",
     "Absence and current totals use a bounded complete collection reached by an inverse foreign key from one directly scoped parent (including every tenant/principal field in that key). Use not(exists(...)) for no active holds, and kind=aggregate with operation=count/sum/min/max, binding, field (except count rows), and optional typed where. Include all relevant rows in Verification, not a source status filter or an unmaintained stored total. Runner infers complete_locked, locks the parent and collection, checks FK/RLS completeness and enforces overflow refusal. Sum and count of an empty collection are zero; count uses integer unit=rows; sum retains the field unit. Unknown predicate or missing/null summands block evaluation. Empty min/max is unknown, so do not use it as a non-null derived effect. PostgreSQL uses READ COMMITTED; MySQL uses REPEATABLE READ. An unsupported collection shape is a concrete requirement, not a reason to drop a business clause or invent an eligibility flag.",
     "Prefer the reviewed source fact that directly represents a policy condition: for example, metadata declaring waitlist_position=1 means next in queue can prove first-in-queue without reading other students' records. Do not replace that fact with a cross-customer collection or fabricate an eligibility flag. If its authoritative meaning is ambiguous, ask that one business clarification.",
     "When a required source fact is missing, explain the business gap plainly and offer to map an existing authoritative source through the relationship tools, or save setup pending that source. Never infer eligibility such as current admission from authentication, existing registrations or stored totals. An operator explanation can establish a source's meaning, not supply a missing current fact. Preserve effective-date checks at both request preparation and execution; missing, expired or withdrawn evidence must not authorize the operation. A test fixture extension is not proof of a production integration.",

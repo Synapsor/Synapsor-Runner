@@ -43,6 +43,8 @@ export type ActionRuleAuthoringResourceV1 = {
   principal_rls_setting?: string;
   version_candidates: string[];
   selected_version_field?: string;
+  /** Structurally suitable fields; their conflict-counter meaning needs review. */
+  version_field_options?: string[];
   verification_only?: true;
   operations: {
     update: boolean;
@@ -168,8 +170,11 @@ export function buildActionRuleAuthoringCatalog(input: {
     const versionCandidates = table.suggestions.conflict_columns
       .filter((name) => supportedNames.has(name))
       .sort();
+    const versionFieldOptions = table.columns.filter(column => !column.nullable && !column.generated && !column.identity
+      && !column.suggestions.immutable && actionRuleTypeForColumn(column)?.kind === "integer"
+      && ![...table.primary_key, primaryKey, tenantKey, principalKey].includes(column.name)).map(column => column.name).sort();
     const selectedVersionField = retainedResource?.version_field
-      && versionCandidates.includes(retainedResource.version_field)
+      && (versionCandidates.includes(retainedResource.version_field) || versionFieldOptions.includes(retainedResource.version_field))
       ? retainedResource.version_field
       : versionCandidates.length === 1
         ? versionCandidates[0]
@@ -178,7 +183,9 @@ export function buildActionRuleAuthoringCatalog(input: {
       code: versionCandidates.length ? "ACTION_RULE_VERSION_SELECTION_REQUIRED" : "ACTION_RULE_VERSION_REQUIRED",
       applies_to: "update",
       resource: resourceName,
-      message: versionCandidates.length
+      message: versionFieldOptions.length
+        ? `UPDATE needs a reviewed conflict counter. Structurally suitable fields: ${versionFieldOptions.join(", ")}. If the source owner identifies a maintained counter, use the guided counter review; structural suitability alone is not its business meaning. Private verification is still available without a version.`
+        : versionCandidates.length
         ? "UPDATE only: no unique conflict counter is selected. This does not block using this resource for private verification. Runner rechecks verification facts at execution; do not request a version for a resource that the action does not change."
         : "UPDATE only: no inspected conflict field is available, so this resource cannot be changed by a versioned update. Private verification remains supported without a version: Runner reloads, locks and compares the reviewed facts at execution. No schema change or writer grant is needed merely to verify this resource.",
     });
@@ -263,6 +270,7 @@ export function buildActionRuleAuthoringCatalog(input: {
         ? { principal_rls_setting: resource.rls_session.principal_setting }
         : {}),
       version_candidates: versionCandidates,
+      version_field_options: versionFieldOptions,
       ...(selectedVersionField ? { selected_version_field: selectedVersionField } : {}),
       ...(verificationOnly ? { verification_only: true as const } : {}),
       operations: {

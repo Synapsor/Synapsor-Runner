@@ -172,6 +172,7 @@ import {
   type BoundaryAuthoringResumeState,
 } from "./boundary-authoring-resume.js";
 import { reviewPrivateActionSourceForModel } from "./action-rule-source-consent.js";
+import { reviewActionVersionField } from "./action-rule-version-review.js";
 import {
   MAX_BOUNDARY_ACTION_INTENT_CHARACTERS,
   MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS,
@@ -6343,6 +6344,19 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   : {}),
                 egressAcknowledged: true,
                 env: process.env,
+                reviewVersionField: async request => {
+                  const generationLock = await loadGenerationLockSnapshot(input.projectRoot, request.context.readBoundary.generation_lock_fingerprint);
+                  const prepared = await reviewActionVersionField({ ...request, generationLock, inspection: actionInspection!, session: input.session,
+                    assertCurrent: async () => {
+                      const fresh = await loadBoundaryReviewContext(input.projectRoot);
+                      if (explorationBoundaryCandidateDigest(fresh.candidate) !== request.context.readBoundaryDigest) {
+                        throw new Error("ACTION_RULE_REVISION_STALE: The Read draft changed during counter review. Recheck the saved draft; no authority changed.");
+                      }
+                    },
+                  });
+                  if (prepared) semanticActionCatalog = prepared.builtCatalog;
+                  return prepared;
+                },
                 reviewPrivateSource: async request => {
                   const prepared = await reviewPrivateActionSourceForModel({ request, inspection: actionInspection!,
                     session: input.session, modelLabel: boundaryModelLabel(ruleSession),
@@ -8125,6 +8139,17 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           if (resumePersistenceBlocked) throw checkpointSaveFailure("The edit checkpoint");
         },
         builtCatalog: entry.catalog, readBoundary: context.candidate, readBoundaryDigest: committed.candidate_digest,
+        reviewVersionField: async request => {
+          const generationLock = await loadGenerationLockSnapshot(input.projectRoot, request.context.readBoundary.generation_lock_fingerprint);
+          return reviewActionVersionField({ ...request, generationLock, inspection: actionInspection!, session: input.session,
+            assertCurrent: async () => {
+              const fresh = await loadBoundaryReviewContext(input.projectRoot);
+              if (explorationBoundaryCandidateDigest(fresh.candidate) !== request.context.readBoundaryDigest) {
+                throw new Error("ACTION_RULE_REVISION_STALE: The Read draft changed during counter review. Recheck the saved draft; no authority changed.");
+              }
+            },
+          });
+        },
         reviewPrivateSource: request => reviewPrivateActionSourceForModel({ request, inspection: actionInspection!,
           session: input.session, modelLabel: boundaryModelLabel(modelAssistSession!),
           assertCurrent: async () => {

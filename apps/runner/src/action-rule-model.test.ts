@@ -82,6 +82,70 @@ describe("structured Action draft schema", () => {
 });
 
 describe("conversational Action authoring tools", () => {
+  it("reviews an existing counter through a bounded host operation and restores it before resuming draft components", async () => {
+    const initial = builtCatalog();
+    delete initial.catalog.resources[0]!.version_field;
+    delete initial.authoring.resources[0]!.selected_version_field;
+    initial.authoring.resources[0]!.version_candidates = [];
+    initial.authoring.resources[0]!.version_field_options = ["version"];
+    initial.authoring.resources[0]!.operations.update = false;
+    const review = { resource: "billing.accounts", field: "version", maintenance: "all_writers_increment" as const,
+      proof_digest: canonicalJsonDigest("reviewed owner-maintained counter") };
+    const reviewVersionField = vi.fn(async ({ context }: Parameters<NonNullable<Parameters<typeof converseActionRuleDraft>[0]["reviewVersionField"]>>[0]) =>
+      ({ ...context, builtCatalog: builtCatalog(), review }));
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const first = [call("runner.review_version_field", { resource: review.resource, field: review.field }),
+      call("runner.submit_verification_boundary_draft"), say("Who reviews valid exceptions?")];
+    await expect(converseActionRuleDraft({ ...requestInput(async () => first.shift()!), builtCatalog: initial, reviewVersionField,
+      onCheckpoint: async saved => { checkpoint = saved; }, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    expect(checkpoint?.reviewed_version_fields).toEqual([review]);
+    expect(checkpoint?.components.verification).toBeDefined();
+    expect(initial.catalog.resources[0]!.version_field).toBeUndefined();
+    const resumed = [call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Ready for review.")];
+    const actual = await converseActionRuleDraft({ ...requestInput(async () => resumed.shift()!), builtCatalog: initial,
+      reviewVersionField, checkpoint });
+    expect(reviewVersionField.mock.calls[1]?.[0]).toMatchObject({ previousReview: review });
+    expect(actual).toMatchObject({ authority_granted: false, source_database_changed: false });
+    expect(actual.compiled.loaded.authority.catalog.resources[0]!.version_field).toBe("version");
+    expect(resumed).toEqual([]);
+    const noRequest = vi.fn();
+    await expect(converseActionRuleDraft({ ...requestInput(noRequest), checkpoint, builtCatalog: initial })).rejects.toThrow("CHECKPOINT_STALE");
+    expect(noRequest).not.toHaveBeenCalled();
+    await expect(converseActionRuleDraft({ ...requestInput(noRequest), checkpoint, builtCatalog: initial,
+      reviewVersionField: async () => undefined })).rejects.toThrow("CHECKPOINT_STALE");
+    expect(noRequest).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat declined counter review or treat it as mapped", async () => {
+    const requests: string[] = [];
+    const steps = [call("runner.review_version_field", { resource: "billing.accounts", field: "version" }),
+      call("runner.review_version_field", { resource: "billing.accounts", field: "version" }), say("Keep this mapping pending.")];
+    const reviewVersionField = vi.fn(async () => undefined), onCheckpoint = vi.fn();
+    await expect(converseActionRuleDraft({ ...requestInput(async request => { requests.push(JSON.stringify(request.body)); return steps.shift()!; }),
+      reviewVersionField, onCheckpoint, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    expect(reviewVersionField).toHaveBeenCalledOnce();
+    expect(requests.at(-1)).toContain("do not repeat the same confirmation");
+    expect(onCheckpoint.mock.calls.every(([saved]) => !saved.reviewed_version_fields?.length)).toBe(true);
+  });
+
+  it.each(["extra", "invalid_name", "changed_read", "wrong_field"])("refuses an unbounded or inconsistent counter mapping (%s)", async kind => {
+    const requests: string[] = [];
+    const args = { resource: "billing.accounts", field: "version", ...(kind === "extra" ? { execute: true } : {}) };
+    if (kind === "invalid_name") args.field = "version; DROP TABLE accounts";
+    const steps = [call("runner.review_version_field", args), say("Mapping remains pending.")];
+    const reviewVersionField = vi.fn(async ({ context }: Parameters<NonNullable<Parameters<typeof converseActionRuleDraft>[0]["reviewVersionField"]>>[0]) => ({
+      ...context, ...(kind === "changed_read" ? { readBoundaryDigest: canonicalJsonDigest("unapproved reads") } : {}),
+      review: { resource: "billing.accounts", field: kind === "wrong_field" ? "other_counter" : "version",
+        maintenance: "all_writers_increment" as const, proof_digest: canonicalJsonDigest("proof") },
+    }));
+    await expect(converseActionRuleDraft({ ...requestInput(async request => { requests.push(JSON.stringify(request.body)); return steps.shift()!; }),
+      reviewVersionField, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+    if (["extra", "invalid_name"].includes(kind)) expect(reviewVersionField).not.toHaveBeenCalled();
+    else expect(requests.at(-1)).toContain("ACTION_VERSION_REVIEW_CHANGED");
+    expect(requests.at(-1)).not.toContain('"status":"counter_mapping_prepared"');
+  });
+
   it("revalidates retained partial components after a host-mediated Read edit without asking answered questions", async () => {
     let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
     const first = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),

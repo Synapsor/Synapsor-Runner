@@ -6162,6 +6162,11 @@ describe("boundary operator-plane CLI", () => {
     let rulesMenuVisits = 0;
     const coverageRequests: string[] = [];
     const inspection = principalScopeInspection();
+    if (posture === "proposal_only") {
+      inspection.tables.find(table => table.name === "service_visits")!.columns.push({ name: "c09", data_type: "integer",
+        nullable: false, generated: false, identity: false, ordinal_position: 99,
+        suggestions: { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false } });
+    }
     const build = buildAutoBoundary({
       inspection,
       project: {
@@ -6273,6 +6278,14 @@ describe("boundary operator-plane CLI", () => {
         readBoundary: input.readBoundary,
         readBoundaryDigest: input.readBoundaryDigest,
       };
+      if (posture === "proposal_only") {
+        expect(input.reviewVersionField).toBeTypeOf("function");
+        const beforeRead = structuredClone(prepared.readBoundary);
+        const mapped = await input.reviewVersionField!({ context: prepared, resource: "public.service_visits", field: "c09" });
+        expect(mapped?.review).toMatchObject({ resource: "public.service_visits", field: "c09", maintenance: "all_writers_increment" });
+        expect(mapped?.readBoundary).toEqual(beforeRead);
+        prepared = mapped!;
+      }
       if (input.prepareResources) {
         prepared = await input.prepareResources({
           context: prepared,
@@ -6464,6 +6477,11 @@ describe("boundary operator-plane CLI", () => {
       },
       chooseOption: async (title, options, choiceOptions) => {
         if (cancellation.signal.aborted || dependencyCancellation.signal.aborted) throw new Error(`Unexpected post-cancellation menu: ${title}`);
+        if (posture === "proposal_only" && title === "REVIEW CHANGED-RECORD PROTECTION") {
+          expect(choiceOptions?.requireExplicitSelection).toBe(true);
+          expect(choiceOptions?.exactDetails?.lines.join("\n")).toContain("public.service_visits.c09");
+          return "confirm";
+        }
         if (posture === "read_only_pivot" && title === "ACTIVATE READ BOUNDARY") {
           readActivationReviewCount++;
           return "finish";
