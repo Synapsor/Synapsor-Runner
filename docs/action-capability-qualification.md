@@ -16,11 +16,20 @@ operational journey. No Gate 2 execution, receipt, concurrency or live rule-edit
 pass is claimed. The result below distinguishes product failures from tester
 cancellation and untested work. Gate 1 acceptance remains unchanged.
 
-**Bounded Gate 2 repairs are now authorized and in progress.** Starting commit
-`4515cbc43ebade261edd9a21c881902f3fc1a629`, initially clean. This does not replace
-the historical verdicts above or authorize broader capability expansion. The
-original projects, policies, schemas and complete frozen installation remain
-unchanged. New evidence is under the existing external
+**The bounded repair/regression pass has stopped; operational qualification is
+still incomplete.** Starting commit `4515cbc43ebade261edd9a21c881902f3fc1a629`,
+initially clean; implementation commit `3478de5` passed the regression gates.
+Normal guided identity review passed in both known fresh cases, but later
+onboarding did not finish. Neither reached the runtime/edit matrix.
+
+**Test preservation incident:** copied recovery locators retained absolute paths
+to the original test control stores. Each recovery made one unintended commit
+there. No active business authority or source rows changed. All logical changes
+were audited and both failed stores preserved; the parent undid only these test
+writes using verified byte-exact baselines. The complete original-project manifest
+now matches its pre-test value. Recovery isolation remains **FAILED**, not a pass
+because restoration succeeded. Both complete frozen installations stayed unchanged.
+Details and remaining blockers follow below. New evidence is under the existing external
 `r13-e07-20260911/gate2-repair-4515cbc/`; the existing generalization tracker
 continues to own progress.
 
@@ -34,13 +43,21 @@ Neither field exposure nor runtime authority is added by the mapping operation.
 The full Read validator still rejects empty authority. Unsupported policy
 expressions, changed evidence and concurrent edits remain refusals.
 
+The initial failure was an ordering gap: conventional-name scope inference and
+an organization-mode choice did not save a concrete reviewed field/setting map.
+Read drafting then required an admitted resource to clarify that same missing
+mapping. The existing manual resource review could validate the inspected fields,
+but guided setup did not invoke that prerequisite before the admitted-only tool.
+The new shared step reuses those proofs and records rather than loosening the
+Read clarification contract or adding tutorial-specific names.
+
 Focused shared-command evidence: 17 tests pass, including both known identity
 layouts, a renamed layout, grouped review, ambiguity, swapped/declined choices,
 stale/unavailable/unsupported proof, resume before and after a metadata-only save,
 and preservation of private fields, active Read authority and pending requests.
 The initial failing-before command reached the mapper without identity review
-for all three layouts. Full integrated gates and new-artifact public journeys
-are still required; these tests do not establish successful onboarding.
+for all three layouts. Full integrated gates passed; real-provider fresh tests
+also reached exact grouped review. Neither fact establishes successful onboarding.
 
 Insurance host reproduction now identifies `ACTION_RULE_UNBOUNDED`: the saved
 freeze workspace supplied inherited scope rather than the complete collection's
@@ -49,15 +66,17 @@ the **unchanged complete rule** compiles through the existing private-source
 preparation path and both collection reader checks pass. The repair diagnostic
 now identifies that catalog prerequisite instead of suggesting an expression
 edit. No derived scope is promoted, public fields exposed, condition removed or
-engine grammar expanded. The proposed public recovery remains to be tested.
+engine grammar expanded. Public recovery then exposed a different checkpoint
+transition failure and the test-isolation incident; it did not qualify recovery.
 
 Editorial evidence fixes distinguish the authoring provider from the runtime
 client and include the already-inspected reader when exact current fingerprints
 match. Trusted transaction time is explicitly not proof of database-origin UTC.
 The original clock requirement remains unmet; it has not been weakened. Exact
 host conflict-counter confirmations must be durable before coverage can cite
-them. Fresh and copied-checkpoint reruns will be reported separately, using a
-new complete installed artifact and finite provider/test budgets.
+them. The fresh and stopped-state reruns below use a new complete installed
+artifact and finite provider/test budgets. The explicit reader context was useful;
+model interpretation of other coverage evidence remains inconsistent.
 
 Repair regression checkpoint: full `corepack pnpm test` PASS (5,880 tests;
 447 optional tests skipped; 285 files passed and 21 skipped, 1,040.46 seconds).
@@ -65,11 +84,12 @@ This includes the Gate 1 lifecycle/storage regressions, type build, trusted-core
 dependencies, license/content, command surface, DSL paths, Cursor packaging,
 Runner package build, freshness and six launcher shutdown cases. The opt-in
 owned PostgreSQL writer/rescan regression ran separately: 1 PASS, 0 SKIP,
-7.47 seconds, with its temporary container removed. Clean-install packed Runner
+7.47 seconds of test execution (13.70 seconds elapsed), with its temporary
+container removed. Clean-install packed Runner
 checks also PASS using the local pre-release Spec 1.11.0: declarations, CLI/demo,
 fixtures, publish manifest and managed client configuration preservation. Nothing
-was published. New frozen-artifact real-provider cases are still pending. Test
-counts are regression evidence, not a completed operator journey.
+was published. New frozen-artifact real-provider results are below. Test counts
+are regression evidence, not a completed operator journey.
 
 Historical public student evidence was based on `a4a720af8df051125ac26e4875eafacbcadce4f9`.
 Its last completed public test used CLI SHA-256
@@ -81,6 +101,201 @@ Those earlier executables are not the current Gate 1 artifact.
 ## Latest Public Qualification
 
 ### Current Checkpoint
+
+#### Bounded Gate 2 Repair Regression
+
+Implementation commit `3478de5d133e6f70bdc2b1127926f0cf7c355bc1` was committed
+and pushed only to the verified private `backup` remote. No engine grammar,
+runtime tool inventory, activation permission or write safeguard changed.
+The four public reruns used only the original two cases: fresh setup and an
+attempted stopped-state copy for each. They are **known-case regressions**, not
+new unfamiliar-domain qualification. The recovery copies were not isolated from
+their original control stores, as disclosed below. This milestone is stopped;
+no overall completion, isolated recovery or operational pass is claimed.
+
+The entire new installation was frozen at `2026-09-11T22:07:28.421Z` after the
+full, live writer/rescan and packed Gate 1 checks above. Evidence is under
+`r13-e07-20260911/gate2-repair-4515cbc/` outside Git.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Complete installed tree, 7,569 entries | `92e9f5fde6a18920ba8335bfa2b9f57577b4f17a31a9332c8a83cd3141f52c5d` |
+| Complete manifest | `3abb4e2c35c8196dd64dea1ad056bfc51b30c5364027b6b0de6f4d99f8c6e033` |
+| Installed archive | `7b73b52d348a8b0e8ff6f065ab673be224451f05a811ae494ef68038c1702dc5` |
+| Installed package lock | `13d38ac7c1a9e965878901e9f9842f89da7d08669807d69fafe9bfeb1b38f5ae` |
+| Runner 1.8.0 tarball | `beaa496a91c25eb92d651d928bdeb7283f7482cddacbd223875a40d015fde9bd` |
+| Local pre-release Spec 1.11.0 tarball | `27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e` |
+
+Parent pre-run audit verifies both complete installed trees, the five new packed
+entrypoints against the tested build, the installed CLI version and a complete
+path/mode/content manifest of both original stopped projects. The old installation
+is unchanged. Two failed external freeze-helper attempts are retained: lifecycle
+text broke an npm JSON parse, then npm failed to rewrite workspace dependencies.
+The successful helper uses the same workspace-aware pnpm packer as the passing
+package gate. These are harness errors, not failed public onboarding attempts.
+
+##### Public Results And Friction
+
+Each fresh/recovery run had a declared ceiling of 30 minutes and 40 provider
+transport attempts across all resumes. No deadline or counter was reset, no
+policy or schema was narrowed, and no diagnostic extension or runtime budget
+was started. All observed model calls used Terra. A real Claude/SDK client
+was not started because no case cleared the prerequisites.
+
+| Case | Actual public result | Provider attempts | Setup wall time |
+| --- | --- | --- | --- |
+| Editorial fresh | Guided scope review passes; Read relationship drafting FAILS | 5 measured; initial greeting UNKNOWN, conservatively 1-6 additional | 458.897 s |
+| Editorial recovery | Two counter reviews saved; original database-clock requirement remains UNMET; isolation FAILS | 16 measured | 370.314 s |
+| Insurance fresh | Guided scope review passes; two disabled revisions of one Action saved; INCOMPLETE at budget ceiling before activation review | 34 measured; initial greeting UNKNOWN, at most 6 additional | 674.777 s |
+| Insurance recovery | Public privacy exclusion observed, then checkpoint transition FAILS; isolation FAILS | 8 measured | 203.035 s |
+
+Both fresh cases used a single grouped exact review of three inspected resources,
+without scope flags, injected drafts or manual identity edits. Meaning still
+required operator confirmation; the mapping grants no business authority.
+Editorial recovery separately confirmed two maintained conflict counters from
+the original inspected fixture triggers. Insurance fresh confirmed three counters
+and repeated already-supplied portfolio-status, initial routine-ceiling and writer
+maintenance information. These are not zero-friction or unaided journeys.
+
+The external transport hook initially failed to propagate through the CLI child
+process in both fresh cases. Each greeting's actual count remains unknown; a
+source-backed ceiling of six requests was reserved, not reported as a measured
+count. Instrumentation was fixed before policy input, retaining the project and
+clock; each extra restart and repeated metadata consent is assistance. Editorial
+also needed its zero-sized test PTY resized to 140x42. These harness problems are
+not attributed to the product. Insurance's next request was blocked before
+transport at its conservative budget ceiling, not a proven product timeout/loop.
+
+**Editorial fresh:** host diagnostic `READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED`
+records the model asking twice for manuscript-rooted links to final reviews and
+rights clearances, with `Available links: []`. The inspected composite FKs exist;
+this is a Read catalog/relationship-authoring failure, not proof that runtime
+composite scope is unsupported. The rejected draft was discarded, the saved
+stage remained `read_mapping`, and no blind retry or weakened policy followed.
+Returning from failure to the agent job required an advanced-editor detour.
+
+**Editorial recovery:** exact host counter acknowledgements survive saved progress;
+the verified reader is no longer treated as missing. Coverage correctly records
+that Runner evaluation time does not satisfy the original database-origin UTC
+requirement. That requirement was reaffirmed, not waived, so activation remained
+unavailable. Nevertheless model narration called the unchanged draft validated
+and ready, and coverage still misclassified Terra despite the supplied authoring
+context. Other coverage concerns involve trigger proof, FK validation/immediacy
+and boundary-wide versus capability-specific history. These model judgments are
+not new compiler verdicts and have not been established as engine limitations.
+The public status hint still suggests activation despite the interactive blocker;
+the actual gate remained closed. The Action file stayed byte-identical.
+
+**Insurance fresh:** persisted host records show two revisions of ONE outcome,
+not duplicate outcomes. The saved rule retains active claim/portfolio checks,
+the no-active-freeze predicate, complete reserve sum minus the old reserve plus
+the requested reserve, private ceilings, and original 8-overall/3-insurer rolling
+limits. Current disabled Read exposes only the intended claims/portfolio fields,
+with no analytical selectors; the freeze collection remains private. This is
+static candidate evidence, not completed coverage, activation or runtime privacy.
+
+**Insurance recovery:** the exact compiler verdict first points to missing direct
+child scope, as reproduced above. Chat consent did not perform the required Read
+edit. One explicit public `--exclude` detour removed the broad freeze resource's
+six visible fields and all analytical selectors. Because of the locator error,
+that edit changed the ORIGINAL disabled review, not an isolated recovery store.
+The next normal resume failed before another provider call with
+`ACTION_AUTHORING_CHECKPOINT_STALE`.
+
+At `action-rule-model.ts:319`, existing reviewed private sources restore first;
+saved relationship names must then exist before components/model history resume.
+The removed public-origin freeze edge has no prior private-source review record
+to restore it. The guard therefore prevents offering the needed private review.
+This is a newly observed checkpoint/private-source transition recovery defect,
+not unsupported absence/aggregate grammar. The strict refusal remains intact;
+the failed checkpoint and exact privacy diff are preserved. No speculative
+repair, renamed outcome, policy reset or frozen-artifact switch was attempted.
+
+##### Preservation Incident And Restoration
+
+Both external recovery harnesses copied the project but missed the absolute
+original SQLite path in `.synapsor/control-policy/migration.json`. A relative
+public storage path and an explicit copied project root did not ensure isolation.
+The parent pre-test manifest independently detects exactly two changed original
+files, each `.synapsor/local.db`; all other original project files are unchanged.
+The recovery copies' unused SQLite files still match the pre-test bytes.
+
+| Original test store | Exact unintended change | Authority/effect |
+| --- | --- | --- |
+| Editorial | One `save_disabled_action` event; epoch 8 to 9; SAME Action digest, no new revision or draft change | No active business authority or source effect |
+| Insurance | One `edit_prepared_read` event; epoch 4 to 5; disabled Read revision 4 to 5 removes freezes, plus corresponding management review pointer | No active business authority or source effect |
+
+Read-only forensic copies were compared across all 42 SQLite tables. Editorial
+changed only the event and deployment tables; insurance changed the five exact
+review bookkeeping tables. All runtime/proposal/approval/receipt tables remain
+unchanged and empty. The event times, operations and terminal evidence attribute
+the changes to these recovery runs; no unrelated logical changes were found.
+
+After all test processes stopped and no WAL/journal/open handles remained, the
+parent preserved both complete failed stores again and restored ONLY its own
+audited writes from the verified pre-test bytes. The restore refuses unexpected
+hashes or companions and uses fsync'd, atomic file replacement; it never opens
+the original through SQLite or manufactures authority records. Restoration
+completed at `2026-09-11T22:51:24.246Z`.
+
+| Original store | Verified baseline/restored SHA-256 | Preserved failed SHA-256 |
+| --- | --- | --- |
+| Editorial | `9ba885c3cd8797aa6a509c1d51e2d12833f10ab1f3cafa71c8fc9be535aa2602` | `bb21bd1440a926cc7b6b53945974f8f4b93b918ba7d57357a0567000fa334057` |
+| Insurance | `9b09d4a8936ae9f580389bdff62212b2c44ec21814042ad1d5b57d4c6604c508` | `e474a44bc1285494f7c1e55f718f034d925f8b74dc76cce5d5f91a983205df07` |
+
+Independent final comparison of every original project path, mode and file
+content is an exact match to the pre-test combined manifest:
+`03891eff63c155c4cd369e8a8ec2171cdd6524f0178b3822ea9a165f2c419c1c`.
+The failed intermediate audit is retained separately. Neither original project
+has been resumed after restoration. **This repairs our test's unintended state
+change; it does not make the preservation/isolation test pass.** Initial recovery
+exports that read the unused copied DB are explicitly superseded by the corrected
+forensic audits, not silently relabeled as the manifest-bound final state.
+
+##### Stop State And Evidence
+
+The accepted historical Gate 1 remains accepted for its recorded artifact.
+Changed-code regression/type/live/package gates PASS. The original Gate 2 remains
+FAILED for fresh onboarding and INCOMPLETE operationally. This bounded follow-up
+also does not qualify either journey: fresh editorial FAILS, fresh insurance is
+INCOMPLETE, and both recovery-isolation tests FAIL. No automatic new domain,
+broader grammar, unlimited repair loop or public release follows this report.
+
+Not reached in either case: generated writer administration/recheck, separate
+Read/Action/execution activation, real generated four-tool client, worker,
+eligible execution and receipt/readback, invalid runtime refusals, human review,
+private-value/analytical and cross-scope negatives, changed-private-fact checks,
+concurrency/limits/duplicates, same-client policy edits/add/remove, or old pending
+requests after an edit. A source dump matching baseline is not action readback.
+
+All new case source copies remain unchanged (editorial: 60 rows; insurance:
+40 rows, plus original schema/RLS/constraints). Dumps and unsuccessful terminal
+runs are retained. Only the four newly owned regression containers were stopped
+and removed; the earlier host-diagnostic/live-writer containers were also cleaned
+up. Existing tutorial/other containers and images were not removed. No owned
+CLI, provider, client or worker process remains. Both old/new installed trees and
+all five new entrypoint hashes were reverified after restoration.
+
+Durable evidence under the external `gate2-repair-4515cbc/` directory:
+
+- `editorial-regression/RESULT.md`, `insurance-regression/RESULT.md`: exact public
+  commands, terminal captures, per-case metrics, frozen inputs and blocked matrix.
+- `editorial-regression/urgent-readonly-audit-uRUkyz/` and
+  `insurance-regression/stop-audit/`: full failed snapshots and logical/file diffs.
+- `parent-artifact-before.json`, `parent-artifact-after.json`,
+  `parent-artifact-restored.json`: immutable before, failed intermediate and
+  restored full-manifest comparisons. The latter supersedes only current state,
+  never the failed isolation verdict.
+- `parent-owned-write-restoration/`: failed stores, byte-exact baseline copies
+  and exact restoration plan/results. No credentials or ledgers are committed.
+- `full-gate.log`, `live-writer-rescan.log`, `packed-gate.log` and frozen
+  manifest/lock/archive: regression and artifact evidence, distinct from journeys.
+
+Any future copied-project recovery must resolve and isolate ALL storage locators
+before public startup, not merely copy local.db or change the project flag. The
+new Read relationship, private-source transition and coverage/narration failures
+remain recorded for a separately scoped decision; no guard was weakened to
+advance past them.
 
 #### Gate 2: Frozen Artifact And Public Qualification
 

@@ -27,19 +27,36 @@ regressions, not completion of unfamiliar-database qualification.
 
 ## Gate 2 Observation: 2026-09-11
 
-Subsequent bounded repair authorization starts at `4515cbc`; the observations
-below remain historical frozen-artifact results. Shared guided scope admission
+Subsequent bounded repair started at `4515cbc` and is now stopped on product
+commit `3478de5`; the observations below remain historical frozen-artifact
+results. Shared guided scope admission
 now uses the existing closed inspected policy proof, explicit business-role
 clarification/review and atomic disabled metadata records before Read mapping.
 It does not extend table, field or setting-name allowlists. A renamed layout and
-both known identity representations pass focused orchestration regressions;
-public fresh/recovery journeys on a newly frozen artifact remain required.
+both known identity representations pass focused orchestration regressions.
+Both known fresh real-provider runs also pass normal grouped identity review on
+complete artifact `92e9f5f`, but neither finishes onboarding: editorial fails
+Read relationship drafting; insurance stops at its finite provider budget.
 The insurance completeness diagnostic is now grounded in the actual host
 rejection and its prepared catalog, not the model's explanation. The unchanged
 rule compiles via the already-supported private-source path on a restored copy;
-this is not yet a public recovery pass. Editorial provider/reader annotations
-and explicit clock provenance correct context omissions without claiming a
-database-origin clock or waiving source-counter confirmation.
+public recovery remains failed. Excluding the broad private collection workspace
+then reveals a missing saved-relationship/private-source transition that blocks
+resume before new review. Editorial host counter records now persist and reader
+evidence is recognized; provider/coverage narration is still inconsistent, and
+the original database-clock requirement remains explicitly unmet.
+
+The recovery harnesses also missed absolute original-store migration locators.
+Each wrote once to its ORIGINAL owned test control store. After complete logical
+audits found only these own writes, failed stores were preserved and both originals
+restored byte-exactly; the final full-project manifest equals the pre-test value.
+Recovery isolation remains FAIL, not retroactively passed. Neither original nor
+new installed artifact changed. No business authority was activated and no source
+rows changed.
+See the qualification report for exact before/failed/restored hashes and evidence.
+This bounded known-case pass stops with regression gates passing, fresh/recovery
+failures retained, and all runtime/edit checks unrun. It does not replace the
+historical Gate 2 verdict or authorize new cases/grammar/automatic repairs.
 
 The separately authorized Gate 2 run froze the **entire installation**, local
 pre-release Spec, dependencies and lock before selecting editorial release and
