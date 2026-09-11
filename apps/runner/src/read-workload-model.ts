@@ -153,6 +153,7 @@ export async function generateModelReadWorkload(input: {
   let analysis: ReadWorkloadAnalysis | undefined;
   let valueRequest: ModelReadValueRequest | undefined;
   let clarificationRequest: ModelReadClarificationRequest | undefined;
+  let clarificationFromInvalidNaming = false;
   let mechanicalClarificationRequest: ModelReadClarificationRequest | undefined;
   let resolvedMechanicalRequest: ModelReadClarificationRequest | undefined;
   const clarifiedTargets: (ModelReadClarificationRequest & { answer: string })[] = [];
@@ -192,6 +193,7 @@ export async function generateModelReadWorkload(input: {
       workload = undefined;
       analysis = undefined;
       lastSubmission = structuredClone(args);
+      clarificationFromInvalidNaming = false;
       if (namingCorrectionWorkload && !isRecord(args.clarification_request) && !isRecord(args.value_request)
         && canonicalJsonDigest({ allowed: args.allowed ?? [], forbidden: args.forbidden ?? [] }) !== namingCorrectionWorkload) {
         workloadValidationBlockers = ["A naming-evidence correction must retain the complete allowed and forbidden workload. Supply exact operator_meanings or ask for the missing meaning; do not remove or replace plans to bypass the vocabulary check."];
@@ -211,6 +213,7 @@ export async function generateModelReadWorkload(input: {
           && clarification.resource === error.target?.resource && clarification.field === error.target.field
           && !clarificationRequest && !valueRequest) {
           clarificationRequest = clarification;
+          clarificationFromInvalidNaming = true;
           return { ok: true, value: { status: "clarification_required_before_mapping",
             refused_naming_evidence: true, resource: clarification.resource, field: clarification.field,
             blockers: workloadValidationBlockers, authority_granted: false,
@@ -601,8 +604,9 @@ export async function generateModelReadWorkload(input: {
         // Only the existing verbatim-evidence parser can accept that mapping.
         if (!namingEvidenceCorrectionUsed && request.category !== "relationship_support"
           && metadata && !metadata.label && !metadata.description
-          && isClearlyOpaqueExploreIdentifier(request.field ?? request.resource)
-          && namingSources.some(source => operatorNamingReference(source, request, catalog))) {
+          && (clarificationFromInvalidNaming || isClearlyOpaqueExploreIdentifier(request.field ?? request.resource))
+          && [...namingSources, ...clarifiedTargets.map(entry => entry.answer)]
+            .some(source => operatorNamingReference(source, request, catalog))) {
           namingEvidenceCorrectionUsed = true;
           correctionUsed = true;
           clarificationRequest = undefined;

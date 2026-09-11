@@ -16,6 +16,41 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 15:04 UTC: host counter-review persistence and ordinary-field
+naming correction pass the integrated 583-test suite / 2 existing skips and
+Runner type checking. Four public-CLI harness cases cover unchanged atomic
+drafts, cancellation/resume, declined review and failed second-counter saves.
+Active Read/Action and the business rule remain unchanged in these cases;
+failed persistence cannot become positive coverage evidence. These are
+metadata-only CLI regressions, not database effect evidence.
+
+The full 83-case Read-mapping suite passes. The new ordinary-field correction
+cases failed before the fix; a bounded model retry now uses already approved
+operator context, preserves the complete workload and still rejects invented
+quotes. Genuine ambiguous meanings remain operator decisions. Next: isolate
+this executable and resume the saved public garden, coded and student cases.
+The coded environment-classification/routing defect remains open; no overall
+completion or final-artifact runtime pass is claimed.
+
+2026-09-11 14:38 UTC: `49e2f8f` is backed up privately; isolated
+`candidate-uA19Ni` executable SHA-256
+`569ac3ca872e2f1d29d7c8aff4ff46a506f1733acf7f7cb7a545b058b34e0c29`.
+Its stable full gate passed 5,674 tests / 446 optional skips, types and
+package/launcher checks (`49e2f8f-full-gate.log`). This is not qualification
+of the subsequent working tree or a complete public journey.
+
+Garden resume exposed host counter confirmations being discarded with a no-op
+model revision checkpoint. Separate durable host records and exact current
+metadata evidence are in progress; external-writer behavior remains unproved.
+Renamed library resume now proves RLS-only customer scope and activated its
+reviewed Read. Coverage then incorrectly treated "development fixture" as a
+requirement to change the `staging` configuration enum, even after an explicit
+operator clarification. It is paused with Read active, Action/execution off.
+A radio review fixture, selected after uA was frozen, exposed repeated ordinary
+field-meaning questions during fresh public intake. Its Read mapping remains
+unactivated. Both failed runs are retained, not counted as successes. Original
+student public recovery and all final-artifact runtime checks remain pending.
+
 2026-09-11 13:55 UTC: student older-Read recovery, inspected RLS coverage
 evidence and actionable policy diagnostics are integrated. The combined
 CLI/resume/chat/coverage/scope suite passes 484 tests / 1 existing skip; separate

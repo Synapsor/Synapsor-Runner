@@ -4267,6 +4267,176 @@ describe("boundary operator-plane CLI", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
+  it.each(["confirmed_noop", "cancelled_checkpoint", "declined", "save_failure"] as const)("persists host counter reviews through an unchanged atomic Action and public policy resume (%s)", async posture => {
+    const outcome = "maintenance.complete_visit";
+    const fixture = await staleSemanticRevalidationFixture({ atomicUpdates: true, outcomes: [outcome] });
+    const { root, inspection } = fixture;
+    const inspectionBefore = structuredClone(inspection), resumeFile = path.join(root, ".synapsor/boundary-authoring/resume.json");
+    let cancellation = new AbortController(), failSave = false, runNumber = 1, confirmationCount = 0;
+    const actualRename = fs.rename;
+    const rename = vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+      if (failSave && String(to) === resumeFile) throw Object.assign(new Error("COUNTER_REVIEW_TEST_SAVE_DENIED"), { code: "EACCES" });
+      await actualRename(from, to);
+    });
+    const chats: BoundaryAuthoringChat[] = [], coverage: Array<{ records: unknown[]; saved: unknown[]; run: number }> = [];
+    const callbackErrors: string[] = [];
+    try {
+      const context = await loadBoundaryReviewContext(root);
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: context.draft, candidate: context.candidate,
+        confirmedDecisions: context.candidate.unresolved_decisions, actor: "test-reviewer", reason: "Review fixture Read before host counter recovery.",
+        revision: (context.progress?.revision ?? 0) + 1 }));
+      await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate, expectedDigest: context.bundle.candidate_digest,
+        actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
+        confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+      const authority = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
+      await activateActionRuleAuthority({ projectRoot: root, name: authority.authority.name, expected_digest: authority.digest,
+        confirmation: `ACTIVATE ${authority.digest}`, actor: "test-reviewer" });
+      const activeRead = await loadActivatedExplorationBoundaries(root), activeAction = await readActionRuleAuthorityActivation(root);
+      const source = newPolicySourceSession();
+      source.snapshots = [policyTextSnapshot(Buffer.from("The owner must confirm every writer increments each updated source counter; preserve both atomic updates and all other rules."), "Counter-contract.txt")];
+      source.active = 1;
+      source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+      await savePolicySources(root, source);
+      const binding = { boundary_name: context.candidate.pack.name, generation_lock_fingerprint: context.bundle.authority.generation_lock_fingerprint,
+        schema_fingerprint: context.lock.schema_fingerprint, role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint };
+      const cards = buildReadWorkloadPlanCards(context.candidate);
+      const workload = readWorkloadFromPlanCards({ cards, selectedIds: cards.map(card => card.id) });
+      const stored = await storeReadWorkloadAnalysis({ projectRoot: root, generatedBoundary: context.candidate,
+        source: workload.source, analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: context.candidate }) });
+      await recordReadWorkloadReview({ projectRoot: root, workload: stored, candidateDigest: context.bundle.candidate_digest, reviewRevision: 1 });
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding, stage: "authority_review",
+        jobIntent: "Review the existing atomic visit completion contract.", provider: "openai", model: "gpt-test",
+        read: { analysis_id: stored.analysis_id, analysis_digest: stored.analysis_digest },
+        action: { intent: "Keep both existing atomic updates.", strategy: "rule_derived", intents: ["Keep both existing atomic updates."], completed_outcomes: [outcome] },
+        policySourceSession: source.id }));
+      const savedResume = async () => {
+        const saved = await readBoundaryAuthoringResumeState(root, binding);
+        expect(saved.status).toBe("ready");
+        if (saved.status !== "ready") throw new Error("Expected valid counter-review resume");
+        return saved.value;
+      };
+      const session: BoundaryReviewInteractiveSession = { ...fixture.session,
+        chooseOption: vi.fn(async (title, _choices, options) => {
+          if (title === "START BOUNDARY DRAFTING") return "resume";
+          if (title === "REVIEW CHANGED-RECORD PROTECTION") {
+            expect(options).toMatchObject({ initialValue: "pending", requireExplicitSelection: true });
+            confirmationCount++;
+            if (posture === "save_failure" && confirmationCount === 2) failSave = true;
+            return posture === "declined" ? "pending" : "confirm";
+          }
+          if (title === "FINISH ATTACHED RULES REVIEW") return "pause";
+          throw new Error(`Unexpected counter-review menu: ${title}; ${JSON.stringify(options?.context)}; ${JSON.stringify(chats.flatMap(chat => vi.mocked(chat.rememberDetails).mock.calls))}`);
+        }), confirmActivation: vi.fn(async () => false),
+      };
+      const generator = vi.fn(async (request: Parameters<typeof generateModelActionRuleDraft>[0]): Promise<ModelActionRuleDraftResult> => {
+        expect(request.existingDraft?.outcome).toBe(outcome);
+        expect(request.reviewVersionField).toBeTypeOf("function");
+        const before = structuredClone(request.existingDraft!);
+        let prepared = { readBoundary: request.readBoundary, readBoundaryDigest: request.readBoundaryDigest, builtCatalog: request.builtCatalog };
+        const reviews = [];
+        for (const resource of ["public.service_visits", "public.maintenance_requests"]) {
+          try {
+            // Deliberately omit previousReview: the host must restore its own saved decision.
+            const reviewed = await request.reviewVersionField!({ context: prepared, resource, field: "c09" });
+            if (reviewed) {
+              prepared = reviewed; reviews.push(reviewed.review);
+              expect((await savedResume()).reviewed_version_fields).toContainEqual(reviewed.review);
+            } else expect(posture).toBe("declined");
+          } catch (error) {
+            callbackErrors.push(error instanceof Error ? error.message : String(error));
+            throw error;
+          }
+        }
+        await request.onCheckpoint?.(actionRuleAuthoringCheckpoint({ intent_digest: canonicalJsonDigest(request.intent),
+          context_digest: canonicalJsonDigest({ catalog: request.builtCatalog.catalog, read: request.readBoundaryDigest, baseline: canonicalJsonDigest(before) }),
+          components: {}, reviewed_version_fields: reviews }));
+        if (posture === "cancelled_checkpoint" && runNumber === 1) {
+          cancellation.abort();
+          throw new AskError("ASK_CANCELLED", "Pause after the real host counter confirmations.", 499);
+        }
+        const compiled = compileActionRuleModelDraft({ draft: before, ...prepared });
+        expect(compiled.draft).toEqual(request.existingDraft);
+        expect(compiled.effect_envelope.atomic_updates).toHaveLength(1);
+        return { state: "ready", compiled, provider: "openai", model: "gpt-test", correction_used: false,
+          clarification_count: 0, authority_granted: false, source_database_changed: false };
+      });
+      const run = () => boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection, session, undefined, {
+        startWithAgentJob: true,
+        modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret", dependencies: { requestJson: async request => {
+          const messages = (request.body as { input: Array<{ content?: string }> }).input;
+          const prefix = "Current draft (JSON pointer root): ";
+          const line = messages.flatMap(message => (message.content ?? "").split("\n")).find(line => line.startsWith(prefix));
+          expect(line).toBeDefined();
+          const draft = JSON.parse(line!.slice(prefix.length));
+          const effect = draft.runner_evidence.actions[outcome].effect;
+          for (const binding of ["visit", "request"]) expect(draft.runner_evidence.actions[outcome].scoped_bindings[binding].fields.c09)
+            .toMatchObject({ actual_values_returned: false, model_analysis: [], private_action_verification: true });
+          const records = [effect.source_counter_maintenance, effect.atomic_updates[0].source_counter_maintenance];
+          coverage.push({ records, saved: (await savedResume()).reviewed_version_fields ?? [], run: runNumber });
+          if (records.every(record => record !== null)) {
+            cancellation.abort();
+            throw new AskError("ASK_CANCELLED", "Pause after inspecting exact current coverage evidence.", 499);
+          }
+          return { status: 200, body: { output: [{ type: "function_call", call_id: `counter_coverage_${coverage.length}`, name: "runner__review_policy_coverage",
+            arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: "conflict", topic: "Source counter maintenance",
+              responsibility: "runner", issue_kind: "contradiction", interpretation: "The existing counters need exact host owner-maintenance confirmation, not a business-rule change.",
+              next_step: "Review both maintained counters while preserving the exact existing atomic action.",
+              draft_paths: [`/runner_evidence/actions/${outcome}/effect/source_counter_maintenance`,
+                `/runner_evidence/actions/${outcome}/effect/atomic_updates/0/source_counter_maintenance`] }] }) }] } };
+        } } }, modelBoundaryJobPlanner: fixture.planner, modelActionRuleGenerator: generator,
+        modelReadWorkloadGenerator: async () => { throw new Error("The retained Read must not be replanned."); },
+        modelAuthoringNarrator: async () => "Review the exact source counter commitments; existing rules are unchanged.",
+        actionProjectInspector: async () => inspection, boundaryAuthoringChatFactory: () => {
+          const chat = { ...testBoundaryAuthoringChat(session), signal: cancellation.signal, readOperator: vi.fn(async () => undefined) };
+          chats.push(chat); return chat;
+        },
+      });
+      const assertUnchanged = async () => {
+        expect(await readActionRuleAuthorityDraft(root, authority.authority.name)).toEqual(authority);
+        expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeRead);
+        expect(await readActionRuleAuthorityActivation(root)).toEqual(activeAction);
+        expect(inspection).toEqual(inspectionBefore);
+        expect(session.confirmActivation).not.toHaveBeenCalled();
+        expect(fixture.planner).not.toHaveBeenCalled();
+        expect((await loadPolicySources(root, source.id))?.snapshots).toEqual(source.snapshots);
+      };
+      await expect(run()).resolves.toBe(0);
+      expect(generator, JSON.stringify(chats.flatMap(chat => vi.mocked(chat.rememberDetails).mock.calls))).toHaveBeenCalledOnce();
+      expect(confirmationCount).toBe(2);
+      await assertUnchanged();
+      const paused = await savedResume();
+      if (posture === "declined") {
+        expect(paused.reviewed_version_fields).toBeUndefined();
+        expect(coverage.every(entry => entry.records.every(record => record === null))).toBe(true);
+      } else if (posture === "save_failure") {
+        expect(callbackErrors).toEqual([expect.stringContaining("ACTION_CHECKPOINT_NOT_SAVED: The changed-record protection review")]);
+        expect(callbackErrors[0]).toContain("COUNTER_REVIEW_TEST_SAVE_DENIED");
+        expect(paused.reviewed_version_fields).toHaveLength(1);
+        expect(paused.pending_action_revision).toBeDefined();
+        expect(coverage.at(-1)!.records[0]).not.toBeNull();
+        expect(coverage.at(-1)!.records[1]).toBeNull();
+        for (const entry of coverage) for (const record of entry.records.filter(record => record !== null)) {
+          const { resource, field, maintenance, proof_digest } = record as Record<string, unknown>;
+          expect(entry.saved).toContainEqual({ resource, field, maintenance, proof_digest });
+        }
+      } else {
+        expect(paused.reviewed_version_fields).toHaveLength(2);
+        expect(paused.pending_action_revision === undefined).toBe(posture === "confirmed_noop");
+        if (posture === "confirmed_noop") expect(coverage.at(-1)!.records.every(record => record !== null)).toBe(true);
+        cancellation = new AbortController(); runNumber = 2;
+        await expect(run()).resolves.toBe(0);
+        expect(confirmationCount).toBe(2);
+        expect(generator).toHaveBeenCalledTimes(posture === "cancelled_checkpoint" ? 2 : 1);
+        const resumed = coverage.filter(entry => entry.run === 2);
+        expect(resumed.length).toBeGreaterThan(0);
+        for (const record of resumed.at(-1)!.records) expect(record).toMatchObject({ status: "owner_confirmed_operating_prerequisite",
+          field: "c09", external_writers_verified: false, production_integration_verified: false });
+        expect((await savedResume()).reviewed_version_fields).toEqual(paused.reviewed_version_fields);
+        await assertUnchanged();
+      }
+    } finally { rename.mockRestore(); await fixture.dispose(); }
+  }, 30_000);
+
   it("revalidates completed semantic outcomes by their exact saved identities without drafting aliases", async () => {
     const fixture = await staleSemanticRevalidationFixture();
     const actionGenerator = vi.fn(async () => { throw new Error("Stale completed Actions must not be redrafted."); });
@@ -14551,9 +14721,15 @@ function actionTargetInspection(): SchemaInspection {
   return inspection;
 }
 
-async function staleSemanticRevalidationFixture(options: { writeback?: "proposal_only" | "supervised"; outcomes?: string[]; unusedVerificationField?: boolean; privateVerificationResource?: boolean } = {}) {
+async function staleSemanticRevalidationFixture(options: { writeback?: "proposal_only" | "supervised"; outcomes?: string[]; unusedVerificationField?: boolean; privateVerificationResource?: boolean; atomicUpdates?: boolean } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-revalidate-semantic-actions-"));
   const inspection = actionTargetInspection();
+  if (options.atomicUpdates) for (const table of inspection.tables) {
+    table.columns.push({ name: "c09", data_type: "integer", nullable: false, generated: false,
+      ordinal_position: table.columns.length + 1,
+      suggestions: { tenant: false, conflict: true, sensitive: false, immutable: false, large_or_binary: false } });
+    table.suggestions.conflict_columns = ["c09"];
+  }
   if (options.privateVerificationResource) {
     const facts = structuredClone(inspection.tables[0]!);
     facts.name = "visit_facts";
@@ -14565,6 +14741,13 @@ async function staleSemanticRevalidationFixture(options: { writeback?: "proposal
     schema_inputs: [], database_env_names: ["DATABASE_URL"] }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
   const planner = vi.fn(async () => { throw new Error("Stale completed Actions must not be replanned."); });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  if (options.atomicUpdates) for (const table of inspection.tables) {
+    const preview = await prepareBoundaryResourceReviewMutation(root, { resource_id: `public.${table.name}`,
+      withhold_from_model_fields: ["c09"], private_model_fields: ["c09"], actor: "test-reviewer",
+      field_metadata: [{ field: "c09", label: "Source change counter" }],
+      reason: "Keep the fixture conflict counter private, including model analysis." }, async () => inspection);
+    await commitBoundaryResourceReviewMutation(root, preview);
+  }
   const context = await loadBoundaryReviewContext(root);
   const built = buildActionRuleAuthoringCatalog({ boundary: context.candidate, inspection });
   const resource = built.catalog.resources.find((candidate) => candidate.name === "public.service_visits")!;
@@ -14579,9 +14762,17 @@ async function staleSemanticRevalidationFixture(options: { writeback?: "proposal
       outcome,
       verification: { name: `${outcome}.verification`, resources: [{ binding: "visit", resource: "public.service_visits",
         source: { kind: "subject_ref" }, fields: ["status", ...(options.unusedVerificationField ? ["scheduled_at"] : [])] },
+        ...(options.atomicUpdates ? [{ binding: "request", resource: "public.maintenance_requests",
+          source: { kind: "subject_ref" as const }, fields: ["estimated_hours"] }] : []),
         ...(options.privateVerificationResource ? [{ binding: "facts", resource: "public.visit_facts",
           source: { kind: "relationship" as const, from_binding: "visit", relationship: "visit_facts_visit_fk", direction: "inverse" as const }, fields: ["status"], max_rows: 1 }] : [])] },
-      effect: { name: `${outcome}.effect`, operation: "insert", target_resource: "public.maintenance_requests",
+      effect: options.atomicUpdates ? { name: `${outcome}.effect`, operation: "update", target_resource: "public.service_visits", target_binding: "visit",
+        allowed_fields: [{ name: "status", values: ["completed"] }],
+        set: { status: { kind: "literal", value: "completed", value_type: status } }, writeback: options.writeback ?? "proposal_only",
+        atomic_updates: [{ operation: "update", target_resource: "public.maintenance_requests", target_binding: "request",
+          allowed_fields: [{ name: "estimated_hours", minimum: 1, maximum: 8 }],
+          set: { estimated_hours: { kind: "literal", value: 2, value_type: estimatedHours } } }] }
+        : { name: `${outcome}.effect`, operation: "insert", target_resource: "public.maintenance_requests",
         allowed_fields: [{ name: "request_kind", values: ["inspection_followup"] },
           { name: "estimated_hours", minimum: 1, maximum: 8 }],
         set: { request_kind: { kind: "literal", value: "inspection_followup", value_type: requestKind },

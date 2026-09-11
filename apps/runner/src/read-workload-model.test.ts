@@ -32,6 +32,34 @@ function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malforme
 }
 
 describe("model-assisted Read workload mapping", () => {
+  it.each(["corrected", "fabricated", "changed_workload"])("repairs quoted meanings for ordinary fields before asking the operator (%s)", async mode => {
+    const boundary = generatedBoundary(), before = structuredClone(boundary);
+    const quote = "public.orders.status means the current fulfillment stage of the purchase.";
+    const allowed = [{ id: "order_status", description: "Read purchase fulfillment stage",
+      plan: { kind: "rows", resource: "public.orders", select: ["status"] } }];
+    let calls = 0;
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "ordinary_meaning",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify({
+        allowed: ++calls > 1 && mode === "changed_workload" ? [] : allowed, forbidden: [],
+        operator_meanings: [{ resource: "public.orders", field: "status",
+          operator_quote: calls > 1 && mode === "corrected" ? quote : "This field means purchase fulfillment." }],
+      }) }] } }));
+    const clarificationHandler = vi.fn().mockResolvedValue({ state: "declined" });
+    const result = generateModelReadWorkload({ name: "order_read", allowedQuestions: ["Read my purchase status"],
+      operatorNamingContext: quote, provider: "openai", model: "gpt-test", generatedBoundary: boundary,
+      apiKey: "test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+    if (mode === "corrected") {
+      expect((await result).analysis.status).toBe("ready");
+      expect(clarificationHandler).not.toHaveBeenCalled();
+    } else {
+      await expect(result).rejects.toThrow(mode === "changed_workload"
+        ? "READ_WORKLOAD_NAMING_CORRECTION_CHANGED_WORKLOAD" : "READ_WORKLOAD_CLARIFICATION_DECLINED");
+      expect(clarificationHandler).toHaveBeenCalledTimes(mode === "fabricated" ? 1 : 0);
+    }
+    expect(calls).toBe(2);
+    expect(JSON.stringify(requestJson.mock.calls[1])).toContain("Rejected naming submission");
+    expect(boundary).toEqual(before);
+  });
   it.each(["omission", "question"])("corrects omitted exact naming evidence from approved policy before asking a business question (%s)", async attempt => {
     const boundary = opaqueGeneratedBoundary(), before = structuredClone(boundary);
     const conversation = createModelAuthoringConversation(), policy = newPolicySourceSession();

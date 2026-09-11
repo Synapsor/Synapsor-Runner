@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildBoundaryAuthoringResumeState,
+  boundaryAuthoringVersionReviews,
   prepareBoundaryActionRevision,
   clearBoundaryAuthoringResumeState,
   readBoundaryAuthoringResumeState,
@@ -21,6 +22,53 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it("retains two host counter confirmations after a no-op edit, restart and metadata rescan", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-counter-review-resume-"));
+    try {
+      const input = { binding, stage: "authority_review" as const, jobIntent: "Exchange the assignment and consume the selected offer atomically.",
+        provider: "openai" as const, model: "gpt-test" };
+      const reviews = ["operations.assignments", "operations.offers"].map((resource, i) => ({ resource, field: "counter",
+        maintenance: "all_writers_increment" as const, proof_digest: `sha256:${String(i + 4).repeat(64)}` as const }));
+      const checkpoint = actionRuleAuthoringCheckpoint({ intent_digest: `sha256:${"6".repeat(64)}`,
+        context_digest: `sha256:${"7".repeat(64)}`, components: {}, reviewed_version_fields: reviews });
+      const old = buildBoundaryAuthoringResumeState({ ...input, pendingActionRevision: { outcome: "operations.exchange",
+        instruction: "Confirm the existing operating prerequisites.", baseline_digest: `sha256:${"8".repeat(64)}`, checkpoint } });
+      expect(boundaryAuthoringVersionReviews(old)).toEqual(reviews);
+      const completed = buildBoundaryAuthoringResumeState({ ...input, previous: old });
+      expect(completed.pending_action_revision).toBeUndefined();
+      expect(completed.reviewed_version_fields).toEqual(reviews);
+      await writeBoundaryAuthoringResumeState(root, completed);
+      const loaded = await readBoundaryAuthoringResumeState(root, binding);
+      expect(loaded).toEqual({ status: "ready", value: completed });
+      const refreshed = revalidateBoundaryAuthoringResume(old, { ...binding, schema_fingerprint: `sha256:${"9".repeat(64)}` });
+      expect(refreshed.pending_action_revision?.checkpoint).toBeUndefined();
+      expect(boundaryAuthoringVersionReviews(refreshed)).toEqual(reviews);
+      expect(refreshed.authority_granted).toBe(false);
+      expect(refreshed.source_database_changed).toBe(false);
+      expect(() => boundaryAuthoringVersionReviews({ ...completed,
+        reviewed_version_fields: [{ ...reviews[0]!, field: "other_counter" }] })).toThrow("digest");
+      expect(buildBoundaryAuthoringResumeState({ ...input, jobIntent: "A different job.", previous: completed })
+        .reviewed_version_fields).toBeUndefined();
+      expect(buildBoundaryAuthoringResumeState({ ...input, binding: { ...binding, boundary_name: "other" }, previous: completed })
+        .reviewed_version_fields).toBeUndefined();
+      expect(buildBoundaryAuthoringResumeState({ ...input, reviewedVersionFields: [], previous: completed })
+        .reviewed_version_fields).toBeUndefined();
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it("keeps the latest host confirmation instead of an older component checkpoint", () => {
+    const older = { resource: "operations.records", field: "v1", maintenance: "all_writers_increment" as const,
+      proof_digest: `sha256:${"a".repeat(64)}` as const };
+    const latest = { ...older, field: "v2", proof_digest: `sha256:${"b".repeat(64)}` as const };
+    const input = { binding, stage: "authority_review" as const, jobIntent: "Change a record.", provider: "openai" as const, model: "gpt-test" };
+    const state = buildBoundaryAuthoringResumeState({ ...input, reviewedVersionFields: [latest], action: { intent: input.jobIntent,
+      checkpoint: actionRuleAuthoringCheckpoint({ intent_digest: `sha256:${"c".repeat(64)}`, context_digest: `sha256:${"d".repeat(64)}`,
+        components: {}, reviewed_version_fields: [older] }) } });
+    expect(boundaryAuthoringVersionReviews(state)).toEqual([latest]);
+    const records = Array.from({ length: 32 }, (_, i) => ({ ...latest, resource: `operations.record_${i}` }));
+    expect(buildBoundaryAuthoringResumeState({ ...input, reviewedVersionFields: records }).reviewed_version_fields).toEqual(records);
+    expect(() => buildBoundaryAuthoringResumeState({ ...input, reviewedVersionFields: [...records, older] })).toThrow("CHECKPOINT_INVALID");
+    expect(() => buildBoundaryAuthoringResumeState({ ...input, reviewedVersionFields: [older, latest] })).toThrow("CHECKPOINT_INVALID");
+  });
   it.each([true, false])("preserves an omitted unfinished agenda on rewrite, clear and rescan (components %s)", async (components) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-partial-job-resume-"));
     try {

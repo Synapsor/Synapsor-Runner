@@ -8,8 +8,12 @@ import type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js
 import { hasReviewedCustomerReadEntry, reviewedReadEntryPaths } from "./read-relationship-access.js";
 import { policySourceConstraintEvidence, type PolicySourceInspection } from "./action-rule-source-evidence.js";
 import { rolePostureFingerprint, schemaFingerprintForInspection } from "@synapsor-runner/schema-inspector";
-import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
+import { normalizeActionRuleCatalog, type ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import { inspectedPostgresScopeMapping } from "./inspected-scope-mapping.js";
+import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
+import { parseReviewedActionVersionFields, type ReviewedActionVersionField } from "./action-rule-authoring-checkpoint.js";
+import { prepareActionVersionField } from "./action-rule-version-review.js";
+import type { DerivedEffectEnvelopeSpecV1 } from "@synapsor/spec";
 
 function inspectedReadScopes(read: ExplorationBoundaryDraft, source?: PolicySourceInspection) {
   type Mapping = NonNullable<ReturnType<typeof inspectedPostgresScopeMapping>>;
@@ -53,7 +57,10 @@ export function policyCoverageDraft(input: {
   actions: CompiledActionRuleModelDraftV1[];
   authority?: ActionRuleAuthorityDraftV1;
   source?: PolicySourceInspection;
+  /** Host-confirmed operating commitments, never model assertions or proof of external enforcement. */
+  reviewedVersionFields?: readonly ReviewedActionVersionField[];
 }) {
+  const versionReviews = input.reviewedVersionFields === undefined ? [] : parseReviewedActionVersionFields(input.reviewedVersionFields, 32);
   const catalog = readBoundaryRevisionCatalog(input.read);
   const readFields = new Map(catalog.resources.map(resource => [resource.id,
     new Map(resource.fields.map(field => [field.id, field]))]));
@@ -77,6 +84,52 @@ export function policyCoverageDraft(input: {
     });
   const readScopes = inspectedReadScopes(input.read, input.source);
   const readDigest = explorationBoundaryCandidateDigest(input.read);
+  const sourceCounterMaintenance = (action: typeof actions[number], effect: Pick<DerivedEffectEnvelopeSpecV1,
+    "operation" | "target_resource" | "target_binding" | "primary_key" | "tenant_key" | "principal_scope_key" | "organization_scope" | "conflict_key" | "version_advance">,
+  ruleEffect: typeof action.rule.effect | undefined) => {
+    const review = versionReviews.find(entry => entry.resource === effect.target_resource && entry.field === effect.version_advance?.column);
+    if (!review || !input.source || effect.operation !== "update" || effect.version_advance?.strategy !== "integer_increment"
+      || effect.conflict_key !== review.field || !effect.target_binding
+      || ruleEffect?.operation !== effect.operation || ruleEffect.target_resource !== effect.target_resource || ruleEffect.target_binding !== effect.target_binding
+      || action.read_dependency?.name !== input.read.pack.name || action.read_dependency.digest !== readDigest
+      || action.source_catalog?.generation_lock_fingerprint !== input.read.generation_lock_fingerprint
+      || action.verification_boundary.generation_lock_fingerprint !== input.read.generation_lock_fingerprint
+      || [action.rule.source, action.verification_boundary.source, action.effect_envelope.source].some(source => source !== input.read.source)) return null;
+    const targets = action.source_catalog.resources.filter(resource => resource.name === effect.target_resource);
+    const bindings = action.verification_boundary.resources.filter(binding => binding.binding === effect.target_binding);
+    const target = targets.length === 1 ? targets[0] : undefined, binding = bindings.length === 1 ? bindings[0] : undefined;
+    if (!target || target.verification_only || !binding || binding.resource !== target.name
+      || target.version_field !== review.field || binding.version_field !== review.field
+      || target.primary_key !== effect.primary_key || binding.primary_key !== target.primary_key
+      || target.tenant_key !== effect.tenant_key || target.principal_scope_key !== effect.principal_scope_key
+      || binding.scope.mode === "inherited"
+      || binding.scope.principal_field !== target.principal_scope_key
+      || (binding.scope.mode === "columns" ? binding.scope.tenant_field !== target.tenant_key || effect.organization_scope !== undefined
+        : effect.tenant_key !== undefined || !input.read.organization_scope
+          || binding.scope.organization_id !== input.read.organization_scope.organization_id
+          || canonicalJsonDigest(effect.organization_scope ?? null) !== canonicalJsonDigest(input.read.organization_scope))) return null;
+    // A saved digest attests only to the exact reviewed mapping. Re-derive it
+    // from current metadata, then bind it to the actual compiled update target.
+    try {
+      const builtCatalog = buildActionRuleAuthoringCatalog({ boundary: input.read, inspection: input.source.inspection, retainedCatalog: action.source_catalog });
+      const prepared = prepareActionVersionField({ context: { readBoundary: input.read, readBoundaryDigest: readDigest, builtCatalog },
+        inspection: input.source.inspection, generationLock: input.source.generationLock, resource: review.resource, field: review.field });
+      const current = normalizeActionRuleCatalog(prepared.builtCatalog.catalog).resources.find(resource => resource.name === target.name);
+      const saved = normalizeActionRuleCatalog(action.source_catalog).resources.find(resource => resource.name === target.name);
+      const fields = binding.fields.filter(field => field.name === review.field), field = fields.length === 1 ? fields[0] : undefined;
+      const currentField = current?.fields.find(field => field.name === review.field);
+      if (!current || !saved || canonicalJsonDigest(current) !== canonicalJsonDigest(saved)
+        || canonicalJsonDigest(prepared.review) !== canonicalJsonDigest(review)
+        || !field || !currentField || field.nullable !== currentField.nullable
+        || canonicalJsonDigest(field.type) !== canonicalJsonDigest(currentField.type)) return null;
+      return { status: "owner_confirmed_operating_prerequisite" as const, resource: review.resource, field: review.field,
+        maintenance: review.maintenance, proof_digest: review.proof_digest, read_boundary_digest: readDigest,
+        generation_lock_fingerprint: input.read.generation_lock_fingerprint, role_posture_fingerprint: input.read.role_posture_fingerprint,
+        external_writers_verified: false, production_integration_verified: false };
+    } catch {
+      return null;
+    }
+  };
   const actionScope = (action: typeof actions[number], binding: typeof actions[number]["verification_boundary"]["resources"][number]) => {
     const proof = readScopes.get(binding.resource);
     if (!proof || action.source_catalog?.generation_lock_fingerprint !== input.read.generation_lock_fingerprint
@@ -174,6 +227,7 @@ export function policyCoverageDraft(input: {
           fields: action.effect_envelope.allowed_fields.map((field) => field.name),
           version_advance: action.effect_envelope.version_advance
             ? structuredClone(action.effect_envelope.version_advance) : null,
+          source_counter_maintenance: sourceCounterMaintenance(action, action.effect_envelope, action.rule.effect),
           source_fields_modified: [...new Set([
             ...action.effect_envelope.allowed_fields.map((field) => field.name),
             ...(action.effect_envelope.version_advance ? [action.effect_envelope.version_advance.column] : []),
@@ -184,6 +238,7 @@ export function policyCoverageDraft(input: {
             fields: effect.allowed_fields.map((field) => field.name), set: action.rule.atomic_updates![index]!.set,
             source_fields_modified: [...effect.allowed_fields.map((field) => field.name), effect.version_advance.column].sort(),
             version_advance: effect.version_advance,
+            source_counter_maintenance: sourceCounterMaintenance(action, effect, action.rule.atomic_updates?.[index]),
           })), transaction: "All listed updates share one verification, approval, transaction and receipt. Any failed update rolls back all changes. Permanent consumption requires an explicit change plus eligibility checking that changed fact." } : {}),
         },
         execution: {
@@ -228,6 +283,7 @@ export function policyCoverageDraft(input: {
         request_identity: "The fixed request_change operation accepts outcome, scoped subject_refs and reviewed business inputs, not a client-supplied request ID. Repeating the same claimed references, outcome and inputs reuses the recorded proposal. New references or a different reviewed request are not an unlimited delivery-retry exemption. Execution uses the sealed proposal's idempotency identity.",
         conflict_protection: "Runner records immutable eligibility/effect evidence, re-verifies current facts and approved effect at execution, and checks configured version fields. A changed version or changed approved effect refuses stale execution; do not require duplicate equality predicates in require for these Runner-owned checks.",
         version_advancement: "Each compiled action effect lists its exact version_advance, or null when none is configured. integer_increment advances that column in the same guarded source transaction as the successful change. Refused, rolled-back and replayed requests do not advance it again. A conflict field alone is not proof of advancement; neither is this contract permission to add an unconfigured version update.",
+        source_counter_maintenance: "Each effect and atomic_updates entry supplies source_counter_maintenance: an exact host-confirmed operating prerequisite, validated against the current Read dependency, inspection, role posture, generation lock, catalog, compiled update target and saved review digest, or null when no matching current confirmation is available. Cite that exact entry for a source-owner obligation to maintain the counter on every update. This is not independent proof that external writers enforce the obligation: external_writers_verified and production_integration_verified remain false. If the policy requires formal independent enforcement, keep that requirement pending until its actual evidence is supplied. Neither model text, source-policy wording, structural suitability nor compiled version advancement substitutes for host confirmation; a null entry cannot support a positive maintenance claim. This metadata grants no Read visibility, activation or execution authority.",
         receipts: "Runner's control ledger records processing and execution receipts, separately from source effects. A second source-table audit INSERT is not required. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed.",
         client_responsibilities: "The application authenticates the person, supplies trusted session identity, captures their selection and uses returned execution status/receipts for messages. A scoped subject reference authorizes one reviewed row; it does not prove the human clicked a UI. When an effective date is in the future, recording the change is not proof its benefits are already in force. Boundary rules cannot prove arbitrary client UI wording.",
         application_obligations: {

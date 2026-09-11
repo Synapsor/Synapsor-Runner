@@ -158,6 +158,7 @@ import {
 } from "./model-authoring-conversation.js";
 import {
   buildBoundaryAuthoringResumeState,
+  boundaryAuthoringVersionReviews,
   prepareBoundaryActionRevision,
   clearBoundaryAuthoringResumeState,
   boundaryAuthoringActionIsUnfinished,
@@ -4309,6 +4310,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let privateReadMetadataDigest = availableResume?.private_read_metadata_digest;
   let pendingActionRemoval = availableResume?.pending_action_removal;
   let pendingActionRevision = availableResume?.pending_action_revision;
+  let reviewedVersionFields = boundaryAuthoringVersionReviews(availableResume);
   let pendingActionAddition = availableResume?.pending_action_addition;
   let resumeAction: BoundaryAuthoringResumeAction | undefined = availableResume?.action;
   // Read edits and metadata recovery recompile saved outcomes, not an unfinished agenda.
@@ -4362,6 +4364,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ...(privateReadMetadataDigest ? { privateReadMetadataDigest } : {}),
         ...(pendingActionRemoval ? { pendingActionRemoval } : {}),
         ...(pendingActionRevision ? { pendingActionRevision } : {}),
+        reviewedVersionFields,
         ...((retainedReadEdit ? retainedReadEdit.addition : pendingActionAddition)
           ? { pendingActionAddition: retainedReadEdit ? retainedReadEdit.addition : pendingActionAddition } : {}),
         ...(resumeRead ? { read: resumeRead } : {}),
@@ -4599,6 +4602,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       resumeRead = editingSavedJob ? availableResume!.read : undefined;
       resumeReadIntent = editingSavedJob ? availableResume!.read_intent : undefined;
       resumeAction = editingSavedJob ? availableResume!.action : undefined;
+      if (!editingSavedJob) reviewedVersionFields = [];
       retainedReadEdit = undefined;
       pendingReadRevision = undefined;
       pendingJobRevision = undefined;
@@ -5471,7 +5475,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         if (input.authoringChat) await input.authoringChat.streamModel([jobPlan.summary]);
         const currentAuthority = formatCurrentBoundaryAuthoritySummary(reusableState.current_state);
         input.authoringChat?.rememberDetails("EXISTING BOUNDARY AUTHORITY", currentAuthority);
-        if (!await clearBoundaryAuthoringResumeState(input.projectRoot)) {
+        if (boundaryAuthoringActionIsUnfinished(resumeAction) || pendingActionAddition || pendingActionRevision || pendingActionRemoval
+          || (!reviewedVersionFields.length && !await clearBoundaryAuthoringResumeState(input.projectRoot))) {
           return boundaryAssistResult({ tone: "warning", title: "Unfinished work remains saved.",
             lines: ["No new change was planned. The saved job, unanswered business decisions and draft components remain pending."],
             footer: "Resume the saved job when its missing business decisions are available. Existing authority is unchanged." });
@@ -6347,7 +6352,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                 env: process.env,
                 reviewVersionField: async request => {
                   const generationLock = await loadGenerationLockSnapshot(input.projectRoot, request.context.readBoundary.generation_lock_fingerprint);
-                  const prepared = await reviewActionVersionField({ ...request, generationLock, inspection: actionInspection!, session: input.session,
+                  const prepared = await reviewActionVersionField({ ...request,
+                    previousReview: reviewedVersionFields.find(review => review.resource === request.resource) ?? request.previousReview,
+                    generationLock, inspection: actionInspection!, session: input.session,
                     assertCurrent: async () => {
                       const fresh = await loadBoundaryReviewContext(input.projectRoot);
                       if (explorationBoundaryCandidateDigest(fresh.candidate) !== request.context.readBoundaryDigest) {
@@ -6355,7 +6362,15 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                       }
                     },
                   });
-                  if (prepared) semanticActionCatalog = prepared.builtCatalog;
+                  if (prepared) {
+                    const previousReviews = reviewedVersionFields;
+                    try {
+                      reviewedVersionFields = [...reviewedVersionFields.filter(review => review.resource !== prepared.review.resource), prepared.review];
+                      await persistAuthoringResume("action_drafting");
+                      if (resumePersistenceBlocked) throw checkpointSaveFailure("The changed-record protection review");
+                    } catch (error) { reviewedVersionFields = previousReviews; throw error; }
+                    semanticActionCatalog = prepared.builtCatalog;
+                  }
                   return prepared;
                 },
                 reviewPrivateSource: async request => {
@@ -8090,6 +8105,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     const source = activePolicySource(sources);
     if (!source || !input.authoringChat || !modelAssistSession) return undefined;
     const draftRecord = policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
+      reviewedVersionFields,
       ...(actionInspection ? { source: { inspection: actionInspection, generationLock: context.lock } } : {}),
       actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft });
     const authorityDigest = canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
@@ -8151,7 +8167,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         builtCatalog: entry.catalog, readBoundary: context.candidate, readBoundaryDigest: committed.candidate_digest,
         reviewVersionField: async request => {
           const generationLock = await loadGenerationLockSnapshot(input.projectRoot, request.context.readBoundary.generation_lock_fingerprint);
-          return reviewActionVersionField({ ...request, generationLock, inspection: actionInspection!, session: input.session,
+          const prepared = await reviewActionVersionField({ ...request,
+            previousReview: reviewedVersionFields.find(review => review.resource === request.resource) ?? request.previousReview,
+            generationLock, inspection: actionInspection!, session: input.session,
             assertCurrent: async () => {
               const fresh = await loadBoundaryReviewContext(input.projectRoot);
               if (explorationBoundaryCandidateDigest(fresh.candidate) !== request.context.readBoundaryDigest) {
@@ -8159,6 +8177,15 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
               }
             },
           });
+          if (prepared) {
+            const previousReviews = reviewedVersionFields;
+            try {
+              reviewedVersionFields = [...reviewedVersionFields.filter(review => review.resource !== prepared.review.resource), prepared.review];
+              await persistAuthoringResume("authority_review");
+              if (resumePersistenceBlocked) throw checkpointSaveFailure("The changed-record protection review");
+            } catch (error) { reviewedVersionFields = previousReviews; throw error; }
+          }
+          return prepared;
         },
         reviewPrivateSource: request => reviewPrivateActionSourceForModel({ request, inspection: actionInspection!,
           session: input.session, modelLabel: boundaryModelLabel(modelAssistSession!),
@@ -8184,7 +8211,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         },
       }));
       if (revised.compiled.rule.outcome !== before.rule.outcome) throw new Error("The revision must preserve this exact outcome. No duplicate or active authority was changed.");
-      if (canonicalJsonDigest(before.draft) === canonicalJsonDigest(revised.compiled.draft)) {
+      const compiledMeaning = (value: CompiledActionRuleModelDraftV1) => canonicalJsonDigest({ draft: value.draft,
+        catalog: value.loaded.authority.catalog, verification: value.verification_boundary,
+        effect: value.effect_envelope, rule: value.rule, approval: value.approval_class });
+      if (compiledMeaning(before) === compiledMeaning(revised.compiled)) {
         pendingActionRevision = undefined;
         await persistAuthoringResume("authority_review");
         return false;
@@ -8836,6 +8866,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       privacyEvidence: (boundary) => readPrivacyReview({ boundary, session: authoringConversation?.policySources,
         ...(policyReport && policyReport.key === policyAttemptKey ? { coverage: { report: policyReport.report,
           draft: policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
+            reviewedVersionFields,
             ...(actionInspection ? { source: { inspection: actionInspection, generationLock: context.lock } } : {}),
             actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft }) } } : {}),
       }),
