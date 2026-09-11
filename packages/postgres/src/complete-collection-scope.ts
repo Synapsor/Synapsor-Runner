@@ -1,10 +1,10 @@
-type Node = { kind: "column" | "setting" | "string"; value: string }
+type Node = { kind: "column" | "setting" | "string"; value: string; cast?: "text" | "uuid" }
   | { kind: "true" }
   | { kind: "eq" | "and"; left: Node; right: Node };
 type Token = { kind: "word" | "identifier" | "string" | "symbol"; value: string };
 
 /** Closed expression grammar, not a general SQL-equivalence claim. Unknown syntax fails closed. */
-export function isCompleteCollectionScopeExpression(expression: string, allowed: Map<string, string>): boolean {
+export function isCompleteCollectionScopeExpression(expression: string, allowed: Map<string, string>, uuidColumns: ReadonlySet<string> = new Set()): boolean {
   if (expression.length > 16_384) return false;
   const tokens: Token[] = [];
   const lexer = /\s+|'(?:''|[^'])*'|"(?:""|[^"])*"|[a-zA-Z_][a-zA-Z_0-9$]*|::|[=().,]/gy;
@@ -52,7 +52,7 @@ export function isCompleteCollectionScopeExpression(expression: string, allowed:
             result = { kind: "setting", value: setting.value };
           } else if (name === "nullif") {
             const setting = atom(); require(","); const empty = atom(); require(")");
-            if (setting.kind !== "setting" || empty.kind !== "string" || empty.value !== "") throw new Error("Unreviewed null handling");
+            if (setting.kind !== "setting" || setting.cast === "uuid" || empty.kind !== "string" || empty.value !== "") throw new Error("Unreviewed null handling");
             result = setting;
           } else throw new Error("Unreviewed function");
         } else result = name === "true" ? { kind: "true" } : { kind: "column", value: name };
@@ -60,8 +60,17 @@ export function isCompleteCollectionScopeExpression(expression: string, allowed:
     }
     while (take("::")) {
       if (take("pg_catalog")) require(".");
-      require("text");
       if (result.kind !== "column" && result.kind !== "setting" && result.kind !== "string") throw new Error("Unsupported cast");
+      if (take("uuid")) {
+        // Only the trusted setting may be parsed as UUID, and equality below
+        // requires an inspected native UUID column, never a cast business value.
+        if (result.kind !== "setting" || result.cast === "uuid") throw new Error("Unsupported UUID cast");
+        result = { ...result, cast: "uuid" };
+      } else {
+        require("text");
+        if (result.cast === "uuid") throw new Error("Unsupported UUID round trip");
+        result = { ...result, cast: "text" };
+      }
     }
     depth--;
     return result;
@@ -82,6 +91,7 @@ export function isCompleteCollectionScopeExpression(expression: string, allowed:
     const column = node.left.kind === "column" ? node.left : node.right.kind === "column" ? node.right : undefined;
     const setting = node.left.kind === "setting" ? node.left : node.right.kind === "setting" ? node.right : undefined;
     if (!column || !setting || allowed.get(column.value) !== setting.value) return false;
+    if (setting.cast === "uuid" && (column.cast !== undefined || !uuidColumns.has(column.value))) return false;
     covered.add(column.value);
     return true;
   }

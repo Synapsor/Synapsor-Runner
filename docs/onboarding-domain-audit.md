@@ -12,6 +12,7 @@ regressions, not completion of unfamiliar-database qualification.
 | Writer provisioning | Removed automatic telecom-recipe export based on two table names. Generic handoffs contain reviewed requirements, narrow grants and supported scoped-policy repair or concrete administrator blockers. The telecom recipe remains an explicitly invoked example, with its own fixture checks. It is excluded from generalization success evidence. |
 | Client/worker setup | Reviewed Read/Action configurations no longer receive legacy demo credential or identity defaults, even with a matching example source name or path. Local test identity still requires explicit operator input; real backend session wiring is a separate deployment obligation. Client publication, execution policy and worker readiness remain separately checked. |
 | Legacy demos and test helpers | `demo`/`try`, reference-app defaults and test fixture builders remain isolated compatibility/test surfaces. They are not used to establish general four-tool onboarding or runtime evidence. |
+| PostgreSQL identity representations | Unfamiliar library/manufacturing runs exposed a closed-parser limit for UUID setting casts. The same grammar now supports inspected native UUID identities in writer handoff, collection preflight and runtime. Handoffs recheck type drift; unknown casts and extra row predicates remain blockers. No table or setting names select the behavior. Public recovery still needs qualification. |
 
 ## Qualification Rules
 

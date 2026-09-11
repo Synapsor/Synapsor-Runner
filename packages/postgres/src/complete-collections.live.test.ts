@@ -66,6 +66,49 @@ describe.skipIf(process.env.SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE !== "1")("ow
     compiled, subjects: f.subjects, trusted: f.facts.trusted, mode, adapter: createPostgresActionRuleFactLoader(client, scope),
   });
   async function finish(client: PoolClient) { try { await client.query("ROLLBACK"); } finally { client.release(); } }
+  it("proves complete collections with native UUID identity casts and rejects narrower policies", async () => {
+    const tenantId = randomUUID(), principal = randomUUID(), customer = randomUUID();
+    const uuidScope = { ...scope, tenantId, principal };
+    const policy = "tenant_id = nullif(current_setting('synapsor.tenant_id',true),'')::uuid AND principal_id = nullif(current_setting('synapsor.principal',true),'')::uuid";
+    const fixture = completeCollectionFixture("postgres");
+    fixture.catalog.resources[0]!.table = "uuid_customers";
+    fixture.catalog.resources[1]!.table = "uuid_holds";
+    fixture.subjects[0]!.primary_key.value = customer;
+    const uuidCompiled = compileActionRule(fixture);
+    await admin.query(`CREATE TABLE collections.uuid_customers (customer_id uuid PRIMARY KEY, tenant_id uuid NOT NULL, principal_id uuid NOT NULL,
+      state varchar(16) NOT NULL, version integer NOT NULL, UNIQUE (tenant_id, principal_id, customer_id));
+      CREATE TABLE collections.uuid_holds (hold_id uuid PRIMARY KEY, tenant_id uuid NOT NULL, principal_id uuid NOT NULL,
+      customer_id uuid NOT NULL, state varchar(16) NOT NULL, CONSTRAINT holds_customer_fk FOREIGN KEY (tenant_id, principal_id, customer_id)
+      REFERENCES collections.uuid_customers (tenant_id, principal_id, customer_id));
+      GRANT SELECT ON collections.uuid_customers, collections.uuid_holds TO collection_reader, collection_writer;
+      GRANT UPDATE(state,version) ON collections.uuid_customers TO collection_writer;
+      GRANT UPDATE(hold_id) ON collections.uuid_holds TO collection_writer;`);
+    try {
+      for (const table of ["uuid_customers", "uuid_holds"]) await admin.query(`ALTER TABLE collections.${table} ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE collections.${table} FORCE ROW LEVEL SECURITY;
+        CREATE POLICY read_customer ON collections.${table} FOR SELECT TO collection_reader, collection_writer USING (${policy});
+        CREATE POLICY lock_customer ON collections.${table} FOR UPDATE TO collection_writer USING (${policy}) WITH CHECK (${policy});`);
+      await admin.query("INSERT INTO collections.uuid_customers VALUES ($1,$2,$3,'active',1)", [customer, tenantId, principal]);
+      for (const mode of ["proposal_snapshot", "transaction_reverify"] as const) {
+        const client = await writer.connect();
+        try {
+          await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+          await bindPostgresActionRuleScope(client, uuidScope);
+          const loaded = await loadActionRuleFacts({ compiled: uuidCompiled, subjects: fixture.subjects,
+            trusted: { transaction_time: fixture.facts.trusted.transaction_time, tenant: tenantId, principal }, mode, adapter: createPostgresActionRuleFactLoader(client, uuidScope) });
+          expect(evaluateActionRule({ compiled: uuidCompiled, facts: loaded.facts, proposal_id: "uuid-positive" }).result).toBe("eligible");
+        } finally { await finish(client); }
+      }
+      await admin.query(`ALTER POLICY read_customer ON collections.uuid_holds USING ((${policy}) AND state='released')`);
+      const client = await writer.connect();
+      try {
+        await client.query("BEGIN ISOLATION LEVEL READ COMMITTED"); await bindPostgresActionRuleScope(client, uuidScope);
+        await expect(loadActionRuleFacts({ compiled: uuidCompiled, subjects: fixture.subjects,
+          trusted: { transaction_time: fixture.facts.trusted.transaction_time, tenant: tenantId, principal }, mode: "transaction_reverify",
+          adapter: createPostgresActionRuleFactLoader(client, uuidScope) })).rejects.toThrow("cannot prove");
+      } finally { await finish(client); }
+    } finally { await admin.query("DROP TABLE collections.uuid_holds, collections.uuid_customers"); }
+  });
   it("accepts an empty collection through the SELECT-only reader without provisioning a writer", async () => {
     const client = await begin(reader);
     try {

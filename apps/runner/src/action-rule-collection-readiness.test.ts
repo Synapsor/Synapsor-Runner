@@ -23,6 +23,18 @@ function fixture() {
   return { compiled, inspection, source, connection: "reader" as const, table };
 }
 describe("complete collection readiness without runtime customer values", () => {
+  it("checks native UUID filters consistently with runtime without accepting unproven casts", () => {
+    const f = fixture();
+    for (const policy of f.table.row_level_security_policies!) policy.using_expression = "tenant_id = nullif(current_setting('synapsor.tenant_id',true),'')::uuid AND principal_id = nullif(current_setting('synapsor.principal',true),'')::uuid";
+    expect(actionRuleCollectionReadiness(f)).toHaveLength(1);
+    f.table.columns = ["tenant_id", "principal_id"].map((name, index) => ({ name, data_type: "uuid", nullable: false,
+      generated: false, ordinal_position: index + 1,
+      suggestions: { tenant: false, conflict: false, sensitive: false, immutable: true, large_or_binary: false } }));
+    expect(actionRuleCollectionReadiness(f)).toEqual([]);
+    expect(actionRuleCollectionReadiness({ ...f, connection: "writer" })).toEqual([]);
+    f.table.columns[0]!.data_type = "text";
+    expect(actionRuleCollectionReadiness(f)).toHaveLength(1);
+  });
   it("checks a read connection without pretending writer policies or privileges were checked", () => {
     const f = fixture();
     f.table.role_posture!.row_security_applicable_policies = ["SELECT"];

@@ -17,6 +17,19 @@ function simpleWriterPlan(): WriterProvisioningPlan {
 }
 
 describe("administrator-reviewed simple row-policy repair", () => {
+  it("requires inspected native UUID types and protects them against administrator-handoff drift", () => {
+    const plan = simpleWriterPlan(), relation = plan.relations[0]!;
+    relation.policies[0]!.using_expression = "institution_id = nullif(current_setting('app.institution', true),'')::uuid AND student_id = nullif(current_setting('app.student', true),'')::uuid";
+    expect(writerPolicyRepair(plan).sql).toBeUndefined();
+    relation.native_uuid_scope_columns = ["institution_id", "student_id"];
+    const repair = writerPolicyRepair(plan);
+    expect(repair.blockers).toEqual([]);
+    expect(repair.sql).toContain("Reviewed UUID identity type changed");
+    expect(repair.sql).toContain("t.typname=''uuid'' AND n.nspname=''pg_catalog''");
+    expect(repair.sql).toContain(`USING (${relation.policies[0]!.using_expression})`);
+    relation.native_uuid_scope_columns = ["institution_id"];
+    expect(writerPolicyRepair(plan).sql).toBeUndefined();
+  });
   it("exports a separate, drift-checked repair without mutating the input or executing SQL", async () => {
     const plan = simpleWriterPlan(), before = structuredClone(plan);
     const repair = writerPolicyRepair(plan);

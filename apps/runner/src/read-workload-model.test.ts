@@ -1049,6 +1049,9 @@ describe("model-assisted Read workload mapping", () => {
       egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler }).catch((error) => error);
     expect(error).toBeInstanceOf(ReadWorkloadDraftError);
     expect(error.message).toContain("READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED");
+    expect(error.message).toContain("Original question for public.orders: Which column supplies the opaque selection reference?");
+    expect(error.message).toContain("Repeated question for public.orders: Which column supplies the opaque selection reference?");
+    expect(error.message).toContain("Available links:");
     expect(clarificationHandler).not.toHaveBeenCalled();
     expect(requestJson).toHaveBeenCalledTimes(2);
     expect(boundary).toEqual(before);

@@ -215,7 +215,10 @@ export function createPostgresActionRuleFactLoader(
         // It stabilizes relation/FK/policy metadata without reading rows or widening the writer.
         await client.query(`SELECT ${quotePostgresIdentifier(binding.resource.primary_key)} FROM ${quotePostgresIdentifier(binding.resource.schema)}.${quotePostgresIdentifier(binding.resource.table)} WHERE FALSE FOR UPDATE`);
       }
-      const metadata = await client.query(`SELECT c.relrowsecurity AS row_security_enabled
+      const metadata = await client.query(`SELECT c.relrowsecurity AS row_security_enabled,
+        ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_type t ON t.oid=a.atttypid
+          JOIN pg_catalog.pg_namespace tn ON tn.oid=t.typnamespace WHERE a.attrelid=c.oid AND NOT a.attisdropped
+          AND a.attnum>0 AND t.typname='uuid' AND tn.nspname='pg_catalog') AS native_uuid_columns
         FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r', 'p')`, [binding.resource.schema, binding.resource.table]);
       if (metadata.rows.length !== 1) reject("The complete collection must be a current base table.");
@@ -235,9 +238,11 @@ export function createPostgresActionRuleFactLoader(
       }
       const operations: PostgresRlsOperation[] = mode === "transaction_reverify" ? ["SELECT", "UPDATE"] : ["SELECT"];
       const report = await assertPostgresRlsTarget(client, { schema: binding.resource.schema, table: binding.resource.table, scope: databaseScope, operations });
+      const uuidMetadata = metadata.rows[0]!.native_uuid_columns;
+      const uuidColumns = new Set<string>(Array.isArray(uuidMetadata) ? uuidMetadata.filter((field): field is string => typeof field === "string") : []);
       for (const operation of operations) {
         const policies = report.policies.filter(policy => policy.command === "ALL" || policy.command === operation);
-        if (!policies.length || policies.some(policy => !policy.using_expression || !isCompleteCollectionScopeExpression(policy.using_expression, settings))) {
+        if (!policies.length || policies.some(policy => !policy.using_expression || !isCompleteCollectionScopeExpression(policy.using_expression, settings, uuidColumns))) {
           reject(`Complete collection ${binding.binding} cannot prove that ${operation} row security includes every record for the reviewed customer. Extra or unsupported policy predicates need a supported completeness strategy, not broader agent access.`);
         }
       }

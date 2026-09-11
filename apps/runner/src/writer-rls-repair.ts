@@ -24,12 +24,13 @@ export function writerPolicyRepair(plan: WriterProvisioningPlan): WriterPolicyRe
       fail("ENABLE and FORCE RLS must already be reviewed and enabled. Review that database change separately, then refresh this handoff."); continue;
     }
     const reads = relation.policies.filter(policy => policy.command === "SELECT");
+    const uuidColumns = new Set(relation.native_uuid_scope_columns ?? []);
     // Earlier dedicated writers may have equivalent policies. Validate every
     // predicate against the same exact scope, not the number of reader roles.
     if (reads.length === 0 || relation.policies.some(policy => !policy.permissive
       || !["SELECT", "UPDATE", "INSERT"].includes(policy.command)
-      || (policy.command !== "INSERT" && (!policy.using_expression || !isCompleteCollectionScopeExpression(policy.using_expression, settings)))
-      || (policy.command !== "SELECT" && (!policy.check_expression || !isCompleteCollectionScopeExpression(policy.check_expression, settings))))) {
+      || (policy.command !== "INSERT" && (!policy.using_expression || !isCompleteCollectionScopeExpression(policy.using_expression, settings, uuidColumns)))
+      || (policy.command !== "SELECT" && (!policy.check_expression || !isCompleteCollectionScopeExpression(policy.check_expression, settings, uuidColumns))))) {
       fail("Existing policies are not one complete, simple reviewed identity scope. Preserve custom conditions, helper functions and restrictive policies; request a database-administrator repair instead."); continue;
     }
     if (relation.triggers.length || !relation.privileges.every(privilege => ["select", "update", "insert"].includes(privilege))) {
@@ -39,6 +40,7 @@ export function writerPolicyRepair(plan: WriterProvisioningPlan): WriterPolicyRe
     const policies = relation.policies.map(policy => ({ name: policy.name, command: policy.command, permissive: policy.permissive,
       roles: [...policy.roles].sort(), using_expression: policy.using_expression ?? null, check_expression: policy.check_expression ?? null }));
     assertions.push(
+      ...[...uuidColumns].map(column => `IF NOT EXISTS (SELECT 1 FROM pg_attribute a JOIN pg_type t ON t.oid=a.atttypid JOIN pg_namespace n ON n.oid=t.typnamespace WHERE a.attrelid=${literal(table)}::regclass AND a.attname=${literal(column)} AND NOT a.attisdropped AND t.typname='uuid' AND n.nspname='pg_catalog') THEN RAISE EXCEPTION 'Reviewed UUID identity type changed: %', ${literal(`${relation.relation}.${column}`)}; END IF;`),
       `IF NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=${literal(relation.schema)} AND c.relname=${literal(relation.table)} AND c.relkind='r' AND c.relrowsecurity AND c.relforcerowsecurity AND c.relowner<>(SELECT oid FROM pg_roles WHERE rolname=${literal(role)})) THEN RAISE EXCEPTION 'Table ownership or forced row security changed: %', ${literal(relation.relation)}; END IF;`,
       `IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=${literal(table)}::regclass AND NOT tgisinternal) THEN RAISE EXCEPTION 'Unreviewed trigger: %', ${literal(relation.relation)}; END IF;`,
       `IF (SELECT coalesce(jsonb_agg(p ORDER BY p->>'name'), '[]'::jsonb) FROM (SELECT jsonb_build_object('name',policyname,'command',cmd,'permissive',permissive='PERMISSIVE','roles',(SELECT jsonb_agg(r ORDER BY r) FROM unnest(roles) r),'using_expression',qual,'check_expression',with_check) p FROM pg_policies WHERE schemaname=${literal(relation.schema)} AND tablename=${literal(relation.table)}) policies) <> (SELECT jsonb_agg(p ORDER BY p->>'name') FROM jsonb_array_elements(${literal(JSON.stringify(policies))}::jsonb) p) THEN RAISE EXCEPTION 'Policies changed after export: %. Refresh the administrator handoff.', ${literal(relation.relation)}; END IF;`,

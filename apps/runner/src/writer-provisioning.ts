@@ -21,6 +21,8 @@ export function writerProvisioningPlan(input: {
     if ([...required.update_columns, ...(required.lock_column ? [required.lock_column] : [])].some((column) => !columns.has(column))) return undefined;
     if (required.row_scope?.some(item => !columns.has(item.field))) return undefined;
     relations.push({ ...required, schema: table.schema, table: table.name,
+      native_uuid_scope_columns: (required.row_scope ?? []).filter(item => table.columns.some(column => column.name === item.field
+        && column.data_type === "uuid")).map(item => item.field),
       ...(required.rls_required ? { row_security: { enabled: table.row_level_security ?? "unknown",
         forced: typeof table.role_posture?.row_security_forced === "boolean" ? table.role_posture.row_security_forced : "unknown" } } : {}),
       policies: structuredClone(table.row_level_security_policies ?? []), triggers: structuredClone(table.write_triggers ?? []) });

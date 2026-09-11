@@ -40,11 +40,12 @@ export function actionRuleCollectionReadiness(input: {
       continue;
     }
     const operations = input.connection === "writer" ? ["SELECT", "UPDATE"] : ["SELECT"];
+    const uuidColumns = new Set(table.columns.filter(column => column.data_type === "uuid").map(column => column.name));
     for (const operation of operations) {
       const policies = (table.row_level_security_policies ?? []).filter(policy => applicable.includes(policy.name)
         && (policy.command === "ALL" || policy.command === operation));
       if (!policies.some(policy => policy.permissive)
-        || policies.some(policy => !policy.using_expression || !isCompleteCollectionScopeExpression(policy.using_expression, settings))) {
+        || policies.some(policy => !policy.using_expression || !isCompleteCollectionScopeExpression(policy.using_expression, settings, uuidColumns))) {
         issues.push({ relation, reason: `The ${operation === "UPDATE" ? "write/locking" : "read"} connection cannot prove it sees every related record for this customer. A missing policy or an extra row filter makes absence and totals unsafe. Review the exact database policies, then recheck; do not remove the business condition.` });
       }
     }

@@ -50,7 +50,8 @@ describe.skipIf(process.env.SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE !== "1")("ow
       try { await admin.query("SELECT 1"); break; } catch (error) { if (attempt === 60) throw error; await sleep(250); }
     }
     await admin.query(`CREATE SCHEMA school; CREATE ROLE fixture_reader LOGIN PASSWORD 'fixture';
-      CREATE TABLE school.students (student_id text PRIMARY KEY, institution_id text NOT NULL, status text NOT NULL, version integer NOT NULL);
+      CREATE TABLE school.students (student_id text PRIMARY KEY, institution_id text NOT NULL, status text NOT NULL, version integer NOT NULL,
+        UNIQUE (institution_id,student_id));
       CREATE TABLE school.institutions (institution_id text PRIMARY KEY, label text NOT NULL);
       INSERT INTO school.students VALUES ('s1','i1','admitted',1), ('s2','i1','admitted',1), ('s3','i2','admitted',1);
       INSERT INTO school.institutions VALUES ('i1','First institution'), ('i2','Second institution');
@@ -77,6 +78,45 @@ describe.skipIf(process.env.SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE !== "1")("ow
   });
   const policyCount = async () => Number((await admin.query("SELECT count(*) FROM pg_policies WHERE schemaname='school' AND policyname LIKE 'runner_scope_%'")).rows[0].count);
   const sourceRows = async () => (await admin.query("SELECT * FROM school.students ORDER BY student_id")).rows;
+  it("exports and verifies scoped writer policies for inspected UUID identities", async () => {
+    const t = randomUUID(), p = randomUUID(), other = randomUUID();
+    const predicate = "institution_id = nullif(current_setting('app.institution',true),'')::uuid AND student_id = nullif(current_setting('app.student',true),'')::uuid";
+    await admin.query(`CREATE TABLE school.uuid_records (record_id uuid PRIMARY KEY, institution_id uuid NOT NULL, student_id uuid NOT NULL,
+      status text NOT NULL, version integer NOT NULL);
+      GRANT SELECT ON school.uuid_records TO fixture_reader;
+      ALTER TABLE school.uuid_records ENABLE ROW LEVEL SECURITY; ALTER TABLE school.uuid_records FORCE ROW LEVEL SECURITY;
+      CREATE POLICY reviewed_read ON school.uuid_records FOR SELECT TO fixture_reader USING (${predicate});`);
+    await admin.query("INSERT INTO school.uuid_records VALUES ($1,$2,$3,'ready',1),($4,$2,$4,'ready',1),($5,$4,$3,'ready',1)", [randomUUID(), t, p, other, randomUUID()]);
+    let uuidPlan: WriterProvisioningPlan | undefined, uuidWriter: Pool | undefined;
+    try {
+      const inspection = await inspectDatabase({ engine: "postgres", databaseUrlEnv: "FIXTURE_READER", schema: "school", env: { FIXTURE_READER: readerUrl } });
+      uuidPlan = writerProvisioningPlan({ inspection, outcome: "school.uuid_update", actionDigest: plan.action_digest, writerEnv: "UUID_WRITER",
+        assessment: { ok: false, fingerprint: `sha256:${"b".repeat(64)}`, expected_fingerprint: null, reasons: [], allowed_relations: [], writable_relations: [],
+          required_relations: [{ relation: "school.uuid_records", privileges: ["select", "update"], update_columns: ["status", "version"],
+            lock_column: "record_id", rls_required: true, row_scope: [{ field: "institution_id", setting: "app.institution" }, { field: "student_id", setting: "app.student" }] }] } })!;
+      expect(uuidPlan.relations[0]!.native_uuid_scope_columns).toEqual(["institution_id", "student_id"]);
+      const repair = writerPolicyRepair(uuidPlan);
+      expect(repair.blockers).toEqual([]);
+      psql(writerProvisioningSql(uuidPlan)); psql(repair.sql!);
+      await admin.query(`ALTER ROLE "${uuidPlan.suggested_role}" LOGIN PASSWORD 'fixture'`);
+      uuidWriter = new Pool({ connectionString: readerUrl.replace("fixture_reader:", `${uuidPlan.suggested_role}:`) });
+      const client = await uuidWriter.connect();
+      try {
+        await client.query("BEGIN");
+        await bindPostgresActionRuleScope(client, { tenantSetting: "app.institution", principalSetting: "app.student", tenantId: t, principal: p });
+        expect((await client.query("SELECT institution_id, student_id FROM school.uuid_records FOR UPDATE")).rows).toEqual([{ institution_id: t, student_id: p }]);
+        expect((await client.query("UPDATE school.uuid_records SET status='done', version=version+1 RETURNING status")).rows).toEqual([{ status: "done" }]);
+        await client.query("ROLLBACK");
+        expect((await client.query("SELECT * FROM school.uuid_records")).rows).toEqual([]);
+      } finally { await client.query("ROLLBACK"); client.release(); }
+      expect((await admin.query("SELECT status FROM school.uuid_records")).rows.every(row => row.status === "ready")).toBe(true);
+      expect(() => psql(repair.sql!)).toThrow("Policies changed after export");
+    } finally {
+      await uuidWriter?.end();
+      if (uuidPlan) await admin.query(`DROP OWNED BY "${uuidPlan.suggested_role}"; DROP ROLE "${uuidPlan.suggested_role}";`);
+      await admin.query("DROP TABLE school.uuid_records");
+    }
+  });
   it("repairs exact customer and shared-reference policies without changing data or other roles", async () => {
     const before = await sourceRows(), repair = writerPolicyRepair(plan);
     expect(repair.blockers).toEqual([]); expect(repair.changes).toHaveLength(3);
@@ -168,7 +208,8 @@ describe.skipIf(process.env.SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE !== "1")("ow
         institution_id text NOT NULL, student_id text NOT NULL,
         status text NOT NULL CHECK (status IN ('admitted','withdrawn')),
         effective_from timestamptz NOT NULL, effective_until timestamptz NOT NULL,
-        CONSTRAINT admissions_subject UNIQUE (institution_id,student_id));
+        CONSTRAINT admissions_subject UNIQUE (institution_id,student_id),
+        FOREIGN KEY (institution_id,student_id) REFERENCES school.students (institution_id,student_id));
         GRANT SELECT ON school.admissions TO fixture_reader;
         ALTER TABLE school.admissions ENABLE ROW LEVEL SECURITY;
         ALTER TABLE school.admissions FORCE ROW LEVEL SECURITY;

@@ -10334,7 +10334,7 @@ export function semanticActionBusinessReviewLines(compiled: CompiledActionRuleMo
   }
   const selectedName = selectedBinding && (resources.get(selectedBinding.resource)?.label ?? words(selectedBinding.binding));
   const changed = Object.entries(compiled.rule.effect.set).map(([field, value]) =>
-    `${target?.field_metadata?.[field]?.label ?? words(field)} from ${actionRuleScalarSummary(value, fieldNames)}`);
+    `${target?.field_metadata?.[field]?.label ?? words(field)} becomes ${actionRuleScalarSummary(value, fieldNames)}`);
   const expressions = Object.values(compiled.rule.effect.set);
   const sourceBindings = [...new Set(expressions.flatMap((value) => value.kind === "field" ? [value.binding] : []))];
   const sourceNames = sourceBindings.map((binding) => {

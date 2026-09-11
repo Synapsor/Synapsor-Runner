@@ -15,5 +15,6 @@ export type WriterProvisioningPlan = {
     policies: NonNullable<SchemaInspection["tables"][number]["row_level_security_policies"]>;
     triggers: NonNullable<SchemaInspection["tables"][number]["write_triggers"]>;
     row_security?: { enabled: boolean | "unknown"; forced: boolean | "unknown" };
+    native_uuid_scope_columns?: string[];
   }>;
 };

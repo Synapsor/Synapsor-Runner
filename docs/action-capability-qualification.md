@@ -16,6 +16,30 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 follow-up: shared PostgreSQL scope proof now supports trusted-setting
+UUID casts only against inspected native UUID columns. Writer handoffs record
+and recheck those types; Read collection preflight and runtime use the same
+grammar. Unknown casts, swapped settings and extra predicates remain refused.
+Focused suite: 133 passed; real PostgreSQL handoff/collection/concurrency suite:
+27 passed; full CLI plus Action-draft reviews: 251 passed. Types/build passed.
+The live rescan regression fixture was completed with an explicit full-key FK:
+its prior private source had neither direct reviewed scope nor a proven parent,
+so its old setup was correctly refused. This is a test-fixture correction, not
+relaxed source proof. No original acceptance fixture was edited.
+
+The writer and collection public recovery tests on this follow-up are pending.
+Manufacturing diagnostic resume on the PREVIOUS frozen build did produce a valid
+Read mapping and protected-collection Action without a business-policy edit.
+It then stopped at UUID collection preflight and an unresolved policy-coverage
+check about sample constraints/counter selectors. The initial repeated-question
+root cause remains unconfirmed; new diagnostics preserve sanitized original and
+repeated questions plus available links for future recovery. Do not represent
+that diagnostic improvement or eventual remapping as a confirmed root-cause fix.
+All public sessions exited gracefully, preserving saved work. Library Read and
+Action are active only in its owned fixture; execution/client/worker remain off.
+Manufacturing has one disabled Action. Conference has not begun onboarding.
+The whole setup/edit/runtime qualification is still incomplete.
+
 2026-09-11 E-07 checkpoint: `91cfb03` was committed on the existing branch and
 pushed only to the private `backup` remote. Its full local pipeline passed:
 5,399 tests, 443 optional skips, type/dependency checks, packaging and bundle
@@ -44,8 +68,19 @@ the existing model plan; the host retains it through the saved job. Focused
 checks: 166 passed, one optional skip; all 284 CLI/chat/resume tests passed,
 as did types, dependency checks and packaging. The CLI regression reaches review
 without an extra business edit or repeated client choice. Real-model recovery
-tests are pending. Freeze again and add a further unseen case after
-this fix; do not count only the repaired known fixtures as generalization.
+tests now include frozen `8d68988` executable
+`f376e16a5bc0eb46d233029283205b5b1faa682c83bbae6e0f7319fd2d47ff46`.
+Library recovery reached explicit Read and Action activation with correct private
+fields, but the writer handoff refused its UUID-cast scoped filters. No grants,
+execution, client or worker were enabled. It also asked a staging clarification
+and a redundant follow-up about leaving Read unchanged. Manufacturing fresh
+mapping and its bounded retry both stopped at
+`READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED`; the actual question was missing
+from diagnostics. Those are failures to investigate, not successful journeys.
+A further unseen conference meal-preference case was chosen after this freeze
+and provisioned, but has not run. Both failed/recovered projects and terminal
+logs remain in the durable external directory. Do not count only repaired known
+fixtures as generalization.
 
 No original project/policy was changed. Advising limits remain unanswered;
 OpenRouter live qualification still lacks a credential. Continue independent

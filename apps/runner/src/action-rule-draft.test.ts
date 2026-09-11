@@ -253,6 +253,8 @@ describe("model-authored Action Rule draft compilation", () => {
     const compiled = compileActionRuleModelDraft({ draft: proposed, builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest });
     const summary = semanticActionBusinessReviewLines(compiled, boundary()).join("\n");
     expect(summary).toContain("Target: only the record linked to the selected account through the reviewed relationship");
+    expect(summary).toContain("allow pause becomes true");
+    expect(summary).not.toContain("allow pause from true");
     expect(summary).toContain("verifies that selection and its trusted scope");
     expect(summary).not.toContain("policy_id");
     expect(summary).not.toContain("tenant_id");

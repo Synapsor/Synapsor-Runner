@@ -154,6 +154,7 @@ export async function generateModelReadWorkload(input: {
   let valueRequest: ModelReadValueRequest | undefined;
   let clarificationRequest: ModelReadClarificationRequest | undefined;
   let mechanicalClarificationRequest: ModelReadClarificationRequest | undefined;
+  let resolvedMechanicalRequest: ModelReadClarificationRequest | undefined;
   const clarifiedTargets: (ModelReadClarificationRequest & { answer: string })[] = [];
   let suppliedMeanings: OperatorReadMeaning[] = [];
   const clarificationAnswers: string[] = [];
@@ -278,6 +279,12 @@ export async function generateModelReadWorkload(input: {
               value: {
                 error_code: "READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED",
                 message: "Runner already supplied the available record links and scope. Another operator confirmation cannot change this catalog. Keep the requested information and saved answers; retry mapping or inspect the exact available links. Do not substitute broader reads or omit requirements.",
+                blockers: [
+                  "Runner could not resolve a repeated structural question; no mapping was accepted. Inspect the questions and available links before retrying the saved job.",
+                  ...(resolvedMechanicalRequest ? [`Original question for ${resolvedMechanicalRequest.resource}: ${resolvedMechanicalRequest.question}`] : []),
+                  `Repeated question for ${parsedRequest.resource}: ${parsedRequest.question}`,
+                  `Available links: ${JSON.stringify(catalog.resources.find(resource => resource.id === parsedRequest.resource)?.relationships ?? [])}`,
+                ],
                 authority_granted: false,
                 source_query_executed: false,
                 source_database_changed: false,
@@ -564,6 +571,7 @@ export async function generateModelReadWorkload(input: {
         const request = mechanicalClarificationRequest;
         mechanicalClarificationRequest = undefined;
         mechanicalClarificationResolved = true;
+        resolvedMechanicalRequest = request;
         correctionUsed = true;
         await remap([
           runnerResolvedReadMechanicalGuidance(request),
