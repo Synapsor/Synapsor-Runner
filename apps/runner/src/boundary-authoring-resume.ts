@@ -40,7 +40,11 @@ export type BoundaryAuthoringResumeRead = {
   analysis_digest: `sha256:${string}`;
 };
 
-export type BoundaryAuthoringActionRemoval = { outcome: string; authority_name: string; draft_digest: `sha256:${string}` };
+export type BoundaryAuthoringActionRemoval = {
+  outcome: string; authority_name: string; draft_digest: `sha256:${string}`;
+  /** Final-outcome retirement reviews the exact active bundle, not an empty replacement. */
+  mode?: "deactivate";
+};
 export type BoundaryAuthoringActionRevision = {
   outcome: string;
   instruction: string;
@@ -124,6 +128,14 @@ export type BoundaryAuthoringResumeLoad =
   | { status: "stale"; reason: string; value: BoundaryAuthoringResumeState }
   | { status: "invalid"; reason: string };
 
+export function boundaryAuthoringActionIsUnfinished(action: BoundaryAuthoringResumeAction | undefined): boolean {
+  if (!action) return false;
+  if (action.checkpoint) return true;
+  return action.intents
+    ? action.intents.length > (action.completed_outcomes?.length ?? 0)
+    : !action.outcome && !action.completed_outcomes?.length;
+}
+
 export function buildBoundaryAuthoringResumeState(input: {
   binding: BoundaryAuthoringResumeBinding;
   stage: BoundaryAuthoringResumeStage;
@@ -147,8 +159,14 @@ export function buildBoundaryAuthoringResumeState(input: {
   previous?: BoundaryAuthoringResumeState;
   now?: string;
 }): BoundaryAuthoringResumeState {
+  if (input.previous) assertBoundaryAuthoringResumeState(input.previous);
   const now = input.now ?? new Date().toISOString();
   const conversation = modelAuthoringHistory(createModelAuthoringConversation(input.conversation));
+  // Omission during a Read/planning rewrite is not withdrawal of unfinished
+  // business work. Completed/replaced agendas are still supplied explicitly.
+  const action = input.action ?? (input.previous?.binding.boundary_name === input.binding.boundary_name
+    && input.previous.job_intent === input.jobIntent.trim()
+    && boundaryAuthoringActionIsUnfinished(input.previous.action) ? input.previous.action : undefined);
   const core = {
     schema_version: BOUNDARY_AUTHORING_RESUME_VERSION,
     state: "in_progress" as const,
@@ -185,7 +203,7 @@ export function buildBoundaryAuthoringResumeState(input: {
     ...(input.pendingActionRemoval ? { pending_action_removal: normalizeActionRemoval(input.pendingActionRemoval) } : {}),
     ...(input.pendingActionRevision ? { pending_action_revision: normalizeActionRevision(input.pendingActionRevision) } : {}),
     ...(input.pendingActionAddition ? { pending_action_addition: normalizeActionAddition(input.pendingActionAddition) } : {}),
-    ...(input.action ? { action: normalizeAction(input.action) } : {}),
+    ...(action ? { action: normalizeAction(action) } : {}),
     ...(input.clientHandoff ? { client_handoff: normalizeClientHandoff(input.clientHandoff) } : {}),
     ...(input.intendedClient ? { intended_client: normalizeIntendedClient(input.intendedClient) } : {}),
     created_at: input.previous?.created_at ?? now,
@@ -248,8 +266,16 @@ export async function readBoundaryAuthoringResumeState(
     : { status: "ready", value: parsed };
 }
 
-export async function clearBoundaryAuthoringResumeState(projectRootInput: string): Promise<void> {
-  await fs.rm(resumePath(path.resolve(projectRootInput)), { force: true });
+export async function clearBoundaryAuthoringResumeState(projectRootInput: string): Promise<boolean> {
+  const filePath = resumePath(path.resolve(projectRootInput));
+  let state: unknown;
+  try { state = JSON.parse(await fs.readFile(filePath, "utf8")); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return true; throw error; }
+  assertBoundaryAuthoringResumeState(state);
+  if (boundaryAuthoringActionIsUnfinished(state.action) || state.pending_job_revision || state.pending_read_revision
+    || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal) return false;
+  await fs.rm(filePath, { force: true });
+  return true;
 }
 
 /** Retain business context and untrusted draft components after a rescan.
@@ -381,12 +407,14 @@ function normalizeActionRevision(value: unknown): BoundaryAuthoringActionRevisio
 
 function normalizeActionRemoval(value: unknown): BoundaryAuthoringActionRemoval {
   if (!isRecord(value) || typeof value.outcome !== "string" || typeof value.authority_name !== "string" || typeof value.draft_digest !== "string"
-    || Object.keys(value).some(key => !["outcome", "authority_name", "draft_digest"].includes(key))) {
+    || value.mode !== undefined && value.mode !== "deactivate"
+    || Object.keys(value).some(key => !["outcome", "authority_name", "draft_digest", "mode"].includes(key))) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Action removal review is invalid.");
   }
   return { outcome: reviewedText(value.outcome, "Action removal outcome", 256),
     authority_name: reviewedText(value.authority_name, "Action removal authority", 256),
-    draft_digest: reviewedDigest(value.draft_digest, "Action removal revision") };
+    draft_digest: reviewedDigest(value.draft_digest, "Action removal revision"),
+    ...(value.mode === "deactivate" ? { mode: "deactivate" as const } : {}) };
 }
 
 function normalizeActionAddition(value: unknown): BoundaryAuthoringActionAddition {

@@ -23,7 +23,7 @@ import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { explicitActionExecutionIntent } from "./action-execution-intent.js";
 import { prepareActionRuleReadRevision, rebindActionCatalogForReadPolicyRevision, rebuildActionCatalogAfterMetadataRefresh, buildActionCatalogForSavedReadRevision, combineReviewedActionCatalogs,
   rebindActiveActionRuleAuthorityForReadRevision, rebindStoredActionRuleAuthorityDraftForReadRevision } from "./action-rule-read-revision.js";
-import { prepareSavedActionRuleRemoval } from "./action-rule-removal.js";
+import { prepareSavedActionRuleRemoval, reviewFinalActionRemoval } from "./action-rule-removal.js";
 import { assertJointApprovalLimitsPreserved } from "./action-policy-scope.js";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -160,6 +160,7 @@ import {
   buildBoundaryAuthoringResumeState,
   prepareBoundaryActionRevision,
   clearBoundaryAuthoringResumeState,
+  boundaryAuthoringActionIsUnfinished,
   readBoundaryAuthoringResumeState,
   revalidateBoundaryAuthoringResume,
   writeBoundaryAuthoringResumeState,
@@ -4309,9 +4310,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   // Read edits and metadata recovery recompile saved outcomes, not an unfinished agenda.
   let retainedReadEdit: { action?: BoundaryAuthoringResumeAction; addition?: BoundaryAuthoringActionAddition } | undefined = pendingReadRevision
     ? { action: structuredClone(resumeAction), addition: structuredClone(pendingActionAddition) } : undefined;
-  const retainedActionIsUnfinished = () => Boolean(retainedReadEdit?.action
-    && (retainedReadEdit.action.checkpoint || (!retainedReadEdit.action.outcome
-      && (retainedReadEdit.action.intents?.length ?? 1) > (retainedReadEdit.action.completed_outcomes?.length ?? 0))));
+  let deferUnfinishedActions = false;
+  const retainedActionIsUnfinished = () => boundaryAuthoringActionIsUnfinished(retainedReadEdit?.action);
   let selectedResumeModel: ActionModelSuggestionSession | undefined;
   let intendedClient: AuthoringClientPlan | undefined;
   let jobIntent: string | undefined;
@@ -5015,6 +5015,27 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     try {
       const removal = await prepareSavedActionRuleRemoval(input.projectRoot, outcome,
         pendingActionRemoval?.outcome === outcome ? pendingActionRemoval : undefined);
+      if (removal.mode === "deactivate") {
+        pendingActionRemoval = { outcome, authority_name: removal.authorityName,
+          draft_digest: removal.digest as `sha256:${string}`, mode: "deactivate" };
+        await persistAuthoringResume("authority_review");
+        const result = await reviewFinalActionRemoval({ projectRoot: input.projectRoot, removal, session: input.session });
+        if (result.completed) {
+          pendingActionRemoval = undefined;
+          const previous = resumeAction ?? availableResume?.action;
+          const completed = previous?.completed_outcomes ?? (previous?.outcome ? [previous.outcome] : []);
+          const removedIndex = completed.indexOf(outcome);
+          const intents = (previous?.intents ?? (previous ? [previous.intent] : []))
+            .filter((_intent, index) => index !== removedIndex);
+          const outcomes = completed.filter(value => value !== outcome);
+          resumeAction = intents.length ? { intent: intents[0]!, intents, strategy: previous?.strategy,
+            completed_outcomes: outcomes, ...(previous?.outcome !== outcome ? { outcome: previous?.outcome, checkpoint: previous?.checkpoint } : {}) }
+            : undefined;
+          await persistAuthoringResume("authority_review");
+        }
+        input.authoringChat?.checkpoint(result.notice.title, result.notice.lines ?? []);
+        return boundaryAssistResult(result.notice);
+      }
       if (!removal.alreadyRemoved) await writeActionRuleAuthorityDraftIfCurrent(input.projectRoot, removal.draft, removal.baseline);
       const previousAction = availableResume?.action;
       const retainedIntents = removal.retainedOutcomes.map(retained => {
@@ -5259,6 +5280,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       additionalAttemptUsed = true;
     }
     if (jobPlan?.state === "planned") {
+      // The selected public editor, not model classification, owns edit scope.
+      if (input.initialSavedReadRevision) jobPlan = { ...jobPlan, action_mode: "reuse" };
       if (!intendedClient && isAuthoringClientPlan(jobPlan.intended_client)) intendedClient = jobPlan.intended_client;
       await chooseUnspecifiedClient();
       if (pendingActionAddition) {
@@ -5281,12 +5304,26 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         jobIntent = availableResume?.job_intent ?? jobIntent;
         return reviewActionRemoval(jobPlan.action_outcome!);
       }
+      // Editing saved access is an exact revision, even when the planner calls
+      // an unreviewed partial mapping "create". Never commit a replacement
+      // mapping before validating all of its saved Action dependencies.
+      if (editingSavedJob && jobPlan.read_mode === "create"
+        && (input.initialSavedReadRevision || jobPlan.action_mode === "reuse" || jobPlan.action_mode === "none")) {
+        jobPlan = { ...jobPlan, read_mode: "revise", action_mode: "reuse" };
+      }
       if (jobPlan.read_mode === "create") {
         resumeRead = undefined;
         pendingReadRevision = undefined;
       }
       if (jobPlan.read_mode === "revise") {
-        const exact = reusableState.revisable_read_workload;
+        let exact = reusableState.revisable_read_workload;
+        if (!exact && availableResume && !revalidateSavedJob && (editingSavedJob || pendingReadRevision)) {
+          context = await reloadReadReviewForModelRevision(input.projectRoot, context);
+          // This binds an edit to the current disabled candidate, not an
+          // operator signoff. Final Read review and activation remain separate.
+          exact = await recordExactReadAuthorityAsReusableWorkload({ projectRoot: input.projectRoot,
+            boundary: context.candidate, reviewRevision: context.progress?.revision ?? 1 });
+        }
         if (!exact?.review || exact.review.candidate_digest !== context.bundle.candidate_digest) {
           return boundaryAssistResult({ tone: "warning", title: "The saved access review needs recovery.",
             lines: ["There is no matching exact review for the current draft. Your work and active permissions are unchanged."],
@@ -5411,7 +5448,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
               ...(jobPlan.action_outcome ? { outcome: jobPlan.action_outcome } : {}),
               ...(jobPlan.action_strategy ? { strategy: jobPlan.action_strategy } : {}),
             }
-          : undefined;
+          : availableResume?.action;
       // The plan now owns the classified edit. Keep the business job stable for
       // mixed Read/Action revisions as well as access-only changes.
       if (!pendingActionAddition) pendingJobRevision = undefined;
@@ -5428,7 +5465,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         if (input.authoringChat) await input.authoringChat.streamModel([jobPlan.summary]);
         const currentAuthority = formatCurrentBoundaryAuthoritySummary(reusableState.current_state);
         input.authoringChat?.rememberDetails("EXISTING BOUNDARY AUTHORITY", currentAuthority);
-        await clearBoundaryAuthoringResumeState(input.projectRoot);
+        if (!await clearBoundaryAuthoringResumeState(input.projectRoot)) {
+          return boundaryAssistResult({ tone: "warning", title: "Unfinished work remains saved.",
+            lines: ["No new change was planned. The saved job, unanswered business decisions and draft components remain pending."],
+            footer: "Resume the saved job when its missing business decisions are available. Existing authority is unchanged." });
+        }
         return boundaryAssistResult({
           tone: "success",
           title: "Existing Boundary authority kept unchanged.",
@@ -6410,15 +6451,17 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           } catch (error) {
             assertRunning(error);
             if (error instanceof ActionAuthoringReadOnlyRequest) {
+              retainedReadEdit ??= { action: structuredClone({ ...resumeAction, intent: actionIntents[0]!, intents: actionIntents }),
+                addition: structuredClone(pendingActionAddition) };
+              deferUnfinishedActions = true;
               actionIntents = semanticActionDrafts.map((entry) => entry.intent);
               partialActionCheckpoint = undefined;
-              resumeAction = actionIntents.length ? { intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived",
-                completed_outcomes: semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome) } : undefined;
+              resumeAction = retainedReadEdit.action;
               semanticActionModelResult = semanticActionDrafts.at(-1)?.result;
               semanticActionModelDraft = semanticActionModelResult?.compiled.draft;
               ruleDerivedAction = semanticActionDrafts.length > 0;
               input.authoringChat?.checkpoint("Continuing to Read review", [
-                "The unfinished Action request was removed from this job. Existing saved drafts and active authority are unchanged.",
+                "The unfinished Action request and its unanswered decisions remain saved for later. Existing saved drafts and active authority are unchanged.",
                 ...(semanticActionDrafts.length ? [`${semanticActionDrafts.length} previously prepared Action draft(s) remain saved for separate review.`] : []),
               ]);
               await persistAuthoringResume("read_mapping");
@@ -7183,10 +7226,13 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       expectedBindings: context.bundle.mutation_bindings,
       schemaInspector: input.schemaInspector,
     });
-    committed = await commitReadWorkloadCandidate({
+    const savedRead = await commitReadWorkloadCandidate({
       projectRoot: input.projectRoot,
       preview,
     });
+    committed = savedRead;
+    context = await reloadReadReviewAfterCommit(input.projectRoot, savedRead);
+    mappingBoundary = context.candidate;
   }
   if (actionIntents.length && !reusingExactRead) {
     if (!input.completeReadReview) {
@@ -7965,7 +8011,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       "No permission or source data changed. Review the prepared changes next, or pause this saved job.",
     ], "warning");
   }
-  if (retainedActionIsUnfinished() && !recoveringSeparatelySavedActions) {
+  if (retainedActionIsUnfinished() && !recoveringSeparatelySavedActions && !deferUnfinishedActions) {
     await persistAuthoringResume("action_drafting");
     const notice: BoundaryAccessNotice = { tone: "success", title: "Access edit saved; continuing your unfinished action.",
       lines: ["Existing business rules and the unfinished action's saved components are retained.",
@@ -9830,13 +9876,7 @@ export async function applyModelReadBoundaryExposureRevision(input: ModelReadBou
     ? await commitExactBoundaryCandidateMutation(input.projectRoot, preview)
     : await commitBoundaryReviewMutationBatch(input.projectRoot, preview);
   input.onCommitted?.();
-  const context = await loadBoundaryReviewContext(input.projectRoot);
-  if (context.bundle.candidate_digest !== mutation.candidate_digest
-    || context.bundle.mutation_bindings.review_revision !== mutation.review_revision
-    || canonicalJsonDigest(context.bundle.mutation_bindings.authoring ?? null)
-      !== canonicalJsonDigest(mutation.authoring_binding ?? null)) {
-    throw new Error("READ_BOUNDARY_REVISION_CHANGED_AFTER_SAVE: The disabled Read revision was saved, but another update changed the selected review before continuation. Resume this job to review the current revision and revalidate its Action dependencies. No authority was activated.");
-  }
+  const context = await reloadReadReviewAfterCommit(input.projectRoot, mutation);
   const workload = await recordExactReadAuthorityAsReusableWorkload({
     projectRoot: input.projectRoot,
     boundary: context.candidate,
@@ -9856,6 +9896,21 @@ export async function applyModelReadBoundaryExposureRevision(input: ModelReadBou
       source_database_changed: false,
     },
   };
+}
+
+async function reloadReadReviewAfterCommit(projectRoot: string, mutation: {
+  candidate_digest: `sha256:${string}`;
+  review_revision: number;
+  authoring_binding?: BoundaryReviewMutationBindings["authoring"];
+}): Promise<Awaited<ReturnType<typeof loadBoundaryReviewContext>>> {
+  const context = await loadBoundaryReviewContext(projectRoot);
+  if (context.bundle.candidate_digest !== mutation.candidate_digest
+    || context.bundle.mutation_bindings.review_revision !== mutation.review_revision
+    || canonicalJsonDigest(context.bundle.mutation_bindings.authoring ?? null)
+      !== canonicalJsonDigest(mutation.authoring_binding ?? null)) {
+    throw new Error("READ_BOUNDARY_REVISION_CHANGED_AFTER_SAVE: The disabled Read revision was saved, but another update changed the selected review before continuation. Resume this job to review the current revision and revalidate its Action dependencies. No authority was activated.");
+  }
+  return context;
 }
 
 function formatReadBoundaryExposure(value: ReadBoundaryFieldExposure): string {

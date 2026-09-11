@@ -674,8 +674,18 @@ export async function deactivateActionRuleAuthority(projectRootInput: string, pe
   return withProjectAuthorityMutation(projectRootInput, (held) => deactivateActionRuleAuthorityUnlocked(held.projectRoot), { permit });
 }
 
-async function deactivateActionRuleAuthorityUnlocked(projectRootInput: string): Promise<boolean> {
+/** Retiring a reviewed final outcome must not disable a concurrently replaced bundle. */
+export async function deactivateActionRuleAuthorityIfCurrent(projectRoot: string,
+  expected: ActionRuleAuthorityRevisionBaseline): Promise<boolean> {
+  const baseline = structuredClone(expected);
+  return withProjectAuthorityMutation(projectRoot, held =>
+    deactivateActionRuleAuthorityUnlocked(held.projectRoot, baseline, held));
+}
+
+async function deactivateActionRuleAuthorityUnlocked(projectRootInput: string,
+  expected?: ActionRuleAuthorityRevisionBaseline, permit?: ProjectAuthorityMutationPermit): Promise<boolean> {
   const stored = await withStoredActionPolicies(projectRootInput, undefined, async (binding, current) => {
+    if (expected) assertActionRevisionBaseline(storedActionRevisionBaseline(projectRootInput, current), expected);
     const active = current.active[0];
     if (!active) return { deactivated: false };
     parseStoredActionActivation(active);
@@ -686,6 +696,7 @@ async function deactivateActionRuleAuthorityUnlocked(projectRootInput: string): 
     return { deactivated: true };
   });
   if (stored) return stored.deactivated;
+  if (expected) assertActionRevisionBaseline(await readActionRuleAuthorityRevisionBaseline(projectRootInput, permit), expected);
   const target = activePath(path.resolve(projectRootInput));
   if (!await exists(target)) return false;
   await fs.rm(target, { force: true });

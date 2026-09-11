@@ -170,6 +170,9 @@ export function actionRuleModelDraftFromAuthority(input: {
         fields: resource.fields
           .filter((field) => {
             if (referencedFields.get(resource.binding)?.has(field.name)) return true;
+            // Collection loading is part of the rule's verification dependency,
+            // even when its ordering field appears in no business expression.
+            if (resource.deterministic_order?.some((item) => item.field === field.name)) return true;
             if (!input.preserveVerificationFields) return false;
             const catalog = input.authority.catalog.resources.find((entry) => entry.name === resource.resource)!;
             return ![catalog.primary_key, catalog.tenant_key, catalog.principal_scope_key, catalog.version_field].includes(field.name);

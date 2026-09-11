@@ -95,14 +95,16 @@ describe("model-authored Action Rule draft compilation", () => {
     expect(restored.effect.allowed_fields).toEqual([...proposed.effect.allowed_fields].sort((a, b) => a.name.localeCompare(b.name)));
     expect(compileActionRuleModelDraft({ ...input, draft: restored }).loaded.authority.approval_classes).toEqual(compiled.loaded.authority.approval_classes);
   });
-  it("infers complete collection protection and preserves aggregate-only private fields through edits", () => {
+  it("preserves complete collection ordering and aggregate-only private fields through approval edits", () => {
     const built = relatedBuiltCatalog();
     const policy = built.catalog.resources[1]!;
     const authoring = built.authoring.resources[1]!;
     const accountId = { name: "account_id", type: stringId, nullable: false };
     const amount = { name: "amount", type: { kind: "integer" as const, unit: "credits" }, nullable: false };
-    policy.fields.push(accountId, amount);
-    authoring.fields.push({ ...accountId, role: "guard", writable: false }, { ...amount, role: "runner_verification_only", writable: false });
+    const priority = { name: "load_priority", type: { kind: "integer" as const, unit: "order" }, nullable: false };
+    policy.fields.push(accountId, amount, priority);
+    authoring.fields.push({ ...accountId, role: "guard", writable: false }, { ...amount, role: "runner_verification_only", writable: false },
+      { ...priority, role: "runner_verification_only", writable: false });
     const relation = { name: "policies_account_fk", from_resource: policy.name, to_resource: "billing.accounts",
       field_pairs: ["tenant_id", "principal_id", "account_id"].map(field => ({ local_field: field, target_field: field })),
       cardinality: "many_to_one" as const, nullable: false, target_unique: true };
@@ -110,9 +112,12 @@ describe("model-authored Action Rule draft compilation", () => {
     const proposed = draft();
     proposed.verification.resources.push({ binding: "policies", resource: policy.name,
       source: { kind: "relationship", from_binding: "account", relationship: relation.name, direction: "inverse" },
-      fields: ["allow_pause", "amount"], max_rows: 10, overflow: "unsupported", deterministic_order: [{ field: "policy_id", direction: "asc" }] });
-    proposed.require = { kind: "not", expression: { kind: "exists", binding: "policies", where: { kind: "compare", operator: "eq",
-      left: { kind: "field", binding: "policies", field: "allow_pause" }, right: { kind: "literal", value: false, value_type: { kind: "boolean" } } } } };
+      fields: ["allow_pause", "amount", "load_priority"], max_rows: 10, overflow: "unsupported",
+      deterministic_order: [{ field: "load_priority", direction: "desc" }, { field: "policy_id", direction: "asc" }] });
+    proposed.require = { kind: "all", expressions: [proposed.require,
+      { kind: "not", expression: { kind: "exists", binding: "policies", where: { kind: "compare", operator: "eq",
+        left: { kind: "field", binding: "policies", field: "allow_pause" }, right: { kind: "literal", value: false, value_type: { kind: "boolean" } } } } },
+    ] };
     proposed.derive.total = { kind: "aggregate", operation: "sum", binding: "policies", field: "amount", where: { kind: "compare", operator: "eq",
       left: { kind: "field", binding: "policies", field: "allow_pause" }, right: { kind: "literal", value: true, value_type: { kind: "boolean" } } } };
     const input = { builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest };
@@ -135,6 +140,17 @@ describe("model-authored Action Rule draft compilation", () => {
     expect(proposed.verification.resources[1]!.collection_consistency).toBeUndefined();
     const minimal = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority, outcome: proposed.outcome, review: proposed.review });
     expect(minimal.verification.resources[1]!.fields).toContain("amount");
+    expect(minimal.verification.resources[1]!.fields).toContain("load_priority");
+    const missingOrderField = structuredClone(minimal);
+    missingOrderField.verification.resources[1]!.fields = missingOrderField.verification.resources[1]!.fields.filter(field => field !== "load_priority");
+    expect(() => compileActionRuleModelDraft({ ...input, draft: missingOrderField }))
+      .toThrow(/load_priority must be in the private Verification Boundary/u);
+    minimal.approval.required_approvals = 2;
+    const minimalEdit = compileActionRuleModelDraft({ ...input, draft: minimal });
+    expect(minimalEdit.verification_boundary).toEqual(compiled.verification_boundary);
+    expect(minimalEdit.loaded.authority.rules[0]!.rule.require).toEqual(compiled.loaded.authority.rules[0]!.rule.require);
+    expect(minimalEdit.rule.derive).toEqual(compiled.rule.derive);
+    expect(minimalEdit.effect_envelope).toEqual(compiled.effect_envelope);
     const restored = actionRuleModelDraftFromAuthority({ authority: compiled.loaded.authority, outcome: proposed.outcome, review: proposed.review, preserveVerificationFields: true });
     expect(restored.verification.resources[1]!.collection_consistency).toBe("complete_locked");
     const validate = new Ajv2020({ strict: false, allErrors: true }).compile(actionRuleModelDraftJsonSchema());
@@ -142,7 +158,7 @@ describe("model-authored Action Rule draft compilation", () => {
     restored.approval.required_approvals = 2;
     const edited = compileActionRuleModelDraft({ ...input, draft: restored });
     expect(edited.verification_boundary).toEqual(compiled.verification_boundary);
-    expect(edited.rule.require).toEqual(compiled.rule.require);
+    expect(edited.loaded.authority.rules[0]!.rule.require).toEqual(compiled.loaded.authority.rules[0]!.rule.require);
     expect(edited.rule.derive).toEqual(compiled.rule.derive);
     expect(edited.effect_envelope).toEqual(compiled.effect_envelope);
   });

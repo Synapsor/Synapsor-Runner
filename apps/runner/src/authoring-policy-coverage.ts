@@ -84,6 +84,33 @@ function canonicalDraftPointer(draft: unknown, pointer: string): string {
   }
 }
 
+function evidenceRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+/** Enumerate exact resource/field identities, never redirect guessed pointers. */
+function fieldPrivacyEvidence(draft: unknown) {
+  const evidence = evidenceRecord(evidenceRecord(draft)?.runner_evidence);
+  const fields: Array<{ resource: string; field: string; path: string; action: boolean; value: unknown }> = [];
+  const escape = (key: string) => key.replace(/~/gu, "~0").replace(/\//gu, "~1");
+  const add = (resource: string, pointer: string, value: unknown, action: boolean) => {
+    for (const [field, visibility] of Object.entries(evidenceRecord(value) ?? {})) {
+      fields.push({ resource, field, path: `${pointer}/fields/${escape(field)}`, action, value: visibility });
+    }
+  };
+  for (const [resource, value] of Object.entries(evidenceRecord(evidence?.read_access) ?? {})) {
+    add(resource, `/runner_evidence/read_access/${escape(resource)}`, evidenceRecord(value)?.fields, false);
+  }
+  for (const [outcome, value] of Object.entries(evidenceRecord(evidence?.actions) ?? {})) {
+    for (const [binding, raw] of Object.entries(evidenceRecord(evidenceRecord(value)?.scoped_bindings) ?? {})) {
+      const entry = evidenceRecord(raw);
+      if (typeof entry?.resource === "string") add(entry.resource,
+        `/runner_evidence/actions/${escape(outcome)}/scoped_bindings/${escape(binding)}`, entry.fields, true);
+    }
+  }
+  return fields;
+}
+
 function coverageReferences(draft: unknown): string[] {
   const references = new Set<string>();
   const escape = (key: string) => key.replace(/~/gu, "~0").replace(/\//gu, "~1");
@@ -99,6 +126,11 @@ function coverageReferences(draft: unknown): string[] {
   for (const root of ["/actions", "/runner_evidence/actions"]) {
     children(root);
     for (const pointer of [...references].filter((entry) => entry.startsWith(`${root}/`))) children(pointer);
+  }
+  for (const { path } of fieldPrivacyEvidence(draft)) {
+    references.add(path);
+    references.add(path.slice(0, path.lastIndexOf("/")));
+    references.add(path.slice(0, path.lastIndexOf("/fields/")));
   }
   return [...references].sort();
 }
@@ -177,8 +209,9 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
       try { canonicalDraftPointer(draft, pointer); return false; } catch { return true; }
     });
   });
-  if (missingReferences.length) throw new Error(`Draft pointer(s) not present: ${[...new Set(missingReferences)].join(", ")}. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link.`);
+  if (missingReferences.length) throw new Error(`Draft pointer(s) not present: ${[...new Set(missingReferences)].join(", ")}. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link. Private verification-only fields are under /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field>, not nonexistent read_access resources. Select an existing exact path; no missing Read path is redirected.`);
   const covered = new Set<number>(), lines = policyTextLines(source.text);
+  const fieldEvidence = fieldPrivacyEvidence(draft);
   const passages: PolicyPassage[] = [];
   for (const [index, raw] of args.passages.entries()) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Each passage must be an object.");
@@ -270,12 +303,25 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
         if (!check || Object.keys(check).some((key) => !["resource", "field", "expectation"].includes(key))
           || typeof check.resource !== "string" || check.resource.length > 256 || typeof check.field !== "string" || check.field.length > 128
           || !["private", "business_visible"].includes(check.expectation)) throw new Error("Field checks require a reviewed resource, field and private/business_visible expectation.");
-        const escape = (value: string) => value.replace(/~/gu, "~0").replace(/\//gu, "~1");
-        const pointer = `/runner_evidence/read_access/${escape(check.resource)}/fields/${escape(check.field)}`;
-        const actual = draftValue(draft, pointer) as { actual_values_returned: boolean; model_analysis: string[] };
+        const matches = fieldEvidence.filter(field => field.resource === check.resource && field.field === check.field);
+        if (!matches.length) throw new Error(`Field privacy evidence is not present: ${check.resource}.${check.field}. Use exact fields from read_access or Action scoped_bindings; do not infer private access from an absent resource.`);
+        let valuesReturned = false;
+        const analysis = new Set<string>();
+        for (const match of matches) {
+          const value = evidenceRecord(match.value);
+          if (typeof value?.actual_values_returned !== "boolean" || !Array.isArray(value.model_analysis)
+            || !value.model_analysis.every(operation => typeof operation === "string")
+            || match.action && (typeof value.model_visible !== "boolean" || typeof value.read_access_present !== "boolean"
+              || typeof value.private_read_selection !== "boolean" || typeof value.private_action_verification !== "boolean")) {
+            throw new Error(`Incomplete field privacy evidence at ${match.path}. Rebuild coverage from the exact current Read and compiled Action candidates; model_visible alone cannot prove privacy.`);
+          }
+          valuesReturned ||= value.actual_values_returned || match.action && value.model_visible === true;
+          for (const operation of value.model_analysis) analysis.add(operation);
+        }
+        const actual = { actual_values_returned: valuesReturned, model_analysis: [...analysis].sort() };
         if (entry.disposition === "implemented" && (check.expectation === "private"
           ? actual.actual_values_returned || actual.model_analysis.length > 0 : !actual.actual_values_returned)) {
-          throw new Error(`Field coverage mismatch: ${check.resource}.${check.field} is claimed ${check.expectation}, but values returned=${actual.actual_values_returned}; model analysis=${JSON.stringify(actual.model_analysis)}. Keep this privacy requirement unresolved and offer a Read revision; do not claim it is implemented.`);
+          throw new Error(`Field coverage mismatch: ${check.resource}.${check.field} is claimed ${check.expectation}, but values returned=${actual.actual_values_returned}; model analysis=${JSON.stringify(actual.model_analysis)}. Keep this privacy requirement unresolved and review the exposing Read or Action evidence; do not claim it is implemented.`);
         }
       }
     }
@@ -341,7 +387,7 @@ export async function reviewPolicyCoverage(input: {
         application_obligations: { type: "array", minItems: 1, maxItems: 2, uniqueItems: true,
           items: { type: "string", enum: ["customer_selection", "status_presentation"] },
           description: "Optional: omit entirely for non-client clauses, never null or []. Only customer selection or truthful receipt/status presentation. Requires responsibility=application and disposition=needs_decision or unsupported, even after assignment; never implemented. Link every selected exact /runner_evidence/runtime_contract/application_obligations/<name> path. No field_checks here: split privacy, eligibility, authentication and other controls into separate passages, which may share the same source lines." },
-        field_checks: { type: "array", maxItems: 160, description: "For privacy requirements list exact fields expected private or business-visible. An implemented claim must match actual raw return AND analysis permissions.", items: {
+        field_checks: { type: "array", maxItems: 160, description: "For privacy requirements list exact fields expected private or business-visible. Runner checks every matching Read and Action use for actual values AND analysis permissions. Private verification-only fields use exact Action scoped_bindings evidence, not nonexistent Read paths; model_visible=false alone is not proof of privacy elsewhere.", items: {
           type: "object", additionalProperties: false, required: ["resource", "field", "expectation"], properties: {
             resource: { type: "string" }, field: { type: "string" }, expectation: { type: "string", enum: ["private", "business_visible"] },
           },
@@ -400,7 +446,8 @@ export async function reviewPolicyCoverage(input: {
           "For concurrency revision advancement inspect runner_evidence.actions.<outcome>.effect.version_advance and source_fields_modified, not only the model-authored effect.set or business-field allowlist. Runner's compiler can add an exact private integer_increment from reviewed metadata. A present compiled version_advance implements that prepared increment without another business question or model field assignment. A null value does not; a version guard alone proves only stale detection. Execution consent and worker readiness remain separate.",
           "For shared approval pools compare each automatic_limits.history_selector, applies_to_outcome, kind, maximum and total field against runtime_contract.approval_counter_selection. limit.id is diagnostic-only: it is NOT a ledger partition. Different IDs/classes with the same selectors share history; the same ID with different capability filters does not. Do not infer separate counters from ID spelling or demand renaming valid limits. Keep genuine selector, threshold, scope or business ambiguities unresolved. Correct mechanical misinterpretations in this report before asking the operator a business question or requesting an Action edit.",
           "For each passage include a short business topic, responsibility (runner for mechanical reconciliation, operator for missing business choice/meaning, deployment for wiring/activation/worker prerequisites, application for client behavior), issue_kind and concrete next_step. Group the same decision under the same topic while retaining all source ranges. Select draft_paths from the supplied references; Runner attaches their exact current values to the review, so do not copy or predict those values in another structure. Recheck contradictory claims before reporting them. Missing coverage links need correction of this report, not pointless edits to a correct action. Full internal privacy requires no actual value return AND no filter/sort/group/measure permissions; role candidates alone do not prove private business meaning. Preserve plan benefits and useful invoice/case references.",
-          "For privacy passages emit field_checks for the affected fields, especially every privacy_review candidate the source requires to be private. Check actual values and analysis, not only model_withheld_fields declarations. If a field required private is exposed, this is a real conflict needing Read revision, not implemented. If its meaning is uncertain, request that meaning. Use keyed runner_evidence paths (resource/field/binding names) instead of guessing positions in raw draft arrays. Exact evidence sections are /runner_evidence/read_review, /runner_evidence/read_access, /runner_evidence/actions and /runner_evidence/runtime_contract. draft_paths also accepts /read_review/..., /read_access/... and /runtime_contract/... as exact section shorthand; these are canonicalized, not fuzzy matched.",
+          "For privacy passages emit field_checks for the affected fields, especially every privacy_review candidate the source requires to be private. Check actual values and analysis, not only model_withheld_fields declarations. If a field required private is exposed, this is a real conflict needing Read or Action revision, not implemented. If its meaning is uncertain, request that meaning. Use keyed runner_evidence paths (resource/field/binding names) instead of guessing positions in raw draft arrays. Exact evidence sections are /runner_evidence/read_review, /runner_evidence/read_access, /runner_evidence/actions and /runner_evidence/runtime_contract. draft_paths also accepts /read_review/..., /read_access/... and /runtime_contract/... as exact section shorthand; these are canonicalized, not fuzzy matched.",
+          "Private Action verification-only fields may be absent from Read entirely. Cite their exact /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field> references, using the binding's resource identity in field_checks. Never invent /read_access entries for them or expose a private collection to repair coverage. Each field's typed visibility evidence combines this Action's model_visible flag with the actual current Read raw-return and analysis permissions. read_access_present=false means no Read field exists; private_action_verification and private_read_selection describe Runner-only use, not public permission. model_visible=false alone does not forbid Read filters, grouping or other analysis. Check all uses across the bundle: any public values or model analysis defeats a private claim, even if another binding is private. For mixed Read/Action resources also cite the exact Read evidence and keep real disclosure conflicts unresolved. Evidence contains metadata only, no private row values or activation authority.",
           "private_read_selection is Runner's private access, not agent visibility or model analysis. A field with actual_values_returned=false and no model_analysis is private from the agent even when Runner can select it internally. Do not demand removal of private selection to satisfy a rule that explicitly permits Runner-internal use. Conversely, existing scope filtering, opaque references and private Action verification do not justify adding Read selection for a kept-out field. Use the current operator clarification for ambiguous meanings; do not ask it again after it was answered.",
           "Supervised means supported automatic processing AFTER separate execution review and a running worker, not per-request staff approval of routine work. Distinguish preparation from live deployment; never claim prerequisites are already satisfied. Customer selection, authentication UI and truthful customer wording are application responsibilities, not missing source-table predicates. Runner receipts/statuses provide evidence but cannot prove an arbitrary client obeys them. Keep genuinely unsupported or unassigned mandatory requirements unresolved. Do not relabel such requirements background merely to clear coverage.",
           "For the fixed four-tool interface and supported rule updates without new MCP tools, compare /runner_evidence/runtime_contract/agent_interface. This is an existing Runner contract, not custom client implementation. Record supported interface behavior separately from later client installation/handshake under runner_client_connection; neither grants authority or proves the client connected. Do not claim arbitrary future SQL or unsupported business effects are covered by this interface contract.",

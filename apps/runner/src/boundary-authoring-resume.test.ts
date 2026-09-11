@@ -21,6 +21,32 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it.each([true, false])("preserves an omitted unfinished agenda on rewrite, clear and rescan (components %s)", async (components) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-partial-job-resume-"));
+    try {
+      const input = { binding, stage: "authority_review" as const, jobIntent: "Inspect assets, close a visit, and schedule follow-up when its limits are provided.",
+        provider: "openai" as const, model: "gpt-test" };
+      const action = { intent: "Inspect an asset.", intents: ["Inspect an asset.", "Close a visit.", "Schedule a follow-up; automatic limits remain unanswered."],
+        outcome: "operations.close_visit", completed_outcomes: ["operations.inspect_asset", "operations.close_visit"], strategy: "rule_derived" as const,
+        ...(components ? { checkpoint: actionRuleAuthoringCheckpoint({ intent_digest: `sha256:${"4".repeat(64)}`,
+          context_digest: `sha256:${"5".repeat(64)}`, components: { verification: { name: "private_facts", resources: [] } },
+          operator_messages: ["The business owner has not supplied the automatic limit. Keep it pending."] }) } : {}),
+      };
+      let state = buildBoundaryAuthoringResumeState({ ...input, action });
+      for (const stage of ["planning", "read_mapping", "action_drafting", "authority_review"] as const) {
+        state = buildBoundaryAuthoringResumeState({ ...input, stage, previous: state });
+        expect(state.action).toEqual(action);
+        await writeBoundaryAuthoringResumeState(root, state);
+        expect(await clearBoundaryAuthoringResumeState(root)).toBe(false);
+        expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
+      }
+      expect(revalidateBoundaryAuthoringResume(state, { ...binding, schema_fingerprint: `sha256:${"6".repeat(64)}` }).action).toEqual(action);
+      const complete = buildBoundaryAuthoringResumeState({ ...input, previous: state,
+        action: { ...action, checkpoint: undefined, completed_outcomes: [...action.completed_outcomes, "operations.followup"] } });
+      await writeBoundaryAuthoringResumeState(root, complete);
+      expect(await clearBoundaryAuthoringResumeState(root)).toBe(true);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("retains an unclassified edit separately from the job through resume and rescan", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-job-edit-resume-"));
     try {

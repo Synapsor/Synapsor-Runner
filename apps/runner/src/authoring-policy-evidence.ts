@@ -16,6 +16,8 @@ export function policyCoverageDraft(input: {
   authority?: ActionRuleAuthorityDraftV1;
 }) {
   const catalog = readBoundaryRevisionCatalog(input.read);
+  const readFields = new Map(catalog.resources.map(resource => [resource.id,
+    new Map(resource.fields.map(field => [field.id, field]))]));
   // Coverage reviews the replacement bundle, not just newly authored entries.
   // Otherwise adding one outcome makes retained business rules appear missing.
   const actions: Array<Pick<CompiledActionRuleModelDraftV1, "draft" | "rule" | "verification_boundary" | "effect_envelope"> & { boundary_name: string }> = input.authority
@@ -63,7 +65,18 @@ export function policyCoverageDraft(input: {
         scoped_bindings: Object.fromEntries(action.verification_boundary.resources.map((resource) => [resource.binding, {
           binding: resource.binding, resource: resource.resource, scope: resource.scope, source: resource.source,
           row_identity: resource.primary_key, conflict_field: resource.version_field ?? null,
-          fields: Object.fromEntries(resource.fields.map((field) => [field.name, { name: field.name, model_visible: field.model_visible }])),
+          fields: Object.fromEntries(resource.fields.map((field) => {
+            const readField = readFields.get(resource.resource)?.get(field.name);
+            // A private verification flag cannot hide independent Read access.
+            // An absent Read field supplies no Read permissions, not a new entry.
+            return [field.name, { name: field.name, type: structuredClone(field.type), model_visible: field.model_visible === true,
+              read_access_present: readField !== undefined,
+              actual_values_returned: field.model_visible === true || readField?.raw_return === true,
+              model_analysis: [...(readField?.model_operations ?? [])],
+              private_read_selection: readField?.row_selection === true && !readField.raw_return,
+              private_action_verification: field.model_visible !== true,
+            }] as const;
+          })),
         }])),
         automatic_limits: (action.draft.approval.shared_limits ?? []).map((limit) => ({
           ...limit,

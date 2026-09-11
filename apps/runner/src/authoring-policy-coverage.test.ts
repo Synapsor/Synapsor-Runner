@@ -12,6 +12,7 @@ import { policyCoverageDraft, policyCoverageActionTargets } from "./authoring-po
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { mcpClientPickerTransition } from "./post-activation-ask.js";
 import { parseManagedMcpProjectClient } from "./managed-mcp-project.js";
+import type { CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
 
 const clientPointer = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection";
 const clientEvidence = () => ({ runner_evidence: { runtime_contract: { deployment_prerequisites: {
@@ -26,6 +27,235 @@ const savedClientPassage: PolicyPassage = {
   topic: "Claude Code client connection", responsibility: "deployment", issue_kind: "missing_configuration",
   next_step: "After authority review, choose and configure the Claude Code client connection.",
 };
+
+describe("private Action field policy evidence", () => {
+  const resource = "quality.lab_samples", outcome = "quality.release";
+  const privatePath = `/runner_evidence/actions/${outcome}/scoped_bindings/samples/fields/sample_number`;
+  const absentReadPath = `/runner_evidence/read_access/${resource}/fields/sample_number`;
+  const source = policyTextSnapshot(Buffer.from("Keep sample identifiers and sample numbers private, including analysis."), "quality-rules.txt");
+  const passage = { start: 1, end: 1, disposition: "implemented", responsibility: "runner",
+    interpretation: "Sample fields remain private verification evidence, not public values or analysis.",
+    draft_paths: [`/runner_evidence/actions/${outcome}/scoped_bindings/samples`],
+    field_checks: ["sample_id", "sample_number"].map(field => ({ resource, field, expectation: "private" })),
+  };
+  function fixture() {
+    const read: ExplorationBoundaryDraft = {
+      schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed", deployment_profile: "staging",
+      source: "local_postgres", compiler_version: "1.8.0", spec_version: "1.11.0", reporting_timezone: "UTC",
+      trusted_context: { provider: "environment", tenant_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
+      generation_lock_fingerprint: `sha256:${"a".repeat(64)}`, role_posture_fingerprint: `sha256:${"b".repeat(64)}`,
+      budgets: structuredClone(DEFAULT_REVIEWED_EXPLORATION_BUDGETS), unresolved_decisions: [], pack: { name: "quality_read", resources: [] },
+    };
+    // Only the typed compiled fields consumed by evidence generation are needed;
+    // this unit fixture does not claim authoring/compiler or runtime qualification.
+    const action = {
+      draft: { outcome, approval: { shared_limits: [] } }, rule: { outcome },
+      loaded: { authority: { action_boundary: { name: "quality_actions" } } },
+      verification_boundary: { resources: [{ binding: "samples", resource, primary_key: "sample_id",
+        scope: { mode: "columns", tenant_field: "factory", principal_field: "coordinator" },
+        source: { kind: "relationship", from_binding: "lot", relationship: "samples_lot_fk", direction: "inverse" },
+        cardinality: "many", collection_consistency: "complete_locked", max_rows: 16,
+        deterministic_order: [{ field: "sample_number", direction: "asc" }, { field: "sample_id", direction: "asc" }],
+        fields: [{ name: "sample_id", type: { kind: "string", comparison: "exact", max_length: 36 }, nullable: false, model_visible: false },
+          { name: "sample_number", type: { kind: "integer" }, nullable: false, model_visible: false }],
+      }] },
+      effect_envelope: { target_resource: "quality.lots", operation: "update", allowed_fields: [], writeback: { mode: "direct_sql" } },
+    } as unknown as CompiledActionRuleModelDraftV1;
+    return { read, actions: [action], decisions: [] };
+  }
+  function addRead(input: ReturnType<typeof fixture>) {
+    const raw: ExplorationBoundaryDraft["pack"]["resources"][number] = {
+      id: resource, schema: "quality", table: "lab_samples", primary_key: "sample_id",
+      tenant_key: "factory", principal_key: "coordinator", field_types: { sample_id: "uuid", sample_number: "integer" },
+      field_enums: {}, selectable_fields: [], filterable_fields: {}, sortable_fields: [], groupable_fields: [],
+      aggregate_measures: [], aggregate_measure_functions: {}, count_distinct_fields: [], time_bucket_fields: {},
+      kept_out_fields: [], relationships: [], minimum_cohort_size: 5, suppression_aware_totals: true,
+    };
+    input.read.pack.resources.push(raw);
+    return raw;
+  }
+
+  it("derives private verification-only selection and analysis without adding public Read fields", () => {
+    const input = fixture(), before = structuredClone(input);
+    const draft = policyCoverageDraft(input);
+    expect(draft.runner_evidence.read_access).not.toHaveProperty(resource);
+    expect(draft.runner_evidence.actions[outcome]!.scoped_bindings.samples!.fields.sample_number).toMatchObject({
+      name: "sample_number", type: { kind: "integer" }, model_visible: false, read_access_present: false,
+      actual_values_returned: false, model_analysis: [], private_read_selection: false, private_action_verification: true,
+    });
+    expect(parsePolicyCoverage({ passages: [passage] }, source, draft, []).passages[0]!.disposition).toBe("implemented");
+    expect(input).toEqual(before);
+  });
+
+  it.each(["return", "filter", "sort", "group", "measure", "count_distinct"])("does not hide actual Read %s access behind a private Action flag", (mode) => {
+    const input = fixture(), raw = addRead(input);
+    if (mode === "return") raw.selectable_fields = ["sample_number"];
+    if (mode === "filter") raw.filterable_fields = { sample_number: ["eq"] };
+    if (mode === "sort") raw.sortable_fields = ["sample_number"];
+    if (mode === "group") raw.groupable_fields = ["sample_number"];
+    if (mode === "measure") { raw.aggregate_measures = ["sample_number"]; raw.aggregate_measure_functions = { sample_number: ["sum"] }; }
+    if (mode === "count_distinct") raw.count_distinct_fields = ["sample_number"];
+    const draft = policyCoverageDraft(input);
+    const actual = draft.runner_evidence.actions[outcome]!.scoped_bindings.samples!.fields.sample_number!;
+    expect(actual.model_visible).toBe(false);
+    expect(actual).toMatchObject({ read_access_present: true, actual_values_returned: mode === "return" });
+    expect(() => parsePolicyCoverage({ passages: [passage] }, source, draft, [])).toThrow(`Field coverage mismatch: ${resource}.sample_number`);
+    expect(parsePolicyCoverage({ passages: [{ ...passage, disposition: "conflict" }] }, source, draft, []).passages[0]!.disposition).toBe("conflict");
+    if (mode === "return") expect(parsePolicyCoverage({ passages: [{ ...passage,
+      field_checks: [{ resource, field: "sample_number", expectation: "business_visible" }],
+    }] }, source, draft, []).passages[0]!.disposition).toBe("implemented");
+    else expect(actual.model_analysis.length).toBeGreaterThan(0);
+  });
+
+  it("keeps private Read selection distinct from both raw return and model analysis", () => {
+    const input = fixture(), raw = addRead(input);
+    raw.selectable_fields = ["sample_id"]; raw.model_withheld_fields = ["sample_id"];
+    const draft = policyCoverageDraft(input);
+    expect(draft.runner_evidence.actions[outcome]!.scoped_bindings.samples!.fields.sample_id).toMatchObject({
+      read_access_present: true, actual_values_returned: false, private_read_selection: true, model_analysis: [],
+    });
+    expect(() => parsePolicyCoverage({ passages: [passage] }, source, draft, [])).not.toThrow();
+  });
+
+  it("checks every Action use even when a public Read entry reports the field private", () => {
+    const input = fixture(); addRead(input);
+    const second = structuredClone(input.actions[0]!);
+    second.rule.outcome = "quality.audit"; second.draft.outcome = second.rule.outcome;
+    second.verification_boundary.resources[0]!.fields[1]!.model_visible = true;
+    input.actions.push(second);
+    const draft = policyCoverageDraft(input);
+    expect(draft.runner_evidence.actions[outcome]!.scoped_bindings.samples!.fields.sample_number!.actual_values_returned).toBe(false);
+    expect(draft.runner_evidence.actions[second.rule.outcome]!.scoped_bindings.samples!.fields.sample_number!.actual_values_returned).toBe(true);
+    expect(() => parsePolicyCoverage({ passages: [passage] }, source, draft, [])).toThrow(`Field coverage mismatch: ${resource}.sample_number`);
+  });
+
+  it("requires actual visible-value evidence for business-visible private-only fields", () => {
+    const input = fixture();
+    const visible = { ...passage, field_checks: [{ resource, field: "sample_number", expectation: "business_visible" }] };
+    expect(() => parsePolicyCoverage({ passages: [visible] }, source, policyCoverageDraft(input), [])).toThrow("Field coverage mismatch");
+    input.actions[0]!.verification_boundary.resources[0]!.fields[1]!.model_visible = true;
+    expect(() => parsePolicyCoverage({ passages: [visible] }, source, policyCoverageDraft(input), [])).not.toThrow();
+  });
+
+  it("normalizes optional verification visibility without claiming a new public permission", () => {
+    const input = fixture();
+    delete input.actions[0]!.verification_boundary.resources[0]!.fields[1]!.model_visible;
+    const draft = policyCoverageDraft(input);
+    expect(draft.runner_evidence.actions[outcome]!.scoped_bindings.samples!.fields.sample_number!.model_visible).toBe(false);
+    expect(() => canonicalJsonDigest(draft)).not.toThrow();
+    expect(() => parsePolicyCoverage({ passages: [passage] }, source, draft, [])).not.toThrow();
+  });
+
+  it("uses exact escaped resource, outcome, binding and field identities without fuzzy aliases", () => {
+    const input = fixture(), action = input.actions[0]!, binding = action.verification_boundary.resources[0]!;
+    action.rule.outcome = "quality/release~batch"; action.draft.outcome = action.rule.outcome;
+    binding.resource = "quality/lab~samples"; binding.binding = "checks/ordered~";
+    binding.fields[1]!.name = "sample/number~";
+    const exact = "/runner_evidence/actions/quality~1release~0batch/scoped_bindings/checks~1ordered~0/fields/sample~1number~0";
+    const draft = policyCoverageDraft(input);
+    const claim = { ...passage, draft_paths: [exact],
+      evidence_checks: [{ path: `${exact}/actual_values_returned`, equals: false }],
+      field_checks: [{ resource: binding.resource, field: binding.fields[1]!.name, expectation: "private" }],
+    };
+    expect(parsePolicyCoverage({ passages: [claim] }, source, draft, []).passages[0]!.draft_paths).toEqual([exact]);
+    expect(() => parsePolicyCoverage({ passages: [{ ...claim, draft_paths: [privatePath] }] }, source, draft, [])).toThrow("Draft pointer");
+    expect(() => parsePolicyCoverage({ passages: [{ ...claim,
+      field_checks: [{ resource: binding.resource, field: "sample_number", expectation: "private" }],
+    }] }, source, draft, [])).toThrow("Field privacy evidence is not present");
+  });
+
+  it("refuses invented Read paths, unknown fields and incomplete private evidence instead of guessing", () => {
+    const draft = policyCoverageDraft(fixture());
+    expect(() => parsePolicyCoverage({ passages: [{ ...passage, draft_paths: [absentReadPath] }] }, source, draft, [])).toThrow("Draft pointer");
+    expect(() => parsePolicyCoverage({ passages: [{ ...passage,
+      field_checks: [{ resource, field: "invented_sample", expectation: "private" }],
+    }] }, source, draft, [])).toThrow("Field privacy evidence is not present");
+    Reflect.deleteProperty(draft.runner_evidence.actions[outcome]!.scoped_bindings.samples!.fields.sample_number!, "model_analysis");
+    expect(() => parsePolicyCoverage({ passages: [passage] }, source, draft, [])).toThrow("Incomplete field privacy evidence");
+  });
+
+  it.each(["return", "analysis", "action"])("rejects stale private coverage after %s exposure changes", (mode) => {
+    const input = fixture(), previous = policyCoverageDraft(input);
+    const report = parsePolicyCoverage({ passages: [passage] }, source, previous, []);
+    if (mode === "action") input.actions[0]!.verification_boundary.resources[0]!.fields[1]!.model_visible = true;
+    else {
+      const raw = addRead(input);
+      if (mode === "return") raw.selectable_fields = ["sample_number"];
+      else raw.filterable_fields = { sample_number: ["eq"] };
+    }
+    const current = policyCoverageDraft(input), before = structuredClone(current);
+    expect(canonicalJsonDigest(current)).not.toBe(report.draft_digest);
+    expect(() => policyCoverageActionTargets({ report, draft: current, passages: report.passages, editableOutcomes: [outcome] }))
+      .toThrow("POLICY_COVERAGE_DRAFT_CHANGED");
+    expect(() => parsePolicyCoverage({ passages: report.passages }, source, current, [])).toThrow("Field coverage mismatch");
+    expect(current).toEqual(before);
+    if (mode !== "action") {
+      current.runner_evidence.actions[outcome]!.scoped_bindings.samples!.fields.sample_number =
+        structuredClone(previous.runner_evidence.actions[outcome]!.scoped_bindings.samples!.fields.sample_number!);
+      // Even stale private Action evidence cannot conceal independently exposed Read access.
+      expect(() => parsePolicyCoverage({ passages: report.passages }, source, current, [])).toThrow("Field coverage mismatch");
+    }
+  });
+
+  it.each([
+    absentReadPath,
+    `/read_access/${resource}/fields/sample_number`,
+    privatePath.replace("quality.release", "quality.other_release"),
+    privatePath.replace("/samples/", "/other_samples/"),
+    privatePath.replace("/sample_number", "/sample_Number"),
+    `${privatePath}/model_analysis/0`,
+  ])("does not redirect nonexistent pointer %s to similar private evidence", (pointer) => {
+    const draft = policyCoverageDraft(fixture()), before = structuredClone(draft);
+    expect(() => parsePolicyCoverage({ passages: [{ ...passage, draft_paths: [pointer] }] }, source, draft, [])).toThrow("Draft pointer");
+    expect(draft).toEqual(before);
+  });
+
+  it("rejects a removed private field through both its old pointer and an unchanged parent reference", () => {
+    const input = fixture();
+    input.actions[0]!.verification_boundary.resources[0]!.fields = input.actions[0]!.verification_boundary.resources[0]!.fields
+      .filter(field => field.name !== "sample_number");
+    const draft = policyCoverageDraft(input);
+    expect(() => parsePolicyCoverage({ passages: [{ ...passage, draft_paths: [privatePath] }] }, source, draft, [])).toThrow("Draft pointer");
+    expect(() => parsePolicyCoverage({ passages: [passage] }, source, draft, [])).toThrow("Field privacy evidence is not present");
+  });
+
+  it("does not accept inherited field evidence or model-supplied privacy overrides", () => {
+    const draft = policyCoverageDraft(fixture()), fields = draft.runner_evidence.actions[outcome]!.scoped_bindings.samples!.fields;
+    Object.setPrototypeOf(fields, { invented_sample: fields.sample_number });
+    const forged = { ...passage, field_checks: [{ resource, field: "invented_sample", expectation: "private" }] };
+    expect(() => parsePolicyCoverage({ passages: [{ ...forged, draft_paths: [privatePath.replace("sample_number", "invented_sample")] }] }, source, draft, []))
+      .toThrow("Draft pointer");
+    expect(() => parsePolicyCoverage({ passages: [forged] }, source, draft, [])).toThrow("Field privacy evidence is not present");
+    expect(() => parsePolicyCoverage({ passages: [passage], runner_evidence: {} }, source, draft, [])).toThrow("unexpected top-level keys");
+    expect(() => parsePolicyCoverage({ passages: [{ ...passage, field_checks: [{ resource, field: "sample_number", expectation: "private",
+      actual_values_returned: false, model_analysis: [],
+    }] }] }, source, draft, [])).toThrow("Field checks require a reviewed resource");
+  });
+
+  it.each(["corrected", "still invalid"])("lists exact private references in bounded coverage correction (%s)", async (resultKind) => {
+    const input = fixture(), draft = policyCoverageDraft(input), before = structuredClone(draft);
+    const conversation = createModelAuthoringConversation(); conversation.policySources = newPolicySourceSession();
+    conversation.policySources.snapshots = [source]; conversation.policySources.active = source.version;
+    conversation.policySources.approvals = [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model: "fixture" }) }];
+    const requests: string[] = [];
+    const rejected = { ...passage, draft_paths: [absentReadPath] };
+    const run = reviewPolicyCoverage({ source, draft, env: { OPENAI_API_KEY: "test-key" },
+      session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async request => {
+        requests.push(JSON.stringify(request.body));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: `private_${requests.length}`,
+          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [requests.length > 1 && resultKind === "corrected"
+            ? { ...passage, draft_paths: [privatePath] } : rejected] }) }] } };
+      } } },
+    });
+    if (resultKind === "corrected") expect((await run).passages[0]!.disposition).toBe("implemented");
+    else await expect(run).rejects.toThrow("POLICY_COVERAGE_INVALID: Draft pointer");
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toContain(privatePath);
+    expect(requests[0]).toContain("verification-only fields");
+    expect(requests[1]).toContain("Previous untrusted coverage submission");
+    expect(draft).toEqual(before);
+  });
+});
 
 describe("execution setup is not a business-rule revision", () => {
   const pointer = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup";

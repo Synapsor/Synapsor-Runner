@@ -27,6 +27,7 @@ import {
   buildActionRuleAuthorityDraft,
   createActiveActionRuleAuthorityLoader,
   deactivateActionRuleAuthority,
+  deactivateActionRuleAuthorityIfCurrent,
   listActionRuleAuthorityDrafts,
   loadActiveActionRuleAuthority,
   mergeActionRuleAuthorityDraft,
@@ -69,6 +70,35 @@ afterEach(async () => {
 });
 
 describe("semantic Action Rule authority persistence", () => {
+  it.each(["legacy", "sqlite"] as const)("retires only the exact reviewed active bundle under the writer permit (%s)", async backend => {
+    const root = await temporaryRoot(), read = activeReadBoundary();
+    await writeActiveReadSet(root, read);
+    const source = authoritySource(read.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: read.pack.name, read_boundary_digest: read.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }], reviews: [authorityReview()] });
+    await writeActionRuleAuthorityDraft(root, draft);
+    const active = await activateActionRuleAuthority({ projectRoot: root, name: draft.authority.name, expected_digest: draft.digest,
+      confirmation: `ACTIVATE ${draft.digest}`, actor: "fixture reviewer" });
+    const binding = backend === "sqlite" ? await migrateActionBaselineFixture(root) : undefined;
+    try {
+      const baseline = await readActionRuleAuthorityRevisionBaseline(root);
+      let pending!: Promise<unknown>, finished = false;
+      await withProjectAuthorityMutation(root, async permit => {
+        pending = deactivateActionRuleAuthorityIfCurrent(root, baseline).catch(error => error).finally(() => { finished = true; });
+        await delay(30);
+        expect(finished).toBe(false);
+        await writeActionRuleAuthorityDraft(root, draft, permit);
+        Object.assign(baseline, await readActionRuleAuthorityRevisionBaseline(root, permit));
+      });
+      expect(await pending).toMatchObject({ code: "ACTION_BOUNDARY_REVISION_CHANGED" });
+      expect(await readActionRuleAuthorityActivation(root)).toEqual(active);
+      const current = await readActionRuleAuthorityRevisionBaseline(root);
+      expect(await deactivateActionRuleAuthorityIfCurrent(root, current)).toBe(true);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      expect(await readActionRuleAuthorityDraft(root, draft.authority.name)).toEqual(draft);
+    } finally { await binding?.close(); }
+  });
   it.each(["return", "failure", "nonzero"] as const)("continues directly from active Action review to client setup without another activation (%s)", async mode => {
     const root = await temporaryRoot(), read = activeReadBoundary();
     await writeActiveReadSet(root, read);

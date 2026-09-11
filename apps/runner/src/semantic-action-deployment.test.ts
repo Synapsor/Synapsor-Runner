@@ -121,6 +121,7 @@ describe("complete Action Boundary execution re-review", () => {
       const list = async () => (await client.callTool("app.describe_actions", {})).actions as Array<{ outcome: string }>;
       expect((await list()).map(action => action.outcome)).toEqual(["billing.pause_notifications", "billing.set_priority"]);
       const prepared = await prepareSavedActionRuleRemoval(fixture.root, "billing.set_priority");
+      if (prepared.mode === "deactivate") throw new Error("Two-outcome removal must retain the other outcome.");
       expect(prepared.draft.authority.rules.map(({ activated_at: _activatedAt, ...rule }) => rule)).toEqual(original.authority.rules.filter(rule => rule.rule.outcome !== "billing.set_priority")
         .map(({ activated_at: _activatedAt, ...rule }) => rule));
       await writeActionRuleAuthorityDraftIfCurrent(fixture.root, prepared.draft, prepared.baseline);
@@ -149,6 +150,7 @@ describe("complete Action Boundary execution re-review", () => {
   it("refuses a removal publication if another reviewer changes the saved bundle", async () => {
     const fixture = await activeProject("human", true);
     const prepared = await prepareSavedActionRuleRemoval(fixture.root, "billing.set_priority");
+    if (prepared.mode === "deactivate") throw new Error("Two-outcome removal must retain the other outcome.");
     const competing = { ...fixture.draft, reviews: fixture.draft.reviews.map(review => ({ ...review, when: `${review.when}; revised explanation` })) };
     await writeActionRuleAuthorityDraft(fixture.root, competing);
     await expect(writeActionRuleAuthorityDraftIfCurrent(fixture.root, prepared.draft, prepared.baseline))

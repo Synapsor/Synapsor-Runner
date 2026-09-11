@@ -16,6 +16,57 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 10:49 UTC implementation follow-up: private verification-only fields
+now have exact coverage evidence, including all public Read and Action uses;
+nonexistent pointers and exposed fields still fail validation. Minimal rule edits
+retain already reviewed fields needed only for deterministic collection ordering.
+Read-only corrections bind to the current disabled revision, revalidate dependent
+Actions before publication and retain unfinished agenda/checkpoints. Own-save
+refresh is separate from refusal of a competing saved revision.
+
+The public museum removal test found that final-outcome removal still fell into
+an unsupported-empty-bundle error and manual editor. Guided removal now offers
+separate exact deactivation, preserves Read/client/history, supports pause/resume,
+and checks the full Action baseline under the publication lock before revoking.
+It does not create empty authority or undo dispatched/completed transactions.
+Focused integration: 181 passed / 1 optional skip; final-removal CLI continuation
+passed separately, including cancellation and resume. Types and package build
+passed. The full pipeline is running; live recovery on this follow-up is pending.
+
+2026-09-11 10:26 UTC: latest frozen candidate is `9fcc942615213687169b4ced439dce6bb72610c4`,
+executable SHA-256 `01220968ed4d1d60bd7f467fff0ecc508f02872e56f8eb6bcda2ace90a5a9397`.
+It is committed on the existing branch and pushed only to private `backup`.
+The following supersedes the older public checkpoint entries, which remain
+historical evidence. This is still assisted qualification, not final acceptance.
+
+| Public journey on this artifact | Result and remaining limits |
+| --- | --- |
+| Library live limit edit | One ordinary-language edit lowered only automatic limits to 2 overall and 1 per library in 24 hours. Public review retained privacy, eligibility, fallback and execution. New P-105 correctly needs human review. P-104, approved under the old rules but not dispatched, remains queued with zero attempts and an explicit changed-rules blocker. P-101 remains the sole completed change and receipt. |
+| Museum setup recovery and operation | Saved policy recovered without weakening it. Generated exact writer instructions, owned administrator application, public rescan, separate authority reviews, managed Claude installation, explicit local test identity and worker startup passed. Actual Claude completed EX-104 at 80 lux and replayed the identical request without a tester hint to obtain durable execution confirmation. Independent fixture-owner SELECT found only that row changed, version 2. Other valid requests required two reviewers; an in-storage exhibit was refused. |
+| Museum live policy edit | One plain-language edit added a 75-lux automatic ceiling, retaining the private ceiling, hard bounds, quorum, scope, limits and execution. EX-105 at 80 now needs human review. The generated Claude configuration is byte-for-byte unchanged; no client reinstall or new tool was needed. |
+| Privacy and protocol negatives | Actual generated SDK connections passed 14 library and 13 museum checks: four tools, scoped reads, private raw/filter/sort/group refusals, injected SQL/identity and forged-reference refusals. The library old approved request cannot be resubmitted under the new authority. No new write or permission was introduced by these checks. |
+| Fresh student | Blocked after two disabled Actions. A Read correction encountered stale revision handling, and the unfinished advising component disappeared from the continuation view. Approximately 676 seconds with assistance, no active authority/client/worker or completed operation. Generic correction/checkpoint repairs are in progress; advising limits remain unanswered. |
+| Manufacturing protected collection | Blocked by privacy-coverage references to a resource absent from public Read, and an edit exporter dropping a private field used only for deterministic collection ordering. Exact typed private evidence and dependency-preserving export fixes are under test. No completed operation or generalization pass. |
+
+Museum receipt: `sha256:4337f2437e74b2def97b72bf1241431d25d253c65fb805fde4178290c57aabc1`,
+applied once at `2026-09-11T10:03:08.418Z`. Status replay now explicitly confirms
+verified execution, without returning private identifiers or adding a tool.
+The first museum test request mislabeled 120 lux as eligible despite a private
+100-lux ceiling; its human-review result was correct. The subsequent eligible
+case used 80. Both workers were stopped gracefully; pending requests remain.
+
+Durable evidence: external `r13-e07-20260911/library-edit-terminal.log`,
+`library-after-limit-edit-client.jsonl`, `library-worker-after-edit.json`,
+`library-runtime-readback.json`, `museum-recovery-terminal.log`,
+`museum-rescan-terminal.log`, `museum-eligible-client.jsonl`,
+`museum-edit-terminal.log`, `museum-stricter-rule-client.jsonl`,
+`museum-runtime-readback.json`, and both `*-after-edit*-protocol.json` reports.
+Client JSONL files are private raw evidence, not shareable credential dumps.
+Setup required administrator assistance and recovery; timing includes separately
+recorded model calls, navigation and tester pauses, not a claimed unaided duration.
+Museum same-connected-client removal is being tested. New unseen/coded cases,
+student completion, remaining lifecycle cases and final-artifact gates are open.
+
 2026-09-11 public follow-up on `231d589`, frozen executable
 `15dd2e7ac3310a405b8e4cc814c0be05e8276c10d4687076d8187de2c6fd9a2a`:
 the owned library recovery now passes generated writer administration, public
