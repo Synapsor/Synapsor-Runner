@@ -16,6 +16,61 @@ operational journey. No Gate 2 execution, receipt, concurrency or live rule-edit
 pass is claimed. The result below distinguishes product failures from tester
 cancellation and untested work. Gate 1 acceptance remains unchanged.
 
+**Bounded Gate 2 repairs are now authorized and in progress.** Starting commit
+`4515cbc43ebade261edd9a21c881902f3fc1a629`, initially clean. This does not replace
+the historical verdicts above or authorize broader capability expansion. The
+original projects, policies, schemas and complete frozen installation remain
+unchanged. New evidence is under the existing external
+`r13-e07-20260911/gate2-repair-4515cbc/`; the existing generalization tracker
+continues to own progress.
+
+Implemented shared prerequisite review now distinguishes inspected identity
+structure from business meaning: the existing closed PostgreSQL proof enumerates
+possible organization/person orientations; the model interprets the policy or
+asks a clarification; the operator reviews the exact mapping; current metadata
+and review bindings are checked again before an atomic disabled save. Existing
+governed metadata-only records allow that review before resource admission.
+Neither field exposure nor runtime authority is added by the mapping operation.
+The full Read validator still rejects empty authority. Unsupported policy
+expressions, changed evidence and concurrent edits remain refusals.
+
+Focused shared-command evidence: 17 tests pass, including both known identity
+layouts, a renamed layout, grouped review, ambiguity, swapped/declined choices,
+stale/unavailable/unsupported proof, resume before and after a metadata-only save,
+and preservation of private fields, active Read authority and pending requests.
+The initial failing-before command reached the mapper without identity review
+for all three layouts. Full integrated gates and new-artifact public journeys
+are still required; these tests do not establish successful onboarding.
+
+Insurance host reproduction now identifies `ACTION_RULE_UNBOUNDED`: the saved
+freeze workspace supplied inherited scope rather than the complete collection's
+explicit direct child scope. On a restored copy with identical source metadata,
+the **unchanged complete rule** compiles through the existing private-source
+preparation path and both collection reader checks pass. The repair diagnostic
+now identifies that catalog prerequisite instead of suggesting an expression
+edit. No derived scope is promoted, public fields exposed, condition removed or
+engine grammar expanded. The proposed public recovery remains to be tested.
+
+Editorial evidence fixes distinguish the authoring provider from the runtime
+client and include the already-inspected reader when exact current fingerprints
+match. Trusted transaction time is explicitly not proof of database-origin UTC.
+The original clock requirement remains unmet; it has not been weakened. Exact
+host conflict-counter confirmations must be durable before coverage can cite
+them. Fresh and copied-checkpoint reruns will be reported separately, using a
+new complete installed artifact and finite provider/test budgets.
+
+Repair regression checkpoint: full `corepack pnpm test` PASS (5,880 tests;
+447 optional tests skipped; 285 files passed and 21 skipped, 1,040.46 seconds).
+This includes the Gate 1 lifecycle/storage regressions, type build, trusted-core
+dependencies, license/content, command surface, DSL paths, Cursor packaging,
+Runner package build, freshness and six launcher shutdown cases. The opt-in
+owned PostgreSQL writer/rescan regression ran separately: 1 PASS, 0 SKIP,
+7.47 seconds, with its temporary container removed. Clean-install packed Runner
+checks also PASS using the local pre-release Spec 1.11.0: declarations, CLI/demo,
+fixtures, publish manifest and managed client configuration preservation. Nothing
+was published. New frozen-artifact real-provider cases are still pending. Test
+counts are regression evidence, not a completed operator journey.
+
 Historical public student evidence was based on `a4a720af8df051125ac26e4875eafacbcadce4f9`.
 Its last completed public test used CLI SHA-256
 `31616b6d832e6cffd1cf1c115cffea3e15506d958b48d3b5a6d2b1c1d62dee65`.

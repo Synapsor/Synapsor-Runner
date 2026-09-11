@@ -49,8 +49,9 @@ export async function interpretPrincipalScopeAnswer(input: {
   env?: NodeJS.ProcessEnv;
   egressAcknowledged: boolean;
   signal?: AbortSignal;
+  scopeKind?: "organization_and_person";
 }): Promise<ModelPrincipalScopeResolution> {
-  const answer = boundedText(input.answer, "Principal-scope answer", 1_000);
+  const answer = boundedText(input.answer, "Principal-scope answer", input.scopeKind ? 12_000 : 1_000);
   if (!input.options.length) throw new Error("Principal-scope review requires at least one exact option.");
   if (new Set(input.options.map((option) => option.id)).size !== input.options.length) {
     throw new Error("Principal-scope review option IDs must be unique.");
@@ -93,12 +94,15 @@ export async function interpretPrincipalScopeAnswer(input: {
     async close() {},
   };
   const question = [
-    "Translate one operator answer about authenticated-person row scope.",
+    input.scopeKind
+      ? "Interpret the operator's policy to distinguish organization scope from authenticated-person scope. Each candidate is one complete orientation of both existing columns and their inspected session settings."
+      : "Translate one operator answer about authenticated-person row scope.",
     `Exact reviewed resource: ${input.resourceId}`,
     `Exact Runner candidates: ${JSON.stringify(catalog)}`,
     `Operator answer: ${JSON.stringify(answer)}`,
     `Call ${REVIEW_PRINCIPAL_SCOPE_TOOL} exactly once.`,
     "Resolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.",
+    ...(input.scopeKind ? ["Structural proof does not establish business orientation. If the policy does not distinguish the organization and person, ask which is which. Runner will separately ask the operator to confirm the exact proposed mapping before saving it."] : []),
     "If the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.",
     "If the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.",
     "Do not emit SQL, credentials, tenant or principal values, activation, approval, or write authority.",

@@ -9,6 +9,27 @@ export type InspectedScopeMapping = {
   policy_fingerprint: `sha256:${string}`;
 };
 
+/** Enumerate possible orientations; only the operator can establish their business meaning. */
+export function inspectedPostgresScopeCandidates(inspection: SchemaInspection, schema: string, name: string): InspectedScopeMapping[] {
+  const table = inspection.tables.find(table => table.schema === schema && table.name === name);
+  if (!table) return [];
+  // Discovery is not proof: every pair below must pass the existing closed parser.
+  const settings = [...new Set((table.row_level_security_policies ?? []).flatMap(policy =>
+    [...(policy.using_expression ?? "").matchAll(/\bcurrent_setting\s*\(\s*'([a-zA-Z0-9_.-]+)'/g)].map(match => match[1]!)))].sort();
+  const fields = table.columns.filter(column => !column.nullable).map(column => column.name);
+  if (settings.length > 8 || fields.length > 256) return [];
+  const results: InspectedScopeMapping[] = [];
+  for (const tenantSetting of settings) for (const principalSetting of settings) {
+    if (tenantSetting === principalSetting) continue;
+    for (const tenantField of fields) {
+      const mapping = inspectedPostgresScopeMapping({ inspection, resource: { schema, table: name, fields },
+        tenantField, tenantSetting, principalSetting });
+      if (mapping) results.push(mapping);
+    }
+  }
+  return results;
+}
+
 /** A closed SELECT row-scope proof, not a permission, business predicate or SQL egress. */
 export function inspectedPostgresScopeMapping(input: {
   inspection?: SchemaInspection;

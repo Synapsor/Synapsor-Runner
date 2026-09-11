@@ -61,6 +61,19 @@ export function actionRuleDiagnosticRepair(
   if (/STALE|REVISION_CHANGED|REVIEW_CHANGED/u.test(diagnostic.code)) {
     return { category: "draft_structure", next_action: "Refresh the inspected metadata and reopen the saved draft against the current reviewed revision. Preserve the business rules; do not copy an old fingerprint into a new draft." };
   }
+  const collectionScope = /^Complete collection ([A-Za-z_][A-Za-z0-9_]*) requires an inverse foreign key from one directly scoped parent and explicit matching child scope\.$/u.exec(diagnostic.message);
+  if (diagnostic.code === "ACTION_RULE_UNBOUNDED" && collectionScope && context) {
+    const matches = context.verification?.resources.filter(entry => entry.binding === collectionScope[1]) ?? [];
+    const resources = matches.length === 1
+      ? context.builtCatalog.catalog.resources.filter(entry => entry.name === matches[0]!.resource)
+      : [];
+    if (resources.length === 1 && !resources[0]!.tenant_key) {
+      return {
+        category: "source_evidence",
+        next_action: "Review the collection's exact child and parent scope against the current inspected foreign key and database filters. Use the existing private Action source review with metadata consent for a private collection; do not add public Read access. If the source is already in a broad intermediate Read workspace, explicitly review and narrow that workspace before private preparation. Keep the absence or aggregate condition, bounds, effect and approval policy unchanged. No draft expression can supply missing reviewed scope; keep setup pending until that evidence is available.",
+      };
+    }
+  }
   if (/VERSION|CONFLICT|COMPLETE_COLLECTION|PHANTOM|ISOLATION/u.test(diagnostic.code)
     || /complete[_ -]locked|phantom|deterministic ordering|conflict (?:guard|counter)/iu.test(diagnostic.message)) {
     return { category: "concurrency", next_action: "Review the named verification or conflict requirement against the inspected schema. A write grant does not supply a missing conflict field, complete collection, or concurrency guarantee. Keep setup pending if the source cannot prove it." };

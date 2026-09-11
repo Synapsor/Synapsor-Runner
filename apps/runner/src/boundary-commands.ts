@@ -2,6 +2,7 @@ import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
+import { reviewGuidedScopeAdmission } from "./guided-scope-admission.js";
 import {
   canonicalJsonDigest,
   type ActionBoundarySharedLimitV1,
@@ -5596,11 +5597,34 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       : resumePastPlanning
         ? resumeAction?.strategy === "rule_derived" || resumeAction?.outcome !== undefined
         : false);
+  let scopeMappingChanged = false;
+  if (input.jobFirst && mode === "model" && preselectedMappingSession && modelEgressAcknowledged
+    && !reusingExactRead && !resumingDisabledRead
+    && (!resumePastPlanning || (availableResume?.stage === "read_mapping" && !resumeRead))) {
+    const admission = await reviewGuidedScopeAdmission({
+      projectRoot: input.projectRoot,
+      inspectionInput: { engine: context.lock.engine, databaseUrlEnv: context.lock.source_env,
+        schema: context.lock.inspected_schema, env: process.env },
+      schemaInspector: input.schemaInspector, session: input.session,
+      model: boundaryAuthoringModelSession(preselectedMappingSession, input.authoringChat),
+      interpreter: input.modelPrincipalScopeInterpreter,
+      egressAcknowledged: modelEgressAcknowledged, jobIntent: jobIntent.trim(), actor: localInteractiveActor(),
+      signal: input.authoringChat?.signal, progress: runWithProgress,
+    });
+    if (!admission.ready) {
+      await persistAuthoringResume("read_mapping");
+      return boundaryAssistResult({ tone: "warning", title: "Identity mapping needs review", lines: [admission.reason!],
+        footer: "The same job remains saved. No Read, Action or execution authority changed." });
+    }
+    scopeMappingChanged = admission.changed;
+    if (scopeMappingChanged) context = await loadBoundaryReviewContext(input.projectRoot);
+  }
   if (input.jobFirst
     && mode !== "saved"
     && !reusingExactRead
     && !resumingDisabledRead
-    && !resumePastPlanning) {
+    && (!resumePastPlanning || scopeMappingChanged
+      || (availableResume?.stage === "read_mapping" && !resumeRead && context.candidate.pack.resources.length === 0))) {
     const prepared = await prepareJobMappingCatalog({
       projectRoot: input.projectRoot,
       schemaInspector: input.schemaInspector,
@@ -5613,7 +5637,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     });
     if (!prepared) {
       return boundaryAssistResult(boundaryAssistBackNotice(
-        "Job mapping paused. No model request was made and active authority is unchanged.",
+        "Job mapping paused before Read drafting. Active authority is unchanged; the saved job can be resumed.",
       ));
     }
     context = await loadBoundaryReviewContext(input.projectRoot);
@@ -8158,14 +8182,99 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let policyAttemptKey: string | undefined;
   let policyReport: { key: string; report: PolicyCoverage } | undefined;
   let policyFailure: string | undefined;
+  const currentPolicyCoverageDraft = () => policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
+    reviewedVersionFields, policySources: authoringConversation?.policySources,
+    ...(modelAssistSession ? { authoringSession: { provider: modelAssistSession.provider, model: modelAssistSession.model } } : {}),
+    ...(actionInspection ? { source: { inspection: actionInspection, generationLock: context.lock } } : {}),
+    actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft });
+  const sourceCounterReviewAttempts = new Map<string, { failure?: string }>();
+  let reportedSourceCounterFailure: string | undefined;
+  const reviewCompiledSourceCounters = async () => {
+    const authority = semanticActionAuthorityDraft, inspection = actionInspection, reviewedContext = context;
+    if (!authority || !inspection) return;
+    const checkpoint = await readBoundaryAuthoringResumeState(input.projectRoot, boundaryAuthoringResumeBinding(reviewedContext.bundle));
+    const durableReviews = (checkpoint.status === "ready" || checkpoint.status === "stale")
+      && checkpoint.value.binding.boundary_name === reviewedContext.candidate.pack.name ? boundaryAuthoringVersionReviews(checkpoint.value) : [];
+    reviewedVersionFields = reviewedVersionFields.filter(review => durableReviews.some(saved => canonicalJsonDigest(saved) === canonicalJsonDigest(review)));
+    const assertCurrent = async () => {
+      assertRunning();
+      await reloadReadReviewForModelRevision(input.projectRoot, reviewedContext, authority);
+    };
+    await assertCurrent();
+    const readDigest = explorationBoundaryCandidateDigest(reviewedContext.candidate);
+    let pending = false;
+    for (const rule of authority.authority.rules) {
+      const effects = [rule.effect_envelope, ...(rule.effect_envelope.atomic_updates ?? [])];
+      for (const effect of effects) {
+        if (effect.operation !== "update" || effect.version_advance?.strategy !== "integer_increment") continue;
+        const evidenceForTarget = () => {
+          const current = currentPolicyCoverageDraft().runner_evidence.actions[rule.rule.outcome]?.effect;
+          return current && [current, ...(current.atomic_updates ?? [])].find(entry => entry.target_resource === effect.target_resource
+            && entry.target_binding === effect.target_binding)?.source_counter_maintenance;
+        };
+        if (evidenceForTarget()) continue;
+        const key = canonicalJsonDigest({ read: readDigest, authority: authority.digest,
+          resource: effect.target_resource, field: effect.version_advance.column });
+        const attempted = sourceCounterReviewAttempts.get(key);
+        if (attempted?.failure) throw new Error(attempted.failure);
+        if (attempted) { pending = true; continue; }
+        const attempt: { failure?: string } = {};
+        sourceCounterReviewAttempts.set(key, attempt);
+        try {
+          const prepared = await reviewActionVersionField({ resource: effect.target_resource, field: effect.version_advance.column,
+            context: { readBoundary: reviewedContext.candidate, readBoundaryDigest: readDigest,
+              builtCatalog: buildActionRuleAuthoringCatalog({ boundary: reviewedContext.candidate, inspection, retainedCatalog: authority.authority.catalog }) },
+            inspection, generationLock: reviewedContext.lock, session: input.session, assertCurrent,
+            previousReview: reviewedVersionFields.find(review => review.resource === effect.target_resource),
+          });
+          if (!prepared) { pending = true; continue; }
+          const previousReviews = reviewedVersionFields, previousResume = activeResume;
+          try {
+            reviewedVersionFields = [...reviewedVersionFields.filter(review => review.resource !== prepared.review.resource), prepared.review];
+            // The exact compiled target must accept the proof without remapping
+            // its catalog or regenerating any business rule.
+            if (!evidenceForTarget()) throw new Error("ACTION_COUNTER_REVIEW_STALE: The compiled update no longer matches the reviewed counter. Revalidate the saved Action; no rule changed.");
+            await assertCurrent();
+            await persistAuthoringResume("authority_review");
+            if (resumePersistenceBlocked || !activeResume) throw checkpointSaveFailure("The source counter review");
+            const saved = await readBoundaryAuthoringResumeState(input.projectRoot, activeResume.binding);
+            if (saved.status !== "ready" || saved.value.revision_digest !== activeResume.revision_digest
+              || !boundaryAuthoringVersionReviews(saved.value).some(review => canonicalJsonDigest(review) === canonicalJsonDigest(prepared.review))) {
+              throw checkpointSaveFailure("The source counter review acknowledgement");
+            }
+          } catch (error) {
+            reviewedVersionFields = previousReviews;
+            activeResume = previousResume;
+            throw error;
+          }
+          await assertCurrent();
+        } catch (error) {
+          assertRunning(error);
+          attempt.failure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+          throw new Error(attempt.failure);
+        }
+      }
+    }
+    await assertCurrent();
+    if (pending) throw new Error("ACTION_COUNTER_REVIEW_PENDING: The source owner has not confirmed every updated counter. The exact rules are retained; resume this job when the maintenance commitment can be reviewed.");
+  };
   const ensurePolicyCoverage = async (force = false) => {
     const sources = authoringConversation?.policySources;
     const source = activePolicySource(sources);
     if (!source || !input.authoringChat || !modelAssistSession) return undefined;
-    const draftRecord = policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
-      reviewedVersionFields, policySources: sources,
-      ...(actionInspection ? { source: { inspection: actionInspection, generationLock: context.lock } } : {}),
-      actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft });
+    try { await reviewCompiledSourceCounters(); }
+    catch (error) {
+      assertRunning(error);
+      policyFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+      policyReport = undefined;
+      if (reportedSourceCounterFailure !== policyFailure) {
+        reportedSourceCounterFailure = policyFailure;
+        input.authoringChat.rememberDetails("SOURCE COUNTER REVIEW PENDING", [policyFailure,
+          "The saved rules and active authority are unchanged. Reopen this job after resolving the source review or checkpoint prerequisite."]);
+      }
+      return undefined;
+    }
+    const draftRecord = currentPolicyCoverageDraft();
     const authorityDigest = canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
       action: semanticActionAuthorityDraft?.digest ?? null });
     const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources?.operator_messages ?? [],
@@ -9026,10 +9135,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       confirmedFieldMeanings: (digest) => confirmedReadFieldMeanings(authoringConversation?.policySources, digest),
       privacyEvidence: (boundary) => readPrivacyReview({ boundary, session: authoringConversation?.policySources,
         ...(policyReport && policyReport.key === policyAttemptKey ? { coverage: { report: policyReport.report,
-          draft: policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
-            reviewedVersionFields, policySources: authoringConversation?.policySources,
-            ...(actionInspection ? { source: { inspection: actionInspection, generationLock: context.lock } } : {}),
-            actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft }) } } : {}),
+          draft: currentPolicyCoverageDraft() } } : {}),
       }),
       prepareExecution: prepareRequestedExecution,
       ...(reviseReadWithModel ? { reviseWithModel: reviseReadWithModel,
@@ -9530,6 +9636,14 @@ async function prepareJobMappingCatalog(input: {
     }
   }
   const total = plan.direct_resources.length + plan.derived_resources.length + acceptedShared.length;
+  if (!total) {
+    const lines = ["No resource has all the reviewed identity and access prerequisites needed for Read drafting.",
+      ...plan.manual_resources.map(resource => `${resource.resource_id}: ${resource.reason}`),
+      "Review the missing source mappings, then resume this same saved job. Runner has not requested a Read draft or activated access."];
+    if (input.write) await input.write("SOURCE MAPPING NEEDS REVIEW", lines, "warning");
+    else process.stdout.write(["", "SOURCE MAPPING NEEDS REVIEW", ...lines, ""].join("\n"));
+    return false;
+  }
   const limitsChange = plan.current_limits.max_derived_scope_hops
       !== plan.proposed_limits.max_derived_scope_hops
     || plan.current_limits.max_analysis_relationship_hops

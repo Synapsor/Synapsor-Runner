@@ -14,6 +14,31 @@ import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
 import { parseReviewedActionVersionFields, type ReviewedActionVersionField } from "./action-rule-authoring-checkpoint.js";
 import { prepareActionVersionField } from "./action-rule-version-review.js";
 import type { DerivedEffectEnvelopeSpecV1 } from "@synapsor/spec";
+import type { AskProvider } from "./model-ask.js";
+
+function inspectedReaderPosture(read: ExplorationBoundaryDraft, source?: PolicySourceInspection) {
+  if (!source) return null;
+  const { inspection, generationLock } = source;
+  const schemaFingerprint = schemaFingerprintForInspection(inspection), roleFingerprint = rolePostureFingerprint(inspection);
+  if (canonicalJsonDigest(generationLock) !== read.generation_lock_fingerprint
+    || generationLock.engine !== inspection.engine || generationLock.schema_fingerprint !== schemaFingerprint
+    || generationLock.role_posture_fingerprint !== roleFingerprint || read.role_posture_fingerprint !== roleFingerprint) {
+    return null;
+  }
+  const role = inspection.role_posture;
+  const nonOwner = role?.verified === true && role.owned_relations.length === 0 && inspection.tables.length > 0
+    && inspection.tables.every(table => table.role_posture?.current_role_is_owner === false
+      && table.role_posture.current_role_can_assume_owner === false);
+  return { source: read.source, engine: inspection.engine,
+    generation_lock_fingerprint: read.generation_lock_fingerprint, schema_fingerprint: schemaFingerprint, role_posture_fingerprint: roleFingerprint,
+    role_verified: role?.verified === true,
+    read_only: role?.verified === true && role.read_only && role.writable_relations.length === 0,
+    non_owner: nonOwner,
+    non_bypass: role?.verified === true && role.superuser === false && role.bypass_rls === false && nonOwner,
+    live_connection_rechecked: false, writer_separation_verified: false, production_integration_verified: false,
+    meaning: "Current generation-lock-bound metadata establishes only the inspected onboarding reader's role posture, not RLS or additional business predicates. It is not a new live credential check and reveals no credentials. When these exact facts satisfy the requested reader posture, do not ask to provision it again. This does not verify a separate writer, client connection, authenticated identity, grants after inspection, production integration or execution. Compare record scope separately against read_access database_scope_proof.",
+  };
+}
 
 function inspectedReadScopes(read: ExplorationBoundaryDraft, source?: PolicySourceInspection) {
   type Mapping = NonNullable<ReturnType<typeof inspectedPostgresScopeMapping>>;
@@ -60,6 +85,8 @@ export function policyCoverageDraft(input: {
   /** Host-confirmed operating commitments, never model assertions or proof of external enforcement. */
   reviewedVersionFields?: readonly ReviewedActionVersionField[];
   policySources?: PolicySourceSession;
+  /** Current host-selected authoring session, not saved policy prose or a runtime client. */
+  authoringSession?: { provider: AskProvider; model: string };
 }) {
   const policySource = activePolicySource(input.policySources);
   const versionReviews = input.reviewedVersionFields === undefined ? [] : parseReviewedActionVersionFields(input.reviewedVersionFields, 32);
@@ -85,6 +112,7 @@ export function policyCoverageDraft(input: {
         ...(rule ? { read_dependency: { name: rule.read_boundary_name, digest: rule.read_boundary_digest } } : {}) };
     });
   const readScopes = inspectedReadScopes(input.read, input.source);
+  const readerPosture = inspectedReaderPosture(input.read, input.source);
   const readDigest = explorationBoundaryCandidateDigest(input.read);
   const sourceCounterMaintenance = (action: typeof actions[number], effect: Pick<DerivedEffectEnvelopeSpecV1,
     "operation" | "target_resource" | "target_binding" | "primary_key" | "tenant_key" | "principal_scope_key" | "organization_scope" | "conflict_key" | "version_advance">,
@@ -252,6 +280,16 @@ export function policyCoverageDraft(input: {
         },
       }])),
       runtime_contract: {
+        authoring_provider: input.authoringSession ? {
+          provider: input.authoringSession.provider, model: input.authoringSession.model, purpose: "disabled_policy_authoring",
+          provider_response_verified: false, runtime_client_verified: false, authority_granted: false,
+          meaning: "The host selected this provider and model for the current authoring session, not a runtime MCP client. This selection does not prove a successful provider response or the semantic correctness of its drafts. Compare an authoring-model requirement here, separately from later managed runtime-client installation and connection. It grants no data, approval, activation or execution authority.",
+        } : null,
+        onboarding_reader: readerPosture,
+        trusted_time: {
+          binding: "transaction_time", origin: "runner_supplied_evaluation_time", database_clock_verified: false, model_supplied: false,
+          meaning: "Action predicates receive a trusted timestamp from Runner's proposal evaluation or execution re-verification context. The binding name does not establish database-server clock origin, a SQL CURRENT_TIMESTAMP expression or equality to a database transaction-start timestamp. A policy requiring that particular clock origin remains unresolved; do not silently replace it with trusted current UTC evaluation time. This describes only the existing time binding, not a new predicate or execution capability.",
+        },
         authoring_lifecycle: {
           current_policy_snapshot: policySource ? { digest: policySource.digest, version: policySource.version,
             bytes: policySource.bytes, lines: policySource.lines } : null,

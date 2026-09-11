@@ -118,6 +118,8 @@ import { policyReviewReadiness } from "./authoring-review-readiness.js";
 import { boundaryCommand } from "./guided-start.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { initializeGuidedProject, readGuidedOnboardingState } from "./guided-project.js";
+import { initializeFreshGovernedAuthoring } from "./control-policy-fresh-authoring.js";
+import { reviewGuidedScopeAdmission } from "./guided-scope-admission.js";
 import {
   compileExplorePlan,
   prepareScopedExplore,
@@ -139,6 +141,191 @@ describe("boundary operator-plane CLI", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["editorial", "manuscripts", "publisher_id", "editor_id", "app.publisher", "app.editor", "text"],
+    ["reserve_ops", "claims", "insurer_id", "adjuster_id", "app.insurer_id", "app.adjuster_id", "uuid"],
+    ["q7", "r2", "z9", "a4", "ctx.z", "ctx.a", "uuid"],
+  ].flatMap(row => (row[0] === "q7" ? ["accepted", "grouped", "ambiguous", "swapped", "declined", "stale", "unavailable", "stale_before", "unsupported", "resume", "resume_after_mapping"] : ["accepted"])
+    .map(mode => [...row, mode])))("reviews pre-admission identity mappings in guided chat (%s, %s, %s, %s, %s, %s, %s, %s)", async (schema, tableName, tenant, principal, tenantSetting, principalSetting, dataType, mode) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-admission-"));
+    const inspection = boundaryInspection();
+    const table = inspection.tables[0]!;
+    inspection.schemas = [schema!];
+    table.schema = schema!; table.name = tableName!;
+    const identityColumn = { ...table.columns[1]!, suggestions: { ...table.columns[1]!.suggestions, tenant: false } };
+    table.columns = [table.columns[0]!, { ...identityColumn, name: tenant!, data_type: dataType! },
+      { ...identityColumn, name: principal!, data_type: dataType! }, ...table.columns.slice(2)];
+    table.suggestions.tenant_columns = [];
+    table.suggestions.default_visible_columns = ["status", "scheduled_at"];
+    table.role_posture!.row_security_forced = true;
+    table.role_posture!.row_security_applicable_policies = ["own"];
+    table.row_level_security_policies = [{ name: "own", command: "SELECT", permissive: true, roles: ["app_reader"],
+      using_expression: `${tenant} = NULLIF(current_setting('${tenantSetting}', true), '')${dataType === "uuid" ? "::uuid" : ""} AND ${principal} = NULLIF(current_setting('${principalSetting}', true), '')${dataType === "uuid" ? "::uuid" : ""}` }];
+    if (mode === "unsupported") table.row_level_security_policies[0]!.using_expression += " OR true";
+    if (mode === "grouped") inspection.tables.push({ ...structuredClone(table), name: "r3" });
+    const build = buildAutoBoundary({ inspection, project: { root, package_manager: "npm", frameworks: ["node"],
+      schema_inputs: [], database_env_names: ["DATABASE_URL"] }, sourceEnv: "DATABASE_URL", inspectedSchema: schema });
+    expect(build.exploration_boundary.pack.resources).toHaveLength(0);
+    const events: string[] = [];
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => { output.push(String(chunk)); return true; });
+    let interpretationCount = 0;
+    const interpreter = vi.fn(async (input: { options: Array<{ id: string; label: string }> }) => {
+      events.push("interpret");
+      if (mode === "ambiguous" && interpretationCount++ === 0) return { state: "clarification" as const,
+        question: "Which is the organization, and which is the signed-in person?", correction_used: false };
+      const option = input.options.find(option => option.label.includes(`organization: ${mode === "swapped" ? principal : tenant} `))!;
+      return { state: "resolved" as const, option_id: option.id, correction_used: false };
+    });
+    const mapper = vi.fn(async (input: Parameters<typeof generateModelReadWorkload>[0]) => {
+      events.push("map");
+      const resource = input.generatedBoundary.pack.resources.find(resource => resource.id === `${schema}.${tableName}`)!;
+      expect(resource).toMatchObject({ tenant_key: tenant, principal_key: principal,
+        rls_session: { tenant_setting: tenantSetting, principal_setting: principalSetting } });
+      expect(resource.selectable_fields).not.toContain(tenant);
+      expect(resource.selectable_fields).not.toContain(principal);
+      const cards = buildReadWorkloadPlanCards(input.generatedBoundary).slice(0, 1);
+      const workload = readWorkloadFromPlanCards({ cards, selectedIds: cards.map(card => card.id) });
+      return { workload, analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
+        provider: input.provider, model: input.model, authority_granted: false as const, source_query_executed: false as const,
+        explore_budget_consumed: false as const, source_database_changed: false as const };
+    });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async (...args) => { output.push(JSON.stringify(args)); return undefined; }, editFieldTiers: async () => undefined,
+      promptText: async prompt => { output.push(prompt); return prompt.includes("What job") || prompt.includes("Which is the organization")
+        ? `Read only my records. ${tenant} identifies my organization; ${principal} identifies the authenticated person.` : undefined; },
+      chooseOption: async (title, _choices, config) => { output.push(JSON.stringify({ title, config })); return title === "START BOUNDARY DRAFTING" || title === "MAP THE JOB TO REVIEWED STRUCTURE" ? "model"
+        : title === "MODEL FOR BOUNDARY DRAFTING" ? "current" : title === "ACTIVATE READ BOUNDARY" ? "finish"
+        : title === "RESUME BOUNDARY DRAFTING" ? "resume" : undefined; },
+      confirm: async prompt => {
+        output.push(prompt);
+        if (prompt.includes("Save these organization/person mappings")) {
+          events.push("review");
+          expect((await loadBoundaryReviewContext(root)).candidate.pack.resources).toHaveLength(0);
+          if (mode === "stale") table.row_level_security_policies![0]!.using_expression += " OR true";
+          if (mode === "unavailable") table.role_posture!.row_security_effective_for_current_role = false;
+          if (mode === "declined" || mode === "swapped" || (mode?.startsWith("resume") && events.filter(event => event === "review").length === 1)) return false;
+          return true;
+        }
+        return prompt.includes("reviewed structural context");
+      },
+      confirmActivation: async () => false, confirmReviewedDisabled: async () => true,
+    };
+    try {
+      const guided = await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.8.0" });
+      const config = await loadRuntimeConfigFromFile(guided.config_path);
+      await initializeFreshGovernedAuthoring({ projectRoot: root, build, config, storePath: guided.store_path, actor: "local_operator" });
+      const before = await readProjectReadAuthoring(root);
+      if (mode === "stale_before") table.role_posture!.row_security_effective_for_current_role = false;
+      const run = () => boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection, session, undefined, {
+        startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-5.6-terra", apiKey: "test-only" },
+        modelPrincipalScopeInterpreter: interpreter, modelReadWorkloadGenerator: mapper,
+        modelAuthoringNarrator: async input => input.nextQuestion ?? "Review the disabled draft.",
+        boundaryAuthoringChatFactory: () => {
+          const chat = testBoundaryAuthoringChat(session);
+          chat.rememberDetails = (...args) => { output.push(JSON.stringify(args)); };
+          chat.runner = (...args) => { output.push(JSON.stringify(args)); };
+          chat.checkpoint = chat.runner;
+          chat.streamCheckpoint = async (...args) => { output.push(JSON.stringify(args)); };
+          return chat;
+        },
+      });
+      await run();
+      if (["declined", "swapped", "stale", "unavailable", "stale_before", "unsupported", "resume", "resume_after_mapping"].includes(mode!)) {
+        expect(mapper).not.toHaveBeenCalled();
+        expect((await readProjectReadAuthoring(root))?.authoring).toEqual(before?.authoring);
+        await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active");
+        if (!mode?.startsWith("resume")) return;
+        if (mode === "resume_after_mapping") {
+          const preview = await prepareBoundaryReviewMutationBatch(root, [{ resource_id: `${schema}.${tableName}`,
+            tenant_key: tenant, principal_key: principal, actor: "local_operator", reason: "Exact identity review saved before interruption." }], async () => inspection);
+          await boundaryReviewMutations.commitBoundaryReviewMutationBatch(root, preview);
+          expect((await loadBoundaryReviewContext(root)).candidate.pack.resources).toHaveLength(0);
+          expect(() => reviewExplorationBoundaryCandidate(preview.build.exploration_boundary, preview.candidate))
+            .toThrow("retain at least one reviewed resource");
+        }
+        await run();
+      }
+      expect(events, output.join("")).toEqual(mode === "ambiguous" ? ["interpret", "interpret", "review", "map"]
+        : mode === "resume" ? ["interpret", "review", "interpret", "review", "map"] : ["interpret", "review", "map"]);
+      expect(mapper).toHaveBeenCalledOnce();
+      const context = await loadBoundaryReviewContext(root);
+      expect(context.progress?.review_overrides.resources[`${schema}.${tableName}`]).toMatchObject({
+        tenant_key: { value: tenant }, principal_key: { value: principal },
+      });
+      if (mode === "grouped") expect(context.progress?.review_overrides.resources[`${schema}.r3`]).toMatchObject({
+        tenant_key: { value: tenant }, principal_key: { value: principal },
+      });
+      await expect(loadActivatedExplorationBoundaries(root)).rejects.toThrow("No exploration boundary is active");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(["accepted", "declined", "concurrent_review", "cancelled"])("preserves private fields, active authority and pending work during scope admission (%s)", async mode => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-admission-preservation-"));
+    const inspection = boundaryInspection();
+    const opaque = structuredClone(inspection.tables[0]!);
+    opaque.name = "r8";
+    opaque.columns[1] = { ...opaque.columns[1]!, name: "q2", suggestions: { ...opaque.columns[1]!.suggestions, tenant: false } };
+    opaque.columns.push({ ...opaque.columns[1]!, name: "q1" });
+    opaque.suggestions.tenant_columns = [];
+    opaque.role_posture!.row_security_forced = true;
+    opaque.role_posture!.row_security_applicable_policies = ["own"];
+    opaque.row_level_security_policies = [{ name: "own", command: "SELECT", roles: ["app_reader"], permissive: true,
+      using_expression: "q2 = current_setting('ctx.k2', true)::uuid AND q1 = current_setting('ctx.k1', true)::uuid" }];
+    inspection.tables.push(opaque);
+    const build = buildAutoBoundary({ inspection, project: { root, package_manager: "npm", frameworks: ["node"],
+      schema_inputs: [], database_env_names: ["DATABASE_URL"] }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
+    const store = new ProposalStore(path.join(root, "pending.db"));
+    const controller = new AbortController();
+    try {
+      store.createProposal({ schema_version: "synapsor.change-set.v1", proposal_id: "wrp_existing", proposal_version: 1,
+        action: "existing.change", mode: "review_required", principal: { id: "original-person", source: "trusted_session" },
+        scope: { tenant_id: "original-org", business_object: "record", object_id: "original-record" },
+        source: { kind: "external_postgres", source_id: "source", schema: "public", table: "service_visits", primary_key: { column: "id", value: "original-record" } },
+        before: { status: "scheduled" }, patch: { status: "completed" }, after: { status: "completed" },
+        guards: { tenant: { column: "tenant_id", value: "original-org" }, allowed_columns: ["status"], expected_version: { column: "version", value: 1 } },
+        evidence: { bundle_id: "ev_existing", query_fingerprint: `sha256:${"a".repeat(64)}`, items: [] },
+        approval: { status: "pending", required_role: "reviewer" }, writeback: { status: "not_applied", mode: "trusted_worker_required" },
+        source_database_mutated: false, integrity: { proposal_hash: `sha256:${"b".repeat(64)}` }, created_at: "2026-09-11T00:00:00Z" });
+      const pending = store.getProposal("wrp_existing");
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const privacy = await prepareBoundaryReviewMutationBatch(root, [{ resource_id: "public.service_visits", actor: "test-reviewer",
+        reason: "Keep existing private verification fields unavailable to model analysis.", withhold_from_model_fields: ["status"], private_model_fields: ["status"] }], async () => inspection);
+      await boundaryReviewMutations.commitBoundaryReviewMutationBatch(root, privacy);
+      const before = await loadBoundaryReviewContext(root);
+      await activateExplorationBoundary({ projectRoot: root, candidate: before.candidate, expectedDigest: before.bundle.candidate_digest,
+        actor: "test-reviewer", confirmation: `ACTIVATE ${before.bundle.candidate_digest}`, confirmedDecisions: before.candidate.unresolved_decisions, currentInspection: inspection });
+      const active = await loadActivatedExplorationBoundaries(root);
+      const session: BoundaryReviewInteractiveSession = { chooseResource: async () => undefined, editFieldTiers: async () => undefined,
+        promptText: async () => undefined, confirmActivation: async () => false,
+        confirm: async () => {
+          if (mode === "concurrent_review") {
+            const changed = await prepareBoundaryReviewMutationBatch(root, [{ resource_id: "public.service_visits", actor: "other-reviewer",
+              reason: "Another operator changes a disclosure limit.", max_queries_per_session: 42 }], async () => inspection);
+            await boundaryReviewMutations.commitBoundaryReviewMutationBatch(root, changed);
+          }
+          if (mode === "cancelled") controller.abort();
+          return mode !== "declined";
+        } };
+      const operation = reviewGuidedScopeAdmission({ projectRoot: root,
+        inspectionInput: { engine: "postgres", databaseUrlEnv: "DATABASE_URL", schema: "public" }, schemaInspector: async () => inspection,
+        session, model: { provider: "openai", model: "gpt-5.6-terra", apiKey: "test" },
+        interpreter: async input => ({ state: "resolved", correction_used: false,
+          option_id: input.options.find(option => option.label.includes("organization: q2 "))!.id }),
+        actor: "test-reviewer", egressAcknowledged: true, jobIntent: "q2 is the organization; q1 is the person.", signal: controller.signal });
+      if (mode === "concurrent_review" || mode === "cancelled") await expect(operation).rejects.toThrow();
+      else expect(await operation).toMatchObject({ changed: mode === "accepted", ready: mode === "accepted" });
+      const after = await loadBoundaryReviewContext(root);
+      expect(after.candidate.pack.resources).toEqual(before.candidate.pack.resources);
+      expect(after.candidate.pack.resources.some(resource => resource.id === "public.r8")).toBe(false);
+      expect(after.progress?.review_overrides.resources["public.r8"]?.tenant_key?.value).toBe(mode === "accepted" ? "q2" : undefined);
+      if (mode === "concurrent_review") expect(after.candidate.budgets.max_queries_per_session).toBe(42);
+      expect(await loadActivatedExplorationBoundaries(root)).toEqual(active);
+      expect(store.getProposal("wrp_existing")).toEqual(pending);
+      expect(inspection.tables[1]).toEqual(opaque);
+    } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
   });
 
   it.each(["persist", "missing_refs", "stale_refs", "failed_save", "noop_save", "unrelated_passage", "changed_requirement", "stale_proof"] as const)("persists scoped Read decisions through the actual host callback across commands (%s)", async mode => {
@@ -4443,6 +4630,7 @@ describe("boundary operator-plane CLI", () => {
     const rename = vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
       if (failSave && String(to) === resumeFile) throw Object.assign(new Error("COUNTER_REVIEW_TEST_SAVE_DENIED"), { code: "EACCES" });
       await actualRename(from, to);
+      if (posture === "cancelled_checkpoint" && runNumber === 1 && confirmationCount === 2 && String(to) === resumeFile) cancellation.abort();
     });
     const chats: BoundaryAuthoringChat[] = [], coverage: Array<{ records: unknown[]; saved: unknown[]; run: number }> = [];
     const callbackErrors: string[] = [];
@@ -4567,32 +4755,33 @@ describe("boundary operator-plane CLI", () => {
         expect((await loadPolicySources(root, source.id))?.snapshots).toEqual(source.snapshots);
       };
       await expect(run()).resolves.toBe(0);
-      expect(generator, JSON.stringify(chats.flatMap(chat => vi.mocked(chat.rememberDetails).mock.calls))).toHaveBeenCalledOnce();
+      expect(generator, JSON.stringify(chats.flatMap(chat => vi.mocked(chat.rememberDetails).mock.calls))).not.toHaveBeenCalled();
       expect(confirmationCount).toBe(2);
       await assertUnchanged();
       const paused = await savedResume();
       if (posture === "declined") {
         expect(paused.reviewed_version_fields).toBeUndefined();
-        expect(coverage.every(entry => entry.records.every(record => record === null))).toBe(true);
+        expect(coverage).toHaveLength(0);
       } else if (posture === "save_failure") {
-        expect(callbackErrors).toEqual([expect.stringContaining("ACTION_CHECKPOINT_NOT_SAVED: The changed-record protection review")]);
-        expect(callbackErrors[0]).toContain("COUNTER_REVIEW_TEST_SAVE_DENIED");
+        expect(callbackErrors).toEqual([]);
+        const diagnostics = JSON.stringify(chats.flatMap(chat => vi.mocked(chat.rememberDetails).mock.calls));
+        expect(diagnostics).toContain("ACTION_CHECKPOINT_NOT_SAVED: The source counter review");
+        expect(diagnostics).toContain("COUNTER_REVIEW_TEST_SAVE_DENIED");
         expect(paused.reviewed_version_fields).toHaveLength(1);
-        expect(paused.pending_action_revision).toBeDefined();
-        expect(coverage.at(-1)!.records[0]).not.toBeNull();
-        expect(coverage.at(-1)!.records[1]).toBeNull();
+        expect(paused.pending_action_revision).toBeUndefined();
+        expect(coverage).toHaveLength(0);
         for (const entry of coverage) for (const record of entry.records.filter(record => record !== null)) {
           const { resource, field, maintenance, proof_digest } = record as Record<string, unknown>;
           expect(entry.saved).toContainEqual({ resource, field, maintenance, proof_digest });
         }
       } else {
         expect(paused.reviewed_version_fields).toHaveLength(2);
-        expect(paused.pending_action_revision === undefined).toBe(posture === "confirmed_noop");
+        expect(paused.pending_action_revision).toBeUndefined();
         if (posture === "confirmed_noop") expect(coverage.at(-1)!.records.every(record => record !== null)).toBe(true);
         cancellation = new AbortController(); runNumber = 2;
         await expect(run()).resolves.toBe(0);
         expect(confirmationCount).toBe(2);
-        expect(generator).toHaveBeenCalledTimes(posture === "cancelled_checkpoint" ? 2 : 1);
+        expect(generator).not.toHaveBeenCalled();
         const resumed = coverage.filter(entry => entry.run === 2);
         expect(resumed.length).toBeGreaterThan(0);
         for (const record of resumed.at(-1)!.records) expect(record).toMatchObject({ status: "owner_confirmed_operating_prerequisite",

@@ -1245,7 +1245,18 @@ export async function prepareBoundaryReviewMutationBatch(
     candidate = { ...candidate, read_prerequisite: structuredClone(privateCondition) };
     assertReadPrerequisiteRetained(state.candidate, candidate);
   }
-  const reviewed = reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
+  // Identity review can precede resource admission. Retain an empty disabled
+  // candidate only for scope-only edits; activation still requires full validation.
+  const scopeOnlyPreparation = candidate.pack.resources.length === 0
+    && state.candidate.pack.resources.length === 0
+    && !privateCondition
+    && requests.every(request => request.include !== true && canStageIncompleteScopeResolution(request));
+  if (scopeOnlyPreparation && !state.authoring) {
+    throw new Error("Identity-only review requires the saved authoring store. Migrate this legacy file-based review before continuing; nothing was saved.");
+  }
+  const reviewed = scopeOnlyPreparation
+    ? { candidate, digest: explorationBoundaryCandidateDigest(candidate) }
+    : reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
   // Every request must survive later resource rebuilds and final normalization.
   // The generated baseline already includes the whole batch, so intermediate
   // candidates cannot serve as the "before" side of each resource's diff.

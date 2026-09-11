@@ -27,6 +27,20 @@ regressions, not completion of unfamiliar-database qualification.
 
 ## Gate 2 Observation: 2026-09-11
 
+Subsequent bounded repair authorization starts at `4515cbc`; the observations
+below remain historical frozen-artifact results. Shared guided scope admission
+now uses the existing closed inspected policy proof, explicit business-role
+clarification/review and atomic disabled metadata records before Read mapping.
+It does not extend table, field or setting-name allowlists. A renamed layout and
+both known identity representations pass focused orchestration regressions;
+public fresh/recovery journeys on a newly frozen artifact remain required.
+The insurance completeness diagnostic is now grounded in the actual host
+rejection and its prepared catalog, not the model's explanation. The unchanged
+rule compiles via the already-supported private-source path on a restored copy;
+this is not yet a public recovery pass. Editorial provider/reader annotations
+and explicit clock provenance correct context omissions without claiming a
+database-origin clock or waiving source-counter confirmation.
+
 The separately authorized Gate 2 run froze the **entire installation**, local
 pre-release Spec, dependencies and lock before selecting editorial release and
 insurance reserve policies. Source remained `d018290`; installed-tree SHA-256
