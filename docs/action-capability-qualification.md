@@ -10,6 +10,12 @@ authorized the bounded Gate 2 qualification below. This is not a
 release-readiness or unaided-onboarding claim. Pinned R12 and original acceptance
 projects are unchanged.
 
+**Gate 2 stopped with a FAILED / INCOMPLETE qualification result.** Both fresh
+model-guided cases failed Read mapping. Assisted recovery did not complete either
+operational journey. No Gate 2 execution, receipt, concurrency or live rule-edit
+pass is claimed. The result below distinguishes product failures from tester
+cancellation and untested work. Gate 1 acceptance remains unchanged.
+
 Historical public student evidence was based on `a4a720af8df051125ac26e4875eafacbcadce4f9`.
 Its last completed public test used CLI SHA-256
 `31616b6d832e6cffd1cf1c115cffea3e15506d958b48d3b5a6d2b1c1d62dee65`.
@@ -21,9 +27,9 @@ Those earlier executables are not the current Gate 1 artifact.
 
 ### Current Checkpoint
 
-#### Gate 2: Prerequisites And Predeclared Envelope
+#### Gate 2: Frozen Artifact And Public Qualification
 
-Gate 2 authorized 2026-09-11; IN PROGRESS, no public pass claimed. Starting
+Gate 2 authorized 2026-09-11; stopped with the report below, no public pass claimed. Starting
 commit `b955c836b70553347785a8050dbf26493144375b`, clean tree. Product source
 remains `d018290`. Before selecting any new cases, verify actual authoring
 provider/client calls and freeze the complete installed Runner, local pre-release
@@ -49,7 +55,7 @@ version maintenance, external side effects and real production session integrati
 No envelope changes to turn a failed selected case into a pass. No saved authority,
 injected draft JSON or internal activation in the public setup journey.
 
-Two previously unused policies/layouts will be selected only after freezing;
+Two previously unused policies/layouts were selected only after freezing;
 one must be structurally different. Test real four-tool execution, receipts and
 independent readback, refusals, human review, private values and analytical uses,
 concurrency, same-client edits/add/remove and pending-request behavior. Record all
@@ -96,11 +102,182 @@ Cases selected **after** freezing, 2026-09-11 19:32 UTC:
   3 per trusted insurer / 24h, plus an explicit routine ceiling.
 
 These specific policies/layouts were absent from the prior qualification/tracker
-search. Each original policy, schema and fixture must be fixed and hashed before
-its first public provider run; later policy edits are separately reviewed test
-steps. Both cases remain unqualified until their actual evidence is collected.
+search. Each original policy, schema and fixture was fixed and hashed before
+its first public provider run. The planned later policy edits were not reached.
+Both cases remain unqualified; actual failed/incomplete evidence follows.
 The complete frozen installation is shared read-only by convention and checked
 for drift; each case has an independent disposable database, project and evidence.
+
+##### Gate 2 Results
+
+Product source remained `d018290`; qualification started at `b955c83` and the
+prerequisite/freeze documentation was committed as `2f6e12c`. No product repair,
+fixture narrowing, installed-file change, injected authority or new protocol was
+introduced during this gate. Both agents used the actual public CLI with Terra.
+Claude Opus and MCP connectivity were verified only in the neutral prerequisite
+test, not through either unfinished Runner client journey.
+
+| Check | Editorial Release | Insurance Reserve Adjustment |
+| --- | --- | --- |
+| Original policy/layout frozen before its first provider call | PASS: 19:38:07.106Z | PASS: 19:40:55.715Z |
+| Fresh model-guided setup | FAIL: empty admitted scope/catalog; initial and one retry refused Read clarification | FAIL: same initial and retry refusal |
+| Same-project public scope recovery | ASSISTED: three exact disabled scope/privacy reviews | ASSISTED: two exact disabled scope/privacy reviews |
+| Saved Action | One disabled atomic publication/final-review outcome | Four partial components, zero completed Action revisions |
+| Final recovery result | INCOMPLETE: tester cancelled during streaming policy checks | BLOCKED: final resume could not establish complete child scope for private freezes |
+| Complete privacy/coverage and authority review | NOT COMPLETED | NOT COMPLETED; broad disabled freeze workspace remains a privacy concern |
+| Writer review/application, rescan, execution review and worker | NOT RUN: recovery was cancelled before setup completed | BLOCKED before completed Action |
+| Generated persistent four-tool client and eligible execution | NOT RUN | BLOCKED |
+| Runtime receipts plus effect readback, invalid refusals, human review | NOT RUN | BLOCKED |
+| Raw/analytical privacy, cross-scope and changed-private-fact tests | NOT RUN | BLOCKED |
+| Same/different-target races, rolling limits and duplicate handling | NOT RUN | BLOCKED |
+| Same-client limit edit, add/remove behavior, old pending request after edit | NOT RUN; no edit-time metric available | BLOCKED; no edit-time metric available |
+| Safe pause and persisted work, without activation | PASS, bounded snapshot evidence | PASS, bounded snapshot evidence |
+| Independent backup restore and unchanged source rows | PASS: all 60 rows match original hashed fixture | PASS: all 40 rows match pre-provider baseline |
+
+The last two rows do not prove runtime isolation, effect correctness or operational
+readiness. Both stores have only management active pointers, zero active database
+authority, and zero proposals, approvals, receipts, observed references, query
+audits and worker jobs. Editorial has one current disabled Action outcome (two
+stored revisions of its bundle), not two business outcomes. Insurance has none.
+
+Original policy SHA-256:
+- Editorial: `6c8d8a259f5ae1b8c54425fa784dbcc9af4a34a945c908908a4b4ea16592df2d`.
+- Insurance: `31cf8412c3cde34fa57341762ddb878c427d2363e1c0a53435e40ee3a5607875`.
+
+Original schema SHA-256:
+- Editorial: `9570270ba98be264e6690506a8ce3478bc3eef584b3d7ca37c261a919477ea67`.
+- Insurance: `54e8debabb1493534bcb5153e0b7b208a2fb31623994b6cf411efc055078876a`.
+
+##### Observed Failures And Evidence Limits
+
+Both original attempts displayed `READ_WORKLOAD_CLARIFICATION_REFUSED` with
+`clarification_request.resource must be one exact reviewed catalog resource.`
+Exact public metadata simultaneously showed effective two-identity ENABLE/FORCE
+RLS, but no tenant/principal candidates and no included resources. The operator
+chose separate customers, not whole-organization access. The Read failure details
+still labeled the offered retry as attempt 1 and did not expose the failed raw
+arguments. The reports retain the two visible failures without inventing internal
+correction counts or blaming model capability.
+
+Read-only source inspection identifies the reusable mapping boundary:
+`auto-boundary.ts` uses `rankedScopeInference` / `rlsExpressionSupportsScope`,
+which still gate RLS role suggestions through known column/setting conventions.
+`guided-start.ts::reviewUnresolvedOrganizationScope` offers model review of coded
+ownership but returns the organization mode, not a reviewed existing-column
+mapping. `read-workload-model.ts::parseReadClarificationRequest` can then reject a
+question outside the admitted catalog. The documented public `boundary review
+resource --include --tenant-key ... --principal-key ...` path accepted the same
+existing columns after exact review. This supports a mapping/orchestration defect;
+it does not establish an unsupported enforcement engine. No extra column-name
+allowlist or permission relaxation was added as a qualification workaround.
+
+Insurance's final ordinary resume ran validation before another input prompt.
+The model reported that it could not establish `freezes` as a complete, explicitly
+child-scoped inverse collection. Its final catalog corroborates derived scope via
+the full parent FK, without a direct reviewed child identity. The low-level
+compiler error was not exposed; the model's explanation is not independently
+treated as an engine verdict. All four components were checkpointed, but the
+host's `/details` correctly said the question had not changed a saved Action.
+Calling the draft "prepared" earlier did not make it ready. The intermediate
+disabled freeze workspace also included private fields for selection/analysis;
+it needed narrowing before any activation. This is an unresolved privacy review,
+not an observed data leak. The no-active-freeze requirement was never removed.
+
+Editorial's assisted run did save the atomic Action. After one business answer,
+the tester observed four policy-check episodes (63s, 62s, 55s and 15s), then pressed
+Esc while output was still streaming. **This was a tester stopping decision, not
+a proven loop, provider timeout or final validation refusal.** The saved coverage
+changed between two snapshots, despite matching draft/context digests. Continued
+completion was not tested. Earlier informal descriptions of a "stall" are not
+the qualification verdict. Later runtime work is untested because of cancellation,
+not a demonstrated runtime failure.
+
+The preserved editorial coverage also classifies Terra drafting as unsupported
+against the runtime-client interface and asks for a read-only credential already
+used for inspection. These are concrete interpretation/evidence concerns, not
+established causes of the cancellation. The owner counter-maintenance promise
+was present, but its exact host confirmation had not been reached. A further
+**case-selection caveat** is retained: the original editorial prose specified
+database-origin current UTC, whereas the declared envelope promised trusted
+evaluation time. The exported draft uses `transaction_time`; clock-origin
+equivalence was not established. The wording was not changed after freezing,
+and this caveat does not explain the earlier empty-catalog failure.
+
+##### Friction And Assistance
+
+| Observed measure | Editorial | Insurance |
+| --- | --- | --- |
+| Initial public CLI time | About 191s | 157.869s |
+| Assisted recovery CLI time | About 374s before cancellation | 179.953s plus 102.725s final resume |
+| First launch through final pause | About 14m04s | 11m34.098s |
+| Business answers after initial failure | One manuscript-reference meaning answer | One repeated portfolio-reference definition already in policy |
+| Manual disabled mapping reviews | Three, with typed exact digests | Two, with typed exact digests |
+| Model retry after initial failure | One | One |
+| Additional navigation | Two detail views, manual-editor detour, revalidate, final Esc | Two failure detail views, manual-editor detour, revalidate, two Action details, help, pause and extra resume |
+| Runtime authority confirmations and completed edits | Zero | Zero |
+
+Times include operator inspection/coordination, not provider latency alone. Total
+provider requests/tokens and unseen internal correction counts were not captured.
+Both policies supplied engineering-level column meanings, identity/RLS roles,
+maintenance guarantees and deployment instructions. Fixture creation, attaching
+those documents, reading CLI help, manually enumerating privacy fields, entering
+scope-review flags/digests and diagnostic inspection are assistance, not unaided
+onboarding. Neither result meets the CEO's few-step operational standard.
+
+Harness mistakes are retained separately: initial prerequisite transport misuse;
+one editorial PostgreSQL bootstrap readiness retry and CLI option/output-path
+corrections; one insurance evidence-collector array-decoding correction. None was
+a product repair, a source-policy change, or passing runtime evidence. Public
+revalidation referred to a "changed database" after disabled local mapping edits;
+the database schema and rows were unchanged. Renewed metadata consent is counted
+separately from repeated business meaning.
+
+##### Evidence, Reproduction And Stop
+
+Durable evidence root:
+`/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/gate2-b955c83/`.
+The original policies, schemas, fixture scripts, complete frozen installation,
+launch arguments, raw terminal/timing logs, exact public exports, local checkpoints,
+sanitized diagnostics and final case reports are preserved there. Credentials,
+database dumps and ledgers remain outside Git with owner-only permissions.
+
+- `editorial/RESULT.md` and `sanitized-actual-diagnostics.json` distinguish initial
+  failure from tester cancellation; `launches.jsonl` records public commands.
+- `insurance/RESULT.md`, `public-invocations.jsonl`, final public resource reviews
+  and `final-control-state.json` record the separate collection/privacy blocker.
+- `parent-final-evidence-audit.json` independently rechecks all 7,569 installed
+  entries, Node, lock, package/archive hashes, unchanged original fixture files,
+  read-only control stores and inactive runtime counters.
+- The parent actually restored both editorial dumps and the insurance dump into
+  an isolated no-network disposable PostgreSQL server. All 60 editorial rows
+  matched the original hashed schema/fixture; all 40 insurance rows matched their
+  pre-provider baseline. Restore success is evidence durability, not an MCP effect.
+
+Editorial final dump SHA-256:
+`f78b80f22a184e75ca29f1f3a626da3f662d0d1e7a252f0a881398ea1228d7e2`.
+Insurance dump SHA-256:
+`68bdd187a8abc64d473a809392abfb0948f36538dc40a588503cf4516a27afa9`.
+Read-only installation recheck:
+`node <evidence-root>/freeze-artifact.mjs --verify`.
+Durability/state audit:
+`node <evidence-root>/final-evidence-audit.mjs` (creates/removes only its labeled,
+no-network restore fixture). Public setup replays must restore the owned case
+database first and use the preserved original inputs and recorded commands;
+the stopped project must not be reset or silently replaced by a generated draft.
+
+Final audit at **2026-09-11T20:07:59.177Z** passed. Only the two case containers
+and the parent's restore container were removed. All 57 preexisting container
+IDs remain; both test agents and their sessions are closed, with no owned worker,
+client or qualification process left running. Frozen tree hash is unchanged.
+
+Stopping point: **Gate 1 accepted; Gate 2 fresh onboarding FAILED and full public
+qualification INCOMPLETE.** Remaining work is separately scoped: mapping/admission
+and truthful recovery diagnostics; private collection scope/coverage propagation;
+editorial interpretation/clock-origin questions; then the unrun deployment/runtime
+and edit matrix. No runtime safety conclusion or universal support claim follows
+from checks never reached. A later repair requires its own bounded authorization,
+new frozen artifact and the audit's new unseen evidence, with these cases retained
+as regressions. No automatic expansion or additional repair loop was started.
 
 #### Consolidation Milestone: Gate 1 Only
 

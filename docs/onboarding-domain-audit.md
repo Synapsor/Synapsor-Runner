@@ -25,9 +25,51 @@ regressions, not completion of unfamiliar-database qualification.
 | Ordinary-field naming corrections | Radio intake escalated invalid model quotes directly to users despite existing field explanations. The shared bounded correction now covers invalid claims for ordinary names as well as coded names, retaining exact operator evidence and the complete workload. Explicit genuine ambiguity questions still reach the operator. |
 | Clarification before revision | Renamed library recovery reused a pre-answer concern to open an editor even when the operator explained the existing setting. Generic coverage now includes saved clarification history in its cache key and rechecks non-field decisions before proposing a revision. Exact profile evidence distinguishes local identity modes from unverified production integration; informal environment labels do not change authority. Public recovery remains required. |
 
+## Gate 2 Observation: 2026-09-11
+
+The separately authorized Gate 2 run froze the **entire installation**, local
+pre-release Spec, dependencies and lock before selecting editorial release and
+insurance reserve policies. Source remained `d018290`; installed-tree SHA-256
+`38cc0e0621bf29000f071b7cf6d66c2b26d96da6a79005503d429303de8feab4` stayed unchanged.
+Full results, artifact identities, friction and evidence paths are in
+[Action Capability Qualification](action-capability-qualification.md).
+
+Both fresh public model-guided paths failed before scope mapping completed.
+Inspected exact two-identity RLS did not admit `publisher_id`/`editor_id` or
+`insurer_id`/`adjuster_id` into the initial catalog. The model's Read clarification
+was rejected because no exact admitted resource existed. Existing public
+resource-review flags accepted these columns with manual exact review, confirming
+an authoring admission/recovery gap rather than proving unsupported runtime scope.
+Read-only source inspection still finds column/setting conventions in
+`auto-boundary.ts::rlsExpressionSupportsScope`; the initial organization choice
+does not perform the promised existing-column role review. Future repair belongs
+at that shared boundary, not an additional tutorial name allowlist. No repair was
+made during the frozen qualification.
+
+The layouts are genuinely different: editorial requires atomic two-row release
+with private positive related evidence; insurance updates one child while checking
+complete inverse collections, negative existence and an aggregate budget.
+Insurance's assisted continuation remained blocked on private child collection
+scope and left a broad intermediate disabled Read workspace needing privacy
+review. Its low-level compiler cause was not exposed; model prose is not an
+engine capability verdict. Editorial's assisted continuation saved an atomic
+Action, but the tester cancelled during streaming policy checks. That is incomplete
+evidence, not a proven loop. The editorial policy also specified database-origin
+time beyond the predeclared trusted-clock guarantee; this selection caveat was
+retained, not patched after failure or blamed for the initial mapping defect.
+
+No client-operation, receipt, runtime privacy/concurrency or same-client rule-edit
+claim is established for either case. Both initial failures, manual assistance,
+editorial cancellation, saved state and unrun checks remain visible in the report.
+The source fixtures were restored and independently compared unchanged; all
+authority stayed disabled. Gate 2 is FAILED / INCOMPLETE, not generalization
+success. Any subsequent repair needs a new frozen artifact and new unseen
+qualification evidence; these examples then become regressions.
+
 ## Qualification Rules
 
-Freeze the executable before choosing two previously unused policies/layouts,
+Freeze/hash the complete installed artifact, including local Spec and transitive
+dependencies, before choosing two previously unused policies/layouts,
 including one structurally different layout. A renamed/coded equivalent is an
 additional regression, not a substitute. Use new owned disposable databases and
 the public setup/client path, not saved authority or injected draft JSON.
