@@ -250,6 +250,13 @@ export function policyCoverageDraft(input: {
         },
       }])),
       runtime_contract: {
+        deployment_profile: {
+          configured_profile: input.read.deployment_profile,
+          identity_provider: input.read.trusted_context.provider,
+          local_identity_mode: input.read.deployment_profile !== "production" && input.read.trusted_context.provider === "environment",
+          production_authentication_verified: false,
+          meaning: "Development and staging are local environment-bound identity profiles. The profile name does not establish whether source data is synthetic, where the system is deployed, or whether a production authentication integration was verified. Compare the actual required identity and deployment controls, not an informal environment label. An explicit requirement for a specific profile still needs review; never downgrade production or waive authentication, privacy or execution requirements.",
+        },
         agent_interface: {
           tools: ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"],
           surface: "fixed_four_tools",

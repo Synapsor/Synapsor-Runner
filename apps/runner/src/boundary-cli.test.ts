@@ -6248,7 +6248,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised", "writer_setup", "repair_on_resume", "concurrent_action_read_rebind", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit", "active_rules_recovery", "policy_target_business", "policy_target_mechanical", "policy_target_multi", "policy_target_pause", "policy_target_mixed_read", "policy_target_mixed_read_scope", "policy_target_retained", "policy_target_concurrent", "policy_target_collision"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+  it.each(["proposal_only", "supervised", "writer_setup", "repair_on_resume", "concurrent_action_read_rebind", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit", "active_rules_recovery", "policy_target_business", "policy_target_explained", "policy_target_explained_failure", "policy_target_mechanical", "policy_target_multi", "policy_target_pause", "policy_target_mixed_read", "policy_target_mixed_read_scope", "policy_target_retained", "policy_target_concurrent", "policy_target_collision"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
     const writerSetup = posture === "writer_setup";
     const coverageFailure = posture === "coverage_failure";
     const partialConfirmation = posture === "partial_confirmation";
@@ -7063,7 +7063,8 @@ describe("boundary operator-plane CLI", () => {
         }
         expect(modelActionRuleGenerator).toHaveBeenCalledTimes(3);
         expect(modelReadBoundaryRevisionGenerator).not.toHaveBeenCalled();
-        expect(coverageRequests).toHaveLength(2);
+        expect(coverageRequests).toHaveLength(3); // Original, clarified meaning, then the changed draft.
+        expect(coverageRequests[1]).toContain("Use two maintenance reviewers as required by the attached rules.");
         expect(coverageRequests.every((request) => request.includes("Require two maintenance reviewers"))).toBe(true);
         expect(coverageRequests.every((request) => request.includes("runner_evidence") && request.includes("read_review") && request.includes("scoped_bindings"))).toBe(true);
         expect(rulesMenuVisits).toBe(0); // same-action clarification does not require inspecting source menus
@@ -7302,6 +7303,8 @@ describe("boundary operator-plane CLI", () => {
         confirmReviewedDisabled: async () => true,
       };
       if (posture === "active_rules_recovery" || posture.startsWith("policy_target_")) {
+        const explained = posture === "policy_target_explained" || posture === "policy_target_explained_failure";
+        const clarifiedNoChange = "The existing reviewer setting already expresses the intended policy. Preserve every draft and permission unchanged.";
         const mixedRead = posture === "policy_target_mixed_read" || posture === "policy_target_mixed_read_scope";
         const requiresCurrentState = posture === "policy_target_mixed_read";
         if (!semantic || deferredResume.status !== "ready") throw new Error("Expected saved semantic job");
@@ -7361,7 +7364,7 @@ describe("boundary operator-plane CLI", () => {
             if (title === "START BOUNDARY DRAFTING") return "resume";
             if (title === "REVIEW DISABLED ACTION REVISION") return "save";
             if (posture === "policy_target_pause" && title === "CHOOSE THE ACTION TO REVISE") {
-              expect(calls).toBe(1);
+              expect(calls).toBe(2);
               expect(options?.initialValue).toBe("back");
               expect(options?.displayContext).toBe(true);
               expect(options?.context?.some(line => line.includes("coverage report references more than one outcome"))).toBe(true);
@@ -7391,7 +7394,7 @@ describe("boundary operator-plane CLI", () => {
           confirmActivation: confirmAction,
         };
         const chat = testBoundaryAuthoringChat(policySession);
-        chat.readOperator = vi.fn().mockResolvedValueOnce(requiresCurrentState
+        chat.readOperator = vi.fn().mockResolvedValueOnce(explained ? clarifiedNoChange : requiresCurrentState
           ? "Require current eligibility before viewing information. Keep all change rules and limits unchanged."
           : posture === "policy_target_mixed_read_scope"
             ? "Customers can view only their own permitted records. Keep all change rules and limits unchanged."
@@ -7432,6 +7435,7 @@ describe("boundary operator-plane CLI", () => {
           throw new Error("READ_PREREQUISITE_SOURCE_MISSING: Synthetic fixture has no current-status evidence; keep setup pending.");
         });
         const revise = vi.fn(async (input: Parameters<typeof generateModelActionRuleDraft>[0]): Promise<ModelActionRuleDraftResult> => {
+          if (explained) throw new Error("A clarified interpretation must be rechecked before any draft editor is invoked.");
           expect(recovery).toBe(false);
           expect(input.existingDraft!.outcome).toBe(original.outcome);
           expect(input.reservedOutcomes).toEqual([outcomes[0], outcomes[2]]);
@@ -7454,8 +7458,12 @@ describe("boundary operator-plane CLI", () => {
               expect(body).toContain("history_selector");
               for (const outcome of outcomes) expect(body).toContain(outcome);
               if (phase === "fail") throw new Error("POLICY_TEST_PROVIDER_UNAVAILABLE");
+              if (explained && calls > 1) {
+                expect(body).toContain(clarifiedNoChange);
+                if (posture === "policy_target_explained_failure") throw new Error("POLICY_TEST_CLARIFICATION_RECHECK_UNAVAILABLE");
+              }
               const saved = (await readActionRuleAuthorityDraft(root, combined.authority.name))!;
-              const fixed = phase === "ready" || saved.authority.approval_classes.find((entry) => entry.name === `${original.outcome}.approval`)!.required_approvals === 2;
+              const fixed = explained && calls > 1 || phase === "ready" || saved.authority.approval_classes.find((entry) => entry.name === `${original.outcome}.approval`)!.required_approvals === 2;
               return { status: 200, body: { output: [{ type: "function_call", call_id: `rules_${calls}`, name: "runner__review_policy_coverage",
                 arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: fixed ? "implemented" : "conflict",
                   topic: recovery ? "Joint automatic-approval limits" : "Reviewer requirement",
@@ -7480,8 +7488,25 @@ describe("boundary operator-plane CLI", () => {
             actionProjectInspector: async () => inspection, boundaryAuthoringChatFactory: () => chat,
           });
         expect(await run()).toBe(0);
+        if (explained) {
+          expect(calls).toBe(2);
+          expect(revise).not.toHaveBeenCalled();
+          expect(sharedReadRevision).not.toHaveBeenCalled();
+          expect(chat.readOperator).toHaveBeenCalledOnce();
+          expect((await readActionRuleAuthorityDraft(root, combined.authority.name))!.digest).toBe(combined.digest);
+          expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeReadBefore);
+          expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+          if (posture === "policy_target_explained_failure") {
+            expect(confirmAction).not.toHaveBeenCalled();
+            expect(chat.rememberDetails).toHaveBeenCalledWith("RULES COVERAGE UNAVAILABLE",
+              expect.arrayContaining([expect.stringContaining("POLICY_TEST_CLARIFICATION_RECHECK_UNAVAILABLE")]));
+          }
+          const state = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+          expect(state.conversation).toContainEqual(expect.objectContaining({ answer: clarifiedNoChange, kind: "clarification" }));
+          return;
+        }
         if (posture === "policy_target_pause" || mixedRead) {
-          if (posture === "policy_target_pause") expect(calls).toBe(1);
+          if (posture === "policy_target_pause") expect(calls).toBe(2);
           expect(sharedReadRevision).toHaveBeenCalledTimes(mixedRead ? 1 : 0);
           expect(menus).toBe(0);
           expect(revise).not.toHaveBeenCalled();

@@ -8111,6 +8111,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     const authorityDigest = canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
       action: semanticActionAuthorityDraft?.digest ?? null });
     const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources?.operator_messages ?? [],
+      clarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification") ?? [],
       interpretations: sources?.read_interpretations ?? [] });
     if (!force && policyAttemptKey === undefined && sources?.coverage_context_digest === key && sources.coverage) {
       try {
@@ -8504,11 +8505,27 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       if (!answer?.trim()) return;
       rememberModelAuthoringClarification(authoringConversation, questions.join("\n"), answer.trim());
       await persistAuthoringResume("authority_review");
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The business clarification");
+      if (!business.passages.some(passage => passage.field_checks?.length)) {
+        // An answer can correct the report's interpretation without changing
+        // authority. Never open an editor using the pre-answer concern.
+        const previousPassages = business.passages;
+        const checked = await ensurePolicyCoverage();
+        if (!checked?.report) return;
+        const remaining = policyReadinessItems(checked.report, authoringConversation?.policySources)
+          .filter(item => item.blocksReview).flatMap(item => item.passages)
+          .filter(passage => previousPassages.some(previous => passage.start <= previous.end && previous.start <= passage.end
+            && (passage.topic === previous.topic || passage.draft_paths.some(pointer => previous.draft_paths.includes(pointer)))));
+        if (!remaining.length) return;
+        business = { ...business, passages: remaining };
+        current = checked;
+      }
+      const revisionRequirements = business.passages.map(passage => passage.next_step ?? passage.interpretation);
       if (reviseReadWithModel && (business.passages.every(isReadOnlyPolicyPassage)
         || business.passages.some((passage) => passage.field_checks?.some((field) => field.expectation === "private")))) {
         await reviseReadWithModel([
           "Resolve only this Read requirement in the disabled draft, using the operator's answer. Preserve customer-facing information unless its restriction is requested. Existing related-only access can remove independent queries without adding scope or private Action grants.",
-          ...exactQuestions, `Operator answer: ${answer.trim()}`,
+          ...revisionRequirements, `Operator answer: ${answer.trim()}`,
           "Preserve every existing exclusion and Read-selection grant, business-facing information, all Action rules and execution intent. Do not add access.",
         ].join("\n"), undefined, { interpretationInstruction: answer.trim(),
           generalReadRestriction: !business.passages.some((passage) => passage.field_checks?.length) });
@@ -8521,7 +8538,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         }
         else if (entry) await revisePolicyAction(entry, [
             "Apply this clarified business requirement to the same disabled action. Preserve other rules and execution intent.",
-            ...exactQuestions, `Operator answer: ${answer.trim()}`,
+            ...revisionRequirements, `Operator answer: ${answer.trim()}`,
           ].join("\n"));
       }
       await ensurePolicyCoverage();

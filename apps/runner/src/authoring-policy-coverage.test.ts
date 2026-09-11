@@ -75,6 +75,26 @@ describe("private Action field policy evidence", () => {
     return raw;
   }
 
+  it.each(["development", "staging", "production"] as const)("states actual profile semantics without attesting to source data or production authentication (%s)", profile => {
+    const input = fixture();
+    input.read.deployment_profile = profile;
+    if (profile === "production") input.read.trusted_context = { provider: "http_claims", tenant_claim: "organization", principal_claim: "subject" };
+    const before = structuredClone(input), draft = policyCoverageDraft(input);
+    const pointer = "/runner_evidence/runtime_contract/deployment_profile";
+    expect(draft.runner_evidence.runtime_contract.deployment_profile).toMatchObject({ configured_profile: profile,
+      identity_provider: profile === "production" ? "http_claims" : "environment", local_identity_mode: profile !== "production",
+      production_authentication_verified: false });
+    const source = policyTextSnapshot(Buffer.from("Review the configured identity mode; production integration remains unverified."), "Deployment.txt");
+    const passage = { start: 1, end: 1, disposition: "implemented", interpretation: "The configured mode is described, not proof of live deployment.",
+      draft_paths: [pointer], evidence_checks: [{ path: `${pointer}/configured_profile`, equals: profile },
+        { path: `${pointer}/production_authentication_verified`, equals: false }] };
+    expect(parsePolicyCoverage({ passages: [passage] }, source, draft, []).passages).toHaveLength(1);
+    expect(() => parsePolicyCoverage({ passages: [{ ...passage, evidence_checks: [
+      { path: `${pointer}/production_authentication_verified`, equals: true }] }] }, source, draft, [])).toThrow("Mechanical evidence mismatch");
+    expect(draft.runner_evidence.runtime_contract.deployment_profile.meaning).toContain("explicit requirement for a specific profile");
+    expect(input).toEqual(before);
+  });
+
   it("derives private verification-only selection and analysis without adding public Read fields", () => {
     const input = fixture(), before = structuredClone(input);
     const draft = policyCoverageDraft(input);

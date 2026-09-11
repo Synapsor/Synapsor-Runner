@@ -16,6 +16,24 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 15:33 UTC: the generic clarification-before-revision change passes
+358 integrated CLI/coverage/resume/conversation tests with one existing skip,
+plus Runner type checking. A clarification that resolves a mistaken concern
+does not invoke Read or Action editors. A failed recheck retains the same
+disabled draft and active authority, with a visible retry diagnostic. Genuine
+changes still receive separate validation after their revision. Coverage-cache
+identity now includes the saved clarification history; exact deployment-profile
+evidence does not attest to production authentication or waive explicit controls.
+Public coded recovery and final-artifact qualification remain pending.
+
+Garden public recovery on `ca836d7` / `candidate-9MfvPL` reached generated writer
+administration, separate authority reviews, managed Claude setup and a real
+atomic assignment/offer update. The tester reports independent two-row readback,
+50 privacy checks, human review and refusals. Canonical applied receipt:
+`b58f4dc4098d99fbd3bac55b3d4232c4c8e63c7545d8df33fb44f0e21969da2c`.
+The same-client limit edit is still underway. This is assisted recovery on the
+preceding frozen artifact, not final-tree or unaided onboarding qualification.
+
 2026-09-11 15:04 UTC: host counter-review persistence and ordinary-field
 naming correction pass the integrated 583-test suite / 2 existing skips and
 Runner type checking. Four public-CLI harness cases cover unchanged atomic
