@@ -266,6 +266,11 @@ describe("model-authored Action Rule draft compilation", () => {
       readBoundary: boundary(), readBoundaryDigest: readDigest });
     const before = structuredClone(compiled);
     const evidence = policyCoverageDraft({ read: boundary(), decisions: [], actions: [compiled] });
+    expect(evidence.runner_evidence.runtime_contract.agent_interface).toMatchObject({
+      tools: ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"],
+      surface: "fixed_four_tools", configuration_checked: false, connection_verified: false,
+      limits: expect.stringContaining("Only supported, validated and explicitly activated boundaries"),
+    });
     const action = evidence.runner_evidence.actions[compiled.rule.outcome]!;
     expect(action.effect).toMatchObject({ fields: ["status"],
       version_advance: { column: "version", strategy: "integer_increment" },

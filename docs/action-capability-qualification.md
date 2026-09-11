@@ -16,6 +16,41 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 public follow-up on `231d589`, frozen executable
+`15dd2e7ac3310a405b8e4cc814c0be05e8276c10d4687076d8187de2c6fd9a2a`:
+the owned library recovery now passes generated writer administration, public
+rescan, preserved private dependencies, separate Read/Action/execution review,
+managed Claude Code installation, private test identity, four-tool handshake
+and foreground worker startup. The generated grants/policies changed no source
+rows. Actual Claude Opus 5 used all four tools. P-101 was automatically approved,
+executed once with receipt 1, and independently read back as collected/version 2;
+other rows stayed unchanged. P-102 required human review and expired P-103 was
+refused. No original project or policy was modified.
+
+This is assisted recovery, not fresh unaided completion. The first Claude request
+did not discover status replay and stopped at approval plus source readback.
+An explicit tester hint to repeat the identical call returned the recorded
+completed result without another proposal. The working follow-up adds status
+replay guidance and a private-value-free durable receipt confirmation, with no
+new tool or authority. Runtime retest of that follow-up remains pending.
+The follow-up's focused/CLI regression passed 314 tests with one optional skip;
+type/package build and trusted-core dependency checks passed (368 modules,
+1948 internal edges). These checks do not complete the public qualification.
+
+The further unseen museum fixture was selected after the same freeze. Fresh
+Terra drafting reached review with correct private fields and two-reviewer
+fallback, but its overall counter selected the entire bundle instead of the
+requested outcome. A public model correction fixed that selector and preserved
+the rest; repeated coverage-link correction and a fixed-four-tool-interface
+coverage concern still blocked activation. No museum authority was enabled.
+The working follow-up retains the rejected coverage submission during bounded
+correction and supplies explicit supported-interface evidence, without claiming
+client installation or permitting unsupported effects. Manufacturing recovery,
+museum completion, fresh student, unfamiliar edits and final artifact gates
+remain unfinished. Full transcripts, fixture policies and owned projects are in
+the durable `r13-e07-20260911` external directory. Library worker was stopped
+gracefully after testing; the valid human-review request remains pending.
+
 2026-09-11 follow-up: shared PostgreSQL scope proof now supports trusted-setting
 UUID casts only against inspected native UUID columns. Writer handoffs record
 and recheck those types; Read collection preflight and runtime use the same

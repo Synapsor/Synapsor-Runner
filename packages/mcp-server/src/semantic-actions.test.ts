@@ -494,6 +494,12 @@ describe("fixed semantic Action MCP", () => {
       });
       expect(result).toMatchObject({ status: expectedStatus, execution: applied && receipt ? "completed" : "held",
         source_database_changed: applied });
+      if (applied && receipt) {
+        expect(result.execution_receipt).toEqual({ verified: true, status: "applied", source_database_changed: true });
+      } else {
+        expect(result).not.toHaveProperty("execution_receipt");
+      }
+      expect(JSON.stringify(result)).not.toMatch(/wrp_rule_|job_test|test_worker|sha256:|raw-preference-42/u);
       if (!applied) expect(await fixture.store.approvals(proposalId)).toHaveLength(1);
     } finally { fixture.store.close(); }
   });
@@ -618,6 +624,13 @@ describe("fixed semantic Action MCP", () => {
         status: "pending_human_review",
         request_disposition: "already_recorded",
       });
+      expect(created.status_check).toMatchObject({ tool: REQUEST_CHANGE_TOOL,
+        guidance: expect.stringContaining("original subject_refs"),
+        completion_evidence: expect.stringContaining("verified execution_receipt"),
+      });
+      expect(retried.status_check).toEqual(created.status_check);
+      expect(fixture.semanticActions.listTools().find((tool) => tool.name === REQUEST_CHANGE_TOOL)?.description)
+        .toContain("Do not obtain new references to check status");
       expect(created).not.toHaveProperty("proposal_id");
       expect(retried).not.toHaveProperty("proposal_id");
       expect(fixture.queries).toHaveLength(1);

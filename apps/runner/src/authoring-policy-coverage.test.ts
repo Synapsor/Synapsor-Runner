@@ -58,6 +58,9 @@ describe("execution setup is not a business-rule revision", () => {
     expect(requests).toHaveLength(2);
     expect(requests[1]).toContain("Classify the deployment prerequisite");
     expect(requests[1]).toContain("runner_execution_setup");
+    expect(requests[0]).not.toContain("Previous untrusted coverage submission");
+    expect(requests[1]).toContain("Previous untrusted coverage submission");
+    expect(requests[1]).toContain(JSON.stringify({ passages: [previous] }).replaceAll('"', '\\"'));
     expect(policyReviewReadiness(source, result).ready).toBe(true);
     expect(policyReadinessItems(result)).toMatchObject([{ kind: "deployment_prerequisite", blocksReview: false }]);
     expect(policyReviewReadiness(source, result).summary.join("\n")).toContain("writer review");

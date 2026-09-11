@@ -113,6 +113,15 @@ export function policyCoverageDraft(input: {
         },
       }])),
       runtime_contract: {
+        agent_interface: {
+          tools: ["app.describe_data", "app.explore_data", "app.describe_actions", "app.request_change"],
+          surface: "fixed_four_tools",
+          discovery: "Activated reading permissions and business outcomes are discovered through these tools. Supported reviewed rule changes update their catalogs, not the tool list. No per-outcome MCP tool or bespoke runtime adapter is required.",
+          limits: "Only supported, validated and explicitly activated boundaries are available. A fixed interface does not provide arbitrary SQL, unsupported effects, model-supplied scope, approval or execution authority. New grants and execution policies still require separate review; pending requests retain their reviewed version checks.",
+          configuration_checked: false,
+          connection_verified: false,
+          deployment: "This is Runner's supported interface contract, not proof that a particular client is installed, configured or connected. Use runner_client_connection for the separate later installation and handshake check.",
+        },
         read_eligibility: {
           trusted_record_scope_configured: input.read.pack.resources.length > 0
             && input.read.pack.resources.every((resource) => hasReviewedCustomerReadEntry(input.read, resource.id)

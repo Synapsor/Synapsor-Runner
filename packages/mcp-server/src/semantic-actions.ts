@@ -312,7 +312,7 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
     {
       name: REQUEST_CHANGE_TOOL,
       title: "Request a reviewed change",
-      description: "Request one activated business outcome using opaque Explore references and only the typed business inputs described by app.describe_actions. Runner validates those inputs and reloads authoritative facts to derive an immutable proposal; this tool cannot approve, apply, or accept an arbitrary patch.",
+      description: "Request one activated business outcome using opaque Explore references and only the typed business inputs described by app.describe_actions. Runner validates those inputs and reloads authoritative facts to derive an immutable proposal; this tool cannot approve, apply, or accept an arbitrary patch. To check an accepted request later, repeat the identical outcome, original subject_refs and inputs. An already recorded request returns its durable status, not a second proposal. Do not obtain new references to check status. Completion requires a verified execution receipt; if authority or context changed, report unavailable rather than recreating the request.",
       kind: "semantic_action",
       input_schema: {
         outcome: { type: "string", required: true },
@@ -619,6 +619,12 @@ async function semanticProposalResult(
     outcome: proposal.action,
     status,
     request_disposition: disposition === "created" ? "created" : "already_recorded",
+    status_check: {
+      tool: REQUEST_CHANGE_TOOL,
+      guidance: "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+      completion_evidence: "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not.",
+    },
+    ...(completed ? { execution_receipt: { verified: true, status: "applied", source_database_changed: true } } : {}),
     result_summary: {
       description: humanizeOutcome(proposal.action),
       change: `${effect.operation === "update" ? "Update" : "Insert"} one reviewed ${effect.target_resource} record using only the exact Runner-derived effect.`,
