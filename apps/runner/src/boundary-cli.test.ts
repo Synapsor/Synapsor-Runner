@@ -8,6 +8,8 @@ import * as actionReadRevisions from "./action-rule-read-revision.js";
 import * as actionReadRecovery from "./action-read-recovery.js";
 import * as readPrerequisiteSources from "./read-prerequisite-source-review.js";
 import * as readPrerequisiteConsent from "./read-prerequisite-consent.js";
+import { buildReadPrerequisiteModelCatalog } from "./read-prerequisite-model.js";
+import { listSupportedReadCurrentStatePrerequisiteCandidates } from "./read-prerequisite.js";
 import type { planModelBoundaryJob } from "./boundary-job-model.js";
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { loadPolicySources, activePolicySource, newPolicySourceSession, policyTextSnapshot, savePolicySources, authoringDestination } from "./authoring-policy-source.js";
@@ -86,6 +88,7 @@ import { compileActionRuleModelDraft, actionRuleModelDraftFromAuthority, type Ac
 import { activateActionRuleAuthority, buildActionRuleAuthorityDraft, readActionRuleAuthorityDraft, readActionRuleAuthorityActivation,
   writeActionRuleAuthorityDraft } from "./action-rule-authority.js";
 import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
+import { reviewActionVersionField } from "./action-rule-version-review.js";
 import {
   generateModelActionRuleDraft,
   ActionAuthoringReadOnlyRequest,
@@ -137,6 +140,169 @@ describe("boundary operator-plane CLI", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
+
+  it.each(["persist", "missing_refs", "stale_refs", "failed_save", "noop_save", "unrelated_passage", "changed_requirement", "stale_proof"] as const)("persists scoped Read decisions through the actual host callback across commands (%s)", async mode => {
+    const fixture = await staleSemanticRevalidationFixture({ currentStateRead: true });
+    const { root, inspection } = fixture;
+    const noDraft = vi.fn(async () => { throw new Error("Do not redraft saved Actions or invent the unfinished limit."); });
+    try {
+      await fixture.writeResume(["maintenance.complete_visit", "maintenance.close_visit"], ["Keep the first rule.", "Keep the second rule."]);
+      await fixture.run(noDraft);
+      const context = await loadBoundaryReviewContext(root);
+      const binding = { boundary_name: context.candidate.pack.name, generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
+        schema_fingerprint: context.lock.schema_fingerprint, role_posture_fingerprint: context.lock.role_posture_fingerprint };
+      const old = await readBoundaryAuthoringResumeState(root, binding);
+      if (old.status !== "ready") throw new Error("Expected current saved job");
+      const action = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
+      await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate, expectedDigest: context.bundle.candidate_digest,
+        actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
+        confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+      await activateActionRuleAuthority({ projectRoot: root, name: action.authority.name, expected_digest: action.digest,
+        actor: "test-reviewer", confirmation: `ACTIVATE ${action.digest}` });
+      const activeRead = await loadActivatedExplorationBoundaries(root), activeAction = await readActionRuleAuthorityActivation(root);
+      const source = newPolicySourceSession();
+      source.snapshots = [policyTextSnapshot(Buffer.from("Require a current authoritative eligibility condition before every Read.\nThe separate follow-up limit is unanswered."), "Scoped-rules.txt")];
+      source.active = 1;
+      const currentPointer = "/runner_evidence/runtime_contract/read_eligibility/configured_current_state_prerequisite";
+      source.coverage = { source_digest: source.snapshots[0]!.digest, draft_digest: canonicalJsonDigest("current fixture report"),
+        passages: [{ start: 1, end: 1, disposition: "needs_decision", interpretation: "Review the required private access condition.",
+          responsibility: "operator", issue_kind: "business_choice", draft_paths: mode === "missing_refs" ? ["/read"] : [currentPointer] },
+        { start: 2, end: 2, disposition: "needs_decision", interpretation: "The follow-up limit remains unanswered.", draft_paths: ["/actions"] }] };
+      if (mode === "stale_refs") {
+        source.snapshots.push(policyTextSnapshot(Buffer.from("Review a different current eligibility requirement.\nThe separate follow-up limit is unanswered."), "Scoped-rules.txt", 2));
+        source.active = 2;
+      }
+      source.approvals = source.snapshots.map(snapshot => ({ digest: snapshot.digest,
+        destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }));
+      await savePolicySources(root, source);
+      const unfinished = { intent: "Schedule a separate follow-up only after its automatic limit is supplied.", strategy: "rule_derived" as const };
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding, stage: "authority_review",
+        jobIntent: "Keep both existing outcomes and the independent unfinished follow-up; require the supported current-state Read condition.",
+        provider: "openai", model: "gpt-test", previous: old.value, read: old.value.read, action: unfinished,
+        policySourceSession: source.id, pendingReadRevision: "Review the policy's private current-state Read condition without changing any Action." }));
+      const resumePath = path.join(root, ".synapsor/boundary-authoring/resume.json");
+      expect(context.candidate.pack.resources.some(resource => resource.table === "current_access")).toBe(false);
+      const candidates = listSupportedReadCurrentStatePrerequisiteCandidates(inspection, context.candidate);
+      const catalog = buildReadPrerequisiteModelCatalog({ candidates, metadata_digest: canonicalJsonDigest(candidates) });
+      const candidate = catalog.entries.find(entry => entry.source.table === "current_access"
+        && entry.current_state.effective_from_column === "effective_from" && entry.current_state.effective_until_column === "effective_until")!;
+      expect(candidate).toBeDefined();
+      let command = 0, providerCalls = 0, injected = 0, scopeOptIns = 0;
+      const hostCallbacks: number[] = [], operatorQuestions: number[] = [], metadataReviews: number[] = [], semanticReviews: number[] = [];
+      let firstRecord: { decision_id: string; applicability_digest: string } | undefined;
+      let inspectPrivateSource = false;
+      const inspect = async () => {
+        if (inspectPrivateSource && command === 2 && mode === "stale_proof") {
+          const stale = structuredClone(inspection);
+          stale.tables.find(table => table.name === "current_access")!.foreign_keys = [];
+          return stale;
+        }
+        return inspection;
+      };
+      const originalRename = fs.rename.bind(fs);
+      const failure = vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+        if (command === 1 && (mode === "failed_save" || mode === "noop_save") && String(to) === resumePath) {
+          const proposed = JSON.parse(await fs.readFile(from, "utf8"));
+          if (proposed.read_prerequisite_decisions?.length) {
+            injected++;
+            if (mode === "failed_save") throw Object.assign(new Error("EACCES: injected scoped answer save failure"), { code: "EACCES" });
+            return;
+          }
+        }
+        await originalRename(from, to);
+      });
+      const outcomes = action.authority.rules.map(entry => entry.rule.outcome);
+      for (command = 1; command <= 2; command++) {
+        providerCalls = 0;
+        if (command === 2 && (mode === "unrelated_passage" || mode === "changed_requirement")) {
+          const revised = await loadPolicySources(root, source.id);
+          const lines = source.snapshots[0]!.text.split("\n");
+          if (mode === "changed_requirement") lines[0] = "Require the operator's newly reviewed current eligibility meaning before every Read.";
+          else lines[1] = "The separate follow-up limit is still unanswered; this unrelated passage does not change Read.";
+          const snapshot = policyTextSnapshot(Buffer.from(lines.join("\n")), "Scoped-rules.txt", 2);
+          revised.snapshots.push(snapshot);
+          revised.active = 2;
+          revised.approvals.push({ digest: snapshot.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) });
+          revised.coverage = { ...source.coverage!, source_digest: snapshot.digest };
+          await savePolicySources(root, revised);
+        }
+        const session: BoundaryReviewInteractiveSession = { ...fixture.session, chooseOption: async (title) => {
+          if (title === "START BOUNDARY DRAFTING") return "resume";
+          if (title === "REVIEW PRIVATE ACCESS EVIDENCE") { metadataReviews.push(command); return "allow"; }
+          if (title === "CONFIRM ACCESS CONDITION") { semanticReviews.push(command); return "pending"; }
+          if (title === "FINISH ATTACHED RULES REVIEW") return "pause";
+          if (title === "ACTIVATE READ BOUNDARY" || title === "FINISH BOUNDARY REVIEW" || title === "REPLACE ACTIVE READ BOUNDARY") return "finish";
+          throw new Error(`Unexpected scoped-decision menu: ${title}`);
+        } };
+        const chat = testBoundaryAuthoringChat(session);
+        chat.readOperator = vi.fn(async () => { operatorQuestions.push(command); return "The operator confirms this register supplies authoritative current eligibility."; });
+        const run = () => boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], inspect,
+          session, undefined, { startWithAgentJob: true, boundaryAuthoringChatFactory: () => chat, actionProjectInspector: async () => inspection,
+            modelBoundaryJobPlanner: noDraft, modelActionRuleGenerator: noDraft, modelReadWorkloadGenerator: noDraft,
+            modelAuthoringNarrator: async () => "Review the saved private condition; all active authority remains unchanged.",
+            modelReadBoundaryRevisionGenerator: async request => {
+              hostCallbacks.push(command);
+              expect(request.reviewPrivatePrerequisite).toEqual(expect.any(Function));
+              inspectPrivateSource = true;
+              try { await request.reviewPrivatePrerequisite!({ reason: "Map the policy's required current-state condition." }); }
+              finally { inspectPrivateSource = false; }
+              throw new Error("TARGET_B_HOST_MAPPING_PAUSED: preserve exact authorities for the next command.");
+            },
+            modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret", dependencies: {
+              requestJson: async request => {
+                providerCalls++;
+                const body = request.body as { tools: Array<{ name: string; parameters: { oneOf: Array<{ properties?: { clarification_request?: { properties: { decision_id?: { enum: string[] } } } } }> } }> };
+                const tool = body.tools.find(tool => tool.name === "runner__submit_read_prerequisite");
+                if (!tool) throw new Error("Unexpected provider call outside the actual private prerequisite mapper");
+                const ids = tool.parameters.oneOf.flatMap(branch => branch.properties?.clarification_request?.properties.decision_id?.enum ?? []);
+                const scoped = ids.length > 0;
+                expect(scoped).toBe(mode !== "missing_refs" && mode !== "stale_refs");
+                if (providerCalls === 1 && scoped) scopeOptIns++;
+                const payload = providerCalls === 1 ? { clarification_request: { question: command === 1 ? "Is this register authoritative?" : "Does this register supply the official status?",
+                  reason: "Need the actual current source meaning.", ...(scoped ? { decision_id: ids[0] } : {}) } }
+                  : { candidate_id: candidate.candidate_id, positive_state: "scheduled", source_description: "Operator-reviewed current eligibility register.",
+                    positive_state_description: "Scheduled is positive between inclusive start and exclusive expiry in database UTC." };
+                return { status: 200, body: { output: [{ type: "function_call", call_id: `mapping_${command}_${providerCalls}`,
+                  name: "runner__submit_read_prerequisite", arguments: JSON.stringify(payload) }] } };
+              },
+            } },
+          });
+        expect(await run(), JSON.stringify(vi.mocked(chat.rememberDetails).mock.calls)).toBe(0);
+        const saved = JSON.parse(await fs.readFile(resumePath, "utf8"));
+        expect(saved.action).toEqual(unfinished);
+        const acknowledged = ["persist", "unrelated_passage", "changed_requirement", "stale_proof"].includes(mode)
+          || command === 2 && (mode === "failed_save" || mode === "noop_save");
+        expect(saved.read_prerequisite_decisions?.length ?? 0, JSON.stringify(vi.mocked(chat.rememberDetails).mock.calls)).toBe(acknowledged ? 1 : 0);
+        if (acknowledged) expect(saved.read_prerequisite_decisions[0].question).toContain("with organization field tenant_id and person field principal_id");
+        if (command === 1 && acknowledged) firstRecord = structuredClone(saved.read_prerequisite_decisions[0]);
+        if (command === 2 && firstRecord) {
+          expect(saved.read_prerequisite_decisions[0].decision_id).toBe(firstRecord.decision_id);
+          if (mode === "changed_requirement") expect(saved.read_prerequisite_decisions[0].applicability_digest).not.toBe(firstRecord.applicability_digest);
+          else expect(saved.read_prerequisite_decisions[0]).toEqual(firstRecord);
+        }
+        if (command === 1 && (mode === "failed_save" || mode === "noop_save")) {
+          expect(providerCalls).toBe(1);
+          expect(JSON.stringify(vi.mocked(chat.rememberDetails).mock.calls)).toMatch(/NOT_SAVED|SAVE_UNCONFIRMED/);
+        }
+        if (command === 2 && mode === "stale_proof") {
+          expect(providerCalls).toBe(0);
+          expect(JSON.stringify(vi.mocked(chat.rememberDetails).mock.calls)).toContain("READ_PREREQUISITE_SOURCE_REVIEW_REQUIRED");
+        }
+        expect((await readActionRuleAuthorityDraft(root, action.authority.name))!.digest).toBe(action.digest);
+        expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeRead);
+        expect(await readActionRuleAuthorityActivation(root)).toEqual(activeAction);
+        expect((await readActionRuleAuthorityDraft(root, action.authority.name))!.authority.rules.map(entry => entry.rule.outcome)).toEqual(outcomes);
+      }
+      failure.mockRestore();
+      expect(hostCallbacks).toEqual([1, 2]);
+      expect(operatorQuestions).toEqual(["persist", "unrelated_passage", "stale_proof"].includes(mode) ? [1] : [1, 2]);
+      expect(scopeOptIns).toBe(mode === "missing_refs" || mode === "stale_refs" ? 0 : mode === "stale_proof" ? 1 : 2);
+      expect(metadataReviews).toEqual(mode === "stale_proof" ? [1] : [1, 2]);
+      expect(semanticReviews).toEqual(mode === "failed_save" || mode === "noop_save" ? [2] : mode === "stale_proof" ? [1] : [1, 2]);
+      expect(injected > 0).toBe(mode === "failed_save" || mode === "noop_save");
+      expect(noDraft).not.toHaveBeenCalled();
+    } finally { await fixture.dispose(); }
+  }, 30000);
 
   it("summarizes reused Read and Action authority instead of echoing the model request", () => {
     const summary = formatCurrentBoundaryAuthoritySummary({
@@ -4518,14 +4684,14 @@ describe("boundary operator-plane CLI", () => {
     } finally { await fixture.dispose(); }
   }, 30_000);
 
-  it.each(["stale_resume", "failed_planning_resume", "pending_removal_draft", "authority_review_resume", "read_only_revision"] as const)("revalidates separately saved rules while retaining an unfinished standalone agenda (%s)", async shape => {
+  it.each(["stale_resume", "failed_planning_resume", "pending_removal_draft", "authority_review_resume", "read_only_revision", "current_resume", "current_removal_draft"] as const)("revalidates separately saved rules while retaining an unfinished standalone agenda (%s)", async shape => {
     const fixture = await staleSemanticRevalidationFixture({ unusedVerificationField: true });
     const generator = vi.fn(async () => { throw new Error("No new business decision is needed to revalidate saved rules."); });
     try {
       const prior = await loadBoundaryReviewContext(fixture.root);
       let before = await readActionRuleAuthorityDraft(fixture.root, "reviewed_staging_rules");
       let activeBefore: Awaited<ReturnType<typeof readActionRuleAuthorityActivation>>;
-      if (shape === "pending_removal_draft") {
+      if (shape === "pending_removal_draft" || shape === "current_removal_draft") {
         await saveBoundaryReviewProgress(fixture.root, createBoundaryReviewProgress({ draft: prior.draft, candidate: prior.candidate,
           confirmedDecisions: prior.candidate.unresolved_decisions, actor: "test-reviewer", reason: "Review fixture Read before Action activation.",
           revision: (prior.progress?.revision ?? 0) + 1 }));
@@ -4547,9 +4713,9 @@ describe("boundary operator-plane CLI", () => {
         await saveBoundaryReviewProgress(fixture.root, createBoundaryReviewProgress({ draft: prior.draft, candidate,
           confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", reason: "Narrow saved Read without changing source metadata.",
           revision: (prior.progress?.revision ?? 0) + 1 }));
-      } else fixture.inspection.tables[0]!.row_level_security_policies!.push({ name: "new_writer_policy", command: "UPDATE", permissive: true,
+      } else if (!shape.startsWith("current_")) fixture.inspection.tables[0]!.row_level_security_policies!.push({ name: "new_writer_policy", command: "UPDATE", permissive: true,
         roles: ["separate_writer"], using_expression: "tenant_id = current_setting('app.tenant_id')", check_expression: "tenant_id = current_setting('app.tenant_id')" });
-      if (shape !== "read_only_revision") await boundaryCommand(["rescan", "--from-env", "DATABASE_URL", "--project-root", fixture.root], async () => fixture.inspection);
+      if (shape !== "read_only_revision" && !shape.startsWith("current_")) await boundaryCommand(["rescan", "--from-env", "DATABASE_URL", "--project-root", fixture.root], async () => fixture.inspection);
       const refreshed = await loadBoundaryReviewContext(fixture.root);
       const resumeContext = shape === "stale_resume" ? prior : refreshed;
       const action = { intent: "Release an eligible advising hold; approval limits are still pending.", strategy: "rule_derived" as const };
@@ -4558,7 +4724,7 @@ describe("boundary operator-plane CLI", () => {
           generation_lock_fingerprint: resumeContext.bundle.authority.generation_lock_fingerprint,
           schema_fingerprint: resumeContext.bundle.authority.schema_fingerprint,
           role_posture_fingerprint: resumeContext.bundle.authority.role_posture_fingerprint },
-        stage: shape === "stale_resume" ? "action_drafting" : ["authority_review_resume", "read_only_revision"].includes(shape) ? "authority_review" : "planning",
+        stage: shape === "stale_resume" ? "action_drafting" : ["authority_review_resume", "read_only_revision", "current_resume", "current_removal_draft"].includes(shape) ? "authority_review" : "planning",
         jobIntent: "Keep the two reviewed visit rules and finish the separate advising action later.",
         provider: "openai", model: "gpt-test", action,
       }));
@@ -4578,12 +4744,196 @@ describe("boundary operator-plane CLI", () => {
       const saved = JSON.parse(await fs.readFile(path.join(fixture.root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
       expect(saved.action).toEqual(action);
       expect(saved.stage).toBe("action_drafting");
+      if (shape.startsWith("current_")) {
+        expect(after!.digest).toBe(before!.digest);
+        await expect(fixture.run(generator)).resolves.toBe(0);
+        expect(generator).not.toHaveBeenCalled();
+        expect(fixture.planner).not.toHaveBeenCalled();
+        const resumed = JSON.parse(await fs.readFile(path.join(fixture.root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+        expect(resumed.action).toEqual(action);
+        expect(resumed.stage).toBe("action_drafting");
+        const reviewed = JSON.stringify(fixture.chats.flatMap(chat => vi.mocked(chat.rememberDetails).mock.calls));
+        for (const entry of before!.authority.rules) expect(reviewed).toContain(entry.rule.outcome);
+      }
       const reviewText = JSON.stringify(fixture.chats.flatMap(chat => vi.mocked(chat.rememberDetails).mock.calls));
       expect(reviewText).not.toContain("The job draft is complete.");
       await expect(readActionRuleAuthorityActivation(fixture.root)).resolves.toEqual(activeBefore);
       if (!activeBefore) await expect(loadActivatedExplorationBoundaries(fixture.root)).rejects.toMatchObject({ code: "ENOENT" });
     } finally { await fixture.dispose(); }
   }, 30_000);
+
+  it("keeps one saved job through interruption, a limit edit and writer rescan with an unfinished intent", async () => {
+    const outcome = "maintenance.complete_visit";
+    const fixture = await staleSemanticRevalidationFixture({ atomicUpdates: true, privateVerificationResource: true, outcomes: [outcome] });
+    const { root, inspection } = fixture;
+    const noDrafting = vi.fn(async () => { throw new Error("Completed rules must not be redrafted; the separate limit is unanswered."); });
+    try {
+      await fixture.writeResume([outcome], ["Keep the existing atomic visit update."]);
+      await fixture.run(noDrafting);
+      const context = await loadBoundaryReviewContext(root);
+      const saved = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
+      const existing = actionRuleModelDraftFromAuthority({ authority: saved.authority, outcome,
+        review: saved.reviews[0]!, preserveVerificationFields: true });
+      existing.approval = { ...existing.approval, mode: "policy", auto_approve_when: existing.require,
+        shared_limits: [{ id: "visit_overall", kind: "count", scope: "boundary", maximum: 10, window_seconds: 86400 },
+          { id: "visit_account", kind: "count", scope: "tenant", maximum: 3, window_seconds: 86400 }] };
+      const catalog = buildActionRuleAuthoringCatalog({ boundary: context.candidate, inspection, retainedCatalog: saved.authority.catalog });
+      const compiled = compileActionRuleModelDraft({ draft: existing, builtCatalog: catalog, readBoundary: context.candidate,
+        readBoundaryDigest: context.bundle.candidate_digest });
+      const baseline = buildActionRuleAuthorityDraft({ name: saved.authority.name, action_boundary_name: saved.authority.action_boundary.name,
+        catalog: compiled.loaded.authority.catalog, rules: compiled.loaded.authority.rules,
+        approval_classes: compiled.loaded.authority.approval_classes, reviews: [{ outcome, ...compiled.review }] });
+      await writeActionRuleAuthorityDraft(root, baseline);
+      await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate, expectedDigest: context.bundle.candidate_digest,
+        actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
+        confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+      await activateActionRuleAuthority({ projectRoot: root, name: baseline.authority.name, expected_digest: baseline.digest,
+        actor: "test-reviewer", confirmation: `ACTIVATE ${baseline.digest}` });
+      const activeRead = await loadActivatedExplorationBoundaries(root), activeAction = await readActionRuleAuthorityActivation(root);
+      const choose = fixture.session.chooseOption!;
+      let ownerReviews = 0;
+      fixture.session.chooseOption = vi.fn(async (title, choices, options) => {
+        if (title === "REVIEW CHANGED-RECORD PROTECTION") { ownerReviews++; return "confirm"; }
+        return choose(title, choices, options);
+      });
+      const versionReviews = [];
+      for (const resource of ["public.service_visits", "public.maintenance_requests"]) {
+        const prepared = await reviewActionVersionField({ context: { readBoundary: context.candidate,
+          readBoundaryDigest: context.bundle.candidate_digest, builtCatalog: catalog }, resource, field: "c09",
+          inspection, generationLock: context.lock, session: fixture.session,
+          assertCurrent: async () => { expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(context.bundle.candidate_digest); } });
+        expect(prepared).toBeDefined(); versionReviews.push(prepared!.review);
+      }
+      expect(ownerReviews).toBe(2);
+      const unfinished = { intent: "Prepare the separate follow-up after its owner supplies approval limits.", strategy: "rule_derived" as const };
+      const conversation = [{ question: "What does the customer limit mean?", answer: "It is shared across the trusted account.", kind: "clarification" as const }];
+      const binding = { boundary_name: context.candidate.pack.name, generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
+        schema_fingerprint: context.lock.schema_fingerprint, role_posture_fingerprint: context.lock.role_posture_fingerprint };
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding, stage: "authority_review",
+        jobIntent: "Retain the visit job and finish the separate follow-up only when its limits are known.", provider: "openai", model: "gpt-test",
+        conversation, action: unfinished, reviewedVersionFields: versionReviews }));
+      await fixture.run(noDrafting);
+      let interrupted = await readBoundaryAuthoringResumeState(root, binding);
+      if (interrupted.status !== "ready") throw new Error("Expected saved lifecycle job");
+      expect(interrupted.value.action).toEqual(unfinished);
+      expect(interrupted.value.conversation).toEqual(conversation);
+      const source = newPolicySourceSession();
+      source.snapshots = [policyTextSnapshot(Buffer.from("The overall and customer automatic-approval limits share the same rolling 24-hour window."), "Saved-rules.txt")];
+      source.active = 1;
+      source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+      await savePolicySources(root, source);
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding, stage: "authority_review",
+        jobIntent: interrupted.value.job_intent, provider: "openai", model: "gpt-test", conversation,
+        read: interrupted.value.read, action: unfinished, policySourceSession: source.id, previous: interrupted.value }));
+      const clarification = "Both existing limits already use the same rolling 24 hours. Do not edit either limit or any permission.";
+      const answer = vi.fn().mockResolvedValueOnce(clarification).mockRejectedValue(new Error("Do not repeat an accepted business question."));
+      let coverageCalls = 0, clarificationMenus = 0;
+      const originalChoose = fixture.session.chooseOption!;
+      fixture.session.chooseOption = async (title, choices, options) => {
+        if (title === "FINISH ATTACHED RULES REVIEW") {
+          expect(clarificationMenus++).toBe(0);
+          return "clarify";
+        }
+        return originalChoose(title, choices, options);
+      };
+      const lifecycleOverrides: NonNullable<Parameters<typeof boundaryReviewCommandInternal>[4]> = {
+        modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret", dependencies: {
+          requestJson: async request => {
+            const fixed = ++coverageCalls > 2;
+            if (fixed) expect(JSON.stringify(request.body)).toContain(clarification);
+            return { status: 200, body: { output: [{ type: "function_call", call_id: `coverage_${coverageCalls}`,
+              name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{ start: 1, end: 1,
+                disposition: fixed ? "implemented" : "conflict", topic: "Shared approval window", responsibility: "runner",
+                issue_kind: "contradiction", interpretation: fixed ? "Both exact limits use the required rolling 24-hour window."
+                  : "Different limit IDs were interpreted as different windows.", next_step: "Clarify whether the current window already matches.",
+                draft_paths: ["/actions/0/approval", `/runner_evidence/actions/${outcome}/automatic_limits`] }] }) }] } };
+          },
+        } },
+        boundaryAuthoringChatFactory: () => {
+          const chat = testBoundaryAuthoringChat(fixture.session);
+          chat.readOperator = answer; fixture.chats.push(chat); return chat;
+        },
+      };
+      const run = (generator: Parameters<typeof fixture.run>[0]) => fixture.run(generator, async () => inspection, lifecycleOverrides);
+      const beforeClarification = await readActionRuleAuthorityDraft(root, baseline.authority.name);
+      await expect(run(noDrafting)).resolves.toBe(0);
+      expect(answer).toHaveBeenCalledOnce(); expect(coverageCalls).toBe(3);
+      expect(await readActionRuleAuthorityDraft(root, baseline.authority.name)).toEqual(beforeClarification);
+      expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeRead);
+      expect(await readActionRuleAuthorityActivation(root)).toEqual(activeAction);
+      interrupted = await readBoundaryAuthoringResumeState(root, binding);
+      if (interrupted.status !== "ready") throw new Error("Expected clarified lifecycle checkpoint");
+      expect(interrupted.value.conversation.some(turn => turn.answer === clarification)).toBe(true);
+      const currentBaseline = (await readActionRuleAuthorityDraft(root, baseline.authority.name))!;
+      const editable = actionRuleModelDraftFromAuthority({ authority: currentBaseline.authority, outcome,
+        review: currentBaseline.reviews[0]!, preserveVerificationFields: true });
+      const instruction = "Lower only the automatic limit per account from three to one per rolling 24 hours. Leave everything else unchanged.";
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding, stage: "authority_review",
+        jobIntent: interrupted.value.job_intent, provider: "openai", model: "gpt-test", conversation: interrupted.value.conversation,
+        read: interrupted.value.read, action: unfinished, policySourceSession: source.id,
+        pendingActionRevision: { outcome, instruction, baseline_digest: canonicalJsonDigest(editable) }, previous: interrupted.value }));
+      const edit = vi.fn(async (request: Parameters<typeof generateModelActionRuleDraft>[0]) => {
+        expect(request.existingDraft).toEqual(editable);
+        for (const resource of ["public.service_visits", "public.maintenance_requests"]) {
+          await request.reviewVersionField!({ context: { readBoundary: request.readBoundary, readBoundaryDigest: request.readBoundaryDigest,
+            builtCatalog: request.builtCatalog }, resource, field: "c09" });
+        }
+        const limits = request.existingDraft!.approval.shared_limits.map(limit => limit.id === "visit_account" ? { ...limit, maximum: 1 } : limit);
+        const responses = [
+          { type: "function_call", call_id: "limit", name: "runner__submit_approval_policy_draft",
+            arguments: JSON.stringify({ status: "draft", ...request.existingDraft!.approval, shared_limits: limits, changed_fields: ["shared_limits"] }) },
+          { type: "function_call", call_id: "validate", name: "runner__validate_action_draft", arguments: "{}" },
+          { type: "message", role: "assistant", content: [{ type: "output_text", text: "The account limit is now one; all other settings are retained." }] },
+        ];
+        const result = await generateModelActionRuleDraft({ ...request, approvalLimitsOnly: true,
+          session: { ...request.session, dependencies: { requestJson: async () => {
+            const response = responses.shift();
+            if (!response) throw new Error("Unexpected extra model retry");
+            return { status: 200, body: { output: [response] } };
+          } } } });
+        expect(responses).toEqual([]);
+        return result;
+      });
+      await expect(run(edit)).resolves.toBe(0);
+      expect(edit, JSON.stringify(fixture.chats.flatMap(chat => vi.mocked(chat.rememberDetails).mock.calls))).toHaveBeenCalledOnce();
+      const after = (await readActionRuleAuthorityDraft(root, baseline.authority.name))!;
+      expect(after.authority.approval_classes[0]!.shared_limits).toEqual(baseline.authority.approval_classes[0]!.shared_limits
+        .map(limit => limit.id === "visit_account" ? { ...limit, maximum: 1 } : limit));
+      const afterMeaning = actionRuleModelDraftFromAuthority({ authority: after.authority, outcome, review: after.reviews[0]!, preserveVerificationFields: true });
+      expect({ ...afterMeaning, approval: editable.approval }).toEqual(editable);
+      const edited = await readBoundaryAuthoringResumeState(root, binding);
+      expect(edited).toMatchObject({ status: "ready", value: { action: unfinished, conversation: expect.arrayContaining(conversation) } });
+      expect(ownerReviews).toBe(2);
+      if (edited.status !== "ready") throw new Error("Expected edited lifecycle checkpoint");
+      expect(edited.value.reviewed_version_fields).toHaveLength(2);
+      expect(edited.status === "ready" && edited.value.pending_action_revision).toBeUndefined();
+      fixture.inspection.tables[0]!.row_level_security_policies!.push({ name: "reviewed_writer_update", command: "UPDATE", permissive: true,
+        roles: ["dedicated_writer"], using_expression: "tenant_id = current_setting('app.tenant_id')", check_expression: "tenant_id = current_setting('app.tenant_id')" });
+      await boundaryCommand(["rescan", "--from-env", "DATABASE_URL", "--project-root", root], async () => inspection);
+      await run(noDrafting);
+      await run(noDrafting);
+      const finalContext = await loadBoundaryReviewContext(root);
+      const final = (await readActionRuleAuthorityDraft(root, baseline.authority.name))!;
+      expect(final.authority.rules[0]!.rule).toEqual(after.authority.rules[0]!.rule);
+      expect(final.authority.rules[0]!.effect_envelope).toEqual(after.authority.rules[0]!.effect_envelope);
+      expect(final.authority.approval_classes).toEqual(after.authority.approval_classes);
+      expect(final.authority.rules[0]!.read_boundary_digest).toBe(finalContext.bundle.candidate_digest);
+      expect(final.authority.rules[0]!.verification_boundary).toEqual({ ...after.authority.rules[0]!.verification_boundary,
+        generation_lock_fingerprint: finalContext.candidate.generation_lock_fingerprint });
+      expect(finalContext.candidate.pack.resources.some(resource => resource.id === "public.visit_facts")).toBe(false);
+      const resumed = await readBoundaryAuthoringResumeState(root, { boundary_name: binding.boundary_name,
+        generation_lock_fingerprint: finalContext.candidate.generation_lock_fingerprint,
+        schema_fingerprint: finalContext.lock.schema_fingerprint, role_posture_fingerprint: finalContext.lock.role_posture_fingerprint });
+      expect(resumed).toMatchObject({ status: "ready", value: { action: unfinished, conversation: expect.arrayContaining(conversation),
+        reviewed_version_fields: edited.value.reviewed_version_fields } });
+      expect(ownerReviews).toBe(2);
+      expect(answer).toHaveBeenCalledOnce();
+      expect(resumed.status === "ready" && resumed.value.conversation.some(turn => turn.answer === clarification)).toBe(true);
+      expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeRead);
+      expect(await readActionRuleAuthorityActivation(root)).toEqual(activeAction);
+      expect(noDrafting).not.toHaveBeenCalled(); expect(fixture.planner).not.toHaveBeenCalled();
+    } finally { await fixture.dispose(); }
+  }, 30000);
 
   it("keeps an authoring failure visible with local details and pauses without a manual-editor detour", async () => {
     const fixture = await staleSemanticRevalidationFixture();
@@ -6248,7 +6598,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised", "writer_setup", "repair_on_resume", "concurrent_action_read_rebind", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit", "active_rules_recovery", "policy_target_business", "policy_target_explained", "policy_target_explained_failure", "policy_target_mechanical", "policy_target_multi", "policy_target_pause", "policy_target_mixed_read", "policy_target_mixed_read_scope", "policy_target_retained", "policy_target_concurrent", "policy_target_collision"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+  it.each(["proposal_only", "supervised", "writer_setup", "repair_on_resume", "concurrent_action_read_rebind", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit", "active_rules_recovery", "policy_target_business", "policy_target_postcommit_once", "policy_target_postcommit_permanent", "policy_target_postcommit_competing_pause", "policy_target_postcommit_edit_current", "policy_target_postcommit_delegation_save", "policy_target_explained", "policy_target_explained_failure", "policy_target_counter_clarified", "policy_target_counter_clarified_failure", "policy_target_mechanical", "policy_target_multi", "policy_target_pause", "policy_target_mixed_read", "policy_target_mixed_read_scope", "policy_target_retained", "policy_target_concurrent", "policy_target_collision"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
     const writerSetup = posture === "writer_setup";
     const coverageFailure = posture === "coverage_failure";
     const partialConfirmation = posture === "partial_confirmation";
@@ -7303,7 +7653,12 @@ describe("boundary operator-plane CLI", () => {
         confirmReviewedDisabled: async () => true,
       };
       if (posture === "active_rules_recovery" || posture.startsWith("policy_target_")) {
-        const explained = posture === "policy_target_explained" || posture === "policy_target_explained_failure";
+        const postCommitResumeFailure = posture.startsWith("policy_target_postcommit_");
+        const competingPendingRevision = posture === "policy_target_postcommit_competing_pause";
+        const rebasePendingRevision = posture === "policy_target_postcommit_edit_current";
+        const delegationSaveFailure = posture === "policy_target_postcommit_delegation_save";
+        const counterClarification = posture === "policy_target_counter_clarified" || posture === "policy_target_counter_clarified_failure";
+        const explained = posture === "policy_target_explained" || posture === "policy_target_explained_failure" || counterClarification;
         const clarifiedNoChange = "The existing reviewer setting already expresses the intended policy. Preserve every draft and permission unchanged.";
         const mixedRead = posture === "policy_target_mixed_read" || posture === "policy_target_mixed_read_scope";
         const requiresCurrentState = posture === "policy_target_mixed_read";
@@ -7352,7 +7707,7 @@ describe("boundary operator-plane CLI", () => {
           policySourceSession: source.id, previous: deferredResume.value }));
         const recovery = posture === "active_rules_recovery";
         let phase: "blocked" | "fail" | "ready" = "blocked";
-        let calls = 0, menus = 0;
+        let calls = 0, menus = 0, pendingReviewMenus = 0;
         const details: string[][] = [], diagnostics: string[] = [];
         const confirmAction = vi.fn(async () => false);
         const policySession: BoundaryReviewInteractiveSession = { ...resumedSession,
@@ -7363,6 +7718,14 @@ describe("boundary operator-plane CLI", () => {
           chooseOption: async (title, _choices, options) => {
             if (title === "START BOUNDARY DRAFTING") return "resume";
             if (title === "REVIEW DISABLED ACTION REVISION") return "save";
+            if (title === "REVIEW CHANGED ACTION DRAFT") {
+              expect(options?.initialValue).toBe("pause");
+              expect(options?.displayContext).toBe(true);
+              expect(_choices.map(choice => choice.value)).toEqual(["details", "keep_current", "edit_current", "pause"]);
+              expect(options?.context?.join("\n")).toContain("Pending instruction:");
+              expect(revise).toHaveBeenCalledOnce();
+              return pendingReviewMenus++ === 0 ? "details" : competingPendingRevision ? "pause" : rebasePendingRevision ? "edit_current" : "keep_current";
+            }
             if (posture === "policy_target_pause" && title === "CHOOSE THE ACTION TO REVISE") {
               expect(calls).toBe(2);
               expect(options?.initialValue).toBe("back");
@@ -7380,6 +7743,11 @@ describe("boundary operator-plane CLI", () => {
             }
             if (title === "FINISH ATTACHED RULES REVIEW") {
               expect(options?.initialValue).toBe("pause");
+              if (counterClarification && menus++ === 0) {
+                expect(calls).toBe(2);
+                expect(_choices.some(choice => choice.value === "clarify")).toBe(true);
+                return "clarify";
+              }
               if (!recovery) return "pause";
               menus++;
               if (menus === 1) { expect(calls).toBe(2); return "details"; }
@@ -7393,7 +7761,7 @@ describe("boundary operator-plane CLI", () => {
           showReviewDetails: async (_title, lines) => { details.push(lines); },
           confirmActivation: confirmAction,
         };
-        const chat = testBoundaryAuthoringChat(policySession);
+        let chat = testBoundaryAuthoringChat(policySession);
         chat.readOperator = vi.fn().mockResolvedValueOnce(explained ? clarifiedNoChange : requiresCurrentState
           ? "Require current eligibility before viewing information. Keep all change rules and limits unchanged."
           : posture === "policy_target_mixed_read_scope"
@@ -7439,6 +7807,42 @@ describe("boundary operator-plane CLI", () => {
           expect(recovery).toBe(false);
           expect(input.existingDraft!.outcome).toBe(original.outcome);
           expect(input.reservedOutcomes).toEqual([outcomes[0], outcomes[2]]);
+          if (rebasePendingRevision && input.existingDraft!.approval.required_approvals === 3) {
+            expect(input.checkpoint).toBeUndefined();
+            expect(input.intent).toContain("Require two reviewers");
+            const checkpoint = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+            expect(checkpoint.pending_action_revision.baseline_digest).toBe(canonicalJsonDigest(input.existingDraft));
+            expect(checkpoint.pending_action_revision.checkpoint).toBeUndefined();
+            const responses = [
+              { type: "function_call", call_id: "invalid", name: "runner__submit_approval_policy_draft",
+                arguments: JSON.stringify({ status: "draft", ...input.existingDraft!.approval, required_approvals: 0, changed_fields: ["required_approvals"] }) },
+              { type: "function_call", call_id: "valid", name: "runner__submit_approval_policy_draft",
+                arguments: JSON.stringify({ status: "draft", ...input.existingDraft!.approval,
+                  class_name: "unmarked_replacement", required_role: "unmarked_reviewer", shared_limits: [],
+                  required_approvals: 2, changed_fields: ["required_approvals"] }) },
+              { type: "function_call", call_id: "validate", name: "runner__validate_action_draft", arguments: "{}" },
+              { type: "message", role: "assistant", content: [{ type: "output_text", text: "Only the reviewer count changed to two." }] },
+            ];
+            const bodies: string[] = [];
+            const result = await generateModelActionRuleDraft({ ...input,
+              session: { ...input.session, dependencies: { requestJson: async request => {
+                bodies.push(JSON.stringify(request.body));
+                const response = responses.shift();
+                if (!response) throw new Error("Unexpected rebase provider retry");
+                return { status: 200, body: { output: [response] } };
+              } } },
+            });
+            expect(responses).toEqual([]);
+            expect(bodies[1]).toContain("invalid");
+            expect(result.compiled.draft).toEqual({ ...input.existingDraft!,
+              approval: { ...input.existingDraft!.approval, required_approvals: 2 } });
+            return result;
+          }
+          if (rebasePendingRevision) await input.onCheckpoint?.(actionRuleAuthoringCheckpoint({
+            intent_digest: canonicalJsonDigest(input.intent),
+            context_digest: canonicalJsonDigest({ catalog: input.builtCatalog.catalog, read: input.readBoundaryDigest, baseline: input.existingDraft }),
+            components: { approval: { ...input.existingDraft!.approval } },
+          }));
           const draft = structuredClone(input.existingDraft!);
           draft.approval.required_approvals = 2;
           draft.review.human_review = "Two maintenance reviewers approve this proposal.";
@@ -7458,25 +7862,25 @@ describe("boundary operator-plane CLI", () => {
               expect(body).toContain("history_selector");
               for (const outcome of outcomes) expect(body).toContain(outcome);
               if (phase === "fail") throw new Error("POLICY_TEST_PROVIDER_UNAVAILABLE");
-              if (explained && calls > 1) {
+              if (explained && calls > (counterClarification ? 2 : 1)) {
                 expect(body).toContain(clarifiedNoChange);
-                if (posture === "policy_target_explained_failure") throw new Error("POLICY_TEST_CLARIFICATION_RECHECK_UNAVAILABLE");
+                if (posture === "policy_target_explained_failure" || posture === "policy_target_counter_clarified_failure") throw new Error("POLICY_TEST_CLARIFICATION_RECHECK_UNAVAILABLE");
               }
               const saved = (await readActionRuleAuthorityDraft(root, combined.authority.name))!;
-              const fixed = explained && calls > 1 || phase === "ready" || saved.authority.approval_classes.find((entry) => entry.name === `${original.outcome}.approval`)!.required_approvals === 2;
+              const fixed = explained && calls > (counterClarification ? 2 : 1) || phase === "ready" || saved.authority.approval_classes.find((entry) => entry.name === `${original.outcome}.approval`)!.required_approvals === 2;
               return { status: 200, body: { output: [{ type: "function_call", call_id: `rules_${calls}`, name: "runner__review_policy_coverage",
                 arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: fixed ? "implemented" : "conflict",
                   topic: recovery ? "Joint automatic-approval limits" : "Reviewer requirement",
-                  responsibility: recovery || posture === "policy_target_mechanical" ? "runner" : "operator",
-                  issue_kind: recovery || posture === "policy_target_mechanical" ? "contradiction" : "business_choice",
+                  responsibility: recovery || posture === "policy_target_mechanical" || counterClarification ? "runner" : "operator",
+                  issue_kind: recovery || posture === "policy_target_mechanical" || counterClarification ? "contradiction" : "business_choice",
                   interpretation: requiresCurrentState ? "Current eligibility is mandatory for both Read access and changes; their checks remain unconfigured."
                     : posture === "policy_target_mixed_read_scope" ? "Customers may access only their permitted records before requesting a change."
                     : fixed ? "The prepared rules match the required selectors and reviewer quorum."
-                    : recovery ? "Different limit IDs were interpreted as separate pools." : "The current new outcome requires two reviewers.",
+                    : recovery || counterClarification ? "Different limit IDs were interpreted as separate pools." : "The current new outcome requires two reviewers.",
                   next_step: recovery ? "Reconcile the history selectors without renaming IDs." : "Should this outcome require two reviewers?",
                   draft_paths: requiresCurrentState ? ["/read", "/runner_evidence/runtime_contract/read_eligibility/configured_current_state_prerequisite", "/actions/0/require", "/actions/1/require", "/actions/2/require"]
                     : posture === "policy_target_mixed_read_scope" ? ["/read", "/runner_evidence/read_access/public.service_visits", "/actions/0/require", "/actions/1/require", "/actions/2/require"]
-                    : recovery ? ["/actions/0/approval", "/actions/1/approval", "/actions/2/approval",
+                    : recovery || counterClarification ? ["/actions/0/approval", "/actions/1/approval", "/actions/2/approval",
                     ...outcomes.map((outcome) => `/runner_evidence/actions/${outcome}/automatic_limits`)]
                     : posture === "policy_target_multi" || posture === "policy_target_pause" ? ["/actions/0/approval", "/actions/1/approval", "/actions/2/approval"]
                     : posture === "policy_target_retained" ? ["/actions/0/approval"]
@@ -7487,16 +7891,180 @@ describe("boundary operator-plane CLI", () => {
             modelAuthoringNarrator: async () => "Review the pending requirement for the saved outcome.",
             actionProjectInspector: async () => inspection, boundaryAuthoringChatFactory: () => chat,
           });
+        if (postCommitResumeFailure) {
+          const permanentFailure = posture !== "policy_target_postcommit_once" && !delegationSaveFailure;
+          const resumePath = path.join(root, ".synapsor/boundary-authoring/resume.json");
+          const rename = fs.rename.bind(fs);
+          let injected = 0;
+          let failedResume: unknown;
+          const failure = vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+            const laterSave = delegationSaveFailure ? typeof to === "string"
+              && to.startsWith(path.join(root, ".synapsor/delegations/")) && to.endsWith("/draft.json") : to === resumePath;
+            if (laterSave && (permanentFailure || injected === 0)) {
+              const actual = await readActionRuleAuthorityDraft(root, combined.authority.name);
+              if (actual && actual.digest !== combined.digest
+                && actual.authority.approval_classes.find(entry => entry.name === `${original.outcome}.approval`)!.required_approvals === 2) {
+                injected++;
+                failedResume ??= JSON.parse(await fs.readFile(resumePath, "utf8"));
+                throw Object.assign(new Error(`EACCES: injected post-commit ${delegationSaveFailure ? "delegation" : "resume"} rename failure`), { code: "EACCES" });
+              }
+            }
+            return rename(from, to);
+          });
+          let firstCode: number | undefined, firstError: string | undefined;
+          try { firstCode = await run(); }
+          catch (error) { firstError = error instanceof Error ? error.message : String(error); }
+          finally { failure.mockRestore(); }
+          const persisted = (await readActionRuleAuthorityDraft(root, combined.authority.name))!;
+          const afterFirstResume = JSON.parse(await fs.readFile(resumePath, "utf8"));
+          const first = { code: firstCode, error: firstError, injected,
+            draft_digest: persisted.digest, prior_digest: combined.digest,
+            activation_review_calls: confirmAction.mock.calls.length,
+            revise_calls: revise.mock.calls.length, coverage_calls: calls,
+            details: vi.mocked(chat.rememberDetails).mock.calls,
+            checkpoints: vi.mocked(chat.checkpoint).mock.calls,
+            failed_resume: failedResume, after_resume: afterFirstResume };
+          expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeReadBefore);
+          expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+          confirmAction.mockClear();
+          const editsBeforeRestart = revise.mock.calls.length;
+          let expectedCurrent = persisted;
+          if (competingPendingRevision || rebasePendingRevision) {
+            expectedCurrent = buildActionRuleAuthorityDraft({
+              name: persisted.authority.name, action_boundary_name: persisted.authority.action_boundary.name,
+              catalog: persisted.authority.catalog,
+              rules: persisted.authority.rules.map(({ activated_at: _at, ...rule }) => rule),
+              approval_classes: persisted.authority.approval_classes.map(entry =>
+                entry.name === `${original.outcome}.approval` ? { ...entry, required_approvals: 3 } : entry),
+              reviews: persisted.reviews.map(entry => !rebasePendingRevision && entry.outcome === original.outcome
+                ? { ...entry, human_review: "Three reviewers under a competing owner revision." } : entry),
+            });
+            await writeActionRuleAuthorityDraft(root, expectedCurrent);
+          }
+          chat = testBoundaryAuthoringChat(policySession);
+          chat.readOperator = vi.fn(async () => { throw new Error("Recovery must not ask for the same edit again."); });
+          chat.streamModel = vi.fn(async () => undefined);
+          let secondCode: number | undefined, secondError: string | undefined;
+          try { secondCode = await run(); }
+          catch (error) { secondError = error instanceof Error ? error.message : String(error); }
+          const afterRestart = (await readActionRuleAuthorityDraft(root, combined.authority.name))!;
+          const resumed = JSON.parse(await fs.readFile(resumePath, "utf8"));
+          const second = { code: secondCode, error: secondError,
+            draft_digest: afterRestart.digest, activation_review_calls: confirmAction.mock.calls.length,
+            revise_calls: revise.mock.calls.length, coverage_calls: calls,
+            details: vi.mocked(chat.rememberDetails).mock.calls,
+            checkpoints: vi.mocked(chat.checkpoint).mock.calls,
+            resume: resumed };
+          let third: typeof second | undefined;
+          if (permanentFailure) {
+            confirmAction.mockClear();
+            chat = testBoundaryAuthoringChat(policySession);
+            chat.readOperator = vi.fn(async () => { throw new Error("Recovery must not ask for the same edit again."); });
+            chat.streamModel = vi.fn(async () => undefined);
+            let code: number | undefined, error: string | undefined;
+            try { code = await run(); }
+            catch (caught) { error = caught instanceof Error ? caught.message : String(caught); }
+            third = { code, error,
+              draft_digest: (await readActionRuleAuthorityDraft(root, combined.authority.name))!.digest,
+              activation_review_calls: confirmAction.mock.calls.length,
+              revise_calls: revise.mock.calls.length, coverage_calls: calls,
+              details: vi.mocked(chat.rememberDetails).mock.calls,
+              checkpoints: vi.mocked(chat.checkpoint).mock.calls,
+              resume: JSON.parse(await fs.readFile(resumePath, "utf8")) };
+          }
+          expect(injected).toBeGreaterThanOrEqual(permanentFailure ? 2 : 1);
+          expect(persisted.digest).not.toBe(combined.digest);
+          expect(persisted.authority.approval_classes.find(entry => entry.name === `${original.outcome}.approval`)!.required_approvals).toBe(2);
+          for (const outcome of outcomes) {
+            const stripTime = (rule: typeof persisted.authority.rules[number]) => { const { activated_at: _time, ...rest } = rule; return rest; };
+            expect(stripTime(persisted.authority.rules.find(entry => entry.rule.outcome === outcome)!))
+              .toEqual(stripTime(combined.authority.rules.find(entry => entry.rule.outcome === outcome)!));
+            const beforeApproval = combined.authority.approval_classes.find(entry => entry.name === `${outcome}.approval`)!;
+            expect(persisted.authority.approval_classes.find(entry => entry.name === `${outcome}.approval`))
+              .toEqual(outcome === original.outcome ? { ...beforeApproval, required_approvals: 2 } : beforeApproval);
+          }
+          expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeReadBefore);
+          expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+          expect(first.error).toBeUndefined();
+          expect(first.activation_review_calls, "A failed post-commit local save must not offer activation readiness").toBe(0);
+          expect(first.coverage_calls).toBe(2);
+          expect(first.checkpoints.some(([title]) => title === "Draft updated")).toBe(false);
+          if (permanentFailure) expect(first.after_resume).toEqual(failedResume);
+          else if (delegationSaveFailure) expect(first.after_resume.pending_action_revision).toEqual(
+            (failedResume as typeof first.after_resume).pending_action_revision);
+          else expect(first.after_resume.pending_action_revision).toBeUndefined();
+          expect(first.details.some(([title]) => title === "ACTION REVISION NOT SAVED")).toBe(false);
+          expect(first.checkpoints.some(([title, lines]) => (delegationSaveFailure || /saved.*resume|resume.*saved/i.test(String(title)))
+            && JSON.stringify(lines).includes(persisted.digest))).toBe(true);
+          expect(second.error).toBeUndefined();
+          expect(secondCode).toBe(0);
+          if (rebasePendingRevision) {
+            expect(first.after_resume.pending_action_revision.checkpoint).toBeDefined();
+            expect(pendingReviewMenus).toBe(2);
+            expect(afterRestart.digest).not.toBe(expectedCurrent.digest);
+            for (const outcome of outcomes) {
+              const stripTime = (rule: typeof persisted.authority.rules[number]) => { const { activated_at: _at, ...rest } = rule; return rest; };
+              expect(stripTime(afterRestart.authority.rules.find(entry => entry.rule.outcome === outcome)!))
+                .toEqual(stripTime(expectedCurrent.authority.rules.find(entry => entry.rule.outcome === outcome)!));
+              const approval = expectedCurrent.authority.approval_classes.find(entry => entry.name === `${outcome}.approval`)!;
+              expect(afterRestart.authority.approval_classes.find(entry => entry.name === approval.name))
+                .toEqual(outcome === original.outcome ? { ...approval, required_approvals: 2 } : approval);
+            }
+            expect(revise).toHaveBeenCalledTimes(editsBeforeRestart + 1);
+            expect(second.activation_review_calls).toBe(1);
+            expect(resumed.pending_action_revision).toBeUndefined();
+            expect(third!.error).toBeUndefined();
+            expect(third!.draft_digest).toBe(afterRestart.digest);
+            expect(third!.revise_calls).toBe(editsBeforeRestart + 1);
+            expect(third!.resume.pending_action_revision).toBeUndefined();
+            expect(chat.readOperator).not.toHaveBeenCalled();
+            return;
+          }
+          expect(afterRestart.digest).toBe(expectedCurrent.digest);
+          expect(revise).toHaveBeenCalledTimes(editsBeforeRestart);
+          if (competingPendingRevision) {
+            expect(expectedCurrent.digest).not.toBe(persisted.digest);
+            expect(details.flat().join("\n")).toContain(expectedCurrent.digest);
+            expect(details.flat().join("\n")).toContain('"required_approvals": 3');
+            for (const attempt of [second, third!]) {
+              expect(attempt.error).toBeUndefined();
+              expect(attempt.code).toBe(0);
+              expect(attempt.draft_digest).toBe(expectedCurrent.digest);
+              expect(attempt.activation_review_calls).toBe(0);
+              expect(attempt.revise_calls).toBe(editsBeforeRestart);
+              expect(attempt.coverage_calls).toBe(first.coverage_calls);
+              expect(attempt.resume.pending_action_revision).toEqual(first.after_resume.pending_action_revision);
+            }
+            expect(pendingReviewMenus).toBe(3);
+            expect(chat.readOperator).not.toHaveBeenCalled();
+            return;
+          }
+          if (permanentFailure) {
+            expect(pendingReviewMenus).toBe(2);
+            expect(details.flat().join("\n")).toContain(persisted.digest);
+            expect(details.flat().join("\n")).toContain(first.after_resume.pending_action_revision.instruction);
+            expect(details.flat().join("\n")).toContain('"required_approvals": 2');
+            expect(third!.error).toBeUndefined();
+            expect(third!.draft_digest).toBe(persisted.digest);
+            expect(third!.activation_review_calls).toBe(1);
+            expect(third!.revise_calls).toBe(editsBeforeRestart);
+            expect(third!.resume.pending_action_revision).toBeUndefined();
+          }
+          expect(confirmAction).toHaveBeenCalledOnce();
+          expect(resumed.pending_action_revision).toBeUndefined();
+          expect(chat.readOperator).not.toHaveBeenCalled();
+          return;
+        }
         expect(await run()).toBe(0);
         if (explained) {
-          expect(calls).toBe(2);
+          expect(calls).toBe(counterClarification ? 3 : 2);
           expect(revise).not.toHaveBeenCalled();
           expect(sharedReadRevision).not.toHaveBeenCalled();
           expect(chat.readOperator).toHaveBeenCalledOnce();
           expect((await readActionRuleAuthorityDraft(root, combined.authority.name))!.digest).toBe(combined.digest);
           expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeReadBefore);
           expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
-          if (posture === "policy_target_explained_failure") {
+          if (posture === "policy_target_explained_failure" || posture === "policy_target_counter_clarified_failure") {
             expect(confirmAction).not.toHaveBeenCalled();
             expect(chat.rememberDetails).toHaveBeenCalledWith("RULES COVERAGE UNAVAILABLE",
               expect.arrayContaining([expect.stringContaining("POLICY_TEST_CLARIFICATION_RECHECK_UNAVAILABLE")]));
@@ -14746,9 +15314,20 @@ function actionTargetInspection(): SchemaInspection {
   return inspection;
 }
 
-async function staleSemanticRevalidationFixture(options: { writeback?: "proposal_only" | "supervised"; outcomes?: string[]; unusedVerificationField?: boolean; privateVerificationResource?: boolean; atomicUpdates?: boolean } = {}) {
+async function staleSemanticRevalidationFixture(options: { writeback?: "proposal_only" | "supervised"; outcomes?: string[]; unusedVerificationField?: boolean; privateVerificationResource?: boolean; atomicUpdates?: boolean; currentStateRead?: boolean } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-revalidate-semantic-actions-"));
-  const inspection = actionTargetInspection();
+  const inspection = options.currentStateRead ? principalScopeInspection() : actionTargetInspection();
+  if (options.currentStateRead) {
+    const parent = inspection.tables[0]!;
+    parent.unique_constraints.push({ name: "current_organization_person", columns: ["tenant_id", "principal_id"] });
+    const table = structuredClone(parent);
+    table.name = "current_access";
+    table.foreign_keys = [{ name: "current_access_subject_fk", columns: ["tenant_id", "principal_id"], referenced_schema: "public",
+      referenced_table: parent.name, referenced_columns: ["tenant_id", "principal_id"], delete_rule: "RESTRICT" }];
+    for (const name of ["effective_from", "effective_until"]) table.columns.push({ name, data_type: "timestamptz", nullable: false, generated: false,
+      ordinal_position: table.columns.length + 1, suggestions: { tenant: false, conflict: false, sensitive: false, immutable: false, large_or_binary: false } });
+    inspection.tables.push(table);
+  }
   if (options.atomicUpdates) for (const table of inspection.tables) {
     table.columns.push({ name: "c09", data_type: "integer", nullable: false, generated: false,
       ordinal_position: table.columns.length + 1,
@@ -14766,6 +15345,11 @@ async function staleSemanticRevalidationFixture(options: { writeback?: "proposal
     schema_inputs: [], database_env_names: ["DATABASE_URL"] }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
   const planner = vi.fn(async () => { throw new Error("Stale completed Actions must not be replanned."); });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  if (options.currentStateRead) for (const table of inspection.tables) {
+    const preview = await prepareBoundaryResourceReviewMutation(root, { resource_id: `public.${table.name}`, principal_key: "principal_id",
+      withhold_from_model_fields: ["principal_id"], actor: "test-reviewer", reason: "Review the fixture's exact existing organization/person scope." }, async () => inspection);
+    await commitBoundaryResourceReviewMutation(root, preview);
+  }
   if (options.atomicUpdates) for (const table of inspection.tables) {
     const preview = await prepareBoundaryResourceReviewMutation(root, { resource_id: `public.${table.name}`,
       withhold_from_model_fields: ["c09"], private_model_fields: ["c09"], actor: "test-reviewer",
@@ -14822,9 +15406,9 @@ async function staleSemanticRevalidationFixture(options: { writeback?: "proposal
     approval_classes: compiled.flatMap((entry) => entry.loaded.authority.approval_classes),
     reviews: compiled.map((entry) => ({ outcome: entry.rule.outcome, ...entry.review })), now: "2026-09-08T12:00:00.000Z" });
   await writeActionRuleAuthorityDraft(root, stored);
-  if (options.privateVerificationResource) {
+  if (options.privateVerificationResource || options.currentStateRead) {
     const candidate = structuredClone(context.candidate);
-    candidate.pack.resources = candidate.pack.resources.filter(resource => resource.id !== "public.visit_facts");
+    candidate.pack.resources = candidate.pack.resources.filter(resource => resource.id !== "public.visit_facts" && resource.id !== "public.current_access");
     await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: context.draft, candidate,
       confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", reason: "Keep verification facts private.",
       revision: (context.progress?.revision ?? 0) + 1 }));
@@ -14855,7 +15439,8 @@ async function staleSemanticRevalidationFixture(options: { writeback?: "proposal
   };
   const chats: BoundaryAuthoringChat[] = [];
   const run = (modelActionRuleGenerator: (input: Parameters<typeof generateModelActionRuleDraft>[0]) => Promise<ModelActionRuleDraftResult>,
-    actionProjectInspector: () => Promise<SchemaInspection> = async () => inspection) =>
+    actionProjectInspector: () => Promise<SchemaInspection> = async () => inspection,
+    overrides: NonNullable<Parameters<typeof boundaryReviewCommandInternal>[4]> = {}) =>
     boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
       session, undefined, { startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
         modelBoundaryJobPlanner: planner, modelActionRuleGenerator,
@@ -14864,6 +15449,7 @@ async function staleSemanticRevalidationFixture(options: { writeback?: "proposal
         actionProjectInspector, boundaryAuthoringChatFactory: () => {
           const chat = testBoundaryAuthoringChat(session); chats.push(chat); return chat;
         },
+        ...overrides,
       });
   const expectRetained = async (outcomes: string[]) => {
     const current = await readActionRuleAuthorityDraft(root, stored.authority.name);

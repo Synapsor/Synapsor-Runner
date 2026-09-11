@@ -8,6 +8,8 @@ import { MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS } from "./boundary-authoring-li
 import { reviewReadPrerequisiteSelection } from "./read-prerequisite-consent.js";
 import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { AnalyticsShellIo } from "./analytics-shell.js";
+import { buildReadPrerequisiteDecisions, parseReadPrerequisiteBusinessDecisions,
+  type ReadPrerequisiteBusinessDecision, type ReadPrerequisiteDecisionContext } from "./read-prerequisite-decisions.js";
 import {
   buildReadPrerequisiteModelCatalog, generateModelReadPrerequisite, parseReadPrerequisiteModelSelection,
   readPrerequisiteCatalogProse, readPrerequisiteSelectionSchema, sanitizeReadPrerequisiteMetadataForReview,
@@ -72,7 +74,287 @@ function model(payloads: unknown[], inspect?: (request: Parameters<NonNullable<A
   });
 }
 
+function scopedFixture() {
+  const f = fixture();
+  f.input.boundary.source = "DATABASE_URL";
+  Object.assign(f.input.boundary.pack, { name: "maintenance" });
+  const context: ReadPrerequisiteDecisionContext = { boundary_name: "maintenance", source: "DATABASE_URL",
+    workflow: "before_every_read", purpose_key: "current_access_condition", requirement_revision: canonicalJsonDigest("Require current eligibility.") };
+  const saved: ReadPrerequisiteBusinessDecision[] = [];
+  const recordBusinessDecision = vi.fn(async (record: ReadPrerequisiteBusinessDecision) => { saved.push(record); });
+  const input = { ...f.input, businessDecisionContext: context, recordBusinessDecision };
+  const decisions = () => buildReadPrerequisiteDecisions({ context, boundary: input.boundary, inspection: input.inspection,
+    candidates: input.approvedMetadata.candidates });
+  const source = () => decisions().find(decision => decision.kind === "source_authority")!;
+  const ask = (question: string, id = source().decision_id) => ({ clarification_request: { question, reason: "Need source authority.", decision_id: id } });
+  return { ...f, input, context, saved, recordBusinessDecision, decisions, source, ask };
+}
+
+describe("host-scoped private Read business decisions", () => {
+  it("does not rekey a candidate decision for unrelated resource RLS settings", () => {
+    const f = scopedFixture(), before = f.decisions();
+    f.input.boundary.pack.resources.push({ schema: "coded", table: "unrelated", tenant_key: "organization",
+      rls_session: { tenant_setting: "app.unrelated_organization" } });
+    expect(f.decisions()).toEqual(before);
+  });
+
+  it("rekeys the decision when its candidate's reviewed RLS roles change", () => {
+    const f = scopedFixture(), before = f.source();
+    f.input.boundary.pack.resources[0]!.rls_session = { tenant_setting: "app.changed_organization", principal_setting: "app.changed_person" };
+    const after = f.source();
+    expect(after.decision_id).not.toBe(before.decision_id);
+  });
+
+  it("uses only the proven identity parent's settings for a private FK candidate", () => {
+    const f = scopedFixture();
+    const parent = structuredClone(f.input.inspection.tables[0]!);
+    parent.name = "identity_parent";
+    f.input.inspection.tables.push(parent);
+    f.input.inspection.tables[0]!.foreign_keys = [{ name: "current_identity_fk", columns: ["t0", "p1"], referenced_schema: "coded",
+      referenced_table: parent.name, referenced_columns: ["t0", "p1"], delete_rule: "RESTRICT" }];
+    f.input.boundary.pack.resources[0]!.table = parent.name;
+    const before = f.decisions();
+    f.input.boundary.pack.resources.push({ schema: "coded", table: "unrelated", tenant_key: "organization",
+      rls_session: { tenant_setting: "app.unrelated_organization" } });
+    expect(f.decisions()).toEqual(before);
+    f.input.boundary.pack.resources[0]!.rls_session = { tenant_setting: "app.parent_organization", principal_setting: "app.parent_person" };
+    expect(f.decisions().map(decision => decision.decision_id)).not.toEqual(before.map(decision => decision.decision_id));
+  });
+
+  it("keeps internal workflow and purpose keys out of the canonical operator question", () => {
+    const f = scopedFixture(), decision = f.source();
+    expect(decision.question).not.toContain(f.context.workflow);
+    expect(decision.question).not.toContain(f.context.purpose_key);
+    expect(decision.question).toContain("this job's selected Read condition");
+    expect(decision.question).toContain("coded.r7");
+    expect(decision.question).toContain("organization field t0 and person field p1");
+  });
+
+  it("does not count the same saved operator exchange twice at the legacy history limit", async () => {
+    const f = scopedFixture(), decision = f.source();
+    const record = { decision_id: decision.decision_id, applicability_digest: decision.applicability_digest, question: decision.question, answer: "Authoritative." };
+    const history = [{ question: record.question, answer: record.answer },
+      ...Array.from({ length: 15 }, (_, i) => ({ question: `Separate question ${i}?`, answer: "Separate answer." }))];
+    const result = await generateModelReadPrerequisite({ ...f.input, approvedBusinessClarifications: history, approvedBusinessDecisions: [record],
+      dependencies: { requestJson: model([f.payload]) } });
+    expect(result).toMatchObject({ state: "reviewed", clarification_metrics: { business_questions: 0, reused_business_answers: 1, semantic_reviews: 1 } });
+    expect(history).toHaveLength(16);
+  });
+
+  it("reuses a saved answer across restart and unrelated edits, but obtains new exact semantic consent", async () => {
+    const f = scopedFixture();
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "The operator identifies r7 as authoritative." }));
+    await generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: model([f.ask("Which register?"), f.payload]) }, clarificationHandler });
+    const saved = JSON.parse(JSON.stringify(f.saved)) as ReadPrerequisiteBusinessDecision[];
+    saved[0]!.question = "Older host display wording, not a different decision.";
+    f.input.boundary.generation_lock_fingerprint = canonicalJsonDigest("unrelated writer rescan");
+    f.input.inspection.inspected_at = "2026-09-11T00:00:00.000Z";
+    f.input.inspection.current_user = "reviewed_replacement_reader";
+    f.input.inspection.tables[0]!.row_level_security_policies![0]!.roles = ["reviewed_replacement_reader"];
+    Object.assign(f.input.boundary.pack.resources[0]!, { max_rows: 5 });
+    f.input.instruction += "\nKeep an unrelated approval limit at 5.";
+    const requestJson = model([f.ask("Does this register have authoritative status?"), f.payload], request => {
+      expect(JSON.stringify(request.body)).toContain(saved[0]!.answer);
+      expect(JSON.stringify(request.body)).not.toContain("Older host display wording");
+    });
+    const result = await generateModelReadPrerequisite({ ...f.input, approvedBusinessDecisions: saved, dependencies: { requestJson }, clarificationHandler });
+    expect(result).toMatchObject({ state: "reviewed", clarification_metrics: { business_questions: 0, reused_business_answers: 1,
+      repeated_business_questions: 1, renewed_business_questions: 0, semantic_reviews: 1 } });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(f.confirmSemanticSelection).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["workflow", "purpose", "principal", "source", "object"])("does not reuse identical wording in a different %s scope", async kind => {
+    const f = scopedFixture(), old = f.source();
+    const records = [{ decision_id: old.decision_id, applicability_digest: old.applicability_digest, question: old.question, answer: "OTHER_SCOPE_ANSWER" }];
+    if (kind === "workflow") f.context.workflow = "separate_workflow";
+    if (kind === "purpose") f.context.purpose_key = "different_business_decision";
+    if (kind === "principal") f.input.boundary.trusted_context.principal_env = "REVIEWED_DIFFERENT_PERSON_ROLE";
+    if (kind === "source") f.input.boundary.source = f.context.source = "OTHER_DATABASE_URL";
+    if (kind === "object") {
+      f.input.inspection.tables[0]!.name = "r8";
+      f.input.boundary.pack.resources[0]!.table = "r8";
+      const candidates = listSupportedReadCurrentStatePrerequisiteCandidates(f.input.inspection, f.input.boundary);
+      f.input.approvedMetadata = { candidates, metadata_digest: canonicalJsonDigest(candidates) };
+    }
+    expect(f.source().decision_id).not.toBe(old.decision_id);
+    const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
+    const result = await generateModelReadPrerequisite({ ...f.input, approvedBusinessDecisions: records,
+      clarificationHandler, dependencies: { requestJson: model([f.ask(old.question)], request => expect(JSON.stringify(request.body)).not.toContain("OTHER_SCOPE_ANSWER")) } });
+    expect(result).toMatchObject({ state: "pending", clarification_metrics: { business_questions: 1, reused_business_answers: 0 } });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(f.confirmSemanticSelection).not.toHaveBeenCalled();
+  });
+
+  it.each(["meaning", "enum", "type", "source_description"])("renews a decision after a relevant %s change, without deleting older history", async kind => {
+    const f = scopedFixture();
+    const choose = () => f.decisions().find(decision => decision.kind === "positive_state")!;
+    const old = choose(), saved = [{ decision_id: old.decision_id, applicability_digest: old.applicability_digest,
+      question: old.question, answer: "OLD_RELEVANT_ANSWER" }];
+    const before = structuredClone(saved);
+    if (kind === "meaning") f.context.requirement_revision = canonicalJsonDigest("Explicitly changed condition.");
+    if (kind === "enum") f.input.inspection.tables[0]!.columns.find(column => column.name === "s0")!.enum_values!.push("suspended");
+    if (kind === "type") f.input.inspection.tables[0]!.columns.find(column => column.name === "s0")!.data_type = "character varying";
+    if (kind === "source_description") f.input.inspection.tables[0]!.comment = "New owner-reviewed meaning required.";
+    const candidates = listSupportedReadCurrentStatePrerequisiteCandidates(f.input.inspection, f.input.boundary);
+    f.input.approvedMetadata = { candidates, metadata_digest: canonicalJsonDigest(candidates) };
+    const current = choose();
+    expect(current.decision_id).toBe(old.decision_id);
+    expect(current.applicability_digest).not.toBe(old.applicability_digest);
+    const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
+    expect(await generateModelReadPrerequisite({ ...f.input, approvedBusinessDecisions: saved, clarificationHandler,
+      dependencies: { requestJson: model([f.ask(old.question, current.decision_id)], request => expect(JSON.stringify(request.body)).not.toContain("OLD_RELEVANT_ANSWER")) } }))
+      .toMatchObject({ state: "pending", clarification_metrics: { business_questions: 1, renewed_business_questions: 1, semantic_reviews: 0 } });
+    expect(saved).toEqual(before);
+    expect(f.recordBusinessDecision).not.toHaveBeenCalled();
+  });
+
+  it("uses a fixed host question even when model prose refers to a different decision", async () => {
+    const f = scopedFixture();
+    const clarificationHandler = vi.fn(async request => {
+      expect(request.question).toBe(f.source().question);
+      expect(request.question).not.toContain("waive");
+      return { state: "declined" as const };
+    });
+    await generateModelReadPrerequisite({ ...f.input, clarificationHandler,
+      dependencies: { requestJson: model([f.ask("May we waive a different workflow's limit?")]) } });
+    expect(f.saved).toEqual([]);
+  });
+
+  it("bounds repeated applicable decisions without another operator question or semantic review", async () => {
+    const f = scopedFixture(), decision = f.source();
+    const requestJson = model([f.ask("Paraphrased question")]);
+    const clarificationHandler = vi.fn();
+    const result = await generateModelReadPrerequisite({ ...f.input, approvedBusinessDecisions: [{ decision_id: decision.decision_id,
+      applicability_digest: decision.applicability_digest, question: decision.question, answer: "Authoritative." }], dependencies: { requestJson }, clarificationHandler });
+    expect(result).toMatchObject({ state: "pending", reason: expect.stringContaining("one reminder"),
+      clarification_metrics: { business_questions: 0, repeated_business_questions: 2, semantic_reviews: 0 } });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(clarificationHandler).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse an answer after a failed save or cancelled decision", async () => {
+    const f = scopedFixture();
+    const requestJson = model([f.ask("Authority?"), f.payload]);
+    await expect(generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson },
+      clarificationHandler: async () => ({ state: "answered", answer: "Authoritative." }),
+      recordBusinessDecision: async () => { throw new Error("simulated atomic resume save failure"); } })).rejects.toThrow("atomic resume save failure");
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(f.confirmSemanticSelection).not.toHaveBeenCalled();
+    const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
+    await generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: model([f.ask("Authority after restart?")]) }, clarificationHandler });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(f.saved).toEqual([]);
+  });
+
+  it("rejects foreign decision ids with the existing bounded correction and no operator decision", async () => {
+    const f = scopedFixture(), requestJson = model([f.ask("Authority?", canonicalJsonDigest("foreign"))]);
+    const clarificationHandler = vi.fn();
+    await expect(generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson }, clarificationHandler })).rejects.toThrow("READ_PREREQUISITE_NOT_SUBMITTED");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(clarificationHandler).not.toHaveBeenCalled();
+  });
+
+  it.each(["duplicate", "overpost", "credential", "digest"])("rejects malformed saved decision %s before egress", async kind => {
+    const f = scopedFixture(), current = f.source();
+    const record: Record<string, unknown> = { decision_id: current.decision_id, applicability_digest: current.applicability_digest, question: current.question, answer: "Authoritative." };
+    if (kind === "overpost") record.authority_granted = true;
+    if (kind === "credential") record.answer = "postgresql://reader:secret@localhost/private";
+    if (kind === "digest") record.decision_id = "guessed";
+    const requestJson = model([f.payload]);
+    await expect(generateModelReadPrerequisite({ ...f.input, approvedBusinessDecisions: (kind === "duplicate" ? [record, record] : [record]) as ReadPrerequisiteBusinessDecision[],
+      dependencies: { requestJson } })).rejects.toThrow("READ_PREREQUISITE_DECISION_INVALID");
+    expect(requestJson).not.toHaveBeenCalled();
+  });
+
+  it("guards host context against a concurrent relevant meaning change", async () => {
+    const f = scopedFixture();
+    const requestJson = model([f.payload]);
+    await expect(generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson }, confirmSemanticSelection: async () => {
+      f.context.requirement_revision = canonicalJsonDigest("concurrent edit");
+      return { state: "confirmed", operator_evidence: "Original selection confirmed." };
+    } })).rejects.toThrow("READ_PREREQUISITE_REVIEW_STALE");
+  });
+
+  it("does not reuse or overwrite a scoped answer after an unclassified operator mapping correction", async () => {
+    const f = scopedFixture(), decision = f.source();
+    const saved = [{ decision_id: decision.decision_id, applicability_digest: decision.applicability_digest,
+      question: decision.question, answer: "Original ownership meaning." }];
+    const clarificationHandler = vi.fn(async request => {
+      expect(request).not.toHaveProperty("decision");
+      return { state: "answered" as const, answer: "The operator provides the revised source meaning as context." };
+    });
+    let confirmations = 0;
+    const result = await generateModelReadPrerequisite({ ...f.input, approvedBusinessDecisions: saved, clarificationHandler,
+      dependencies: { requestJson: model([f.payload, f.ask("Explain or correct the source meaning?"), f.payload]) },
+      confirmSemanticSelection: async () => ++confirmations === 1 ? { state: "revise", instruction: "The source meaning has changed; review my correction." }
+        : { state: "pending" } });
+    expect(result.state).toBe("pending");
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(f.recordBusinessDecision).not.toHaveBeenCalled();
+    expect(saved[0]!.answer).toBe("Original ownership meaning.");
+  });
+
+  it("keeps decision kinds and oriented date pairs distinct without name or type inference", () => {
+    const f = scopedFixture(), decisions = f.decisions();
+    expect(decisions.filter(decision => decision.kind === "source_authority")).toHaveLength(1);
+    expect(decisions.filter(decision => decision.kind === "positive_state")).toHaveLength(1);
+    expect(decisions.filter(decision => decision.kind === "effective_interval")).toHaveLength(6);
+    expect(new Set(decisions.map(decision => decision.decision_id)).size).toBe(8);
+    expect(parseReadPrerequisiteBusinessDecisions([])).toEqual([]);
+  });
+
+  it.each(["source", "boundary", "inspection"])("cannot use a saved answer to bypass a changed current %s reference", async kind => {
+    const f = scopedFixture(), decision = f.source();
+    const saved = [{ decision_id: decision.decision_id, applicability_digest: decision.applicability_digest, question: decision.question, answer: "Authoritative." }];
+    if (kind === "source") f.context.source = "UNSELECTED_DATABASE_URL";
+    if (kind === "boundary") f.context.boundary_name = "unselected_boundary";
+    if (kind === "inspection") f.input.inspection.tables[0]!.unique_constraints = [];
+    const requestJson = model([f.payload]);
+    await expect(generateModelReadPrerequisite({ ...f.input, approvedBusinessDecisions: saved, dependencies: { requestJson } })).rejects.toThrow(/DECISION_INVALID|no longer match/);
+    expect(requestJson).not.toHaveBeenCalled();
+    expect(f.confirmSemanticSelection).not.toHaveBeenCalled();
+  });
+
+  it("preserves saved answers on provider failure and requires new host review on retry", async () => {
+    const f = scopedFixture(), decision = f.source();
+    const saved = [{ decision_id: decision.decision_id, applicability_digest: decision.applicability_digest, question: decision.question, answer: "Authoritative." }];
+    const before = structuredClone(saved);
+    await expect(generateModelReadPrerequisite({ ...f.input, approvedBusinessDecisions: saved,
+      dependencies: { requestJson: async () => { throw new Error("deterministic provider unavailable"); } } })).rejects.toThrow();
+    expect(saved).toEqual(before);
+    expect(f.confirmSemanticSelection).not.toHaveBeenCalled();
+    await generateModelReadPrerequisite({ ...f.input, approvedBusinessDecisions: saved, dependencies: { requestJson: model([f.payload]) } });
+    expect(f.confirmSemanticSelection).toHaveBeenCalledOnce();
+    expect(f.recordBusinessDecision).not.toHaveBeenCalled();
+  });
+});
+
 describe("strict private Read prerequisite catalog and selection", () => {
+  it("does not ask the same source decision twice when its display question is paraphrased", async () => {
+    const f = scopedFixture();
+    const requestJson = model([
+      f.ask("Is r7 the authoritative current register?"),
+      f.ask("Does r7 supply the official current status?"),
+      f.payload,
+    ]);
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Yes, the owner maintains r7 as the authoritative current register." }));
+    expect(await generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson }, clarificationHandler })).toMatchObject({ state: "reviewed" });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ question: f.source().question }));
+    expect(f.saved).toHaveLength(1);
+  });
+
+  it("does not let identical legacy wording suppress a business decision in another scope", async () => {
+    const f = scopedFixture(), question = "Is this the authoritative register?";
+    const requestJson = model([f.ask(question), f.payload]);
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "For this workflow, r7 is authoritative." }));
+    const result = await generateModelReadPrerequisite({ ...f.input, approvedBusinessClarifications: [{ question, answer: "For the separate workflow, r8 is authoritative." }],
+      dependencies: { requestJson }, clarificationHandler });
+    expect(result).toMatchObject({ state: "reviewed" });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+  });
+
   it("retains every date pair and comment for the proven coded scope while a selection fixes one complete tuple", () => {
     const { catalog, payload } = fixture();
     expect(catalog.entries).toHaveLength(6);

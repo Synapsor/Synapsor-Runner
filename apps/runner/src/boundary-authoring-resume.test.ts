@@ -13,6 +13,7 @@ import {
   type BoundaryAuthoringResumeBinding,
 } from "./boundary-authoring-resume.js";
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 
 const binding: BoundaryAuthoringResumeBinding = {
   boundary_name: "reviewed_staging",
@@ -22,6 +23,53 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it("retains scoped business decisions through rewrite, restart and rescan without upgrading history or consent", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-scoped-decision-resume-"));
+    try {
+      const conversation = [{ kind: "clarification" as const, question: "Earlier ambiguous question?", answer: "Earlier unscoped business answer." }];
+      const input = { binding, stage: "authority_review" as const, jobIntent: "Inspect equipment and close a visit; a separate automatic limit is unanswered.",
+        provider: "openai" as const, model: "gpt-test", conversation };
+      const records = [{ decision_id: canonicalJsonDigest("host exact scope"), applicability_digest: canonicalJsonDigest("host relevant meaning and fields"),
+        question: "For this workflow, is the reviewed register authoritative?", answer: "The operator confirms its business ownership." }];
+      const action = { intent: "Schedule follow-up; automatic limit remains unanswered.", intents: ["Close a visit.", "Schedule follow-up; automatic limit remains unanswered."],
+        completed_outcomes: ["operations.close_visit"], checkpoint: actionRuleAuthoringCheckpoint({ intent_digest: canonicalJsonDigest("unfinished intent"),
+          context_digest: canonicalJsonDigest("old proof"), components: {}, operator_messages: ["Business limit remains unanswered."] }) };
+      const original = buildBoundaryAuthoringResumeState({ ...input, readPrerequisiteDecisions: records, action,
+        privateReadMetadataDigest: canonicalJsonDigest("old consent") });
+      let state = original;
+      for (const stage of ["planning", "read_mapping", "action_drafting", "authority_review"] as const) {
+        state = buildBoundaryAuthoringResumeState({ ...input, stage, previous: state });
+        expect(state.read_prerequisite_decisions).toEqual(records);
+        expect(state.action).toEqual(action);
+        expect(state.conversation).toEqual(conversation);
+        await writeBoundaryAuthoringResumeState(root, state);
+        expect(await clearBoundaryAuthoringResumeState(root)).toBe(false);
+        expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
+      }
+      const revalidated = revalidateBoundaryAuthoringResume(original, { ...binding, role_posture_fingerprint: canonicalJsonDigest("fresh writer role") });
+      expect(revalidated.read_prerequisite_decisions).toEqual(records);
+      expect(revalidated.private_read_metadata_digest).toBeUndefined();
+      expect(revalidated.authority_granted).toBe(false);
+      expect(revalidated.action).toEqual(action);
+      expect(buildBoundaryAuthoringResumeState(input).read_prerequisite_decisions).toBeUndefined();
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("distinguishes omission, explicit replacement, explicit clear and another Boundary for scoped records", () => {
+    const input = { binding, stage: "authority_review" as const, jobIntent: "Review the complete saved job.", provider: "openai" as const, model: "gpt-test" };
+    const record = { decision_id: canonicalJsonDigest("decision"), applicability_digest: canonicalJsonDigest("applicability"), question: "Reviewed meaning?", answer: "Original answer." };
+    const previous = buildBoundaryAuthoringResumeState({ ...input, readPrerequisiteDecisions: [record] });
+    const replaced = { ...record, applicability_digest: canonicalJsonDigest("explicit revised meaning"), answer: "Explicit new answer." };
+    expect(buildBoundaryAuthoringResumeState({ ...input, previous, readPrerequisiteDecisions: [replaced] }).read_prerequisite_decisions).toEqual([replaced]);
+    expect(buildBoundaryAuthoringResumeState({ ...input, previous, readPrerequisiteDecisions: [] }).read_prerequisite_decisions).toBeUndefined();
+    expect(buildBoundaryAuthoringResumeState({ ...input, previous, binding: { ...binding, boundary_name: "other" } }).read_prerequisite_decisions).toBeUndefined();
+    const edited = buildBoundaryAuthoringResumeState({ ...input, previous, jobIntent: "Explicitly edited job; retained answers are context until applicability is checked." });
+    expect(edited.read_prerequisite_decisions).toEqual([record]);
+    expect(previous.read_prerequisite_decisions).toEqual([record]);
+    expect(() => buildBoundaryAuthoringResumeState({ ...input, readPrerequisiteDecisions: [record, replaced] })).toThrow("duplicate decision");
+    expect(() => revalidateBoundaryAuthoringResume({ ...previous, read_prerequisite_decisions: [replaced] }, binding)).toThrow("digest");
+  });
+
   it("retains two host counter confirmations after a no-op edit, restart and metadata rescan", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-counter-review-resume-"));
     try {

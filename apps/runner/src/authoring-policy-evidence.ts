@@ -4,7 +4,7 @@ import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js";
+import { activePolicySource, type PolicyCoverage, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
 import { hasReviewedCustomerReadEntry, reviewedReadEntryPaths } from "./read-relationship-access.js";
 import { policySourceConstraintEvidence, type PolicySourceInspection } from "./action-rule-source-evidence.js";
 import { rolePostureFingerprint, schemaFingerprintForInspection } from "@synapsor-runner/schema-inspector";
@@ -59,7 +59,9 @@ export function policyCoverageDraft(input: {
   source?: PolicySourceInspection;
   /** Host-confirmed operating commitments, never model assertions or proof of external enforcement. */
   reviewedVersionFields?: readonly ReviewedActionVersionField[];
+  policySources?: PolicySourceSession;
 }) {
+  const policySource = activePolicySource(input.policySources);
   const versionReviews = input.reviewedVersionFields === undefined ? [] : parseReviewedActionVersionFields(input.reviewedVersionFields, 32);
   const catalog = readBoundaryRevisionCatalog(input.read);
   const readFields = new Map(catalog.resources.map(resource => [resource.id,
@@ -250,6 +252,17 @@ export function policyCoverageDraft(input: {
         },
       }])),
       runtime_contract: {
+        authoring_lifecycle: {
+          current_policy_snapshot: policySource ? { digest: policySource.digest, version: policySource.version,
+            bytes: policySource.bytes, lines: policySource.lines } : null,
+          retained_business_answers: input.policySources?.operator_messages?.length ?? 0,
+          retained_read_interpretations: input.policySources?.read_interpretations?.length ?? 0,
+          sources: "Complete versioned local snapshots are restored on resume, not silently reread from an edited original file. Replacing or removing rules is an explicit operator operation with separate model-transfer consent.",
+          revisions: "Business and permission edits prepare disabled revisions. Current active authority remains separate until exact operator activation; model prose and saved answers never activate authority.",
+          resume: "Saved job progress, accepted meanings and existing action revisions are retained. Changed schema, reader posture or Read dependencies require revalidation; unsupported rules and unanswered decisions remain pending. A saved checkpoint is not proof that the entire policy is implemented or a future external client will obey it.",
+          automatic_activation: false,
+          external_client_behavior_verified: false,
+        },
         deployment_profile: {
           configured_profile: input.read.deployment_profile,
           identity_provider: input.read.trusted_context.provider,

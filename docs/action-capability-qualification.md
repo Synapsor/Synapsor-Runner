@@ -16,6 +16,89 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+#### Consolidation Milestone: Gate 1 Only
+
+The resumed assignment (2026-09-11) is bounded to existing authoring lifecycle
+reliability. Starting commit: `1ef96d954709b3cd2c3563e767ea189ac4b0d194`.
+Preserved paused changes include execution-intent negation, policy lifecycle
+context, clarification recovery and the saved-action helper/tests. Gate 2,
+new domains and feature expansion are deferred until separately requested.
+The UX reference guides this CLI's decisions, reviews and recovery; it is
+not a second feature checklist. Gate 1 is currently IN PROGRESS, not passed.
+
+Ownership and focused diagnosis:
+
+| Information | Existing owner and recovery | Assessed result |
+| --- | --- | --- |
+| Current disabled Actions | Action authority draft; selected disabled replacement precedes the same named active revision | Reproduced: normal resume recovered only stale dependencies, so current separately saved outcomes disappeared from model review. Two new public orchestration cases failed before the helper integration and pass after. Explicit removal remains respected. |
+| Unfinished intents and partial model components | Existing resume action agenda/checkpoint | Preserved separately from saved outcome inventory. Initial integration incorrectly intercepted the one-shot continuation after a Read edit; the existing parity tests caught it and the corrected path passes. |
+| Accepted business context and counter commitments | Conversation, policy-source interpretations, top-level reviewed version fields and scoped prerequisite answer records | Host-scoped decision IDs and separate applicability are integrated. Exact current policy references and inspected source/subject scope govern reuse; legacy prose is context only. Actual host tests cover paraphrase reuse, changed requirements, unrelated edits, missing references, stale proof and failed/no-op saves. |
+| Clarification versus revision | Existing coverage check, cache identity and disabled edit operation | Earlier fix retained. Added checks for clarifying a disputed counter interpretation and provider failure: no Read/Action edit or active-authority change. |
+| Draft and resume storage | Governed transaction/revision checks plus atomic resume-file replacement | Seven actual storage failure/restart/concurrent-save cases pass. No storage defect or new ledger. A public orchestration defect WAS reproduced: a saved Action followed by a failed resume/delegation save reported misleading status and could proceed to review. It now pauses with the exact saved revision. Restart reconciles stale pending edits only after an explicit current-revision choice; competing drafts are protected. |
+
+Evidence so far (existing external `r13-e07-20260911` evidence directory):
+`gate1-current-actions-before.log`: 2 reproduced failures;
+`gate1-current-actions-after.log`: 26 selected tests passed;
+`gate1-preservation-integrated.log`: 335 passed, 3 continuation regressions,
+1 existing skip (failed run retained);
+`gate1-preservation-parity.log`: corrected 36 selected tests passed.
+Focused selection exclusions are not unavailable checks. Storage integration:
+56 passed across four files, no skips. These are controlled-provider/host tests,
+not first-time-user or real-model qualification. Final stable snapshot,
+complete lifecycle evidence and final gate results remain pending.
+
+Current combined regression: `gate1-combined-lifecycle.log`, 27 PASS (217
+unselected), including eight actual scoped-answer host sequences and 18
+post-commit/clarification neighbors. The compound sequence starts with active
+Read/Action and two separately confirmed counters, interrupts a saved job,
+clarifies a disputed window without editing, changes only the account limit
+3 -> 1, rescans and resumes twice. The same one Action, private dependency,
+counter confirmations and separate unanswered intent survive. Active records
+are byte-for-byte unchanged. One operator clarification, zero repeated answers,
+zero repeated counter confirmations, one three-turn structured limit edit;
+no model re-planning or manual-editor detour. Controlled inspection is used in
+this compound; it is not live writer provisioning evidence.
+
+Separate real PostgreSQL 17 integration: generated narrow writer grants and
+scoped RLS policies are reviewed/applied in an owned disposable empty fixture,
+then the public rescan and two resumes revalidate the private Action dependency.
+One live test passes; active Read remains exact, Action remains disabled,
+business rows and model-drafting calls are zero. Evidence and generated SQL:
+`r13-e07-20260911/manufacturing-qualification-agent/gate1-storage-public/`.
+The initial fixture's single-argument `current_setting` was outside the existing
+repair grammar; failed attempts remain evidence. The successful fixture uses
+the existing supported `current_setting(setting, true)` shape. No parser,
+policy or enforcement rule was weakened to make it pass.
+
+Scoped helper/model/resume/consent coverage: 257 PASS, no skips. The parent
+intermediate run `gate1-integrated-host.log` had 509 PASS / 1 FAIL / 1 existing
+skip while the unrelated-RLS regression was being added; retained as a failed
+iteration, not final qualification. Initial final typecheck found a test-only
+parameter-index error, now corrected; the stable whole-tree gate is next.
+Execution-intent negation is committed as `1d0410a` and pushed only to private
+backup after 29 focused tests passed. Gate 1 is not yet declared complete.
+
+#### Earlier R13 Checkpoints (Historical)
+
+2026-09-11 16:05 UTC: paused at the operator's request, not complete. Parent
+coded/radio CLI sessions exited without changing authority; both agents
+confirmed their sessions closed with no workers or clients running. No parent
+worker, build or test remains running. Preserve all uncommitted changes and test
+projects. Resume checkpoint outside git:
+`../Progress docs tracking/r13-generalization-20260911.md`.
+
+Committed `1ef96d954709b3cd2c3563e767ea189ac4b0d194`, backed up privately,
+passed the full gate: 5,734 tests / 446 optional skips, types, packaging and
+launcher checks. Its frozen `candidate-mCo99N` executable SHA-256 is
+`14c62fd06473502645a9b59ac2f8ab611d900eadfd39fed36f85b892c9b9cbad`.
+Subsequent uncommitted negated-proposal-only fixes passed 134 focused tests /
+one existing skip. New lifecycle evidence and conversational coverage recovery
+passed type checking but still need their focused regressions and public runs.
+Current saved-action recovery helper tests passed 23 cases in isolation;
+parent integration is pending. None of this establishes final-artifact or
+unaided onboarding completion. Original student and unfamiliar-schema public
+journeys still have unresolved review/correction failures.
+
 2026-09-11 15:33 UTC: the generic clarification-before-revision change passes
 358 integrated CLI/coverage/resume/conversation tests with one existing skip,
 plus Runner type checking. A clarification that resolves a mistaken concern

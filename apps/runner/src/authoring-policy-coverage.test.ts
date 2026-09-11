@@ -95,6 +95,30 @@ describe("private Action field policy evidence", () => {
     expect(input).toEqual(before);
   });
 
+  it("supplies current local policy metadata without treating resume as completed authority", () => {
+    const input = fixture(), policySources = newPolicySourceSession();
+    const source = policyTextSnapshot(Buffer.from("Preserve these rules and accepted meanings on resume unless explicitly edited."), "Workflow.txt");
+    policySources.snapshots = [source]; policySources.active = source.version;
+    policySources.operator_messages = ["Keep the unanswered action pending; this is not a waiver."];
+    const before = structuredClone({ input, policySources });
+    const draft = policyCoverageDraft({ ...input, policySources });
+    const pointer = "/runner_evidence/runtime_contract/authoring_lifecycle";
+    const evidence = draft.runner_evidence.runtime_contract.authoring_lifecycle;
+    expect(evidence).toMatchObject({ current_policy_snapshot: { digest: source.digest, version: source.version, bytes: source.bytes, lines: source.lines },
+      retained_business_answers: 1, retained_read_interpretations: 0, automatic_activation: false, external_client_behavior_verified: false });
+    expect(JSON.stringify(evidence)).not.toContain(policySources.operator_messages[0]);
+    expect(evidence.resume).toContain("unanswered decisions remain pending");
+    expect(parsePolicyCoverage({ passages: [{ start: 1, end: 1, disposition: "implemented",
+      interpretation: "The saved snapshot uses Runner's reviewed authoring lifecycle, not automatic authority.", draft_paths: [pointer],
+      evidence_checks: [{ path: `${pointer}/current_policy_snapshot/digest`, equals: source.digest }] }] }, source, draft, []).passages).toHaveLength(1);
+    for (const name of ["automatic_activation", "external_client_behavior_verified"]) {
+      expect(() => parsePolicyCoverage({ passages: [{ start: 1, end: 1, disposition: "implemented", interpretation: "Unproved claim.",
+        draft_paths: [pointer], evidence_checks: [{ path: `${pointer}/${name}`, equals: true }] }] }, source, draft, [])).toThrow("Mechanical evidence mismatch");
+    }
+    expect(policyCoverageDraft(input).runner_evidence.runtime_contract.authoring_lifecycle.current_policy_snapshot).toBeNull();
+    expect({ input, policySources }).toEqual(before);
+  });
+
   it("derives private verification-only selection and analysis without adding public Read fields", () => {
     const input = fixture(), before = structuredClone(input);
     const draft = policyCoverageDraft(input);

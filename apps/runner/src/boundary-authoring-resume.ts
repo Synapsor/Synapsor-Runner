@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision } from "./read-prerequisite-decisions.js";
 import type { AskHistoryTurn } from "./model-ask.js";
 import { isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import { parseActionRuleAuthoringCheckpoint, parseReviewedActionVersionFields, type ActionRuleAuthoringCheckpoint, type ReviewedActionVersionField } from "./action-rule-authoring-checkpoint.js";
@@ -110,6 +111,8 @@ export type BoundaryAuthoringResumeState = {
   pending_action_revision?: BoundaryAuthoringActionRevision;
   /** Host-reviewed operating prerequisites, not proof of external writers or authority. */
   reviewed_version_fields?: ReviewedActionVersionField[];
+  /** Scoped business answers only. Current applicability, metadata consent and authority are rechecked separately. */
+  read_prerequisite_decisions?: ReadPrerequisiteBusinessDecision[];
   /** A cited policy behavior awaiting bounded planning as one new Action. */
   pending_action_addition?: BoundaryAuthoringActionAddition;
   read?: BoundaryAuthoringResumeRead;
@@ -166,6 +169,8 @@ export function buildBoundaryAuthoringResumeState(input: {
   pendingActionRemoval?: BoundaryAuthoringActionRemoval;
   pendingActionRevision?: BoundaryAuthoringActionRevision;
   reviewedVersionFields?: readonly ReviewedActionVersionField[];
+  /** Omitted retains this Boundary's records; [] explicitly clears them. Never upgrades legacy conversation. */
+  readPrerequisiteDecisions?: readonly ReadPrerequisiteBusinessDecision[];
   pendingActionAddition?: BoundaryAuthoringActionAddition;
   read?: BoundaryAuthoringResumeRead;
   action?: BoundaryAuthoringResumeAction;
@@ -185,6 +190,8 @@ export function buildBoundaryAuthoringResumeState(input: {
   const reviewedVersionFields = parseReviewedActionVersionFields(input.reviewedVersionFields
     ?? (input.previous?.binding.boundary_name === input.binding.boundary_name
       && input.previous.job_intent === input.jobIntent.trim() ? boundaryAuthoringVersionReviews(input.previous) : []), 32);
+  const readPrerequisiteDecisions = parseReadPrerequisiteBusinessDecisions(input.readPrerequisiteDecisions
+    ?? (input.previous?.binding.boundary_name === input.binding.boundary_name ? input.previous.read_prerequisite_decisions ?? [] : []));
   const core = {
     schema_version: BOUNDARY_AUTHORING_RESUME_VERSION,
     state: "in_progress" as const,
@@ -221,6 +228,7 @@ export function buildBoundaryAuthoringResumeState(input: {
     ...(input.pendingActionRemoval ? { pending_action_removal: normalizeActionRemoval(input.pendingActionRemoval) } : {}),
     ...(input.pendingActionRevision ? { pending_action_revision: normalizeActionRevision(input.pendingActionRevision) } : {}),
     ...(reviewedVersionFields.length ? { reviewed_version_fields: reviewedVersionFields } : {}),
+    ...(readPrerequisiteDecisions.length ? { read_prerequisite_decisions: readPrerequisiteDecisions } : {}),
     ...(input.pendingActionAddition ? { pending_action_addition: normalizeActionAddition(input.pendingActionAddition) } : {}),
     ...(action ? { action: normalizeAction(action) } : {}),
     ...(input.clientHandoff ? { client_handoff: normalizeClientHandoff(input.clientHandoff) } : {}),
@@ -394,6 +402,7 @@ export function assertBoundaryAuthoringResumeState(
   if (value.metadata_destination_digest !== undefined) normalizePrivateReadMetadataDigest(value.metadata_destination_digest);
   if (value.pending_action_revision !== undefined) normalizeActionRevision(value.pending_action_revision);
   if (value.reviewed_version_fields !== undefined) parseReviewedActionVersionFields(value.reviewed_version_fields, 32);
+  if (value.read_prerequisite_decisions !== undefined) parseReadPrerequisiteBusinessDecisions(value.read_prerequisite_decisions);
   if (value.pending_action_addition !== undefined) normalizeActionAddition(value.pending_action_addition);
   if (value.stage === "client_setup" && value.client_handoff === undefined) throw new Error("Client continuation requires its exact reviewed authority.");
   if (value.client_handoff !== undefined) normalizeClientHandoff(value.client_handoff as BoundaryAuthoringClientHandoff);
