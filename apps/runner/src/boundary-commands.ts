@@ -349,6 +349,7 @@ import {
 } from "./boundary-review-mutation.js";
 import { prepareReadPrerequisiteRevision } from "./read-prerequisite-revision.js";
 import { reviewReadPrerequisiteMetadata, reviewReadPrerequisiteSelection } from "./read-prerequisite-consent.js";
+import { loadReadPrerequisiteSourceReview } from "./read-prerequisite-source-review.js";
 import { generateModelReadPrerequisite, validateReadPrerequisiteBusinessAnswer } from "./read-prerequisite-model.js";
 
 const REVIEWED_SHAPE_LIMIT_FLAGS = [
@@ -7689,6 +7690,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             }
           };
           let validatedPreview: { revision: string; preview: ModelReadRevisionPreview } | undefined;
+          let assertPrivateReadSourcesCurrent: (() => Promise<void>) | undefined;
           const revisionKey = (revision: ModelReadBoundaryExposureRevisionInput["revision"]) =>
             canonicalJsonDigest({ changes: revision.changes, policy_changes: revision.policy_changes ?? [], read_prerequisite: revision.read_prerequisite ?? null,
               reviewed_relationship: revision.reviewed_relationship ?? null });
@@ -7732,10 +7734,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   session: input.session, modelLabel: boundaryModelLabel(modelSession), assertCurrent });
               },
               reviewPrivatePrerequisite: async ({ reason }) => {
-                const assertCurrent = async () => {
+                const assertReadCurrent = async () => {
                   await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
                 };
-                await assertCurrent();
+                await assertReadCurrent();
                 const inspection = await input.schemaInspector({ engine: context.lock.engine,
                   databaseUrlEnv: context.lock.source_env, schema: context.lock.inspected_schema, env: process.env });
                 // Retained private scope can prove identity roles without adding
@@ -7743,8 +7745,15 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                 const retainedCatalogs = semanticActionDrafts.length
                   ? semanticActionDrafts.map(entry => entry.catalog.catalog)
                   : semanticActionCatalog ? [semanticActionCatalog.catalog] : [];
-                const scopeBoundary = { ...context.candidate,
-                  ...(retainedCatalogs.length ? { scopeEvidence: { retained_action_catalogs: retainedCatalogs } } : {}) };
+                const sourceReview = await loadReadPrerequisiteSourceReview({ projectRoot: input.projectRoot,
+                  boundary: context.candidate, generationLock: context.lock, inspection, retainedCatalogs,
+                  revalidateMetadata: Boolean(revalidateSavedJob && resumeSelected) });
+                const assertCurrent = async () => {
+                  await assertReadCurrent();
+                  await sourceReview.assertCurrent();
+                };
+                assertPrivateReadSourcesCurrent = assertCurrent;
+                const scopeBoundary = { ...context.candidate, scopeEvidence: sourceReview.scopeEvidence };
                 const approvedMetadata = await reviewReadPrerequisiteMetadata({ inspection, boundary: scopeBoundary,
                   session: input.session, modelLabel: boundaryModelLabel(modelSession), assertCurrent });
                 if (!approvedMetadata) return undefined;
@@ -7908,6 +7917,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
 
           const previousDigest = committed.candidate_digest;
           const previousCandidate = structuredClone(context.candidate);
+          await assertPrivateReadSourcesCurrent?.();
           const revised = await applyModelReadBoundaryExposureRevision({
             projectRoot: input.projectRoot,
             schemaInspector: input.schemaInspector,

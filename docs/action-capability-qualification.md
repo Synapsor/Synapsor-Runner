@@ -16,6 +16,34 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 12:43 UTC: commits `040ac98` and `d8bae39` are backed up privately.
+Frozen `candidate-FQ51HU` executable SHA-256
+`4a527edec8c7234c72539c3627505c8c58b8f0a8a23a8f6fe55aa0b75ee0f4d0`.
+Both coded and municipal saved jobs recovered their owner-confirmed existing
+conflict counters. Exact Read details verified internal identifiers, counters
+and classifications unavailable for raw return and all analysis. Municipal
+Read/Action activation succeeded; generated writer repair now reports missing
+column-to-identity mappings. Coded activation correctly refuses missing table
+vocabulary, but drafting/recovery failed to resolve that known meaning before
+review. Both failures are retained as generalization regressions, not passes.
+
+Student private-source recovery now loads current saved Action dependencies,
+including older disabled Read bindings, and freshly revalidates their metadata,
+source, scope and guard proofs. History is not used as authority. Exact consent
+and pre-save guards reject concurrent dependency changes. Generic helper,
+consent and complete CLI suite: 276 passed; types passed. The host regression
+exercises the actual private-review callback and confirms declined metadata
+review leaves saved and active authority unchanged. Public student recovery on
+the newly integrated artifact is still pending; advising limits remain unknown.
+
+Manufacturing agent reports FQ same-client rule-edit checks passing, including
+old-request refusal, a fresh above-threshold human review and duplicate-request
+serialization. Historical approvals were checked against unchanged semantic
+selectors despite generated identifier churn. A combined private sample
+insert/update/delete race produced a failed receipt with zero source effect.
+This is assisted qualification, not three independent mutation races or an
+overall completion claim; final sanitized evidence is being consolidated.
+
 2026-09-11 12:15 UTC implementation checkpoint: explicit existing-counter review
 and resume integration passed 456 tests / 1 optional skip; the final role-drift
 addition passed in a 23-case counter suite. Types passed. Coded and municipal

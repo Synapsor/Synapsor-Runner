@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as boundaryReviewMutations from "./boundary-review-mutation.js";
 import * as actionReadRevisions from "./action-rule-read-revision.js";
 import * as actionReadRecovery from "./action-read-recovery.js";
+import * as readPrerequisiteSources from "./read-prerequisite-source-review.js";
+import * as readPrerequisiteConsent from "./read-prerequisite-consent.js";
 import type { planModelBoundaryJob } from "./boundary-job-model.js";
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { loadPolicySources, activePolicySource, newPolicySourceSession, policyTextSnapshot, savePolicySources, authoringDestination } from "./authoring-policy-source.js";
@@ -7221,6 +7223,27 @@ describe("boundary operator-plane CLI", () => {
           if (requiresCurrentState) {
             expect(request.instruction).toContain("separately required current-state access condition");
             expect(request.reviewPrivatePrerequisite).toEqual(expect.any(Function));
+            const sourceReview = vi.spyOn(readPrerequisiteSources, "loadReadPrerequisiteSourceReview");
+            const metadataReview = vi.spyOn(readPrerequisiteConsent, "reviewReadPrerequisiteMetadata")
+              .mockImplementationOnce(async (input) => {
+                await input.assertCurrent();
+                expect(input.boundary).toEqual(expect.objectContaining({ scopeEvidence: {
+                  retained_action_catalogs: expect.arrayContaining([expect.objectContaining({ resources: expect.any(Array) })]),
+                } }));
+                expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+                return undefined;
+              });
+            try {
+              await expect(request.reviewPrivatePrerequisite!({ reason: "Review existing private current-status evidence." }))
+                .resolves.toBeUndefined();
+              expect(sourceReview).toHaveBeenCalledOnce();
+              expect(sourceReview.mock.calls[0]![0].projectRoot).toBe(root);
+              expect(metadataReview).toHaveBeenCalledOnce();
+              expect((await readActionRuleAuthorityDraft(root, combined.authority.name))!.digest).toBe(combined.digest);
+            } finally {
+              sourceReview.mockRestore();
+              metadataReview.mockRestore();
+            }
           } else {
             expect(request.instruction).toContain("Do not infer a separate current-state access condition");
             expect(request.instruction).not.toContain("request host-mediated private evidence review");
