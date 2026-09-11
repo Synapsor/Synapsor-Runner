@@ -16,6 +16,34 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 13:08 UTC: the combined naming/review/writer repair passes 403
+focused tests and type checking. Fourteen live PostgreSQL writer-policy tests
+also pass, including a public-role inspection to generated-policy to scoped
+UPDATE regression. A missing private principal-column annotation can now be
+recovered only from one exact inspected two-identity policy over reviewed
+fields; ambiguous, custom, restrictive or changed-type policies still refuse.
+No field name or tutorial table selects this behavior.
+
+Missing table/field meanings are checked before activation is offered. The
+model can repair them using previously supplied meanings without changing
+permissions; partial repairs are refused. Failed activation now refreshes the
+chat's own exact saved review binding, so subsequent revision does not mistake
+its own signoff for someone else's edit. Concurrent edits remain rejected.
+These are implementation passes; coded and municipal public recovery on the
+next isolated artifact remains required. Student public recovery is using
+`93fb317` / candidate-sAKtQ9, executable SHA-256
+`0b8f2967af35ae64ffa96b59f6274304e3f4384268627c5342cfd75e6789000c`.
+
+Manufacturing evidence correction: the earlier B1 worker result hash is not
+the canonical execution receipt hash. Read-only verification recomputed B1's
+canonical applied receipt as
+`sha256:8e7c1c45d8912ff3781b9ead17d3a965d62759168df9fb1674a0fd540f58968f`
+and the later failed mutation-race receipt as
+`sha256:49cfd0c5be58ca4abe2277905c297858c0ed7585604361ee73b8e142bc5a6eca`.
+The original worker result hashes and verifier mistakes remain in the durable
+RECOVERY-04 report. No pre-edit canonical receipt byte snapshot was captured;
+byte-for-byte before/after preservation is not claimed.
+
 2026-09-11 12:43 UTC: commits `040ac98` and `d8bae39` are backed up privately.
 Frozen `candidate-FQ51HU` executable SHA-256
 `4a527edec8c7234c72539c3627505c8c58b8f0a8a23a8f6fe55aa0b75ee0f4d0`.
@@ -63,7 +91,7 @@ artifact and actual connected-client retest are still pending.
 `candidate-gJxM04` executable SHA-256
 `6d70286bc0bbd0d7a527e383908dba9fe2bab95eef23155dbdffdd6615612486`.
 Manufacturing recovered the missing structural evidence, completed public writer,
-execution and Claude setup, and applied B1 once with receipt
+execution and Claude setup, and applied B1 once with worker result hash
 `sha256:4a6b646e62fd8e50814b64a1cfbe0ed068bc01bcb9b8320c0bbc6fc5f78f1c94`.
 Independent owner readback found only B1 released, version 2. B2 required human
 review; failed-sample, insufficient-sample and already-released requests refused.

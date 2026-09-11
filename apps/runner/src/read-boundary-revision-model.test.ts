@@ -341,7 +341,112 @@ describe("model-assisted Read Boundary field exposure revisions", () => {
     expect(result.authority_granted).toBe(false);
   });
 
-  it.each(["metadata", "access", "limit"])("keeps a vocabulary repair metadata-only (%s)", async (attempt) => {
+  it.each(["partial", "noop"])("corrects an incomplete vocabulary-only repair including its opaque table (%s)", async attempt => {
+    const draft = boundary(), resource = draft.pack.resources[0]!;
+    resource.id = "public.r19"; resource.table = "r19";
+    for (const field of ["c03", "c04", "c05", "c06", "c07"]) {
+      resource.field_types[field] = "text"; resource.selectable_fields.push(field);
+      resource.field_metadata ??= {}; resource.field_metadata[field] = { label: `Reviewed ${field}` };
+    }
+    const before = structuredClone(draft), validateRevision = vi.fn();
+    let calls = 0;
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "table_vocabulary",
+      name: "runner__submit_read_boundary_revision", arguments: JSON.stringify(++calls === 1
+        ? attempt === "partial" ? { resource_changes: [{ resource: "public.r19", settings: { field_metadata: [{ field: "c03", label: "Shipment number" }] } }] }
+          : { status: "already_satisfied", resource_changes: [{ resource: "public.r19", field_exposure: [{ field: "status", exposure: "model_and_runner" }] }] }
+        : { resource_changes: [{ resource: "public.r19", settings: { metadata: { label: "Shipment requests" } } }] }) }] } }));
+    const result = await generateModelReadBoundaryRevision({ instruction: "Complete the missing reviewed vocabulary.",
+      operatorNamingContext: "public.r19 contains shipment requests.", vocabularyOnly: true, provider: "openai", model: "gpt-test",
+      apiKey: "test-key", boundary: draft, egressAcknowledged: true, dependencies: { requestJson }, validateRevision });
+    expect(requestJson).toHaveBeenCalledTimes(2); expect(result.correction_used).toBe(true);
+    expect(JSON.stringify(requestJson.mock.calls[1])).toContain("READ_VOCABULARY_INCOMPLETE");
+    expect(validateRevision).toHaveBeenCalledOnce();
+    expect(result.policy_changes).toEqual([{ resource: "public.r19", settings: { metadata: { label: "Shipment requests" } } }]);
+    expect(result.authority_granted).toBe(false); expect(draft).toEqual(before);
+  });
+
+  it.each(["partial", "noop", "clear_table", "clear_field", "empty_field_metadata"])("refuses persistently incomplete vocabulary without a validation or activation claim (%s)", async failure => {
+    const draft = boundary(), resource = draft.pack.resources[0]!;
+    resource.id = "public.r19"; resource.table = "r19";
+    resource.field_types.c03 = "text"; resource.selectable_fields.push("c03");
+    if (failure === "clear_table") resource.label = "Shipment requests";
+    if (failure === "clear_field") resource.field_metadata = { c03: { label: "Shipment number" } };
+    const before = structuredClone(draft), validateRevision = vi.fn();
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "incomplete_vocabulary",
+      name: "runner__submit_read_boundary_revision", arguments: JSON.stringify(failure === "noop"
+        ? { status: "already_satisfied", resource_changes: [{ resource: resource.id, field_exposure: [{ field: "status", exposure: "model_and_runner" }] }] }
+        : { resource_changes: [{ resource: resource.id, settings: {
+          metadata: { label: failure === "clear_table" ? null : "Shipment requests" },
+          ...(failure !== "partial" ? { field_metadata: [{ field: "c03", ...(failure === "empty_field_metadata" ? {} : { label: failure === "clear_field" ? null : "Shipment number" }) }] } : {}),
+        } }] }) }] } }));
+    await expect(generateModelReadBoundaryRevision({ instruction: "Complete the missing reviewed vocabulary.", vocabularyOnly: true,
+      provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: draft, egressAcknowledged: true,
+      dependencies: { requestJson }, validateRevision })).rejects.toThrow("READ_VOCABULARY_INCOMPLETE");
+    expect(requestJson).toHaveBeenCalledTimes(2); expect(validateRevision).not.toHaveBeenCalled();
+    expect(JSON.stringify(requestJson.mock.calls[1])).toContain("Rejected revision submission"); expect(draft).toEqual(before);
+  });
+
+  it.each(["answered", "declined"])("delivers a genuine naming question from the bounded vocabulary correction (%s)", async decision => {
+    const draft = boundary(), resource = draft.pack.resources[0]!;
+    resource.id = "public.r19"; resource.table = "r19";
+    const before = structuredClone(draft), validateRevision = vi.fn();
+    const clarificationHandler = vi.fn().mockResolvedValue({ state: decision, answer: "This view contains shipment requests." });
+    let calls = 0;
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "vocabulary_question",
+      name: "runner__submit_read_boundary_revision", arguments: JSON.stringify(++calls === 2
+        ? { clarification_request: { question: "Which business records are in this view?", reason: "The supplied job does not explain public.r19." } }
+        : { resource_changes: [{ resource: resource.id, settings: calls === 1
+          ? { field_metadata: [{ field: "status", label: "Lifecycle" }] } : { metadata: { description: "Shipment requests" } } }] }) }] } }));
+    const result = generateModelReadBoundaryRevision({ instruction: "Name this view without guessing its business meaning.", vocabularyOnly: true,
+      provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: draft, egressAcknowledged: true,
+      dependencies: { requestJson }, validateRevision, clarificationHandler });
+    if (decision === "answered") await expect(result).resolves.toMatchObject({ correction_used: true, authority_granted: false,
+      changes: [], policy_changes: [{ resource: resource.id, settings: { metadata: { description: "Shipment requests" } } }] });
+    else await expect(result).rejects.toThrow("READ_BOUNDARY_REVISION_CLARIFICATION_DECLINED");
+    expect(calls).toBe(decision === "answered" ? 3 : 2); expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(validateRevision).toHaveBeenCalledTimes(decision === "answered" ? 1 : 0); expect(draft).toEqual(before);
+  });
+
+  it.each(["unknown_resource", "unknown_field", "stale"])("keeps vocabulary repair bound to the exact current catalog (%s)", async failure => {
+    const draft = boundary(), resource = draft.pack.resources[0]!;
+    resource.id = "public.r19"; resource.table = "r19";
+    const validateRevision = vi.fn();
+    const requestJson = vi.fn(async () => {
+      if (failure === "stale") draft.budgets.max_rows = 1;
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "exact_vocabulary",
+        name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{
+          resource: failure === "unknown_resource" ? "public.r19_private" : resource.id,
+          settings: { metadata: { label: "Shipment requests" },
+            ...(failure === "unknown_field" ? { field_metadata: [{ field: "status_private", label: "Lifecycle" }] } : {}),
+          },
+        }] }) }] } };
+    });
+    const result = generateModelReadBoundaryRevision({ instruction: "Name the shipment request view.", vocabularyOnly: true,
+      provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: draft, egressAcknowledged: true, dependencies: { requestJson }, validateRevision });
+    if (failure === "stale") await expect(result).rejects.toMatchObject({ code: "ASK_AUTHORITY_CHANGED" });
+    else await expect(result).rejects.toThrow(failure === "unknown_resource" ? "not an exact resource" : "Unknown or repeated metadata field");
+    expect(validateRevision).not.toHaveBeenCalled(); expect(requestJson).toHaveBeenCalledTimes(failure === "stale" ? 1 : 2);
+  });
+
+  it("completes table and public field vocabulary without exposing private fields or replacing reviewed metadata", async () => {
+    const draft = boundary(), resource = draft.pack.resources[0]!;
+    resource.id = "public.r19"; resource.table = "r19";
+    resource.field_types.c03 = "text"; resource.selectable_fields.push("c03");
+    resource.field_metadata = { c03: { description: "Reviewed shipment number" }, status: { label: "Lifecycle" } };
+    resource.field_types.c99 = "text"; resource.kept_out_fields.push("c99");
+    resource.model_withheld_fields = ["id"];
+    const before = structuredClone(draft), validateRevision = vi.fn();
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "complete_vocabulary",
+      name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{ resource: resource.id,
+        settings: { metadata: { description: "Shipment requests" }, field_metadata: [{ field: "c03", label: "Shipment number" }] },
+      }] }) }] } }));
+    const result = await generateModelReadBoundaryRevision({ instruction: "Name this shipment request view and its shipment number.", vocabularyOnly: true,
+      provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: draft, egressAcknowledged: true, dependencies: { requestJson }, validateRevision });
+    expect(result).toMatchObject({ changes: [], correction_used: false, model_exposure_expansions: 0, authority_granted: false, source_query_executed: false });
+    expect(validateRevision).toHaveBeenCalledOnce(); expect(draft).toEqual(before);
+  });
+
+  it.each(["metadata", "access", "limit", "operations", "relationships", "scope", "private_exposure"])("keeps a vocabulary repair metadata-only (%s)", async (attempt) => {
     const draft = boundary(), before = structuredClone(draft);
     let calls = 0;
     const requestJson = vi.fn(async (request) => {
@@ -350,8 +455,12 @@ describe("model-assisted Read Boundary field exposure revisions", () => {
       return { status: 200, body: { output: [{ type: "function_call", call_id: "vocabulary",
         name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ resource_changes: [{ resource: "public.orders",
           ...(attempt === "access" && calls === 1 ? { field_exposure: [{ field: "status", exposure: "runner_only" }] } : {}),
+          ...(attempt === "private_exposure" && calls === 1 ? { field_exposure: [{ field: "secret_note", exposure: "model_and_runner" }] } : {}),
           settings: { field_metadata: [{ field: "status", label: "Order lifecycle", description: "The operator identified the order lifecycle status." }],
             ...(attempt === "limit" && calls === 1 ? { max_rows: 20 } : {}),
+            ...(attempt === "operations" && calls === 1 ? { filterable_fields: [] } : {}),
+            ...(attempt === "relationships" && calls === 1 ? { relationship_ids: [] } : {}),
+            ...(attempt === "scope" && calls === 1 ? { relationship_only: true } : {}),
           },
         }] }),
       }] } };

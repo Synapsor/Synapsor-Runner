@@ -8,6 +8,7 @@ export { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
 import { parseReadPolicySettings, READ_POLICY_SETTINGS_SCHEMA, type ReadBoundaryPolicyChange } from "./read-boundary-policy-revision.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
+import { exploreBoundaryVocabularyGaps } from "./explore-vocabulary.js";
 import {
   askToolSurfaceDigest,
   resolveAskProviderConfiguration,
@@ -137,6 +138,7 @@ export async function generateModelReadBoundaryRevision(input: {
   let prerequisiteReviewFailed = false;
   let issue = "The model did not submit one exact field-exposure revision.";
   let callCount = 0;
+  let lastSubmission: Record<string, unknown> | undefined;
   const privateDecisions = new Map<string, ReadBoundaryFieldExposureChange>();
   const gateway: AskToolGateway = {
     mode: "authoring",
@@ -146,6 +148,7 @@ export async function generateModelReadBoundaryRevision(input: {
       if (name !== SUBMIT_READ_BOUNDARY_REVISION_TOOL) {
         return refusal("This tool is outside the disabled Read revision surface.");
       }
+      lastSubmission = structuredClone(args);
       if (args.relationship_review_request !== undefined) {
         try {
           if (!allowRelationshipReview || relationshipRequest || reviewedRelationship) {
@@ -220,7 +223,10 @@ export async function generateModelReadBoundaryRevision(input: {
           }
           change.settings.relationship_ids = [...new Set([...(change.settings.relationship_ids ?? root.relationships), selected.relationship_id])];
         }
-        if (input.vocabularyOnly) assertVocabularyOnlyReadRevision(parsed);
+        if (input.vocabularyOnly) {
+          assertVocabularyOnlyReadRevision(parsed);
+          assertCompleteReadVocabulary(parsed.policy_changes, input.boundary);
+        }
         // Correction repairs an invalid candidate; it must not "succeed" by
         // silently dropping an already submitted Runner-only privacy decision.
         for (const [key, expected] of privateDecisions) {
@@ -273,7 +279,10 @@ export async function generateModelReadBoundaryRevision(input: {
     "model_and_runner permits reviewed model access; runner_only with model_operations none keeps private Runner access but removes model filters, sorting, grouping and measures; kept_out removes every read operation. Raw withholding alone is NOT full privacy.",
     "For fields already readable, runner_only can remove model disclosure while preserving existing private selection. Preserve kept_out fields: tenant/principal filtering, opaque reference identity and private Action verification do not require granting Read selection. A field's internal role is not a reason to add Read access.",
     ...(input.privacyOnly ? ["This is a privacy-only refinement: no new raw return, private row selection, model analysis, or removal of existing exclusions is permitted. Omit unrelated fields and settings. If a business request needs additional access, explain that separately instead of bundling it into this privacy correction."] : []),
-    ...(input.vocabularyOnly ? ["This is vocabulary-only: submit no field exposure changes and only metadata or field_metadata settings. Retain every Read operation, exclusion, scope, limit, Action rule, approval and execution setting. Reuse meanings already stated by the operator; ask one business question only if a required meaning is actually missing. Do not guess business meanings from coded identifiers."] : []),
+    ...(input.vocabularyOnly ? [
+      "This is vocabulary-only: submit no field exposure changes and only metadata or field_metadata settings. Retain every Read operation, exclusion, scope, limit, Action rule, approval and execution setting. Reuse meanings already stated by the operator in the original job, approved policy or saved clarifications; ask one business question only if a required meaning is actually missing. Do not guess business meanings from coded identifiers.",
+      `Required vocabulary gaps in the exact current Read: ${JSON.stringify(exploreBoundaryVocabularyGaps(input.boundary.pack.resources))}. A resource_gap requires a table label or description in settings.metadata; field labels do not name their table. Every listed field needs a label or description in settings.field_metadata. Repair all gaps without dropping existing meanings. A partial repair or already_satisfied response is refused while any gap remains.`,
+    ] : []),
     ...(operatorNamingContext ? [`Original operator job (naming evidence, not new authority): ${JSON.stringify(operatorNamingContext)}`] : []),
     "Never make a trusted tenant or principal scope field model_and_runner. Never infer a wider request than the operator stated.",
     "Submit only requested changes. field_exposure changes visibility; settings changes exact reviewed policy. Operation lists replace the whole current list, so preserve unmentioned fields. Budget settings apply boundary-wide, not just to the named table. Use catalog ceilings.",
@@ -334,7 +343,20 @@ export async function generateModelReadBoundaryRevision(input: {
     let usage = initial.result.usage;
     let correctionUsed = initial.correction_used;
     const clarificationAnswers: Array<{ question: string; answer: string }> = [];
-    while (!changes && (clarification || prerequisiteRequest || relationshipRequest)) {
+    while (!changes) {
+      if (!clarification && !prerequisiteRequest && !relationshipRequest) {
+        if (correctionUsed) break;
+        correctionUsed = true;
+        const result = await run([
+          "Runner rejected or did not receive the first field-exposure revision. Do not repeat it.",
+          `Validation issue: ${issue.slice(0, 700)}`,
+          `Rejected revision submission: ${JSON.stringify(lastSubmission)}.`,
+          "Submit one corrected exact revision now. Do not return prose and do not change any other Boundary dimension. If a required business meaning is genuinely absent from the supplied operator evidence, ask a focused clarification instead of guessing.",
+          baseQuestion,
+        ].join("\n"));
+        usage = mergeUsage(usage, result.usage);
+        continue;
+      }
       if (relationshipRequest) {
         const request = relationshipRequest;
         relationshipRequest = undefined;
@@ -394,16 +416,6 @@ export async function generateModelReadBoundaryRevision(input: {
       const result = await run([
         `Operator business clarifications: ${JSON.stringify(clarificationAnswers.slice(-16))}.`,
         "Apply those answers only to the requested exact revision. Ask again only for genuinely unresolved meaning, not already answered questions.",
-        baseQuestion,
-      ].join("\n"));
-      usage = mergeUsage(usage, result.usage);
-    }
-    if (!changes && !correctionUsed) {
-      correctionUsed = true;
-      const result = await run([
-        "Runner rejected or did not receive the first field-exposure revision. Do not repeat it.",
-        `Validation issue: ${issue.slice(0, 700)}`,
-        "Submit one corrected exact revision now. Do not return prose and do not change any other Boundary dimension.",
         baseQuestion,
       ].join("\n"));
       usage = mergeUsage(usage, result.usage);
@@ -710,6 +722,31 @@ export function assertVocabularyOnlyReadRevision(
     .some((key) => key !== "metadata" && key !== "field_metadata"))) {
     throw new Error("Vocabulary-only review accepts labels and descriptions only. Keep every field exposure, operation, relationship, limit and scope unchanged.");
   }
+}
+
+function assertCompleteReadVocabulary(
+  changes: readonly ReadBoundaryPolicyChange[],
+  boundary: ExplorationBoundaryDraft,
+): void {
+  const resources = structuredClone(boundary.pack.resources);
+  for (const change of changes) {
+    const resource = resources.find(resource => resource.id === change.resource)!;
+    for (const key of ["label", "description"] as const) {
+      const value = change.settings.metadata?.[key];
+      if (value === null) delete resource[key];
+      else if (value !== undefined) resource[key] = value;
+    }
+    for (const metadata of change.settings.field_metadata ?? []) {
+      resource.field_metadata ??= {};
+      const field = resource.field_metadata[metadata.field] ??= {};
+      for (const key of ["label", "description"] as const) {
+        if (metadata[key] === null) delete field[key];
+        else if (metadata[key] !== undefined) field[key] = metadata[key];
+      }
+    }
+  }
+  const gaps = exploreBoundaryVocabularyGaps(resources);
+  if (gaps.length) throw new Error(`READ_VOCABULARY_INCOMPLETE: The proposed metadata still lacks reviewed table or field meanings: ${JSON.stringify(gaps)}. Supply complete labels/descriptions from the operator's evidence, or ask for the genuinely missing meaning. No Read revision was accepted.`);
 }
 
 function assertPrivacyOnlyRevision(

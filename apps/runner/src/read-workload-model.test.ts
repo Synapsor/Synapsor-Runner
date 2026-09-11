@@ -32,6 +32,93 @@ function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malforme
 }
 
 describe("model-assisted Read workload mapping", () => {
+  it.each(["omission", "question"])("corrects omitted exact naming evidence from approved policy before asking a business question (%s)", async attempt => {
+    const boundary = opaqueGeneratedBoundary(), before = structuredClone(boundary);
+    const conversation = createModelAuthoringConversation(), policy = newPolicySourceSession();
+    const quotes = ["public.tbl_7 contains shipment requests", "col_2 means shipment lifecycle status"];
+    const snapshot = policyTextSnapshot(Buffer.from(quotes.join("\n")), "Rules.txt");
+    policy.snapshots.push(snapshot); policy.active = snapshot.version;
+    policy.approvals.push({ digest: snapshot.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) });
+    conversation.policySources = policy;
+    const allowed = [{ id: "shipments", description: "Read shipment lifecycle", plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }];
+    let calls = 0;
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "naming",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify(++calls === 1 && attempt === "question"
+        ? { clarification_request: { resource: "public.tbl_7", reason: "The table has a coded name.", question: "What business records does this view contain?" } }
+        : { allowed, forbidden: [],
+        ...(calls > 1 ? { operator_meanings: [
+          { resource: "public.tbl_7", operator_quote: quotes[0] },
+          { resource: "public.tbl_7", field: "col_2", operator_quote: quotes[1] },
+        ] } : {}) }) }] } }));
+    const clarificationHandler = vi.fn().mockResolvedValue({ state: "declined" });
+    const result = await generateModelReadWorkload({ name: "shipment_read", allowedQuestions: ["Read my shipment lifecycle"],
+      operatorNamingContext: "Use the attached rules.", provider: "openai", model: "gpt-test", generatedBoundary: boundary,
+      apiKey: "test-key", egressAcknowledged: true, conversation, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+    expect(result.analysis.status).toBe("ready");
+    expect(requestJson).toHaveBeenCalledTimes(2); expect(clarificationHandler).not.toHaveBeenCalled();
+    expect(JSON.stringify(requestJson.mock.calls[1])).toContain("Rejected naming submission");
+    expect(boundary).toEqual(before); expect(result.authority_granted).toBe(false);
+  });
+
+  it.each(["missing_quote", "fabricated_quote", "changed_workload", "unknown_field", "withheld_field"])("bounds naming correction without accepting missing evidence or changed access (%s)", async failure => {
+    const boundary = opaqueGeneratedBoundary(), before = structuredClone(boundary);
+    const tableQuote = "public.tbl_7 contains shipment requests", fieldQuote = "col_2 means shipment lifecycle status";
+    const allowed = [{ id: "shipments", description: "Read shipment lifecycle", plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }];
+    let calls = 0;
+    const requestJson = vi.fn(async () => {
+      calls++;
+      const operator_meanings = [{ resource: "public.tbl_7", operator_quote: tableQuote },
+        { resource: "public.tbl_7", field: failure === "unknown_field" ? "col_200" : failure === "withheld_field" ? "tenant_id" : "col_2",
+          operator_quote: failure === "fabricated_quote" ? "col_2 means private credit balance" : fieldQuote }];
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "bounded_naming", name: "runner__submit_read_workloads",
+        arguments: JSON.stringify({ allowed: calls > 1 && failure === "changed_workload" ? [] : allowed, forbidden: [],
+          ...(calls > 1 && failure !== "missing_quote" ? { operator_meanings } : {}) }) }] } };
+    });
+    const clarificationHandler = vi.fn().mockResolvedValue({ state: "declined" });
+    await expect(generateModelReadWorkload({ name: "shipment_read", allowedQuestions: ["Read my shipment lifecycle"],
+      operatorNamingContext: `${tableQuote}. ${fieldQuote}.`, provider: "openai", model: "gpt-test", generatedBoundary: boundary,
+      apiKey: "test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler }))
+      .rejects.toThrow(failure === "changed_workload" ? "READ_WORKLOAD_NAMING_CORRECTION_CHANGED_WORKLOAD"
+        : ["unknown_field", "withheld_field"].includes(failure) ? "READ_WORKLOAD_NAMING_EVIDENCE_INVALID" : "READ_WORKLOAD_CLARIFICATION_DECLINED");
+    expect(calls).toBe(2);
+    expect(clarificationHandler).toHaveBeenCalledTimes(["missing_quote", "fabricated_quote"].includes(failure) ? 1 : 0);
+    expect(boundary).toEqual(before);
+  });
+
+  it("still asks for a genuinely missing field meaning after reusing the table quote", async () => {
+    const boundary = opaqueGeneratedBoundary(), before = structuredClone(boundary);
+    const quote = "public.tbl_7 contains shipment requests";
+    let calls = 0;
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "missing_field_meaning",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify({
+        allowed: [{ id: "shipments", description: "Read shipment lifecycle", plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }],
+        forbidden: [], ...(++calls > 1 ? { operator_meanings: [{ resource: "public.tbl_7", operator_quote: quote }] } : {}),
+      }) }] } }));
+    const clarificationHandler = vi.fn().mockResolvedValue({ state: "answered", answer: "The shipment lifecycle status" });
+    const result = await generateModelReadWorkload({ name: "shipment_read", allowedQuestions: ["Read my shipment lifecycle"],
+      operatorNamingContext: quote, provider: "openai", model: "gpt-test", generatedBoundary: boundary, apiKey: "test-key",
+      egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+    expect(calls).toBe(3); expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ resource: "public.tbl_7", field: "col_2" }));
+    expect(result.analysis.status).toBe("ready"); expect(result.authority_granted).toBe(false); expect(boundary).toEqual(before);
+  });
+
+  it("does not reuse a stale Read catalog during naming correction", async () => {
+    const boundary = opaqueGeneratedBoundary();
+    let calls = 0;
+    const requestJson = vi.fn(async () => {
+      if (++calls === 2) boundary.pack.resources[0]!.selectable_fields = [];
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "stale_naming", name: "runner__submit_read_workloads",
+        arguments: JSON.stringify({ allowed: [{ id: "shipments", description: "Read shipment lifecycle",
+          plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [] }) }] } };
+    });
+    await expect(generateModelReadWorkload({ name: "shipment_read", allowedQuestions: ["Read my shipment lifecycle"],
+      operatorNamingContext: "public.tbl_7 contains shipment requests", provider: "openai", model: "gpt-test", generatedBoundary: boundary,
+      apiKey: "test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson } }))
+      .rejects.toMatchObject({ code: "ASK_AUTHORITY_CHANGED" });
+    expect(calls).toBe(2);
+  });
+
   it("corrects shared-table reads into owned-root related projections without a scope-review detour", async () => {
     const boundary = generatedBoundary();
     const orders = boundary.pack.resources[0]!;

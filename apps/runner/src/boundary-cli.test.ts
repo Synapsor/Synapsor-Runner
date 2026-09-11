@@ -7670,11 +7670,18 @@ describe("boundary operator-plane CLI", () => {
       }
       if (posture === "proposal_only") {
         let vocabularyReviewCount = 0;
+        let activationFailureExercised = false, failActivationInspection = false;
         const vocabularySession: BoundaryReviewInteractiveSession = { ...resumedSession,
           promptText: async () => "Label visit status as Visit lifecycle. Keep every action and its approval settings unchanged.",
           chooseOption: async (title) => {
             if (title === "START BOUNDARY DRAFTING") return "resume";
-            if (title === "ACTIVATE READ BOUNDARY") return vocabularyReviewCount++ === 0 ? "revise_model" : "finish";
+            if (title === "ACTIVATE READ BOUNDARY") {
+              if (!activationFailureExercised) {
+                activationFailureExercised = true; failActivationInspection = true; return "activate";
+              }
+              return vocabularyReviewCount++ === 0 ? "revise_model" : "finish";
+            }
+            if (title === "READ ACTIVATION NEEDS ATTENTION") return "retry";
             if (title === "SETUP NEEDS ATTENTION" && vocabularyLabel === "Reviewed visit lifecycle") return "pause";
             throw new Error(`Unexpected vocabulary revision menu: ${title}`);
           },
@@ -7688,7 +7695,15 @@ describe("boundary operator-plane CLI", () => {
               arguments: JSON.stringify({ resource_changes: [{ resource: "public.service_visits",
                 settings: { field_metadata: [{ field: "status", label: vocabularyLabel }] } }] }) }] } }) },
         });
-        await boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
+        await boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => {
+          if (failActivationInspection) {
+            failActivationInspection = false;
+            const drifted = structuredClone(inspection);
+            drifted.tables[0]!.role_posture!.owner = "unreviewed_owner";
+            return drifted;
+          }
+          return inspection;
+        },
           vocabularySession, undefined, { startWithAgentJob: true,
             modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
             modelAuthoringNarrator: revisionNarrator, actionProjectInspector: async () => inspection,
@@ -7696,6 +7711,7 @@ describe("boundary operator-plane CLI", () => {
         const labelledRead = (await loadBoundaryReviewContext(root)).candidate;
         const labelledActions = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
         expect(vocabularyChat.streamCheckpoint).not.toHaveBeenCalledWith("Read revision not saved", expect.anything(), expect.anything());
+        expect(activationFailureExercised).toBe(true);
         expect(labelledRead.generation_lock_fingerprint).not.toBe(multiple!.authority.catalog.generation_lock_fingerprint);
         expect(labelledActions!.authority.rules).toHaveLength(3);
         expect(labelledActions!.authority.approval_classes).toEqual(multiple!.authority.approval_classes);
@@ -9105,6 +9121,43 @@ describe("boundary operator-plane CLI", () => {
       expect(choices).toEqual([]);
       if (recovery === "retry") expect((await loadActivatedExplorationBoundaries(root))[0]?.activation.digest).toBe(digest);
       else await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each([false, true])("preflights missing table vocabulary before an activation offer (conversation=%s)", async conversation => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-vocabulary-preflight-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({ inspection, project: { root, package_manager: "npm", frameworks: [],
+      schema_inputs: [], database_env_names: ["DATABASE_URL"] }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
+    const resource = build.exploration_boundary.pack.resources[0]!;
+    resource.id = "public.r07";
+    delete resource.label; delete resource.description;
+    build.exploration_boundary.pack.resources = [resource];
+    let visits = 0;
+    const lines: string[] = [], confirmActivation = vi.fn(async () => true);
+    const session: BoundaryReviewInteractiveSession = {
+      ...(conversation ? { presentationMode: "conversation" as const } : {}),
+      chooseResource: async () => visits++ === 0 ? { action: "confirm" } : undefined,
+      editFieldTiers: async () => undefined, promptText: async () => "operator", confirm: async () => true, confirmActivation,
+      chooseOption: async (title, options, config) => {
+        expect(title).toBe("FINISH BOUNDARY REVIEW");
+        expect(options.some(option => option.value === "activate")).toBe(false);
+        expect(config?.reviewOnly).toBe(true);
+        lines.push(...config!.context!);
+        return "finish";
+      },
+      showReviewDetails: async (_title, details) => { lines.push(...details); },
+    };
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const before = (await loadBoundaryReviewContext(root)).bundle.candidate_digest;
+      expect(await boundaryReviewCommandInternal(["--project-root", root, "--access"], async () => inspection, session)).toBe(0);
+      expect(confirmActivation).not.toHaveBeenCalled();
+      expect(lines.join(" ")).toMatch(/public\.r07:?\s+table label or description/u);
+      expect(lines.join(" ")).toContain("Finish names with the model");
+      expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(before);
+      await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
