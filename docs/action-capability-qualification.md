@@ -5,8 +5,8 @@ arbitrary SQL/business logic is supported. Last updated: 2026-09-11.
 
 Current bounded qualification: Gate 1 authoring lifecycle reliability PASSED
 on source commit `d018290f9d5ca0444ecceaf3c7dc29442f8913c4`, branch
-`codex/tui-safe-action-control-plane`. Gate 2 and broader R13 qualification
-remain pending by the controlling assignment's stopping rule. This is not a
+`codex/tui-safe-action-control-plane`. The user subsequently accepted Gate 1 and
+authorized the bounded Gate 2 qualification below. This is not a
 release-readiness or unaided-onboarding claim. Pinned R12 and original acceptance
 projects are unchanged.
 
@@ -20,6 +20,87 @@ Those earlier executables are not the current Gate 1 artifact.
 ## Latest Public Qualification
 
 ### Current Checkpoint
+
+#### Gate 2: Prerequisites And Predeclared Envelope
+
+Gate 2 authorized 2026-09-11; IN PROGRESS, no public pass claimed. Starting
+commit `b955c836b70553347785a8050dbf26493144375b`, clean tree. Product source
+remains `d018290`. Before selecting any new cases, verify actual authoring
+provider/client calls and freeze the complete installed Runner, local pre-release
+Spec and transitive dependencies. Preserve the package lock and content manifest,
+not just the CLI executable hash. Evidence: existing external
+`r13-e07-20260911/gate2-b955c83/`; the existing generalization tracker owns progress.
+
+Declared envelope: PostgreSQL 17, exact reviewed tenant/principal scope under
+supported ENABLE/FORCE RLS, non-owner/non-bypass roles, validated immediate FKs
+including composite relationships, one stable identity and maintained integer
+conflict counter per mutation target. Scoped Read projections/analysis and opaque
+references; one exact UPDATE or atomic two-to-four UPDATE effects; private related
+facts and immediate inverse-FK complete collections with bounded typed predicates
+and count/sum/min/max. Explicit overall and trusted-scope rolling automatic limits,
+human fallback only for valid requests, separate Read/Action/execution reviews,
+generated narrow writer requirements, explicit local test identity and worker.
+Record the actual receipt mode; do not relabel ledger receipts as source receipts.
+
+Excluded before selection: arbitrary SQL, DELETE, mixed-operation transactions,
+bulk effects, composite-only mutation identities, arbitrary/hidden RLS collection
+predicates, unbounded aggregates, unsupported calendar conversions, unproved
+version maintenance, external side effects and real production session integration.
+No envelope changes to turn a failed selected case into a pass. No saved authority,
+injected draft JSON or internal activation in the public setup journey.
+
+Two previously unused policies/layouts will be selected only after freezing;
+one must be structurally different. Test real four-tool execution, receipts and
+independent readback, refusals, human review, private values and analytical uses,
+concurrency, same-client edits/add/remove and pending-request behavior. Record all
+questions, repeated questions, reviews, retries, detours, setup/edit time and
+administrator/developer assistance. Failures remain failures; no automatic
+capability expansion or repair loop. This gate is not a universal support claim.
+
+Prerequisites verified: Node 22.22.2, Docker 29.5.2, Claude Code 2.1.268 with
+an actual `claude-opus-5` response and an observed neutral MCP ping; Terra
+returned HTTP 200 and the required function through Responses. Two initial
+probe requests used incompatible Chat Completions defaults and failed HTTP 400.
+This was test-harness assistance, not a Runner defect: Runner already uses
+Responses. These failures are retained; the neutral ping is not Runner runtime
+qualification. No policy, database rows or credential values were sent by these
+prerequisite tests.
+
+Complete installed artifact frozen **2026-09-11T19:29:43.990Z**, before choosing
+either case. Runner 1.8.0, local Spec 1.11.0 and all transitive packages: 7,569
+file/directory/symlink entries, with file bytes, modes and symlink targets recorded.
+
+| Frozen evidence | SHA-256 |
+| --- | --- |
+| Canonical complete installed-tree manifest contents | `38cc0e0621bf29000f071b7cf6d66c2b26d96da6a79005503d429303de8feab4` |
+| `installed-artifact-manifest.json` | `d71209b09f222b35e1714ae06b6e28cf9fba2b4328a32596dc78cc6f2cc9053a` |
+| `installed/package-lock.json` | `be1139da587e9cfebabc6de1c2c9c46014f973159592212e8792cf4ab846efde` |
+| `installed-artifact.tar.gz` (entire installation) | `df2788145966b076a8adfd7d6bd1f232b0ca540f2ca9cee5291dc4e2f8d55a86` |
+| Local Runner tarball | `135672cabe598cac477026afd2849e7f0947ec7a2062b24f56974e00867bb141` |
+| Local pre-release Spec tarball | `27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e` |
+
+The manifest also records the Node executable hash and source commit. The only
+uncommitted repository change at freeze was this qualification documentation.
+`freeze-artifact.mjs --verify` rechecks the entire installation without changing it.
+
+Cases selected **after** freezing, 2026-09-11 19:32 UTC:
+
+- Editorial production release: publisher/editor scope, an embargo and rights
+  clearance, and atomic manuscript publication plus final-review completion.
+  Private routine classification separates automatic approval from a production
+  reviewer. Initial rolling caps: 6 overall and 2 per trusted publisher / 24h.
+- Insurance portfolio reserve adjustment: active claim/portfolio, no active
+  freezes, and a complete current active-claim reserve total after the proposed
+  change within the portfolio cap. This is a different parent/inverse-collection
+  layout, not another two-record release. Initial automatic caps: 8 overall and
+  3 per trusted insurer / 24h, plus an explicit routine ceiling.
+
+These specific policies/layouts were absent from the prior qualification/tracker
+search. Each original policy, schema and fixture must be fixed and hashed before
+its first public provider run; later policy edits are separately reviewed test
+steps. Both cases remain unqualified until their actual evidence is collected.
+The complete frozen installation is shared read-only by convention and checked
+for drift; each case has an independent disposable database, project and evidence.
 
 #### Consolidation Milestone: Gate 1 Only
 
