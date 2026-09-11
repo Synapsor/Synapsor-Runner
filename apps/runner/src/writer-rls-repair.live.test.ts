@@ -19,6 +19,9 @@ import { migrateProjectControlPolicies } from "./control-policy-store.js";
 import { encodeOperatorAuthority, validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
 import { readAuthoringCatalog } from "./control-policy-read-authoring.js";
 import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
+import { compileActionRule } from "@synapsor-runner/action-rules";
+import { completeCollectionFixture } from "../../../packages/action-rules/src/testing/complete-collection-fixture.js";
+import { collectWriterRowScopes, type WriterRowScope } from "./writer-rls-requirements.js";
 
 describe.skipIf(process.env.SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE !== "1")("owned PostgreSQL administrator policy handoff", () => {
   const name = `synapsor-policy-repair-${randomUUID().slice(0, 8)}`;
@@ -78,6 +81,56 @@ describe.skipIf(process.env.SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE !== "1")("ow
   });
   const policyCount = async () => Number((await admin.query("SELECT count(*) FROM pg_policies WHERE schemaname='school' AND policyname LIKE 'runner_scope_%'")).rows[0].count);
   const sourceRows = async () => (await admin.query("SELECT * FROM school.students ORDER BY student_id")).rows;
+  it("derives a private principal mapping from live RLS before generating a narrow writer", async () => {
+    const input = completeCollectionFixture();
+    for (const resource of input.catalog.resources) delete resource.principal_scope_key;
+    for (const binding of input.verification_boundary.resources) if (binding.scope.mode === "columns") delete binding.scope.principal_field;
+    delete input.effect_envelope.principal_scope_key;
+    const compiled = compileActionRule(input);
+    await admin.query(`CREATE SCHEMA collections;
+      CREATE TABLE collections.customers (customer_id text PRIMARY KEY, tenant_id text NOT NULL, principal_id text NOT NULL,
+        state text NOT NULL, version integer NOT NULL);
+      CREATE TABLE collections.holds (hold_id text PRIMARY KEY, customer_id text NOT NULL, tenant_id text NOT NULL,
+        principal_id text NOT NULL, state text NOT NULL);
+      INSERT INTO collections.customers VALUES ('c1','t1','p1','active',1),('c2','t1','p2','active',1),('c3','t2','p1','active',1);
+      GRANT USAGE ON SCHEMA collections TO fixture_reader; GRANT SELECT ON ALL TABLES IN SCHEMA collections TO fixture_reader;`);
+    for (const table of ["customers", "holds"]) await admin.query(`ALTER TABLE collections.${table} ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE collections.${table} FORCE ROW LEVEL SECURITY;
+      CREATE POLICY own_rows ON collections.${table} FOR SELECT TO fixture_reader USING
+      (tenant_id = NULLIF(current_setting('app.organization', true),'') AND principal_id = NULLIF(current_setting('app.person', true),''));`);
+    let generated: WriterProvisioningPlan | undefined, generatedWriter: Pool | undefined;
+    try {
+      const inspection = await inspectDatabase({ engine: "postgres", databaseUrlEnv: "FIXTURE_READER", schema: "collections", env: { FIXTURE_READER: readerUrl } });
+      const scopes = new Map<string, WriterRowScope | null>();
+      collectWriterRowScopes(compiled, { engine: "postgres", read_url_env: "FIXTURE_READER",
+        database_scope: { mode: "postgres_rls", tenant_setting: "app.organization", principal_setting: "app.person" } }, scopes, inspection);
+      expect(scopes.get("collections.customers")).toEqual([
+        { field: "principal_id", setting: "app.person" }, { field: "tenant_id", setting: "app.organization" },
+      ]);
+      generated = writerProvisioningPlan({ inspection, outcome: "collections.ready", actionDigest: plan.action_digest, writerEnv: "COLLECTION_WRITER",
+        assessment: { ok: false, fingerprint: `sha256:${"a".repeat(64)}`, expected_fingerprint: null, reasons: [], allowed_relations: [], writable_relations: [],
+          required_relations: [{ relation: "collections.customers", privileges: ["select", "update"], update_columns: ["state", "version"],
+            lock_column: "customer_id", rls_required: true, row_scope: scopes.get("collections.customers")! }] } })!;
+      const repair = writerPolicyRepair(generated);
+      expect(repair.blockers).toEqual([]);
+      psql(writerProvisioningSql(generated)); psql(repair.sql!);
+      await admin.query(`ALTER ROLE "${generated.suggested_role}" LOGIN PASSWORD 'fixture'`);
+      generatedWriter = new Pool({ connectionString: readerUrl.replace("fixture_reader:", `${generated.suggested_role}:`) });
+      const client = await generatedWriter.connect();
+      try {
+        await client.query("BEGIN");
+        await bindPostgresActionRuleScope(client, { tenantSetting: "app.organization", principalSetting: "app.person", tenantId: "t1", principal: "p1" });
+        expect((await client.query("UPDATE collections.customers SET state='ready', version=version+1 RETURNING customer_id")).rows).toEqual([{ customer_id: "c1" }]);
+        await client.query("ROLLBACK");
+        expect((await client.query("SELECT * FROM collections.customers")).rows).toEqual([]);
+      } finally { await client.query("ROLLBACK"); client.release(); }
+      expect((await admin.query("SELECT state FROM collections.customers")).rows.every(row => row.state === "active")).toBe(true);
+    } finally {
+      await generatedWriter?.end();
+      if (generated) await admin.query(`DROP OWNED BY "${generated.suggested_role}"; DROP ROLE "${generated.suggested_role}";`);
+      await admin.query("DROP SCHEMA collections CASCADE");
+    }
+  });
   it("exports and verifies scoped writer policies for inspected UUID identities", async () => {
     const t = randomUUID(), p = randomUUID(), other = randomUUID();
     const predicate = "institution_id = nullif(current_setting('app.institution',true),'')::uuid AND student_id = nullif(current_setting('app.student',true),'')::uuid";

@@ -323,7 +323,7 @@ export function assessSemanticSupervisedWriterPosture(
       reasons.push("writer_source_mismatch");
       continue;
     }
-    collectWriterRowScopes(compiled, source, rowScopes);
+    collectWriterRowScopes(compiled, source, rowScopes, inspection);
     for (const issue of actionRuleCollectionReadiness({ compiled, source, inspection, connection: "writer" })) {
       reasons.push("writer_complete_collection_unproven");
       relationIssues.push({ relation: issue.relation, issue: "missing", privileges: [issue.reason] });
