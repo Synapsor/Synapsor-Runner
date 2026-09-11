@@ -3,14 +3,19 @@
 This is an evidence inventory, not a claim that onboarding is complete or that
 arbitrary SQL/business logic is supported. Last updated: 2026-09-11.
 
-Candidate: R13 work in progress on `codex/tui-safe-action-control-plane`, based
-on `a4a720af8df051125ac26e4875eafacbcadce4f9`. The CLI in the current student
-last completed public test used SHA-256
+Current bounded qualification: Gate 1 authoring lifecycle reliability PASSED
+on source commit `d018290f9d5ca0444ecceaf3c7dc29442f8913c4`, branch
+`codex/tui-safe-action-control-plane`. Gate 2 and broader R13 qualification
+remain pending by the controlling assignment's stopping rule. This is not a
+release-readiness or unaided-onboarding claim. Pinned R12 and original acceptance
+projects are unchanged.
+
+Historical public student evidence was based on `a4a720af8df051125ac26e4875eafacbcadce4f9`.
+Its last completed public test used CLI SHA-256
 `31616b6d832e6cffd1cf1c115cffea3e15506d958b48d3b5a6d2b1c1d62dee65`.
 The full Luna completion and live rule-edit evidence below used the preceding
 `15227986a28788a0b563b1808b64f769af5ec349ee1b4150061388425b5a7f4d` executable.
-This is not the final release artifact. Pinned R12 and original acceptance
-projects are unchanged.
+Those earlier executables are not the current Gate 1 artifact.
 
 ## Latest Public Qualification
 
@@ -24,7 +29,12 @@ Preserved paused changes include execution-intent negation, policy lifecycle
 context, clarification recovery and the saved-action helper/tests. Gate 2,
 new domains and feature expansion are deferred until separately requested.
 The UX reference guides this CLI's decisions, reviews and recovery; it is
-not a second feature checklist. Gate 1 is currently IN PROGRESS, not passed.
+not a second feature checklist. Gate 1 is PASSED; implementation stops here.
+The preserved uncommitted baseline consisted of execution-intent source/tests,
+policy coverage source/tests and evidence context, command orchestration, this
+qualification document, and saved-action helper/tests. Relevant repairs were
+integrated rather than discarded. No parallel job ledger, patch language or
+authorization protocol was introduced.
 
 Ownership and focused diagnosis:
 
@@ -36,7 +46,7 @@ Ownership and focused diagnosis:
 | Clarification versus revision | Existing coverage check, cache identity and disabled edit operation | Earlier fix retained. Added checks for clarifying a disputed counter interpretation and provider failure: no Read/Action edit or active-authority change. |
 | Draft and resume storage | Governed transaction/revision checks plus atomic resume-file replacement | Seven actual storage failure/restart/concurrent-save cases pass. No storage defect or new ledger. A public orchestration defect WAS reproduced: a saved Action followed by a failed resume/delegation save reported misleading status and could proceed to review. It now pauses with the exact saved revision. Restart reconciles stale pending edits only after an explicit current-revision choice; competing drafts are protected. |
 
-Evidence so far (existing external `r13-e07-20260911` evidence directory):
+Development evidence (existing external `r13-e07-20260911` evidence directory):
 `gate1-current-actions-before.log`: 2 reproduced failures;
 `gate1-current-actions-after.log`: 26 selected tests passed;
 `gate1-preservation-integrated.log`: 335 passed, 3 continuation regressions,
@@ -44,8 +54,8 @@ Evidence so far (existing external `r13-e07-20260911` evidence directory):
 `gate1-preservation-parity.log`: corrected 36 selected tests passed.
 Focused selection exclusions are not unavailable checks. Storage integration:
 56 passed across four files, no skips. These are controlled-provider/host tests,
-not first-time-user or real-model qualification. Final stable snapshot,
-complete lifecycle evidence and final gate results remain pending.
+not first-time-user or real-model qualification. Stable results follow below;
+the failed intermediate runs have not been replaced or counted as passes.
 
 Current combined regression: `gate1-combined-lifecycle.log`, 27 PASS (217
 unselected), including eight actual scoped-answer host sequences and 18
@@ -74,9 +84,101 @@ Scoped helper/model/resume/consent coverage: 257 PASS, no skips. The parent
 intermediate run `gate1-integrated-host.log` had 509 PASS / 1 FAIL / 1 existing
 skip while the unrelated-RLS regression was being added; retained as a failed
 iteration, not final qualification. Initial final typecheck found a test-only
-parameter-index error, now corrected; the stable whole-tree gate is next.
+parameter-index error, now corrected and included in the passing stable gate.
 Execution-intent negation is committed as `1d0410a` and pushed only to private
-backup after 29 focused tests passed. Gate 1 is not yet declared complete.
+backup after 29 focused tests passed. The complete bounded implementation is
+committed as `d018290` and pushed only to private backup.
+
+##### Stable Gate 1 Results And Artifact
+
+Source commit: `d018290f9d5ca0444ecceaf3c7dc29442f8913c4`.
+Source tree: `b780a1a952f6e6d18701f8fecc8e9e79d380ecc4`.
+The working tree was clean throughout the stable test and installed-package
+checks. The subsequent qualification update changes documentation only.
+
+| Check | Stable result | Durable evidence |
+| --- | --- | --- |
+| Whole-tree types, tests, dependencies and packaging | 5,821 PASS / 446 environment-gated SKIP; 283 test files passed / 20 skipped; exit 0 | `gate1-final-full.log` |
+| Compound saved-job lifecycle and eight actual scoped-answer host sequences | Included in the passing whole-tree run; focused combined run 27 PASS (217 unselected) | `gate1-combined-lifecycle.log`, `gate1-lifecycle-complete.log`; regressions in `apps/runner/src/boundary-cli.test.ts` |
+| Actual governed storage, restart, conflicting saves and uncertain retry | 7 PASS in the stable run; SQLite, filesystem errors and independent child processes, not mocked storage | `gate1-final-full.log`; `control-policy-authoring-storage.integration.test.ts` |
+| Actual writer setup, rescan and two resumes | 1 PASS / 0 SKIP, PostgreSQL 17; 7.048s in stable run | `gate1-final-full.log`, `gate1-rescan-*`; `boundary-writer-rescan-postgres.integration.test.ts` |
+| Clean packed install with local pre-release Spec | PASS, exit 0; public declarations, launchers, fixtures and managed client install/status/uninstall preservation | `gate1-packed.log` |
+| License/content, public command surface, source paths, Cursor plugin, bundle freshness and six launcher shutdown cases | PASS within whole-tree gate | `gate1-final-full.log` |
+
+The 446 skipped tests include other opt-in database, real-provider, delegation
+and runtime deployment cases whose environments were not enabled. They are not
+fresh passing evidence. The required Gate 1 live rescan case was explicitly
+enabled. The packed check uses local `@synapsor/spec@1.11.0`, not proof that this
+pre-release Spec is available from the public registry. No package was published.
+
+SHA-256 of the tested/rebuilt package entrypoints:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `apps/runner/dist/runner.mjs` | `edba1f0b1265caf60506308e9e6f6d4bf83a9c96b1a4cda06418f62c0c245bde` |
+| `apps/runner/dist/authoring.mjs` | `b82d745464b0e275993266d6eff074f4e0752a69117e75e8166a3f9d5b177116` |
+| `apps/runner/dist/runtime.mjs` | `3b352535fe52c59ed5a545659f18fa31c7c3bc3f8b736a07a70c7f11585b9a00` |
+| `apps/runner/dist/shadow.mjs` | `5fa8c286ad426a72e67f0d4b0c034f0cb4056c15110267f91d6b368d3f504ed6` |
+| `apps/runner/dist/cli.js` | `fd5383c5bd241f7c1f917ee548bc679b00a188ebeac0f117ac3e6224a7ea6acc` |
+
+Evidence root on the qualification host:
+`/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/`.
+Reproduce from the source commit with Node >=22.13, pnpm and Docker available:
+
+```sh
+env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY \
+  SYNAPSOR_TEST_BOUNDARY_WRITER_RESCAN_LIVE=1 corepack pnpm test
+env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY \
+  VERIFY_PACKED_RUNNER_USE_LOCAL_SPEC=1 ./scripts/verify-packed-runner.sh
+```
+
+The live test creates and removes its own labeled empty database. It reviews
+generated narrow writer grants/RLS using an administrator credential owned by
+the fixture. It does not request a production credential, alter an existing
+tutorial, read business rows or grant an agent authority. The cleanup check
+found no remaining `synapsor.test=gate1-writer-rescan` containers. Existing
+recovery projects, policies and older containers were preserved.
+
+##### Measured Friction And Remaining Scope
+
+Controlled successful lifecycle: two existing counter confirmations before
+interruption; one clarification with no configuration change; one approval-limit
+edit with three structured provider turns; zero repeated accepted answers or
+counter confirmations; zero model re-planning, manual-editor detours or lost
+saved outcomes. The independent unfinished intent stays explicitly unanswered.
+Scoped-answer host cases distinguish a reused business answer from renewed
+metadata consent and semantic review: unrelated policy edits reuse the answer,
+while changed relevant requirements require a new decision. A stale proof is
+refused before another model transfer/review, not converted into trusted proof.
+
+Failure recovery is deliberately not zero-step: after an acknowledged Action
+save and failed follow-up save, one checkpoint-only retry is allowed, then the
+flow pauses with the saved digest. A stale pending edit requires inspection and
+an explicit keep-current or edit-current decision. No automatic merge, repeated
+model edit or silent competing-revision overwrite occurs. A failed/no-op answer
+save does not report confirmation or trigger further drafting; asking again on
+restart in that case is necessary, not loss of an acknowledged saved answer.
+
+Engineering intervention: fixtures, deterministic model responses and failure
+injection were authored by engineers. The live fixture had seven development
+attempts (five failed, two passed before the stable run), including correction
+to the already supported RLS expression shape. This is internal qualification,
+not an unaided operator completion score. Failed iterations remain evidence.
+
+| Category | Remaining status |
+| --- | --- |
+| Selected lifecycle defects | No unresolved defect in the qualified sequences; current/stale saved inventory, explicit removal, clarification, limit edit, failed follow-up saves and rescan pass. |
+| Interpretation / metadata | Legacy unscoped prose is not auto-confirmed. Missing references, genuinely changed meaning and unavailable current proof still require evidence or a decision. Arbitrary prose extraction completeness is not established. |
+| Unsupported capability | SQL/RLS/effect envelope unchanged. Unsupported repair grammar and broader business operations are not made supported by these tests. |
+| Deployment prerequisites | Writer setup, trusted identity, explicit publication and worker readiness remain independent requirements. Unanswered historical advising limits and absent real credentials remain unresolved outside this milestone. |
+| Runtime safety / receipt limits | Four runtime tools and existing validators unchanged. Authoring tests do not prove cross-process runtime request idempotency or universal safety. Existing receipt modes, duplicate handling and already-dispatched work limitations below still apply. |
+| Untested combinations | New real-model/first-time-user journeys, new domains, arbitrary concurrent conversation-only edits and all possible multi-store interleavings are not qualified. |
+
+**Gate 2: PENDING, not started.** Broader unfamiliar-schema qualification and
+feature expansion require a separate request. UX-reference ideas beyond this
+milestone, including a new persistent workspace layout, expanded behavior
+previews and new deployment modes, remain later work. No background agent or
+test continues this assignment after the Gate 1 report and private backup.
 
 #### Earlier R13 Checkpoints (Historical)
 
