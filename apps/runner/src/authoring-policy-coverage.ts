@@ -8,6 +8,7 @@ export type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js
 import type { ReviewSection } from "./read-boundary-review-types.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { safeTerminalText } from "./terminal-syntax.js";
+import { ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE } from "./action-rule-source-evidence.js";
 
 const DISPOSITIONS = ["implemented", "needs_decision", "conflict", "unsupported", "background", "overridden"] as const;
 const TOOL = "runner.review_policy_coverage";
@@ -131,6 +132,18 @@ function coverageReferences(draft: unknown): string[] {
     references.add(path);
     references.add(path.slice(0, path.lastIndexOf("/")));
     references.add(path.slice(0, path.lastIndexOf("/fields/")));
+  }
+  const sourceRoot = "/runner_evidence/source_constraints";
+  children(sourceRoot); children(`${sourceRoot}/resources`);
+  for (const resource of [...references].filter(pointer => pointer.startsWith(`${sourceRoot}/resources/`))) {
+    children(resource); children(`${resource}/primary_key`);
+    for (const kind of ["unique_constraints", "check_constraints"]) {
+      const root = `${resource}/${kind}`;
+      children(root);
+      for (const pointer of [...references].filter(entry => entry.startsWith(`${root}/`))) {
+        children(pointer); children(`${pointer}/columns`);
+      }
+    }
   }
   return [...references].sort();
 }
@@ -446,6 +459,8 @@ export async function reviewPolicyCoverage(input: {
           "For concurrency revision advancement inspect runner_evidence.actions.<outcome>.effect.version_advance and source_fields_modified, not only the model-authored effect.set or business-field allowlist. Runner's compiler can add an exact private integer_increment from reviewed metadata. A present compiled version_advance implements that prepared increment without another business question or model field assignment. A null value does not; a version guard alone proves only stale detection. Execution consent and worker readiness remain separate.",
           "For shared approval pools compare each automatic_limits.history_selector, applies_to_outcome, kind, maximum and total field against runtime_contract.approval_counter_selection. limit.id is diagnostic-only: it is NOT a ledger partition. Different IDs/classes with the same selectors share history; the same ID with different capability filters does not. Do not infer separate counters from ID spelling or demand renaming valid limits. Keep genuine selector, threshold, scope or business ambiguities unresolved. Correct mechanical misinterpretations in this report before asking the operator a business question or requesting an Action edit.",
           "For each passage include a short business topic, responsibility (runner for mechanical reconciliation, operator for missing business choice/meaning, deployment for wiring/activation/worker prerequisites, application for client behavior), issue_kind and concrete next_step. Group the same decision under the same topic while retaining all source ranges. Select draft_paths from the supplied references; Runner attaches their exact current values to the review, so do not copy or predict those values in another structure. Recheck contradictory claims before reporting them. Missing coverage links need correction of this report, not pointless edits to a correct action. Full internal privacy requires no actual value return AND no filter/sort/group/measure permissions; role candidates alone do not prove private business meaning. Preserve plan benefits and useful invoice/case references.",
+          ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE,
+          "For source guarantees use /runner_evidence/source_constraints/resources/<exact resource>/unique_constraints/<exact constraint> or check_constraints/<exact constraint>. This evidence is bound to the current generation lock and schema inspection, including private Action sources absent from Read. Cite the supplied exact pointers and compare complete key columns, nullability and exact enforced CHECK definitions with the policy. These are not activation or live-row eligibility evidence. If the section or constraint is missing, do not invent a pointer, assert an uninspected guarantee or replace the database guarantee with a new rule-language predicate merely to clear coverage.",
           "For privacy passages emit field_checks for the affected fields, especially every privacy_review candidate the source requires to be private. Check actual values and analysis, not only model_withheld_fields declarations. If a field required private is exposed, this is a real conflict needing Read or Action revision, not implemented. If its meaning is uncertain, request that meaning. Use keyed runner_evidence paths (resource/field/binding names) instead of guessing positions in raw draft arrays. Exact evidence sections are /runner_evidence/read_review, /runner_evidence/read_access, /runner_evidence/actions and /runner_evidence/runtime_contract. draft_paths also accepts /read_review/..., /read_access/... and /runtime_contract/... as exact section shorthand; these are canonicalized, not fuzzy matched.",
           "Private Action verification-only fields may be absent from Read entirely. Cite their exact /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field> references, using the binding's resource identity in field_checks. Never invent /read_access entries for them or expose a private collection to repair coverage. Each field's typed visibility evidence combines this Action's model_visible flag with the actual current Read raw-return and analysis permissions. read_access_present=false means no Read field exists; private_action_verification and private_read_selection describe Runner-only use, not public permission. model_visible=false alone does not forbid Read filters, grouping or other analysis. Check all uses across the bundle: any public values or model analysis defeats a private claim, even if another binding is private. For mixed Read/Action resources also cite the exact Read evidence and keep real disclosure conflicts unresolved. Evidence contains metadata only, no private row values or activation authority.",
           "private_read_selection is Runner's private access, not agent visibility or model analysis. A field with actual_values_returned=false and no model_analysis is private from the agent even when Runner can select it internally. Do not demand removal of private selection to satisfy a rule that explicitly permits Runner-internal use. Conversely, existing scope filtering, opaque references and private Action verification do not justify adding Read selection for a kept-out field. Use the current operator clarification for ambiguous meanings; do not ask it again after it was answered.",

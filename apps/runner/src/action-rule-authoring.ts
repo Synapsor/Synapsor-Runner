@@ -13,6 +13,7 @@ import type {
 } from "@synapsor-runner/schema-inspector";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { actionRuleRelationshipsForTable, actionRuleTypeForColumn, type ActionRuleSchemaDiagnostic } from "./action-rule-schema-metadata.js";
+import { actionRuleSourceConstraints, type ActionRuleSourceConstraints } from "./action-rule-source-evidence.js";
 export { actionRuleRelationshipsForTable, actionRuleTypeForColumn, uniqueKey } from "./action-rule-schema-metadata.js";
 
 export const ACTION_RULE_AUTHORING_CATALOG_VERSION =
@@ -48,6 +49,8 @@ export type ActionRuleAuthoringResourceV1 = {
     insert: boolean;
   };
   fields: ActionRuleAuthoringFieldV1[];
+  /** Metadata for authoring only; not new Read, verification or write authority. */
+  source_constraints?: ActionRuleSourceConstraints;
 };
 
 export type ActionRuleAuthoringCatalogV1 = {
@@ -269,6 +272,7 @@ export function buildActionRuleAuthoringCatalog(input: {
           && supportsProposalIdDeduplication(table, primaryKey, tenantKey),
       },
       fields,
+      source_constraints: actionRuleSourceConstraints(table),
     });
   }
 

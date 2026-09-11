@@ -30,7 +30,7 @@ export async function reviewFinalActionRemoval(input: {
         { value: "details", label: "View exact removal details" },
         { value: "pause", label: "Keep this removal pending", detail: "Existing permissions stay unchanged." },
       ], { initialValue: "pause", context: lines,
-        exactDetails: { title: "Remove the last allowed change", lines: details } })
+        exactDetails: { title: "Remove the last allowed change", summaryTitle: "Removal review", lines: details } })
         : await session.confirm("Remove this change and keep viewing available?", { defaultValue: false, context: details }) ? "remove" : "pause";
       if (choice === "details") {
         if (session.showReviewDetails) await session.showReviewDetails("Remove the last allowed change", details);

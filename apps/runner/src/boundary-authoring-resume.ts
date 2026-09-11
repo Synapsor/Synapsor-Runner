@@ -540,8 +540,15 @@ function assertNoPrivateRuntimeMaterial(value: unknown): void {
     );
   }
   const concreteIdentity = [...serialized.matchAll(
-    /\b(?:tenant|principal)(?:[_ -]?id)?\s*(?:=|:|is)\s*["']?([A-Za-z0-9_-]{3,})/giu,
-  )].some((match) => !/^(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed|unknown|unset|required|outside)$/iu.test(match[1]!));
+    /\b(?:tenant|principal)(?:[_ -]?id)?\s*(=|:|is)\s*["']?([A-Za-z0-9_-]{3,})/giu,
+  )].some((match) => {
+    if (/^(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed|unknown|unset|required|outside)$/iu.test(match[2]!)) return false;
+    // A descriptive "is the trusted ..." sentence is not a concrete value.
+    // Keep literal assignments and other values subject to the existing guard.
+    return !(match[1]!.toLowerCase() === "is" && match[2]!.toLowerCase() === "the"
+      && /^\s+(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed)\b/iu
+        .test(serialized.slice(match.index! + match[0].length)));
+  });
   if (concreteIdentity) {
     throw new Error(
       "BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state.",

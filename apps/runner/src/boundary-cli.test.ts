@@ -4738,10 +4738,20 @@ describe("boundary operator-plane CLI", () => {
           "What is the maximum number of automatically approved follow-ups in a rolling 24-hour window?",
         );
         expect(answer).toBe("At most three per customer each rolling 24 hours.");
+        const refused = actionRuleAuthoringCheckpoint({
+          intent_digest: canonicalJsonDigest(input.intent),
+          context_digest: canonicalJsonDigest({ catalog: input.builtCatalog.catalog, read: input.readBoundaryDigest, baseline: null }),
+          components: {}, operator_messages: ["principal_id: actual-private-user"],
+        });
+        await expect(input.onCheckpoint?.(refused)).rejects.toThrow(
+          "ACTION_CHECKPOINT_NOT_SAVED: The checkpoint could not be saved. BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED:",
+        );
+        const beforeCorrection = await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8");
+        expect(beforeCorrection).not.toContain("actual-private-user");
         await input.onCheckpoint?.(actionRuleAuthoringCheckpoint({
           intent_digest: canonicalJsonDigest(input.intent),
           context_digest: canonicalJsonDigest({ catalog: input.builtCatalog.catalog, read: input.readBoundaryDigest, baseline: null }),
-          components: {}, operator_messages: [answer!],
+          components: {}, operator_messages: [answer!, "The tenant is the trusted account context; the principal is the reviewed authenticated person."],
         }));
       } else {
         resumedMessages = input.checkpoint?.operator_messages;
@@ -4886,7 +4896,8 @@ describe("boundary operator-plane CLI", () => {
       expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
       expect(resumedPlanner).not.toHaveBeenCalled();
       expect(metadataEgressPrompts).toHaveLength(1);
-      expect(resumedMessages).toEqual(["At most three per customer each rolling 24 hours."]);
+      expect(resumedMessages).toEqual(["At most three per customer each rolling 24 hours.",
+        "The tenant is the trusted account context; the principal is the reviewed authenticated person."]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

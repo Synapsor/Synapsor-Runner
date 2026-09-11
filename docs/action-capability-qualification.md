@@ -16,6 +16,40 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 11:33 UTC: final-action retirement fix `acd63fc` is backed up privately.
+Frozen executable `a1310a7bd08f17f44454fb7985301c6a776e556cac263942e609b836bdb723e9`
+(`candidate-KBDw2N`) passed the actual library same-connected-client sequence:
+four tools unchanged, empty Action discovery after public deactivation, Read
+still succeeds and new requests return `SEMANTIC_ACTION_UNAVAILABLE`. Requests,
+receipts and source changes were not rewritten; the worker was already stopped.
+The harness first looked for error.code instead of documented error_code;
+the captured five responses passed a corrected read-only verifier. Both the
+failed harness report and verification remain. Client artifact was upgraded
+before connecting; its configuration did not change during retirement.
+
+The coded public run failed checkpoint persistence after a supplied symbolic
+identity explanation. The exact sentence reproduces a false positive in the
+private-material guard ("tenant is the trusted ..."). A narrow descriptive
+sentence fix preserves concrete-value/credential refusal, and checkpoint errors
+now retain their sanitized underlying category. Regression shows refused private
+checkpoint data is not saved; a corrected checkpoint survives normal resume.
+Resume/removal/CLI integration: 249 passed; types passed. This is not yet a
+successful coded public recovery. The removal panel heading is also corrected
+from a generic Read review title to Removal review.
+
+Manufacturing MF-03: authoring had omitted inspected UNIQUE/CHECK facts. Exact
+source constraints now accompany current reviewed Read/Action sources only,
+bound to the generation lock/schema. Nullable, partial, stale and missing proof
+remain explicitly limited or refused. No authority schema or runtime permission
+changed. Sidecar focused suites: 336 passed / 2 existing skips; current combined
+package is building, public recovery pending.
+
+Student recovery on `38b2349` still fails private-admission scope proof because
+saved Actions reference an older disabled Read digest and their private evidence
+is absent from the correction context. Refusals preserve the saved drafts. The
+generic recovery path is under investigation; no student runtime pass or invented
+advising policy is claimed. Original projects and policies remain untouched.
+
 2026-09-11 11:09 UTC: `38b2349` is committed and pushed only to private backup;
 its frozen executable is `8b85ed8783bfd4004b46ccfd76e62046b008b83cddc50be9662da1346f6a969d`
 in durable `candidate-yUqQWI`. Public museum final-action removal succeeded

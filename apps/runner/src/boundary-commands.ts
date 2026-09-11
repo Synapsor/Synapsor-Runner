@@ -4317,6 +4317,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let jobIntent: string | undefined;
   let canonicalJobIntent: string | undefined;
   let resumePersistenceBlocked = false;
+  let resumePersistenceFailure: string | undefined;
+  const checkpointSaveFailure = (step: string) => new Error(`ACTION_CHECKPOINT_NOT_SAVED: ${step} could not be saved. ${resumePersistenceFailure ?? "Inspect local storage access and retry the saved job."} Existing drafts and authority are unchanged.`);
   const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage): Promise<void> => {
     assertRunning();
     if (!input.authoringChat
@@ -4366,13 +4368,15 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       assertRunning();
       await writeBoundaryAuthoringResumeState(input.projectRoot, activeResume);
       resumePersistenceBlocked = false;
+      resumePersistenceFailure = undefined;
     } catch (error) {
       assertRunning(error);
       activeResume = undefined;
+      resumePersistenceFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
       if (resumePersistenceBlocked) return;
       resumePersistenceBlocked = true;
       input.authoringChat.rememberDetails("BOUNDARY JOB RESUME WAS NOT SAVED", [
-        redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+        resumePersistenceFailure,
         "The current in-memory setup may continue, but Runner will not persist prohibited or invalid transcript material.",
         "No authority or source data changed.",
       ]);
@@ -6330,7 +6334,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   assertRunning();
                   resumeAction = { ...resumeAction, intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived", checkpoint };
                   await persistAuthoringResume("action_drafting");
-                  if (resumePersistenceBlocked) throw new Error("ACTION_CHECKPOINT_NOT_SAVED: The checkpoint could not be saved. Existing drafts and authority are unchanged.");
+                  if (resumePersistenceBlocked) throw checkpointSaveFailure("The checkpoint");
                 },
                 readBoundary: mappingBoundary,
                 readBoundaryDigest: explorationBoundaryCandidateDigest(mappingBoundary),
@@ -8062,6 +8066,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     const source = activePolicySource(sources);
     if (!source || !input.authoringChat || !modelAssistSession) return undefined;
     const draftRecord = policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
+      ...(actionInspection ? { source: { inspection: actionInspection, generationLock: context.lock } } : {}),
       actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft });
     const authorityDigest = canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
       action: semanticActionAuthorityDraft?.digest ?? null });
@@ -8110,14 +8115,14 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         outcome: before.rule.outcome, instruction, baseline_digest: canonicalJsonDigest(before.draft),
       }, pendingActionRevision);
       await persistAuthoringResume("authority_review");
-      if (resumePersistenceBlocked) throw new Error("ACTION_CHECKPOINT_NOT_SAVED: The edit request could not be saved. Existing drafts and authority are unchanged.");
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The edit request");
       const revised = await runWithProgress("Reconciling this action with your saved rules", () => (input.modelActionRuleGenerator ?? generateModelActionRuleDraft)({
         session: modelAssistSession!, intent: pendingActionRevision!.instruction, existingDraft: before.draft,
         ...(pendingActionRevision!.checkpoint ? { checkpoint: pendingActionRevision!.checkpoint } : {}),
         onCheckpoint: async checkpoint => {
           pendingActionRevision = { ...pendingActionRevision!, checkpoint };
           await persistAuthoringResume("authority_review");
-          if (resumePersistenceBlocked) throw new Error("ACTION_CHECKPOINT_NOT_SAVED: The edit checkpoint could not be saved. Existing drafts and authority are unchanged.");
+          if (resumePersistenceBlocked) throw checkpointSaveFailure("The edit checkpoint");
         },
         builtCatalog: entry.catalog, readBoundary: context.candidate, readBoundaryDigest: committed.candidate_digest,
         reviewPrivateSource: request => reviewPrivateActionSourceForModel({ request, inspection: actionInspection!,
@@ -8796,6 +8801,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       privacyEvidence: (boundary) => readPrivacyReview({ boundary, session: authoringConversation?.policySources,
         ...(policyReport && policyReport.key === policyAttemptKey ? { coverage: { report: policyReport.report,
           draft: policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
+            ...(actionInspection ? { source: { inspection: actionInspection, generationLock: context.lock } } : {}),
             actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft }) } } : {}),
       }),
       prepareExecution: prepareRequestedExecution,

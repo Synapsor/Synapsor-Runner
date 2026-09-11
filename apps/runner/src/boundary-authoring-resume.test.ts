@@ -420,4 +420,32 @@ describe("Boundary authoring resume state", () => {
       answer: "tenant_id is Runner-injected and principal_id is trusted runtime context.",
     }]);
   });
+
+  it.each([
+    "Yes. app.person is the authenticated patron's trusted identity and filters c01. app.tenant is the trusted library/account identity and filters c02. They are distinct even though both source columns are UUID. Keep these bindings private and outside model arguments.",
+    "The tenant is the trusted account context; the principal is the reviewed authenticated person.",
+  ])("retains descriptive trusted identity clarification through checkpoint save: %s", async (answer) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-symbolic-scope-resume-"));
+    try {
+      const state = buildBoundaryAuthoringResumeState({ binding, stage: "action_drafting",
+        jobIntent: "Let people collect eligible holds.", provider: "openai", model: "gpt-test",
+        conversation: [{ question: "What do the identity bindings mean?", answer, kind: "clarification" }],
+        action: { intent: "Collect an eligible hold.", checkpoint: actionRuleAuthoringCheckpoint({
+          intent_digest: `sha256:${"4".repeat(64)}`, context_digest: `sha256:${"5".repeat(64)}`, components: {},
+          operator_messages: [answer],
+        }) },
+      });
+      await writeBoundaryAuthoringResumeState(root, state);
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
+      expect(state.conversation[0]?.answer).toBe(answer);
+      expect(state.authority_granted).toBe(false);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(["tenant is acme-corp", "app.tenant = acme-corp", "principal_id: user-123", "tenant is the-account-123",
+    "tenant is the trusted identity. principal_id = 45000000-0000-4000-8000-000000000001"])("still refuses concrete identity assignment: %s", (answer) => {
+    expect(() => buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Review records.",
+      provider: "openai", model: "gpt-test", conversation: [{ question: "Scope?", answer }],
+    })).toThrow("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED");
+  });
 });

@@ -6,6 +6,7 @@ import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js";
 import { hasReviewedCustomerReadEntry, reviewedReadEntryPaths } from "./read-relationship-access.js";
+import { policySourceConstraintEvidence, type PolicySourceInspection } from "./action-rule-source-evidence.js";
 
 /** Evidence for authoring review, derived from the current typed candidates. No
  * runtime identities, rows, credentials or model assertions belong here. */
@@ -14,6 +15,7 @@ export function policyCoverageDraft(input: {
   decisions: Array<{ decision: string; confirmed: boolean }>;
   actions: CompiledActionRuleModelDraftV1[];
   authority?: ActionRuleAuthorityDraftV1;
+  source?: PolicySourceInspection;
 }) {
   const catalog = readBoundaryRevisionCatalog(input.read);
   const readFields = new Map(catalog.resources.map(resource => [resource.id,
@@ -33,6 +35,9 @@ export function policyCoverageDraft(input: {
     read: input.read,
     actions: actions.map((action) => action.draft),
     runner_evidence: {
+      ...(input.source ? { source_constraints: policySourceConstraintEvidence({ source: input.source, read: input.read,
+        resources: [...input.read.pack.resources.map(resource => resource.id),
+          ...actions.flatMap(action => action.verification_boundary.resources.map(resource => resource.resource))] }) } : {}),
       read_review: {
         meaning: "read.unresolved_decisions lists candidate review requirements, NOT current outstanding decisions. The following current digest-bound review status is authoritative for their confirmation, not activation.",
         confirmed: input.decisions.filter((decision) => decision.confirmed).map((decision) => decision.decision),
