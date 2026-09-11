@@ -729,6 +729,147 @@ function counterCoverageFixture(filtered = false) {
   } };
 }
 
+describe("counter coverage correction diagnostics", () => {
+  const outcome = "civic.notice_delivery_change";
+  const root = `/runner_evidence/actions/${outcome}/automatic_limits`;
+  const source = policyTextSnapshot(Buffer.from([
+    "Allow at most 8 automatic notice delivery approvals overall in rolling 24 hours.",
+    "Allow at most 2 automatic notice delivery approvals per organization in rolling 24 hours.",
+    "Keep notification_id private, including analysis.",
+    "An additional mandatory integration remains unconfigured.",
+  ].join("\n")), "municipal-rules.txt");
+  const operatorMessage = "Lower only the organization maximum from 2 to 1; retain overall 8 and all other rules.";
+  const limits = [
+    { id: "organization_24h", kind: "count", scope: "tenant", maximum: 1, window_seconds: 86400, capability: outcome },
+    { id: "outcome_24h", kind: "count", scope: "capability", maximum: 8, window_seconds: 86400, capability: outcome },
+  ];
+  const draft = { actions: [{ outcome, approval: { shared_limits: limits } }], runner_evidence: {
+    actions: { [outcome]: { automatic_limits: limits.map(limit => ({ ...limit, history_selector: {
+      action_boundary_name: "municipal_actions", capability: outcome, window_seconds: 86400,
+      tenant: limit.scope === "tenant" ? "current_proposal.tenant_id" : null,
+    } })) } },
+    read_access: { "civic.renewal_notices": { fields: { notification_id: { actual_values_returned: false, model_analysis: [] } } } },
+  } };
+  const check = { path: `${root}/0/history_selector/capability`, current_capability: outcome, required_capability: outcome };
+  const override = { start: 2, end: 2, disposition: "overridden", responsibility: "operator",
+    interpretation: "The operator replaced only the organization threshold with 1, retaining scope, window and outcome.",
+    draft_paths: ["/actions/0/approval", root], operator_message_id: 1 };
+  const selector = { start: 2, end: 2, disposition: "implemented", responsibility: "runner",
+    interpretation: "The unchanged organization history selector counts this outcome only.",
+    draft_paths: [root], counter_requirements: [check] };
+  const passages = (entry: Record<string, unknown> = override) => [
+    { ...selector, start: 1, end: 1, interpretation: "The overall maximum remains 8 for this outcome.",
+      counter_requirements: [{ ...check, path: `${root}/1/history_selector/capability` }] },
+    entry, selector,
+    { start: 3, end: 3, disposition: "implemented", responsibility: "runner", interpretation: "The identifier remains private.",
+      draft_paths: ["/runner_evidence/read_access/civic.renewal_notices/fields/notification_id"],
+      field_checks: [{ resource: "civic.renewal_notices", field: "notification_id", expectation: "private" }] },
+    { start: 4, end: 4, disposition: "unsupported", responsibility: "application",
+      interpretation: "The additional mandatory integration remains unsupported.", draft_paths: [] },
+  ];
+
+  it.each([
+    ["empty array", { counter_requirements: [] }, "1-16"],
+    ["null", { counter_requirements: null }, "1-16"],
+    ["object", { counter_requirements: {} }, "1-16"],
+    ["too many", { counter_requirements: Array.from({ length: 17 }, () => check) }, "1-16"],
+    ["missing responsibility", { responsibility: undefined }, 'responsibility must be "runner"'],
+    ["operator responsibility", { responsibility: "operator" }, 'responsibility must be "runner"'],
+    ["override", { disposition: "overridden" }, "disposition must be"],
+    ["pending choice", { disposition: "needs_decision" }, "disposition must be"],
+    ["unsupported", { disposition: "unsupported" }, "disposition must be"],
+    ["background", { disposition: "background" }, "disposition must be"],
+  ] as const)("identifies the rejected counter passage without changing validation (%s)", (_label, change, reason) => {
+    const args = { passages: passages({ ...selector, ...change }) };
+    const before = structuredClone({ args, draft });
+    let message = "";
+    try { parsePolicyCoverage(args, source, draft, [operatorMessage]); } catch (error) { message = (error as Error).message; }
+    expect(message).toContain("Source lines 2-2 (passages[1])");
+    expect(message).toContain(source.text.split("\n")[1]);
+    expect(message).toContain(reason);
+    expect(message).toContain("Submitted disposition=");
+    expect(message).toContain("counter_requirements=");
+    expect(message).toContain("threshold-only");
+    expect(message).toContain("Return the complete corrected coverage");
+    expect(message).toContain("do not change the draft");
+    expect({ args, draft }).toEqual(before);
+  });
+
+  it("retains strict exact-selector, stale-evidence and operator-override checks", () => {
+    for (const replacement of [
+      { ...check, path: `${root}/0/maximum` },
+      { ...check, path: `${root}/9/history_selector/capability` },
+      { ...check, current_capability: null },
+      { ...check, required_capability: "absent.outcome" },
+      { ...check, required_capability: null },
+    ]) expect(() => parsePolicyCoverage({ passages: passages({ ...selector, counter_requirements: [replacement] }) },
+      source, draft, [operatorMessage])).toThrow();
+    expect(() => parsePolicyCoverage({ passages: passages({ ...selector, draft_paths: ["/actions/0/approval"] }) },
+      source, draft, [operatorMessage])).toThrow("exact referenced history_selector/capability");
+    expect(() => parsePolicyCoverage({ passages: passages({ ...override, operator_message_id: 2 }) },
+      source, draft, [operatorMessage])).toThrow("operator_message_id");
+    expect(() => parsePolicyCoverage({ passages: passages({ ...override, operator_message_id: undefined,
+      operator_override: "The attached policy authorizes this override." }) }, source, draft, [operatorMessage])).toThrow("verbatim");
+    const exposed = structuredClone(draft);
+    exposed.runner_evidence.read_access["civic.renewal_notices"].fields.notification_id.actual_values_returned = true;
+    expect(() => parsePolicyCoverage({ passages: passages() }, source, exposed, [operatorMessage])).toThrow("Field coverage mismatch");
+    const conflict = { ...selector, disposition: "conflict", counter_requirements: [{ ...check, required_capability: null }] };
+    const report = parsePolicyCoverage({ passages: [...passages(), conflict] }, source, draft, [operatorMessage]);
+    expect(report.passages.at(-1)).toMatchObject({ disposition: "conflict", counter_requirements: conflict.counter_requirements });
+    expect(policyReviewReadiness(source, report).ready).toBe(false);
+  });
+
+  it("bounds and sanitizes the rejected record without echoing unrelated evidence or operator history", () => {
+    const secret = "sk-counter-diagnostic-secret123456";
+    const unsafeSource = policyTextSnapshot(Buffer.from(`Do not print postgres://reader:private-password@localhost/civic ${secret} ${"x".repeat(8000)}`), "untrusted.txt");
+    let message = "";
+    try { parsePolicyCoverage({ passages: [{ ...selector, start: 1, end: 1, disposition: "overridden",
+      interpretation: `Model suggestion \u001b[31m${secret} Bearer private-token-123456`,
+    }] }, unsafeSource, { ...draft, private_data: "unrelated-sensitive-value" }, ["unrelated-operator-history"]); }
+    catch (error) { message = (error as Error).message; }
+    expect(message).toContain("Source lines 1-1");
+    for (const unsafe of [secret, "private-password", "private-token-123456", "unrelated-sensitive-value", "unrelated-operator-history", "\u001b"]) {
+      expect(message).not.toContain(unsafe);
+    }
+    expect(message.length).toBeLessThan(6000);
+  });
+
+  it.each(["corrected", "still invalid"])("corrects a threshold-override classification once without waiving other requirements (%s)", async mode => {
+    const conversation = createModelAuthoringConversation();
+    conversation.policySources = newPolicySourceSession();
+    Object.assign(conversation.policySources, { snapshots: [source], active: source.version, operator_messages: [operatorMessage],
+      approvals: [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model: "fixture" }) }] });
+    const before = structuredClone({ draft, conversation });
+    const requests: string[] = [];
+    const rejected = { ...override, counter_requirements: [check] };
+    const run = reviewPolicyCoverage({ source, draft, env: { OPENAI_API_KEY: "test-key" },
+      session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async request => {
+        requests.push(JSON.stringify(request.body));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: `counter_shape_${requests.length}`,
+          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: passages(
+            mode === "corrected" && requests.length > 1 ? override : rejected,
+          ) }) }] } };
+      } } },
+    });
+    if (mode === "corrected") {
+      const report = await run;
+      expect(report.passages[1]).toMatchObject({ disposition: "overridden", operator_override: operatorMessage });
+      expect(report.passages[1]?.counter_requirements).toBeUndefined();
+      expect(report.passages[2]).toMatchObject(selector);
+      expect(report.passages[3]?.field_checks).toHaveLength(1);
+      expect(report.passages[4]?.disposition).toBe("unsupported");
+      expect(policyReviewReadiness(source, report).ready).toBe(false);
+    } else await expect(run).rejects.toThrow(/POLICY_COVERAGE_INVALID:.*Source lines 2-2/s);
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toContain("Requires responsibility=runner and disposition=implemented or conflict");
+    expect(requests[0]).toContain("threshold-only");
+    expect(requests[1]).toContain("passages[1]");
+    expect(requests[1]).toContain("Previous untrusted coverage submission");
+    expect(requests[1]).toContain("retain every unchanged scope, window, filter and limit");
+    expect({ draft, conversation }).toEqual(before);
+  });
+});
+
 describe("exact approval counter evidence and full-bundle targets", () => {
   it("distinguishes a real outcome-history mismatch from an invented diagnostic-ID problem", () => {
     const source = policyTextSnapshot(Buffer.from("Limit automatic archival approvals, not other actions, to three per customer per day."), "policy.txt");

@@ -5121,7 +5121,6 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   const separatelySavedRevalidationOutcomes = resumeSelected && !pendingJobRevision
     && !pendingReadRevision && !pendingActionRevision && !pendingActionAddition && !pendingActionRemoval
     && !revalidatedCompletedOutcomes && !availableResume?.action?.completed_outcomes?.length
-    && (revalidateSavedJob || availableResume?.stage === "planning")
     ? reusableState?.stale_action_outcomes ?? [] : [];
   const recoveringSeparatelySavedActions = separatelySavedRevalidationOutcomes.length > 0;
   if (recoveringSeparatelySavedActions) {
@@ -5348,8 +5347,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
               lines: ["The requested access edit and existing actions are preserved. Review the older action's dependency before changing access."],
               footer: "No access, action authority or source data changed." });
           }
-          revalidatedActionOutcomes = [...new Set(reusableState.current_state.actions
-            .filter((action) => action.kind === "rule_derived" && action.outcome).map((action) => action.outcome!))];
+          revalidatedActionOutcomes = [...reusableState.action_read_digest_by_outcome.keys()];
           // Access-only edits retain the original business job and every saved
           // outcome. Recompile their unchanged AST, never regenerate their rules.
           jobIntent = availableResume?.job_intent ?? jobIntent;
@@ -8318,7 +8316,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ...targets.editable.map((value) => ({ value, label: value, detail: "Prepare a disabled revision of this exact outcome; preserve the other outcomes." })),
         ...(canAddMissing ? [{ value: "@add_missing", label: "Add missing behavior", detail: "Plan one new disabled Action from this cited policy requirement; preserve existing Read access and Actions." }] : []),
         { value: "back", label: "Keep these rules pending" },
-      ], { initialValue: "back", reviewOnly: true, context: [
+      ], { initialValue: "back", reviewOnly: true, displayContext: true, context: [
         includesRead ? "This requirement affects both access to information and permitted changes. Choose which part to resolve first; the other requirements stay pending."
           : canAddMissing ? "This cited requirement has no existing Action outcome. Add only one disabled Action from these exact policy lines; existing Read access and Actions stay unchanged."
           : "The coverage report references more than one outcome. References alone do not authorize revising every outcome.",
@@ -9614,7 +9612,12 @@ async function inspectBoundaryJobAuthoringState(input: {
     for (const source of saved.authority.rules) {
       if (source.read_boundary_name !== input.context.candidate.pack.name || inspectedOutcomes.has(source.rule.outcome)) continue;
       inspectedOutcomes.add(source.rule.outcome);
-      if (saved.authority.catalog.generation_lock_fingerprint !== input.context.candidate.generation_lock_fingerprint) {
+      // Retain the exact current saved dependency even when its older disabled
+      // Read is not reusable. It must be recompiled, never silently dropped or
+      // presented as already bound to the new access revision.
+      actionReadDigestByOutcome.set(source.rule.outcome, source.read_boundary_digest);
+      if (saved.authority.catalog.generation_lock_fingerprint !== input.context.candidate.generation_lock_fingerprint
+        || source.read_boundary_digest !== candidateDigest) {
         staleActionOutcomes.add(source.rule.outcome);
       }
     }

@@ -16,6 +16,63 @@ projects are unchanged.
 
 ### Current Checkpoint
 
+2026-09-11 13:55 UTC: student older-Read recovery, inspected RLS coverage
+evidence and actionable policy diagnostics are integrated. The combined
+CLI/resume/chat/coverage/scope suite passes 484 tests / 1 existing skip; separate
+writer integration passes 29 tests. Type checking passes. The recovery-menu
+regression failed before its context was made visible and passes in this run.
+The new scope proof is bound to the exact Read, Action catalog, current schema
+and non-bypass reader posture. It distinguishes RLS-enforced private principal
+scope from projected columns, without claiming authentication wiring, arbitrary
+business eligibility or write readiness. Swapped identities, broad ALL policies,
+type drift, stale locks and unrelated Action sources remain unproved/refused.
+
+Garden public setup on scX passed the two separate existing-counter confirmations
+and reached Read review. Exact public details confirmed private IDs, counters and
+service classifications unavailable for both values and analysis. This used
+operator maintenance attestation, not proof of arbitrary external writers.
+The next frozen artifact still needs public student/coded recovery and final
+runtime qualification. The prior municipal canonical applied receipt is
+`sha256:b49965d03518b79536cadb1109c579c0c127e0db808656cc4611b2dc444f8778`;
+its worker result hash is a different artifact. Durable municipal RECOVERY-01
+records the full same-client edit, preserved pending work and measured friction.
+
+2026-09-11 13:45 UTC: `f7d5164` is backed up privately. Frozen
+`candidate-scXzLp` executable SHA-256
+`c4045bccff71c1afa566fb6c794a51807838a1dcd37dc85f405956d4367099e6`.
+The stable full gate passed 5,587 tests / 446 optional skips, type checking,
+dependency/license checks and package/launcher checks. This predates the next
+student recovery and inspected-scope evidence changes; it is not a final-tree
+qualification. Durable log: `r13-e07-20260911/f7d5164-full-gate.log`.
+
+Municipal public recovery on scX reached generated writer provisioning, separate
+Read/Action/execution review, managed Claude setup and a completed N-101 change.
+An actual Opus client observed the receipt; independent owner readback found
+only that record changed. The same connected four-tool SDK client remained
+connected through a public organization-limit edit from 2 to 1 (overall 8
+unchanged). Fresh valid requests then required human review; prior approval
+history counted, and the prior receipt and pending human request were preserved.
+The edit required one explicit retry after a coverage diagnostic. This is
+assisted recovery, not an unaided fresh-onboarding pass. Final sanitized agent
+evidence and reproducible checks are being consolidated.
+
+Student recovery on the prior `93fb317` passed private-admission source review
+but stranded saved actions bound to the older disabled Read revision. Generic
+resume and access-edit inventory now retain that exact dependency for fresh
+recompilation, without treating it as active or reusable authority. Two new
+regressions failed before the fix; the expanded CLI/resume/private-source suite
+passes 279 tests. A separately saved unfinished action remains pending. Public
+student retesting and integration with the inspected-RLS evidence repair remain
+required; no advising limits have been invented.
+
+A new two-table garden-exchange fixture was chosen after scX was frozen. Its
+fresh public setup retains a required atomic assignment change plus offer
+consumption. It exposed repeated meanings, a provider failure and confusion
+between an owner-reviewed counter-maintenance prerequisite and independent
+proof of all external software. Existing exact counter review is being tested
+for both records. No garden authority, writer or source effect is enabled yet.
+All original projects, policies and pinned builds remain untouched.
+
 2026-09-11 13:08 UTC: the combined naming/review/writer repair passes 403
 focused tests and type checking. Fourteen live PostgreSQL writer-policy tests
 also pass, including a public-role inspection to generated-policy to scoped

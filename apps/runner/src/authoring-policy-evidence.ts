@@ -1,4 +1,4 @@
-import { hasReviewedPrincipalScope, type ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { explorationBoundaryCandidateDigest, hasReviewedPrincipalScope, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { actionRuleModelDraftFromAuthority, type CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
@@ -7,6 +7,43 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js";
 import { hasReviewedCustomerReadEntry, reviewedReadEntryPaths } from "./read-relationship-access.js";
 import { policySourceConstraintEvidence, type PolicySourceInspection } from "./action-rule-source-evidence.js";
+import { rolePostureFingerprint, schemaFingerprintForInspection } from "@synapsor-runner/schema-inspector";
+import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
+import { inspectedPostgresScopeMapping } from "./inspected-scope-mapping.js";
+
+function inspectedReadScopes(read: ExplorationBoundaryDraft, source?: PolicySourceInspection) {
+  type Mapping = NonNullable<ReturnType<typeof inspectedPostgresScopeMapping>>;
+  type Evidence = Pick<Mapping, "tenant" | "principal" | "policy_fingerprint"> & {
+    resource: string; source: string; schema: string; table: string; operation: "SELECT";
+    generation_lock_fingerprint: string; schema_fingerprint: string; role_posture_fingerprint: string;
+    policy_count: number; enforcement: "inspected_postgres_rls"; meaning: string;
+  };
+  const result = new Map<string, Evidence>();
+  const resources = read.pack.resources.filter(resource => resource.rls_session?.tenant_setting && resource.rls_session.principal_setting);
+  if (!source || !resources.length) return result;
+  const { inspection, generationLock } = source;
+  const schemaFingerprint = schemaFingerprintForInspection(inspection), roleFingerprint = rolePostureFingerprint(inspection);
+  if (inspection.engine !== "postgres" || generationLock.engine !== inspection.engine
+    || canonicalJsonDigest(generationLock) !== read.generation_lock_fingerprint
+    || schemaFingerprint !== generationLock.schema_fingerprint
+    || roleFingerprint !== generationLock.role_posture_fingerprint || roleFingerprint !== read.role_posture_fingerprint) {
+    throw new Error("POLICY_RLS_EVIDENCE_STALE: exact current Read lock, inspected schema and current-role posture are required for database scope evidence.");
+  }
+  for (const resource of resources) {
+    if (!resource.tenant_key || read.pack.resources.filter(entry => entry.id === resource.id).length !== 1) continue;
+    const mapping = inspectedPostgresScopeMapping({ inspection,
+      resource: { schema: resource.schema, table: resource.table, fields: Object.keys(resource.field_types ?? {}) },
+      tenantField: resource.tenant_key, tenantSetting: resource.rls_session!.tenant_setting!, principalSetting: resource.rls_session!.principal_setting! });
+    if (!mapping || resource.principal_key && resource.principal_key !== mapping.principal.field) continue;
+    result.set(resource.id, { resource: resource.id, source: read.source, schema: resource.schema, table: resource.table, operation: "SELECT",
+      tenant: mapping.tenant, principal: mapping.principal, policy_fingerprint: mapping.policy_fingerprint,
+      generation_lock_fingerprint: read.generation_lock_fingerprint, schema_fingerprint: schemaFingerprint,
+      role_posture_fingerprint: roleFingerprint, policy_count: mapping.policy_names.length, enforcement: "inspected_postgres_rls",
+      meaning: "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included.",
+    });
+  }
+  return result;
+}
 
 /** Evidence for authoring review, derived from the current typed candidates. No
  * runtime identities, rows, credentials or model assertions belong here. */
@@ -22,15 +59,39 @@ export function policyCoverageDraft(input: {
     new Map(resource.fields.map(field => [field.id, field]))]));
   // Coverage reviews the replacement bundle, not just newly authored entries.
   // Otherwise adding one outcome makes retained business rules appear missing.
-  const actions: Array<Pick<CompiledActionRuleModelDraftV1, "draft" | "rule" | "verification_boundary" | "effect_envelope"> & { boundary_name: string }> = input.authority
+  const actions: Array<Pick<CompiledActionRuleModelDraftV1, "draft" | "rule" | "verification_boundary" | "effect_envelope"> & {
+    boundary_name: string; source_catalog?: ActionRuleCatalogV1; read_dependency?: { name: string; digest: string };
+  }> = input.authority
     ? input.authority.authority.rules.map((entry) => {
       const review = input.authority!.reviews.find((item) => item.outcome === entry.rule.outcome);
       if (!review) throw new Error(`POLICY_COVERAGE_ACTION_REVIEW_MISSING: ${entry.rule.outcome} needs its saved review before the complete policy can be checked.`);
-      return { boundary_name: input.authority!.authority.action_boundary.name,
+      return { boundary_name: input.authority!.authority.action_boundary.name, source_catalog: input.authority!.authority.catalog,
+        read_dependency: { name: entry.read_boundary_name, digest: entry.read_boundary_digest },
         rule: entry.rule, verification_boundary: entry.verification_boundary, effect_envelope: entry.effect_envelope,
         draft: actionRuleModelDraftFromAuthority({ authority: input.authority!.authority, outcome: entry.rule.outcome,
           review, preserveVerificationFields: true }) };
-    }) : input.actions.map((action) => ({ ...action, boundary_name: action.loaded.authority.action_boundary.name }));
+    }) : input.actions.map((action) => {
+      const rule = action.loaded.authority.rules?.find(entry => entry.rule.outcome === action.rule.outcome);
+      return { ...action, boundary_name: action.loaded.authority.action_boundary.name, source_catalog: action.loaded.authority.catalog,
+        ...(rule ? { read_dependency: { name: rule.read_boundary_name, digest: rule.read_boundary_digest } } : {}) };
+    });
+  const readScopes = inspectedReadScopes(input.read, input.source);
+  const readDigest = explorationBoundaryCandidateDigest(input.read);
+  const actionScope = (action: typeof actions[number], binding: typeof actions[number]["verification_boundary"]["resources"][number]) => {
+    const proof = readScopes.get(binding.resource);
+    if (!proof || action.source_catalog?.generation_lock_fingerprint !== input.read.generation_lock_fingerprint
+      || action.read_dependency?.name !== input.read.pack.name || action.read_dependency.digest !== readDigest
+      || binding.scope.mode !== "columns" || binding.scope.tenant_field !== proof.tenant.field
+      || binding.scope.principal_field && binding.scope.principal_field !== proof.principal.field) return null;
+    const resources = action.source_catalog.resources.filter(resource => resource.name === binding.resource);
+    const resource = resources.length === 1 ? resources[0] : undefined;
+    if (!resource || resource.engine !== "postgres" || resource.source !== input.read.source
+      || resource.schema !== proof.schema || resource.table !== proof.table
+      || resource.tenant_key !== proof.tenant.field
+      || resource.principal_scope_key && resource.principal_scope_key !== proof.principal.field
+      || ![proof.tenant.field, proof.principal.field].every(field => resource.fields.some(entry => entry.name === field))) return null;
+    return proof;
+  };
   return {
     read: input.read,
     actions: actions.map((action) => action.draft),
@@ -52,7 +113,9 @@ export function policyCoverageDraft(input: {
       read_access: Object.fromEntries(catalog.resources.map((resource) => {
         const raw = input.read.pack.resources.find((entry) => entry.id === resource.id)!;
         return [resource.id, { resource: resource.id, label: resource.label ?? null, description: resource.description ?? null,
-          trusted_tenant_field: raw.tenant_key ?? null, trusted_principal_field: raw.principal_key ?? null,
+          trusted_tenant_field: raw.tenant_key ?? null, trusted_principal_field: raw.principal_key ?? readScopes.get(resource.id)?.principal.field ?? null,
+          explicit_principal_column: raw.principal_key ?? null,
+          database_scope_proof: readScopes.get(resource.id) ?? null,
           database_session_scope: raw.rls_session ?? null,
           principal_scope_configured: hasReviewedPrincipalScope(raw),
           independently_queryable: !raw.relationship_only,
@@ -69,6 +132,7 @@ export function policyCoverageDraft(input: {
         outcome: action.rule.outcome,
         scoped_bindings: Object.fromEntries(action.verification_boundary.resources.map((resource) => [resource.binding, {
           binding: resource.binding, resource: resource.resource, scope: resource.scope, source: resource.source,
+          database_scope_proof: actionScope(action, resource),
           row_identity: resource.primary_key, conflict_field: resource.version_field ?? null,
           fields: Object.fromEntries(resource.fields.map((field) => {
             const readField = readFields.get(resource.resource)?.get(field.name);

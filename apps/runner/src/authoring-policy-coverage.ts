@@ -14,6 +14,7 @@ const DISPOSITIONS = ["implemented", "needs_decision", "conflict", "unsupported"
 const TOOL = "runner.review_policy_coverage";
 const RESPONSIBILITIES = ["operator", "runner", "deployment", "application"] as const;
 const ISSUES = ["business_choice", "schema_meaning", "missing_configuration", "unsupported_requirement", "contradiction", "coverage_link"] as const;
+const COUNTER_REQUIREMENT_GUIDANCE = "counter_requirements compares only which existing outcomes count, using exact history_selector/capability evidence. Requires responsibility=runner and disposition=implemented or conflict. Omit the property entirely when no capability-filter comparison is needed, never null or []. A threshold-only operator override belongs in a separate overridden passage linked to the limit and an actual indexed operator message or verbatim quote, without counter_requirements. Keep any unchanged selector comparison in a separate implemented Runner passage; overlapping source lines are allowed. Compare maximum separately and retain every unchanged scope, window, filter and limit. A genuine selector mismatch remains conflict, not overridden or implemented. Do not invent an override or remove a requirement to repair this report.";
 
 export const unresolvedPolicyPassages = (report: PolicyCoverage) => report.passages.filter((passage) =>
   ["needs_decision", "conflict", "unsupported"].includes(passage.disposition));
@@ -180,6 +181,28 @@ function coverageDiagnosticValue(value: unknown): string {
   return Array.isArray(value) ? `(array of ${value.length} entries)` : `(${typeof value})`;
 }
 
+function counterRequirementError(entry: PolicyPassage, index: number, lines: string[], draftPaths: string[]): Error | undefined {
+  const issues: string[] = [];
+  if (!Array.isArray(entry.counter_requirements) || !entry.counter_requirements.length || entry.counter_requirements.length > 16) {
+    issues.push("counter_requirements must contain 1-16 existing capability-filter comparisons. Omit it entirely when not applicable, never null or an empty array.");
+  }
+  if (entry.responsibility !== "runner") issues.push('responsibility must be "runner" for counter_requirements. Separate operator decisions from Runner selector evidence.');
+  if (!["implemented", "conflict"].includes(entry.disposition)) {
+    issues.push('disposition must be "implemented" for matching capability filters or "conflict" for differing filters; counter_requirements cannot accompany an override or another disposition.');
+  }
+  if (!issues.length) return undefined;
+  return new Error([
+    `Source lines ${entry.start}-${entry.end} (passages[${index}]): Invalid counter requirements record.`,
+    ...issues.map(issue => `Failed check: ${issue}`),
+    `Source excerpt (untrusted): ${coverageDiagnosticText(lines.slice(entry.start - 1, entry.end).join(" "), 900)}`,
+    `Submitted interpretation (untrusted): ${coverageDiagnosticText(entry.interpretation, 800)}`,
+    `Submitted disposition=${coverageDiagnosticValue(entry.disposition)}; responsibility=${coverageDiagnosticValue(entry.responsibility)}; counter_requirements=${coverageDiagnosticValue(entry.counter_requirements)}.`,
+    `Submitted draft_paths: ${draftPaths.slice(0, 8).map(pointer => coverageDiagnosticText(pointer, 180)).join(", ")}${draftPaths.length > 8 ? `; ${draftPaths.length - 8} more omitted` : ""}.`,
+    COUNTER_REQUIREMENT_GUIDANCE,
+    "Return the complete corrected coverage, not a patch; do not change the draft, waive requirements or treat the rejected submission as operator authority. Preserve every other requirement and unresolved concern.",
+  ].join("\n"));
+}
+
 function applicationObligationError(entry: PolicyPassage, index: number, lines: string[], draftPaths: string[]): Error | undefined {
   const issues: string[] = [];
   const obligationsValid = validApplicationObligations(entry.application_obligations);
@@ -286,10 +309,8 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
       }
     }
     if (entry.counter_requirements !== undefined) {
-      if (!Array.isArray(entry.counter_requirements) || !entry.counter_requirements.length || entry.counter_requirements.length > 16
-        || entry.responsibility !== "runner" || !["implemented", "conflict"].includes(entry.disposition)) {
-        throw new Error("Counter requirements must identify 1-16 existing capability filters as implemented or conflicting Runner policy, not a business waiver.");
-      }
+      const issue = counterRequirementError(entry, index, lines, draftPaths);
+      if (issue) throw issue;
       for (const check of entry.counter_requirements) {
         if (!check || Object.keys(check).some((key) => !["path", "current_capability", "required_capability"].includes(key))
           || typeof check.path !== "string" || !/^\/runner_evidence\/actions\/[^/]+\/automatic_limits\/\d+\/history_selector\/capability$/u.test(check.path)
@@ -391,7 +412,7 @@ export async function reviewPolicyCoverage(input: {
         topic: { type: "string", maxLength: 90, description: "Short business requirement, e.g. Three automatic approvals per customer account. Not technical reasoning or a JSON pointer." },
         responsibility: { type: "string", enum: [...RESPONSIBILITIES] }, issue_kind: { type: "string", enum: [...ISSUES] },
         next_step: { type: "string", maxLength: 400, description: "Concrete next step; ask the operator only for genuine business meaning. Pending execution is a deployment review, not a new rule." },
-        ...(counterCapabilityReferences(input.draft).length ? { counter_requirements: { type: "array", minItems: 1, maxItems: 16, description: "Only when source policy specifies which existing outcomes count: compare an exact history_selector/capability with the required capability. null means all outcomes. Not diagnostic limit IDs. Conflict permits a separately validated disabled Action repair, never activation.", items: {
+        ...(counterCapabilityReferences(input.draft).length ? { counter_requirements: { type: "array", minItems: 1, maxItems: 16, description: `${COUNTER_REQUIREMENT_GUIDANCE} A null capability means all outcomes, not a null counter_requirements array. Limit IDs are diagnostic, not filters. Conflict permits a separately validated disabled Action repair, never activation.`, items: {
           type: "object", additionalProperties: false, required: ["path", "current_capability", "required_capability"], properties: {
             path: { type: "string", enum: counterCapabilityReferences(input.draft) }, current_capability: { type: ["string", "null"] }, required_capability: { type: ["string", "null"] },
           },
@@ -458,6 +479,7 @@ export async function reviewPolicyCoverage(input: {
           "Use runner_evidence for mechanical facts: actual field exposure, current digest-bound Read confirmations, exact business-field/trusted-scope mappings, compiled version guards, execution support and the runtime contract. read.unresolved_decisions is the historical review checklist; it is NOT the current pending set. Do not turn a confirmed checklist item into several new blockers. A tenant-scoped limit uses the same tenant-field value as the verified resources; if that field identifies the account in this reviewed deployment, the limit is per account across its principals. Never invent a broader tenant or demand a redundant account limit. Other deployments may have different mappings; ask about genuinely ambiguous labels.",
           "For concurrency revision advancement inspect runner_evidence.actions.<outcome>.effect.version_advance and source_fields_modified, not only the model-authored effect.set or business-field allowlist. Runner's compiler can add an exact private integer_increment from reviewed metadata. A present compiled version_advance implements that prepared increment without another business question or model field assignment. A null value does not; a version guard alone proves only stale detection. Execution consent and worker readiness remain separate.",
           "For shared approval pools compare each automatic_limits.history_selector, applies_to_outcome, kind, maximum and total field against runtime_contract.approval_counter_selection. limit.id is diagnostic-only: it is NOT a ledger partition. Different IDs/classes with the same selectors share history; the same ID with different capability filters does not. Do not infer separate counters from ID spelling or demand renaming valid limits. Keep genuine selector, threshold, scope or business ambiguities unresolved. Correct mechanical misinterpretations in this report before asking the operator a business question or requesting an Action edit.",
+          COUNTER_REQUIREMENT_GUIDANCE,
           "For each passage include a short business topic, responsibility (runner for mechanical reconciliation, operator for missing business choice/meaning, deployment for wiring/activation/worker prerequisites, application for client behavior), issue_kind and concrete next_step. Group the same decision under the same topic while retaining all source ranges. Select draft_paths from the supplied references; Runner attaches their exact current values to the review, so do not copy or predict those values in another structure. Recheck contradictory claims before reporting them. Missing coverage links need correction of this report, not pointless edits to a correct action. Full internal privacy requires no actual value return AND no filter/sort/group/measure permissions; role candidates alone do not prove private business meaning. Preserve plan benefits and useful invoice/case references.",
           ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE,
           "For source guarantees use /runner_evidence/source_constraints/resources/<exact resource>/unique_constraints/<exact constraint> or check_constraints/<exact constraint>. This evidence is bound to the current generation lock and schema inspection, including private Action sources absent from Read. Cite the supplied exact pointers and compare complete key columns, nullability and exact enforced CHECK definitions with the policy. These are not activation or live-row eligibility evidence. If the section or constraint is missing, do not invent a pointer, assert an uninspected guarantee or replace the database guarantee with a new rule-language predicate merely to clear coverage.",

@@ -4348,7 +4348,7 @@ describe("boundary operator-plane CLI", () => {
     } finally { await fixture.dispose(); }
   }, 30_000);
 
-  it.each(["stale_resume", "failed_planning_resume", "pending_removal_draft"] as const)("revalidates separately saved rules while retaining an unfinished standalone agenda (%s)", async shape => {
+  it.each(["stale_resume", "failed_planning_resume", "pending_removal_draft", "authority_review_resume", "read_only_revision"] as const)("revalidates separately saved rules while retaining an unfinished standalone agenda (%s)", async shape => {
     const fixture = await staleSemanticRevalidationFixture({ unusedVerificationField: true });
     const generator = vi.fn(async () => { throw new Error("No new business decision is needed to revalidate saved rules."); });
     try {
@@ -4371,9 +4371,15 @@ describe("boundary operator-plane CLI", () => {
           reviews: before!.reviews.filter(entry => entry.outcome === retained.rule.outcome) });
         await writeActionRuleAuthorityDraft(fixture.root, before);
       }
-      fixture.inspection.tables[0]!.row_level_security_policies!.push({ name: "new_writer_policy", command: "UPDATE", permissive: true,
+      if (shape === "read_only_revision") {
+        const candidate = structuredClone(prior.candidate);
+        candidate.budgets.max_rows = 2;
+        await saveBoundaryReviewProgress(fixture.root, createBoundaryReviewProgress({ draft: prior.draft, candidate,
+          confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", reason: "Narrow saved Read without changing source metadata.",
+          revision: (prior.progress?.revision ?? 0) + 1 }));
+      } else fixture.inspection.tables[0]!.row_level_security_policies!.push({ name: "new_writer_policy", command: "UPDATE", permissive: true,
         roles: ["separate_writer"], using_expression: "tenant_id = current_setting('app.tenant_id')", check_expression: "tenant_id = current_setting('app.tenant_id')" });
-      await boundaryCommand(["rescan", "--from-env", "DATABASE_URL", "--project-root", fixture.root], async () => fixture.inspection);
+      if (shape !== "read_only_revision") await boundaryCommand(["rescan", "--from-env", "DATABASE_URL", "--project-root", fixture.root], async () => fixture.inspection);
       const refreshed = await loadBoundaryReviewContext(fixture.root);
       const resumeContext = shape === "stale_resume" ? prior : refreshed;
       const action = { intent: "Release an eligible advising hold; approval limits are still pending.", strategy: "rule_derived" as const };
@@ -4382,7 +4388,7 @@ describe("boundary operator-plane CLI", () => {
           generation_lock_fingerprint: resumeContext.bundle.authority.generation_lock_fingerprint,
           schema_fingerprint: resumeContext.bundle.authority.schema_fingerprint,
           role_posture_fingerprint: resumeContext.bundle.authority.role_posture_fingerprint },
-        stage: shape === "stale_resume" ? "action_drafting" : "planning",
+        stage: shape === "stale_resume" ? "action_drafting" : ["authority_review_resume", "read_only_revision"].includes(shape) ? "authority_review" : "planning",
         jobIntent: "Keep the two reviewed visit rules and finish the separate advising action later.",
         provider: "openai", model: "gpt-test", action,
       }));
@@ -4391,6 +4397,7 @@ describe("boundary operator-plane CLI", () => {
       expect(generator).not.toHaveBeenCalled();
       const after = await readActionRuleAuthorityDraft(fixture.root, "reviewed_staging_rules");
       expect(after!.authority.catalog.generation_lock_fingerprint).toBe(refreshed.candidate.generation_lock_fingerprint);
+      expect(after!.authority.rules.every(entry => entry.read_boundary_digest === refreshed.bundle.candidate_digest)).toBe(true);
       expect(after!.authority.rules.map(entry => entry.rule)).toEqual(before!.authority.rules.map(entry => entry.rule));
       expect(after!.authority.rules.map(entry => entry.verification_boundary)).toEqual(before!.authority.rules.map(entry => ({
         ...entry.verification_boundary, generation_lock_fingerprint: refreshed.candidate.generation_lock_fingerprint,
@@ -5047,7 +5054,7 @@ describe("boundary operator-plane CLI", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
-  it.each(["disabled", "active", "active_changes", "retry", "clarification", "changed_dependency", "planning_failure", "active_planning_failure", "planning_pause", "three_outcomes", "partial", "partial_separate", "partial_separate_missing", "partial_planning_failure", "partial_planning_noop", "partial_signedoff_without_workload_review", "partial_signedoff_navigation", "partial_signedoff_navigation_decline", "partial_signedoff_navigation_noop", "partial_signedoff_navigation_none_noop", "partial_unreviewed_create", "partial_unreviewed_revise", "partial_unreviewed_private_retry", "partial_unreviewed_navigation", "partial_unreviewed_navigation_decline", "partial_unreviewed_navigation_action_create"])("general access edit preserves saved outcomes without remapping (%s)", async (posture) => {
+  it.each(["disabled", "active", "active_changes", "retry", "clarification", "changed_dependency", "planning_failure", "active_planning_failure", "planning_pause", "three_outcomes", "partial", "partial_separate", "partial_separate_missing", "partial_separate_older_read", "partial_planning_failure", "partial_planning_noop", "partial_signedoff_without_workload_review", "partial_signedoff_navigation", "partial_signedoff_navigation_decline", "partial_signedoff_navigation_noop", "partial_signedoff_navigation_none_noop", "partial_unreviewed_create", "partial_unreviewed_revise", "partial_unreviewed_private_retry", "partial_unreviewed_navigation", "partial_unreviewed_navigation_decline", "partial_unreviewed_navigation_action_create"])("general access edit preserves saved outcomes without remapping (%s)", async (posture) => {
     const privatePartial = posture === "partial_unreviewed_private_retry";
     const retry = posture === "retry" || privatePartial;
     const fixture = await staleSemanticRevalidationFixture({ writeback: "supervised",
@@ -5072,8 +5079,8 @@ describe("boundary operator-plane CLI", () => {
           expectedDigest: context.bundle.candidate_digest, actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
           confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
       }
-      if (posture === "active_changes") {
-        await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate,
+      if (posture === "active_changes" || posture === "partial_separate_older_read") {
+        if (posture === "active_changes") await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate,
           expectedDigest: context.bundle.candidate_digest, actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
           confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
         const candidate = structuredClone(context.candidate);
@@ -7186,12 +7193,16 @@ describe("boundary operator-plane CLI", () => {
             if (posture === "policy_target_pause" && title === "CHOOSE THE ACTION TO REVISE") {
               expect(calls).toBe(1);
               expect(options?.initialValue).toBe("back");
+              expect(options?.displayContext).toBe(true);
+              expect(options?.context?.some(line => line.includes("coverage report references more than one outcome"))).toBe(true);
               return "back";
             }
             if (mixedRead && title === "CHOOSE WHAT TO REVISE") {
               expect(_choices.map(choice => choice.value)).toEqual(["@read_requirement", ...outcomes, "back"]);
               expect(_choices[0]?.label).toBe("Who can see information");
               expect(options?.initialValue).toBe("back");
+              expect(options?.displayContext).toBe(true);
+              expect(options?.context?.some(line => line.includes("both access to information and permitted changes"))).toBe(true);
               return "@read_requirement";
             }
             if (title === "FINISH ATTACHED RULES REVIEW") {
@@ -14632,6 +14643,7 @@ async function staleSemanticRevalidationFixture(options: { writeback?: "proposal
     boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
       session, undefined, { startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret" },
         modelBoundaryJobPlanner: planner, modelActionRuleGenerator,
+        modelReadWorkloadGenerator: async () => { throw new Error("Saved dependency recovery must not remap Read or request a provider."); },
         modelAuthoringNarrator: async () => "Review the reconciled Read revision; nothing is active.",
         actionProjectInspector, boundaryAuthoringChatFactory: () => {
           const chat = testBoundaryAuthoringChat(session); chats.push(chat); return chat;
