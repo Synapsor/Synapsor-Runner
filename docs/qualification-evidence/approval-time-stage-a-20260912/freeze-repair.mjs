@@ -11,8 +11,12 @@ const root = join(evidence, 'installed');
 const digest = data => createHash('sha256').update(data).digest('hex');
 const fileHash = async file => digest(await readFile(file));
 const run = (command, args, cwd = repo) => execFileSync(command, args, { cwd, encoding: 'utf8' });
+const sourceStatus = () => run('git', ['status', '--porcelain']).trim();
+const coherentSource = value => value === '' || value === '?? .claude/';
+// The credential-free HOME exposes this existing global-ignore directory. It
+// is outside the runner pack and is neither opened, changed nor included.
 if (process.argv.includes('--install')) {
-  assert.equal(run('git', ['status', '--porcelain']).trim(), '', 'Commit the coherent tested source before freezing');
+  assert(coherentSource(sourceStatus()), 'Commit the coherent tested source before freezing');
   await mkdir(root);
   // Use the same workspace-aware packer as the passing packed-package gate.
   // The parent has already built and tested the bytes; retain pack output as-is.
@@ -56,11 +60,11 @@ if (process.argv.includes('--verify')) {
   assert.equal(runner.version, '1.8.0'); assert.equal(spec.version, '1.11.0');
   const manifest = { frozen_at: new Date().toISOString(), purpose: 'approval-time verification and local Stage A; separate publication failure remains open',
     cases: ['owned insurance recovery A1-A4 and sequential exact limit edit'], product_commit: 'a2b6b5f870f544ca608d7fb0e6bc834da1e27196', test_commit: run('git',['rev-parse','HEAD']).trim(), report_commit: 'recorded separately after verification',
-    source_commit: run('git', ['rev-parse', 'HEAD']).trim(), source_status: run('git', ['status', '--porcelain']).trim(),
+    source_commit: run('git', ['rev-parse', 'HEAD']).trim(), source_status: sourceStatus(), unpackaged_unrelated_directory: '.claude/ (preserved, no contents read)',
     installed_root: root, installed_tree_sha256: treeHash, node: { version: process.version, executable: process.execPath, sha256: await fileHash(process.execPath) },
     runner_version: runner.version, spec_version: spec.version, package_lock_sha256: await fileHash(join(root, 'package-lock.json')),
     tarballs: await Promise.all(['synapsor-runner-1.8.0.tgz', 'synapsor-spec-1.11.0.tgz'].map(async name => ({ name, sha256: await fileHash(join(evidence, name)) }))), records };
-  assert.equal(manifest.source_status, '');
+  assert(coherentSource(manifest.source_status));
   await writeFile(join(evidence, 'installed-artifact-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
   run('tar', ['-czf', join(evidence, 'installed-artifact.tar.gz'), '-C', evidence, 'installed']);
   console.log(JSON.stringify({ frozen_at: manifest.frozen_at, source_commit: manifest.source_commit, installed_tree_sha256: treeHash,
