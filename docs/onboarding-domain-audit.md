@@ -3,19 +3,55 @@
 R13 working candidate, 2026-09-12. This records source inspection and focused
 regressions, not completion of unfamiliar-database qualification.
 
-Current assignment: a new bounded proposal/receipt and scope/edit continuation
-starts from `961d98c`, whose product bytes match `35e21a2`. The following closure
-is historical, not permission for broader work. The shared target repair selects
-the compiled binding without discarding verification dependencies; renamed
-structure and adversarial facts exercise the same path. Scope correction uses
-current exact policy evidence and operator meaning review, including populated
-contradictions. No freight-specific unit heuristic, domain branch, new effect
-language or additional MCP tool is introduced. Public interrupted gym failure
-and exact freight compiler diagnostics are reproduced; corrected public controls,
-insurance receipt/readback and the final fresh journey are still pending. See
-`action-capability-qualification.md` for the active evidence checkpoint.
+The bounded proposal/receipt and scope/edit assignment is complete on product
+source `6671302a04a684fd48e4de029c4827b93e789774`. The protected insurance recovery
+and one final fresh insurance journey reached canonical receipts and independent
+source readback. The same connected four-tool Claude client enforced the reviewed
+input maximum change from 100,000 to 80,000, preserving unrelated rules, prior
+requests, approvals and receipts. The original pending request could not acquire
+approval under changed authority; the old queued request stayed unleased with its
+immutable digest. This is assisted known-case evidence, not an unseen Gate 2 pass.
 
-Current bounded isolation-first follow-up starts at `591555b`, after `3478de5`.
+The target repair selects the exact compiled mutation binding while retaining all
+verification dependencies, including the same physical row in a complete collection.
+Conflicting projections still refuse. Scope admission checks populated contradictory
+mappings against exact inspected RLS and retains explicit business-role review.
+Generated diagnostics remain separate from accepted operator intent. Interrupted
+editing returns to planning, and unfulfilled changes remain pending. Renamed and
+adversarial regressions use these same shared paths, with no domain-name branches,
+new effect grammar, unit inference shortcut or additional runtime tool.
+
+All three corrected public gym controls save disabled `<=10`, preserve active
+`<=30` and retain unrelated verification fields. Corrected public freight reviews
+`carrier_id` / `app.tenant_id` and `account_id` / `app.principal_id` on both resources,
+then accurately reports the unchanged automatic requirement unmet: disabled human-only
+Action, no substituted cap, no execution. The saved current compiler failure is
+weight integer/no-unit versus a `kg` literal, not either isolated status comparison.
+The narrow symbolic-column checkpoint repair is regression-covered; the corrected
+public run did not need that branch. Earlier authorized and forbidden fallback runs
+remain separate historical results, and the forbidden Action never compiled.
+
+Fresh insurance produced four applied and one refused zero-row canonical V5
+`runner_ledger` receipts. The complete-collection check blocked the second individually
+eligible change after the first source effect, keeping the portfolio within its cap.
+Two worker processes competed with reviewed concurrency one; this is not simultaneous
+source transactions. Actual duplicate/limit client batches arrived serially, so
+concurrent admission races remain unqualified. Cross-scope rows were absent and a
+forged opaque reference refused; genuine foreign-scope token replay was not exercised
+in the final public client. The local fixture identity and unverified `dev_env`
+operator are not production authentication.
+
+Frozen tree `17c608d6ca9c405797d1f85839cfc5c082941ba943cee320a0af94bedf698c42`
+includes all 7,569 entries, local Spec and lockfile; only one of the three allowed
+artifacts was needed. Stable regression passed 6,092 tests with 447 optional skips,
+and types/live engines/full release gate passed. Public setup still required
+meaning/scope/version confirmations, coverage annotation repair and exact writer
+provisioning. Original evidence is unchanged, owned resources are stopped, and
+publication remains forbidden. See `action-capability-qualification.md` for exact
+artifact identities, receipts, before/after status and limitations. The closure and
+known-case observations below describe the earlier artifact and remain historical.
+
+Historical bounded isolation-first follow-up starts at `591555b`, after `3478de5`.
 It does not select new domains or replace Gate 2. The shared fixes are exact
 Read relationship prerequisite review/catalog rebuild, full private scope-pair
 retention, fresh private-collection checkpoint consent/revalidation, and saved
@@ -26,7 +62,7 @@ FAILED and editorial remains blocked by its original database-clock requirement.
 See the final result section of the qualification report. Complete original projects
 and frozen installations are read-only during isolated runs and manifest-checked.
 
-### Known-Case Generalization Limits
+### Historical Known-Case Generalization Limits
 
 The final installed artifact is `e59245de2be15d8319a746a486cd8e7496ef94440496cb2c0a39f36b75529171`,
 including local Spec and dependencies. These are known regression layouts, not

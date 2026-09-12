@@ -3,58 +3,220 @@
 This is an evidence inventory, not a claim that onboarding is complete or that
 arbitrary SQL/business logic is supported. Last updated: 2026-09-12.
 
-## Active bounded follow-up: proposal, scope and edit correctness
+## Bounded proposal-to-receipt and scope/edit result
 
-A new assignment on 2026-09-12 authorizes only the saved insurance target-overlap
-repair, generated repair provenance, the named freight/gym controls, protected
-insurance recovery and one final fresh insurance journey. The previous closure
-below remains a failed operational qualification. This continuation has not yet
-produced a live receipt or a new frozen artifact and does not reopen unseen Gate 2.
+Completed 2026-09-12 on product source
+`6671302a04a684fd48e4de029c4827b93e789774`. Checkpoints A and B are complete.
+The one final fresh insurance journey reached real receipts, independent source
+readback and a behavior-changing reviewed edit through the same connected client.
+The declared duplicate/limit batches arrived serially, so their concurrent races
+remain unqualified. This is assisted known-case verification, not an unseen Gate 2
+pass or unaided onboarding qualification. Earlier failed closures remain history.
 
-Current source regressions distinguish an exact compiled mutation binding from
-an overlapping complete collection, retain all dependency evidence and reject
-conflicting projections. Scope admission checks populated contradictory mappings
-against exact inspected RLS. Generated repair context is separated from retained
-operator statements. Interrupted jobs return to planning; unchanged edits remain
-pending unless the operator explicitly closes them. Approval edits retain unused
-verification fields. The design is recorded in `semantic-target-overlap-repair.md`.
+### Checkout, preservation and exact artifact
 
-Public controls on the preserved prior artifact reproduced the gym split:
-selected and deferred client runs saved a disabled `<= 10` replacement and kept
-the active `<= 30` authority, six provider transports each. Actual process
-termination at the client picker followed by public resume saved `<= 30` while
-the model claimed `<= 10`. The interrupted control used nine transports,
-including six carried forward from an invalid Ctrl-C interruption attempt.
-All raw attempts and the invalid control remain evidence. The baseline's bytes
-and active authority stayed unchanged; execution was off. Both successful before
-controls also dropped an unused verification projection, covered by the repair.
+The starting checkout was clean at `961d98c69b5829b1677342b84e2a4ef4aa8832e4`.
+Its difference from tested product `35e21a279c2f515bbc78dea846c16269a715df80`
+was documentation only. Claude's historical manual tests used the older frozen
+gate2-repair-4515cbc installation; those results are not silently attributed to
+the newer source. Current-code reproductions precede classification below.
 
-The saved freight components now have an exact current-compiler diagnosis:
-`rule.require.expressions[2]` is the normalized failure path. Isolated shipment
-and dock-slot status comparisons compile; the integer weight comparison fails
-because its literal has unit `kg` and the inspected integer column has no unit.
-An in-memory type-aligned counterfactual then fails the existing requirement for
-an overall count in addition to the trusted-scope count. This neither validates
-nor activates the saved cap. The earlier model's dock-slot explanation was not
-the compiler cause. Public corrected scope and truthful blocked handling remain
-to be qualified; no effect grammar or unit-inference shortcut has been added.
+One new frozen artifact was used, out of the maximum three. Its complete tree
+was verified before every public invocation and again after runtime. It contains
+7,569 entries, Runner 1.8.0, local Spec 1.11.0 and the pinned lock/dependencies.
+Five installed entrypoints match the tested build. No installed files were patched.
 
-Stable full regression completed successfully: **6,092 passed, 447 optional
-skips, 293 files passed and 21 skipped**, followed by dependency, license,
-command-surface, DSL, Cursor, package build and bundle-freshness checks. Types
-and the live PostgreSQL/MySQL semantic gate also passed. The initial full run
-retained eight failures, including mixed source/test loading during two late
-corrections; the independently reproduced unfinished-agenda lifecycle defect was
-repaired and seven integrated edit/lifecycle controls pass. The release gate is
-still running. Frozen public runtime, receipt/readback and cleanup qualification
-remain pending; the test totals do not establish those outcomes.
+| Identity | SHA-256 |
+| --- | --- |
+| Complete installed tree | `17c608d6ca9c405797d1f85839cfc5c082941ba943cee320a0af94bedf698c42` |
+| Installed manifest | `bb0e610adb9ce6723c14db63610f9e1e99aa45603cdb1df9e767bed706afaadd` |
+| Installed archive | `9e94c46c3b51c27d728761404eaa6aef7dc62fa1d13701871f528c1d6a2d9f1e` |
+| Package lock | `882db94e11b6b2ca7262115a9df067d4bf30989387322115adfc9ea9739ccbd3` |
+| Runner archive | `074049599aa08ea04e270f9fc98247d65e60799566ba17b315987b2cd6cab469` |
+| Local Spec archive | `27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e` |
 
-Durable logs and manifests are under the external tracker evidence directory
-`r13-e07-20260911/proposal-receipt-scope-961d98c`. Original insurance and Claude
-evidence is manifest-protected; recovery uses whole-project namespace isolation
-and effective-store preflight. No public repository push or publication is allowed.
+Original insurance and durable Claude evidence remained read-only. The final
+preservation audit checks 632 entries: 469 regular files, 151 directories and
+12 special files, without opening FIFOs. No entries were added, removed or changed.
+Preservation manifest identity:
+`39d8b3a03f3a5f21736fdcc0eb12ec8ebe4cfefa1c39b97cdddb7ae2fc1eb245`.
+Recovery used whole-directory namespace binds and Runner's effective-store
+preflight before writable opens, with no locator rewrite or fabricated actor.
 
-## Bounded Pass Result: Operational Completion Failed
+### A: exact target binding and real recovery receipt
+
+The saved insurance rule was compiled and evaluated against the original synthetic
+facts on the starting product. Eligibility was true. The exact selected target
+appeared as both `selected_claim` and a member of `portfolio_claims`; proposal
+construction incorrectly counted physical-key matches across bindings and returned
+`SEMANTIC_TARGET_DEPENDENCY_INVALID`.
+
+The repair selects exactly one dependency for the compiled mutation binding,
+resource and primary key, with source/table/version agreement. All verification
+dependencies and complete-collection proofs remain distinct. Conflicting overlapping
+projections are refused. No first-match shortcut, deduplication, scope waiver or
+collection weakening was introduced. Real compiled/evaluated and renamed tests
+cover ordinary/overlapping targets, missing/duplicate membership, conflicting facts,
+ambiguous/wrong bindings, forged/cross-scope references, admission and worker parsing.
+PostgreSQL/MySQL transaction-time tests retain stale-fact and authority refusal.
+
+The protected recovery copied the already-publicly-prepared job whole, revalidated
+it, reviewed current Read/Action authority, provisioned only the inspected generated
+writer SQL and explicitly re-reviewed execution. Its setup took 14 authoring
+transports. Actual persistent Claude made nine MCP calls over nine Anthropic
+transports. A fresh CL-101 request for 30,000 created one automatic approval;
+all 40 rows remained unchanged before the public supervised worker ran.
+
+Proposal `wrp_rule_16a8061421420d4cb6502db973fe2823` reached canonical stored V5
+`runner_ledger` receipt
+`sha256:c20d07f84547fd4b1c262f68de8c3fae0088f0103d4801f467f240998def10ff`.
+Independent readback showed only CL-101 reserve 20,000 → 30,000 and version 1 → 2;
+the other 39 rows were unchanged. All eight dependencies, including both target
+bindings, survived. Same-reference replay returned the completed verified receipt
+without another proposal, approval or effect. This is recovery, not fresh onboarding.
+
+### B: current versus historical findings
+
+| Finding | Before classification | Corrected evidence |
+| --- | --- | --- |
+| Generated repair prose as intent | Current parser treated a diagnostic describing incorrect boundary-wide accounting as an operator requirement to retain that accounting. | Original policy and accepted operator statements are separate from generated repair context in the existing pending revision/checkpoint. Strict intent checks remain. Focused regressions and complete unchanged-policy public insurance coverage pass. |
+| Missing and contradictory freight scope | Populated defaults bound both roles to `account_id` / `app.principal_id`; missing-only admission was insufficient. | Shared admission checks exact inspected RLS and explicitly reviews both roles. Public corrected case binds `carrier_id` to `app.tenant_id` and `account_id` to `app.principal_id` on shipments and dock slots. Missing, stale and contradictory cases have deterministic coverage. |
+| Freight type/unit diagnosis | Exact current normalized path is `rule.require.expressions[2]`: integer weight column without a unit versus a `kg` literal. Both isolated status comparisons compile. | No unit inference or grammar expansion. An in-memory type-aligned diagnostic then exposes the required overall count alongside a trusted-scope count; it does not validate the saved tenant-only cap. |
+| Symbolic-column checkpoint | Current privacy guard falsely refused the saved column-choice question using “is bound to”. | Narrow explicit-column-choice allowance; real identity assignments, credentials, URLs and mixed unsafe content still refuse. Corrected public freight did not require this exact checkpoint, so that public branch is not claimed. |
+| Gym interrupted edit | Public selected/deferred controls saved `<=10`, but actual termination at client selection followed by resume saved `<=30` despite a model `<=10` claim. Successful before controls also dropped an unused verification field. | Selected, deferred and interrupted/resumed controls all save disabled `<=10`, keep active `<=30` unchanged, and retain all other business/verification rules. Interrupted incomplete planning resumes planning; unfulfilled edits remain pending with existing cancellation/no-op/concurrent-revision controls. |
+
+Freight used the unchanged forbidden-fallback requirement. Both the contemporary
+baseline and corrected run accurately reported its automatic requirement unmet.
+The corrected public run used 18 HTTP-200 authoring transports; final disabled
+Action is human-only with one dispatcher and no automatic/shared cap. It does not
+satisfy automatic dispatch and contains no global/per-account substitution. All
+16 source rows were unchanged, with zero activations/proposals/approvals/receipts.
+Earlier authorized fallback and later forbidden-fallback Claude evidence remain
+separate. The latter never compiled, so no executed bad limit is claimed. Its
+historical false-satisfaction narration was not reproduced in the current public run.
+
+Corrected freight Read fingerprint:
+`sha256:35b15b8f068dbdb6622dcbf089c07848f53f223b1c9cc8e90abd250a4dc91b4e`.
+Disabled Action revision:
+`policy:fceea69798c8224e502e05a252eb2496d11a21d9beb6e31fa80983c6d0ee8cc5`.
+The prior public initializer was deliberately used to create the populated bad
+Read defaults, then the repaired artifact performed the public correction. No
+Action was preloaded and no saved authority locator was rewritten.
+
+Gym before selected/deferred used six transports each. Interrupted before used
+nine, including six carried from an invalid Ctrl-C attempt that did not interrupt;
+the valid interruption used actual process termination. Corrected selected/deferred
+used six each; interrupted/resumed used eight under its original unchanged budget.
+Actual provider inputs, `changed_fields`, compiled AST and completion state are
+saved. Corrected revisions are respectively `b1d260bc...362df`, `4c40a254...e1d5`
+and `625f8803...a17e7`; full identities are in `gym-corrected-results.json`.
+
+### Final fresh insurance: runtime and edit
+
+The project was empty apart from its Git directory before public `start`.
+Original policy, schema and 40 business rows were unchanged. No draft or authority
+was seeded. The initial request did not include predecessor diagnostic hints.
+Setup and one writer rescan completed in **23m04s / 29 HTTP-200 authoring transports**,
+under one 50-minute/80-transport ceiling. Original policy hash is
+`31cf8412c3cde34fa57341762ddb878c427d2363e1c0a53435e40ee3a5607875`;
+schema `54e8debabb1493534bcb5153e0b7b208a2fb31623994b6cf411efc055078876a`;
+fixture `7f814d80cab9ced868f3cfd9686af9f21ebea00e445a47183887f458041f988e`.
+
+The operator confirmed exact insurer/adjuster scope, repeated source meanings and
+the original every-writer version contract, independently checked the existing
+40,000 routine ceiling, and repaired coverage annotations through public Ask/retry.
+These are material assistance and UX friction, not waived policy. The administrator
+applied only the inspected generated writer handoff: claim reserve/version updates,
+required lock privileges and six scoped policies, preserving existing source policies.
+Read, Action, execution, local fixture identity and managed client installation were
+separately reviewed. The four-tool handshake itself was not counted as completion.
+
+One actual Claude Code `claude-opus-5` session
+`3cde4f78-4b44-49f5-8e30-f1d3532a439b` remained connected across the edit, with
+one MCP process and exactly four tools. Runtime/edit took **15m19s, 34 MCP calls,
+13 operator CLI invocations, 20 Anthropic plus eight OpenAI transports**. All 47
+operations and 28 combined transports fit the declared 90-minute/120-operation/
+50-transport ceiling. Claude cost recorded by its client was $1.113557.
+
+| Check | Actual result |
+| --- | --- |
+| CL-101 duplicate 30,000 | One proposal, automatic approval and queue item; all 40 source rows unchanged before worker. Worker applied one row; fresh-reference replay returned verified completion. |
+| Serial approval limits | CL-101, CL-103 and CL-901 got the three automatic approvals. CL-902/903 went to human review; source unchanged before workers. |
+| Duplicate/limit concurrency | Claude emitted same-response batches, but byte-level MCP timing showed serial delivery. No concurrent admission or cross-process exactly-once claim. |
+| Human approval / complete collection | CL-401/402 at 60,000 each were individually eligible and human-pending. Neither request nor approval changed rows. Two workers competed under concurrency one: one applied CL-401, one started nothing. A later first attempt of untouched CL-402 blocked `SEMANTIC_AUTHORITY_STALE`, zero rows. Portfolio ended 90,000 <= 100,000. This was not simultaneous source transactions. |
+| Invalid/private controls | 999, 100,001 and fractional cents refused `ARGUMENT_INVALID`; closed claim/portfolio, active freeze and excess budget returned uniform `SEMANTIC_ACTION_NOT_ELIGIBLE`; internal-ID selection/version grouping refused; private freeze resource unavailable. |
+| Scope/reference controls | The full 27-row read excluded other-insurer CL-701 and other-adjuster CL-801. A single-character forged opaque token refused `SUBJECT_REFERENCE_UNAVAILABLE`. No genuine foreign-scope token was minted/replayed in this public client. |
+| Exact reviewed edit | Only `desired_cents.maximum` changed 100,000 → 80,000. All other rule AST, effect, verification, catalog, Read, approval classes and 8/3 counters were unchanged. Drafting and publication preserved original proposal/approval/receipt/queue rows exactly. |
+| Same-client behavior/history | Current discovery showed 80,000; fresh CL-501 90,000 refused, 80,000 required human review. CL-502 25,000 still required human review because prior automatic history exhausted the unchanged per-insurer counter. |
+| Old pending / queued | CL-102 approval refused current-authority mismatch before recording a decision. CL-104 remained approved/queued with its original digest; public status identified changed rules. Public worker once left it unleased at zero attempts, with no new receipt or write. No cancellation, retargeting or requeue. |
+
+Final ledger: **11 proposals, six approvals, five canonical V5 receipts (four
+applied, one failed), six queue records**. Human approval records have null boundary
+context on this path; the earlier source-query concern alone does not establish
+that human decisions consume the automatic boundary-scoped counter.
+
+Only these source values changed; all four versions advanced 1 → 2 and the other
+36 rows were byte-equivalent to baseline: CL-101 20,000 → 30,000; CL-103 10,000 →
+25,000; CL-901 1,000 → 2,000; CL-401 30,000 → 60,000. The edit and negative checks
+caused no additional source effect. Original approvals/receipts and nine proposals
+remained unchanged; two new valid human-pending proposals were added after the edit.
+
+First fresh proposal: `wrp_rule_4c07bf1db5bbc0a37ba7b2347be50b64`.
+Canonical receipt:
+`sha256:7add162b6da3c7553bbb645df19bf251f2e00aacba4a7bbf610df06928195d45`.
+CL-402 refused receipt:
+`sha256:9a61e9b2126721f2c7efd262521639a1e4f7ee95b6665de3191d29ee80bdcac3`.
+These are hashes verified from stored canonical receipt bytes, not the different
+worker-result hashes printed to stdout. All five identities and raw-byte hashes
+are in `insurance-fresh/final-runtime-summary.json`.
+
+Published edit Action revision:
+`policy:5f759d61ab19977fb79e8de5dfbc9b2328041e9120d9cfe577794aca36b9eb39`;
+business Action digest
+`sha256:bf28c455b7bf4cb1df80b59ec14f93e4759bccb3a1cd3271dacf66aa5aa97477`;
+execution revision
+`policy:abead8579edb2e1e25fcb1d60f2b9d40daf52d326113e6e3eeff66d0dd7611e8`.
+The original Read revision remained
+`policy:e12c645f88cc18b1904769b02c97e126440655563ca701d405113d7139a409ef`.
+
+### Tests, limits and closure
+
+Stable full regression passed **6,092 tests / 447 optional skips; 293 files passed,
+21 skipped**, followed by dependency/license/command/DSL/Cursor/build/freshness
+checks. Types and live PostgreSQL/MySQL semantic engines passed. The full release
+gate passed, including public/local/packed/owned-database/live HTTP checks and
+package publish **dry run only**. Nothing was published. The integrated named
+scope/provenance/edit suite passed 330 tests with one optional skip; focused
+overlap, lifecycle and engine evidence is retained separately.
+
+The initial full run's eight failures remain evidence: seven involved mixed late
+source/test loading, and the unfinished-agenda lifecycle defect was independently
+reproduced, repaired and covered by seven integrated controls. The one permitted
+stable full rerun passed. No additional product correction or frozen artifact was
+needed after the public runs. Finite before/after gym, freight and insurance
+budgets were retained across interruptions/resumes; no failed control was erased.
+
+The deployment was an owned PostgreSQL 17 fixture with local SQLite `runner_ledger`
+receipts, local stdio Claude, fixed local fixture identity and same-host workers.
+The real public operator path recorded `dev_env`, `local_operator`, verified=false.
+This is not production authentication, multi-host durability or cross-process
+exactly-once qualification. Claude's inaccurate expired-reference and queued-state
+narration is retained and corrected against timestamps/ledger evidence. No broad
+manual editor, refusal disclosure, worker requeue, new domain, freight execution
+or editorial clock implementation was added. Editorial's original clock guarantee
+remains unmet.
+
+All owned sources and clients are stopped. The final source dump and read-only
+ledger snapshots are durable. `original-audit-final.json`,
+`artifact-final-verification.json`, per-case `owned-cleanup.json`,
+`insurance-fresh/actual-tool-results.json`, `final-runtime-summary.json`,
+`edit-disabled-proof.json` and `collection-result-proof.json` carry the final evidence.
+The repository reports contain the same bounded result while preserving historical
+failed closures. Final documentation commit and verified private-backup push are
+recorded in `delivery.json` and the existing primary tracker. No public push is
+authorized. After that delivery, this assignment is STOPPED.
+
+## Historical Bounded Pass Result: Operational Completion Failed
 
 The isolation-first known-case assignment reached its declared three-artifact
 limit. Final product source is `35e21a279c2f515bbc78dea846c16269a715df80`.
