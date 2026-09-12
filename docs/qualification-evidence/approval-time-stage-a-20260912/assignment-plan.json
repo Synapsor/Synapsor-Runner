@@ -1,0 +1,37 @@
+{
+  "started_at": "2026-09-12T22:01:35.656261+00:00",
+  "overall_deadline": "2026-09-13T02:01:35.656261+00:00",
+  "scope": "Verification only per d181b112 plus midnight-semantics and precise clock-invariant additions. Product code unchanged; stop affected path on product failure. No Stage B, model calls or public publication.",
+  "baseline": "a0942d1bf6e45b21cae041cc4a6ff49823908678",
+  "product_revision": "a2b6b5f870f544ca608d7fb0e6bc834da1e27196",
+  "budgets": {
+    "fixture_setup_minutes": 20,
+    "fixture_attempts": 3,
+    "integration_development_minutes": 60,
+    "focused_runs": 8,
+    "rule_schedules_per_backend_ordering": 3,
+    "stable_full_runs": 1,
+    "environment_only_full_retry": 1,
+    "full_run_minutes_each": 45,
+    "offline_package_attempts": 2,
+    "freeze_minutes": 20,
+    "installed_stage_a_minutes": 90,
+    "public_mcp_operations": 240,
+    "worker_invocations": 24,
+    "installed_schedules_per_case": 3
+  },
+  "priorities": [
+    "Preserve checkout/evidence and trace two window mechanisms",
+    "Dependable owned PostgreSQL readiness and real control-store cases",
+    "Publication/admission orderings and separate clock semantics check",
+    "One stable full suite, offline package, new complete installed artifact",
+    "Independent safe installed A1-A4 and legitimate receipt/readback; no pass if required lane blocked",
+    "Reports, preservation/cleanup, intended commits and private backup delivery"
+  ],
+  "product_files_sha256": {
+    "packages/mcp-server/src/semantic-actions.ts": "ed86b1f1ffb8b4a03cf38c97680a95a557b2308e8930c07b6ed551c9b113a665",
+    "packages/proposal-store/src/sqlite-proposal-methods.ts": "3890e6e2a6093b1f7324de5ee45c239bca1467f6983dd3e11f09a5de4c5c829e",
+    "packages/proposal-store/src/postgres-runtime-store.ts": "21f3a8d8d5ddd05d6cc8b089fbedce22cc7d67ba62d421e324f77c8818d701c7",
+    "apps/runner/src/semantic-action-runtime.ts": "9d827ec1ad216e605bf396bbe7ddb5dc6ce9792811bbfa18c9ae6559bdf50be2"
+  }
+}

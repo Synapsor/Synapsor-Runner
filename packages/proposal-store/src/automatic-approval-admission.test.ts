@@ -28,6 +28,10 @@ function options(p: StoredProposal, now?: string, action_boundary = boundary) {
   return { policy: "reviewed_policy", proposal_hash: p.proposal_hash, proposal_version: p.proposal_version,
     reason: "eligible synthetic local fixture", action_boundary, ...(now ? { now } : {}) };
 }
+async function saveObservation(name: string, value: unknown) {
+  const directory = process.env.SYNAPSOR_TEST_EVIDENCE_DIR;
+  if (directory) { await fs.mkdir(directory, { recursive: true }); await fs.writeFile(path.join(directory, `${name}.json`), JSON.stringify(value, null, 2) + "\n"); }
+}
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(r => { resolve = r; });
@@ -80,6 +84,26 @@ describe("durable automatic approval admission", () => {
       expect(store.approvals(first.proposal_id)).toHaveLength(1);
       expect(store.approvals(exact.proposal_id)).toEqual([]);
     } finally { store.close(); await fs.rm(directory, { recursive: true, force: true }); }
+  });
+
+  it("keeps semantic 24-hour limits rolling across UTC midnight and legacy day limits calendar-based", async () => {
+    const store = new ProposalStore();
+    const before = "2026-09-12T23:59:00.000Z", after = "2026-09-13T00:01:00.000Z";
+    const decisions: Record<string, boolean[]> = {rolling: [], daily: []};
+    try {
+      for (const mechanism of ["rolling", "daily"] as const) for (const at of [before, after]) for (let i = 0; i < 3; i++) {
+        const p = await proposal(store, `wrp_${mechanism}_${at === before ? "before" : "after"}_${i}`, mechanism);
+        const o = mechanism === "rolling" ? options(p, at) : {
+          policy: "explicit_daily", proposal_hash: p.proposal_hash, proposal_version: p.proposal_version, reason: "explicit day control",
+          now: at, limits: [{kind: "count" as const, max: 3, period: "day" as const}],
+        };
+        decisions[mechanism]!.push(store.approveProposalByPolicy(p.proposal_id, o).approved);
+      }
+      expect(decisions.rolling).toEqual([true, true, true, false, false, false]);
+      expect(decisions.daily).toEqual([true, true, true, true, true, true]);
+      await saveObservation("midnight-mechanisms", {before, after, decisions,
+        rolling: boundary.limits, daily: {period: "day", max: 3}, approvals: store.listProposals().flatMap(p => store.approvals(p.proposal_id))});
+    } finally { store.close(); }
   });
 
   it("takes admission time after real cross-process SQLite writer exclusion", async () => {
@@ -159,6 +183,8 @@ describe.skipIf(!postgresUrl)("PostgreSQL approval control store (local fixture)
     const schema = `approval_${randomUUID().replaceAll("-", "")}`;
     const firstLocked = deferred(), release = deferred(), secondContended = deferred();
     let armed = false, schemaCreated = false;
+    const sequence: Array<{event: string; pool: string; at: string; approvals?: number}> = [];
+    const observe = (event: string, first: boolean, approvals?: number) => sequence.push({event, pool: first ? "A" : "B", at: new Date().toISOString(), ...(approvals === undefined ? {} : {approvals})});
     const wrap = (pool: Pool, first: boolean): PostgresRuntimePool => ({
       query: (sql, values) => pool.query(sql, values),
       connect: async () => {
@@ -166,9 +192,13 @@ describe.skipIf(!postgresUrl)("PostgreSQL approval control store (local fixture)
         return { release: () => client.release(), query: async (sql, values) => {
           const result = await client.query(sql, values);
           if (armed && sql.includes("pg_try_advisory_xact_lock")) {
+            observe(result.rows[0]?.locked ? "writer_lock_acquired" : "writer_lock_wait", first);
             if (first && result.rows[0]?.locked) { firstLocked.resolve(); await release.promise; }
             if (!first && result.rows[0]?.locked === false) secondContended.resolve();
           }
+          if (armed && sql.includes("SELECT") && sql.includes("ledger_entries") && !sql.includes("pg_try"))
+            observe("fresh_ledger_materialized", first, result.rows.filter(row => row.kind === "approval").length);
+          if (armed && sql === "COMMIT") observe("commit_acknowledged", first);
           return result;
         } } as PostgresRuntimeClient;
       },
@@ -197,6 +227,19 @@ describe.skipIf(!postgresUrl)("PostgreSQL approval control store (local fixture)
       expect(await second.approvals(b.proposal_id)).toEqual([]);
       const durable = await poolA.query(`SELECT payload_json FROM "${schema}".ledger_entries WHERE kind='approval'`);
       expect(durable.rows).toHaveLength(history.length + 1);
+      armed = false;
+      const winner = (await first.approvals(a.proposal_id))[0]!;
+      const denial = (await second.events(b.proposal_id)).find(e => e.kind === "policy_auto_approval_deferred")!;
+      const lockA = sequence.find(e => e.pool === "A" && e.event === "writer_lock_acquired")!;
+      const lockB = sequence.find(e => e.pool === "B" && e.event === "writer_lock_acquired")!;
+      expect(Date.parse(winner.created_at)).toBeGreaterThanOrEqual(Date.parse(lockA.at));
+      expect(denial.payload.tripped_limits).toEqual(expect.arrayContaining([expect.objectContaining({id: scope,
+        observed: scope === "insurer" ? 3 : 8, window_end: expect.any(String)})]));
+      const windowEnd = (denial.payload.tripped_limits as Array<{window_end: string}>)[0]!.window_end;
+      expect(Date.parse(windowEnd)).toBeGreaterThanOrEqual(Date.parse(lockB.at));
+      expect(Date.parse(windowEnd)).toBeGreaterThanOrEqual(Date.parse(winner.created_at));
+      expect(sequence.find(e => e.pool === "B" && e.event === "fresh_ledger_materialized")?.approvals).toBe(history.length + 1);
+      await saveObservation(`pg-last-${scope}`, {schema, sequence, caller_now_override: false, results, durable_approvals: durable.rows, denial});
     } finally {
       release.resolve();
       await Promise.allSettled(work);
@@ -206,4 +249,51 @@ describe.skipIf(!postgresUrl)("PostgreSQL approval control store (local fixture)
       } finally { await Promise.all([poolA.end(), poolB.end()]); }
     }
   }, 25000);
+  it("grants ample concurrent capacity, rolls back a definite pre-COMMIT failure, and preserves decisions on retry and restart", async () => {
+    const schema = `approval_control_${randomUUID().replaceAll("-", "")}`;
+    const pool = new Pool({connectionString: postgresUrl, connectionTimeoutMillis: 3000, statement_timeout: 10000});
+    let failBeforeCommit = false;
+    const sequence: unknown[] = [];
+    const wrapped: PostgresRuntimePool = {query: (sql, values) => pool.query(sql, values), connect: async () => {
+      const client = await pool.connect();
+      return {release: () => client.release(), query: async (sql, values) => {
+        if (failBeforeCommit && sql === "COMMIT") {failBeforeCommit = false; sequence.push("injected definite failure before COMMIT submission"); throw new Error("owned_pre_commit_failure");}
+        const result = await client.query(sql, values); if (sql === "ROLLBACK") sequence.push("ROLLBACK acknowledged"); return result;
+      }} as PostgresRuntimeClient;
+    }};
+    const stores = [new PostgresProposalRuntimeStore({pool: wrapped, schema, autoMigrate: true})];
+    const peers = Array.from({length: 3}, () => new Pool({connectionString: postgresUrl, connectionTimeoutMillis: 3000}));
+    stores.push(...peers.map(pool => new PostgresProposalRuntimeStore({pool, schema, autoMigrate: true})));
+    try {
+      const ps = [];
+      for (let i = 0; i < 4; i++) ps.push(await proposal(stores[i]!, `wrp_ample${i}`, `insurer-${i}`));
+      const concurrent = await Promise.all(ps.map((p, i) => stores[i]!.approveProposalByPolicy(p.proposal_id, options(p))));
+      expect(concurrent.every(r => r.approved)).toBe(true);
+      const retry = await proposal(stores[0]!, "wrp_rollback", "insurer-retry");
+      failBeforeCommit = true;
+      await expect(stores[0]!.approveProposalByPolicy(retry.proposal_id, options(retry))).rejects.toThrow("owned_pre_commit_failure");
+      expect(await stores[1]!.approvals(retry.proposal_id)).toEqual([]);
+      expect(await stores[1]!.getProposal(retry.proposal_id)).toMatchObject({state: "pending_review"});
+      expect((await stores[0]!.approveProposalByPolicy(retry.proposal_id, options(retry))).approved).toBe(true);
+      await expect(stores[0]!.approveProposalByPolicy(retry.proposal_id, options(retry))).rejects.toMatchObject({code: "PROPOSAL_NOT_PENDING_REVIEW"});
+      await Promise.all(stores.map(store => store.close()));
+      const restartedPool = new Pool({connectionString: postgresUrl, connectionTimeoutMillis: 3000});
+      const restarted = new PostgresProposalRuntimeStore({pool: restartedPool, schema, autoMigrate: false});
+      try {
+        const approvals = [];
+        for (const p of await restarted.listProposals()) approvals.push(...await restarted.approvals(p.proposal_id));
+        expect(approvals).toHaveLength(5);
+        expect(await restarted.receipts(retry.proposal_id)).toEqual([]);
+        const sequential = await proposal(restarted, "wrp_sequential", "insurer-sequential");
+        expect((await restarted.approveProposalByPolicy(sequential.proposal_id, options(sequential))).approved).toBe(true);
+        await saveObservation("pg-controls", {concurrent, sequence, approvals_after_restart: approvals,
+          sequential: await restarted.approvals(sequential.proposal_id), uncertain_commit_recovery: "unrun", clock: "ordinary default"});
+      } finally { await restarted.close(); await restartedPool.end(); }
+    } finally {
+      await Promise.all(stores.map(store => store.close()));
+      await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await Promise.all([pool.end(), ...peers.map(pool => pool.end())]);
+    }
+  }, 30000);
+
 });

@@ -1,0 +1,11 @@
+{
+  "runtime_driver_source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/runtime-driver.mjs",
+  "preflight_source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/storage-preflight.mjs",
+  "changes": [
+    "owned case selection",
+    "private Unix-socket source and relay",
+    "90-minute shared operation/worker budget",
+    "credential-free local operator TTY; no provider launcher"
+  ],
+  "preflight_sha256": "f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2"
+}

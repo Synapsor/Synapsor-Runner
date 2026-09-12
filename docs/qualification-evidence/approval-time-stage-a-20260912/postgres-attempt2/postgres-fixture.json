@@ -1,0 +1,114 @@
+{
+  "name": "synapsor-stagea-987b2499",
+  "owned": "/tmp/synapsor-stagea-pg-g58YPB",
+  "socket": "/tmp/synapsor-stagea-pg-g58YPB/socket",
+  "created_at": "2026-09-12T22:03:57.530Z",
+  "network": "none",
+  "auto_remove": false,
+  "fixture_database": "synapsor_stage_a",
+  "authentication": "New isolated synthetic fixture, trusted Unix socket inside private task-owned parent; no pre-existing credentials.",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "id": "1554e69039c81d1ff21568f9f3e1f38021ad54f6ae5c658aa1a7c5955bfb893e",
+  "readiness_attempts": [
+    {
+      "at": "2026-09-12T22:03:58.170Z",
+      "code": "ENOENT",
+      "message": "connect ENOENT /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:03:58.673Z",
+      "code": "ENOENT",
+      "message": "connect ENOENT /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:03:59.176Z",
+      "code": "ENOENT",
+      "message": "connect ENOENT /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:03:59.687Z",
+      "code": "3D000",
+      "message": "database \"synapsor_stage_a\" does not exist"
+    },
+    {
+      "at": "2026-09-12T22:04:00.188Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:00.690Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:01.190Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:01.692Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:02.196Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:02.700Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:03.202Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:03.704Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:04.205Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:04.706Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:05.208Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:05.711Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:06.212Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:06.715Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:07.217Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:04:07.718Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-g58YPB/socket/.s.PGSQL.5432"
+    }
+  ]
+}

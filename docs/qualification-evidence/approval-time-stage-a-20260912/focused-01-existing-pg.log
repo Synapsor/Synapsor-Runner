@@ -1,0 +1,17 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:884564) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ packages/proposal-store/src/automatic-approval-admission.test.ts (5 tests) 12500ms
+   ✓ durable automatic approval admission > does not partially consume combined limits, merge insurers, count human decisions, or reset history on a stricter revision  3117ms
+   ✓ durable automatic approval admission > preserves the inclusive rolling-window boundary, then releases capacity only after expiry  2486ms
+   ✓ durable automatic approval admission > takes admission time after real cross-process SQLite writer exclusion  4208ms
+   ✓ PostgreSQL approval control store (local fixture) > serializes the final insurer slot across independent pools and commits only one event  691ms
+   ✓ PostgreSQL approval control store (local fixture) > serializes the final overall slot across independent pools and commits only one event  1994ms
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  15:08:26
+   Duration  14.03s (transform 822ms, setup 0ms, collect 1.16s, tests 12.50s, environment 0ms, prepare 75ms)
+

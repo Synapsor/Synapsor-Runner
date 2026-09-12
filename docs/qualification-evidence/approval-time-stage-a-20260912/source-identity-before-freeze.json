@@ -1,0 +1,11 @@
+{
+  "head": "a0942d1bf6e45b21cae041cc4a6ff49823908678",
+  "product": "a2b6b5f870f544ca608d7fb0e6bc834da1e27196",
+  "product_hashes_unchanged": true,
+  "tests": {
+    "packages/proposal-store/src/automatic-approval-admission.test.ts": "9a067712daf4c3704d39608fd783590f22d25b4b5f629e76e7fb09a8ef6fa49b",
+    "apps/runner/src/semantic-admission-publication.qualification.ts": "d68bff605d9c9fa3ba6a0b0296c28cc736425f194296319cd2fe3a413436c032"
+  },
+  "stable_suite": "standard discovery; stopped strict publication reproduction kept separately and remains failed",
+  "runtime_harness": "prepared, not yet executed"
+}

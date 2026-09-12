@@ -1,0 +1,857 @@
+[
+  {
+    "file": "apps/runner/src/action-rule-model.test.ts",
+    "count": 1,
+    "category": "external live authoring provider opt-in",
+    "declared_env_names": [
+      "SYNAPSOR_LIVE_AUTHORING_BASE_URL",
+      "SYNAPSOR_LIVE_AUTHORING_MODEL",
+      "SYNAPSOR_LIVE_AUTHORING_PROVIDER"
+    ],
+    "tests": [
+      "conversational Action authoring tools qualifies live creation and a day-two edit through the same tools"
+    ]
+  },
+  {
+    "file": "apps/runner/src/authoring-policy-coverage.test.ts",
+    "count": 1,
+    "category": "external live authoring provider opt-in",
+    "declared_env_names": [
+      "SYNAPSOR_LIVE_ADMISSION_COVERAGE"
+    ],
+    "tests": [
+      "Read eligibility is not authentication or an Action prerequisite keeps unmet admission-gated reads blocked with the live authoring model"
+    ]
+  },
+  {
+    "file": "apps/runner/src/boundary-writer-rescan-postgres.integration.test.ts",
+    "count": 1,
+    "category": "owned database live-suite opt-in disabled",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_BOUNDARY_WRITER_RESCAN_LIVE",
+      "SYNAPSOR_TEST_EVIDENCE_DIR"
+    ],
+    "tests": [
+      "owned PostgreSQL writer metadata rescan revalidates private disabled Action dependencies after separately reviewed grants and RLS without changing active Read"
+    ]
+  },
+  {
+    "file": "apps/runner/src/control-policy-authority-codec.test.ts",
+    "count": 174,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "DATABASE_URL",
+      "SYNAPSOR_TEST_POSTGRES_URL",
+      "TEST_POLICY_URL"
+    ],
+    "tests": [
+      "postgres validated operator policy transactions keeps the original Read review token while waiting for another authority writer",
+      "postgres validated operator policy transactions atomically saves only a validated disabled Action companion with Read authoring",
+      "postgres validated operator policy transactions retains partial coded metadata decisions and promotes only a fully valid disabled Read candidate",
+      "postgres validated operator policy transactions rescans and renames incomplete metadata without publishing Read authority or losing reviewed answers",
+      "postgres validated operator policy transactions reads current and paginated historical governed generation locks without legacy exports or pointer changes",
+      "postgres validated operator policy transactions rebinds all retained Action outcomes before merging a later Read revision and refuses unproven replacements",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: disabled",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: unrelated_active",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: selected_active",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: selected_changed",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: guided_active",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: metadata",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: stale_export",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: no_authoring",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: workbench",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: wrong_store",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: no_config",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: no_config_cli",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: bare",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: deferred",
+      "postgres validated operator policy transactions resumes governed startup without generated exports: deferred_json",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: cli",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: draft",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: coded_cli",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: coded_draft",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: configured_scope",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: configured_scope_draft",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: unconfigured_cli",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: unconfigured_draft",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: inspection_race",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: unsafe_role",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: inspection_failure",
+      "postgres validated operator policy transactions publishes initial governed metadata only into an empty saved review: review_failure",
+      "postgres validated operator policy transactions resumes a stored rescan only when its exact selected Read is active: 'cli' false",
+      "postgres validated operator policy transactions resumes a stored rescan only when its exact selected Read is active: 'cli' true",
+      "postgres validated operator policy transactions resumes a stored rescan only when its exact selected Read is active: 'draft' false",
+      "postgres validated operator policy transactions resumes a stored rescan only when its exact selected Read is active: 'draft' true",
+      "postgres validated operator policy transactions binds Quick Start saves to the original review and returns the exact activation successor",
+      "postgres validated operator policy transactions uses stored Quick Start candidates without export fallback: accept",
+      "postgres validated operator policy transactions uses stored Quick Start candidates without export fallback: edit",
+      "postgres validated operator policy transactions uses stored Quick Start candidates without export fallback: prompt_race",
+      "postgres validated operator policy transactions uses stored Quick Start candidates without export fallback: inspection_race",
+      "postgres validated operator policy transactions uses stored Quick Start candidates without export fallback: staging",
+      "postgres validated operator policy transactions persists exact disabled edits independently, avoids duplicate history, and resumes current state",
+      "postgres validated operator policy transactions commits complete Read authoring and selection atomically without changing active authority",
+      "postgres validated operator policy transactions reopens, edits and switches stored Read reviews without file repair or stale overwrites",
+      "postgres validated operator policy transactions rescans stored reviews atomically, retains exact catalogs, and rejects stale publication",
+      "postgres validated operator policy transactions uses exact saved revisions for manual Workbench reads, progress and library switches",
+      "postgres validated operator policy transactions binds Workbench field_metadata to its original saved review and returns the exact committed successor",
+      "postgres validated operator policy transactions binds Workbench minimum_cohort_all to its original saved review and returns the exact committed successor",
+      "postgres validated operator policy transactions retains the selected saved Read revision through Workbench workload analyze and recovery",
+      "postgres validated operator policy transactions retains the selected saved Read revision through Workbench workload model and recovery",
+      "postgres validated operator policy transactions retains the selected saved Read revision through Workbench workload apply and recovery",
+      "postgres validated operator policy transactions retains the selected saved Read revision through Workbench workload receipt and recovery",
+      "postgres validated operator policy transactions keeps the original saved job-mapping review through no-op and recovery",
+      "postgres validated operator policy transactions keeps the original saved job-mapping review through expand and recovery",
+      "postgres validated operator policy transactions keeps the original saved job-mapping review through preparation and recovery",
+      "postgres validated operator policy transactions keeps the original saved job-mapping review through inspection and recovery",
+      "postgres validated operator policy transactions keeps the original saved job-mapping review through refresh and recovery",
+      "postgres validated operator policy transactions binds the saved Workbench job artifact to its exact Read dependency during current",
+      "postgres validated operator policy transactions binds the saved Workbench job artifact to its exact Read dependency during stale",
+      "postgres validated operator policy transactions binds the saved Workbench job artifact to its exact Read dependency during before_save",
+      "postgres validated operator policy transactions binds the saved Workbench job artifact to its exact Read dependency during after_save",
+      "postgres validated operator policy transactions binds the saved Workbench job artifact to its exact Read dependency during selection",
+      "postgres validated operator policy transactions binds the saved Workbench job artifact to its exact Read dependency during unrelated",
+      "postgres validated operator policy transactions binds the saved Workbench job artifact to its exact Read dependency during action_mismatch",
+      "postgres validated operator policy transactions binds the saved Workbench job artifact to its exact Read dependency during analysis_mismatch",
+      "postgres validated operator policy transactions stages a proven relationship only on the original saved active review with same policy locks without overwriting pending work",
+      "postgres validated operator policy transactions stages a proven relationship only on the original saved active review with separate policy locks without overwriting pending work",
+      "postgres validated operator policy transactions binds saved Read activation to the exact original selection, candidate and repository epoch",
+      "postgres validated operator policy transactions refuses stale CLI consent and keeps the revised draft available for a new confirmation",
+      "postgres validated operator policy transactions commits governed headless Read consent in the actual policy store: complete",
+      "postgres validated operator policy transactions commits governed headless Read consent in the actual policy store: commit_failure",
+      "postgres validated operator policy transactions commits governed headless Read consent in the actual policy store: lost_response",
+      "postgres validated operator policy transactions commits governed headless Read consent in the actual policy store: unknown_commit",
+      "postgres validated operator policy transactions commits governed headless Read consent in the actual policy store: wrong_store",
+      "postgres validated operator policy transactions commits governed headless Read consent in the actual policy store: explicit_wrong_store",
+      "postgres validated operator policy transactions commits governed headless Read consent in the actual policy store: nested_wrong_store",
+      "postgres validated operator policy transactions commits governed headless Read consent in the actual policy store: concurrent",
+      "postgres validated operator policy transactions commits governed headless Read consent in the actual policy store: expired_after_review",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'complete' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'complete' 'jwt_oidc'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'commit_failure' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'commit_failure' 'jwt_oidc'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'lost_response' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'lost_response' 'jwt_oidc'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'unknown_commit' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'unknown_commit' 'jwt_oidc'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'wrong_store' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'nested_wrong_store' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'concurrent' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'expired_after_review' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'tampered_candidate' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'single' 'tampered_contract' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'complete' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'complete' 'jwt_oidc'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'commit_failure' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'commit_failure' 'jwt_oidc'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'lost_response' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'lost_response' 'jwt_oidc'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'unknown_commit' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'unknown_commit' 'jwt_oidc'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'wrong_store' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'nested_wrong_store' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'concurrent' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'expired_after_review' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'tampered_candidate' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'batch' 'tampered_contract' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'coded' 'complete' 'signed_key'",
+      "postgres validated operator policy transactions atomically records signed Read edits in the configured repository: 'coded' 'commit_failure' 'signed_key'",
+      "postgres validated operator policy transactions rejects an old headless bundle even when a later review has the same authority digest",
+      "postgres validated operator policy transactions refuses a Workbench preview changed during inspection and resumes the exact review",
+      "postgres validated operator policy transactions refuses a Workbench activate changed during inspection and resumes the exact review",
+      "postgres validated operator policy transactions preserves the active identity when renaming a stored draft and uses its exact policy lock",
+      "postgres validated operator policy transactions reads execution from the same repository, never from an edited export, and observes revocation",
+      "postgres validated operator policy transactions opens fixed-tool Ask with stored execution despite an invalid worker export and checks the selected store",
+      "postgres validated operator policy transactions requires saved-job revalidation after a writer policy changes the reviewed database contract",
+      "postgres validated operator policy transactions requires new execution review after a compiled two-to-three outcome replacement (replacement_warning)",
+      "postgres validated operator policy transactions requires new execution review after a compiled two-to-three outcome replacement (sequential)",
+      "postgres validated operator policy transactions requires new execution review after a compiled two-to-three outcome replacement (decline)",
+      "postgres validated operator policy transactions requires new execution review after a compiled two-to-three outcome replacement (policy_race)",
+      "postgres validated operator policy transactions publishes execution only through exact writer review and preserves revocation across stale exports and reviews",
+      "postgres validated operator policy transactions recovers Action runtime publication from the exact activation receipt: failed",
+      "postgres validated operator policy transactions recovers Action runtime publication from the exact activation receipt: replacement_failed",
+      "postgres validated operator policy transactions recovers Action runtime publication from the exact activation receipt: lost_response",
+      "postgres validated operator policy transactions recovers Action runtime publication from the exact activation receipt: unknown_receipt",
+      "postgres validated operator policy transactions recovers Action runtime publication from the exact activation receipt: different_receipt",
+      "postgres validated operator policy transactions recovers a terminated Action activation process: before_config",
+      "postgres validated operator policy transactions recovers a terminated Action activation process: before_commit",
+      "postgres validated operator policy transactions recovers a terminated Action activation process: after_commit",
+      "postgres validated operator policy transactions refuses changed Action publication inputs before replacing authority: forged_draft",
+      "postgres validated operator policy transactions refuses changed Action publication inputs before replacing authority: changed_draft",
+      "postgres validated operator policy transactions refuses changed Action publication inputs before replacing authority: revoked_read",
+      "postgres validated operator policy transactions refuses changed Action publication inputs before replacing authority: wrong_store",
+      "postgres validated operator policy transactions refuses changed Action publication inputs before replacing authority: changed_config",
+      "postgres validated operator policy transactions reopens Action review without repeating an interrupted activation: cancelled",
+      "postgres validated operator policy transactions reopens Action review without repeating an interrupted activation: committed",
+      "postgres validated operator policy transactions reopens Action review without repeating an interrupted activation: cleanup",
+      "postgres validated operator policy transactions reopens Action review without repeating an interrupted activation: unavailable",
+      "postgres validated operator policy transactions reopens Action review without repeating an interrupted activation: newer_config",
+      "postgres validated operator policy transactions keeps Action recovery review available with unavailable Read authority: disabled",
+      "postgres validated operator policy transactions keeps Action recovery review available with unavailable Read authority: revoked",
+      "postgres validated operator policy transactions keeps Action recovery review available with unavailable Read authority: revoked_execution",
+      "postgres validated operator policy transactions keeps Action recovery review available with unavailable Read authority: revoked_unconfirmed",
+      "postgres validated operator policy transactions reviews execution only against the selected outcome's current Read dependency",
+      "postgres validated operator policy transactions does not treat corrupt stored Read authority as disabled during Action recovery",
+      "postgres validated operator policy transactions recovers and disables an interrupted execution save with an explicit control-store environment",
+      "postgres validated operator policy transactions confirms execution publication from its exact transaction receipt: new_failed",
+      "postgres validated operator policy transactions confirms execution publication from its exact transaction receipt: same_failed",
+      "postgres validated operator policy transactions confirms execution publication from its exact transaction receipt: lost_response",
+      "postgres validated operator policy transactions confirms execution publication from its exact transaction receipt: unknown_receipt",
+      "postgres validated operator policy transactions confirms execution publication from its exact transaction receipt: different_receipt",
+      "postgres validated operator policy transactions refreshes execution in a long-running client between approved requests without claiming completion",
+      "postgres validated operator policy transactions serves and revokes the exact Read repository revision despite stale file exports",
+      "postgres validated operator policy transactions publishes through the existing exact Read activation gate without rewriting an active file export",
+      "postgres validated operator policy transactions serves Action drafts and active revisions from the repository through the existing gates and cached loader",
+      "postgres validated operator policy transactions keeps the selected Read last even when repository ordering places its name first",
+      "postgres validated operator policy transactions refuses an unrelated runtime ledger before Read inspection, scope resolution or Action facts",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: read",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: read_set",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: read_inspection",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: read_scope",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: read_budget",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: action",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: action_loader",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: lazy_action",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: lazy_bind",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: optional_init",
+      "postgres validated operator policy transactions requires an explicit runtime restart after repository cutover: queue",
+      "postgres validated operator policy transactions uses the same live repository for discovery and observes revocation without reopening a locator",
+      "postgres validated operator policy transactions atomically revokes Read authority and its selection without deleting the disabled draft",
+      "postgres validated operator policy transactions refuses disabled-as-active, cross-scope, duplicate and wrong-key updates without partial changes",
+      "postgres validated operator policy transactions refuses stale review and admits only one concurrent revision of the same snapshot",
+      "postgres validated operator policy transactions preserves Action identity through Read revocation and rejects new stale Action or execution authority"
+    ]
+  },
+  {
+    "file": "apps/runner/src/control-policy-store.test.ts",
+    "count": 1,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "uses the configured PostgreSQL repository, not a local authority mirror"
+    ]
+  },
+  {
+    "file": "apps/runner/src/delegated-writeback.test.ts",
+    "count": 14,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "delegated database execution: sqlite control applies an RLS-only effect once and preserves cross-owner/tenant rows and revoked queued work",
+      "delegated database execution: sqlite control captures the same RLS scope for verifier and adapter before awaiting the control store",
+      "delegated database execution: sqlite control refuses missing/mismatched RLS scope and a different owner even when RLS permits that owner to read the row",
+      "delegated database execution: sqlite control does not admit stale RLS facts or a tampered proof",
+      "delegated database execution: sqlite control settles actual source receipts once and reconciles replay after revocation",
+      "delegated database execution: sqlite control holds unknown effects until the exact source receipt is recovered",
+      "delegated database execution: sqlite control reserves a shared cap before mutation and never charges a dry run",
+      "delegated database execution: postgres control applies an RLS-only effect once and preserves cross-owner/tenant rows and revoked queued work",
+      "delegated database execution: postgres control captures the same RLS scope for verifier and adapter before awaiting the control store",
+      "delegated database execution: postgres control refuses missing/mismatched RLS scope and a different owner even when RLS permits that owner to read the row",
+      "delegated database execution: postgres control does not admit stale RLS facts or a tampered proof",
+      "delegated database execution: postgres control settles actual source receipts once and reconciles replay after revocation",
+      "delegated database execution: postgres control holds unknown effects until the exact source receipt is recovered",
+      "delegated database execution: postgres control reserves a shared cap before mutation and never charges a dry run"
+    ]
+  },
+  {
+    "file": "apps/runner/src/guided-atomic-live.test.ts",
+    "count": 1,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "OPENAI_API_KEY",
+      "SYNAPSOR_GUIDED_ATOMIC_REPORT",
+      "SYNAPSOR_TEST_GUIDED_ATOMIC_LIVE",
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "guided atomic live Terra qualification authors one atomic action, revises only fallback review, then requests and completes it through fixed MCP and the supervised worker"
+    ]
+  },
+  {
+    "file": "apps/runner/src/guided-composite-live.test.ts",
+    "count": 1,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "OPENAI_API_KEY",
+      "SYNAPSOR_GUIDED_COMPOSITE_REPORT",
+      "SYNAPSOR_TEST_GUIDED_COMPOSITE_LIVE",
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "guided composite onboarding with live Terra maps natural and coded registration displays without repeated technical clarification, then serves the reviewed composite read"
+    ]
+  },
+  {
+    "file": "apps/runner/src/ledger-runtime-config-postgres.test.ts",
+    "count": 1,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "read-only shared PostgreSQL ledger configuration reads receipts through the governed bridge despite a stale execution binding and refuses an alternate store"
+    ]
+  },
+  {
+    "file": "apps/runner/src/owner-delegation-journey.test.ts",
+    "count": 2,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "owner delegation journey: sqlite governed control keeps two maya owners isolated while actual delegated PG writes use reviewed proposals and receipts",
+      "owner delegation journey: postgres governed control keeps two maya owners isolated while actual delegated PG writes use reviewed proposals and receipts"
+    ]
+  },
+  {
+    "file": "apps/runner/src/owner-policy-connection.test.ts",
+    "count": 28,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "postgres owner connection exact execution recovery recovers only added owner fields with independent exact execution consent and preserves immutable policies: management_only",
+      "postgres owner connection exact execution recovery recovers only added owner fields with independent exact execution consent and preserves immutable policies: management_and_workload",
+      "postgres owner connection exact execution recovery keeps caller-owned input mutations outside the confirmed connection binding",
+      "postgres owner connection exact execution recovery preserves confirmed policy, bindings and receipt against in-flight public review mutation under the held lock",
+      "postgres owner connection exact execution recovery rejects invalid confirmation without mutation: connection_digest",
+      "postgres owner connection exact execution recovery rejects invalid confirmation without mutation: execution_digest",
+      "postgres owner connection exact execution recovery rejects invalid confirmation without mutation: tamper",
+      "postgres owner connection exact execution recovery rejects invalid confirmation without mutation: expired",
+      "postgres owner connection exact execution recovery CLI decline leaves runtime, authority and drafts unchanged: cancel",
+      "postgres owner connection exact execution recovery CLI decline leaves runtime, authority and drafts unchanged: details",
+      "postgres owner connection exact execution recovery CLI decline leaves runtime, authority and drafts unchanged: execution_decline",
+      "postgres owner connection exact execution recovery CLI accepts input through two decisions and exposes names without token or key values",
+      "postgres owner connection exact execution recovery rejects configuration edits after preparation without overwriting the newer file",
+      "postgres owner connection exact execution recovery rejects a newer parent epoch without changing configuration or execution",
+      "postgres owner connection exact execution recovery refuses genuine unrelated changes: source",
+      "postgres owner connection exact execution recovery refuses genuine unrelated changes: context",
+      "postgres owner connection exact execution recovery refuses genuine unrelated changes: store",
+      "postgres owner connection exact execution recovery accepts a previous configuration only when it proves the exact stored old binding",
+      "postgres owner connection exact execution recovery uses stored execution policy when the editable export tries to disable it",
+      "postgres owner connection exact execution recovery connects without inventing execution when no execution policy was migrated",
+      "postgres owner connection exact execution recovery CLI requires only connection consent when there is no stored execution",
+      "postgres owner connection exact execution recovery admits the migrated Action companion before the distinct generated Read configuration",
+      "postgres owner connection exact execution recovery previews and configures four tools from the generated primary after execution migration",
+      "postgres owner connection exact execution recovery default local launch rejects a changed Action source binding without falling back to Read",
+      "postgres owner connection exact execution recovery default local launch rejects a changed Action context binding without falling back to Read",
+      "postgres owner connection exact execution recovery default local launch rejects a changed Action authentication binding without falling back to Read",
+      "postgres owner connection exact execution recovery rejects tampered Action authentication even when the primary fallback independently admits",
+      "postgres owner connection exact execution recovery refuses an independently valid migrated Action configuration belonging to another project"
+    ]
+  },
+  {
+    "file": "apps/runner/src/read-discovery-compatibility.test.ts",
+    "count": 1,
+    "category": "external live authoring provider opt-in",
+    "declared_env_names": [
+      "OPENAI_API_KEY",
+      "SYNAPSOR_TEST_DISCOVERY_CONSUMER_LIVE",
+      "SYNAPSOR_TEST_DISCOVERY_CONSUMER_OLLAMA"
+    ],
+    "tests": [
+      "complete bounded Read contracts live Terra consumes grouped permissions into an exact composite plan (metadata/validation only)"
+    ]
+  },
+  {
+    "file": "apps/runner/src/read-prerequisite-mysql.live.test.ts",
+    "count": 1,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_MYSQL_URL"
+    ],
+    "tests": [
+      "connected Read current-state prerequisite (owned disposable MySQL only) permits only current evidence and rechecks a coverage query after withdrawal"
+    ]
+  },
+  {
+    "file": "apps/runner/src/read-prerequisite-postgres.live.test.ts",
+    "count": 1,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "connected Read current-state prerequisite (owned disposable PostgreSQL only) permits only current evidence and rechecks a coverage query after withdrawal"
+    ]
+  },
+  {
+    "file": "apps/runner/src/runtime-bridge-admission.test.ts",
+    "count": 3,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "local admission around actual PostgreSQL ledger bridges holds admission through write bridge work and cleanup",
+      "local admission around actual PostgreSQL ledger bridges holds admission through read bridge work and cleanup",
+      "local admission around actual PostgreSQL ledger bridges holds admission through mirror bridge work and cleanup"
+    ]
+  },
+  {
+    "file": "apps/runner/src/scoped-explore-composite-postgres.test.ts",
+    "count": 1,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "connected composite registration display returns own section/course details without independent course access or cross-institution matches"
+    ]
+  },
+  {
+    "file": "apps/runner/src/semantic-atomic-mysql.live.test.ts",
+    "count": 3,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_ATOMIC_MYSQL_LIVE"
+    ],
+    "tests": [
+      "owned MySQL atomic completion and source receipts completes both scoped records with one receipt, replays once, and refuses permanent offer reuse",
+      "owned MySQL atomic completion and source receipts rolls back both updates and the receipt claim when receipt persistence fails",
+      "owned MySQL atomic completion and source receipts refuses a changed companion version without leaving a partial update or success receipt"
+    ]
+  },
+  {
+    "file": "apps/runner/src/semantic-atomic-postgres.test.ts",
+    "count": 10,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "connected atomic PostgreSQL completion (owned disposable database only) proposal and approval are read-only; one durable receipt binds two targets; replay does not repeat either write",
+      "connected atomic PostgreSQL completion (owned disposable database only) real constraint failure after the first write leaves both rows unchanged and fresh eligibility intact",
+      "connected atomic PostgreSQL completion (owned disposable database only) real zero failure after the first write leaves both rows unchanged and fresh eligibility intact",
+      "connected atomic PostgreSQL completion (owned disposable database only) real version failure after the first write leaves both rows unchanged and fresh eligibility intact",
+      "connected atomic PostgreSQL completion (owned disposable database only) real receipt failure after the first write leaves both rows unchanged and fresh eligibility intact",
+      "connected atomic PostgreSQL completion (owned disposable database only) a companion version change after approval refuses the whole request before either UPDATE",
+      "connected atomic PostgreSQL completion (owned disposable database only) consumption permanently refuses a NEW request even after testadmin restores the old plan and advances its version",
+      "connected atomic PostgreSQL completion (owned disposable database only) distinct approved requests race on same_offer with at most one whole completion",
+      "connected atomic PostgreSQL completion (owned disposable database only) distinct approved requests race on different_offers with at most one whole completion",
+      "connected atomic PostgreSQL completion (owned disposable database only) an offer lock-only writer is insufficient and cannot commit the subscription alone"
+    ]
+  },
+  {
+    "file": "apps/runner/src/semantic-collections-postgres.test.ts",
+    "count": 19,
+    "category": "owned database live-suite opt-in disabled",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE"
+    ],
+    "tests": [
+      "complete collection through real guarded execution and receipts approval changes no rows; completion requires the durable receipt and replay cannot repeat the update",
+      "complete collection through real guarded execution and receipts a hold insert after approval refuses before changing the target",
+      "complete collection through real guarded execution and receipts a hold reactivate after approval refuses before changing the target",
+      "complete collection through real guarded execution and receipts missing admission cannot authorize a new request",
+      "complete collection through real guarded execution and receipts expired admission cannot authorize a new request",
+      "complete collection through real guarded execution and receipts future admission cannot authorize a new request",
+      "complete collection through real guarded execution and receipts withdrawn admission cannot authorize a new request",
+      "complete collection through real guarded execution and receipts not_admitted admission cannot authorize a new request",
+      "complete collection through real guarded execution and receipts missing admission after approval stops execution without a receipt",
+      "complete collection through real guarded execution and receipts expired admission after approval stops execution without a receipt",
+      "complete collection through real guarded execution and receipts withdrawn admission after approval stops execution without a receipt",
+      "complete collection through real guarded execution and receipts not_admitted admission after approval stops execution without a receipt",
+      "complete collection through real guarded execution and receipts start_corrected admission after approval stops execution without a receipt",
+      "complete collection through real guarded execution and receipts end_corrected admission after approval stops execution without a receipt",
+      "complete collection through real guarded execution and receipts admission for another scoped customer c2 cannot supply missing evidence",
+      "complete collection through real guarded execution and receipts admission for another scoped customer c3 cannot supply missing evidence",
+      "complete collection through real guarded execution and receipts keeps admission status and effective dates outside both agent effects and writer mutation privileges",
+      "complete collection through real guarded execution and receipts an approved request cannot bypass a new rule, while a newly reviewed request uses that rule",
+      "complete collection through real guarded execution and receipts a receipt failure rolls back the update and permits a verified retry"
+    ]
+  },
+  {
+    "file": "apps/runner/src/semantic-writeback-authority.test.ts",
+    "count": 6,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "connected semantic worker identity and trusted context applies with generated defaults, persists one receipt and never repeats the effect",
+      "connected semantic worker identity and trusted context blocks a different trusted TEST_WORKER_TENANT without source writes",
+      "connected semantic worker identity and trusted context blocks a different trusted TEST_WORKER_PRINCIPAL without source writes",
+      "connected semantic worker identity and trusted context preserves the exact missing-binding code in the worker queue instead of a generic execution error",
+      "connected semantic worker identity and trusted context refuses a conflicting named session context before claiming, without top-level fallback",
+      "connected semantic worker identity and trusted context refuses stale approved facts without an additional source change"
+    ]
+  },
+  {
+    "file": "apps/runner/src/writer-rls-repair.live.test.ts",
+    "count": 14,
+    "category": "owned database live-suite opt-in disabled",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE"
+    ],
+    "tests": [
+      "owned PostgreSQL administrator policy handoff derives a private principal mapping from live RLS before generating a narrow writer",
+      "owned PostgreSQL administrator policy handoff exports and verifies scoped writer policies for inspected UUID identities",
+      "owned PostgreSQL administrator policy handoff repairs exact customer and shared-reference policies without changing data or other roles",
+      "owned PostgreSQL administrator policy handoff provisions a second independent writer without replacing the first writer or its equivalent policies",
+      "owned PostgreSQL administrator policy handoff rolls back the whole repair when a source policy changes after export",
+      "owned PostgreSQL administrator policy handoff refuses second SELECT predicate drift without changing existing writer policies",
+      "owned PostgreSQL administrator policy handoff refuses second SELECT role drift without changing existing writer policies",
+      "owned PostgreSQL administrator policy handoff refuses second SELECT removed drift without changing existing writer policies",
+      "owned PostgreSQL administrator policy handoff refreshes a saved private admission proof after unrelated writer policies without dropping its condition",
+      "owned PostgreSQL administrator policy handoff refuses changed bypass before creating any policy",
+      "owned PostgreSQL administrator policy handoff refuses changed membership before creating any policy",
+      "owned PostgreSQL administrator policy handoff refuses changed writer_grantee before creating any policy",
+      "owned PostgreSQL administrator policy handoff refuses changed unforced before creating any policy",
+      "owned PostgreSQL administrator policy handoff treats a policy name containing SQL and dollar delimiters as metadata"
+    ]
+  },
+  {
+    "file": "packages/mysql/src/complete-collections.live.test.ts",
+    "count": 7,
+    "category": "owned database live-suite opt-in disabled",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE"
+    ],
+    "tests": [
+      "owned MySQL complete-collection concurrency checks an empty collection under exact composite customer scope with narrow writer grants",
+      "owned MySQL complete-collection concurrency prevents concurrent insert from invalidating the result before commit",
+      "owned MySQL complete-collection concurrency prevents concurrent reactivate from invalidating the result before commit",
+      "owned MySQL complete-collection concurrency prevents concurrent delete from invalidating the result before commit",
+      "owned MySQL complete-collection concurrency prevents concurrent retarget from invalidating the result before commit",
+      "owned MySQL complete-collection concurrency does not accept a session default as proof of the actual transaction isolation",
+      "owned MySQL complete-collection concurrency refuses a newly committed active hold even when the old proposal had none"
+    ]
+  },
+  {
+    "file": "packages/mcp-server/src/delegated-semantic-runtime.test.ts",
+    "count": 22,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "delegated semantic runtime: postgres reverifies an RLS-only target using the exact trusted source owner scope",
+      "delegated semantic runtime: postgres refuses missing RLS scope before any proof lookup",
+      "delegated semantic runtime: postgres refuses different tenant RLS scope before any proof lookup",
+      "delegated semantic runtime: postgres refuses empty principal RLS scope before any proof lookup",
+      "delegated semantic runtime: postgres refuses untrusted mode RLS scope before any proof lookup",
+      "delegated semantic runtime: postgres does not discover another owner's proof or mask a transient store failure",
+      "delegated semantic runtime: postgres captures source scope per attempt and does not repair a mismatched captured scope",
+      "delegated semantic runtime: postgres requires a supplied transaction scope to match an existing physical principal",
+      "delegated semantic runtime: postgres rejects even a correctly hashed attestation filed under a different source owner",
+      "delegated semantic runtime: postgres keeps RLS proposals subject to source freshness, proof integrity and current revocation",
+      "delegated semantic runtime: postgres binds inventory exact effects and short-lived verified workload without storing tokens",
+      "delegated semantic runtime: postgres binds university exact effects and short-lived verified workload without storing tokens",
+      "delegated semantic runtime: postgres binds support exact effects and short-lived verified workload without storing tokens",
+      "delegated semantic runtime: postgres refuses parent/owner hard conditions before saving a proof, while valid exceptions require human review",
+      "delegated semantic runtime: postgres binds runs and owners to references and blocks an old proposal after revocation",
+      "delegated semantic runtime: postgres current epoch fences revocation between policy resolution and dispatch",
+      "delegated semantic runtime: postgres two concurrent attempts cannot receive two effect admissions; unknown is not released or retried",
+      "delegated semantic runtime: postgres recovers a lost dispatch acknowledgement without permitting a second effect or exposing a nonce",
+      "delegated semantic runtime: postgres does not admit a stale source effect, substituted job, missing proof, or altered business inputs",
+      "delegated semantic runtime: postgres does not register a proposal when authority changes while its attestation is being saved",
+      "delegated semantic runtime: postgres counts actual effects, preserves usage across owner cap edits, and blocks human-reviewed overspending",
+      "delegated semantic runtime: postgres shares reservations across authenticated agents and retains unknown effects without a new allowance"
+    ]
+  },
+  {
+    "file": "packages/mcp-server/src/effective-owner-policy.test.ts",
+    "count": 10,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "effective owner policy: postgres conjoins root, tenant and personal restrictions using coded reviewed facts",
+      "effective owner policy: postgres keeps any layer's human requirement without replacing parent approval obligations",
+      "effective owner policy: postgres refuses unaffiliated callers before owner content lookup {\"tenant_id\":\"beta\"}",
+      "effective owner policy: postgres refuses unaffiliated callers before owner content lookup {\"principal\":\"colleague\"}",
+      "effective owner policy: postgres refuses unaffiliated callers before owner content lookup {\"agent_id\":\"agent-b\"}",
+      "effective owner policy: postgres refuses unaffiliated callers before owner content lookup {\"delegator\":\"another-owner\"}",
+      "effective owner policy: postgres rejects expired workloads, changed runs and source facts for another principal",
+      "effective owner policy: postgres revokes the chain immediately and never treats a disabled draft as active",
+      "effective owner policy: postgres rejects parent edits and withdrawals during asynchronous rule loading",
+      "effective owner policy: postgres requires explicitly enabled runtime bindings and rejects cross-tenant chains"
+    ]
+  },
+  {
+    "file": "packages/mcp-server/src/policy-management-tools.test.ts",
+    "count": 10,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "four-tool owner settings: postgres discovers virtual settings, submits one disabled revision and hands off human review without adding a tool",
+      "four-tool owner settings: postgres returns a replay to an earlier request whose permission read finishes last",
+      "four-tool owner settings: postgres isolates two owners named maya and rejects cross-session, source-object and forged scope arguments",
+      "four-tool owner settings: postgres rechecks current permissions before disclosure and replay; refreshed revisions require fresh references",
+      "four-tool owner settings: postgres pages complete public vocabulary entries and invalidates the cursor after a parent edit",
+      "four-tool owner settings: postgres derives public fact types and enum values from the compiled rule without disclosing private source mappings",
+      "four-tool owner settings: postgres uses a numeric allowlisted value for the conditional example and omits an unusable one",
+      "four-tool owner settings: postgres fails closed when the saved parent fact cannot be resolved to a supported compiled scalar",
+      "four-tool owner settings: postgres preserves a saved draft when human UI fails and preserves the parent on invalid or expired edits",
+      "four-tool owner settings: postgres shows inspect-only settings without advertising a mutation and never exposes private backend diagnostics"
+    ]
+  },
+  {
+    "file": "packages/mcp-server/src/policy-management.test.ts",
+    "count": 11,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "authenticated owner policy service: postgres drafts, reviews, activates, edits and retries through the same scoped service without changing source data",
+      "authenticated owner policy service: postgres denies before fetching owner content and does not let a data reader's roles grant management",
+      "authenticated owner policy service: postgres lists only currently authorized reviewed owner scopes in bounded cursor pages",
+      "authenticated owner policy service: postgres rediscovers an identical saved draft after a new session without creating another revision",
+      "authenticated owner policy service: postgres browses only an authorized owner scope in bounded stable pages and keeps detail independent of unrelated pointers",
+      "authenticated owner policy service: postgres keeps two tenants with the same principal separate and prevents adopting the other owner's agent",
+      "authenticated owner policy service: postgres refuses generic MCP credentials, tampered summaries and a different human session",
+      "authenticated owner policy service: postgres refuses stale or revoked parent rights during review and after asynchronous compilation",
+      "authenticated owner policy service: postgres permits revocation after the parent or base Action changes, preserving disabled work",
+      "authenticated owner policy service: postgres shows bounded authorized draft and review history without raw control events or another owner's records",
+      "authenticated owner policy service: postgres does not overwrite a policy identity owned by another parent"
+    ]
+  },
+  {
+    "file": "packages/mcp-server/src/policy-review-continuation.test.ts",
+    "count": 3,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "policy review continuation: postgres keeps a publish handle opaque and delegates exact human confirmation plus durable retry",
+      "policy review continuation: postgres allows a different authorized human to replace a pending challenge but rejects stale sessions and tampering",
+      "policy review continuation: postgres fails closed for a replaced target, bad nonce, expiry, cancellation, and bounded handle exhaustion"
+    ]
+  },
+  {
+    "file": "packages/proposal-store/src/automatic-approval-admission.test.ts",
+    "count": 3,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "PATH",
+      "SYNAPSOR_TEST_EVIDENCE_DIR",
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "PostgreSQL approval control store (local fixture) serializes the final insurer slot across independent pools and commits only one event",
+      "PostgreSQL approval control store (local fixture) serializes the final overall slot across independent pools and commits only one event",
+      "PostgreSQL approval control store (local fixture) grants ample concurrent capacity, rolls back a definite pre-COMMIT failure, and preserves decisions on retry and restart"
+    ]
+  },
+  {
+    "file": "packages/proposal-store/src/control-effect-admissions.test.ts",
+    "count": 19,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "one-use effect admission: postgres issues exactly one dispatch grant across independent executors and recovery",
+      "one-use effect admission: postgres prepares the exact shared-budget hold and admission atomically with idempotent recovery",
+      "one-use effect admission: postgres two independently connected agents cannot prepare more shared capacity than permitted",
+      "one-use effect admission: postgres rolls back every account when a later cap or effect insertion fails, preserving old holds",
+      "one-use effect admission: postgres rejects stale epoch, conflicting units and expired preparation without leaving orphan reservations",
+      "one-use effect admission: postgres refuses tampered actor_digest without consuming the admission",
+      "one-use effect admission: postgres refuses tampered policy_chain_digest without consuming the admission",
+      "one-use effect admission: postgres refuses tampered effect_digest without consuming the admission",
+      "one-use effect admission: postgres refuses tampered request_id without consuming the admission",
+      "one-use effect admission: postgres refuses tampered deployment_id without consuming the admission",
+      "one-use effect admission: postgres refuses tampered nonce without consuming the admission",
+      "one-use effect admission: postgres blocks not-yet-admitted work after revocation without erasing completed work",
+      "one-use effect admission: postgres allows nonce recovery before dispatch without extending lifetime or retaining the old nonce",
+      "one-use effect admission: postgres retains unknown work and cannot release or dispatch a duplicate after terminal completion",
+      "one-use effect admission: postgres recovers accounting after a durable receipt without freeing uncertain capacity",
+      "one-use effect admission: postgres binds one budget reservation to only one execution identity",
+      "one-use effect admission: postgres uses the database clock and refuses expired dispatch without consuming it",
+      "one-use effect admission: postgres rejects prepared admissions with unreviewably long lifetimes",
+      "one-use effect admission: postgres cancels before releasing capacity so racing dispatch never uses a freed reservation"
+    ]
+  },
+  {
+    "file": "packages/proposal-store/src/control-hard-budgets.test.ts",
+    "count": 11,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "shared hard budgets: postgres serializes independent agents against one shared allowance without authorizing execution",
+      "shared hard budgets: postgres recovers identical concurrent retries exactly once and refuses changed effect or accounts",
+      "shared hard budgets: postgres preserves consumption through policy edits, new agent runs, reduced limits and repository reopen",
+      "shared hard budgets: postgres reserves all account layers atomically or none, including account creation",
+      "shared hard budgets: postgres does not reset committed usage when a policy shortens its rolling window",
+      "shared hard budgets: postgres keeps unknown outcomes reserved indefinitely until authoritative reconciliation",
+      "shared hard budgets: postgres releases only proven no-effect work and never rewrites a terminal receipt",
+      "shared hard budgets: postgres separates equal principal names across tenants and fixes units for an account",
+      "shared hard budgets: postgres uses database settlement time for rolling usage, not caller wall-clock time",
+      "shared hard budgets: postgres refuses stale policy epochs and invalid amounts before reservation",
+      "shared hard budgets: postgres rolls back all settlement work if the receipt cannot be recorded"
+    ]
+  },
+  {
+    "file": "packages/proposal-store/src/control-policy-postgres.test.ts",
+    "count": 9,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "control policy PostgreSQL storage parity serializes concurrent initialization and preserves one repository identity",
+      "control policy PostgreSQL storage parity atomically imports once and does not replay migration over a new active revision",
+      "control policy PostgreSQL storage parity rolls back all records on interrupted import or an invalid pointer",
+      "control policy PostgreSQL storage parity recognizes concurrent imports across both unique keys without admitting a second deployment",
+      "control policy PostgreSQL storage parity allows only one concurrent commit of an exact reviewed epoch",
+      "control policy PostgreSQL storage parity saves drafts without activation and atomically promotes only the reviewed revision",
+      "control policy PostgreSQL storage parity separates identical principal names and rejects a pointer to a different owner's revision",
+      "control policy PostgreSQL storage parity retains immutable history, refuses replayed review events and detects corrupt content",
+      "control policy PostgreSQL storage parity pages guarded pointers under one epoch and refuses a stale cursor"
+    ]
+  },
+  {
+    "file": "packages/proposal-store/src/control-policy-reviews.test.ts",
+    "count": 20,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "exact policy review: postgres prepares without authority and atomically activates only the exact reviewed draft",
+      "exact policy review: postgres refuses altered nonce without consuming review or changing authority",
+      "exact policy review: postgres refuses altered actor without consuming review or changing authority",
+      "exact policy review: postgres refuses altered session_digest without consuming review or changing authority",
+      "exact policy review: postgres refuses altered summary_digest without consuming review or changing authority",
+      "exact policy review: postgres refuses altered revision_id without consuming review or changing authority",
+      "exact policy review: postgres refuses altered operation without consuming review or changing authority",
+      "exact policy review: postgres refuses altered expected_epoch without consuming review or changing authority",
+      "exact policy review: postgres refuses altered scope without consuming review or changing authority",
+      "exact policy review: postgres refuses altered kind without consuming review or changing authority",
+      "exact policy review: postgres refuses altered name without consuming review or changing authority",
+      "exact policy review: postgres refuses altered deployment_id without consuming review or changing authority",
+      "exact policy review: postgres refuses altered review_id without consuming review or changing authority",
+      "exact policy review: postgres does not activate a replaced draft or grant a newer revision from an older review",
+      "exact policy review: postgres recovers a concurrent confirmation receipt and never reactivates it after revocation",
+      "exact policy review: postgres rolls back pointer changes and nonce consumption when event publication fails",
+      "exact policy review: postgres survives repository reopen and revokes only the reviewed active revision, leaving a newer draft",
+      "exact policy review: postgres enforces database-time expiry after waiting for another writer",
+      "exact policy review: postgres bounds pending reviews without treating invalidated reviews as a permanent blocker",
+      "exact policy review: postgres uses the database clock rather than the caller's JavaScript clock"
+    ]
+  },
+  {
+    "file": "packages/proposal-store/src/control-runtime-proofs.test.ts",
+    "count": 4,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "runtime proof attestation: postgres registers immutable scoped claims with no authority or epoch change and exact retry recovery",
+      "runtime proof attestation: postgres refuses cross-scope, deployment, digest and stale epoch access",
+      "runtime proof attestation: postgres enforces database-time expiration and bounded payload integrity",
+      "runtime proof attestation: postgres detects stored-content tampering instead of trusting a matching lookup digest"
+    ]
+  },
+  {
+    "file": "packages/proposal-store/src/production-explore-postgres.test.ts",
+    "count": 10,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "production Explore PostgreSQL accounting isolates principal budgets while retaining one tenant-wide ceiling",
+      "production Explore PostgreSQL accounting serializes concurrent requests so only one can consume the final principal unit",
+      "production Explore PostgreSQL accounting keeps differencing variants across store instances while isolating root-resource pools",
+      "production Explore PostgreSQL accounting charges failed releases to query and rate budgets but not disclosure cells",
+      "production Explore PostgreSQL accounting blocks complementary releases at both principal and tenant scope",
+      "production Explore PostgreSQL accounting atomically blocks scalar-filter complements at principal and tenant scope",
+      "production Explore PostgreSQL accounting appends production audit volume beyond the proposal-ledger cap without blocking proposal audit writes",
+      "production Explore PostgreSQL accounting allows independent production audit appends to proceed without a global writer lock",
+      "production Explore PostgreSQL accounting keeps retention cleanup outside accounting locks and uses the database clock for the 24-hour privacy window",
+      "production Explore PostgreSQL accounting creates indexes for time-based maintenance"
+    ]
+  },
+  {
+    "file": "packages/proposal-store/src/worker-cancellation-role.test.ts",
+    "count": 1,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "worker cancellation control-role shared PostgreSQL persistence round-trips prior roles, explicit no-role, and legacy rows without backfilling legacy authority"
+    ]
+  },
+  {
+    "file": "packages/schema-inspector/src/postgres-column-privileges.test.ts",
+    "count": 3,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "PostgreSQL effective column privileges does not label a column-only writer read-only and binds its exact fields into role posture",
+      "PostgreSQL effective column privileges proves PostgreSQL needs a narrow UPDATE grant even for a private verification lock",
+      "PostgreSQL effective column privileges detects SELECT-visible rows denied to locking SELECT until an inherited UPDATE RLS policy applies"
+    ]
+  },
+  {
+    "file": "packages/schema-inspector/src/postgres-native-enum.test.ts",
+    "count": 2,
+    "category": "database prerequisite",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_POSTGRES_URL"
+    ],
+    "tests": [
+      "PostgreSQL native enum inspection returns ordered native ENUM and CHECK vocabularies without aborting inspection",
+      "PostgreSQL native enum inspection can inspect through a caller-owned bounded PostgreSQL pool"
+    ]
+  },
+  {
+    "file": "packages/postgres/src/action-rule-rls-scope.live.test.ts",
+    "count": 7,
+    "category": "owned database live-suite opt-in disabled",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE"
+    ],
+    "tests": [
+      "owned PostgreSQL private shared-reference verification uses scalar and composite shared references in proposal_snapshot without requiring a student column on them",
+      "owned PostgreSQL private shared-reference verification uses scalar and composite shared references in transaction_reverify without requiring a student column on them",
+      "owned PostgreSQL private shared-reference verification does not expose shared facts through another customer's subject ({\"tenantId\":\"t1\",\"principal\":\"p2\",\"tenantSetting\":\"synapsor.tenant_id\",\"principalSetting\":\"synapsor.principal\"})",
+      "owned PostgreSQL private shared-reference verification does not expose shared facts through another customer's subject ({\"tenantId\":\"t2\",\"principal\":\"p1\",\"tenantSetting\":\"synapsor.tenant_id\",\"principalSetting\":\"synapsor.principal\"})",
+      "owned PostgreSQL private shared-reference verification rechecks a shared prerequisite that changed after preparation",
+      "owned PostgreSQL private shared-reference verification refuses missing institutional RLS rather than silently relying on the parent",
+      "owned PostgreSQL private shared-reference verification rejects a composite tuple inconsistent with the reviewed relationship during compilation"
+    ]
+  },
+  {
+    "file": "packages/postgres/src/complete-collections.live.test.ts",
+    "count": 14,
+    "category": "owned database live-suite opt-in disabled",
+    "declared_env_names": [
+      "SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE"
+    ],
+    "tests": [
+      "owned PostgreSQL complete-collection concurrency proves complete collections with native UUID identity casts and rejects narrower policies",
+      "owned PostgreSQL complete-collection concurrency accepts an empty collection through the SELECT-only reader without provisioning a writer",
+      "owned PostgreSQL complete-collection concurrency blocks a concurrent insert until the verification transaction ends",
+      "owned PostgreSQL complete-collection concurrency blocks a concurrent reactivate until the verification transaction ends",
+      "owned PostgreSQL complete-collection concurrency blocks a concurrent delete until the verification transaction ends",
+      "owned PostgreSQL complete-collection concurrency blocks a concurrent retarget until the verification transaction ends",
+      "owned PostgreSQL complete-collection concurrency blocks a concurrent policy_change until the verification transaction ends",
+      "owned PostgreSQL complete-collection concurrency sees a newly committed hold when verification waited for the parent",
+      "owned PostgreSQL complete-collection concurrency refuses hidden rows in read_customer rather than interpreting them as absence",
+      "owned PostgreSQL complete-collection concurrency refuses hidden rows in lock_customer rather than interpreting them as absence",
+      "owned PostgreSQL complete-collection concurrency retains every key component and never mistakes another customer's hold for this customer's hold",
+      "owned PostgreSQL complete-collection concurrency creates and upgrades the qualified receipt table with the default search path",
+      "owned PostgreSQL complete-collection concurrency recomputes filtered totals after preparation and refuses a newly exceeded cap",
+      "owned PostgreSQL complete-collection concurrency refuses deferred or removed foreign-key protection after drafting"
+    ]
+  }
+]

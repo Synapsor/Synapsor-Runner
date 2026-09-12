@@ -1,0 +1,15 @@
+apps/runner/src/semantic-admission-publication.test.ts(97,55): error TS2339: Property 'column' does not exist on type 'ActionRuleFactPredicateV1'.
+  Property 'column' does not exist on type '{ operation: "tuple_in"; columns: string[]; tuples: JsonScalar[][]; }'.
+apps/runner/src/semantic-admission-publication.test.ts(97,84): error TS2339: Property 'value' does not exist on type 'ActionRuleFactPredicateV1'.
+  Property 'value' does not exist on type '{ operation: "in"; column: string; values: JsonScalar[]; }'.
+apps/runner/src/semantic-admission-publication.test.ts(122,20): error TS2322: Type 'PoolClient' is not assignable to type 'void'.
+apps/runner/src/semantic-admission-publication.test.ts(122,65): error TS18048: 'blockedClient' is possibly 'undefined'.
+apps/runner/src/semantic-admission-publication.test.ts(123,17): error TS18048: 'blockedClient' is possibly 'undefined'.
+apps/runner/src/semantic-admission-publication.test.ts(135,48): error TS2339: Property 'query' does not exist on type 'never'.
+apps/runner/src/semantic-admission-publication.test.ts(135,79): error TS2339: Property 'release' does not exist on type 'never'.
+apps/runner/src/semantic-admission-publication.test.ts(143,31): error TS2722: Cannot invoke an object which is possibly 'undefined'.
+apps/runner/src/semantic-admission-publication.test.ts(143,31): error TS18048: 'store.listProposals' is possibly 'undefined'.
+apps/runner/src/semantic-admission-publication.test.ts(144,57): error TS2722: Cannot invoke an object which is possibly 'undefined'.
+apps/runner/src/semantic-admission-publication.test.ts(145,63): error TS2722: Cannot invoke an object which is possibly 'undefined'.
+apps/runner/src/semantic-admission-publication.test.ts(158,46): error TS2339: Property 'query' does not exist on type 'never'.
+apps/runner/src/semantic-admission-publication.test.ts(158,102): error TS2339: Property 'release' does not exist on type 'never'.

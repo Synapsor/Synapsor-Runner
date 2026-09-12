@@ -1,0 +1,7 @@
+Warning: config path does not exist yet: ./synapsor.runner.json
+Paste this openai-agents MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Streamable HTTP endpoint: http://127.0.0.1:8766/mcp
+Authentication: openai-agents reads the bearer token from environment SYNAPSOR_RUNNER_HTTP_TOKEN; no token value was written.
+Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as SYNAPSOR_RUNNER_HTTP_TOKEN.
+public checkout commands verified

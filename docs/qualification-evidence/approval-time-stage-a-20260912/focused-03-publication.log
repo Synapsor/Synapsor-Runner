@@ -1,0 +1,52 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:897734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/semantic-admission-publication.test.ts (4 tests | 2 failed) 17380ms
+   × publication versus admission (sqlite) > preserves exact current authority: replacement_first 4983ms
+     → expected { result: { ok: true, …(12) } } to have property "error"
+   ✓ publication versus admission (sqlite) > preserves exact current authority: admission_first  3463ms
+   × publication versus admission (postgres) > preserves exact current authority: replacement_first 5941ms
+     → expected false to be true // Object.is equality
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_first  2988ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (sqlite) > preserves exact current authority: replacement_first
+AssertionError: expected { result: { ok: true, …(12) } } to have property "error"
+ ❯ apps/runner/src/semantic-admission-publication.test.ts:153:24
+    151|       expect(oldReplay).toHaveProperty("error");
+    152|       if(ordering === "replacement_first") {
+    153|         expect(result).toHaveProperty("error");
+       |                        ^
+    154|         expect(approvals).toHaveLength(1);
+    155|       } else expect(approvals).toHaveLength(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: replacement_first
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ apps/runner/src/semantic-admission-publication.test.ts:131:28
+    129|             await new Promise(resolve => setTimeout(resolve, 10));
+    130|           }
+    131|           expect(observed).toBe(true);
+       |                            ^
+    132|         }
+    133|         await publish(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  15:15:00
+   Duration  23.03s (transform 2.79s, setup 0ms, collect 5.26s, tests 17.38s, environment 0ms, prepare 72ms)
+

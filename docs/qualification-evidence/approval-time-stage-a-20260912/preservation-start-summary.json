@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-12T22:03:16.901651+00:00",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912",
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/preservation-start.json",
+  "manifest_sha256": "e0e4b80e597ab1c1b3e0789e438e6a0230f833c4d99843efeb0334ba58600c53",
+  "entries": 64723,
+  "prior_recorded_changes": [],
+  "vocabulary_addition_preserved": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/QUALIFICATION-VOCABULARY.md",
+    "mode": 436,
+    "type": 32768,
+    "size": 6495,
+    "sha256": "34c514263dbc5b23169082beabd558fe916267d892ad38e028509a555b1f8f54"
+  }
+}

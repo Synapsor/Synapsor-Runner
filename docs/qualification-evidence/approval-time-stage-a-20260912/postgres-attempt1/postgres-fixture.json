@@ -1,0 +1,114 @@
+{
+  "name": "synapsor-stagea-48dc85de",
+  "owned": "/tmp/synapsor-stagea-pg-ZUJcep",
+  "socket": "/tmp/synapsor-stagea-pg-ZUJcep/socket",
+  "created_at": "2026-09-12T22:02:24.553Z",
+  "network": "none",
+  "auto_remove": false,
+  "fixture_database": "synapsor_stage_a",
+  "authentication": "New isolated synthetic fixture, trusted Unix socket inside private task-owned parent; no pre-existing credentials.",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "id": "860f2c241b812afcf364a2cd49b3ec5e313834b211929e5c072480c5aa861d05",
+  "readiness_attempts": [
+    {
+      "at": "2026-09-12T22:02:25.028Z",
+      "code": "ENOENT",
+      "message": "connect ENOENT /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:25.531Z",
+      "code": "ENOENT",
+      "message": "connect ENOENT /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:26.033Z",
+      "code": "ENOENT",
+      "message": "connect ENOENT /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:26.536Z",
+      "code": "ENOENT",
+      "message": "connect ENOENT /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:27.038Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:27.541Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:28.043Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:28.546Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:29.051Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:29.553Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:30.054Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:30.555Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:31.056Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:31.558Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:32.060Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:32.563Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:33.064Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:33.567Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:34.069Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    },
+    {
+      "at": "2026-09-12T22:02:34.571Z",
+      "code": "ECONNREFUSED",
+      "message": "connect ECONNREFUSED /tmp/synapsor-stagea-pg-ZUJcep/socket/.s.PGSQL.5432"
+    }
+  ]
+}

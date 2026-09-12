@@ -1,0 +1,33 @@
+{
+  "at": "2026-09-12T22:47:20.152154+00:00",
+  "baseline": "a0942d1bf6e45b21cae041cc4a6ff49823908678",
+  "product": "a2b6b5f870f544ca608d7fb0e6bc834da1e27196",
+  "budgets": "unchanged from assignment-plan.json; deadline2026-09-13T02:01:35.656261Z",
+  "existing_full_run": {
+    "exit_code": 1,
+    "passed": 6101,
+    "failed": 1,
+    "skipped": 450,
+    "processes_remaining": 0,
+    "cause_classification": "Concurrent migration hit POLICY_RUNTIME_BUSY; underlying timing cause unconfirmed. No retry and no environment-pass reclassification."
+  },
+  "stopped": [
+    "SQLite replacement-first product assertion",
+    "PostgreSQL replacement-first product assertion",
+    "concurrent migration full-suite failing path"
+  ],
+  "prepared_not_executed_at_continuation": {
+    "prepare-runtime.mjs": "b2b7b7b4d6ea64859f4d3bfed5035021f8a6436ceab28411b1285eed84712416",
+    "runtime-driver.mjs": "bd770b424e0d9b17961d2cf27d61f0edbb9019f41fe1f5704c803b809ee686a1",
+    "a1-identical.mjs": "8d766856744c374c573e267fc50e2afbaa9ab63c97b0fe05f74260e8c140eeb7",
+    "a2-insurer.mjs": "e840bf095ad6772d9d6ab69cbce1ceb70bb15a82ad3412ab1f142cbd9c5a4828",
+    "a2-overall.mjs": "07274e3a7082d30066902c67bed1acf93829ee23b8f85e218c71d1132a315b61",
+    "a3-collections.mjs": "50bce612a9740abd4ed5dff8dcf12e1510567bd8f49c940e9229e9cdbbe2549c",
+    "a4-contexts.mjs": "5b55f5dccf02cd9ce3f1d2278e4895aa5745699f15c5fc68909c428f0cca6767",
+    "operator-cli.mjs": "a5b8af02910f128f4db198ef57088ca7b015eb6bcad710e068d3b7ae7bd4ae39",
+    "run-offline-checks.py": "7fd54f76d993c6198303080b4617331fddb744732da914c2e73bf58d8ccf2564",
+    "run-freeze.py": "a07cd45dd51fae326f6006f7655dfd67c03e2fa5fa00d5b15e62da4a44a5764e",
+    "freeze-repair.mjs": "4e92ebe7668507af61c882ef2e38b52d95fdc89f24732faed21e1631a982333e"
+  },
+  "scope": "Finish only prepared independent checks, types/offline package/artifact and reporting; no product edits or new testing machinery. No duplicate full suite, no stopped-path replay. Only necessary third-insurer records allowed in separate owned extended fixture. New extra installed lock driver and unprepared sequential rule-edit machinery remain not run."
+}

@@ -1,0 +1,38 @@
+{
+  "name": "synapsor-stagea-2f2ec662",
+  "owned": "/tmp/synapsor-stagea-pg-yqk684",
+  "socket": "/tmp/synapsor-stagea-pg-yqk684/socket",
+  "created_at": "2026-09-12T22:08:04.187Z",
+  "network": "none",
+  "auto_remove": false,
+  "fixture_database": "synapsor_stage_a",
+  "authentication": "New isolated synthetic fixture, trusted Unix socket inside private task-owned parent; no pre-existing credentials.",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "id": "48a3223e89ba875ca805e74ff24173f34fa3a1b6de85f3b1cbee72f14c9ea739",
+  "query": {
+    "database": "synapsor_stage_a",
+    "role": "postgres",
+    "version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit"
+  },
+  "ready_at": "2026-09-12T22:08:07.478Z",
+  "required_schema_table_transaction_lock_permissions": true,
+  "connectionString": "postgresql:///synapsor_stage_a?host=%2Ftmp%2Fsynapsor-stagea-pg-yqk684%2Fsocket&user=postgres",
+  "readiness_attempts": [
+    {
+      "at": "2026-09-12T22:08:04.829Z",
+      "message": "Waiting for final server after initialization"
+    },
+    {
+      "at": "2026-09-12T22:08:05.447Z",
+      "message": "Waiting for final server after initialization"
+    },
+    {
+      "at": "2026-09-12T22:08:06.086Z",
+      "message": "Waiting for final server after initialization"
+    },
+    {
+      "at": "2026-09-12T22:08:06.738Z",
+      "message": "Waiting for final server after initialization"
+    }
+  ]
+}

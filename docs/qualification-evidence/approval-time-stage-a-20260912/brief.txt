@@ -1,0 +1,267 @@
+# Synapsor: verify the approval-time repair and complete local Stage A checks
+
+I maintain this repository and authorize local integration testing of the
+existing repair in:
+
+/home/sandesh-tiwari/Desktop/C++/synapsor-runner/
+
+Start from the actual checkout following repair a2b6b5f and evidence
+commit a0942d1. Verify their relationship and preserve unrelated changes.
+
+This is a verification assignment, not another accounting redesign.
+Tests, local fixture/harness corrections and reports are in scope.
+Keep product behavior unchanged by default. If a product defect is
+reproduced, preserve the failing test and exact cause, stop the affected
+path, and report it for a bounded repair decision. Do not silently patch
+product code during qualification.
+
+Only the repository, existing synthetic fixtures and owned disposable
+local databases/processes are in scope. No external model calls,
+customer systems, production credentials, new business domains or
+public publication. Stage B remains NOT STARTED.
+
+## 1. Establish the evidence and a dependable local test environment
+
+Read:
+- docs/qualification-evidence/atomic-approval-20260912/repair-report.md
+- The latest qualification report and existing tracker.
+- The relevant saved Stage A evidence and existing test definitions.
+
+The report establishes a stale admission-time filter, not missing
+transactions. The semantic caller previously passed claimed.claimed_at;
+the history query's upper bound could exclude a later-timestamped
+approval that had already committed. The repair stops using evidence
+time as approval time and reads the default admission clock after the
+existing writer lock. Confirm those two changes in current code.
+
+Do not introduce a new reservation system or replace the existing
+transactional store. Preserve evidence/proposal timestamps separately
+from the corrected admission timestamp and preserve the inclusive
+rolling-window semantics.
+
+Keep original projects, failed queues, historical installations and
+logs read-only. Use the established isolation and effective-store
+preflight. Never run a worker on the preserved over-admitted queue or
+rewrite its approval history. Preserve the separately recorded
+QUALIFICATION-VOCABULARY.md addition; do not erase it or rewrite the
+historical manifest to claim stronger preservation than measured.
+
+Prepare the environment before the full suite:
+- Owned writable temporary directories, including the private /var/tmp
+  mapping required by the sandbox tests.
+- NO_COLOR=1 and the existing expected terminal configuration.
+- A disposable writable offline package-cache copy when required.
+- Correctly scoped local database URLs only for the intended test
+  processes, with unrelated/provider credentials absent.
+
+Create a separately owned local PostgreSQL fixture using the installed
+image and existing fixture setup. Retain the container until its exit
+status, inspect output and database logs are saved; do not use automatic
+removal that destroys failure evidence. Verify readiness, a real query,
+and required local test permissions before starting the assertions.
+Use a private Unix socket or isolated local connection supported by the
+harness. No substitute remote database or image download is authorized.
+
+Declare finite setup/test budgets. A fixture connection failure is an
+environment blocker, not a product assertion failure or a backend pass.
+Fix local fixture issues within budget; independent SQLite checks can
+continue if PostgreSQL remains unavailable. Do not mark the required
+PostgreSQL checks passed or silently optional.
+
+## 2. Complete real PostgreSQL control-store verification
+
+Enable and run the two previously unexecuted PostgreSQL cases in
+packages/proposal-store/src/automatic-approval-admission.test.ts.
+Verify current paths and test selection rather than relying on old
+line numbers.
+
+Exercise the actual PostgreSQL control-store facade with independent
+connections/pools sharing its owned schema. This is NOT satisfied by
+using a PostgreSQL business source with a SQLite control ledger.
+
+Verify both last-per-insurer and last-overall cases, including combined
+limits and persisted human-review results. Confirm a real wait at the
+existing advisory transaction lock and the subsequent fresh history
+materialization/default admission-time selection.
+
+The ordinary caller must not supply its earlier claim time through the
+internal test override. The timestamp used for the decision must be
+obtained after the relevant outer PostgreSQL coordination point as well
+as the inner SQLite primitive. Record the actual sequence instead of
+assuming the shared primitive alone proves facade behavior.
+
+Use existing controlled-clock/interleaving tests as implementation
+coverage, and include the ordinary default-clock path. Do not remove
+the upper time bound, hardcode a fixture count, alter historical dates,
+or change the policy to produce the expected result.
+
+Assert durable counts, approval timestamps, returned decisions and
+pending-review state. Add a sequential/ample-capacity control so
+refusing everything cannot pass. Record rollback/retry/restart checks
+actually executed without claiming uncertain PostgreSQL COMMIT
+recovery or arbitrary clock-skew handling.
+
+## 3. Test rule replacement while admission is waiting
+
+Add a focused deterministic integration test through existing rule
+publication and admission operations. Use real disposable stores and
+valid synthetic review records created through the existing APIs.
+Do not mutate an active-policy pointer directly and call it a normal
+publication test.
+
+Cover SQLite and PostgreSQL where the same supported path applies.
+Trace the actual rule-publication and admission ordering, including any
+separate stores/locks. A stricter sequential edit or same-subject retry
+test does not cover this interleaving.
+
+Test both orderings:
+
+A. The replacement becomes effective before the waiting request's
+   authoritative admission decision. The old request must not obtain
+   new automatic authority using its superseded rule. Preserve the
+   existing stale-request response and history semantics; do not
+   silently retarget it to a different revision. A fresh valid request
+   under the replacement must use the new limit and applicable prior
+   history.
+
+B. Admission becomes authoritative while its original rule is still
+   current, before replacement. Preserve that legitimately recorded
+   decision and its counted history. After replacement, verify the
+   existing treatment of old unstarted work. Do not retroactively
+   classify a correctly earlier admission as a failure or change the
+   contract for already-dispatched work.
+
+Identify the exact authoritative ordering point from implementation
+and observations. If the shared lock legitimately makes publication
+wait, that is a valid admission-first ordering; separately exercise
+replacement-first. Do not force an impossible test barrier requiring
+both operations inside the same exclusive section.
+
+Use explicit acknowledgements and bounded waits, not sleeps alone.
+No new stale approval, partial accounting, lost history or fabricated
+review completion may result. If existing behavior fails this test,
+preserve the reproduction and stop the affected qualification rather
+than weakening the assertion or immediately redesigning storage.
+
+## 4. Obtain a stable baseline and freeze the corrected installation
+
+After test/harness development, run one full local suite with the
+correct environment on unchanged product source, plus types and the
+applicable offline packaging/install checks. Preserve the earlier
+6,096-pass / 5-failure run and its targeted rerun as distinct history.
+Do not combine them into an originally green full-suite result.
+
+Allow a bounded environment-only retry with its original failure kept.
+Do not edit source during the stable run or reduce assertions just to
+obtain green output. Report skips and prerequisite failures by category.
+Network-dependent release/registry checks remain outside this task;
+an offline package pass is not publication qualification.
+
+Freeze a NEW complete installed artifact from the repaired source,
+including local Spec, lockfile, dependencies and installed entrypoints.
+Record product, test and report revisions separately and verify the
+installed manifest before/after application tests. Do not reuse the
+pre-repair artifact simply because its version is also 1.8.0.
+
+## 5. Complete local installed-runtime Stage A on the new artifact
+
+This ticket explicitly authorizes the following local Stage A checks
+once their prerequisites are satisfied. Do not stop after the two added
+integration tests merely to ask permission for these steps.
+
+Reuse a verified isolated pre-failure/prepared insurance fixture, its
+unchanged policy and the deterministic public MCP driver. Restore and
+revalidate through the supported process, retaining exact operator
+reviews and local identity configuration. No new onboarding interview
+or external model is needed. Label restored setup as recovery, not
+fresh or unaided onboarding.
+
+Use the normal four-tool interface and current legitimate references:
+app.describe_data
+app.explore_data
+app.describe_actions
+app.request_change
+
+A1: Concurrent identical local requests, followed by replay/restart.
+    Assert proposal, approval, queue and effect counts against the
+    existing documented contract and exact tested process/store setup.
+
+A2: Distinct requests for the last insurer allowance and, separately,
+    the last overall allowance, preserving the 8/3 rolling policy.
+    Reproduce out-of-order fact completion and lock waiting with the
+    ordinary runtime clock path. Exactly one contender receives the
+    remaining automatic approval; the other eligible request is
+    durably pending human review. Include joint-limit consistency.
+
+A3: Known synthetic requests sharing a portfolio collection/total,
+    plus the existing owned source-update coordination check. Observe
+    the actual database/worker ordering and verify the unchanged
+    business constraint, receipts and source rows. Retain locks and
+    worker limits. Distinguish actual competing transactions, product
+    serialization and later stale-fact refusal.
+
+A4: Existing local context-isolation tests with two synthetic users
+    and organizations. Obtain references through each legitimate
+    configured context; verify same-context success and rejection
+    when a reference belongs to the other context. Do not fabricate
+    tokens or put trusted identity into agent-supplied arguments.
+
+Do not use serial client delivery as concurrent evidence. Conversely,
+a request properly waiting at the product's real coordination point
+is expected; it must then observe current state after the wait.
+Separate instrumented implementation results from unchanged packaged
+runtime results.
+
+In a clean corrected fixture, execute a legitimately admitted request
+through the supervised worker and verify its canonical stored receipt
+and independent source readback. Verify the review-pending competitor
+has no unapproved source effect. Preserve request/history after restart.
+Never perform this step on the original failed queue.
+
+Run the existing supported runtime rule-edit/history check with exact
+operator review and one persistent client where available. Verify a
+real automatic-limit change rather than labeling an input-maximum edit
+as a rolling-limit edit. No direct ledger replacement or new manual
+editor is authorized. This is runtime configuration-change evidence,
+not natural-language editing usability or real-model qualification.
+
+Record SQLite-control/PostgreSQL-source results separately from real
+PostgreSQL-control results. Finish independent safe checks within the
+declared budget, but no overall pass while a required lane is blocked.
+
+## 6. Boundaries and delivery
+
+No onboarding rewrite, new domain, new accounting ledger, clock
+synchronization service, database feature expansion, public deployment
+or universal exactly-once claim. Preserve existing authorization,
+privacy, eligibility, exact revisions, history, receipts and worker
+semantics.
+
+No code changes are preauthorized merely because a check is untested.
+If a product assertion fails, preserve the smallest valid reproduction
+and report the next repair scope. Harness-only corrections may proceed
+within budget without erasing earlier attempts.
+
+Report separately:
+- SQLite accounting regression status.
+- PostgreSQL control-store status.
+- Rule replacement during admission, by backend and ordering.
+- Stable full-suite and offline package status.
+- Each installed-runtime Stage A result and actual receipt/readback.
+- Environment blockers, product failures and untested cases.
+
+Record tested clock assumptions and the requirement to update all
+cooperating admission processes before any later deployment. Existing
+stores require no migration according to the repair report; verify
+that remains true. Old over-admitted decisions remain historical
+failures and must not be executed as proof of the repair.
+
+Update the existing report/tracker prominently with the current result,
+retain the old failures, and provide exact commands/artifact identities
+for the separate reviewer. Commit only intended tests/harness/reports
+and push only to the verified private backup remote. Preserve evidence
+and stop only task-owned resources.
+
+STOP after this verification assignment. Stage B remains NOT STARTED;
+a successful result supports a separate decision to resume unfamiliar-
+workflow qualification, not a production or self-serve claim.

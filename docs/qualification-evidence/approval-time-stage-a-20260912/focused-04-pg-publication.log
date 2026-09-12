@@ -1,0 +1,32 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:900233) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/semantic-admission-publication.test.ts (4 tests | 1 failed | 3 skipped) 3724ms
+   ↓ publication versus admission (sqlite) > preserves exact current authority: replacement_first
+   ↓ publication versus admission (sqlite) > preserves exact current authority: admission_first
+   × publication versus admission (postgres) > preserves exact current authority: replacement_first 3720ms
+     → expected { result: { ok: true, …(12) } } to have property "error"
+   ↓ publication versus admission (postgres) > preserves exact current authority: admission_first
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: replacement_first
+AssertionError: expected { result: { ok: true, …(12) } } to have property "error"
+ ❯ apps/runner/src/semantic-admission-publication.test.ts:153:24
+    151|       expect(oldReplay).toHaveProperty("error");
+    152|       if(ordering === "replacement_first") {
+    153|         expect(result).toHaveProperty("error");
+       |                        ^
+    154|         expect(approvals).toHaveLength(1);
+    155|       } else expect(approvals).toHaveLength(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 skipped (4)
+   Start at  15:16:15
+   Duration  12.12s (transform 3.83s, setup 0ms, collect 7.74s, tests 3.72s, environment 0ms, prepare 176ms)
+
