@@ -6,6 +6,7 @@ import { policyCoverageDraft } from "./authoring-policy-evidence.js";
 import { parsePolicyCoverage, reviewPolicyCoverage } from "./authoring-policy-coverage.js";
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
+import { policyReviewReadiness } from "./authoring-review-readiness.js";
 
 const root = "/runner_evidence/runtime_contract";
 function fixture() {
@@ -158,5 +159,97 @@ describe("current authoring context is separate from runtime deployment", () => 
     expect(requests[0]).toContain("database-origin clock requirement remains unresolved");
     expect(report.passages.map(p => p.disposition)).toEqual(["implemented", "needs_decision", "implemented", "unsupported"]);
     expect(draft).toEqual(before);
+  });
+
+  it.each([false, true])("bounds a supplied-provider misclassification without waiving the independent clock requirement (corrected=%s)", async corrected => {
+    // The provider interpretation is verbatim from the saved 3478 coverage.
+    // This is a focused excerpt replay, not a claim to recreate its missing wire log.
+    const source = policyTextSnapshot(Buffer.from("Use Claude Code as the runtime MCP client and Terra for drafting.\nUse the database's current UTC timestamp."), "rules.txt");
+    const providerPassage = {
+      start: 1, end: 1, disposition: "conflict", responsibility: "runner", issue_kind: "contradiction",
+      interpretation: "The source requires Terra for drafting, while the host-selected current authoring provider is OpenAI gpt-5.6-terra. A model name does not establish Terra as the required drafting provider; this is separate from the Claude Code runtime-client requirement.",
+      draft_paths: [`${root}/authoring_provider`], topic: "Terra drafting requirement",
+      next_step: "Is Terra required as the drafting provider for this job?",
+    };
+    const clockPassage = {
+      start: 2, end: 2, disposition: "conflict", responsibility: "runner", issue_kind: "contradiction",
+      interpretation: "Runner-supplied evaluation time does not establish the required database-server UTC clock.",
+      draft_paths: [`${root}/trusted_time`],
+      evidence_checks: [{ path: `${root}/trusted_time/database_clock_verified`, equals: false }],
+      next_step: "Do not activate while the unchanged database-clock requirement is unmet.",
+    };
+    const clientPassage = {
+      start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
+      deployment_prerequisite: "runner_client_connection", draft_paths: [`${root}/deployment_prerequisites/runner_client_connection`],
+      interpretation: "Claude Code installation and connection remain unverified.",
+    };
+    const conversation = createModelAuthoringConversation();
+    conversation.policySources = newPolicySourceSession();
+    conversation.policySources.snapshots = [source]; conversation.policySources.active = source.version;
+    conversation.policySources.approvals = [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model: "gpt-5.6-terra" }) }];
+    const answer = "Yes. The database server's current UTC time is required. Runner-supplied host evaluation time is not a substitute. Keep the requirement unchanged; do not activate while it is unmet.";
+    conversation.policySources.operator_messages = [answer];
+    const draft = policyCoverageDraft({ ...fixture(), policySources: conversation.policySources,
+      authoringSession: { provider: "openai", model: "gpt-5.6-terra" } });
+    const before = structuredClone({ draft, conversation }), requests: string[] = [];
+    const report = await reviewPolicyCoverage({ source, draft, env: { OPENAI_API_KEY: "test-key" }, session: {
+      provider: "openai", model: "gpt-5.6-terra", conversation, dependencies: { requestJson: async request => {
+        requests.push(JSON.stringify(request.body));
+        const provider = corrected && requests.length === 2 ? { ...providerPassage, disposition: "implemented",
+          interpretation: "The current host selection is the requested drafting model; it does not verify runtime client deployment.",
+          next_step: "Retain this selection; review the separate client connection later.",
+          evidence_checks: [{ path: `${root}/authoring_provider/model`, equals: "gpt-5.6-terra" }] } : providerPassage;
+        return { status: 200, body: { output: [{ type: "function_call", call_id: `replay_${requests.length}`,
+          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [provider, clientPassage, clockPassage] }) }] } };
+      } },
+    } });
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      expect(request).toContain(answer);
+      expect(request).toContain("gpt-5.6-terra");
+      expect(request).toContain("not a runtime MCP client");
+      expect(request).toContain("database-origin clock requirement remains unresolved");
+    }
+    expect(requests[1]).toContain("Recheck these mechanical coverage gaps");
+    expect(requests[1]).toContain("Previous untrusted coverage submission");
+    expect(requests[1]).toContain(providerPassage.interpretation);
+    expect(report.passages[0]!.disposition).toBe(corrected ? "implemented" : "conflict");
+    expect(report.passages[1]!.deployment_prerequisite).toBe("runner_client_connection");
+    expect(report.passages[2]).toEqual(clockPassage);
+    expect(policyReviewReadiness(source, report).ready).toBe(false);
+    expect(report.passages.some(passage => passage.disposition === "overridden")).toBe(false);
+    expect({ draft, conversation }).toEqual(before);
+  });
+
+  it("transmits retained field meanings outside bounded narration history without declaring them permission", async () => {
+    const source = policyTextSnapshot(Buffer.from("Keep the tracking reference visible; internal keys stay private."), "rules.txt");
+    const conversation = createModelAuthoringConversation();
+    conversation.policySources = newPolicySourceSession();
+    conversation.policySources.snapshots = [source]; conversation.policySources.active = source.version;
+    conversation.policySources.approvals = [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model: "fixture" }) }];
+    const meaning = "records.items.reference is the human-readable tracking reference, not the internal primary key or a trusted identity value.";
+    conversation.policySources.operator_messages = [meaning];
+    const input = fixture(), draft = policyCoverageDraft({ ...input, policySources: conversation.policySources });
+    const contextPath = `${root}/authoring_lifecycle`;
+    const before = structuredClone({ draft, conversation }), requests: string[] = [];
+    const report = await reviewPolicyCoverage({ source, draft, env: { OPENAI_API_KEY: "test-key" }, session: {
+      provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async request => {
+        requests.push(JSON.stringify(request.body));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: "meaning",
+          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{
+            start: 1, end: 1, disposition: "needs_decision", responsibility: "operator", issue_kind: "schema_meaning",
+            interpretation: "The model still asks about a meaning already supplied. This is not proof that the host lost it.",
+            draft_paths: [contextPath], next_step: "What does the tracking reference mean?",
+          }] }) }] } };
+      } },
+    } });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain(meaning);
+    expect(requests[0]).toContain("Indexed operator messages");
+    expect(conversation.turns).toEqual([]);
+    expect(report.passages[0]!.disposition).toBe("needs_decision");
+    expect(policyReviewReadiness(source, report).ready).toBe(false);
+    expect(draft.runner_evidence.runtime_contract.authoring_lifecycle.retained_business_answers).toBe(1);
+    expect({ draft, conversation }).toEqual(before);
   });
 });

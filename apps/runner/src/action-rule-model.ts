@@ -10,6 +10,7 @@ import type {
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
 import { actionRelationshipTools, inspectActionRelationships, actionRelationshipReviewDetails } from "./action-rule-relationship-review.js";
 import { actionRuleAuthoringCheckpoint, parseActionRuleAuthoringCheckpoint, type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
+import { checkpointPrivateCollectionPrerequisite, checkpointPrivateSourcePrerequisites } from "./action-rule-checkpoint-prerequisite.js";
 import { ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE } from "./action-rule-source-evidence.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import {
@@ -198,9 +199,11 @@ export type ModelActionRuleDraftInput = {
   existingDraft?: ActionRuleModelDraftV1;
   reservedOutcomes?: string[];
   preparedDrafts?: ActionRuleModelDraftV1[];
+  /** Current host-retained agenda; a prerequisite resume must retain its job. */
   pendingIntents?: string[];
   checkpoint?: ActionRuleAuthoringCheckpoint;
-  /** Host-mediated resume may retain components as untrusted input after a Read edit. */
+  /** Host-mediated resume of a still-pending job may retain untrusted components
+   * after a Read edit. Never pass a checkpoint for a withdrawn source/outcome. */
   revalidateSavedComponents?: boolean;
   onCheckpoint?: (checkpoint: ActionRuleAuthoringCheckpoint) => Promise<void>;
   onRelationshipReview?: (lines: string[]) => void;
@@ -220,6 +223,9 @@ export type ModelActionRuleDraftInput = {
     context: ActionRuleModelPreparedContext;
     previousReview?: import("./action-rule-authoring-checkpoint.js").ReviewedPrivateActionSource;
     revalidatePreviousReview?: boolean;
+    /** Host-nominated retained collection; exact source/relationship proof and
+     * fresh metadata consent are required, not inferred from Read exclusion. */
+    prerequisite?: { relationship: string; collection_consistency: "complete_locked" };
   }) => Promise<(ActionRuleModelPreparedContext & {
     review: import("./action-rule-authoring-checkpoint.js").ReviewedPrivateActionSource;
   }) | undefined>;
@@ -244,26 +250,67 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   if (savedCheckpoint && savedCheckpoint.intent_digest !== canonicalJsonDigest(intent)) {
     throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: The saved components belong to another action. Resume the original job; no authority changed.");
   }
+  if (savedCheckpoint && input.revalidateSavedComponents && !savedCheckpoint.reopened_draft
+    && input.pendingIntents && input.pendingIntents[0]?.trim() !== intent) {
+    throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: This action is no longer the current retained job. Do not restore its sources or components; active authority is unchanged.");
+  }
   let context: ActionRuleModelPreparedContext = {
     builtCatalog: input.builtCatalog, readBoundary: input.readBoundary, readBoundaryDigest: input.readBoundaryDigest,
   };
   const reviewedPrivateSources = structuredClone(savedCheckpoint?.reviewed_private_sources ?? []);
+  const persistPrivatePrerequisites = async (reviews: typeof reviewedPrivateSources) => {
+    if (!savedCheckpoint || !input.onCheckpoint) throw new Error("ACTION_CHECKPOINT_NOT_SAVED: The private prerequisite review needs a durable checkpoint. Saved components remain pending.");
+    const { schema_version: _schema, digest: _digest, ...pending } = savedCheckpoint;
+    // Keep the old context digest: consent is not validation of the saved rule.
+    await input.onCheckpoint(actionRuleAuthoringCheckpoint({ ...pending, reviewed_private_sources: reviews }));
+  };
   for (let index = 0; index < reviewedPrivateSources.length; index += 1) {
     const review = reviewedPrivateSources[index]!;
     if (!input.egressAcknowledged || !input.reviewPrivateSource) {
       throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: Private source review cannot be restored here. Resume this job through the guided review; no authority changed.");
     }
+    const prerequisite = savedCheckpoint && checkpointPrivateCollectionPrerequisite(savedCheckpoint, review.relationship);
     const restored = await input.reviewPrivateSource({ context, resource: review.resource, parentResource: review.parent_resource,
-      previousReview: review, ...(input.revalidateSavedComponents ? { revalidatePreviousReview: true } : {}) });
+      previousReview: review, ...(input.revalidateSavedComponents ? { revalidatePreviousReview: true } : {}),
+      ...(prerequisite && prerequisite.resource === review.resource && prerequisite.parentResource === review.parent_resource
+        ? { prerequisite: { relationship: prerequisite.relationship, collection_consistency: prerequisite.collection_consistency } } : {}) });
     if (!restored || restored.review.resource !== review.resource || restored.review.parent_resource !== review.parent_resource
       || (!input.revalidateSavedComponents && canonicalJsonDigest(restored.review) !== canonicalJsonDigest(review))) {
       throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: The private source proof changed. Review the selected source again; saved authority is unchanged.");
     }
     if (canonicalJsonDigest(restored.readBoundary) !== canonicalJsonDigest(context.readBoundary)
       || restored.readBoundaryDigest !== context.readBoundaryDigest) throw new Error("PRIVATE_SOURCE_READ_CHANGED: Supporting-source review must leave public Read unchanged.");
+    serializeAuthoringCatalog(restored.builtCatalog);
+    if (prerequisite && canonicalJsonDigest(restored.review) !== canonicalJsonDigest(review)) {
+      await persistPrivatePrerequisites(reviewedPrivateSources.map((current, position) => position === index ? restored.review : current));
+    }
     reviewedPrivateSources[index] = restored.review;
     context = restored;
-    serializeAuthoringCatalog(context.builtCatalog);
+  }
+  let recoveredPrivatePrerequisite = false;
+  if (savedCheckpoint && input.revalidateSavedComponents && input.egressAcknowledged && input.reviewPrivateSource && input.onCheckpoint) {
+    for (const prerequisite of checkpointPrivateSourcePrerequisites(savedCheckpoint, context)) {
+      if (input.signal?.aborted) throw new AskError("ASK_CANCELLED", "Private source review paused; the saved job remains pending.", 499);
+      const prepared = await input.reviewPrivateSource({ context, resource: prerequisite.resource, parentResource: prerequisite.parentResource,
+        prerequisite: { relationship: prerequisite.relationship, collection_consistency: prerequisite.collection_consistency } });
+      if (!prepared) throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: The retained collection still needs private-source consent. Saved components remain pending; Read and active authority are unchanged.");
+      if (prepared.review.resource !== prerequisite.resource || prepared.review.parent_resource !== prerequisite.parentResource
+        || prepared.review.relationship !== prerequisite.relationship
+        || !prepared.builtCatalog.catalog.relationships.some(link => link.name === prerequisite.relationship
+          && link.from_resource === prerequisite.resource && link.to_resource === prerequisite.parentResource)
+        || !prepared.builtCatalog.catalog.resources.some(resource => resource.name === prerequisite.resource && resource.verification_only === true)) {
+        throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: The exact private collection prerequisite was not reviewed. Saved components and active authority are unchanged.");
+      }
+      if (canonicalJsonDigest(prepared.readBoundary) !== canonicalJsonDigest(context.readBoundary)
+        || prepared.readBoundaryDigest !== context.readBoundaryDigest) throw new Error("PRIVATE_SOURCE_READ_CHANGED: Supporting-source review must leave public Read unchanged.");
+      serializeAuthoringCatalog(prepared.builtCatalog);
+      if (input.signal?.aborted) throw new AskError("ASK_CANCELLED", "Private source review paused; the saved job remains pending.", 499);
+      const nextReviews = [...reviewedPrivateSources, prepared.review];
+      await persistPrivatePrerequisites(nextReviews);
+      reviewedPrivateSources.push(prepared.review);
+      context = prepared;
+      recoveredPrivatePrerequisite = true;
+    }
   }
   const reviewedVersionFields = structuredClone(savedCheckpoint?.reviewed_version_fields ?? []);
   for (let index = 0; index < reviewedVersionFields.length; index += 1) {
@@ -313,7 +360,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       || (saved.context_digest !== contextDigest() && !input.revalidateSavedComponents)) {
       throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: the job or reviewed structure changed. Start a fresh draft; active authority is unchanged.");
     }
-    checkpointNeedsRevalidation = saved.context_digest !== contextDigest();
+    checkpointNeedsRevalidation = recoveredPrivatePrerequisite || saved.context_digest !== contextDigest();
     for (const name of saved.reviewed_relationships ?? []) {
       if (!context.builtCatalog.catalog.relationships.some((relationship) => relationship.name === name)) {
         throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: a prepared relationship is no longer supported by this catalog. Re-review the disabled draft; active authority is unchanged.");

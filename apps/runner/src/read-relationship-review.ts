@@ -78,16 +78,16 @@ function reviewableRelationships(input: {
   boundary: ExplorationBoundaryDraft;
   generatedBoundary: ExplorationBoundaryDraft;
   fromResource: string;
-  toResource: string;
+  toResource?: string;
 }): ReviewableReadRelationship[] {
   const currentFrom = input.boundary.pack.resources.find((resource) => resource.id === input.fromResource);
   const generatedFrom = input.generatedBoundary.pack.resources.find((resource) => resource.id === input.fromResource);
   const included = new Set(input.boundary.pack.resources.map((resource) => resource.id));
-  if (!currentFrom || !generatedFrom || !included.has(input.toResource)) return [];
+  if (!currentFrom || !generatedFrom || (input.toResource && !included.has(input.toResource))) return [];
   const currentIds = new Set(currentFrom.relationships.map((relationship) => relationship.id));
   const maximumHops = reviewedAnalysisRelationshipHopLimit(input.boundary.budgets);
   return generatedFrom.relationships
-    .filter((relationship) => relationship.target_resource === input.toResource)
+    .filter((relationship) => !input.toResource || relationship.target_resource === input.toResource)
     .filter((relationship) => !currentIds.has(relationship.id))
     .filter((relationship) => isExactGeneratedRelationship(
       input.fromResource,
@@ -132,7 +132,7 @@ export function readRelationshipEvidenceReviewSections(
 
 /**
  * Reviews one restorable generated path after the caller has already received a
- * bounded root/target request. The host, never the model, selects the exact
+ * bounded root and optional target request. The host, never the model, selects the exact
  * generated path and returns provenance for an exact disabled mutation.
  */
 export async function reviewReadRelationship(input: {
@@ -140,7 +140,7 @@ export async function reviewReadRelationship(input: {
   boundary: ExplorationBoundaryDraft;
   generatedBoundary: ExplorationBoundaryDraft;
   fromResource: string;
-  toResource: string;
+  toResource?: string;
   session: BoundaryReviewInteractiveSession;
   modelLabel: string;
   assertCurrent: () => Promise<void>;
@@ -195,7 +195,7 @@ export async function reviewReadRelationship(input: {
       title: "RESTORABLE READ RELATIONSHIP METADATA",
       summaryTitle: "RESTORABLE READ RELATIONSHIP SUMMARY",
       lines: [
-        `Requested root: ${terminal(input.fromResource)}. Requested target: ${terminal(input.toResource)}.`,
+        `Requested root: ${terminal(input.fromResource)}. Requested target: ${input.toResource ? terminal(input.toResource) : "choose one exact path to an already included resource"}.`,
         `Destination: ${terminal(input.modelLabel)}. The selected path's structural metadata may be sent in the continuing edit; source rows, values, and trusted identity values are not sent.`,
         `Exact metadata fingerprint: ${metadataDigest}.`,
         `Complete eligible paths: ${candidates.length}. No candidate was omitted or truncated.`,

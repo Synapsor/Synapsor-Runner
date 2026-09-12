@@ -21,6 +21,8 @@ import { readProjectReadAuthoring } from "./control-policy-read-authoring-projec
 import { detectProjectContext } from "./project-detection.js";
 import { ControlPolicyRepository } from "@synapsor-runner/proposal-store";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { newPolicySourceSession, policyTextSnapshot, savePolicySources } from "./authoring-policy-source.js";
 import {
   activateInstantCliBoundary,
   type InstantCliBoundaryActivationResult,
@@ -29,6 +31,68 @@ import {
 const suiteCwd = process.cwd();
 
 describe("guided start surfaces", () => {
+  it("public status preserves the saved policy blocker instead of recommending activation from field signoffs", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-status-policy-"));
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      await onboard(["db", "--project-root", root, "--from-env", "DATABASE_URL", "--json"],
+        { interactive: false, schemaInspector: async () => inspection() });
+      let context = await loadBoundaryReviewContext(root);
+      await saveInstantBoundaryReviewBaseline({ projectRoot: root, draft: context.draft, candidate: context.candidate,
+        actor: "test-operator", expectedAuthoring: context.bundle.mutation_bindings.authoring });
+      context = await loadBoundaryReviewContext(root);
+      expect(context.bundle.outstanding_decision_ids).toEqual([]);
+      const sources = newPolicySourceSession();
+      const source = policyTextSnapshot(Buffer.from("Use database-origin UTC for release eligibility."), "rules.txt");
+      sources.snapshots = [source]; sources.active = 1;
+      sources.coverage_authority_digest = canonicalJsonDigest({ read: context.bundle.candidate_digest, action: null });
+      sources.coverage = { source_digest: source.digest, draft_digest: canonicalJsonDigest({ test: "saved interpretation" }), passages: [{
+        start: 1, end: 1, disposition: "conflict", responsibility: "runner", issue_kind: "unsupported_requirement",
+        topic: "Database-origin UTC", interpretation: "Runner evaluation time does not establish database-server time.",
+        draft_paths: [], next_step: "Keep the original requirement and saved draft pending support.",
+      }] };
+      await savePolicySources(root, sources);
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({
+        binding: boundaryAuthoringResumeBinding(context.bundle), stage: "authority_review", jobIntent: "Release eligible records.",
+        provider: "openai", model: "gpt-5.6-terra", policySourceSession: sources.id,
+      }));
+      output.mockClear();
+      await expect(boundaryCommand(["status", "--project-root", root, "--json"])).resolves.toBe(0);
+      const status = JSON.parse(output.mock.calls.map(([chunk]) => String(chunk)).join(""));
+      expect(status.activation).toBe("disabled_unreviewed");
+      expect(status.policy_review).toMatchObject({ ready: false });
+      expect(status.policy_review.summary.join(" ")).toContain("Database-origin UTC");
+      expect(status.next_action).toMatch(/resume.*policy|policy.*review/i);
+      expect(status.next_action).not.toMatch(/^Activate/);
+      output.mockClear();
+      await boundaryCommand(["status", "--project-root", root]);
+      expect(output.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain("Database-origin UTC");
+      await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+      expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(context.bundle.candidate_digest);
+      const originalSources = structuredClone(sources);
+      for (const variant of ["provider_unavailable", "changed_read", "changed_source", "pending_edit", "unfinished_action", "checked"]) {
+        const changed = structuredClone(originalSources);
+        if (variant !== "provider_unavailable") changed.coverage!.passages = [{ start: 1, end: 1, disposition: "implemented",
+          interpretation: "Test-only saved successful interpretation.", draft_paths: [] }];
+        else delete changed.coverage;
+        if (variant === "changed_read") changed.coverage_authority_digest = canonicalJsonDigest({ different: true });
+        if (variant === "changed_source") { changed.snapshots.push(policyTextSnapshot(Buffer.from("A new restriction."), "rules.txt", 2)); changed.active = 2; }
+        await savePolicySources(root, changed);
+        await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({
+          binding: boundaryAuthoringResumeBinding(context.bundle), stage: variant === "unfinished_action" ? "action_drafting" : "authority_review",
+          jobIntent: "Release eligible records.", provider: "openai", model: "gpt-5.6-terra", policySourceSession: changed.id,
+          ...(variant === "pending_edit" ? { pendingReadRevision: "Keep the private release check unavailable to model analysis." } : {}),
+        }));
+        output.mockClear();
+        await boundaryCommand(["status", "--project-root", root, "--json"]);
+        const current = JSON.parse(output.mock.calls.map(([chunk]) => String(chunk)).join(""));
+        expect(current.policy_review.ready, variant).toBe(variant === "checked");
+        expect(current.activation, variant).toBe("disabled_unreviewed");
+        expect(current.next_action, variant).not.toMatch(/^Activate/);
+        if (variant === "checked") expect(current.next_action).toContain("exact saved review");
+      }
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   afterEach(() => {
     process.chdir(suiteCwd);
     vi.restoreAllMocks();

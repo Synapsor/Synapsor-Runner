@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision } from "./read-prerequisite-decisions.js";
 import type { AskHistoryTurn } from "./model-ask.js";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import { parseActionRuleAuthoringCheckpoint, parseReviewedActionVersionFields, type ActionRuleAuthoringCheckpoint, type ReviewedActionVersionField } from "./action-rule-authoring-checkpoint.js";
 import {
@@ -249,12 +251,70 @@ export function buildBoundaryAuthoringResumeState(input: {
 export async function writeBoundaryAuthoringResumeState(
   projectRootInput: string,
   state: BoundaryAuthoringResumeState,
+  options?: { expectedRevisionDigest: BoundaryAuthoringResumeState["revision_digest"] | null; permit?: ProjectAuthorityMutationPermit },
 ): Promise<string> {
   assertBoundaryAuthoringResumeState(state);
-  const projectRoot = path.resolve(projectRootInput);
-  const filePath = resumePath(projectRoot);
-  await writeAtomic(filePath, `${JSON.stringify(state, null, 2)}\n`);
-  return relativeProjectPath(projectRoot, filePath);
+  const frozen = structuredClone(state);
+  const expected = options?.expectedRevisionDigest;
+  return withProjectAuthorityMutation(projectRootInput, async held => {
+    // Legacy explicit replacement still serializes; public continuations must
+    // supply the last acknowledged revision (null means the file was absent).
+    if (options) await compareResumeRevision(held.projectRoot, frozen.binding, expected!);
+    const filePath = resumePath(held.projectRoot);
+    await writeAtomic(filePath, `${JSON.stringify(frozen, null, 2)}\n`);
+    const saved = await readBoundaryAuthoringResumeState(held.projectRoot, frozen.binding);
+    if (saved.status !== "ready" || saved.value.revision_digest !== frozen.revision_digest) {
+      const code = "BOUNDARY_AUTHORING_RESUME_NOT_SAVED";
+      throw Object.assign(new Error(`${code}: The exact checkpoint write could not be verified. The last acknowledged revision remains the save baseline; reopen the saved job before assuming this review was retained.`), { code });
+    }
+    return relativeProjectPath(held.projectRoot, filePath);
+  }, { permit: options?.permit });
+}
+
+export type BoundaryAuthoringActionFreshness =
+  | { intent: string; outcome?: string }
+  | { revision: Omit<BoundaryAuthoringActionRevision, "checkpoint"> };
+
+/** Point-in-time consent guard, not a lease across an operator/model turn.
+ * The following checkpoint save must independently compare the same revision. */
+export async function assertBoundaryAuthoringResumeCurrent(
+  projectRoot: string,
+  expected: BoundaryAuthoringResumeState,
+  action?: BoundaryAuthoringActionFreshness,
+): Promise<void> {
+  assertBoundaryAuthoringResumeState(expected);
+  const frozen = structuredClone(expected);
+  const target: BoundaryAuthoringActionFreshness | undefined = action && ("revision" in action ? { revision: normalizeActionRevision(action.revision) }
+    : { intent: reviewedText(action.intent, "Action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS),
+      ...(action.outcome ? { outcome: reviewedName(action.outcome, "Action outcome", 200) } : {}) });
+  await withProjectAuthorityMutation(projectRoot, async held => {
+    const current = await compareResumeRevision(held.projectRoot, frozen.binding, frozen.revision_digest);
+    if (!current || canonicalJsonDigest(current.binding) !== canonicalJsonDigest(frozen.binding)) throw resumeChanged();
+    if (!target) return;
+    const outcome = "revision" in target ? target.revision.outcome : target.outcome;
+    if (outcome && current.pending_action_removal?.outcome === outcome) throw resumeChanged();
+    if ("revision" in target) {
+      const pending = current.pending_action_revision;
+      if (!pending || pending.outcome !== target.revision.outcome || pending.instruction !== target.revision.instruction
+        || pending.baseline_digest !== target.revision.baseline_digest) throw resumeChanged();
+    } else if (!(current.action?.intents ?? (current.action ? [current.action.intent] : [])).includes(target.intent)) {
+      throw resumeChanged();
+    }
+  });
+}
+
+async function compareResumeRevision(projectRoot: string, binding: BoundaryAuthoringResumeBinding,
+  expected: BoundaryAuthoringResumeState["revision_digest"] | null): Promise<BoundaryAuthoringResumeState | undefined> {
+  const loaded = await readBoundaryAuthoringResumeState(projectRoot, binding);
+  if (expected === null && loaded.status === "none") return undefined;
+  if (typeof expected !== "string" || (loaded.status !== "ready" && loaded.status !== "stale")
+    || loaded.value.revision_digest !== expected) throw resumeChanged();
+  return loaded.value;
+}
+
+function resumeChanged(): Error {
+  const code = "BOUNDARY_AUTHORING_RESUME_CHANGED";
+  return Object.assign(new Error(`${code}: The saved job changed, was removed, or cannot be verified. Reopen the current saved job before reviewing sources or saving more work. This operation did not overwrite its checkpoint or change active authority.`), { code });
 }
 
 export async function readBoundaryAuthoringResumeState(
@@ -294,15 +354,17 @@ export async function readBoundaryAuthoringResumeState(
 }
 
 export async function clearBoundaryAuthoringResumeState(projectRootInput: string): Promise<boolean> {
-  const filePath = resumePath(path.resolve(projectRootInput));
-  let state: unknown;
-  try { state = JSON.parse(await fs.readFile(filePath, "utf8")); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return true; throw error; }
-  assertBoundaryAuthoringResumeState(state);
-  if (boundaryAuthoringActionIsUnfinished(state.action) || state.pending_job_revision || state.pending_read_revision
-    || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal) return false;
-  await fs.rm(filePath, { force: true });
-  return true;
+  return withProjectAuthorityMutation(projectRootInput, async held => {
+    const filePath = resumePath(held.projectRoot);
+    let state: unknown;
+    try { state = JSON.parse(await fs.readFile(filePath, "utf8")); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return true; throw error; }
+    assertBoundaryAuthoringResumeState(state);
+    if (boundaryAuthoringActionIsUnfinished(state.action) || state.pending_job_revision || state.pending_read_revision
+      || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal) return false;
+    await fs.rm(filePath, { force: true });
+    return true;
+  });
 }
 
 /** Retain business context and untrusted draft components after a rescan.
@@ -607,9 +669,10 @@ function resumePath(projectRoot: string): string {
 
 async function writeAtomic(filePath: string, contents: string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  const temporary = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   await fs.writeFile(temporary, contents, { encoding: "utf8", mode: 0o600, flag: "wx" });
-  await fs.rename(temporary, filePath);
+  try { await fs.rename(temporary, filePath); }
+  finally { await fs.rm(temporary, { force: true }).catch(() => undefined); }
 }
 
 function relativeProjectPath(projectRoot: string, target: string): string {

@@ -168,6 +168,16 @@ export async function openBoundProjectControlPolicies(projectRoot: string, env: 
   return manifest ? openBoundRepository(manifest, env) : undefined;
 }
 
+/** Read-only locator inspection. No repository constructor, lock, migration or
+ * authority lookup runs here; callers must still validate the actual binding. */
+export async function inspectProjectControlPolicyTargets(input: ProjectPolicyStoreSelection): Promise<{
+  selected: Manifest["target"];
+  bound?: Manifest["target"];
+}> {
+  const manifest = await readManifest(input.projectRoot);
+  return { selected: selectedTarget(input), ...(manifest ? { bound: manifest.target } : {}) };
+}
+
 async function openBoundRepository(manifest: Manifest, env: NodeJS.ProcessEnv): Promise<BoundProjectPolicyStore> {
   const target = manifest.target;
   await requireExistingLocalStore(target);

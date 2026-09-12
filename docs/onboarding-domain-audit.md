@@ -3,6 +3,15 @@
 R13 working candidate, 2026-09-11. This records source inspection and focused
 regressions, not completion of unfamiliar-database qualification.
 
+Current bounded isolation-first follow-up starts at `591555b`, after `3478de5`.
+It does not select new domains or replace Gate 2. The shared fixes are exact
+Read relationship prerequisite review/catalog rebuild, full private scope-pair
+retention, fresh private-collection checkpoint consent/revalidation, and saved
+policy-aware status. No domain-name branches, source-clock feature, four-tool
+changes or engine grammar were added. Known-case public results remain pending;
+see the current section of the qualification report. Complete original projects
+and frozen installations are read-only during isolated runs and manifest-checked.
+
 | Layer | Finding and treatment |
 | --- | --- |
 | Action catalog/compiler/evaluator | Processes inspected resources, full relationship keys, typed expressions, scope, verification and effects. No student/telecom/warehouse allowlist found in these paths. Engine and bounded-expression restrictions still apply. |

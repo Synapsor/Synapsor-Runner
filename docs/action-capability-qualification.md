@@ -3,6 +3,76 @@
 This is an evidence inventory, not a claim that onboarding is complete or that
 arbitrary SQL/business logic is supported. Last updated: 2026-09-11.
 
+## Current Bounded Isolation-First Pass
+
+Authorized after `591555b`, following implementation `3478de5`. This is a
+known-case repair and completion attempt, **not a new unseen Gate 2**. Historical
+acceptance, failures and the original recovery-isolation incident below remain
+unchanged. The existing external generalization tracker owns progress; evidence
+for this pass is in `r13-e07-20260911/isolation-completion-591555b/`.
+
+Isolation prerequisites pass: actual Runner store resolution refuses the missed
+absolute migration locator before a database open. A public disabled-save
+sentinel changes only its owned copy through a whole-directory namespace bind;
+the original sentinel, source row and migration bytes remain unchanged. Linux
+read-only-root tests protect the original ledger, companions, parent and rename
+locations. Both original projects and both historical complete installations
+match their preserved manifests. These sentinel checks used the prior frozen
+CLI to qualify the harness, not the new implementation.
+
+Provider transport counting is inherited by the public launcher and its Runner
+child. A local transport sentinel observes three attempts across two processes
+and refuses the fourth before network access. An actual terminal test verifies
+140 columns and 42 rows in both public processes. Each case gets a separate
+owned database, store, HOME and client configuration; live cases run sequentially.
+
+Implemented shared repairs, awaiting frozen-artifact public qualification:
+
+- Read preparation now offers the existing exact inspected relationship review
+  when a needed path is unavailable, saves it with current metadata checks, and
+  rebuilds the model's catalog. Full composite keys are retained. The emitter
+  and validator previously allowed private tenant pairs but rejected private
+  principal pairs; both now use the same exact scope-pair check. Foreign-key
+  presence alone never authorizes a path.
+- A retained inverse complete-collection checkpoint can request fresh private
+  source review before the strict stale guard. Direct current child scope,
+  completeness and exact consent remain required. The complete unchanged rule
+  must then revalidate; public exclusion is not private consent. Host and disk
+  compare-and-save checks refuse concurrent removal, stale writes and failed
+  acknowledgements rather than resurrecting removed work.
+- Saved status consults existing policy coverage and pending work, not only
+  field-review counts. It distinguishes saved interpretation from live checks
+  and activation. Unmet editorial database-origin UTC cannot receive an
+  activation hint. No new clock guarantee or execution authority was added.
+- Coverage investigation found current provider facts and distinct accepted
+  counter decisions already present. The historical exact transport bodies were
+  not captured; tests of reconstructed inputs are not called actual historical
+  prompts. Diagnostic regressions preserve the misclassification and legitimate
+  unresolved obligations, without name-based semantic waivers or speculative
+  cache changes.
+
+Initial integration: 200 tests pass on the actual checkout, including host
+relationship review, renamed/ambiguous/declined/stale cases and saved status.
+Four kernel isolation tests and 14 owned PostgreSQL writer/rescan tests pass.
+The first full run caught a new type dependency cycle before tests; it is fixed
+and that failed log is retained. The second ran 5,997 passing application tests
+with 447 optional skips, but failed collecting the Node-test sandbox file through
+Vitest. That file now uses Vitest and its four checks pass there. A final complete
+run is pending. Clean packed-install checks with local Spec passed, including
+managed client configuration preservation. No new known-case execution or edit
+result is claimed. New transport tests also verify optional sanitized actual
+request capture, without modifying transport bodies or retaining headers/secrets.
+
+Budgets: at most three frozen artifacts for the listed defects, 45 minutes and
+80 actual provider attempts per fresh/recovery setup across resumes. If insurance
+clears its prerequisites, runtime/edit has 60 minutes, 80 client operations and
+40 further provider attempts. These ceilings are not UX targets. Insurance uses
+the original complete policy and schema; editorial is a relationship/recovery
+and truthful-blocker regression only. A new capability gap stops the affected
+journey, rather than expanding this assignment or weakening requirements.
+
+## Historical Qualification
+
 Current bounded qualification: Gate 1 authoring lifecycle reliability PASSED
 on source commit `d018290f9d5ca0444ecceaf3c7dc29442f8913c4`, branch
 `codex/tui-safe-action-control-plane`. The user subsequently accepted Gate 1 and

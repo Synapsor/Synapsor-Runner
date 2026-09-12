@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { isReadRelationshipScopePair } from "./read-relationship-scope.js";
 import path from "node:path";
 import crypto from "node:crypto";
 import { Buffer } from "node:buffer";
@@ -4981,8 +4982,8 @@ function assertBoundaryCandidateNarrowsDraft(
         }
         const usesKeptOutJoinKey = link.source_columns.some((field, index) => {
           const targetField = link.target_columns[index]!;
-          const trustedTenantPair = field === source.tenant_key && targetField === target.tenant_key;
-          return !trustedTenantPair && (source.kept_out_fields.includes(field)
+          const trustedScopePair = isReadRelationshipScopePair(source, target, field, targetField);
+          return !trustedScopePair && (source.kept_out_fields.includes(field)
             || target.kept_out_fields.includes(targetField));
         });
         if (usesKeptOutJoinKey) {
@@ -6111,9 +6112,12 @@ function buildExplorationBoundaryDraft(
         // not permit other excluded columns or replace either table's scope.
         return relationship.columns.every((field, index) => {
           const targetField = relationship.referenced_columns[index]!;
-          const trustedTenantPair = field === resource.tenant_key.selected
-            && targetField === target.tenant_key.selected;
-          return trustedTenantPair || (!keptOutSet.has(field) && !targetKeptOut.has(targetField));
+          const trustedScopePair = isReadRelationshipScopePair(
+            { tenant_key: resource.tenant_key.selected, principal_key: resource.principal_key.selected },
+            { tenant_key: target.tenant_key.selected, principal_key: target.principal_key.selected },
+            field, targetField,
+          );
+          return trustedScopePair || (!keptOutSet.has(field) && !targetKeptOut.has(targetField));
         });
       })
       .sort((left, right) => {

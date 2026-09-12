@@ -45,6 +45,7 @@ import {
 import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { listActionRuleAuthorityDrafts } from "./action-rule-authority.js";
 import { clientHandoffMatchesActiveAuthority } from "./authoring-client-readiness.js";
+import { savedAuthoringPolicyReview } from "./authoring-saved-review.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { fileExists, readJsonFileWithLocation } from "./cli-files.js";
 import { isRecord, shellQuote } from "./cli-format.js";
@@ -1471,6 +1472,8 @@ export async function boundaryCommand(
         : context.bundle,
       operationalActive,
     );
+    const policyReview = await savedAuthoringPolicyReview({ projectRoot,
+      binding: boundaryAuthoringResumeBinding(context.bundle), readDigest: context.bundle.candidate_digest });
     const unresolvedResources = [...new Set(context.bundle.decisions
       .filter((decision) => context.bundle.outstanding_decision_ids.includes(decision.id))
       .map((decision) => decision.resource_id)
@@ -1533,7 +1536,12 @@ export async function boundaryCommand(
       disabled_protected_drafts: operational.disabledProtectedDrafts,
       active_named_tools: operational.activeNamedTools,
       production_readiness: operational.productionReadiness,
-      next_action: operational.nextAction,
+      ...(policyReview ? { policy_review: policyReview } : {}),
+      next_action: policyReview && !policyReview.ready
+        ? "Resume the saved job to resolve its policy review; the pending draft is not ready to activate."
+        : policyReview && !editingActive
+          ? "Resume the exact saved review before activation. Client and execution setup remain separate."
+          : operational.nextAction,
       source_database_changed: false,
     };
     if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
@@ -1553,6 +1561,7 @@ export async function boundaryCommand(
       `Protectable recent analyses: ${payload.recent_analysis_references.length}`,
       `Disabled protected drafts: ${payload.disabled_protected_drafts.length}`,
       `Active named tools: ${payload.active_named_tools.length}`,
+      ...(policyReview?.summary ?? []),
       sortedActiveBoundaries.length
         ? `${sortedActiveBoundaries.length} exact reviewed ${sortedActiveBoundaries.length === 1 ? "boundary is" : "boundaries are"} serving.`
         : `Next: ${cliCommandName()} boundary review --project-root ${shellQuote(projectRoot)} ` +

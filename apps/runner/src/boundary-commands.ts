@@ -160,6 +160,7 @@ import {
 } from "./model-authoring-conversation.js";
 import {
   buildBoundaryAuthoringResumeState,
+  assertBoundaryAuthoringResumeCurrent,
   boundaryAuthoringVersionReviews,
   prepareBoundaryActionRevision,
   clearBoundaryAuthoringResumeState,
@@ -279,6 +280,7 @@ import {
 } from "./read-boundary-revision-model.js";
 import { parseReadPolicySettings } from "./read-boundary-policy-revision.js";
 import { assertReviewedReadRelationshipRetained, reviewReadRelationship, validateReviewedReadRelationship } from "./read-relationship-review.js";
+import { prepareReadWorkloadRelationship, validateReadWorkloadRelationshipPreparation } from "./read-relationship-preparation.js";
 import { readBoundaryReviewSections, readRevisionDiff, reviewSectionLines, loadReadReviewDiff, saveReadReviewDiff, type ReviewSection } from "./read-boundary-review-view.js";
 import { readDiscoveryCompatibility, readOptionalExplorationDraft } from "./auto-boundary.js";
 import { readDiscoveryConcernLines } from "./read-discovery-compatibility.js";
@@ -337,6 +339,7 @@ import {
 import {
   commitBoundaryReviewMutationBatch,
   commitExactBoundaryCandidateMutation,
+  prepareExactBoundaryCandidateMutation,
   commitBoundaryResourceReviewMutation,
   inspectBoundaryResourceReview,
   listBoundaryResourceReviews,
@@ -4328,7 +4331,18 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let canonicalJobIntent: string | undefined;
   let resumePersistenceBlocked = false;
   let resumePersistenceFailure: string | undefined;
+  // Revalidated/in-memory state is not an acknowledged disk revision.
+  let savedResumeRevision = loadedResume.status === "ready" || loadedResume.status === "stale"
+    ? loadedResume.value.revision_digest : null;
   const checkpointSaveFailure = (step: string) => new Error(`ACTION_CHECKPOINT_NOT_SAVED: ${step} could not be saved. ${resumePersistenceFailure ?? "Inspect local storage access and retry the saved job."} Existing drafts and authority are unchanged.`);
+  const assertAuthoringResumeCurrent = async (action: Parameters<typeof assertBoundaryAuthoringResumeCurrent>[2], checkpointWrite = false) => {
+    if (!input.authoringChat) return;
+    assertRunning();
+    if ((!checkpointWrite && resumePersistenceBlocked) || !activeResume || activeResume.revision_digest !== savedResumeRevision) {
+      throw checkpointSaveFailure("The current saved job");
+    }
+    await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, action);
+  };
   const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage): Promise<void> => {
     assertRunning();
     if (!input.authoringChat
@@ -4336,6 +4350,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       || !jobIntent?.trim()
       || !selectedResumeModel
       || !modelEgressAcknowledged) return;
+    const expectedRevisionDigest = savedResumeRevision;
     currentResumeBinding = boundaryAuthoringResumeBinding(
       (await loadBoundaryReviewContext(input.projectRoot)).bundle,
     );
@@ -4347,7 +4362,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
         throw error;
       }) : undefined;
-      activeResume = buildBoundaryAuthoringResumeState({
+      const nextResume = buildBoundaryAuthoringResumeState({
         binding: currentResumeBinding,
         stage: retainedActionIsUnfinished() && stage === "authority_review" && !pendingReadRevision
           ? "action_drafting" : stage,
@@ -4378,13 +4393,20 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ...(activeResume ? { previous: activeResume } : {}),
       });
       assertRunning();
-      await writeBoundaryAuthoringResumeState(input.projectRoot, activeResume);
+      await writeBoundaryAuthoringResumeState(input.projectRoot, nextResume, { expectedRevisionDigest });
+      activeResume = nextResume;
+      savedResumeRevision = nextResume.revision_digest;
       resumePersistenceBlocked = false;
       resumePersistenceFailure = undefined;
     } catch (error) {
       assertRunning(error);
-      activeResume = undefined;
       resumePersistenceFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+      if ((error as { code?: string }).code === "BOUNDARY_AUTHORING_RESUME_CHANGED") {
+        resumePersistenceBlocked = true;
+        input.authoringChat.rememberDetails("SAVED BOUNDARY JOB CHANGED", [resumePersistenceFailure,
+          "Reopen the saved job. This session will not overwrite another session's work or restore a removed action."]);
+        throw error;
+      }
       if (resumePersistenceBlocked) return;
       resumePersistenceBlocked = true;
       input.authoringChat.rememberDetails("BOUNDARY JOB RESUME WAS NOT SAVED", [
@@ -5976,6 +5998,50 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ...(mappingSession.conversation ? { conversation: mappingSession.conversation } : {}),
             deferNarration: Boolean(input.authoringChat),
             egressAcknowledged: true,
+            relationshipReviewHandler: async (request, currentBoundary) => {
+              const previous = context;
+              if (explorationBoundaryCandidateDigest(currentBoundary) !== previous.bundle.candidate_digest) {
+                throw new Error("READ_RELATIONSHIP_CANDIDATE_STALE: Reopen the current disabled Read mapping before reviewing a path.");
+              }
+              const assertCurrent = async () => {
+                await assertAuthoringResumeCurrent(undefined);
+                const current = await loadBoundaryReviewContext(input.projectRoot);
+                if (canonicalJsonDigest(current.bundle.mutation_bindings)
+                  !== canonicalJsonDigest(previous.bundle.mutation_bindings)) {
+                  throw new Error("READ_RELATIONSHIP_CANDIDATE_STALE: The current Read review or authoring epoch changed.");
+                }
+              };
+              const prepare = (candidate: ExplorationBoundaryDraft) => prepareExactBoundaryCandidateMutation(input.projectRoot, {
+                candidate, expected_generated_boundary_digest: previous.bundle.candidate_digest,
+                expected_candidate_digest: explorationBoundaryCandidateDigest(candidate),
+                expected_bindings: previous.bundle.mutation_bindings,
+                actor: localInteractiveActor(), reason: "Review one exact inspected relationship for the unfinished disabled Read mapping.",
+              }, input.schemaInspector);
+              // Fresh validation only: this preview is not saved or activated.
+              await assertCurrent();
+              const inspected = await prepare(currentBoundary);
+              if (inspected.build.exploration_boundary.generation_lock_fingerprint !== currentBoundary.generation_lock_fingerprint) {
+                throw new Error("READ_RELATIONSHIP_PROOF_STALE: Revalidate the saved job through normal rescan before reviewing its current generated paths.");
+              }
+              const prepared = await prepareReadWorkloadRelationship({ projectRoot: input.projectRoot,
+                boundary: currentBoundary, generatedBoundary: inspected.build.exploration_boundary,
+                fromResource: request.resource, session: input.session, modelLabel: boundaryModelLabel(mappingSession), assertCurrent });
+              if (!prepared) return undefined;
+              const preview = await prepare(prepared.candidate);
+              const verified = { ...prepared, generated_boundary: preview.build.exploration_boundary, candidate: preview.candidate };
+              validateReadWorkloadRelationshipPreparation(verified, currentBoundary);
+              await assertCurrent();
+              const saved = await commitExactBoundaryCandidateMutation(input.projectRoot, preview);
+              if (saved.candidate_digest !== preview.candidate_digest || saved.candidate_digest === previous.bundle.candidate_digest) {
+                throw new Error("READ_RELATIONSHIP_SAVE_UNCONFIRMED: No changed exact relationship revision was acknowledged. Resume the current saved job.");
+              }
+              context = await reloadReadReviewAfterCommit(input.projectRoot, saved);
+              mappingBoundary = context.candidate;
+              validateReadWorkloadRelationshipPreparation({ ...verified, candidate: mappingBoundary }, currentBoundary);
+              await persistAuthoringResume("read_mapping");
+              await assertAuthoringResumeCurrent(undefined);
+              return { ...verified, candidate: mappingBoundary };
+            },
             valueRequestHandler: (request) => promptReadBoundaryValueContext({
               session: input.session,
               model: mappingSession,
@@ -6373,9 +6439,13 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   ? { checkpoint: partialActionCheckpoint, revalidateSavedComponents: true } : {}),
                 onCheckpoint: async (checkpoint) => {
                   assertRunning();
-                  resumeAction = { ...resumeAction, intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived", checkpoint };
-                  await persistAuthoringResume("action_drafting");
-                  if (resumePersistenceBlocked) throw checkpointSaveFailure("The checkpoint");
+                  await assertAuthoringResumeCurrent({ intent: semanticIntent, outcome: semanticActionRevisionBaseline?.outcome }, true);
+                  const previousAction = resumeAction;
+                  try {
+                    resumeAction = { ...resumeAction, intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived", checkpoint };
+                    await persistAuthoringResume("action_drafting");
+                    if (resumePersistenceBlocked) throw checkpointSaveFailure("The checkpoint");
+                  } catch (error) { resumeAction = previousAction; throw error; }
                 },
                 readBoundary: mappingBoundary,
                 readBoundaryDigest: explorationBoundaryCandidateDigest(mappingBoundary),
@@ -6411,6 +6481,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   const prepared = await reviewPrivateActionSourceForModel({ request, inspection: actionInspection!,
                     session: input.session, modelLabel: boundaryModelLabel(ruleSession),
                     assertCurrent: async () => {
+                      await assertAuthoringResumeCurrent({ intent: semanticIntent, outcome: semanticActionRevisionBaseline?.outcome });
                       const fresh = await loadBoundaryReviewContext(input.projectRoot);
                       const lock = await loadGenerationLockSnapshot(input.projectRoot, request.context.readBoundary.generation_lock_fingerprint);
                       if (explorationBoundaryCandidateDigest(fresh.candidate) !== request.context.readBoundaryDigest
@@ -8329,9 +8400,14 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         session: modelAssistSession!, intent: pendingActionRevision!.instruction, existingDraft: before.draft,
         ...(pendingActionRevision!.checkpoint ? { checkpoint: pendingActionRevision!.checkpoint } : {}),
         onCheckpoint: async checkpoint => {
-          pendingActionRevision = { ...pendingActionRevision!, checkpoint };
-          await persistAuthoringResume("authority_review");
-          if (resumePersistenceBlocked) throw checkpointSaveFailure("The edit checkpoint");
+          await assertAuthoringResumeCurrent({ revision: { outcome: before.rule.outcome, instruction,
+            baseline_digest: canonicalJsonDigest(before.draft) } }, true);
+          const previousRevision = pendingActionRevision;
+          try {
+            pendingActionRevision = { ...pendingActionRevision!, checkpoint };
+            await persistAuthoringResume("authority_review");
+            if (resumePersistenceBlocked) throw checkpointSaveFailure("The edit checkpoint");
+          } catch (error) { pendingActionRevision = previousRevision; throw error; }
         },
         builtCatalog: entry.catalog, readBoundary: context.candidate, readBoundaryDigest: committed.candidate_digest,
         reviewVersionField: async request => {
@@ -8359,6 +8435,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         reviewPrivateSource: request => reviewPrivateActionSourceForModel({ request, inspection: actionInspection!,
           session: input.session, modelLabel: boundaryModelLabel(modelAssistSession!),
           assertCurrent: async () => {
+            await assertAuthoringResumeCurrent({ revision: { outcome: before.rule.outcome, instruction,
+              baseline_digest: canonicalJsonDigest(before.draft) } });
             const fresh = await loadBoundaryReviewContext(input.projectRoot);
             const lock = await loadGenerationLockSnapshot(input.projectRoot, request.context.readBoundary.generation_lock_fingerprint);
             if (explorationBoundaryCandidateDigest(fresh.candidate) !== request.context.readBoundaryDigest
