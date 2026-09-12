@@ -1,0 +1,35 @@
+{
+  "started_at": "2026-09-12T21:10:08.657108+00:00",
+  "network": "unshared network namespace; no external network",
+  "home": "/tmp/synapsor-atomic-test-home-32f94h0o",
+  "commands": [
+    {
+      "name": "stable-type-build",
+      "args": [
+        "node",
+        "node_modules/typescript/bin/tsc",
+        "-b",
+        "--pretty",
+        "false"
+      ],
+      "started_at": "2026-09-12T21:10:08.657319+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:10:10.852661+00:00"
+    },
+    {
+      "name": "stable-full-local",
+      "args": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "--maxWorkers=4",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-12T21:10:10.853106+00:00",
+      "exit_code": 1,
+      "completed_at": "2026-09-12T21:29:39.760515+00:00"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:737458) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:737452) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ packages/proposal-store/src/index.test.ts (80 tests) 32878ms
+   ✓ proposal store > opens and extends the pre-refactor SQLite ledger without migration drift  738ms
+   ✓ proposal store > creates the parent directory for file-backed stores  2450ms
+   ✓ proposal store > tightens an existing POSIX store to owner-only permissions  4201ms
+   ✓ proposal store > waits through short cross-process SQLite writer contention  4528ms
+   ✓ proposal store > enforces one policy reservation across two supervised worker processes  4647ms
+   ✓ proposal store > preserves proposal, evidence, pending writeback, receipt, and replay across restarts  5313ms
+   ✓ proposal store > runs a persistent shadow study with authoritative outcomes and deterministic classifications  4456ms
+   ✓ proposal store > indexes and searches local evidence, audit, receipts, and replay metadata  4416ms
+ ✓ packages/mcp-server/src/semantic-actions.test.ts (42 tests) 38441ms
+   ✓ fixed semantic Action MCP > preserves competing different-request conflict and approval checks (separate stores=false)  4500ms
+   ✓ fixed semantic Action MCP > preserves competing different-request conflict and approval checks (separate stores=true)  4382ms
+   ✓ fixed semantic Action MCP > keeps the final automatic approval atomic for different subjects across separate store instances  3247ms
+   ✓ fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last insurer slot  4696ms
+   ✓ fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last overall slot  6286ms
+   ✓ fixed semantic Action MCP > grants exactly the available allowance under concurrent load (overall allowance=2)  4181ms
+   ✓ fixed semantic Action MCP > grants exactly the available allowance under concurrent load (overall allowance=8)  4462ms
+   ✓ fixed semantic Action MCP > retains a committed automatic decision across lost acknowledgement and restart before queue publication  2802ms
+   ✓ fixed semantic Action MCP > rolls back an aborted automatic decision without spending either allowance or reporting human-review success  2611ms
+(node:738911) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ packages/mcp-server/src/approval-policy.test.ts (6 tests) 30ms
+
+ Test Files  3 passed (3)
+      Tests  128 passed (128)
+   Start at  14:02:27
+   Duration  43.86s (transform 3.77s, setup 0ms, collect 6.72s, tests 71.35s, environment 1ms, prepare 255ms)
+

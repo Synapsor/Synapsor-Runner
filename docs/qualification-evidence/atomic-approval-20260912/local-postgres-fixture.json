@@ -1,0 +1,9 @@
+{
+  "container": "synapsor-atomic-local-a28ba678af",
+  "owned_root": "/tmp/synapsor-atomic-pg-wpjdzn1c",
+  "socket": "/tmp/synapsor-atomic-pg-wpjdzn1c/socket",
+  "database": "synapsor_atomic",
+  "network": "none",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "credential_source": "new disposable test initialization only; not saved in evidence"
+}

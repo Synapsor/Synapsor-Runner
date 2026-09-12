@@ -1,0 +1,20 @@
+{
+  "started_at": "2026-09-12T20:53:28.895791+00:00",
+  "scope": "Focused source repair and local synthetic automated tests only; updated fd4c3ccf brief plus additions. No StageA/B public journey.",
+  "priority": [
+    "Durable failure provenance",
+    "Actual persistent admission regression fails before fix",
+    "Small shared fix",
+    "Per-insurer/overall and combined/no-false-denial/retry/rollback/window/history/current-authority matrix",
+    "Applicable local regression/type/build/packaging checks",
+    "Reports and local delivery"
+  ],
+  "budgets": {
+    "implementation_iterations": 4,
+    "focused_regression_rounds": 6,
+    "stable_full_regression_runs": 1,
+    "failure_specific_reruns": 2,
+    "local_backend_fixture_attempts_per_backend": 1
+  },
+  "prerequisites": "Use installed dependencies and owned temporary local stores; no credential retrieval or third-party probing. Unavailable backends/checks explicitly skipped."
+}

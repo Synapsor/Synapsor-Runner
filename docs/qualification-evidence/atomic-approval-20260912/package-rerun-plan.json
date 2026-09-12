@@ -1,0 +1,27 @@
+{
+  "network": "unshared network namespace; npm offline",
+  "home": "/tmp/synapsor-atomic-offline-home-Ovks9G",
+  "reason": "Correct repository-only evidence references in packaged reports and use a disposable writable cache copied from selected existing local dependency entries. No product-code change.",
+  "commands": [
+    {
+      "name": "failure-rerun2-local-package",
+      "args": [
+        "bash",
+        "scripts/verify-local-runner.sh"
+      ],
+      "started_at": "2026-09-12T21:36:48.032852+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:37:25.543922+00:00"
+    },
+    {
+      "name": "failure-rerun2-packed-offline",
+      "args": [
+        "bash",
+        "scripts/verify-packed-runner.sh"
+      ],
+      "started_at": "2026-09-12T21:37:25.544180+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:39:14.897929+00:00"
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "verified_at": "2026-09-12T21:38:04.089445+00:00",
+  "manifest_sha256": "62a1b83906a7090ed31082a1565db5da36238936985793ef8ea4cbc926631f7a",
+  "entries_checked": 64548,
+  "regular_files_checked": 55135,
+  "special_files_lstat_only": 12,
+  "changes": [],
+  "added": [
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/QUALIFICATION-VOCABULARY.md"
+  ],
+  "a2_evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/insurance-recovery/deterministic/a2-insurer-result.json",
+      "sha256": "ac731bf8388b322798dfda91e138210c5ec01a345a6a4991b414bd0e337cc694",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/insurance-recovery/deterministic/a2-insurer-before-ledger.json",
+      "sha256": "f628622ab15bf1de4dcb5e973afbdc497751c597c24b19c59c9daf3e4d014015",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/insurance-recovery/deterministic/a2-insurer-held-ledger.json",
+      "sha256": "629da0235b46f9d61197f90e3aa0e92fb56e844ec53272610e3b498555bfb1a0",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/insurance-recovery/deterministic/a2-insurer-second-completed-first-held-ledger.json",
+      "sha256": "f8f61a105acab387c65966727e7ce72c4ff2be5810816bf9ab0c4c008346c282",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/insurance-recovery/deterministic/a2-insurer-after-ledger.json",
+      "sha256": "4fb5ed005ddc95d7cfc2df5e59549e7a98b1c2178e02f28fd7ae3db0869771d7",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/insurance-recovery/deterministic/a2-insurer-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/insurance-recovery/deterministic/a2-insurer-after-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/insurance-recovery/deterministic/events.jsonl",
+      "sha256": "324d96e75a9985e237c7534042a597bfcc9f1bcea0b5af5e422b1698f1b9b0a3",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/insurance-recovery/deterministic/a1-result.json",
+      "sha256": "6fede1f558e0387a56404f30f56e51153ba2a36066e3d4d48d01d0fa29ad96c8",
+      "unchanged": true
+    }
+  ],
+  "recorded_entries_unchanged": true,
+  "exact_tree_unchanged": false,
+  "addition_entries": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/QUALIFICATION-VOCABULARY.md",
+      "mode": 436,
+      "type": 32768,
+      "size": 6495,
+      "sha256": "34c514263dbc5b23169082beabd558fe916267d892ad38e028509a555b1f8f54"
+    }
+  ],
+  "passed": true
+}

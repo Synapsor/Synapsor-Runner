@@ -1,0 +1,12 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+ ✓ packages/mcp-server/src/semantic-actions.test.ts (38 tests | 36 skipped) 7541ms
+   ✓ fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last insurer slot  3200ms
+   ✓ fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last overall slot  4337ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 36 skipped (38)
+   Start at  13:57:11
+   Duration  11.94s (transform 2.39s, setup 0ms, collect 3.85s, tests 7.54s, environment 0ms, prepare 179ms)
+

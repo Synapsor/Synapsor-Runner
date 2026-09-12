@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-12T21:20:31.036306+00:00",
+  "results": [
+    {
+      "name": "synapsor-atomic-local-a28ba678af",
+      "status": "already_absent"
+    },
+    {
+      "name": "r13-qualify-insurance-recovery-37652ef5ae",
+      "ownership_label": {
+        "synapsor.qualification": "runtime-qualification-95ac5f5"
+      },
+      "stop_exit_code": 0
+    }
+  ]
+}

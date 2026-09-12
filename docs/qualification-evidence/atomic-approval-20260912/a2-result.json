@@ -1,0 +1,855 @@
+{
+  "recorded_at": "2026-09-12T20:53:28.894337+00:00",
+  "verdict": "FAILED: per-insurer automatic approvals increased 2 -> 4 with maximum 3. Both public responses approved_pending_execution.",
+  "baseline_checkout": "95ac5f50c6747755474946c6c923806850356916",
+  "product_source": "6671302a04a684fd48e4de029c4827b93e789774",
+  "artifact_tree_sha256": "17c608d6ca9c405797d1f85839cfc5c082941ba943cee320a0af94bedf698c42",
+  "original_saved_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/insurance-recovery/deterministic/a2-insurer-result.json",
+  "original_evidence_sha256": {
+    "a2-insurer-result.json": "ac731bf8388b322798dfda91e138210c5ec01a345a6a4991b414bd0e337cc694",
+    "a2-insurer-before-ledger.json": "f628622ab15bf1de4dcb5e973afbdc497751c597c24b19c59c9daf3e4d014015",
+    "a2-insurer-held-ledger.json": "629da0235b46f9d61197f90e3aa0e92fb56e844ec53272610e3b498555bfb1a0",
+    "a2-insurer-second-completed-first-held-ledger.json": "f8f61a105acab387c65966727e7ce72c4ff2be5810816bf9ab0c4c008346c282",
+    "a2-insurer-after-ledger.json": "4fb5ed005ddc95d7cfc2df5e59549e7a98b1c2178e02f28fd7ae3db0869771d7",
+    "a2-insurer-before-source.json": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+    "a2-insurer-after-source.json": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+    "events.jsonl": "324d96e75a9985e237c7534042a597bfcc9f1bcea0b5af5e422b1698f1b9b0a3",
+    "a1-result.json": "6fede1f558e0387a56404f30f56e51153ba2a36066e3d4d48d01d0fa29ad96c8"
+  },
+  "requests": [
+    {
+      "at": "2026-09-12T20:16:39.277Z",
+      "host_pid": 644957,
+      "event": "mcp_send",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "tools/call",
+        "params": {
+          "name": "app.request_change",
+          "arguments": {
+            "outcome": "reserve_ops.adjust_claim_reserve",
+            "subject_refs": {
+              "selected_claim": "obj_JMGeHC5k3L9kIOz7Dhp1HaOs58Q3bXGd2hJnToHzBg4"
+            },
+            "inputs": {
+              "desired_cents": 2000
+            }
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-09-12T20:16:39.876Z",
+      "host_pid": 644957,
+      "event": "mcp_send",
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/call",
+        "params": {
+          "name": "app.request_change",
+          "arguments": {
+            "outcome": "reserve_ops.adjust_claim_reserve",
+            "subject_refs": {
+              "selected_claim": "obj_JE9Hzrh9LQLK13JshVGFVCk8By0UZIf0lfgqJXuBEyU"
+            },
+            "inputs": {
+              "desired_cents": 2000
+            }
+          }
+        }
+      }
+    }
+  ],
+  "trusted_scope": {
+    "provider": "environment",
+    "tenant_id": "b0000000-0000-4000-8000-000000000001",
+    "principal_id": "b0000000-0000-4000-8000-000000000002",
+    "establishment": "Existing reviewed local test identity, supplied by launcher; never MCP arguments."
+  },
+  "selectors": {
+    "action_boundary_name": "reviewed_staging_actions",
+    "outcome": "reserve_ops.adjust_claim_reserve",
+    "status": "approved",
+    "window_seconds": 86400,
+    "per_insurer_maximum": 3,
+    "overall_maximum": 8,
+    "revision_hash_does_not_reset_history": true
+  },
+  "baseline_approvals": [
+    {
+      "approval_id": 1,
+      "proposal_id": "wrp_rule_16a8061421420d4cb6502db973fe2823",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:aba5a352b6cefd97c98d06f952f5218c56c3843f6d68dc01ed30aa4d2ebae0aa",
+      "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+      "status": "approved",
+      "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+      "identity_json": null,
+      "decision_hash": null,
+      "signature": null,
+      "integrity_hash": null,
+      "freshness_proof_digest": null,
+      "action_boundary_name": "reviewed_staging_actions",
+      "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+      "created_at": "2026-09-12T18:10:52.231Z"
+    },
+    {
+      "approval_id": 2,
+      "proposal_id": "wrp_rule_151d3fd65643201555c5a452d775e4e3",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:712d33115689163dd7bb431121f61bf20ab1722c740ccdfc219b98f0520480bc",
+      "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+      "status": "approved",
+      "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+      "identity_json": null,
+      "decision_hash": null,
+      "signature": null,
+      "integrity_hash": null,
+      "freshness_proof_digest": null,
+      "action_boundary_name": "reviewed_staging_actions",
+      "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+      "created_at": "2026-09-12T20:12:49.364Z"
+    }
+  ],
+  "baseline_reconciliation": [
+    {
+      "approval_id": 1,
+      "origin": "Previous publicly prepared recovery: legitimate CL-101 30000 request, applied with canonical receipt. Still in rolling24h window."
+    },
+    {
+      "approval_id": 2,
+      "origin": "This qualification A1 observer-timeout run: legitimate CL-103 25000 public request completed automatic admission after relay release. Its queued decision is durable, despite incomplete contention observation. No worker effect."
+    }
+  ],
+  "durable_approvals_after": [
+    {
+      "approval_id": 1,
+      "proposal_id": "wrp_rule_16a8061421420d4cb6502db973fe2823",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:aba5a352b6cefd97c98d06f952f5218c56c3843f6d68dc01ed30aa4d2ebae0aa",
+      "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+      "status": "approved",
+      "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+      "identity_json": null,
+      "decision_hash": null,
+      "signature": null,
+      "integrity_hash": null,
+      "freshness_proof_digest": null,
+      "action_boundary_name": "reviewed_staging_actions",
+      "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+      "created_at": "2026-09-12T18:10:52.231Z"
+    },
+    {
+      "approval_id": 2,
+      "proposal_id": "wrp_rule_151d3fd65643201555c5a452d775e4e3",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:712d33115689163dd7bb431121f61bf20ab1722c740ccdfc219b98f0520480bc",
+      "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+      "status": "approved",
+      "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+      "identity_json": null,
+      "decision_hash": null,
+      "signature": null,
+      "integrity_hash": null,
+      "freshness_proof_digest": null,
+      "action_boundary_name": "reviewed_staging_actions",
+      "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+      "created_at": "2026-09-12T20:12:49.364Z"
+    },
+    {
+      "approval_id": 3,
+      "proposal_id": "wrp_rule_32f6abf2706777dc6c3813dd79bb87c9",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:cb69837a1688aa871fe096de2ea56f2c1b9e3ed9f80843e759b80a1a0259fece",
+      "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+      "status": "approved",
+      "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+      "identity_json": null,
+      "decision_hash": null,
+      "signature": null,
+      "integrity_hash": null,
+      "freshness_proof_digest": null,
+      "action_boundary_name": "reviewed_staging_actions",
+      "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+      "created_at": "2026-09-12T20:16:40.098Z"
+    },
+    {
+      "approval_id": 4,
+      "proposal_id": "wrp_rule_8a91ea6ea2d8f7574197a791c9e3f9b7",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:63a2a4aaefc068d5411f0133670517e8b2bd2976d3d54956da7f5f6df3d56a90",
+      "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+      "status": "approved",
+      "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+      "identity_json": null,
+      "decision_hash": null,
+      "signature": null,
+      "integrity_hash": null,
+      "freshness_proof_digest": null,
+      "action_boundary_name": "reviewed_staging_actions",
+      "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+      "created_at": "2026-09-12T20:16:39.763Z"
+    }
+  ],
+  "counted_states": {
+    "before": {
+      "proposals": 2,
+      "approvals": 2,
+      "worker_queue": 2,
+      "writeback_receipts": 1,
+      "observed_subject_references": 243,
+      "control_policy_budget_requests": 0,
+      "control_policy_effect_admissions": 0
+    },
+    "after": {
+      "proposals": 4,
+      "approvals": 4,
+      "worker_queue": 4,
+      "writeback_receipts": 1,
+      "observed_subject_references": 243,
+      "control_policy_budget_requests": 0,
+      "control_policy_effect_admissions": 0
+    }
+  },
+  "active_authority": [
+    {
+      "deployment_id": "f07ebc67-e21d-4d79-9382-0b181b46118a",
+      "scope_key": "{\"level\":\"operator\"}",
+      "kind": "management",
+      "name": "read_selection",
+      "revision_id": "policy:0bd56b95268f1bfc4356f205f7ff572ecbbfa1dd4fb7dbb9467272eff61685d8"
+    },
+    {
+      "deployment_id": "f07ebc67-e21d-4d79-9382-0b181b46118a",
+      "scope_key": "{\"level\":\"operator\"}",
+      "kind": "management",
+      "name": "read_authoring",
+      "revision_id": "policy:27242939948420e3a3e2fbfa4b6dde66f4ce6dfa415c36b51c5306aa91a95c0d"
+    },
+    {
+      "deployment_id": "f07ebc67-e21d-4d79-9382-0b181b46118a",
+      "scope_key": "{\"level\":\"operator\"}",
+      "kind": "read",
+      "name": "reviewed_staging",
+      "revision_id": "policy:52daad4126cf2b1d181a51bab3da34fc4f3bb8f94cac73d4df602888f2c8491c"
+    },
+    {
+      "deployment_id": "f07ebc67-e21d-4d79-9382-0b181b46118a",
+      "scope_key": "{\"level\":\"operator\"}",
+      "kind": "action",
+      "name": "reviewed_staging_rules",
+      "revision_id": "policy:82b07f1a89ac5811ac2f2dc7405424aadb987359c5deb745709999c6810c60c5"
+    },
+    {
+      "deployment_id": "f07ebc67-e21d-4d79-9382-0b181b46118a",
+      "scope_key": "{\"level\":\"operator\"}",
+      "kind": "execution",
+      "name": "supervised_worker",
+      "revision_id": "policy:4de27eee99ec8edae0926393194b588016bad741b4e721c8b35086438b84904e"
+    }
+  ],
+  "timeline": [
+    {
+      "at": "2026-09-12T20:16:39.231Z",
+      "host_pid": 644957,
+      "event": "ledger_snapshot",
+      "name": "a2-insurer-before",
+      "counts": {
+        "approvals": 2,
+        "attention_events": 12,
+        "attention_items": 0,
+        "cloud_governance_events": 0,
+        "cloud_outbox": 0,
+        "control_policy_active": 5,
+        "control_policy_budget_accounts": 0,
+        "control_policy_budget_entries": 0,
+        "control_policy_budget_receipts": 0,
+        "control_policy_budget_requests": 0,
+        "control_policy_deployments": 1,
+        "control_policy_drafts": 2,
+        "control_policy_effect_admissions": 0,
+        "control_policy_effect_receipts": 0,
+        "control_policy_events": 31,
+        "control_policy_identity": 1,
+        "control_policy_reviews": 0,
+        "control_policy_revisions": 32,
+        "control_policy_runtime_proofs": 0,
+        "evidence_bundles": 11,
+        "evidence_items": 2,
+        "explore_budget_reservations": 9,
+        "explore_privacy_releases": 0,
+        "idempotency_receipts": 1,
+        "notification_deliveries": 0,
+        "observed_subject_references": 243,
+        "policy_recommendations": 0,
+        "proposal_events": 17,
+        "proposal_store_schema": 1,
+        "proposals": 2,
+        "query_audit": 16,
+        "replay_records": 0,
+        "runner_state": 3,
+        "shadow_human_actions": 0,
+        "shadow_outcomes": 0,
+        "shadow_studies": 0,
+        "shadow_study_cases": 0,
+        "sqlite_sequence": 5,
+        "worker_queue": 2,
+        "writeback_intents": 1,
+        "writeback_jobs": 1,
+        "writeback_receipts": 1
+      }
+    },
+    {
+      "at": "2026-09-12T20:16:39.613Z",
+      "host_pid": 644957,
+      "event": "product_boundary",
+      "point": "subject_wait",
+      "line": 30679,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:b0e3b0cd474dd97f1a762a8374ad1887209eca47042116b8d558aef0f4b8f572",
+        "waiting": false,
+        "size": 1
+      }
+    },
+    {
+      "at": "2026-09-12T20:16:39.697Z",
+      "host_pid": 644957,
+      "event": "product_boundary",
+      "point": "subject_recheck",
+      "line": 30680,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:b0e3b0cd474dd97f1a762a8374ad1887209eca47042116b8d558aef0f4b8f572",
+        "waited": false,
+        "size": 1
+      }
+    },
+    {
+      "at": "2026-09-12T20:16:39.822Z",
+      "host_pid": 644957,
+      "event": "pg_hold",
+      "connection": 4,
+      "backend_pid": 144
+    },
+    {
+      "at": "2026-09-12T20:16:39.846Z",
+      "host_pid": 644957,
+      "event": "pg_host_snapshot",
+      "name": "a2-insurer-first-held",
+      "rows": [
+        {
+          "pid": 141,
+          "usename": "insurance_reader",
+          "application_name": "",
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "xact_start": null,
+          "query_start": "2026-09-12T20:16:38.145Z",
+          "blockers": []
+        },
+        {
+          "pid": 144,
+          "usename": "insurance_reader",
+          "application_name": "",
+          "state": "idle in transaction",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "xact_start": "2026-09-12T20:16:39.755Z",
+          "query_start": "2026-09-12T20:16:39.824Z",
+          "blockers": []
+        }
+      ]
+    },
+    {
+      "at": "2026-09-12T20:16:39.876Z",
+      "host_pid": 644957,
+      "event": "ledger_snapshot",
+      "name": "a2-insurer-held",
+      "counts": {
+        "approvals": 2,
+        "attention_events": 12,
+        "attention_items": 0,
+        "cloud_governance_events": 0,
+        "cloud_outbox": 0,
+        "control_policy_active": 5,
+        "control_policy_budget_accounts": 0,
+        "control_policy_budget_entries": 0,
+        "control_policy_budget_receipts": 0,
+        "control_policy_budget_requests": 0,
+        "control_policy_deployments": 1,
+        "control_policy_drafts": 2,
+        "control_policy_effect_admissions": 0,
+        "control_policy_effect_receipts": 0,
+        "control_policy_events": 31,
+        "control_policy_identity": 1,
+        "control_policy_reviews": 0,
+        "control_policy_revisions": 32,
+        "control_policy_runtime_proofs": 0,
+        "evidence_bundles": 11,
+        "evidence_items": 2,
+        "explore_budget_reservations": 9,
+        "explore_privacy_releases": 0,
+        "idempotency_receipts": 1,
+        "notification_deliveries": 0,
+        "observed_subject_references": 243,
+        "policy_recommendations": 0,
+        "proposal_events": 17,
+        "proposal_store_schema": 1,
+        "proposals": 2,
+        "query_audit": 16,
+        "replay_records": 0,
+        "runner_state": 3,
+        "shadow_human_actions": 0,
+        "shadow_outcomes": 0,
+        "shadow_studies": 0,
+        "shadow_study_cases": 0,
+        "sqlite_sequence": 5,
+        "worker_queue": 2,
+        "writeback_intents": 1,
+        "writeback_jobs": 1,
+        "writeback_receipts": 1
+      }
+    },
+    {
+      "at": "2026-09-12T20:16:39.951Z",
+      "host_pid": 644957,
+      "event": "product_boundary",
+      "point": "subject_wait",
+      "line": 30679,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:9e30db70180d4b046ef770fbeda094d844c3efdc006916b244577a4dee7765d7",
+        "waiting": false,
+        "size": 2
+      }
+    },
+    {
+      "at": "2026-09-12T20:16:40.035Z",
+      "host_pid": 644957,
+      "event": "product_boundary",
+      "point": "subject_recheck",
+      "line": 30680,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:9e30db70180d4b046ef770fbeda094d844c3efdc006916b244577a4dee7765d7",
+        "waited": false,
+        "size": 2
+      }
+    },
+    {
+      "at": "2026-09-12T20:16:40.509Z",
+      "host_pid": 644957,
+      "event": "ledger_snapshot",
+      "name": "a2-insurer-second-completed-first-held",
+      "counts": {
+        "approvals": 3,
+        "attention_events": 15,
+        "attention_items": 0,
+        "cloud_governance_events": 0,
+        "cloud_outbox": 0,
+        "control_policy_active": 5,
+        "control_policy_budget_accounts": 0,
+        "control_policy_budget_entries": 0,
+        "control_policy_budget_receipts": 0,
+        "control_policy_budget_requests": 0,
+        "control_policy_deployments": 1,
+        "control_policy_drafts": 2,
+        "control_policy_effect_admissions": 0,
+        "control_policy_effect_receipts": 0,
+        "control_policy_events": 31,
+        "control_policy_identity": 1,
+        "control_policy_reviews": 0,
+        "control_policy_revisions": 32,
+        "control_policy_runtime_proofs": 0,
+        "evidence_bundles": 12,
+        "evidence_items": 3,
+        "explore_budget_reservations": 9,
+        "explore_privacy_releases": 0,
+        "idempotency_receipts": 1,
+        "notification_deliveries": 0,
+        "observed_subject_references": 243,
+        "policy_recommendations": 0,
+        "proposal_events": 22,
+        "proposal_store_schema": 1,
+        "proposals": 3,
+        "query_audit": 17,
+        "replay_records": 0,
+        "runner_state": 3,
+        "shadow_human_actions": 0,
+        "shadow_outcomes": 0,
+        "shadow_studies": 0,
+        "shadow_study_cases": 0,
+        "sqlite_sequence": 5,
+        "worker_queue": 3,
+        "writeback_intents": 1,
+        "writeback_jobs": 1,
+        "writeback_receipts": 1
+      }
+    },
+    {
+      "at": "2026-09-12T20:16:40.520Z",
+      "host_pid": 644957,
+      "event": "pg_host_snapshot",
+      "name": "a2-insurer-second-completed-first-held",
+      "rows": [
+        {
+          "pid": 141,
+          "usename": "insurance_reader",
+          "application_name": "",
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "xact_start": null,
+          "query_start": "2026-09-12T20:16:38.145Z",
+          "blockers": []
+        },
+        {
+          "pid": 144,
+          "usename": "insurance_reader",
+          "application_name": "",
+          "state": "idle in transaction",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "xact_start": "2026-09-12T20:16:39.755Z",
+          "query_start": "2026-09-12T20:16:39.824Z",
+          "blockers": []
+        }
+      ]
+    },
+    {
+      "at": "2026-09-12T20:16:40.526Z",
+      "host_pid": 644957,
+      "event": "pg_release",
+      "connection": 4,
+      "backend_pid": 144,
+      "bytes_released": 465
+    },
+    {
+      "at": "2026-09-12T20:16:40.858Z",
+      "host_pid": 644957,
+      "event": "ledger_snapshot",
+      "name": "a2-insurer-after",
+      "counts": {
+        "approvals": 4,
+        "attention_events": 18,
+        "attention_items": 0,
+        "cloud_governance_events": 0,
+        "cloud_outbox": 0,
+        "control_policy_active": 5,
+        "control_policy_budget_accounts": 0,
+        "control_policy_budget_entries": 0,
+        "control_policy_budget_receipts": 0,
+        "control_policy_budget_requests": 0,
+        "control_policy_deployments": 1,
+        "control_policy_drafts": 2,
+        "control_policy_effect_admissions": 0,
+        "control_policy_effect_receipts": 0,
+        "control_policy_events": 31,
+        "control_policy_identity": 1,
+        "control_policy_reviews": 0,
+        "control_policy_revisions": 32,
+        "control_policy_runtime_proofs": 0,
+        "evidence_bundles": 13,
+        "evidence_items": 4,
+        "explore_budget_reservations": 9,
+        "explore_privacy_releases": 0,
+        "idempotency_receipts": 1,
+        "notification_deliveries": 0,
+        "observed_subject_references": 243,
+        "policy_recommendations": 0,
+        "proposal_events": 27,
+        "proposal_store_schema": 1,
+        "proposals": 4,
+        "query_audit": 18,
+        "replay_records": 0,
+        "runner_state": 3,
+        "shadow_human_actions": 0,
+        "shadow_outcomes": 0,
+        "shadow_studies": 0,
+        "shadow_study_cases": 0,
+        "sqlite_sequence": 5,
+        "worker_queue": 4,
+        "writeback_intents": 1,
+        "writeback_jobs": 1,
+        "writeback_receipts": 1
+      }
+    },
+    {
+      "at": "2026-09-12T20:16:40.874Z",
+      "host_pid": 644957,
+      "event": "a2_failure",
+      "message": "Original per-insurer maximum3 must not overshoot under supported single-process contention"
+    },
+    {
+      "at": "2026-09-12T20:16:40.934Z",
+      "host_pid": 644957,
+      "event": "ledger_snapshot",
+      "name": "a2-insurer-final",
+      "counts": {
+        "approvals": 4,
+        "attention_events": 18,
+        "attention_items": 0,
+        "cloud_governance_events": 0,
+        "cloud_outbox": 0,
+        "control_policy_active": 5,
+        "control_policy_budget_accounts": 0,
+        "control_policy_budget_entries": 0,
+        "control_policy_budget_receipts": 0,
+        "control_policy_budget_requests": 0,
+        "control_policy_deployments": 1,
+        "control_policy_drafts": 2,
+        "control_policy_effect_admissions": 0,
+        "control_policy_effect_receipts": 0,
+        "control_policy_events": 31,
+        "control_policy_identity": 1,
+        "control_policy_reviews": 0,
+        "control_policy_revisions": 32,
+        "control_policy_runtime_proofs": 0,
+        "evidence_bundles": 13,
+        "evidence_items": 4,
+        "explore_budget_reservations": 9,
+        "explore_privacy_releases": 0,
+        "idempotency_receipts": 1,
+        "notification_deliveries": 0,
+        "observed_subject_references": 243,
+        "policy_recommendations": 0,
+        "proposal_events": 27,
+        "proposal_store_schema": 1,
+        "proposals": 4,
+        "query_audit": 18,
+        "replay_records": 0,
+        "runner_state": 3,
+        "shadow_human_actions": 0,
+        "shadow_outcomes": 0,
+        "shadow_studies": 0,
+        "shadow_study_cases": 0,
+        "sqlite_sequence": 5,
+        "worker_queue": 4,
+        "writeback_intents": 1,
+        "writeback_jobs": 1,
+        "writeback_receipts": 1
+      }
+    }
+  ],
+  "source_rows_unchanged": true,
+  "observer": "Original installed files unchanged. Byte-preserving owned PG relay held one result; read-only debugger boundary locals. No SQL/result/identity/authority/clock/accounting writes by observer. First observer URL failure preserved separately.",
+  "topology": "One public stdio MCP process and one SQLite proposal-store object, two PG fact connections, same insurer/principal; no workers started for this race.",
+  "saved_public_result": {
+    "case": "A2 final insurer slot; same-principal safety subcase",
+    "status": "failed_or_incomplete",
+    "cross_principal_exercised": false,
+    "first_held_host": [
+      {
+        "pid": 141,
+        "usename": "insurance_reader",
+        "application_name": "",
+        "state": "idle",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "xact_start": null,
+        "query_start": "2026-09-12T20:16:38.145Z",
+        "blockers": []
+      },
+      {
+        "pid": 144,
+        "usename": "insurance_reader",
+        "application_name": "",
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "xact_start": "2026-09-12T20:16:39.755Z",
+        "query_start": "2026-09-12T20:16:39.824Z",
+        "blockers": []
+      }
+    ],
+    "second": {
+      "ok": true,
+      "outcome": "reserve_ops.adjust_claim_reserve",
+      "status": "approved_pending_execution",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Adjust claim reserve",
+        "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+        "fields": [
+          "reserve_cents"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "automatic",
+        "execution": "queued"
+      },
+      "proposal": {
+        "status": "approved",
+        "approval": "automatically approved; apply remains a separate authority"
+      },
+      "execution": "queued",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": false,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    "second_completed_while_first_held": true,
+    "overlap_host": [
+      {
+        "pid": 141,
+        "usename": "insurance_reader",
+        "application_name": "",
+        "state": "idle",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "xact_start": null,
+        "query_start": "2026-09-12T20:16:38.145Z",
+        "blockers": []
+      },
+      {
+        "pid": 144,
+        "usename": "insurance_reader",
+        "application_name": "",
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "xact_start": "2026-09-12T20:16:39.755Z",
+        "query_start": "2026-09-12T20:16:39.824Z",
+        "blockers": []
+      }
+    ],
+    "count_after_second": 3,
+    "first": {
+      "ok": true,
+      "outcome": "reserve_ops.adjust_claim_reserve",
+      "status": "approved_pending_execution",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Adjust claim reserve",
+        "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+        "fields": [
+          "reserve_cents"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "automatic",
+        "execution": "queued"
+      },
+      "proposal": {
+        "status": "approved",
+        "approval": "automatically approved; apply remains a separate authority"
+      },
+      "execution": "queued",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": false,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    "count_after_both": 4,
+    "boundaries": [
+      {
+        "point": "subject_wait",
+        "line": 30679,
+        "function": "withSubjectRequestTurn",
+        "locals": {
+          "key": "sha256:b0e3b0cd474dd97f1a762a8374ad1887209eca47042116b8d558aef0f4b8f572",
+          "waiting": false,
+          "size": 1
+        }
+      },
+      {
+        "point": "subject_recheck",
+        "line": 30680,
+        "function": "withSubjectRequestTurn",
+        "locals": {
+          "key": "sha256:b0e3b0cd474dd97f1a762a8374ad1887209eca47042116b8d558aef0f4b8f572",
+          "waited": false,
+          "size": 1
+        }
+      },
+      {
+        "point": "subject_wait",
+        "line": 30679,
+        "function": "withSubjectRequestTurn",
+        "locals": {
+          "key": "sha256:9e30db70180d4b046ef770fbeda094d844c3efdc006916b244577a4dee7765d7",
+          "waiting": false,
+          "size": 2
+        }
+      },
+      {
+        "point": "subject_recheck",
+        "line": 30680,
+        "function": "withSubjectRequestTurn",
+        "locals": {
+          "key": "sha256:9e30db70180d4b046ef770fbeda094d844c3efdc006916b244577a4dee7765d7",
+          "waited": false,
+          "size": 2
+        }
+      }
+    ],
+    "new_approvals": [
+      {
+        "approval_id": 3,
+        "proposal_id": "wrp_rule_32f6abf2706777dc6c3813dd79bb87c9",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:cb69837a1688aa871fe096de2ea56f2c1b9e3ed9f80843e759b80a1a0259fece",
+        "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+        "status": "approved",
+        "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+        "identity_json": null,
+        "decision_hash": null,
+        "signature": null,
+        "integrity_hash": null,
+        "freshness_proof_digest": null,
+        "action_boundary_name": "reviewed_staging_actions",
+        "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+        "created_at": "2026-09-12T20:16:40.098Z"
+      },
+      {
+        "approval_id": 4,
+        "proposal_id": "wrp_rule_8a91ea6ea2d8f7574197a791c9e3f9b7",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:63a2a4aaefc068d5411f0133670517e8b2bd2976d3d54956da7f5f6df3d56a90",
+        "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+        "status": "approved",
+        "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+        "identity_json": null,
+        "decision_hash": null,
+        "signature": null,
+        "integrity_hash": null,
+        "freshness_proof_digest": null,
+        "action_boundary_name": "reviewed_staging_actions",
+        "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+        "created_at": "2026-09-12T20:16:39.763Z"
+      }
+    ],
+    "error": "AssertionError [ERR_ASSERTION]: Original per-insurer maximum3 must not overshoot under supported single-process contention\n    at file:///home/sandesh-tiwari/Desktop/C++/Progress%20docs%20tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912/a2-insurer.mjs:29:2\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)"
+  },
+  "qualification": "Stage A failed; new focused repair does not qualify A or B. Stage B not started. Failed queue remains preserved and unexecuted."
+}

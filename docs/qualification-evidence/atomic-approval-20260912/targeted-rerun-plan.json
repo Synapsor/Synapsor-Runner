@@ -1,0 +1,50 @@
+{
+  "network": "unshared network namespace",
+  "home": "/tmp/synapsor-atomic-rerun-home-eg5xn5_p",
+  "var_tmp_private_bind": "/tmp/synapsor-atomic-var-tmp-ot4k3q8x",
+  "explanation": "Unchanged sandbox tests require their own writable /var/tmp sentinels; unchanged terminal text test assumes NO_COLOR. Final optional PG test cleanup has bounded connections/barriers and closes pools on fixture failure.",
+  "commands": [
+    {
+      "name": "final-type-build",
+      "args": [
+        "node",
+        "node_modules/typescript/bin/tsc",
+        "-b",
+        "--pretty",
+        "false"
+      ],
+      "started_at": "2026-09-12T21:30:35.070350+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:30:36.405125+00:00"
+    },
+    {
+      "name": "focused-round5-final-store",
+      "args": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "packages/proposal-store/src/automatic-approval-admission.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1"
+      ],
+      "started_at": "2026-09-12T21:30:36.405379+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:30:47.453365+00:00"
+    },
+    {
+      "name": "failure-rerun1-environment",
+      "args": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "apps/runner/src/boundary-cli-picker.test.ts",
+        "scripts/qualification-sandbox.test.mjs",
+        "--maxWorkers=1",
+        "--minWorkers=1"
+      ],
+      "started_at": "2026-09-12T21:30:47.453634+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:30:51.417338+00:00"
+    }
+  ]
+}

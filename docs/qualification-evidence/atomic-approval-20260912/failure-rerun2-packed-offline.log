@@ -1,0 +1,46 @@
+
+  apps/runner/dist/runner.mjs  10.9mb ⚠️
+
+⚡ Done in 239ms
+
+  apps/runner/dist/authoring.mjs  193.0kb
+
+⚡ Done in 10ms
+
+  apps/runner/dist/shadow.mjs  528.1kb
+
+⚡ Done in 14ms
+
+  apps/runner/dist/runtime.mjs  1.6mb ⚠️
+
+⚡ Done in 73ms
+Runner source manifest is pnpm-publishable: @synapsor/runner@1.8.0 (workspace:^1.11.0)
+
+  apps/runner/dist/runner.mjs  10.9mb ⚠️
+
+⚡ Done in 207ms
+
+  apps/runner/dist/authoring.mjs  193.0kb
+
+⚡ Done in 20ms
+
+  apps/runner/dist/shadow.mjs  528.1kb
+
+⚡ Done in 20ms
+
+  apps/runner/dist/runtime.mjs  1.6mb ⚠️
+
+⚡ Done in 67ms
+Runner packed manifest is registry-installable: @synapsor/runner@1.8.0 (^1.11.0)
+Using locally packed @synapsor/spec@1.11.0 for pre-release verification.
+Paste this openai-agents MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Streamable HTTP endpoint: http://127.0.0.1:8766/mcp
+Authentication: openai-agents reads the bearer token from environment SYNAPSOR_RUNNER_HTTP_TOKEN; no token value was written.
+Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as SYNAPSOR_RUNNER_HTTP_TOKEN.
+Paste this openai-agents MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Streamable HTTP endpoint: http://127.0.0.1:8766/mcp
+Authentication: openai-agents reads the bearer token from environment SYNAPSOR_RUNNER_HTTP_TOKEN; no token value was written.
+Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as SYNAPSOR_RUNNER_HTTP_TOKEN.
+packed runner verified in /tmp/tmp.uKHxUlfZnD

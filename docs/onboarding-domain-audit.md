@@ -3,6 +3,32 @@
 R13 working candidate, 2026-09-12. This records source inspection and focused
 regressions, not completion of unfamiliar-database qualification.
 
+Focused repair source: `a2b6b5f870f544ca608d7fb0e6bc834da1e27196`.
+
+Current focused repair: the later deterministic Stage A A2 insurer-cap test
+failed on that accepted artifact (two valid historical automatic approvals became
+four under maximum three). The failure is preserved; broader Stage A remains
+pending and Stage B was not started. The updated repair assignment authorizes
+local accounting repair and synthetic regression only, not new onboarding cases.
+
+The shared correction uses admission time after the existing durable writer lock,
+retaining fact-evidence time and all existing rolling-history selectors. The two
+last-slot regressions fail before and pass after; persistent SQLite process
+contention and exact/ample capacity controls pass. Final types pass. The full local run
+had 6,096 passes, 449 skips and five environment-related failures; the latter all
+passed in a 104-test rerun of the two unchanged files. Packaging results are saved
+with the repair evidence. Live PostgreSQL control-store verification is unavailable
+because its disposable local fixture failed to remain available. Authority
+replacement during database admission is not qualified.
+See the repository-only report
+`docs/qualification-evidence/atomic-approval-20260912/repair-report.md`
+for precise coverage and how committed approvals consume allowance when execution
+is blocked.
+The original failed queue has not been executed or retroactively validated.
+
+The following accepted milestone describes historical source, not a new Stage A
+or Gate 2 pass.
+
 The bounded proposal/receipt and scope/edit assignment is complete on product
 source `6671302a04a684fd48e4de029c4827b93e789774`. The protected insurance recovery
 and one final fresh insurance journey reached canonical receipts and independent

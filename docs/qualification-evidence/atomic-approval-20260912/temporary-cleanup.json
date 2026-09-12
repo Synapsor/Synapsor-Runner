@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-12T21:41:23.610031+00:00",
+  "owned_paths": [
+    {
+      "path": "/tmp/synapsor-atomic-offline-home-Ovks9G",
+      "removed": true,
+      "absent": true
+    },
+    {
+      "path": "/tmp/synapsor-atomic-package-home-cxb1unx4",
+      "removed": true,
+      "absent": true
+    },
+    {
+      "path": "/tmp/synapsor-atomic-pg-wpjdzn1c",
+      "removed": true,
+      "absent": true
+    },
+    {
+      "path": "/tmp/synapsor-atomic-rerun-home-eg5xn5_p",
+      "removed": true,
+      "absent": true
+    },
+    {
+      "path": "/tmp/synapsor-atomic-test-home-32f94h0o",
+      "removed": true,
+      "absent": true
+    },
+    {
+      "path": "/tmp/synapsor-atomic-var-tmp-ot4k3q8x",
+      "removed": true,
+      "absent": true
+    }
+  ],
+  "test_sessions": "All launched test/build sessions have exited. Both named task containers are stopped or absent; no worker ran against the failed queue."
+}

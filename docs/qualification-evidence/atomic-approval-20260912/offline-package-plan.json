@@ -1,0 +1,107 @@
+{
+  "started_at": "2026-09-12T21:31:33.407461+00:00",
+  "network": "unshared network namespace; npm offline; installed package caches read-only",
+  "home": "/tmp/synapsor-atomic-package-home-cxb1unx4",
+  "commands": [
+    {
+      "name": "trusted-core",
+      "args": [
+        "node",
+        "scripts/check-trusted-core-dependencies.mjs"
+      ],
+      "started_at": "2026-09-12T21:31:33.407500+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:31:34.824281+00:00"
+    },
+    {
+      "name": "licenses",
+      "args": [
+        "node",
+        "scripts/check-license-content.mjs"
+      ],
+      "started_at": "2026-09-12T21:31:34.824533+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:31:34.989070+00:00"
+    },
+    {
+      "name": "human-commands",
+      "args": [
+        "node",
+        "scripts/verify-human-command-surface.mjs"
+      ],
+      "started_at": "2026-09-12T21:31:34.989858+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:31:35.055030+00:00"
+    },
+    {
+      "name": "dsl-sources",
+      "args": [
+        "bash",
+        "scripts/verify-dsl-source-paths.sh"
+      ],
+      "started_at": "2026-09-12T21:31:35.055273+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:31:35.269897+00:00"
+    },
+    {
+      "name": "cursor-plugin",
+      "args": [
+        "node",
+        "scripts/verify-cursor-plugin.mjs"
+      ],
+      "started_at": "2026-09-12T21:31:35.270459+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:31:35.385199+00:00"
+    },
+    {
+      "name": "mcp-client-configs",
+      "args": [
+        "node",
+        "scripts/verify-mcp-client-configs.mjs"
+      ],
+      "started_at": "2026-09-12T21:31:35.385658+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:31:57.162328+00:00"
+    },
+    {
+      "name": "local-package",
+      "args": [
+        "bash",
+        "scripts/verify-local-runner.sh"
+      ],
+      "started_at": "2026-09-12T21:31:57.163621+00:00",
+      "exit_code": 1,
+      "completed_at": "2026-09-12T21:32:15.775314+00:00"
+    },
+    {
+      "name": "bundle-freshness",
+      "args": [
+        "node",
+        "scripts/verify-local-runner-bundle-freshness.mjs"
+      ],
+      "started_at": "2026-09-12T21:32:15.775607+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:32:21.253818+00:00"
+    },
+    {
+      "name": "public-commands",
+      "args": [
+        "bash",
+        "scripts/verify-public-commands.sh"
+      ],
+      "started_at": "2026-09-12T21:32:21.254101+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-12T21:33:01.820193+00:00"
+    },
+    {
+      "name": "packed-offline",
+      "args": [
+        "bash",
+        "scripts/verify-packed-runner.sh"
+      ],
+      "started_at": "2026-09-12T21:33:01.820722+00:00",
+      "exit_code": 226,
+      "completed_at": "2026-09-12T21:33:41.533409+00:00"
+    }
+  ]
+}

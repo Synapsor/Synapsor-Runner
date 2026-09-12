@@ -1,0 +1,36 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:747969) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ packages/proposal-store/src/automatic-approval-admission.test.ts (5 tests | 2 failed) 9755ms
+   ✓ durable automatic approval admission > does not partially consume combined limits, merge insurers, count human decisions, or reset history on a stricter revision  4342ms
+   ✓ durable automatic approval admission > preserves the inclusive rolling-window boundary, then releases capacity only after expiry  2480ms
+   ✓ durable automatic approval admission > takes admission time after real cross-process SQLite writer exclusion  2915ms
+   × PostgreSQL approval control store (local fixture) > serializes the final insurer slot across independent pools and commits only one event 13ms
+     → connect ECONNREFUSED /tmp/synapsor-atomic-pg-wpjdzn1c/socket/.s.PGSQL.5432
+   × PostgreSQL approval control store (local fixture) > serializes the final overall slot across independent pools and commits only one event 3ms
+     → connect ECONNREFUSED /tmp/synapsor-atomic-pg-wpjdzn1c/socket/.s.PGSQL.5432
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/proposal-store/src/automatic-approval-admission.test.ts > PostgreSQL approval control store (local fixture) > serializes the final insurer slot across independent pools and commits only one event
+ FAIL  packages/proposal-store/src/automatic-approval-admission.test.ts > PostgreSQL approval control store (local fixture) > serializes the final overall slot across independent pools and commits only one event
+Error: connect ECONNREFUSED /tmp/synapsor-atomic-pg-wpjdzn1c/socket/.s.PGSQL.5432
+ ❯ node_modules/.pnpm/pg-pool@3.14.0_pg@8.22.0/node_modules/pg-pool/index.js:45:11
+ ❯ packages/proposal-store/src/automatic-approval-admission.test.ts:196:7
+    194|     } finally {
+    195|       release.resolve(); await Promise.allSettled(work); await first.c…
+    196|       await poolA.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); …
+       |       ^
+    197|     }
+    198|   }, 25000);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 passed (5)
+   Start at  14:07:24
+   Duration  11.06s (transform 781ms, setup 0ms, collect 1.03s, tests 9.75s, environment 0ms, prepare 67ms)
+

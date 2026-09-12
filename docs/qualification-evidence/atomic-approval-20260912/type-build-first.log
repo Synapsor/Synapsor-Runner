@@ -1,0 +1,13 @@
+packages/mcp-server/src/semantic-actions.test.ts(853,71): error TS2345: Argument of type '{ outcome: string; subject_refs: { preference: string; }; } | undefined' is not assignable to parameter of type 'Record<string, unknown>'.
+  Type 'undefined' is not assignable to type 'Record<string, unknown>'.
+packages/mcp-server/src/semantic-actions.test.ts(856,71): error TS2345: Argument of type '{ outcome: string; subject_refs: { preference: string; }; } | undefined' is not assignable to parameter of type 'Record<string, unknown>'.
+  Type 'undefined' is not assignable to type 'Record<string, unknown>'.
+packages/mcp-server/src/semantic-actions.test.ts(877,7): error TS2322: Type '({ proposal, activated }: { proposal: StoredProposal; activated: ActivatedActionRuleV1; }) => Promise<{ execution: "queued"; source_database_changed: false; } | { execution: "not_queued"; source_database_changed: false; }>' is not assignable to type '(input: { proposal: StoredProposal; activated: ActivatedActionRuleV1; }) => Promise<SemanticActionContinuation>'.
+  Type 'Promise<{ execution: "queued"; source_database_changed: false; } | { execution: "not_queued"; source_database_changed: false; }>' is not assignable to type 'Promise<SemanticActionContinuation>'.
+    Type '{ execution: "queued"; source_database_changed: false; } | { execution: "not_queued"; source_database_changed: false; }' is not assignable to type 'SemanticActionContinuation'.
+      Type '{ execution: "not_queued"; source_database_changed: false; }' is not assignable to type 'SemanticActionContinuation'.
+        Types of property 'execution' are incompatible.
+          Type '"not_queued"' is not assignable to type '"human_review" | "not_enabled" | "queued" | "held" | "completed"'.
+packages/mcp-server/src/semantic-actions.test.ts(905,29): error TS2345: Argument of type '{ proposalId: string; errorCode: string; }' is not assignable to parameter of type '{ proposalId: string; workerId: string; leaseId: string; errorCode: string; now?: string | undefined; }'.
+  Type '{ proposalId: string; errorCode: string; }' is missing the following properties from type '{ proposalId: string; workerId: string; leaseId: string; errorCode: string; now?: string | undefined; }': workerId, leaseId
+packages/mcp-server/src/semantic-actions.test.ts(928,61): error TS2339: Property 'event_type' does not exist on type 'ProposalEvent'.

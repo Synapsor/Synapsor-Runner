@@ -1,0 +1,311 @@
+{
+  "recorded_at": "2026-09-12T21:41:23.610330+00:00",
+  "source_commit": "a2b6b5f870f544ca608d7fb0e6bc834da1e27196",
+  "baseline_commit": "95ac5f50c6747755474946c6c923806850356916",
+  "verdict": "Focused SQLite accounting correction verified; broader qualification remains partial/pending.",
+  "failing_before": {
+    "log": "failing-before.log",
+    "failed": 2,
+    "reason": "Both last-slot requests approved on original source"
+  },
+  "focused": {
+    "log": "focused-round3.log",
+    "passed": 128
+  },
+  "final_new_store_matrix": {
+    "log": "focused-round5-final-store.log",
+    "passed": 3,
+    "skipped": 2
+  },
+  "full_suite": {
+    "log": "stable-full-local.log",
+    "passed": 6096,
+    "failed": 5,
+    "skipped": 449,
+    "files": 315
+  },
+  "failure_specific_test_rerun": {
+    "log": "failure-rerun1-environment.log",
+    "passed": 104,
+    "failed": 0,
+    "scope": "Both unchanged failed files; all five initial failures pass with owned /var/tmp and NO_COLOR=1"
+  },
+  "unqualified": [
+    "Live PostgreSQL approval control store: disposable fixture unavailable, two attempted cases ECONNREFUSED",
+    "Rule replacement while waiting specifically inside database admission",
+    "Uncertain PostgreSQL COMMIT acknowledgement",
+    "Broader Stage A runtime rerun",
+    "Stage B fresh onboarding attempt",
+    "Network-dependent release gate portions"
+  ],
+  "executed_plans": {
+    "stable-local-plan.json": {
+      "started_at": "2026-09-12T21:10:08.657108+00:00",
+      "network": "unshared network namespace; no external network",
+      "home": "/tmp/synapsor-atomic-test-home-32f94h0o",
+      "commands": [
+        {
+          "name": "stable-type-build",
+          "args": [
+            "node",
+            "node_modules/typescript/bin/tsc",
+            "-b",
+            "--pretty",
+            "false"
+          ],
+          "started_at": "2026-09-12T21:10:08.657319+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:10:10.852661+00:00"
+        },
+        {
+          "name": "stable-full-local",
+          "args": [
+            "node",
+            "node_modules/vitest/vitest.mjs",
+            "run",
+            "--maxWorkers=4",
+            "--minWorkers=1",
+            "--testTimeout=20000",
+            "--hookTimeout=20000"
+          ],
+          "started_at": "2026-09-12T21:10:10.853106+00:00",
+          "exit_code": 1,
+          "completed_at": "2026-09-12T21:29:39.760515+00:00"
+        }
+      ]
+    },
+    "targeted-rerun-plan.json": {
+      "network": "unshared network namespace",
+      "home": "/tmp/synapsor-atomic-rerun-home-eg5xn5_p",
+      "var_tmp_private_bind": "/tmp/synapsor-atomic-var-tmp-ot4k3q8x",
+      "explanation": "Unchanged sandbox tests require their own writable /var/tmp sentinels; unchanged terminal text test assumes NO_COLOR. Final optional PG test cleanup has bounded connections/barriers and closes pools on fixture failure.",
+      "commands": [
+        {
+          "name": "final-type-build",
+          "args": [
+            "node",
+            "node_modules/typescript/bin/tsc",
+            "-b",
+            "--pretty",
+            "false"
+          ],
+          "started_at": "2026-09-12T21:30:35.070350+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:30:36.405125+00:00"
+        },
+        {
+          "name": "focused-round5-final-store",
+          "args": [
+            "node",
+            "node_modules/vitest/vitest.mjs",
+            "run",
+            "packages/proposal-store/src/automatic-approval-admission.test.ts",
+            "--maxWorkers=1",
+            "--minWorkers=1"
+          ],
+          "started_at": "2026-09-12T21:30:36.405379+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:30:47.453365+00:00"
+        },
+        {
+          "name": "failure-rerun1-environment",
+          "args": [
+            "node",
+            "node_modules/vitest/vitest.mjs",
+            "run",
+            "apps/runner/src/boundary-cli-picker.test.ts",
+            "scripts/qualification-sandbox.test.mjs",
+            "--maxWorkers=1",
+            "--minWorkers=1"
+          ],
+          "started_at": "2026-09-12T21:30:47.453634+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:30:51.417338+00:00"
+        }
+      ]
+    },
+    "offline-package-plan.json": {
+      "started_at": "2026-09-12T21:31:33.407461+00:00",
+      "network": "unshared network namespace; npm offline; installed package caches read-only",
+      "home": "/tmp/synapsor-atomic-package-home-cxb1unx4",
+      "commands": [
+        {
+          "name": "trusted-core",
+          "args": [
+            "node",
+            "scripts/check-trusted-core-dependencies.mjs"
+          ],
+          "started_at": "2026-09-12T21:31:33.407500+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:31:34.824281+00:00"
+        },
+        {
+          "name": "licenses",
+          "args": [
+            "node",
+            "scripts/check-license-content.mjs"
+          ],
+          "started_at": "2026-09-12T21:31:34.824533+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:31:34.989070+00:00"
+        },
+        {
+          "name": "human-commands",
+          "args": [
+            "node",
+            "scripts/verify-human-command-surface.mjs"
+          ],
+          "started_at": "2026-09-12T21:31:34.989858+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:31:35.055030+00:00"
+        },
+        {
+          "name": "dsl-sources",
+          "args": [
+            "bash",
+            "scripts/verify-dsl-source-paths.sh"
+          ],
+          "started_at": "2026-09-12T21:31:35.055273+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:31:35.269897+00:00"
+        },
+        {
+          "name": "cursor-plugin",
+          "args": [
+            "node",
+            "scripts/verify-cursor-plugin.mjs"
+          ],
+          "started_at": "2026-09-12T21:31:35.270459+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:31:35.385199+00:00"
+        },
+        {
+          "name": "mcp-client-configs",
+          "args": [
+            "node",
+            "scripts/verify-mcp-client-configs.mjs"
+          ],
+          "started_at": "2026-09-12T21:31:35.385658+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:31:57.162328+00:00"
+        },
+        {
+          "name": "local-package",
+          "args": [
+            "bash",
+            "scripts/verify-local-runner.sh"
+          ],
+          "started_at": "2026-09-12T21:31:57.163621+00:00",
+          "exit_code": 1,
+          "completed_at": "2026-09-12T21:32:15.775314+00:00"
+        },
+        {
+          "name": "bundle-freshness",
+          "args": [
+            "node",
+            "scripts/verify-local-runner-bundle-freshness.mjs"
+          ],
+          "started_at": "2026-09-12T21:32:15.775607+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:32:21.253818+00:00"
+        },
+        {
+          "name": "public-commands",
+          "args": [
+            "bash",
+            "scripts/verify-public-commands.sh"
+          ],
+          "started_at": "2026-09-12T21:32:21.254101+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:33:01.820193+00:00"
+        },
+        {
+          "name": "packed-offline",
+          "args": [
+            "bash",
+            "scripts/verify-packed-runner.sh"
+          ],
+          "started_at": "2026-09-12T21:33:01.820722+00:00",
+          "exit_code": 226,
+          "completed_at": "2026-09-12T21:33:41.533409+00:00"
+        }
+      ]
+    },
+    "package-rerun-plan.json": {
+      "network": "unshared network namespace; npm offline",
+      "home": "/tmp/synapsor-atomic-offline-home-Ovks9G",
+      "reason": "Correct repository-only evidence references in packaged reports and use a disposable writable cache copied from selected existing local dependency entries. No product-code change.",
+      "commands": [
+        {
+          "name": "failure-rerun2-local-package",
+          "args": [
+            "bash",
+            "scripts/verify-local-runner.sh"
+          ],
+          "started_at": "2026-09-12T21:36:48.032852+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:37:25.543922+00:00"
+        },
+        {
+          "name": "failure-rerun2-packed-offline",
+          "args": [
+            "bash",
+            "scripts/verify-packed-runner.sh"
+          ],
+          "started_at": "2026-09-12T21:37:25.544180+00:00",
+          "exit_code": 0,
+          "completed_at": "2026-09-12T21:39:14.897929+00:00"
+        }
+      ]
+    }
+  },
+  "source_sha256": {
+    "packages/mcp-server/src/semantic-actions.ts": "ed86b1f1ffb8b4a03cf38c97680a95a557b2308e8930c07b6ed551c9b113a665",
+    "packages/mcp-server/src/semantic-actions.test.ts": "70fec93293f533f9385421151c60a70c9e2cc86a65976b4db2e1e6ae90e713c1",
+    "packages/proposal-store/src/sqlite-proposal-methods.ts": "3890e6e2a6093b1f7324de5ee45c239bca1467f6983dd3e11f09a5de4c5c829e",
+    "packages/proposal-store/src/automatic-approval-admission.test.ts": "617a330c4529bfd13619605236dbe7ac0c88ed970cc799bf23579c2552086e18"
+  },
+  "evidence_sha256": {
+    "a2-result.json": "b15b3cefeb00b5449d39e8aaad7f62583e63e950bea74eafa7c0a22cb781a0c0",
+    "backup-verification.json": "2fc8633f936720f2a21fabb7c12bc41f7005fb491c4e96ccb1111f8d512b7dc9",
+    "bundle-freshness.log": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7",
+    "cursor-plugin.log": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+    "dsl-sources.log": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+    "failing-before.log": "d4aed5fc406a2e0c9ba8788ab5cf253afee54d3a1120744d2a74cba3bdbf84cc",
+    "failure-rerun1-environment.log": "c2ea12ed128b40dbc72a8bc6b51871c315b6e5736aee4e80908c68ff2d96a932",
+    "failure-rerun2-local-package.log": "f3e051a7a70f5788351da99dccfbf0a5396ba043559171972f0bc17f8e72fa37",
+    "failure-rerun2-packed-offline.log": "3da66ba3c299f4c21619590b3bd710fa765351ccd7dd62a811921d8c53c58933",
+    "final-type-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "focused-round2.log": "385a32dddae561e111a73784bf57fd7c1a6e7433d18bf8e834849090ade4daab",
+    "focused-round3.log": "a2a5e8b6e8a49fe3ef3f691cb1018bd07ddd77d3b62091f65ec5855a86927fe7",
+    "focused-round4-persistent-backends.log": "cb3faf655877947f83573752ea5cf5b8dff829a20461746676327d88b87e8e59",
+    "focused-round5-final-store.log": "c7042ef9f343179a4b70748095dbf4eab4f371ab0edf4e548c386fae7cedc30c",
+    "frozen-artifact-final-verification.log": "c0da0aa69431f567b18ef509b377cd460cba016bb92fff770712a8dbacd99ba8",
+    "frozen-artifact-verification.log": "285484df389cb4d2c6c242093612097a6c8ac77e419679337530d94e697cf0b9",
+    "human-commands.log": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+    "licenses.log": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+    "local-package.log": "b4e92d1b788da39347dcd2a4510b679cf237d735fa1dd27ecc441affd0f53bb1",
+    "local-postgres-fixture.json": "e48c99947fed539639bc28c72c351bf3a8ebf66d835e6731cdf34b3b648c6048",
+    "mcp-client-configs.log": "920c4b33567d749855dd49afce218c5a635ea6404e8128a5fc297f5ed6a4bf3f",
+    "offline-cache-copy.json": "68f07d4911ad00186b5f3b88a2255dcd3e8dfc966d10806b592212553b6ff8b3",
+    "offline-package-plan.json": "a2adb8930da8e0f7801de549c2a3bd167abff5b7f7dce99b17f3a6d7c659e6a7",
+    "owned-container-cleanup.json": "98804f8252494ec86433a2e7ff076769f83a7d0d66b2f1d66e00fee187ffe8b5",
+    "package-rerun-plan.json": "85b5f8818320c03c95c4c53658624c7ea49b11077c7f7d247388fac9dad2a63c",
+    "packed-offline.log": "1e1f96c07442f33a75e8482f080e2d938a0aa81d7d570ffdf66f8c8f14d9602f",
+    "passing-after-focused.log": "0b62ac03c90889601a73bcff5f6c323ca625411de2a586af1508199b7f6b8e45",
+    "preservation-final-result.json": "e13cf7f7b44f0f752c75726cd8ddb24afb37b56811c24f6f5593e5d69b7df27a",
+    "preservation-result.json": "99351816893de646aa583d8c8be61ad718b553ebd21a4c853c490fc231223c8b",
+    "public-commands.log": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559",
+    "repair-plan.json": "d644195717d4962838f6aeef80217cffda0f612152086f3a04f7b20269bff877",
+    "repair-report.md": "d582f293a868f3a0d2445afd7bb9669bc11940577f814a772a8c48177db0e936",
+    "stable-full-local.log": "145ab5ed17bc6d8e7752c74ffaa7a239d5dc5b3508d3895935f3a5f983bf500a",
+    "stable-local-plan.json": "6e0dbf56b575a967d5cab381ba545ba0ac2ce50bddcec5b39d06cd162c5234c9",
+    "stable-type-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "targeted-rerun-plan.json": "9ae399d6aeab676b59612580e75dd64dce814a1bb2f0b4dbcb3f3eb5e479f7ad",
+    "temporary-cleanup.json": "14ec7d0675248bbc3a52e8118cd673acac7b1bed09121887024b31608b8090ad",
+    "trusted-core.log": "2bcde547970fec26fa7683856d3915fc87dcf1567acd65f480446cb5a0742b57",
+    "type-build-first.log": "80a68d306a115abf698fc4deb9857a9faaa501f2b6939185d9da7b21ec3d53ff",
+    "type-build-matrix.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "type-build-second.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

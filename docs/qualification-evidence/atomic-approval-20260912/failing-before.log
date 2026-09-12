@@ -1,0 +1,81 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+ ❯ packages/mcp-server/src/semantic-actions.test.ts (38 tests | 2 failed | 36 skipped) 8177ms
+   ↓ fixed semantic Action MCP > requires configured delegation before claiming references or reading source facts
+   ↓ fixed semantic Action MCP > preserves delegated human review and rechecks current owner permission on idempotent proposal requests
+   ↓ fixed semantic Action MCP > reports a retired or unknown outcome as unavailable without loading customer facts
+   ↓ fixed semantic Action MCP > does not disclose a catalog withdrawn during asynchronous authority loading
+   ↓ fixed semantic Action MCP > does not disclose a catalog withdrawn during asynchronous scope loading
+   ↓ fixed semantic Action MCP > does not disclose a catalog withdrawn during asynchronous availability loading
+   ↓ fixed semantic Action MCP > filters before searching and rechecks current scope, revision and registry integrity before cached results
+   ↓ fixed semantic Action MCP > owns immutable registry snapshots and rejects oversized complete contracts without dropping constraints
+   ↓ fixed semantic Action MCP > requires durable execution AND a receipt before reporting completion (false, false)
+   ↓ fixed semantic Action MCP > requires durable execution AND a receipt before reporting completion (false, true)
+   ↓ fixed semantic Action MCP > requires durable execution AND a receipt before reporting completion (true, false)
+   ↓ fixed semantic Action MCP > requires durable execution AND a receipt before reporting completion (true, true)
+   ↓ fixed semantic Action MCP > keeps fixed tools discoverable while a stale outcome is blocked before facts or proposals
+   ↓ fixed semantic Action MCP > discovers and validates business inputs before consuming subjects and binds replay to exact values
+   ↓ fixed semantic Action MCP > describes only activated outcomes and accepts no model patch or trusted scope
+   ↓ fixed semantic Action MCP > replays concurrent identical requests without duplicate creation or approval (automatic=false)
+   ↓ fixed semantic Action MCP > replays concurrent identical requests without duplicate creation or approval (automatic=true)
+   ↓ fixed semantic Action MCP > coordinates distinct runtime instances borrowing the same store without sharing results
+   ↓ fixed semantic Action MCP > rechecks queued authority instead of reusing an earlier caller's authorized result
+   ↓ fixed semantic Action MCP > rechecks queued scope instead of reusing an earlier caller's authorized result
+   ↓ fixed semantic Action MCP > releases failed admission and reruns current verification for the waiting request
+   ↓ fixed semantic Action MCP > does not turn changed business inputs into an identical request replay
+   ↓ fixed semantic Action MCP > keeps unrelated requests concurrent while the exact atomic approval limit decides the winner
+   ↓ fixed semantic Action MCP > preserves competing different-request conflict and approval checks (separate stores=false)
+   ↓ fixed semantic Action MCP > preserves competing different-request conflict and approval checks (separate stores=true)
+   ↓ fixed semantic Action MCP > keeps the final automatic approval atomic for different subjects across separate store instances
+   × fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last insurer slot 3236ms
+     → expected { ok: true, …(12) } to match object { …(2) }
+(27 matching properties omitted from actual)
+   × fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last overall slot 4937ms
+     → expected { ok: true, …(12) } to match object { …(2) }
+(27 matching properties omitted from actual)
+   ↓ fixed semantic Action MCP > loads scoped authoritative facts and creates one idempotent Runner-derived proposal
+   ↓ fixed semantic Action MCP > auto-approves only under the exact policy and falls back to human review when an atomic limit trips
+   ↓ fixed semantic Action MCP > keeps a distinct human fallback quorum without blocking an exact automatic policy match
+   ↓ fixed semantic Action MCP > reports durable human approval as human instead of inventing policy approval
+   ↓ fixed semantic Action MCP > collapses forged subjects and refuses ineligible or unknown facts without creating a proposal
+   ↓ fixed semantic Action MCP > reports an actionable database setup failure without exposing private RLS diagnostics or making a proposal
+   ↓ fixed semantic Action MCP > exposes the exact two-tool contract through the official MCP client (business inputs: false)
+   ↓ fixed semantic Action MCP > exposes the exact two-tool contract through the official MCP client (business inputs: true)
+   ↓ fixed semantic Action MCP > does not expose or dispatch configured per-action tools from a fixed runtime
+   ↓ fixed semantic Action MCP > keeps explicit reviewed capabilities beside the fixed semantic tools during migration
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/mcp-server/src/semantic-actions.test.ts > fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last insurer slot
+ FAIL  packages/mcp-server/src/semantic-actions.test.ts > fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last overall slot
+AssertionError: expected { ok: true, …(12) } to match object { …(2) }
+(27 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "proposal": {
+-     "status": "pending_review",
++     "status": "approved",
+    },
+    "source_database_changed": false,
+  }
+
+ ❯ packages/mcp-server/src/semantic-actions.test.ts:821:29
+    819|       vi.setSystemTime(baseTime + 3000);
+    820|       release();
+    821|       expect(await pending).toMatchObject({ proposal: { status: "pendi…
+       |                             ^
+    822|       const proposals = firstStore.listProposals();
+    823|       expect(proposals.filter(p => p.state === "approved")).toHaveLeng…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 36 skipped (38)
+   Start at  13:56:27
+   Duration  12.35s (transform 2.35s, setup 0ms, collect 3.76s, tests 8.18s, environment 0ms, prepare 84ms)
+

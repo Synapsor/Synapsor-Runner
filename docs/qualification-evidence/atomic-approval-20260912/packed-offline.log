@@ -1,0 +1,43 @@
+
+  apps/runner/dist/runner.mjs  10.9mb ⚠️
+
+⚡ Done in 262ms
+
+  apps/runner/dist/authoring.mjs  193.0kb
+
+⚡ Done in 12ms
+
+  apps/runner/dist/shadow.mjs  528.1kb
+
+⚡ Done in 12ms
+
+  apps/runner/dist/runtime.mjs  1.6mb ⚠️
+
+⚡ Done in 34ms
+Runner source manifest is pnpm-publishable: @synapsor/runner@1.8.0 (workspace:^1.11.0)
+
+  apps/runner/dist/runner.mjs  10.9mb ⚠️
+
+⚡ Done in 195ms
+
+  apps/runner/dist/authoring.mjs  193.0kb
+
+⚡ Done in 11ms
+
+  apps/runner/dist/shadow.mjs  528.1kb
+
+⚡ Done in 17ms
+
+  apps/runner/dist/runtime.mjs  1.6mb ⚠️
+
+⚡ Done in 63ms
+Runner packed manifest is registry-installable: @synapsor/runner@1.8.0 (^1.11.0)
+Using locally packed @synapsor/spec@1.11.0 for pre-release verification.
+npm error code EROFS
+npm error syscall mkdtemp
+npm error path /tmp/synapsor-atomic-package-home-cxb1unx4/.npm/_cacache/tmp/zCROdY
+npm error errno -30
+npm error rofs EROFS: read-only file system, mkdtemp '/tmp/synapsor-atomic-package-home-cxb1unx4/.npm/_cacache/tmp/zCROdY'
+npm error rofs Often virtualized file systems, or other file systems
+npm error rofs that don't support symlinks, give this error.
+npm error A complete log of this run can be found in: /tmp/synapsor-atomic-package-home-cxb1unx4/.npm/_logs/2026-09-12T21_33_41_379Z-debug-0.log

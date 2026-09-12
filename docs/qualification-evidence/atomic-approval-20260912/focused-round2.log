@@ -1,0 +1,181 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+ ❯ packages/proposal-store/src/index.test.ts (80 tests | 2 failed) 33355ms
+   ✓ proposal store > opens and extends the pre-refactor SQLite ledger without migration drift  640ms
+   ✓ proposal store > keeps store methods as non-enumerable own prototype methods 1ms
+   ✓ proposal store > creates the parent directory for file-backed stores  2730ms
+   ✓ proposal store > tightens an existing POSIX store to owner-only permissions  3935ms
+   × proposal store > waits through short cross-process SQLite writer contention 4557ms
+     → SQLite lock helper exited 0: 
+   ✓ proposal store > persists exact-replay privacy reservations through shared-ledger round trips and scopes variants per root resource 85ms
+   ✓ proposal store > atomically blocks related scalar-filter releases in either order without blocking sibling filters 119ms
+   ✓ proposal store > does not charge explicit pre-execution refusals as legacy Explore queries 48ms
+   ✓ proposal store > blocks active duplicates but permits a successor after conflict 49ms
+   ✓ proposal store > retention never prunes active or retryable proposal state 42ms
+   ✓ proposal store > exports a stable shared-ledger snapshot without raw JSON strings 40ms
+   ✓ proposal store > records an evidence bundle and its linked query audit atomically 14ms
+   ✓ proposal store > prints a safe shared Postgres runtime-store migration 1ms
+   ✓ proposal store > persists runtime proposal state through a shared Postgres ledger store 214ms
+   ✓ proposal store > round-trips coalesced attention and notification delivery through the shared Postgres runtime store 172ms
+   ✓ proposal store > persists graduated-trust recommendations through the shared Postgres runtime store 87ms
+   ✓ proposal store > persists fleet writeback intents directly before end-of-command ledger sync 31ms
+   ✓ proposal store > round-trips protocol-v3 writeback intents through the shared ledger 5ms
+   ✓ proposal store > fails closed before copying an over-capacity shared runtime ledger 1ms
+   ✓ proposal store > enforces aggregate policy limits atomically and records human-review fallback 24ms
+   ✓ proposal store > treats capability policy PER DAY as a trusted-tenant UTC calendar day 20ms
+   ✓ proposal store > enforces rolling Action Boundary limits across capabilities and boundary revisions 39ms
+   ✓ proposal store > shares boundary approval history despite different limit IDs, policies, and revisions 27ms
+   ✓ proposal store > shares tenant approval history despite different limit IDs, policies, and revisions 24ms
+   ✓ proposal store > isolates Action Boundary approval accounting by capability, principal, and object 37ms
+   ✓ proposal store > fails closed when tenant-principal Action Boundary accounting lacks a trusted principal 14ms
+   ✓ proposal store > persists immutable proposals and append-only events 13ms
+   ✓ proposal store > persists a fail-closed writeback intent across the source mutation boundary 21ms
+   ✓ proposal store > requires reconciliation after an incomplete applying intent is restored 30ms
+   ✓ proposal store > records a signed reconciliation as an immutable terminal receipt 39ms
+   ✓ proposal store > derives tenant and capability operational counters from durable records 19ms
+   ✓ proposal store > derives bounded freshness counters from durable proof and writeback events 38ms
+   ✓ proposal store > preserves immutable principal row scope in generated writeback jobs 17ms
+   ✓ proposal store > requires an immutable fresh proof for freshness-bound approval 24ms
+   ✓ proposal store > preserves freshness proofs and approval bindings through shared-ledger restore 35ms
+   ✓ proposal store > rejects tampered, unavailable, and expired freshness proofs 19ms
+   ✓ proposal store > blocks a later quorum approval permanently when freshness drifts 21ms
+   ✓ proposal store > requires distinct reviewers to satisfy a portable approval quorum 18ms
+   ✓ proposal store > defers policy auto-approval for multi-reviewer quorum and preserves rejection 17ms
+   ✓ proposal store > leases supervised worker items and dead-letters after the retry budget 25ms
+   ✓ proposal store > binds supervised worker queue authority to an exact digest and fenced lease 21ms
+   ✓ proposal store > enforces supervised-worker concurrency and rolling execution limits inside the claim transaction 22ms
+   ✓ proposal store > reserves policy execution limits atomically and blocks expired supervised work before lease 34ms
+   × proposal store > enforces one policy reservation across two supervised worker processes 4842ms
+     → Unexpected end of JSON input
+   ✓ proposal store > binds supervised-worker pause and exact-digest revocation to one integrity-checked operator revision 38ms
+   ✓ proposal store > commits proposal state and projected human-attention events atomically 15ms
+   ✓ proposal store > coalesces human-review events without turning acknowledgement into approval 21ms
+   ✓ proposal store > resolves a coalesced review item only after its last pending proposal and reopens for new work 22ms
+   ✓ proposal store > binds production acknowledgement to one exact attention version and reopens on a new occurrence 16ms
+   ✓ proposal store > keeps successful policy auto-approval quiet by default 15ms
+   ✓ proposal store > raises one critical attention incident when a worker job dead-letters 19ms
+   ✓ proposal store > detects tampering in immutable attention event payloads 13ms
+   ✓ proposal store > fences notification delivery retries without replaying proposal authority 17ms
+   ✓ proposal store > binds notification replay to an exact verified operator decision without replaying authority 16ms
+   ✓ proposal store > reclaims an expired notification lease with the same immutable event identity 14ms
+   ✓ proposal store > refuses to requeue a dead letter after a receipt proves the effect 19ms
+   ✓ proposal store > rejects duplicate proposal ids with a different hash 14ms
+   ✓ proposal store > rejects obvious secret material before it reaches local replay storage 13ms
+   ✓ proposal store > approves only the exact proposal hash and version 14ms
+   ✓ proposal store > records execution receipts and terminal state 17ms
+   ✓ proposal store > preserves proposal, evidence, pending writeback, receipt, and replay across restarts  4805ms
+   ✓ proposal store > creates a public writeback job from an approved immutable proposal 39ms
+   ✓ proposal store > creates operation-aware v2 jobs from approved UPDATE, INSERT, and DELETE proposals 72ms
+   ✓ proposal store > captures reviewed inverse authority for reversible CRUD without hidden fields 54ms
+   ✓ proposal store > creates a v4 compensation job from a separately approved revert proposal 48ms
+   ✓ proposal store > preserves inverse receipts and compensation lineage through shared-ledger backup and restore 87ms
+   ✓ proposal store > does not create direct SQL writeback jobs for app-owned executor proposals 18ms
+   ✓ proposal store > keeps shadow proposals inspectable but blocks approval and writeback 14ms
+   ✓ proposal store > runs a persistent shadow study with authoritative outcomes and deterministic classifications  4613ms
+   ✓ proposal store > fails authoritative shadow outcomes closed on tenant, object, and proposal mismatches 14ms
+   ✓ proposal store > round-trips shadow studies, cases, and outcomes through the shared ledger 26ms
+   ✓ proposal store > records evidence, query audit, replay, and runner state 14ms
+   ✓ proposal store > indexes and searches local evidence, audit, receipts, and replay metadata  4822ms
+   ✓ proposal store > filters receipts through their canonical proposal business object 60ms
+   ✓ graduated-trust recommendation ledger > requires a verified operator decision and preserves approved/exported history through the shared ledger 25ms
+   ✓ graduated-trust recommendation ledger > keeps rejection terminal and fails closed on a tampered recommendation payload 13ms
+   ✓ Cloud-linked durable outbox > persists idempotent events, preserves proposal chronology, and records Cloud authority separately 17ms
+   ✓ Cloud-linked durable outbox > rejects idempotency-key payload drift and dead-letters permanent failures 17ms
+   ✓ Cloud-linked durable outbox > projects Cloud terminal authority once without allowing stale terminal regression 19ms
+   ✓ Cloud-linked durable outbox > round-trips outbox and governance entries through the shared Postgres runtime store 72ms
+ ❯ packages/mcp-server/src/semantic-actions.test.ts (42 tests | 1 failed) 37974ms
+   ✓ fixed semantic Action MCP > requires configured delegation before claiming references or reading source facts 44ms
+   ✓ fixed semantic Action MCP > preserves delegated human review and rechecks current owner permission on idempotent proposal requests 56ms
+   ✓ fixed semantic Action MCP > reports a retired or unknown outcome as unavailable without loading customer facts 19ms
+   ✓ fixed semantic Action MCP > does not disclose a catalog withdrawn during asynchronous authority loading 18ms
+   ✓ fixed semantic Action MCP > does not disclose a catalog withdrawn during asynchronous scope loading 16ms
+   ✓ fixed semantic Action MCP > does not disclose a catalog withdrawn during asynchronous availability loading 24ms
+   ✓ fixed semantic Action MCP > filters before searching and rechecks current scope, revision and registry integrity before cached results 53ms
+   ✓ fixed semantic Action MCP > owns immutable registry snapshots and rejects oversized complete contracts without dropping constraints 4ms
+   ✓ fixed semantic Action MCP > requires durable execution AND a receipt before reporting completion (false, false) 43ms
+   ✓ fixed semantic Action MCP > requires durable execution AND a receipt before reporting completion (false, true) 51ms
+   ✓ fixed semantic Action MCP > requires durable execution AND a receipt before reporting completion (true, false) 42ms
+   ✓ fixed semantic Action MCP > requires durable execution AND a receipt before reporting completion (true, true) 31ms
+   ✓ fixed semantic Action MCP > keeps fixed tools discoverable while a stale outcome is blocked before facts or proposals 25ms
+   ✓ fixed semantic Action MCP > discovers and validates business inputs before consuming subjects and binds replay to exact values 37ms
+   ✓ fixed semantic Action MCP > describes only activated outcomes and accepts no model patch or trusted scope 16ms
+   ✓ fixed semantic Action MCP > replays concurrent identical requests without duplicate creation or approval (automatic=false) 27ms
+   ✓ fixed semantic Action MCP > replays concurrent identical requests without duplicate creation or approval (automatic=true) 39ms
+   ✓ fixed semantic Action MCP > coordinates distinct runtime instances borrowing the same store without sharing results 32ms
+   ✓ fixed semantic Action MCP > rechecks queued authority instead of reusing an earlier caller's authorized result 29ms
+   ✓ fixed semantic Action MCP > rechecks queued scope instead of reusing an earlier caller's authorized result 27ms
+   ✓ fixed semantic Action MCP > releases failed admission and reruns current verification for the waiting request 31ms
+   ✓ fixed semantic Action MCP > does not turn changed business inputs into an identical request replay 23ms
+   ✓ fixed semantic Action MCP > keeps unrelated requests concurrent while the exact atomic approval limit decides the winner 134ms
+   ✓ fixed semantic Action MCP > preserves competing different-request conflict and approval checks (separate stores=false)  4166ms
+   ✓ fixed semantic Action MCP > preserves competing different-request conflict and approval checks (separate stores=true)  4465ms
+   ✓ fixed semantic Action MCP > keeps the final automatic approval atomic for different subjects across separate store instances  2916ms
+   ✓ fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last insurer slot  5148ms
+   ✓ fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last overall slot  6057ms
+   ✓ fixed semantic Action MCP > grants exactly the available allowance under concurrent load (overall allowance=2)  4417ms
+   ✓ fixed semantic Action MCP > grants exactly the available allowance under concurrent load (overall allowance=8)  4390ms
+   × fixed semantic Action MCP > retains a committed automatic decision across lost acknowledgement and restart before queue publication 2633ms
+     → worker undefined must present the exact lease id for wrp_rule_0e182ec8ea38f1532dab6f5ef19ccb2f
+   ✓ fixed semantic Action MCP > rolls back an aborted automatic decision without spending either allowance or reporting human-review success  2628ms
+   ✓ fixed semantic Action MCP > loads scoped authoritative facts and creates one idempotent Runner-derived proposal 26ms
+   ✓ fixed semantic Action MCP > auto-approves only under the exact policy and falls back to human review when an atomic limit trips 51ms
+   ✓ fixed semantic Action MCP > keeps a distinct human fallback quorum without blocking an exact automatic policy match 50ms
+   ✓ fixed semantic Action MCP > reports durable human approval as human instead of inventing policy approval 29ms
+   ✓ fixed semantic Action MCP > collapses forged subjects and refuses ineligible or unknown facts without creating a proposal 42ms
+   ✓ fixed semantic Action MCP > reports an actionable database setup failure without exposing private RLS diagnostics or making a proposal 14ms
+   ✓ fixed semantic Action MCP > exposes the exact two-tool contract through the official MCP client (business inputs: false) 60ms
+   ✓ fixed semantic Action MCP > exposes the exact two-tool contract through the official MCP client (business inputs: true) 28ms
+   ✓ fixed semantic Action MCP > does not expose or dispatch configured per-action tools from a fixed runtime 15ms
+   ✓ fixed semantic Action MCP > keeps explicit reviewed capabilities beside the fixed semantic tools during migration 13ms
+ ✓ packages/mcp-server/src/approval-policy.test.ts (6 tests) 58ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/proposal-store/src/index.test.ts > proposal store > waits through short cross-process SQLite writer contention
+Error: SQLite lock helper exited 0: 
+ ❯ ChildProcess.<anonymous> packages/proposal-store/src/index.test.ts:600:50
+    598|       });
+    599|       locker.once("close", (code) => {
+    600|         if (!stdout.includes("locked\n")) reject(new Error(`SQLite loc…
+       |                                                  ^
+    601|       });
+    602|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  packages/proposal-store/src/index.test.ts > proposal store > enforces one policy reservation across two supervised worker processes
+SyntaxError: Unexpected end of JSON input
+ ❯ packages/proposal-store/src/index.test.ts:2620:31
+    2618|       ]);
+    2619|       const claimed = results
+    2620|         .map((result) => JSON.parse(result.stdout) as { proposal_id: s…
+       |                               ^
+    2621|         .filter((result) => result.proposal_id !== null);
+    2622|       expect(claimed).toHaveLength(1);
+ ❯ packages/proposal-store/src/index.test.ts:2620:10
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  packages/mcp-server/src/semantic-actions.test.ts > fixed semantic Action MCP > retains a committed automatic decision across lost acknowledgement and restart before queue publication
+ProposalStoreError: worker undefined must present the exact lease id for wrp_rule_0e182ec8ea38f1532dab6f5ef19ccb2f
+ ❯ ProposalStore.assertWorkerLease packages/proposal-store/dist/sqlite-worker-methods.js:583:19
+    581|     assertWorkerLease(proposalId, workerId, leaseId) {
+    582|         if (!leaseId) {
+    583|             throw new ProposalStoreError("WORKER_LEASE_ID_REQUIRED", `…
+       |                   ^
+    584|         }
+    585|         const item = this.requireWorkerQueueItem(proposalId);
+ ❯ packages/proposal-store/dist/sqlite-worker-methods.js:441:18
+ ❯ ProposalStore.transaction packages/proposal-store/dist/sqlite-core-methods.js:258:28
+ ❯ ProposalStore.blockWorkerItem packages/proposal-store/dist/sqlite-worker-methods.js:440:14
+ ❯ packages/mcp-server/src/semantic-actions.test.ts:905:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  2 failed | 1 passed (3)
+      Tests  3 failed | 125 passed (128)
+   Start at  13:59:29
+   Duration  42.75s (transform 3.15s, setup 0ms, collect 5.82s, tests 71.39s, environment 1ms, prepare 227ms)
+

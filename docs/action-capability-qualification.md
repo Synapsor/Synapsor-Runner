@@ -3,6 +3,38 @@
 This is an evidence inventory, not a claim that onboarding is complete or that
 arbitrary SQL/business logic is supported. Last updated: 2026-09-12.
 
+## Focused automatic-approval accounting repair — 2026-09-12
+
+Product repair source: `a2b6b5f870f544ca608d7fb0e6bc834da1e27196`.
+
+The later Stage A A2 attempt FAILED on the accepted artifact: two legitimate
+existing automatic approvals plus two concurrent distinct requests produced four
+approvals under the unchanged insurer maximum of three. The complete original
+failure, trusted scope, selectors, interleaving and baseline provenance are
+preserved in the repository-only record
+`docs/qualification-evidence/atomic-approval-20260912/a2-result.json`.
+The original failed queue remains unexecuted. Earlier successful receipt and
+scope/edit results below remain historical; they do not close this failure.
+
+A focused two-function repair now uses trusted admission time after the existing
+database writer lock, instead of an earlier request-claim time that excluded a
+later request's already committed approval. Both last-insurer and last-overall
+regressions fail before and pass after the correction. Persistent SQLite handles
+and independent local processes, exact/ample capacity, rollback, replay/restart,
+blocked approvals and rolling history have local coverage. The full local run had
+6,096 passes, 449 skips and five environment-related failures; all five passed in
+a 104-test rerun of the two unchanged files. Final types and focused tests pass.
+The live PostgreSQL control-store fixture was unavailable, so that backend is not
+reported as qualified. Local packaging results are recorded with the repair evidence.
+
+See the repository-only report
+`docs/qualification-evidence/atomic-approval-20260912/repair-report.md`
+for the transaction boundary, deployment reachability and test limitations.
+Committed automatic approvals consume allowance until their window expires even
+when execution never completes; no refund or requeue feature was added. No schema
+migration or policy change is required. Broader Stage A remains pending, and
+Stage B was not started. Passing local accounting tests cannot pass either stage.
+
 ## Bounded proposal-to-receipt and scope/edit result
 
 Completed 2026-09-12 on product source
