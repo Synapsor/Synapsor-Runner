@@ -81,8 +81,32 @@ correction reuses exact private-source and closed-RLS validators, comparing curr
 and compiled catalogs canonically before reuse. It adds no public access, consent,
 business interpretation or execution readiness. A failing-before regression and
 90 passing targeted cases cover the correction and nearby private-source reviews.
-The corrected full regression and new artifact qualification are pending. Runtime,
-client, worker, receipts and rule edits have not been reached in this pass.
+The corrected full regression passed 6,025 tests (447 optional skips), 14 live
+PostgreSQL checks and clean packed-install checks. Artifact two, source
+`5e3e78b`, has complete installed hash
+`5053aa95858792bcdfcd08a8a8c96b5d8543873fc83eb4fe06ed3d1d90d80bc6`.
+Its fresh run preserved one disabled Read and Action, with all 40 source rows
+unchanged and zero proposals, approvals, jobs or receipts. It made 43 actual
+HTTP-200 provider transports before a public save-and-pause. This is not an
+unaided completion: clarification and precise engineering help were required.
+
+Two findings remain distinct. First, the scope-evidence correction missed
+privately used resources retained from the initial ordinary Action catalog;
+those lack the explicit `verification_only` marker. The final bounded correction
+revalidates that existing compiled origin using current canonical metadata,
+full immediate unique/non-null foreign keys and exact RLS. It neither changes
+resource purpose nor creates private consent or public access. A failing-before
+test and both-origin drift/ambiguity negatives cover this case.
+
+Second, actual sanitized repair inputs and validator diagnostics confirm a new
+repair-provenance blocker: generated coverage prose describing the WRONG old
+scope as "across the Action Boundary rather than only this ... outcome" is
+passed to `assertExplicitApprovalIntentPreserved` as an operator requirement.
+Correcting to outcome accounting therefore contradicts that generated input.
+The model's claim that outcome-specific accounting is unsupported is not the
+root cause. The original policy is preserved; this separate blocker is recorded,
+not bypassed or repaired by expanding the bounded assignment. Runtime, client,
+worker, receipts and rule edits have not been reached in this pass.
 
 Budgets: at most three frozen artifacts for the listed defects, 45 minutes and
 80 actual provider attempts per fresh/recovery setup across resumes. If insurance

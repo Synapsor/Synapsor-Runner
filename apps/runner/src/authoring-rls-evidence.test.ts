@@ -67,7 +67,7 @@ function refresh(f: ReturnType<typeof fixture>) {
   f.read.role_posture_fingerprint = generated.exploration_boundary.role_posture_fingerprint;
 }
 
-function privateFixture() {
+function privateFixture(origin: "private_review" | "retained_catalog" = "private_review") {
   const f = fixture(), parent = f.inspection.tables[0]!, child = structuredClone(parent);
   f.read.pack.resources[0]!.principal_key = "q1";
   parent.unique_constraints = [{ name: "parent_tuple", columns: ["q2", "q1", "k00"] }];
@@ -80,6 +80,17 @@ function privateFixture() {
   const built = buildActionRuleAuthoringCatalog({ boundary: f.read, inspection: f.inspection });
   const prepared = preparePrivateActionSource({ built, boundary: f.read, inspection: f.inspection,
     resource: "opaque.r9", parentResource: resource });
+  let compiledCatalog = prepared.built;
+  if (origin === "retained_catalog") {
+    const broad = structuredClone(f.read), childRead = structuredClone(broad.pack.resources[0]!);
+    childRead.id = "opaque.r9";
+    childRead.table = "r9";
+    childRead.field_types!.parent_id = "uuid";
+    broad.pack.resources.push(childRead);
+    const initial = buildActionRuleAuthoringCatalog({ boundary: broad, inspection: f.inspection });
+    compiledCatalog = buildActionRuleAuthoringCatalog({ boundary: f.read, inspection: f.inspection, retainedCatalog: initial.catalog });
+    expect(compiledCatalog.catalog.resources.find(entry => entry.name === "opaque.r9")!.verification_only).toBeUndefined();
+  }
   const draft = proposed();
   draft.verification.resources.push({ binding: "private_rows", resource: "opaque.r9",
     source: { kind: "relationship", from_binding: "record", relationship: "r9_r8_fk", direction: "inverse" },
@@ -87,12 +98,22 @@ function privateFixture() {
   draft.require = { kind: "all", expressions: [draft.require, { kind: "not", expression: { kind: "exists", binding: "private_rows",
     where: { kind: "compare", operator: "eq", left: { kind: "field", binding: "private_rows", field: "state" },
       right: { kind: "literal", value: "ready", value_type: { kind: "string", comparison: "exact", max_length: 5, enum: ["ready", "done"] } } } } }] };
-  f.compiled = compileActionRuleModelDraft({ draft, builtCatalog: prepared.built, readBoundary: f.read,
+  f.compiled = compileActionRuleModelDraft({ draft, builtCatalog: compiledCatalog, readBoundary: f.read,
     readBoundaryDigest: explorationBoundaryCandidateDigest(f.read) });
   return f;
 }
 
 describe("digest-bound inspected RLS policy evidence", () => {
+  it("carries current RLS evidence for privately used resources retained from the initial catalog", () => {
+    const current = input(privateFixture("retained_catalog")), before = structuredClone(current);
+    const draft = policyCoverageDraft(current);
+    expect(draft.runner_evidence.actions[outcome]!.scoped_bindings.private_rows!.database_scope_proof).toMatchObject({
+      resource: "opaque.r9", tenant: { field: "q2", setting: "app.group" }, principal: { field: "q1", setting: "app.person" } });
+    expect(Object.keys(draft.runner_evidence.read_access)).toEqual([resource]);
+    expect(draft.runner_evidence.actions[outcome]!.scoped_bindings.private_rows!.fields.state).toMatchObject({
+      actual_values_returned: false, model_analysis: [], private_action_verification: true });
+    expect(current).toEqual(before);
+  });
   it("carries current private complete-collection scope into coverage without adding public access or asserting policy completeness", () => {
     const current = input(privateFixture()), before = structuredClone(current);
     const draft = policyCoverageDraft(current);
@@ -106,9 +127,10 @@ describe("digest-bound inspected RLS policy evidence", () => {
     expect(current).toEqual(before);
   });
 
-  it.each(["missing_relationship", "partial_pairs", "binding_pairs", "wrong_parent", "parent_scope", "wrong_source", "wrong_field", "wrong_scope", "not_private", "catalog_lock", "read_digest"])(
+  describe.each(["private_review", "retained_catalog"] as const)("compiled source origin: %s", origin => {
+  it.each(["missing_relationship", "partial_pairs", "binding_pairs", "wrong_parent", "parent_scope", "wrong_source", "wrong_field", "wrong_scope", "missing_resource", "catalog_lock", "read_digest"])(
     "does not infer private scope for a changed compiled binding (%s)", change => {
-      const current = input(privateFixture()), action = current.actions[0]!, authority = action.loaded.authority;
+      const current = input(privateFixture(origin)), action = current.actions[0]!, authority = action.loaded.authority;
       const child = authority.catalog.resources.find(entry => entry.name === "opaque.r9")!;
       const binding = action.verification_boundary.resources.find(entry => entry.binding === "private_rows")!;
       if (change === "missing_relationship") authority.catalog.relationships = [];
@@ -122,22 +144,26 @@ describe("digest-bound inspected RLS policy evidence", () => {
       if (change === "wrong_source") child.source = "other";
       if (change === "wrong_field") child.fields.find(field => field.name === "state")!.nullable = true;
       if (change === "wrong_scope" && binding.scope.mode === "columns") binding.scope.principal_field = "q2";
-      if (change === "not_private") delete child.verification_only;
+      if (change === "missing_resource") authority.catalog.resources = authority.catalog.resources.filter(entry => entry.name !== child.name);
       if (change === "catalog_lock") authority.catalog.generation_lock_fingerprint = canonicalJsonDigest("other");
       if (change === "read_digest") authority.rules[0]!.read_boundary_digest = canonicalJsonDigest("old");
       expect(policyCoverageDraft(current).runner_evidence.actions[outcome]!.scoped_bindings.private_rows!.database_scope_proof).toBeNull();
     });
 
-  it.each(["extra_filter", "broader_policy", "missing_policy", "deferred_fk", "ambiguous_fk", "changed_type"])(
+  it.each(["extra_filter", "broader_policy", "missing_policy", "deferred_fk", "ambiguous_fk", "duplicate_fk", "changed_type", "nullable_key", "unvalidated_fk", "nonunique_tuple"])(
     "does not substitute FK presence for current complete private visibility (%s)", change => {
-      const f = privateFixture(), child = f.inspection.tables[1]!;
+      const f = privateFixture(origin), child = f.inspection.tables[1]!;
       if (change === "extra_filter") child.row_level_security_policies![0]!.using_expression += " AND state = 'ready'";
       if (change === "broader_policy") child.row_level_security_policies!.push({ name: "all", command: "SELECT", permissive: true,
         roles: ["reader"], using_expression: "true" });
       if (change === "missing_policy") child.row_level_security_policies = [];
       if (change === "deferred_fk") child.foreign_keys[0]!.deferrable = true;
       if (change === "ambiguous_fk") child.foreign_keys.push({ ...structuredClone(child.foreign_keys[0]!), name: "other_fk" });
+      if (change === "duplicate_fk") child.foreign_keys.push(structuredClone(child.foreign_keys[0]!));
       if (change === "changed_type") child.columns.find(column => column.name === "state")!.data_type = "boolean";
+      if (change === "nullable_key") child.columns.find(column => column.name === "parent_id")!.nullable = true;
+      if (change === "unvalidated_fk") child.foreign_keys[0]!.action_rule_issue = "unvalidated_foreign_key";
+      if (change === "nonunique_tuple") f.inspection.tables[0]!.unique_constraints = [];
       expect(() => policyCoverageDraft(input(f))).toThrow("POLICY_RLS_EVIDENCE_STALE");
       refresh(f);
       // Updating a source lock alone is not revalidation of its retained private catalog.
@@ -147,6 +173,7 @@ describe("digest-bound inspected RLS policy evidence", () => {
       action.loaded.authority.rules[0]!.read_boundary_digest = explorationBoundaryCandidateDigest(f.read);
       expect(policyCoverageDraft(input(f)).runner_evidence.actions[outcome]!.scoped_bindings.private_rows!.database_scope_proof).toBeNull();
     });
+  });
 
   it("annotates RLS-only principal enforcement without projecting it or changing authority", () => {
     const current = input(), before = structuredClone(current), draft = policyCoverageDraft(current);

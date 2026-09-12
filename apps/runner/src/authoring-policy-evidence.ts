@@ -10,7 +10,7 @@ import { policySourceConstraintEvidence, type PolicySourceInspection } from "./a
 import { rolePostureFingerprint, schemaFingerprintForInspection } from "@synapsor-runner/schema-inspector";
 import { actionRuleRelationshipPairs, normalizeActionRuleCatalog, type ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import { inspectedPostgresScopeMapping } from "./inspected-scope-mapping.js";
-import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
+import { actionRuleRelationshipsForTable, buildActionRuleAuthoringCatalog, uniqueKey } from "./action-rule-authoring.js";
 import { parseReviewedActionVersionFields, type ReviewedActionVersionField } from "./action-rule-authoring-checkpoint.js";
 import { prepareActionVersionField } from "./action-rule-version-review.js";
 import { preparePrivateActionSource } from "./action-rule-resource-review.js";
@@ -173,7 +173,7 @@ export function policyCoverageDraft(input: {
     let proof = readScopes.get(binding.resource);
     // Private verification does not need public Read admission. Recheck only
     // the already-compiled link and exact child scope through existing validators.
-    if (!proof && resource.verification_only && input.source && binding.source.kind === "relationship"
+    if (!proof && input.source && binding.source.kind === "relationship"
       && binding.source.direction === "inverse" && !input.read.pack.resources.some(entry => entry.id === resource.name)) {
       const source = binding.source;
       const parents = action.verification_boundary.resources.filter(entry => entry.binding === source.from_binding);
@@ -195,12 +195,35 @@ export function policyCoverageDraft(input: {
             === canonicalJsonDigest(saved.resources.find(entry => entry.name === name)))
             || canonicalJsonDigest(current.relationships.find(entry => entry.name === source.relationship))
               !== canonicalJsonDigest(saved.relationships.find(entry => entry.name === source.relationship))) return null;
-          const prepared = preparePrivateActionSource({ built, boundary: input.read, inspection: input.source.inspection,
-            resource: resource.name, parentResource: parent.resource });
+          const children = input.source.inspection.tables.filter(table => `${table.schema}.${table.name}` === resource.name);
+          const parents = input.source.inspection.tables.filter(table => `${table.schema}.${table.name}` === parent.resource);
+          const childTable = children.length === 1 ? children[0] : undefined, parentTable = parents.length === 1 ? parents[0] : undefined;
+          if (!childTable || !parentTable || childTable.type !== "table" || parentTable.type !== "table"
+            || !uniqueKey(childTable, [resource.primary_key]) || !uniqueKey(parentTable, [parent.primary_key])
+            || new Set(childTable.foreign_keys.map(key => key.name)).size !== childTable.foreign_keys.length) return null;
+          const candidates = actionRuleRelationshipsForTable(childTable,
+            new Map([[resource.name, childTable], [parent.resource, parentTable]]), new Set([resource.name, parent.resource]), [])
+            .filter(candidate => {
+              const pairs = actionRuleRelationshipPairs(candidate);
+              return candidate.to_resource === parent.resource && candidate.target_unique && !candidate.nullable
+                && !childTable.foreign_keys.find(key => key.name === candidate.name)?.deferrable
+                && pairs.some(pair => pair.local_field === resource.tenant_key && pair.target_field === parentProof.tenant.field)
+                && pairs.some(pair => pair.local_field === resource.principal_scope_key && pair.target_field === parentProof.principal.field)
+                && pairs.every(pair => parentTable.columns.find(column => column.name === pair.target_field)?.nullable === false);
+            });
+          if (candidates.length !== 1 || canonicalJsonDigest(candidates[0]) !== canonicalJsonDigest(link)) return null;
+          // A retained Action catalog may predate narrowing public Read access.
+          // Its already-compiled binding can have RLS evidence without changing
+          // purpose or fabricating the separate private-source consent record.
+          if (resource.verification_only) {
+            const prepared = preparePrivateActionSource({ built, boundary: input.read, inspection: input.source.inspection,
+              resource: resource.name, parentResource: parent.resource });
+            if (prepared.review.relationship !== source.relationship) return null;
+          }
           const mapping = resource.tenant_key && inspectedPostgresScopeMapping({ inspection: input.source.inspection,
             resource: { schema: resource.schema, table: resource.table, fields: resource.fields.map(field => field.name) },
             tenantField: resource.tenant_key, tenantSetting: parentProof.tenant.setting, principalSetting: parentProof.principal.setting });
-          if (mapping && prepared.review.relationship === source.relationship && resource.principal_scope_key === mapping.principal.field) {
+          if (mapping && resource.principal_scope_key === mapping.principal.field) {
             proof = { ...parentProof, resource: resource.name, schema: resource.schema, table: resource.table,
               tenant: mapping.tenant, principal: mapping.principal, policy_fingerprint: mapping.policy_fingerprint,
               policy_count: mapping.policy_names.length };
