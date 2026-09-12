@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveRuntimeConfig, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { activeProjectResolutionState, runnerConfigPath, resolvedRuntimeStorePath, resolvedLocalStorePath } from "./cli-project.js";
-import { optionalArg } from "./cli-options.js";
+import { normalizeCliArgv, optionalArg } from "./cli-options.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
 import { inspectProjectControlPolicyTargets } from "./control-policy-store.js";
 
@@ -20,7 +20,11 @@ export async function inspectQualificationStorage(args: string[]): Promise<Quali
   if (args.includes("--secrets-provider")) throw refused("Resolve managed secrets before entering the isolated test environment.");
   const previous = activeProjectResolutionState.current;
   try {
-    activeProjectResolutionState.current = optionalArg(args, "--config") ? undefined
+    const [command, subcommand] = normalizeCliArgv(args);
+    // Fresh setup does not inherit cli.ts's runtime project discovery. Looking
+    // up a parent here can falsely reject an otherwise isolated empty project.
+    const freshSetup = command === "start" || (command === "onboard" && subcommand === "db");
+    activeProjectResolutionState.current = optionalArg(args, "--config") || freshSetup ? undefined
       : await resolveSynapsorProject(process.cwd(), process.env);
     const configPath = path.resolve(runnerConfigPath(args));
     let config: RuntimeConfig = {} as RuntimeConfig;

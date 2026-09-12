@@ -60,6 +60,17 @@ sandboxTest('same logical project binds the entire owned directory including SQL
   assert.equal(await fs.readFile(path.join(f.original, 'ledger.db'), 'utf8'), 'sentinel');
   assert.deepEqual(await fs.readdir(f.original), ['ledger.db']);
 });
+sandboxTest('retains read-only resolver contents without exposing control sockets', async () => {
+  const f = await fixture();
+  const expected = await fs.readFile('/etc/resolv.conf', 'utf8');
+  const code = `const fs=require('node:fs'),assert=require('node:assert/strict');
+    assert.equal(fs.readFileSync('/etc/resolv.conf','utf8'),${JSON.stringify(expected)});
+    assert.throws(()=>fs.writeFileSync('/etc/resolv.conf','bad'),e=>e.code==='EROFS');
+    assert.equal(fs.existsSync('/run/docker.sock'),false);
+    assert.equal(fs.existsSync('/run/systemd/resolve/io.systemd.Resolve'),false);
+    console.log('resolver preserved, control sockets hidden');`;
+  assert.equal(await run(f, code), 'resolver preserved, control sockets hidden');
+});
 sandboxTest('refuses a writable source outside the declared owner and a client HOME outside the run', async () => {
   const f = await fixture();
   await assert.rejects(qualificationSandboxArguments({ ownedRoot: f.owned, mounts: [{ logical: f.copy, physical: f.original }], cwd: f.copy, home: f.home }), /must be owned/);

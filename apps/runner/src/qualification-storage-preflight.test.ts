@@ -30,6 +30,32 @@ async function fixture() {
 }
 
 describe("qualification storage preflight before writable opens", () => {
+  it.each([["start"], ["onboard", "db"], ["synapsor-runner", "start"]])("keeps fresh setup local despite a discoverable parent config: %j", async (...args) => {
+    const f = await fixture();
+    const child = path.join(f.owned, "fresh");
+    await fs.mkdir(child);
+    process.chdir(child);
+    const inspection = await inspectQualificationStorage(args);
+    expect(inspection.config_path).toBe(path.join(child, "synapsor.runner.json"));
+    expect(inspection.project_roots).toEqual([child]);
+    await assertQualificationStorageOwned({ inspection, mounts: [{ logical: child, physical: child }] });
+    expect(await fs.readdir(child)).toEqual([]);
+  });
+  it("still detects runtime parent discovery before any writable open", async () => {
+    const f = await fixture();
+    const child = path.join(f.owned, "fresh");
+    await fs.mkdir(child);
+    process.chdir(child);
+    const inspection = await inspectQualificationStorage(["mcp", "serve"]);
+    expect(inspection.config_path).toBe(path.join(f.owned, "synapsor.runner.json"));
+    await expect(assertQualificationStorageOwned({ inspection, mounts: [{ logical: child, physical: child }] })).rejects.toMatchObject({ code: "QUALIFICATION_STORAGE_NOT_ISOLATED" });
+    expect(await fs.readdir(child)).toEqual([]);
+  });
+  it("does not let fresh setup hide an explicit unowned config", async () => {
+    const f = await fixture();
+    vi.stubEnv("SYNAPSOR_RUNNER_CONFIG", path.join(f.original, "selected.json"));
+    await expect(assertQualificationStorageOwned({ inspection: await inspectQualificationStorage(["start"]), mounts: [f.mount] })).rejects.toMatchObject({ code: "QUALIFICATION_STORAGE_NOT_ISOLATED" });
+  });
   it("finds the absolute governed locator even when public config selects a copied local store", async () => {
     const f = await fixture(), target = path.join(f.original, "local.db");
     await f.manifest({ kind: "sqlite", path: target });

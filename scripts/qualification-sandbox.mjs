@@ -32,10 +32,16 @@ export async function qualificationSandboxArguments({ ownedRoot, mounts = [], cw
   assert(writable.some(mount => contains(mount.logical, work)), 'Working directory must be in an owned mount');
   assert(contains(root, userHome), 'Client HOME must be owned by this run');
   assert((await fs.stat(userHome)).isDirectory());
+  // Preserve DNS without exposing /run's control sockets. On systemd hosts
+  // /etc/resolv.conf is a symlink into the otherwise private /run mount.
+  const resolver = await fs.realpath('/etc/resolv.conf');
+  assert((await fs.stat(resolver)).isFile(), 'Resolver must be a regular file');
+  const resolverMount = contains('/run', resolver) ? ['--ro-bind', resolver, resolver] : [];
   return [
     '--ro-bind', '/', '/', '--unshare-user', '--unshare-pid', '--unshare-ipc',
     '--disable-userns', '--cap-drop', 'ALL', '--die-with-parent',
     '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--tmpfs', '/run',
+    ...resolverMount,
     ...writable.flatMap(mount => ['--bind', mount.physical, mount.logical]),
     '--setenv', 'HOME', userHome, '--setenv', 'TMPDIR', '/tmp',
     '--setenv', 'XDG_CONFIG_HOME', path.join(userHome, '.config'),
