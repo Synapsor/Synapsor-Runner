@@ -1,0 +1,26 @@
+{
+  "created_at": "2026-09-12T22:54:34.769Z",
+  "case": "main",
+  "owned": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main",
+  "project": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/project",
+  "logical": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/isolation-final-5e3e78b/insurance-fresh/project",
+  "database": "insurance_stagea_main",
+  "container": "synapsor-stagea-2f2ec662",
+  "artifact_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/frozen",
+  "artifact_tree": "c4300519538be9cb2befd08b8d99b0b897a33801cbd57f48cf4f088ea417e10e",
+  "original_hashes": {
+    "original-policy.txt": "31cf8412c3cde34fa57341762ddb878c427d2363e1c0a53435e40ee3a5607875",
+    "original-schema.sql": "54e8debabb1493534bcb5153e0b7b208a2fb31623994b6cf411efc055078876a",
+    "fixture-rows.mjs": "7f814d80cab9ced868f3cfd9686af9f21ebea00e445a47183887f458041f988e"
+  },
+  "original_rows_preserved": 40,
+  "additions": {
+    "portfolios": [],
+    "claims": []
+  },
+  "writer_handoff": {
+    "grants.sql": "f890047c7dce500dfab80745f23bb9634d59c8b2675f88ebd057ebf3a686fc00",
+    "scoped-policies.sql": "e42879d6d301b234055d52fc12703b986b481ebe4656c6fd22f5728f6814d7ca"
+  },
+  "role_creation_omitted_because_task_fixture_role_already_exists": false
+}

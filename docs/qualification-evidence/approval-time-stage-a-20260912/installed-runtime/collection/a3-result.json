@@ -1,0 +1,225 @@
+{
+  "case": "A3 complete portfolio collection and owned source transaction",
+  "status": "pass_observed_source_coordination",
+  "requests": [
+    {
+      "ok": true,
+      "outcome": "reserve_ops.adjust_claim_reserve",
+      "status": "pending_human_review",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Adjust claim reserve",
+        "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+        "fields": [
+          "reserve_cents"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "pending_human_review",
+        "execution": "human_review"
+      },
+      "proposal": {
+        "status": "pending_review",
+        "approval": "human review required"
+      },
+      "execution": "human_review",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": false,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    {
+      "ok": true,
+      "outcome": "reserve_ops.adjust_claim_reserve",
+      "status": "pending_human_review",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Adjust claim reserve",
+        "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+        "fields": [
+          "reserve_cents"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "pending_human_review",
+        "execution": "human_review"
+      },
+      "proposal": {
+        "status": "pending_review",
+        "approval": "human review required"
+      },
+      "execution": "human_review",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": false,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    }
+  ],
+  "proposal_ids": [
+    "wrp_rule_35489bf4db0e6b104947f81c205df048",
+    "wrp_rule_fec497d688f03d536f2edf03d30ca991"
+  ],
+  "human": [
+    {
+      "code": 0,
+      "signal": null,
+      "stdout": "Proposal details: wrp_rule_35489bf4db0e6b104947f81c205df048\n\nReview details:\nprincipal: b0000000-0000-4000-8000-000000000002 (environment)\ntenant: b0000000-0000-4000-8000-000000000001\ntarget: external_postgres:local_postgres/reserve_ops.claims/b0000000-0000-4000-8000-000000000401\nprimary key: claim_id=b0000000-0000-4000-8000-000000000401\nstatus: pending_review\naction: reserve_ops.adjust_claim_reserve\napproval: pending required role insurance_supervisor\nproposal hash: sha256:53a13d1fa2b824e9821bfaa5aea481a8b1a52f065edc6a3edf089c9b1e61c0f2\nproposal version: 1\nallowed columns: reserve_cents\nconflict guard: version=1\nevidence: ev_rule_35489bf4db0e6b104947f81c205df048  query sha256:4579034b0ae44951eae5aba6d8a8d67edb512d30eac868e20775d0cfc213ca15  items 1\nwriteback: not_applied via trusted_worker_required\nsource database changed: no\n\nDiff:\n  reserve_cents: not observed (not read) -> 60000\nFreshness: not required (legacy target guard remains enforced at apply).\napproved wrp_rule_35489bf4db0e6b104947f81c205df048 (1/1)\nqueued for separately trusted supervised execution under sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440\n",
+      "stderr": "{\"timestamp\":\"2026-09-12T23:04:29.398Z\",\"level\":\"info\",\"event\":\"operator_decision\",\"action\":\"approve\",\"proposal_id\":\"wrp_rule_35489bf4db0e6b104947f81c205df048\",\"capability\":\"reserve_ops.adjust_claim_reserve\",\"tenant\":\"b0000000-0000-4000-8000-000000000001\",\"subject\":\"local_operator\",\"identity_provider\":\"dev_env\",\"identity_verified\":false,\"required_role\":\"insurance_supervisor\",\"approval_progress\":\"1/1\",\"freshness_status\":\"not_required\"}\n"
+    },
+    {
+      "code": 0,
+      "signal": null,
+      "stdout": "Proposal details: wrp_rule_fec497d688f03d536f2edf03d30ca991\n\nReview details:\nprincipal: b0000000-0000-4000-8000-000000000002 (environment)\ntenant: b0000000-0000-4000-8000-000000000001\ntarget: external_postgres:local_postgres/reserve_ops.claims/b0000000-0000-4000-8000-000000000402\nprimary key: claim_id=b0000000-0000-4000-8000-000000000402\nstatus: pending_review\naction: reserve_ops.adjust_claim_reserve\napproval: pending required role insurance_supervisor\nproposal hash: sha256:db0952203dc9ba7363f0524f5b71ab9f565c055a0624b2a8f9275b06922de37f\nproposal version: 1\nallowed columns: reserve_cents\nconflict guard: version=1\nevidence: ev_rule_fec497d688f03d536f2edf03d30ca991  query sha256:1bb61ca9fc6f1795c64ba8aa7d8dfa510b147cca0a8d56e83b715b9e17df2ab9  items 1\nwriteback: not_applied via trusted_worker_required\nsource database changed: no\n\nDiff:\n  reserve_cents: not observed (not read) -> 60000\nFreshness: not required (legacy target guard remains enforced at apply).\napproved wrp_rule_fec497d688f03d536f2edf03d30ca991 (1/1)\nqueued for separately trusted supervised execution under sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440\n",
+      "stderr": "{\"timestamp\":\"2026-09-12T23:04:31.067Z\",\"level\":\"info\",\"event\":\"operator_decision\",\"action\":\"approve\",\"proposal_id\":\"wrp_rule_fec497d688f03d536f2edf03d30ca991\",\"capability\":\"reserve_ops.adjust_claim_reserve\",\"tenant\":\"b0000000-0000-4000-8000-000000000001\",\"subject\":\"local_operator\",\"identity_provider\":\"dev_env\",\"identity_verified\":false,\"required_role\":\"insurance_supervisor\",\"approval_progress\":\"1/1\",\"freshness_status\":\"not_required\"}\n"
+    }
+  ],
+  "first_source_wait": [
+    {
+      "pid": 434,
+      "usename": "runner_writer_639afbe3356e",
+      "application_name": "",
+      "state": "active",
+      "wait_event_type": "Lock",
+      "wait_event": "transactionid",
+      "blockers": [
+        429
+      ]
+    }
+  ],
+  "workers": [
+    {
+      "code": 0,
+      "signal": null,
+      "stdout": "",
+      "stderr": "{\"timestamp\":\"2026-09-12T23:04:35.416Z\",\"level\":\"info\",\"event\":\"operator_decision\",\"action\":\"apply\",\"proposal_id\":\"wrp_rule_35489bf4db0e6b104947f81c205df048\",\"capability\":\"reserve_ops.adjust_claim_reserve\",\"tenant\":\"b0000000-0000-4000-8000-000000000001\",\"subject\":\"local_operator\",\"identity_provider\":\"dev_env\",\"identity_verified\":false}\n{\"timestamp\":\"2026-09-12T23:04:37.040Z\",\"level\":\"info\",\"event\":\"writeback_outcome\",\"proposal_id\":\"wrp_rule_35489bf4db0e6b104947f81c205df048\",\"capability\":\"reserve_ops.adjust_claim_reserve\",\"tenant\":\"b0000000-0000-4000-8000-000000000001\",\"runner_id\":\"semantic_action_worker\",\"executor\":\"sql_update\",\"status\":\"applied\",\"rows_affected\":1,\"receipt_hash\":\"sha256:747e75af495810df896e0d020fc2ce32d5361714e820424f5e38de5d865ccde8\",\"dry_run\":false,\"source_database_changed\":true}\n{\"timestamp\":\"2026-09-12T23:04:37.659Z\",\"level\":\"info\",\"event\":\"worker_item_completed\",\"proposal_id\":\"wrp_rule_35489bf4db0e6b104947f81c205df048\",\"worker_id\":\"semantic_action_worker\",\"status\":\"applied\",\"attempt\":1}\n"
+    },
+    {
+      "code": 0,
+      "signal": null,
+      "stdout": "",
+      "stderr": "{\"timestamp\":\"2026-09-12T23:04:40.022Z\",\"level\":\"info\",\"event\":\"operator_decision\",\"action\":\"apply\",\"proposal_id\":\"wrp_rule_fec497d688f03d536f2edf03d30ca991\",\"capability\":\"reserve_ops.adjust_claim_reserve\",\"tenant\":\"b0000000-0000-4000-8000-000000000001\",\"subject\":\"local_operator\",\"identity_provider\":\"dev_env\",\"identity_verified\":false}\n{\"timestamp\":\"2026-09-12T23:04:41.953Z\",\"level\":\"error\",\"event\":\"writeback_outcome\",\"proposal_id\":\"wrp_rule_fec497d688f03d536f2edf03d30ca991\",\"capability\":\"reserve_ops.adjust_claim_reserve\",\"tenant\":\"b0000000-0000-4000-8000-000000000001\",\"runner_id\":\"semantic_action_worker\",\"executor\":\"sql_update\",\"status\":\"failed\",\"rows_affected\":0,\"error_code\":\"SEMANTIC_AUTHORITY_STALE\",\"receipt_hash\":\"sha256:74d3f7446e996276b5955674bff91a2ea21f54d4fb269c77be5c70841b84f750\",\"dry_run\":false,\"source_database_changed\":false}\n{\"timestamp\":\"2026-09-12T23:04:43.019Z\",\"level\":\"warn\",\"event\":\"worker_item_blocked\",\"proposal_id\":\"wrp_rule_fec497d688f03d536f2edf03d30ca991\",\"worker_id\":\"semantic_action_worker\",\"error_code\":\"SEMANTIC_AUTHORITY_STALE\",\"attempt\":1}\n"
+    }
+  ],
+  "collection_receipts": [
+    {
+      "receipt_id": 2,
+      "writeback_job_id": "wbj_wrp_rule_35489bf4db0e6b104947f81c205df048",
+      "proposal_id": "wrp_rule_35489bf4db0e6b104947f81c205df048",
+      "runner_id": "local-runner",
+      "status": "applied",
+      "idempotency_key": "semantic:wrp_rule_35489bf4db0e6b104947f81c205df048",
+      "source_database_mutated": 1,
+      "receipt_json": "{\"schema_version\":\"synapsor.execution-receipt.v5\",\"writeback_job_id\":\"wbj_wrp_rule_35489bf4db0e6b104947f81c205df048\",\"proposal_id\":\"wrp_rule_35489bf4db0e6b104947f81c205df048\",\"proposal_hash\":\"sha256:53a13d1fa2b824e9821bfaa5aea481a8b1a52f065edc6a3edf089c9b1e61c0f2\",\"approval_id\":\"sha256:b28e0788852a9b6845c3505a847f24aa305a9d496c3ae14021f59d4b82d3fb21\",\"runner_id\":\"local-runner\",\"operation\":\"single_row_update\",\"receipt_authority\":\"runner_ledger\",\"status\":\"applied\",\"target\":{\"source_id\":\"local_postgres\",\"schema\":\"reserve_ops\",\"table\":\"claims\",\"identity\":[{\"column\":\"claim_id\",\"value\":\"b0000000-0000-4000-8000-000000000401\"}]},\"rows_affected\":1,\"idempotency_key\":\"semantic:wrp_rule_35489bf4db0e6b104947f81c205df048\",\"before_digest\":\"sha256:9d9ff6322a19ce2dc040d19c4aa3442596b5437ff6eba10889fd2205c1816fea\",\"after_digest\":\"sha256:bcd0a9c51826284f393ef8106b72fb47608421e433458237af94dff690359249\",\"semantic_verification\":{\"status\":\"reverified\",\"proof_digest\":\"sha256:e9b332ad20c2723ba4401ae716e6ed29358509921d33f38a35d322f3d4b3f5a5\",\"action_rule_digest\":\"sha256:6f04fbe35b17fc18c1f2f8b9293eccde6f1b165aa528217078fddeb9b5ef2efc\",\"compiled_plan_digest\":\"sha256:9af402fb0810515374476962e33abb52a91ffa44f646d0cb7b6453bc1ed31a7c\",\"proposal_dependency_set_digest\":\"sha256:ba1f93b43607b9aa5b47f7505d90e3ab34e64f1170f4813a628818502abf59cc\",\"dependency_set_digest\":\"sha256:ba1f93b43607b9aa5b47f7505d90e3ab34e64f1170f4813a628818502abf59cc\",\"effect_digest\":\"sha256:99db2f52d2b752c0b063dcb931089724662e182c171613b3253bbfb5a74cc56e\",\"checked_at\":\"2026-09-12T23:04:36.846Z\"},\"source_database_mutated\":true,\"safe_outcome_code\":\"APPLIED\",\"executed_at\":\"2026-09-12T23:04:36.963Z\",\"receipt_hash\":\"sha256:02981c85acc747708128dd095e289745a25dd7f00c4907eda2238d06441c25ee\"}",
+      "created_at": "2026-09-12T23:04:36.963Z"
+    },
+    {
+      "receipt_id": 3,
+      "writeback_job_id": "wbj_wrp_rule_fec497d688f03d536f2edf03d30ca991",
+      "proposal_id": "wrp_rule_fec497d688f03d536f2edf03d30ca991",
+      "runner_id": "local-runner",
+      "status": "failed",
+      "idempotency_key": "semantic:wrp_rule_fec497d688f03d536f2edf03d30ca991",
+      "source_database_mutated": 0,
+      "receipt_json": "{\"schema_version\":\"synapsor.execution-receipt.v5\",\"writeback_job_id\":\"wbj_wrp_rule_fec497d688f03d536f2edf03d30ca991\",\"proposal_id\":\"wrp_rule_fec497d688f03d536f2edf03d30ca991\",\"proposal_hash\":\"sha256:db0952203dc9ba7363f0524f5b71ab9f565c055a0624b2a8f9275b06922de37f\",\"approval_id\":\"sha256:05cd1cb57fb481e2efbcc079fd3e7dc17f5b1c422d213f0b0e7ea7eea5506768\",\"runner_id\":\"local-runner\",\"operation\":\"single_row_update\",\"receipt_authority\":\"runner_ledger\",\"status\":\"failed\",\"target\":{\"source_id\":\"local_postgres\",\"schema\":\"reserve_ops\",\"table\":\"claims\",\"identity\":[{\"column\":\"claim_id\",\"value\":\"b0000000-0000-4000-8000-000000000402\"}]},\"rows_affected\":0,\"idempotency_key\":\"semantic:wrp_rule_fec497d688f03d536f2edf03d30ca991\",\"semantic_verification\":{\"status\":\"refused\",\"proof_digest\":\"sha256:f77321f611c043c9f904875cd5e68af8b76d275892dfdeab1664396d66861bad\",\"action_rule_digest\":\"sha256:6f04fbe35b17fc18c1f2f8b9293eccde6f1b165aa528217078fddeb9b5ef2efc\",\"compiled_plan_digest\":\"sha256:9af402fb0810515374476962e33abb52a91ffa44f646d0cb7b6453bc1ed31a7c\",\"proposal_dependency_set_digest\":\"sha256:5c29c904ca0956f13f94c7e3918c114e6337249b80dabedf713230ed23861262\",\"effect_digest\":\"sha256:92ad022633dbdbde3e81d975c34ec31a8450c3d678d89a627d9362fc8784491a\"},\"source_database_mutated\":false,\"safe_outcome_code\":\"FAILED\",\"safe_error_code\":\"SEMANTIC_AUTHORITY_STALE\",\"executed_at\":\"2026-09-12T23:04:41.839Z\",\"receipt_hash\":\"sha256:7c5810e678c43baadc360eb58759c04eae27192e496a6aa14d1353f6bc26eb44\"}",
+      "created_at": "2026-09-12T23:04:41.839Z"
+    }
+  ],
+  "external_request": {
+    "ok": true,
+    "outcome": "reserve_ops.adjust_claim_reserve",
+    "status": "approved_pending_execution",
+    "request_disposition": "created",
+    "status_check": {
+      "tool": "app.request_change",
+      "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+      "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+    },
+    "result_summary": {
+      "description": "Adjust claim reserve",
+      "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+      "fields": [
+        "reserve_cents"
+      ],
+      "values_disclosed": false
+    },
+    "authorization": {
+      "eligibility": "verified",
+      "approval": "automatic",
+      "execution": "queued"
+    },
+    "proposal": {
+      "status": "approved",
+      "approval": "automatically approved; apply remains a separate authority"
+    },
+    "execution": "queued",
+    "eligibility": "verified from current authoritative facts",
+    "exact_effect": "Runner-derived and sealed in the operator proposal record",
+    "source_database_changed": false,
+    "model_authority": {
+      "supplied_outcome_and_opaque_subjects_only": false,
+      "supplied_only_reviewed_business_inputs": true,
+      "supplied_patch": false,
+      "approval": false,
+      "apply": false
+    }
+  },
+  "external_proposal_id": "wrp_rule_c66d984ae537721bd82a6285e64d2216",
+  "external_source_wait": [
+    {
+      "pid": 445,
+      "usename": "runner_writer_639afbe3356e",
+      "application_name": "",
+      "state": "active",
+      "wait_event_type": "Lock",
+      "wait_event": "transactionid",
+      "blockers": [
+        441
+      ]
+    }
+  ],
+  "external_worker": {
+    "code": 0,
+    "signal": null,
+    "stdout": "",
+    "stderr": "{\"timestamp\":\"2026-09-12T23:04:46.523Z\",\"level\":\"info\",\"event\":\"operator_decision\",\"action\":\"apply\",\"proposal_id\":\"wrp_rule_c66d984ae537721bd82a6285e64d2216\",\"capability\":\"reserve_ops.adjust_claim_reserve\",\"tenant\":\"b0000000-0000-4000-8000-000000000001\",\"subject\":\"local_operator\",\"identity_provider\":\"dev_env\",\"identity_verified\":false}\n{\"timestamp\":\"2026-09-12T23:04:48.202Z\",\"level\":\"error\",\"event\":\"writeback_outcome\",\"proposal_id\":\"wrp_rule_c66d984ae537721bd82a6285e64d2216\",\"capability\":\"reserve_ops.adjust_claim_reserve\",\"tenant\":\"b0000000-0000-4000-8000-000000000001\",\"runner_id\":\"semantic_action_worker\",\"executor\":\"sql_update\",\"status\":\"failed\",\"rows_affected\":0,\"error_code\":\"SEMANTIC_AUTHORITY_STALE\",\"receipt_hash\":\"sha256:8b3527a51e83dda3e417132a354a370b55b1f3bdd73519e5636ca9a12cddd690\",\"dry_run\":false,\"source_database_changed\":false}\n{\"timestamp\":\"2026-09-12T23:04:48.864Z\",\"level\":\"warn\",\"event\":\"worker_item_blocked\",\"proposal_id\":\"wrp_rule_c66d984ae537721bd82a6285e64d2216\",\"worker_id\":\"semantic_action_worker\",\"error_code\":\"SEMANTIC_AUTHORITY_STALE\",\"attempt\":1}\n"
+  },
+  "external_receipts": [
+    {
+      "receipt_id": 4,
+      "writeback_job_id": "wbj_wrp_rule_c66d984ae537721bd82a6285e64d2216",
+      "proposal_id": "wrp_rule_c66d984ae537721bd82a6285e64d2216",
+      "runner_id": "local-runner",
+      "status": "failed",
+      "idempotency_key": "semantic:wrp_rule_c66d984ae537721bd82a6285e64d2216",
+      "source_database_mutated": 0,
+      "receipt_json": "{\"schema_version\":\"synapsor.execution-receipt.v5\",\"writeback_job_id\":\"wbj_wrp_rule_c66d984ae537721bd82a6285e64d2216\",\"proposal_id\":\"wrp_rule_c66d984ae537721bd82a6285e64d2216\",\"proposal_hash\":\"sha256:cc9dc4ce0d5f07571ffd8f73c425ac30de1401850ed5753f7bd16b7c32ffc58f\",\"approval_id\":\"sha256:b5a3df3e399c28d4222e89eeb8780537e531f27864307eb51a0b8fbfbdb2c398\",\"runner_id\":\"local-runner\",\"operation\":\"single_row_update\",\"receipt_authority\":\"runner_ledger\",\"status\":\"failed\",\"target\":{\"source_id\":\"local_postgres\",\"schema\":\"reserve_ops\",\"table\":\"claims\",\"identity\":[{\"column\":\"claim_id\",\"value\":\"b0000000-0000-4000-8000-000000000501\"}]},\"rows_affected\":0,\"idempotency_key\":\"semantic:wrp_rule_c66d984ae537721bd82a6285e64d2216\",\"semantic_verification\":{\"status\":\"refused\",\"proof_digest\":\"sha256:9e0dac3540ccd8a753d62d26b4cdfb16279a3cfae6d65a1ec5f8cc511abe8f6e\",\"action_rule_digest\":\"sha256:6f04fbe35b17fc18c1f2f8b9293eccde6f1b165aa528217078fddeb9b5ef2efc\",\"compiled_plan_digest\":\"sha256:9af402fb0810515374476962e33abb52a91ffa44f646d0cb7b6453bc1ed31a7c\",\"proposal_dependency_set_digest\":\"sha256:852356b4d96b6e69c3da0adad69678a3c8f49197c0716f4006ae400d81ce85e0\",\"effect_digest\":\"sha256:86ba131274399d4598e3f2d369fc402d99b6977883f6fbcfbfb89b64f948361c\"},\"source_database_mutated\":false,\"safe_outcome_code\":\"FAILED\",\"safe_error_code\":\"SEMANTIC_AUTHORITY_STALE\",\"executed_at\":\"2026-09-12T23:04:48.131Z\",\"receipt_hash\":\"sha256:8d0762b6c96d330c0b40e23c6828b116d67c105d8117a6c070dfe91f24022123\"}",
+      "created_at": "2026-09-12T23:04:48.131Z"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "status": "pass_readonly_saved_evidence_analysis",
+  "application_schedule_rerun": false,
+  "vacuous_assertion": "Both public proposal_id fields omitted; equality itself is not evidence",
+  "durable_proposal_id": "wrp_rule_d320d306f5f065fe7c17aa1ea9a8a1d8",
+  "canonical_stored_receipt_hash": "sha256:3727ab7947f5a5e0e2fe01e3bcc2a58ae5b64200be5d07d17afa5fa97d584ba0",
+  "dispositions": [
+    "created",
+    "already_recorded"
+  ],
+  "independent_counts": {
+    "new_proposals": 1,
+    "new_approvals": 1,
+    "new_queue": 1,
+    "new_receipts": 1,
+    "new_source_effects": 1
+  },
+  "restart_durable_records_unchanged": true
+}

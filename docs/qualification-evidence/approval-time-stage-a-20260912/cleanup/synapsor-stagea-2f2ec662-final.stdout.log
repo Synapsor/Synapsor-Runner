@@ -1,0 +1,48 @@
+2026-09-12T22:08:04.775742823Z The files belonging to this database system will be owned by user "postgres".
+2026-09-12T22:08:04.775803806Z This user must also own the server process.
+2026-09-12T22:08:04.775810747Z 
+2026-09-12T22:08:04.775815463Z The database cluster will be initialized with locale "en_US.utf8".
+2026-09-12T22:08:04.775820540Z The default database encoding has accordingly been set to "UTF8".
+2026-09-12T22:08:04.775825859Z The default text search configuration will be set to "english".
+2026-09-12T22:08:04.775830822Z 
+2026-09-12T22:08:04.775835078Z Data page checksums are disabled.
+2026-09-12T22:08:04.775840192Z 
+2026-09-12T22:08:04.775844473Z fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-09-12T22:08:04.776705010Z creating subdirectories ... ok
+2026-09-12T22:08:04.776887806Z selecting dynamic shared memory implementation ... posix
+2026-09-12T22:08:04.809509097Z selecting default "max_connections" ... 100
+2026-09-12T22:08:04.867246132Z selecting default "shared_buffers" ... 128MB
+2026-09-12T22:08:04.885301897Z selecting default time zone ... Etc/UTC
+2026-09-12T22:08:04.885877189Z creating configuration files ... ok
+2026-09-12T22:08:05.004615992Z running bootstrap script ... ok
+2026-09-12T22:08:05.444181181Z performing post-bootstrap initialization ... ok
+2026-09-12T22:08:05.975574742Z syncing data to disk ... ok
+2026-09-12T22:08:05.975640366Z 
+2026-09-12T22:08:05.975654255Z 
+2026-09-12T22:08:05.975661312Z Success. You can now start the database server using:
+2026-09-12T22:08:05.975711862Z 
+2026-09-12T22:08:05.975732439Z     pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-09-12T22:08:05.975741553Z 
+2026-09-12T22:08:06.079323266Z waiting for server to start....2026-09-12 22:08:06.079 UTC [68] LOG:  starting PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-09-12T22:08:06.086010719Z 2026-09-12 22:08:06.085 UTC [68] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-09-12T22:08:06.109420927Z 2026-09-12 22:08:06.109 UTC [71] LOG:  database system was shut down at 2026-09-12 22:08:05 UTC
+2026-09-12T22:08:06.123537339Z 2026-09-12 22:08:06.123 UTC [68] LOG:  database system is ready to accept connections
+2026-09-12T22:08:06.133732089Z  done
+2026-09-12T22:08:06.133813840Z server started
+2026-09-12T22:08:06.415350582Z CREATE DATABASE
+2026-09-12T22:08:06.416436792Z 
+2026-09-12T22:08:06.416547285Z 
+2026-09-12T22:08:06.416573590Z /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+2026-09-12T22:08:06.416583589Z 
+2026-09-12T22:08:06.418079223Z waiting for server to shut down....2026-09-12 22:08:06.417 UTC [68] LOG:  received fast shutdown request
+2026-09-12T22:08:06.424687013Z 2026-09-12 22:08:06.424 UTC [68] LOG:  aborting any active transactions
+2026-09-12T22:08:06.426506294Z 2026-09-12 22:08:06.426 UTC [68] LOG:  background worker "logical replication launcher" (PID 74) exited with exit code 1
+2026-09-12T22:08:06.428037775Z 2026-09-12 22:08:06.427 UTC [69] LOG:  shutting down
+2026-09-12T22:08:06.434683190Z 2026-09-12 22:08:06.434 UTC [69] LOG:  checkpoint starting: shutdown immediate
+2026-09-12T22:08:07.040718733Z 2026-09-12 22:08:07.040 UTC [69] LOG:  checkpoint complete: wrote 925 buffers (5.6%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.035 s, sync=0.535 s, total=0.613 s; sync files=301, longest=0.008 s, average=0.002 s; distance=4256 kB, estimate=4256 kB; lsn=0/19158F0, redo lsn=0/19158F0
+2026-09-12T22:08:07.055201558Z 2026-09-12 22:08:07.054 UTC [68] LOG:  database system is shut down
+2026-09-12T22:08:07.119407265Z  done
+2026-09-12T22:08:07.119452998Z server stopped
+2026-09-12T22:08:07.122799840Z 
+2026-09-12T22:08:07.122839364Z PostgreSQL init process complete; ready for start up.
+2026-09-12T22:08:07.122848606Z 

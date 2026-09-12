@@ -1,0 +1,27 @@
+{
+  "at": "2026-09-12T23:16:02.859574+00:00",
+  "checks": [
+    {
+      "command": "node --check docs/qualification-evidence/approval-time-stage-a-20260912/a2-overall.mjs",
+      "exit": 0
+    },
+    {
+      "command": "node --check docs/qualification-evidence/approval-time-stage-a-20260912/a3-collections.mjs",
+      "exit": 0
+    },
+    {
+      "command": "node --check docs/qualification-evidence/approval-time-stage-a-20260912/a4-contexts.mjs",
+      "exit": 0
+    },
+    {
+      "command": "git -c core.whitespace=-blank-at-eof diff --cached --check -- :!*.log",
+      "exit": 0
+    }
+  ],
+  "all_report_links_resolve": true,
+  "copied_evidence_records": 94,
+  "copied_evidence_bytes": 39929750,
+  "evidence_copy_sha256_matches_original_saved_files": true,
+  "scope": "Syntax and evidence validation only; no completed or stopped runtime schedule rerun",
+  "credential_review": "No actual database user/password URLs or credential assignments found in newly copied runtime/cleanup files. Literal Docker help POSTGRES_PASSWORD=password and random token-like substrings inside opaque subject references distinguished; source evidence unchanged."
+}

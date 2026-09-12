@@ -1,0 +1,61 @@
+{
+  "status": "verified_two_legitimate_automatic_approvals",
+  "approvals": [
+    {
+      "approval": {
+        "approval_id": 1,
+        "proposal_id": "wrp_rule_16a8061421420d4cb6502db973fe2823",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:aba5a352b6cefd97c98d06f952f5218c56c3843f6d68dc01ed30aa4d2ebae0aa",
+        "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+        "status": "approved",
+        "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+        "identity_json": null,
+        "decision_hash": null,
+        "signature": null,
+        "integrity_hash": null,
+        "freshness_proof_digest": null,
+        "action_boundary_name": "reviewed_staging_actions",
+        "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+        "created_at": "2026-09-12T18:10:52.231Z"
+      },
+      "proposal_id": "wrp_rule_16a8061421420d4cb6502db973fe2823",
+      "tenant": "b0000000-0000-4000-8000-000000000001",
+      "object_id": "b0000000-0000-4000-8000-000000000101",
+      "proposal_state": "applied",
+      "canonical_receipt_hash": "sha256:c20d07f84547fd4b1c262f68de8c3fae0088f0103d4801f467f240998def10ff",
+      "provenance": "Original legitimate reviewed recovery request CL-101"
+    },
+    {
+      "approval": {
+        "approval_id": 2,
+        "proposal_id": "wrp_rule_d320d306f5f065fe7c17aa1ea9a8a1d8",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:61d89d9a5aabe3f6a5d4015b057c2bbf0cab9eb8827d232227b9372596b6ec59",
+        "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+        "status": "approved",
+        "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+        "identity_json": null,
+        "decision_hash": null,
+        "signature": null,
+        "integrity_hash": null,
+        "freshness_proof_digest": null,
+        "action_boundary_name": "reviewed_staging_actions",
+        "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+        "created_at": "2026-09-12T22:55:58.130Z"
+      },
+      "proposal_id": "wrp_rule_d320d306f5f065fe7c17aa1ea9a8a1d8",
+      "tenant": "b0000000-0000-4000-8000-000000000001",
+      "object_id": "b0000000-0000-4000-8000-000000000103",
+      "proposal_state": "applied",
+      "canonical_receipt_hash": "sha256:3727ab7947f5a5e0e2fe01e3bcc2a58ae5b64200be5d07d17afa5fa97d584ba0",
+      "provenance": "New installed A1 identical request CL-103, one ordinary automatic approval then supervised worker"
+    }
+  ],
+  "not_counted_as_approvals": [
+    "reservations",
+    "proposals",
+    "worker_queue entries",
+    "human approvals"
+  ]
+}

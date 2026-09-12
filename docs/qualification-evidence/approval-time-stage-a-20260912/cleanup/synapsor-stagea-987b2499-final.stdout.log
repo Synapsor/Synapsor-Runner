@@ -1,0 +1,32 @@
+2026-09-12T22:03:58.260078750Z The files belonging to this database system will be owned by user "postgres".
+2026-09-12T22:03:58.260140408Z This user must also own the server process.
+2026-09-12T22:03:58.260147980Z 
+2026-09-12T22:03:58.260171637Z The database cluster will be initialized with locale "en_US.utf8".
+2026-09-12T22:03:58.260177832Z The default database encoding has accordingly been set to "UTF8".
+2026-09-12T22:03:58.260183159Z The default text search configuration will be set to "english".
+2026-09-12T22:03:58.260188422Z 
+2026-09-12T22:03:58.260193708Z Data page checksums are disabled.
+2026-09-12T22:03:58.260265871Z 
+2026-09-12T22:03:58.260524986Z fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-09-12T22:03:58.262107642Z creating subdirectories ... ok
+2026-09-12T22:03:58.262364182Z selecting dynamic shared memory implementation ... posix
+2026-09-12T22:03:58.301660016Z selecting default "max_connections" ... 100
+2026-09-12T22:03:58.340138273Z selecting default "shared_buffers" ... 128MB
+2026-09-12T22:03:58.356815840Z selecting default time zone ... Etc/UTC
+2026-09-12T22:03:58.357380327Z creating configuration files ... ok
+2026-09-12T22:03:58.471840197Z running bootstrap script ... ok
+2026-09-12T22:03:58.938344119Z performing post-bootstrap initialization ... ok
+2026-09-12T22:03:59.494147789Z syncing data to disk ... ok
+2026-09-12T22:03:59.494208370Z 
+2026-09-12T22:03:59.494226890Z 
+2026-09-12T22:03:59.494310417Z Success. You can now start the database server using:
+2026-09-12T22:03:59.494321039Z 
+2026-09-12T22:03:59.494327854Z     pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-09-12T22:03:59.494334688Z 
+2026-09-12T22:03:59.615559840Z waiting for server to start....2026-09-12 22:03:59.615 UTC [49] LOG:  starting PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-09-12T22:03:59.622671660Z 2026-09-12 22:03:59.622 UTC [49] LOG:  listening on Unix socket "/qualification/.s.PGSQL.5432"
+2026-09-12T22:03:59.648551109Z 2026-09-12 22:03:59.648 UTC [52] LOG:  database system was shut down at 2026-09-12 22:03:58 UTC
+2026-09-12T22:03:59.663921454Z 2026-09-12 22:03:59.663 UTC [49] LOG:  database system is ready to accept connections
+2026-09-12T22:03:59.683398846Z 2026-09-12 22:03:59.683 UTC [56] FATAL:  database "synapsor_stage_a" does not exist
+2026-09-12T22:03:59.757646410Z  done
+2026-09-12T22:03:59.757703871Z server started

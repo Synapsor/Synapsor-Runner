@@ -1,0 +1,6 @@
+{
+  "original_attempt": "save-state-attempt1.py",
+  "error": "Arbitrary >1000 byte assertion rejected successful 724-byte empty integration database dump",
+  "verified": "pg_dump exit0 and complete footer; integration teardown already removed all user tables (count0)",
+  "correction": "Validate exit0 and dump complete marker; retain actual sizes, including empty final integration DB. No application tests rerun."
+}

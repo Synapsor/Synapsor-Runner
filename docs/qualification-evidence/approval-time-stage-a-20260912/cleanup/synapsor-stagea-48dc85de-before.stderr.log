@@ -1,0 +1,17 @@
+2026-09-12T22:02:25.076485923Z ********************************************************************************
+2026-09-12T22:02:25.076579808Z WARNING: POSTGRES_HOST_AUTH_METHOD has been set to "trust". This will allow
+2026-09-12T22:02:25.076593700Z          anyone with access to the Postgres port to access your database without
+2026-09-12T22:02:25.076602336Z          a password, even if POSTGRES_PASSWORD is set. See PostgreSQL
+2026-09-12T22:02:25.076609481Z          documentation about "trust":
+2026-09-12T22:02:25.076616966Z          https://www.postgresql.org/docs/current/auth-trust.html
+2026-09-12T22:02:25.076623838Z          In Docker's default configuration, this is effectively any other
+2026-09-12T22:02:25.076630455Z          container on the same system.
+2026-09-12T22:02:25.076637014Z 
+2026-09-12T22:02:25.076643293Z          It is not recommended to use POSTGRES_HOST_AUTH_METHOD=trust. Replace
+2026-09-12T22:02:25.076650014Z          it with "-e POSTGRES_PASSWORD=password" instead to set a password in
+2026-09-12T22:02:25.076657201Z          "docker run".
+2026-09-12T22:02:25.076664180Z ********************************************************************************
+2026-09-12T22:02:26.507539162Z initdb: warning: enabling "trust" authentication for local connections
+2026-09-12T22:02:26.507575023Z initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-09-12T22:02:26.859985409Z psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: No such file or directory
+2026-09-12T22:02:26.860052722Z 	Is the server running locally and accepting connections on that socket?

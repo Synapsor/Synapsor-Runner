@@ -1,0 +1,27 @@
+2026-09-12T22:08:04.726063474Z ********************************************************************************
+2026-09-12T22:08:04.726131317Z WARNING: POSTGRES_HOST_AUTH_METHOD has been set to "trust". This will allow
+2026-09-12T22:08:04.726140481Z          anyone with access to the Postgres port to access your database without
+2026-09-12T22:08:04.726145996Z          a password, even if POSTGRES_PASSWORD is set. See PostgreSQL
+2026-09-12T22:08:04.726150701Z          documentation about "trust":
+2026-09-12T22:08:04.726155702Z          https://www.postgresql.org/docs/current/auth-trust.html
+2026-09-12T22:08:04.726160298Z          In Docker's default configuration, this is effectively any other
+2026-09-12T22:08:04.726164913Z          container on the same system.
+2026-09-12T22:08:04.726169400Z 
+2026-09-12T22:08:04.726173993Z          It is not recommended to use POSTGRES_HOST_AUTH_METHOD=trust. Replace
+2026-09-12T22:08:04.726178735Z          it with "-e POSTGRES_PASSWORD=password" instead to set a password in
+2026-09-12T22:08:04.726183793Z          "docker run".
+2026-09-12T22:08:04.726188387Z ********************************************************************************
+2026-09-12T22:08:05.975692319Z initdb: warning: enabling "trust" authentication for local connections
+2026-09-12T22:08:05.975725183Z initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-09-12T22:08:07.203172127Z 2026-09-12 22:08:07.202 UTC [1] LOG:  starting PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-09-12T22:08:07.213586881Z 2026-09-12 22:08:07.213 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-09-12T22:08:07.256569012Z 2026-09-12 22:08:07.256 UTC [90] LOG:  database system was shut down at 2026-09-12 22:08:07 UTC
+2026-09-12T22:08:07.272552289Z 2026-09-12 22:08:07.272 UTC [1] LOG:  database system is ready to accept connections
+2026-09-12T22:13:07.354472677Z 2026-09-12 22:13:07.354 UTC [88] LOG:  checkpoint starting: time
+2026-09-12T22:13:27.958381020Z 2026-09-12 22:13:27.957 UTC [88] LOG:  checkpoint complete: wrote 202 buffers (1.2%); 1 WAL file(s) added, 0 removed, 0 recycled; write=19.967 s, sync=0.540 s, total=20.604 s; sync files=294, longest=0.006 s, average=0.002 s; distance=3378 kB, estimate=3378 kB; lsn=0/1C62570, redo lsn=0/1C624E0
+2026-09-12T22:18:08.058849277Z 2026-09-12 22:18:08.058 UTC [88] LOG:  checkpoint starting: time
+2026-09-12T22:18:27.714636378Z 2026-09-12 22:18:27.714 UTC [88] LOG:  checkpoint complete: wrote 194 buffers (1.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=19.391 s, sync=0.216 s, total=19.656 s; sync files=401, longest=0.007 s, average=0.001 s; distance=3252 kB, estimate=3366 kB; lsn=0/1F8F8F0, redo lsn=0/1F8F860
+2026-09-12T22:58:09.511189593Z 2026-09-12 22:58:09.510 UTC [88] LOG:  checkpoint starting: time
+2026-09-12T22:59:47.173326096Z 2026-09-12 22:59:47.173 UTC [88] LOG:  checkpoint complete: wrote 973 buffers (5.9%); 0 WAL file(s) added, 0 removed, 1 recycled; write=97.353 s, sync=0.282 s, total=97.663 s; sync files=322, longest=0.009 s, average=0.001 s; distance=4397 kB, estimate=4397 kB; lsn=0/23DB0A8, redo lsn=0/23DB018
+2026-09-12T23:03:09.272973593Z 2026-09-12 23:03:09.272 UTC [88] LOG:  checkpoint starting: time
+2026-09-12T23:04:46.706097999Z 2026-09-12 23:04:46.705 UTC [88] LOG:  checkpoint complete: wrote 966 buffers (5.9%); 0 WAL file(s) added, 0 removed, 0 recycled; write=96.642 s, sync=0.742 s, total=97.433 s; sync files=627, longest=0.009 s, average=0.002 s; distance=4400 kB, estimate=4400 kB; lsn=0/2C74778, redo lsn=0/2827088

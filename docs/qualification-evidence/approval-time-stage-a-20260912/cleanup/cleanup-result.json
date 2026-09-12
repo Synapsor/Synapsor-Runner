@@ -1,0 +1,57 @@
+{
+  "at": "2026-09-12T23:07:47.320127+00:00",
+  "resources": [
+    {
+      "name": "synapsor-stagea-48dc85de",
+      "id": "860f2c241b812afcf364a2cd49b3ec5e313834b211929e5c072480c5aa861d05",
+      "final_exit": 2,
+      "finished_at": "2026-09-12T22:02:26.876246577Z",
+      "removed_with_owned_anonymous_volume": true,
+      "logs": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-48dc85de-final.stderr.log"
+    },
+    {
+      "name": "synapsor-stagea-987b2499",
+      "id": "1554e69039c81d1ff21568f9f3e1f38021ad54f6ae5c658aa1a7c5955bfb893e",
+      "final_exit": 2,
+      "finished_at": "2026-09-12T22:03:59.855067284Z",
+      "removed_with_owned_anonymous_volume": true,
+      "logs": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-987b2499-final.stderr.log"
+    },
+    {
+      "name": "synapsor-stagea-2f2ec662",
+      "id": "48a3223e89ba875ca805e74ff24173f34fa3a1b6de85f3b1cbee72f14c9ea739",
+      "final_exit": 0,
+      "finished_at": "2026-09-12T23:07:47.101213781Z",
+      "removed_with_owned_anonymous_volume": true,
+      "logs": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-2f2ec662-final.stderr.log"
+    }
+  ],
+  "database_dumps": [
+    {
+      "database": "synapsor_stage_a",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/db-dumps/synapsor_stage_a.sql",
+      "size": 724,
+      "sha256": "dcade57d95044721f54c9d3c08d036b194a2667a61b0bf828725ec08550ad129"
+    },
+    {
+      "database": "insurance_stagea_main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/db-dumps/insurance_stagea_main.sql",
+      "size": 20593,
+      "sha256": "cd19e932b7fa59ba5d1dde97113613af56121a7e638353ab3592e31f59f864e3"
+    },
+    {
+      "database": "insurance_stagea_overall",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/db-dumps/insurance_stagea_overall.sql",
+      "size": 21289,
+      "sha256": "9ac1d3a70dd75804219e1e3f598d44cd846610495f46cd0f405fd26e7eaeb2ee"
+    },
+    {
+      "database": "insurance_stagea_collection",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/db-dumps/insurance_stagea_collection.sql",
+      "size": 20593,
+      "sha256": "843105f3bc16577e9f0a63e53fe6904ad148351cc7a2fbee828d61dfd31e82bf"
+    }
+  ],
+  "original_evidence": "64723 records verified unchanged before cleanup; no original path targeted",
+  "retained": "New frozen installation, complete manifest/archive, owned runtime projects and ledgers, private dump files, all logs, and three stopped-container socket directories retained for evidence. No global prune or unrelated process termination."
+}

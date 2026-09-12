@@ -1,0 +1,35 @@
+{
+  "frozen_at": "2026-09-12T22:53:24.987Z",
+  "purpose": "approval-time verification and local Stage A; separate publication failure remains open",
+  "cases": [
+    "owned insurance recovery A1-A4 and sequential exact limit edit"
+  ],
+  "product_commit": "a2b6b5f870f544ca608d7fb0e6bc834da1e27196",
+  "test_commit": "c0b81b8e8a8c676a08fe495798414ca09260a6c6",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "c0b81b8e8a8c676a08fe495798414ca09260a6c6",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/frozen/installed",
+  "installed_tree_sha256": "c4300519538be9cb2befd08b8d99b0b897a33801cbd57f48cf4f088ea417e10e",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "5b132513cb50b28819ccdc9b883c08c1b73c01766d08b91e48202d2ab934b467",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "11d032f5d6f5c1cd4e9922c585a5f49d7abc3cf56b26ce208fe39e9ce919eb37"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entry_count": 7569,
+  "artifact_manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/frozen/installed-artifact-manifest.json"
+}

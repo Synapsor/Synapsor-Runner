@@ -1,0 +1,570 @@
+{
+  "at": "2026-09-12T23:08:36.646700+00:00",
+  "records": [
+    {
+      "path": "installed-runtime/main/a1-admitted-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-admitted-ledger.json",
+      "bytes": 1719687,
+      "sha256": "848dd33f8c1f92050b8e40f9a099cd39cbe7d523f6b1fb102cac9ceb82175685"
+    },
+    {
+      "path": "installed-runtime/main/a1-before-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-before-ledger.json",
+      "bytes": 1700560,
+      "sha256": "b6a4a14d00b5a881adb11ecc5b91226e50d193a31fffb18bcedf5a39db70ed0d"
+    },
+    {
+      "path": "installed-runtime/main/a1-before-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-before-source.json",
+      "bytes": 15565,
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96"
+    },
+    {
+      "path": "installed-runtime/main/a1-before-worker-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-before-worker-source.json",
+      "bytes": 15565,
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96"
+    },
+    {
+      "path": "installed-runtime/main/a1-during-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-during-ledger.json",
+      "bytes": 1700654,
+      "sha256": "bd3d3a0959ee31eedbd1d6d0233dece7976d472e26ccadddc696794ade4a4761"
+    },
+    {
+      "path": "installed-runtime/main/a1-executed-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-executed-ledger.json",
+      "bytes": 1750309,
+      "sha256": "e2b749566e1b1e94b353b559d9d4f9c65b89a242003aeca8ba6aca61df9dfbf5"
+    },
+    {
+      "path": "installed-runtime/main/a1-executed-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-executed-source.json",
+      "bytes": 15565,
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2"
+    },
+    {
+      "path": "installed-runtime/main/a1-measurement-corroboration.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-measurement-corroboration.json",
+      "bytes": 631,
+      "sha256": "3b1636b13505986c8a3bbfd4b99fe729aaf1075066986e09c47b10121b025dca"
+    },
+    {
+      "path": "installed-runtime/main/a1-replay-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-replay-ledger.json",
+      "bytes": 1750309,
+      "sha256": "e2b749566e1b1e94b353b559d9d4f9c65b89a242003aeca8ba6aca61df9dfbf5"
+    },
+    {
+      "path": "installed-runtime/main/a1-replay-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-replay-source.json",
+      "bytes": 15565,
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2"
+    },
+    {
+      "path": "installed-runtime/main/a1-restart-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-restart-ledger.json",
+      "bytes": 1750309,
+      "sha256": "e2b749566e1b1e94b353b559d9d4f9c65b89a242003aeca8ba6aca61df9dfbf5"
+    },
+    {
+      "path": "installed-runtime/main/a1-restart-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-restart-source.json",
+      "bytes": 15565,
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2"
+    },
+    {
+      "path": "installed-runtime/main/a1-result.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a1-result.json",
+      "bytes": 10394,
+      "sha256": "aeccc663868c200834e5909b4e245cdab6a26f565a7a40f25de274ffb22f1323"
+    },
+    {
+      "path": "installed-runtime/main/a2-insurer-after-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a2-insurer-after-ledger.json",
+      "bytes": 1859943,
+      "sha256": "096e1177b7aaef9bfe8284858a5881c0a603d018f57c3afad9b7f47200c6a163"
+    },
+    {
+      "path": "installed-runtime/main/a2-insurer-after-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a2-insurer-after-source.json",
+      "bytes": 15565,
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2"
+    },
+    {
+      "path": "installed-runtime/main/a2-insurer-before-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a2-insurer-before-ledger.json",
+      "bytes": 1819026,
+      "sha256": "e1cfff03d4c0320de01e42b8c404de8e9cf61b7e0c885c5930811dd2f6729789"
+    },
+    {
+      "path": "installed-runtime/main/a2-insurer-before-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a2-insurer-before-source.json",
+      "bytes": 15565,
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2"
+    },
+    {
+      "path": "installed-runtime/main/a2-insurer-final-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a2-insurer-final-ledger.json",
+      "bytes": 1859943,
+      "sha256": "096e1177b7aaef9bfe8284858a5881c0a603d018f57c3afad9b7f47200c6a163"
+    },
+    {
+      "path": "installed-runtime/main/a2-insurer-final-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a2-insurer-final-source.json",
+      "bytes": 15565,
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2"
+    },
+    {
+      "path": "installed-runtime/main/a2-insurer-held-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a2-insurer-held-ledger.json",
+      "bytes": 1819120,
+      "sha256": "9a9d6d9ac613143567b86d18c848c2e4634c2ea35bcee04611344edb6e2bd9f8"
+    },
+    {
+      "path": "installed-runtime/main/a2-insurer-result.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a2-insurer-result.json",
+      "bytes": 6726,
+      "sha256": "14d8966ed1791375bc2526ea50525434228785f0429fa1cd5fc3d4322dfa6f13"
+    },
+    {
+      "path": "installed-runtime/main/a2-insurer-second-completed-first-held-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a2-insurer-second-completed-first-held-ledger.json",
+      "bytes": 1840750,
+      "sha256": "c92c1d58b3ca35b36cdeeaebbf5b2ee8dfb4614729758da9d5a341814add3635"
+    },
+    {
+      "path": "installed-runtime/main/a4-before-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a4-before-ledger.json",
+      "bytes": 1859943,
+      "sha256": "096e1177b7aaef9bfe8284858a5881c0a603d018f57c3afad9b7f47200c6a163"
+    },
+    {
+      "path": "installed-runtime/main/a4-before-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a4-before-source.json",
+      "bytes": 15565,
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2"
+    },
+    {
+      "path": "installed-runtime/main/a4-result.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a4-result.json",
+      "bytes": 1154,
+      "sha256": "c738c663c17ab36853d33b47ef3c29490c2e875a6c2dd693c68c0f0b9b7e0ec9"
+    },
+    {
+      "path": "installed-runtime/main/continuation-final-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/continuation-final-ledger.json",
+      "bytes": 1928660,
+      "sha256": "eb06bf96fc1ea6fbe2a64f6f415c3d9040bd4e21c049c186848081849115d7a1"
+    },
+    {
+      "path": "installed-runtime/main/continuation-final-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/continuation-final-source.json",
+      "bytes": 15565,
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2"
+    },
+    {
+      "path": "installed-runtime/main/events.jsonl",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/events.jsonl",
+      "bytes": 212668,
+      "sha256": "89b0145e23a15d0df94b115af8a16254e35c6544d86ecc9ce7ed4c26b671792e"
+    },
+    {
+      "path": "installed-runtime/main/mcp-stderr.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/mcp-stderr.log",
+      "bytes": 1920,
+      "sha256": "43e1f6bbd73b9492ed6d21f05489f93e346fc895bdb5af83dd9131fde63fe592"
+    },
+    {
+      "path": "installed-runtime/main/ownership.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/ownership.json",
+      "bytes": 1485,
+      "sha256": "548265e139eec6abedcc98476263cbc8660d10835757691dcba84c5b307180e5"
+    },
+    {
+      "path": "installed-runtime/main/owner-source-baseline.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/owner-source-baseline.json",
+      "bytes": 15565,
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96"
+    },
+    {
+      "path": "installed-runtime/overall/continuation-final-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/overall/deterministic/continuation-final-ledger.json",
+      "bytes": 1631843,
+      "sha256": "3bb120a0e6cb8360334a65b793baa516fb9ba9607dcc12d64aaa6b6b3ff28508"
+    },
+    {
+      "path": "installed-runtime/overall/continuation-final-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/overall/deterministic/continuation-final-source.json",
+      "bytes": 17144,
+      "sha256": "16831887f34122739a6f53865be7cc8b57a74ec1dea148eea8249fc9d6eca0e5"
+    },
+    {
+      "path": "installed-runtime/overall/events.jsonl",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/overall/deterministic/events.jsonl",
+      "bytes": 1293,
+      "sha256": "ed1af4331e69427948d9cf38ed512676a4cbe2d25f88b1469963b460b59a1869"
+    },
+    {
+      "path": "installed-runtime/overall/ownership.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/overall/ownership.json",
+      "bytes": 3171,
+      "sha256": "e4c1473b58b875f1485ea3433ea41c940c7ab6a7f532f4983578687fad5a32fa"
+    },
+    {
+      "path": "installed-runtime/overall/owner-source-baseline.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/overall/owner-source-baseline.json",
+      "bytes": 17144,
+      "sha256": "16831887f34122739a6f53865be7cc8b57a74ec1dea148eea8249fc9d6eca0e5"
+    },
+    {
+      "path": "installed-runtime/collection/a3-admitted-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/a3-admitted-ledger.json",
+      "bytes": 1729903,
+      "sha256": "e57969dd963f06ddab3b35431e5d922b6489139bafffe8fbb73dcda795874525"
+    },
+    {
+      "path": "installed-runtime/collection/a3-before-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/a3-before-ledger.json",
+      "bytes": 1700560,
+      "sha256": "fb8800ef5e74ebf3d60985db8bf41f260a043ff4d1774fdb895a826057147bc7"
+    },
+    {
+      "path": "installed-runtime/collection/a3-before-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/a3-before-source.json",
+      "bytes": 15565,
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96"
+    },
+    {
+      "path": "installed-runtime/collection/a3-collection-after-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/a3-collection-after-source.json",
+      "bytes": 15565,
+      "sha256": "69c2dbc06c33eb0f069deb82478333158bb6d4c3bb57c2ede41e2d7579901f59"
+    },
+    {
+      "path": "installed-runtime/collection/a3-concurrent-workers-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/a3-concurrent-workers-ledger.json",
+      "bytes": 1794885,
+      "sha256": "fd24d55b8c82d258753dc77c24b6ae8abc196f042e0e6872d1462d392f178e50"
+    },
+    {
+      "path": "installed-runtime/collection/a3-external-admitted-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/a3-external-admitted-ledger.json",
+      "bytes": 1813097,
+      "sha256": "7050c6d3c239c3f5a8a8a202f5d38b0ee95895c4053232fb73d3e6cc6afe0930"
+    },
+    {
+      "path": "installed-runtime/collection/a3-external-before-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/a3-external-before-ledger.json",
+      "bytes": 1794885,
+      "sha256": "fd24d55b8c82d258753dc77c24b6ae8abc196f042e0e6872d1462d392f178e50"
+    },
+    {
+      "path": "installed-runtime/collection/a3-final-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/a3-final-ledger.json",
+      "bytes": 1839067,
+      "sha256": "d7c58cbdedb982e3d70e9887eef0c6473cc02e433573ae13371f35893e00d18c"
+    },
+    {
+      "path": "installed-runtime/collection/a3-final-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/a3-final-source.json",
+      "bytes": 15565,
+      "sha256": "d0ae282fdc89154ff700e6de17d00ae8aef4375677059fa76ba0384a03cbea03"
+    },
+    {
+      "path": "installed-runtime/collection/a3-result.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/a3-result.json",
+      "bytes": 19623,
+      "sha256": "b26b6cf0e83b054bbda36131a333b3c05a4ea625c9b265a8ef41d2b102046528"
+    },
+    {
+      "path": "installed-runtime/collection/continuation-final-ledger.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/continuation-final-ledger.json",
+      "bytes": 1839067,
+      "sha256": "d7c58cbdedb982e3d70e9887eef0c6473cc02e433573ae13371f35893e00d18c"
+    },
+    {
+      "path": "installed-runtime/collection/continuation-final-source.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/continuation-final-source.json",
+      "bytes": 15565,
+      "sha256": "d0ae282fdc89154ff700e6de17d00ae8aef4375677059fa76ba0384a03cbea03"
+    },
+    {
+      "path": "installed-runtime/collection/events.jsonl",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/events.jsonl",
+      "bytes": 73839,
+      "sha256": "9bc7012a8b3a2dec564ab0e1221fb98828b9242081ba2aa2b1187d4c307f606b"
+    },
+    {
+      "path": "installed-runtime/collection/mcp-stderr.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/deterministic/mcp-stderr.log",
+      "bytes": 271,
+      "sha256": "1090257d4fe49c842d5a6ab27e01714f0d8625a6c61a29e5db2d333e99c72bf7"
+    },
+    {
+      "path": "installed-runtime/collection/ownership.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/ownership.json",
+      "bytes": 1508,
+      "sha256": "76450275b94e578a7a4659fb816566c41cef17022f3ebd52f2947a6d2679c0e5"
+    },
+    {
+      "path": "installed-runtime/collection/owner-source-baseline.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/collection/owner-source-baseline.json",
+      "bytes": 15565,
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96"
+    },
+    {
+      "path": "installed-runtime/a1-main.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/a1-main.log",
+      "bytes": 10564,
+      "sha256": "80abaf5fb6a5845e6a81b38e1d6155bed7e785b0ca4d92cc6114ad3a3ff8fcb8"
+    },
+    {
+      "path": "installed-runtime/a2-main-exit.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/a2-main-exit.json",
+      "bytes": 113,
+      "sha256": "efdf7d247ba30653fa89da35c83e392dedde303841b4a895871f9ddbaccff508"
+    },
+    {
+      "path": "installed-runtime/a2-main.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/a2-main.log",
+      "bytes": 6897,
+      "sha256": "0eaf215cc3ea2cc715ae4e9614175271742f45d2b93adba3ae15cd419ca564c7"
+    },
+    {
+      "path": "installed-runtime/a3-collection-exit.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/a3-collection-exit.json",
+      "bytes": 113,
+      "sha256": "e3bedd6eb76fc3a3a4dce674a33fa6277e71d452f7178fdb786c8ecb66190009"
+    },
+    {
+      "path": "installed-runtime/a3-collection.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/a3-collection.log",
+      "bytes": 18166,
+      "sha256": "5f5511d63e55aa7b1845efdf9ff99db1881b88892aba7f48eedecfcdeedabaf2"
+    },
+    {
+      "path": "installed-runtime/a4-main-exit.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/a4-main-exit.json",
+      "bytes": 113,
+      "sha256": "151e944c0fa16794822e58cd720c66ffd87c5942946f9dfd3fc92073cc2392fa"
+    },
+    {
+      "path": "installed-runtime/a4-main.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/a4-main.log",
+      "bytes": 997,
+      "sha256": "a2c6bdecb6364fad136e16781771c0f3637f49c11dbbcb1fdd9f196587d1386c"
+    },
+    {
+      "path": "installed-runtime/budget.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/budget.json",
+      "bytes": 335,
+      "sha256": "a82bb74144d9cd42db68300a1cf122ad2c3735200bd29b1d8ecf19cf355ca183"
+    },
+    {
+      "path": "installed-runtime/final-state-collection.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/final-state-collection.log",
+      "bytes": 171,
+      "sha256": "317a43d985f397bf54fc5f3fec61cd4a1942c52feffd0bcbb5dd0c6e5d2b4231"
+    },
+    {
+      "path": "installed-runtime/final-state-exits.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/final-state-exits.json",
+      "bytes": 141,
+      "sha256": "80c08cbade5ff02eb26a82ebddc73daafbabc41eb46934098b1ab46d6304541a"
+    },
+    {
+      "path": "installed-runtime/final-state-main.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/final-state-main.log",
+      "bytes": 171,
+      "sha256": "4bc6a04451b90a0d37ea5db1d0ef1a74cb632b20fc43ce806e22203ba26a9521"
+    },
+    {
+      "path": "installed-runtime/final-state-overall.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/final-state-overall.log",
+      "bytes": 171,
+      "sha256": "db0193946a0f855c67aa44bec9befe4f916700fd878e336b040acd10b4f377c4"
+    },
+    {
+      "path": "installed-runtime/prepare-collection-exit.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/prepare-collection-exit.json",
+      "bytes": 113,
+      "sha256": "317734d2696638d037ac90d59e3e58b3c07552b0e348521315b74ac52aa2f230"
+    },
+    {
+      "path": "installed-runtime/prepare-collection.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/prepare-collection.log",
+      "bytes": 227,
+      "sha256": "fd12bffb380f768b5c9638e3b654ff2e7855f9e0a0dc69d53071913fa8e0be03"
+    },
+    {
+      "path": "installed-runtime/prepare-main.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/prepare-main.log",
+      "bytes": 215,
+      "sha256": "56694cd07a926ed83cc18291d5d08981cee9af3326eeee42689aff478f2d4f03"
+    },
+    {
+      "path": "installed-runtime/prepare-overall-exit.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/prepare-overall-exit.json",
+      "bytes": 113,
+      "sha256": "76b23143951d79dec0174cbfc53df92e3a106e8e7c6630b0f5eec233a712c927"
+    },
+    {
+      "path": "installed-runtime/prepare-overall.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/prepare-overall.log",
+      "bytes": 222,
+      "sha256": "a11e33701b4c4c17ed784db1749bd0818dad4bd8aae0a094ca8690dedbc90331"
+    },
+    {
+      "path": "cleanup/cleanup-result.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/cleanup-result.json",
+      "bytes": 3110,
+      "sha256": "d85df2b2f784f958aba1a1c869f6664ab619155cce049cbed9db29dfe2f2ce36"
+    },
+    {
+      "path": "cleanup/dump-measurement-correction.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/dump-measurement-correction.json",
+      "bytes": 418,
+      "sha256": "c2a2c0395d23d939adc1c07ac9f26bee61238254bc1cb90678bf98a055dfaa33"
+    },
+    {
+      "path": "cleanup/recorded-processes-before-cleanup.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/recorded-processes-before-cleanup.json",
+      "bytes": 1584,
+      "sha256": "3705b3d795d0688541437b5d6bb06aa41fee54fc4401745f30882ac6ea031c25"
+    },
+    {
+      "path": "cleanup/save-state-attempt1.py",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/save-state-attempt1.py",
+      "bytes": 2822,
+      "sha256": "a6a4595e46759dd5535ff3c9aac9dd319c6d4cc2ef33dad4f3a282799c3b8947"
+    },
+    {
+      "path": "cleanup/saved-state.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/saved-state.json",
+      "bytes": 4062,
+      "sha256": "f753213cc75c7e7ef0f570a26cae01bec2f1635bb951db4dd642ed34e1078b8e"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-2f2ec662-before.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-2f2ec662-before.json",
+      "bytes": 11122,
+      "sha256": "8704b6381e2011a4404c8b051ea5fe46c4c6c254849c8c6e51726d1fa830f69f"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-2f2ec662-before.stderr.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-2f2ec662-before.stderr.log",
+      "bytes": 3726,
+      "sha256": "489d1d32339cfab4aa8a5f8bd1125ddbba4d9fd4c06baafeb3bb3e6c917eae97"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-2f2ec662-before.stdout.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-2f2ec662-before.stdout.log",
+      "bytes": 3855,
+      "sha256": "4aa94b8c603a09f49cdb4bedc740cf5c614cad546513f536c76868e52a6f9204"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-2f2ec662-final.stderr.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-2f2ec662-final.stderr.log",
+      "bytes": 4697,
+      "sha256": "1627c6eca23329ca0f0aa9980f931ab26f5f228ee54ac58bb68c28aba6e78d05"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-2f2ec662-final.stdout.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-2f2ec662-final.stdout.log",
+      "bytes": 3855,
+      "sha256": "4aa94b8c603a09f49cdb4bedc740cf5c614cad546513f536c76868e52a6f9204"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-2f2ec662-stopped.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-2f2ec662-stopped.json",
+      "bytes": 8805,
+      "sha256": "642686b76593bbf2d444106f979af8f64870a4a551cd3723329c8c41f77f8baa"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-48dc85de-before.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-48dc85de-before.json",
+      "bytes": 11107,
+      "sha256": "932b3c7180f8567ed54fdb8f88e7216a2fa583a58506ce52f78fb95deb750b96"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-48dc85de-before.stderr.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-48dc85de-before.stderr.log",
+      "bytes": 1715,
+      "sha256": "e28a6a402a7b956588eb6219863dccbf96eb0beaea8aa6d1bf2fcf2cfc77dbd8"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-48dc85de-before.stdout.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-48dc85de-before.stdout.log",
+      "bytes": 2359,
+      "sha256": "fb6321e5f88da74cf516e305e18eab505dba077970a35683ab94c3baff24454d"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-48dc85de-final.stderr.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-48dc85de-final.stderr.log",
+      "bytes": 1715,
+      "sha256": "e28a6a402a7b956588eb6219863dccbf96eb0beaea8aa6d1bf2fcf2cfc77dbd8"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-48dc85de-final.stdout.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-48dc85de-final.stdout.log",
+      "bytes": 2359,
+      "sha256": "fb6321e5f88da74cf516e305e18eab505dba077970a35683ab94c3baff24454d"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-48dc85de-stopped.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-48dc85de-stopped.json",
+      "bytes": 8911,
+      "sha256": "3e8134bef1e08b0af9fb74beaa337264b26f6d55fac2c1695968f5c750a3969b"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-987b2499-before.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-987b2499-before.json",
+      "bytes": 11148,
+      "sha256": "08d8ce6777d5121aaaec8de19c55359c1ec65de15ce3b8630a2589c7d00079ba"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-987b2499-before.stderr.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-987b2499-before.stderr.log",
+      "bytes": 1715,
+      "sha256": "8b1355eec973781a323a583099f27a0e6b2cc6533853ff7a0b7276ce57b016b7"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-987b2499-before.stdout.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-987b2499-before.stdout.log",
+      "bytes": 2474,
+      "sha256": "2eaf9c7a209f9534d9dc708c451c5ad024c28bd8792f5d6379df3ac4b7bccf30"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-987b2499-final.stderr.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-987b2499-final.stderr.log",
+      "bytes": 1715,
+      "sha256": "8b1355eec973781a323a583099f27a0e6b2cc6533853ff7a0b7276ce57b016b7"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-987b2499-final.stdout.log",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-987b2499-final.stdout.log",
+      "bytes": 2474,
+      "sha256": "2eaf9c7a209f9534d9dc708c451c5ad024c28bd8792f5d6379df3ac4b7bccf30"
+    },
+    {
+      "path": "cleanup/synapsor-stagea-987b2499-stopped.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/cleanup/synapsor-stagea-987b2499-stopped.json",
+      "bytes": 8942,
+      "sha256": "ba08f8e69fd804a81ccf889c47df877c02b343e608bc0467f4bbb3404b8be8be"
+    },
+    {
+      "path": "installed-artifact-manifest.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/frozen/installed-artifact-manifest.json",
+      "bytes": 1622675,
+      "sha256": "bd2095615469325a3394e7ac90f9928400ed1be96b55d981618c7738e5602615"
+    },
+    {
+      "path": "installed-dependency-tree.json",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/frozen/installed-dependency-tree.json",
+      "bytes": 43012,
+      "sha256": "8561b6c9bd72a8aa86e1a99c0ea9c556feb44694053bb13e9f5a754b69cc0023"
+    }
+  ],
+  "excluded": "Runtime private.json, complete .synapsor ledgers, SQL dumps and archives retained only in private owned external root; no credentials/tarballs/generated ledgers staged"
+}

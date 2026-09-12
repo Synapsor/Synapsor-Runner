@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-12T23:06:29.767381+00:00",
+  "entries_checked": 64723,
+  "changed": [],
+  "original_roots": [
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/proposal-receipt-scope-961d98c",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/isolation-final-5e3e78b",
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/manual-mode-test-20260911",
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/runtime-qualification-95ac5f5-20260912",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/atomic-approval-20260912"
+  ],
+  "original_manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/preservation-start.json",
+  "stage": "before cleanup"
+}

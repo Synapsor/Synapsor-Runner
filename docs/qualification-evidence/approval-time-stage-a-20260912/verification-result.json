@@ -1,0 +1,105 @@
+{
+  "status": "STOP_NOT_QUALIFIED",
+  "stage_a": "NOT PASSED",
+  "stage_b": "NOT STARTED",
+  "at": "2026-09-12T23:14:05.436575+00:00",
+  "product_revision": "a2b6b5f870f544ca608d7fb0e6bc834da1e27196",
+  "baseline_evidence_revision": "a0942d1bf6e45b21cae041cc4a6ff49823908678",
+  "product_changed": false,
+  "full_suite": {
+    "exit": 1,
+    "passed": 6101,
+    "failed": 1,
+    "skipped": 450,
+    "test_files": 315,
+    "log": "stable-full.log",
+    "result": "stable-full.json",
+    "same_recovered_process": true,
+    "duplicate_or_retry": false,
+    "failure": "full-suite-failure.md"
+  },
+  "types": {
+    "exit": 0
+  },
+  "offline_checks": {
+    "trusted-core": 0,
+    "licenses": 0,
+    "human-commands": 0,
+    "dsl-sources": 0,
+    "cursor-plugin": 0,
+    "mcp-client-configs": 0,
+    "local-package": 0,
+    "bundle-freshness": 0,
+    "public-commands": 0,
+    "packed-offline": 0
+  },
+  "sqlite_accounting": {
+    "focused_passed": 4,
+    "focused_log": "focused-02-accounting.log",
+    "installed_last_insurer": "PASS same-principal, 2 -> 3, one human-review loser"
+  },
+  "postgres_control_store": {
+    "focused_passed": 3,
+    "last_insurer": "PASS",
+    "last_overall": "PASS",
+    "ample_capacity": "PASS 4/4 concurrent approvals",
+    "definite_pre_commit_rollback_and_retry": "PASS",
+    "pool_store_reopen_autoMigrate_false": "PASS",
+    "uncertain_commit_crash_server_restart_multi_host": "NOT RUN"
+  },
+  "publication": {
+    "sqlite_replacement_first": "FAILED product assertion; STOPPED",
+    "postgres_replacement_first": "FAILED product assertion after one corrected harness setup; STOPPED",
+    "first_postgres_attempt": "FAILED harness setup before replacement",
+    "sqlite_admission_first": "PASS",
+    "postgres_admission_first": "PASS",
+    "queued_worker_across_replacement": "NOT RUN",
+    "issue": "publication-finding.md"
+  },
+  "installed_runtime": {
+    "artifact": {
+      "verified_at": "2026-09-12T23:07:08.057Z",
+      "installed_tree_sha256": "c4300519538be9cb2befd08b8d99b0b897a33801cbd57f48cf4f088ea417e10e",
+      "entries": 7569,
+      "command": "node /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/frozen/freeze-repair.mjs --verify",
+      "actual_exit": 0
+    },
+    "business_source": "PostgreSQL 17.10",
+    "control_store": "SQLite",
+    "A1": "PASS observed identical/receipt/replay/MCP restart",
+    "A2_insurer": "PASS same-principal schedule",
+    "A2_overall": "NOT RUN, reviewed identity prerequisite blocked; only extended synthetic fixture prepared",
+    "A3_collection": "PASS observed source coordination",
+    "A3_owned_update": "PASS observed stale refusal with non-applied receipt",
+    "A4": "BLOCKED alternate principal startup; process exit1; no cross-context assertions",
+    "fresh_limit_edit": "NOT RUN, machinery unprepared in narrowed continuation",
+    "additional_installed_lock_schedules": "NOT RUN, machinery unprepared",
+    "budget": {
+      "started_at": "2026-09-12T22:54:33.228212+00:00",
+      "deadline": "2026-09-13T00:24:33.228212+00:00",
+      "operations": 24,
+      "maximum_operations": 240,
+      "worker_invocations": 4,
+      "schedules": {
+        "A1 identical and replay": 1,
+        "A2 final insurer slot": 1,
+        "A3 portfolio constraint": 1,
+        "A3 owned source update": 1
+      }
+    }
+  },
+  "clock": "Assumptions retained; see clock-semantics.md, no new guarantee",
+  "preservation": {
+    "entries": 64723,
+    "changed": 0,
+    "evidence": "preservation-final.json"
+  },
+  "cleanup": "cleanup-result.json",
+  "remaining": [
+    "Separate publication/admission revision repair decision",
+    "Analyze unresolved concurrent-migration POLICY_RUNTIME_BUSY failure",
+    "Prepare valid reviewed identity fixtures under a future assignment before cross-context/overall installed qualification",
+    "Other unprepared or stopped required checks remain unverified"
+  ],
+  "delivery_destination": "delivery-destination.json"
+}

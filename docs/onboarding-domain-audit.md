@@ -1,5 +1,29 @@
 # Onboarding Generalization Audit
 
+## Local verification continuation — 2026-09-12
+
+**Stage A is NOT PASSED; Stage B is NOT STARTED.** Product remains `a2b6b5f`,
+with preserved baseline evidence `a0942d1`. The recovered full suite finished
+exit 1: 6,101 passed, one concurrent-migration failure (`POLICY_RUNTIME_BUSY`),
+450 skipped. No duplicate suite or failed-path replay ran. Types and all prepared
+offline package checks passed. Seven focused accounting tests passed, including
+real PostgreSQL control-store last-slot, ample-capacity, rollback and reopen checks.
+
+Both governed replacement-first tests failed: SQLite and PostgreSQL admitted an
+old-rule automatic approval after a stricter replacement had committed. Exact
+expectations, ordering, results and strict reproductions remain stopped and saved.
+The new installed artifact passed the observed duplicate/receipt/restart,
+same-principal insurer last-slot and portfolio coordination checks. Alternate local
+identity startup was blocked by the reviewed-identity guard; the overall fixture
+was extended only with a third-insurer portfolio and three claims, but its accounting
+race was NOT RUN. No product changes or new review machinery were introduced.
+
+See [the complete continuation report](qualification-evidence/approval-time-stage-a-20260912/verification-report.md)
+and [the exact issue requiring the next repair decision](qualification-evidence/approval-time-stage-a-20260912/publication-finding.md).
+These results supersede earlier availability statements, while the historical
+milestones, failed qualification, original queues and evidence below remain intact.
+
+
 R13 working candidate, 2026-09-12. This records source inspection and focused
 regressions, not completion of unfamiliar-database qualification.
 

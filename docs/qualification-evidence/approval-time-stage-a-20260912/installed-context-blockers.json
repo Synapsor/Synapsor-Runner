@@ -1,0 +1,23 @@
+{
+  "at": "2026-09-12T23:04:25.620558+00:00",
+  "A4": {
+    "status": "blocked_setup_reviewed_identity_conflict",
+    "actual_exit": 1,
+    "exact_error": "LOCAL_TEST_RUNTIME_ENV_CONFLICT: inherited SYNAPSOR_PRINCIPAL does not match the reviewed local test identity.",
+    "ordering": [
+      "Original identity MCP initialized and explored CL-904",
+      "Second process with alternate principal rejected at startup",
+      "No foreign-reference or own-positive assertion executed"
+    ],
+    "original_attempt": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/main/deterministic/a4-result.json",
+    "product_failure": false
+  },
+  "A2_overall": {
+    "status": "not_run_prerequisite_blocked",
+    "fixture": "Extended synthetic fixture: original40 unchanged plus one third-insurer portfolio and three claims; original8/3/schema unchanged",
+    "prepared_fixture": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/overall/ownership.json",
+    "history_or_race_executed": false,
+    "cause": "Prepared driver overrides insurer environment while preserving a reviewed local-test identity file whose exact values must agree. A4 demonstrates this guard for principal; code applies equally to tenant. No alternate reviewed identity configuration exists in prepared plan. Creating new identity machinery or bypassing the file is out of scope."
+  },
+  "next": "Separate decision for properly reviewed identity fixtures; do not remove identity file or serialize concurrent accounting to obtain a pass."
+}

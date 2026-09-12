@@ -1,0 +1,25 @@
+Debugger listening on ws://127.0.0.1:38255/fca38661-1ee6-4850-90d0-6dd4b6e47fac
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.
+Debugger ending on ws://127.0.0.1:38255/fca38661-1ee6-4850-90d0-6dd4b6e47fac
+For help, see: https://nodejs.org/en/docs/inspector
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.
+Debugger listening on ws://127.0.0.1:34745/7a1d5119-af5c-4aac-8beb-272b38281acc
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.
+Debugger ending on ws://127.0.0.1:34745/7a1d5119-af5c-4aac-8beb-272b38281acc
+For help, see: https://nodejs.org/en/docs/inspector
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+LOCAL_TEST_RUNTIME_ENV_CONFLICT: inherited SYNAPSOR_PRINCIPAL does not match the reviewed local test identity.

@@ -1,0 +1,14 @@
+{
+  "a2-overall.mjs": {
+    "before_sha256": "95baa84a37a1b0a35243b4640e7716705766d9c84466b22b0426d5cf01d85b9b",
+    "after_sha256": "7b435fb395865b08ae2455cae70730b0809ccc3705750e33a421ffa0529f6bda"
+  },
+  "a3-collections.mjs": {
+    "before_sha256": "50bce612a9740abd4ed5dff8dcf12e1510567bd8f49c940e9229e9cdbbe2549c",
+    "after_sha256": "0cf6bc034da5ed3e1ed980bb3407b8b497eb1d66761df252e000adcc9bc32fca"
+  },
+  "a4-contexts.mjs": {
+    "before_sha256": "5b55f5dccf02cd9ce3f1d2278e4895aa5745699f15c5fc68909c428f0cca6767",
+    "after_sha256": "00682a2dbf9042c58ddd06aee1a133ea7aabca2b8abeffbd43988891dbaa8833"
+  }
+}

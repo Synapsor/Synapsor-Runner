@@ -1,0 +1,12 @@
+{
+  "verified_at": "2026-09-12T23:12:50.411717+00:00",
+  "nameWithOwner": "Synapsor/Synapsor-Runner-Backup",
+  "isPrivate": true,
+  "url": "https://github.com/Synapsor/Synapsor-Runner-Backup",
+  "remote": "backup",
+  "push_url": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "branch": "codex/tui-safe-action-control-plane",
+  "verification_command": "gh repo view Synapsor/Synapsor-Runner-Backup --json nameWithOwner,isPrivate,url",
+  "actual_exit": 0,
+  "delivery_commit": "Final report commit and actual push outcome recorded in existing external primary tracker and final response"
+}

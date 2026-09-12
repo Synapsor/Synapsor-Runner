@@ -1,0 +1,111 @@
+{
+  "at": "2026-09-12T23:07:07.274482+00:00",
+  "containers": [
+    {
+      "name": "synapsor-stagea-48dc85de",
+      "id": "860f2c241b812afcf364a2cd49b3ec5e313834b211929e5c072480c5aa861d05",
+      "running": false,
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/tmp/synapsor-stagea-pg-ZUJcep/socket",
+          "Destination": "/qualification",
+          "Mode": "",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "volume",
+          "Name": "d2a611d4264218f11c612f7bfe748f0233035f1f50a8e80e375bf80c3f3e2ca9",
+          "Source": "/var/lib/docker/volumes/d2a611d4264218f11c612f7bfe748f0233035f1f50a8e80e375bf80c3f3e2ca9/_data",
+          "Destination": "/var/lib/postgresql/data",
+          "Driver": "local",
+          "Mode": "",
+          "RW": true,
+          "Propagation": ""
+        }
+      ],
+      "initial_exit": 2
+    },
+    {
+      "name": "synapsor-stagea-987b2499",
+      "id": "1554e69039c81d1ff21568f9f3e1f38021ad54f6ae5c658aa1a7c5955bfb893e",
+      "running": false,
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/tmp/synapsor-stagea-pg-g58YPB/socket",
+          "Destination": "/qualification",
+          "Mode": "",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "volume",
+          "Name": "2e733fd8ef8f1521822bcbfe7e31bd2241c5cdbb36b269a534539792461f33fc",
+          "Source": "/var/lib/docker/volumes/2e733fd8ef8f1521822bcbfe7e31bd2241c5cdbb36b269a534539792461f33fc/_data",
+          "Destination": "/var/lib/postgresql/data",
+          "Driver": "local",
+          "Mode": "",
+          "RW": true,
+          "Propagation": ""
+        }
+      ],
+      "initial_exit": 2
+    },
+    {
+      "name": "synapsor-stagea-2f2ec662",
+      "id": "48a3223e89ba875ca805e74ff24173f34fa3a1b6de85f3b1cbee72f14c9ea739",
+      "running": true,
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/tmp/synapsor-stagea-pg-yqk684/socket",
+          "Destination": "/var/run/postgresql",
+          "Mode": "",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "volume",
+          "Name": "5d7378104a565b24bd6584783545953a9e975ce517cf1307321e0eebad61c145",
+          "Source": "/var/lib/docker/volumes/5d7378104a565b24bd6584783545953a9e975ce517cf1307321e0eebad61c145/_data",
+          "Destination": "/var/lib/postgresql/data",
+          "Driver": "local",
+          "Mode": "",
+          "RW": true,
+          "Propagation": ""
+        }
+      ],
+      "initial_exit": 0
+    }
+  ],
+  "database_dumps": [
+    {
+      "database": "synapsor_stage_a",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/db-dumps/synapsor_stage_a.sql",
+      "size": 724,
+      "sha256": "dcade57d95044721f54c9d3c08d036b194a2667a61b0bf828725ec08550ad129"
+    },
+    {
+      "database": "insurance_stagea_main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/db-dumps/insurance_stagea_main.sql",
+      "size": 20593,
+      "sha256": "cd19e932b7fa59ba5d1dde97113613af56121a7e638353ab3592e31f59f864e3"
+    },
+    {
+      "database": "insurance_stagea_overall",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/db-dumps/insurance_stagea_overall.sql",
+      "size": 21289,
+      "sha256": "9ac1d3a70dd75804219e1e3f598d44cd846610495f46cd0f405fd26e7eaeb2ee"
+    },
+    {
+      "database": "insurance_stagea_collection",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/approval-time-stage-a-a0942d1-20260912/runtime/db-dumps/insurance_stagea_collection.sql",
+      "size": 20593,
+      "sha256": "843105f3bc16577e9f0a63e53fe6904ad148351cc7a2fbee828d61dfd31e82bf"
+    }
+  ],
+  "recorded_processes_all_exited": true,
+  "integration_database_final_user_tables": 0
+}

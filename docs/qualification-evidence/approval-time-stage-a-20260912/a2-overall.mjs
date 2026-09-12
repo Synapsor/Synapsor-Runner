@@ -15,7 +15,11 @@ try {
   requests.push((claim,desired=25000)=>{const index=rows.data.findIndex(x=>x.claim_ref===claim);assert(index>=0);return {outcome:'reserve_ops.adjust_claim_reserve',subject_refs:{selected_claim:rows.subjects.find(x=>x.row_index===index).ref},inputs:{desired_cents:desired}};});
  }
  result.history=[];result.history_workers=[];
- const grant=async(index,claim,desired=25000)=>{const r=await clients[index].call('app.request_change',requests[index](claim,desired));assert(r.ok);assert.equal(r.proposal.status,'approved');result.history.push(r);return r;};
+ const grant=async(index,claim,desired=25000)=>{const label='overall-grant-'+index+'-'+claim+'-'+desired;const before=ledgerSnapshot(label+'-before');
+  const r=await clients[index].call('app.request_change',requests[index](claim,desired));assert(r.ok);assert.equal(r.proposal.status,'approved');
+  const after=ledgerSnapshot(label+'-after'),created=after.proposals.filter(p=>!before.proposals.some(b=>b.proposal_id===p.proposal_id));assert.equal(created.length,1);
+  const p=created[0],change=JSON.parse(p.change_set_json);assert.equal(p.object_id,id(Number(claim.slice(3))));assert.equal(p.tenant_id,id([1,3,5][index]));assert.equal(change.patch.reserve_cents,desired);assert.equal(p.state,'approved');
+  result.history.push({response:r,durable_proposal_id:p.proposal_id});return {proposal_id:p.proposal_id};};
  const worker=async(tenant,proposal)=>{const r=await operator(['worker','run','--supervised','--once','--yes','--config','synapsor.actions.runner.json','--worker-id','semantic_action_worker'],{SYNAPSOR_TENANT_ID:id(tenant),SYNAPSOR_PRINCIPAL:id(2)});result.history_workers.push(r);assert.equal(r.code,0);
   const snapshot=ledgerSnapshot('overall-history-worker-'+proposal.proposal_id);assert.equal(snapshot.proposals.find(p=>p.proposal_id===proposal.proposal_id).state,'applied');};
  for(const ref of ['CL-103','CL-901']){const r=await grant(0,ref);await worker(1,r);}

@@ -29,10 +29,12 @@ try {
   }
  }
  const rejected=ledgerSnapshot('a4-rejected');for(const t of ['proposals','approvals','worker_queue','writeback_receipts'])assert.deepEqual(rejected[t],before[t]);
- result.own=[];
+ result.own=[];result.own_proposal_ids=[];
  for(let i=0;i<clients.length;i++){
-  const r=await clients[i].call('app.request_change',{outcome:'reserve_ops.adjust_claim_reserve',subject_refs:{selected_claim:result.contexts[i].ref},inputs:{desired_cents:25000}});
-  result.own.push(r);assert(r.ok);assert(r.proposal_id);
+  const prior=ledgerSnapshot('a4-own-'+i+'-before');const r=await clients[i].call('app.request_change',{outcome:'reserve_ops.adjust_claim_reserve',subject_refs:{selected_claim:result.contexts[i].ref},inputs:{desired_cents:25000}});
+  result.own.push(r);assert(r.ok);assert(['approved','pending_review'].includes(r.proposal.status));
+  const current=ledgerSnapshot('a4-own-'+i+'-after'),created=current.proposals.filter(p=>!prior.proposals.some(b=>b.proposal_id===p.proposal_id));assert.equal(created.length,1);
+  const p=created[0],change=JSON.parse(p.change_set_json);assert.equal(p.tenant_id,id(contexts[i].tenant));assert.equal(p.object_id,id(Number(contexts[i].claim.slice(3))));assert.equal(change.principal.id,id(contexts[i].principal));assert.equal(change.patch.reserve_cents,25000);result.own_proposal_ids.push(p.proposal_id);
  }
  const after=ledgerSnapshot('a4-after');assert.equal(after.proposals.length,before.proposals.length+3);assert.deepEqual(await sourceSnapshot('a4-after'),source);
  result.status='pass_owned_environment_contexts';result.identity='Fixed synthetic trusted local environment bindings, not production authentication';

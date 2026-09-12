@@ -1,0 +1,99 @@
+[
+  {
+    "case": "main",
+    "database": "insurance_stagea_main",
+    "original_rows_preserved": 40,
+    "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+    "ownership_sha256": "548265e139eec6abedcc98476263cbc8660d10835757691dcba84c5b307180e5",
+    "additions": {
+      "portfolios": [],
+      "claims": []
+    },
+    "source_counts": {
+      "portfolios": 9,
+      "claims": 29,
+      "freezes": 2
+    },
+    "artifact_tree": "c4300519538be9cb2befd08b8d99b0b897a33801cbd57f48cf4f088ea417e10e"
+  },
+  {
+    "case": "overall",
+    "database": "insurance_stagea_overall",
+    "original_rows_preserved": 40,
+    "source_baseline_sha256": "16831887f34122739a6f53865be7cc8b57a74ec1dea148eea8249fc9d6eca0e5",
+    "ownership_sha256": "e4c1473b58b875f1485ea3433ea41c940c7ab6a7f532f4983578687fad5a32fa",
+    "additions": {
+      "portfolios": [
+        {
+          "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+          "insurer_id": "b0000000-0000-4000-8000-000000000005",
+          "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+          "portfolio_ref": "PF-OVERALL-THIRD",
+          "status": "active",
+          "reserve_cap_cents": 300000,
+          "per_claim_ceiling_cents": 90000,
+          "routine_ceiling_cents": 40000,
+          "version": 1
+        }
+      ],
+      "claims": [
+        {
+          "claim_id": "b0000000-0000-4000-8000-000000001001",
+          "insurer_id": "b0000000-0000-4000-8000-000000000005",
+          "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+          "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+          "claim_ref": "CL-1001",
+          "status": "active",
+          "reserve_cents": 10000,
+          "service_label": "standard",
+          "version": 1
+        },
+        {
+          "claim_id": "b0000000-0000-4000-8000-000000001002",
+          "insurer_id": "b0000000-0000-4000-8000-000000000005",
+          "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+          "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+          "claim_ref": "CL-1002",
+          "status": "active",
+          "reserve_cents": 10000,
+          "service_label": "standard",
+          "version": 1
+        },
+        {
+          "claim_id": "b0000000-0000-4000-8000-000000001003",
+          "insurer_id": "b0000000-0000-4000-8000-000000000005",
+          "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+          "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+          "claim_ref": "CL-1003",
+          "status": "active",
+          "reserve_cents": 10000,
+          "service_label": "standard",
+          "version": 1
+        }
+      ]
+    },
+    "source_counts": {
+      "portfolios": 10,
+      "claims": 32,
+      "freezes": 2
+    },
+    "artifact_tree": "c4300519538be9cb2befd08b8d99b0b897a33801cbd57f48cf4f088ea417e10e"
+  },
+  {
+    "case": "collection",
+    "database": "insurance_stagea_collection",
+    "original_rows_preserved": 40,
+    "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+    "ownership_sha256": "76450275b94e578a7a4659fb816566c41cef17022f3ebd52f2947a6d2679c0e5",
+    "additions": {
+      "portfolios": [],
+      "claims": []
+    },
+    "source_counts": {
+      "portfolios": 9,
+      "claims": 29,
+      "freezes": 2
+    },
+    "artifact_tree": "c4300519538be9cb2befd08b8d99b0b897a33801cbd57f48cf4f088ea417e10e"
+  }
+]

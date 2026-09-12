@@ -1,0 +1,24 @@
+{
+  "at": "2026-09-12T23:08:36.648155+00:00",
+  "baseline": "a0942d1bf6e45b21cae041cc4a6ff49823908678",
+  "product_revision": "a2b6b5f870f544ca608d7fb0e6bc834da1e27196",
+  "product_files_unchanged": true,
+  "product_files_sha256": {
+    "packages/mcp-server/src/semantic-actions.ts": "ed86b1f1ffb8b4a03cf38c97680a95a557b2308e8930c07b6ed551c9b113a665",
+    "packages/proposal-store/src/sqlite-proposal-methods.ts": "3890e6e2a6093b1f7324de5ee45c239bca1467f6983dd3e11f09a5de4c5c829e",
+    "packages/proposal-store/src/postgres-runtime-store.ts": "21f3a8d8d5ddd05d6cc8b089fbedce22cc7d67ba62d421e324f77c8818d701c7",
+    "apps/runner/src/semantic-action-runtime.ts": "9d827ec1ad216e605bf396bbe7ddb5dc6ce9792811bbfa18c9ae6559bdf50be2"
+  },
+  "frozen_source_commit": "c0b81b8e8a8c676a08fe495798414ca09260a6c6",
+  "runtime_helpers_sha256": {
+    "a2-overall.mjs": "7b435fb395865b08ae2455cae70730b0809ccc3705750e33a421ffa0529f6bda",
+    "a4-contexts.mjs": "00682a2dbf9042c58ddd06aee1a133ea7aabca2b8abeffbd43988891dbaa8833",
+    "storage-preflight.mjs": "f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2",
+    "a3-collections.mjs": "0cf6bc034da5ed3e1ed980bb3407b8b497eb1d66761df252e000adcc9bc32fca",
+    "operator-cli.mjs": "a5b8af02910f128f4db198ef57088ca7b015eb6bcad710e068d3b7ae7bd4ae39",
+    "a1-identical.mjs": "8d766856744c374c573e267fc50e2afbaa9ab63c97b0fe05f74260e8c140eeb7",
+    "runtime-driver.mjs": "ee49a9198bea1832b32342cd51312a6b7c6a48873dc4c3caa8a4590bc9d8c322",
+    "a2-insurer.mjs": "e840bf095ad6772d9d6ab69cbce1ceb70bb15a82ad3412ab1f142cbd9c5a4828"
+  },
+  "harness_corrections": "Only ID measurement changed after freeze; frozen installation unchanged; unexecuted corrected overall helper remains prepared only"
+}

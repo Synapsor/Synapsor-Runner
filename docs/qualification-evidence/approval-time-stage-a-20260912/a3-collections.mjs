@@ -20,14 +20,16 @@ try {
  const source=await sourceSnapshot('a3-before'),before=ledgerSnapshot('a3-before');schedule('A3 portfolio constraint');
  result.requests=await Promise.all(['CL-401','CL-402'].map(ref=>client.call('app.request_change',args(ref,60000))));
  assert(result.requests.every(r=>r.ok&&r.proposal.status==='pending_review'));
- result.human=[];for(const r of result.requests){const a=await operator(['proposals','approve',r.proposal_id,'--yes','--reason','Reviewed exact owned synthetic collection request for 60000 cents; original hard cap still applies','--config','synapsor.actions.runner.json']);assert.equal(a.code,0);result.human.push(a);}
+ const admitted=ledgerSnapshot('a3-admitted'),created=admitted.proposals.filter(p=>!before.proposals.some(b=>b.proposal_id===p.proposal_id));assert.equal(created.length,2);
+ result.proposal_ids=[401,402].map(n=>{const found=created.filter(p=>p.object_id===`b0000000-0000-4000-8000-${String(n).padStart(12,'0')}`);assert.equal(found.length,1);const p=found[0];assert.equal(p.state,'pending_review');assert.equal(JSON.parse(p.change_set_json).patch.reserve_cents,60000);return p.proposal_id;});
+ result.human=[];for(const proposal_id of result.proposal_ids){const r={proposal_id};const a=await operator(['proposals','approve',r.proposal_id,'--yes','--reason','Reviewed exact owned synthetic collection request for 60000 cents; original hard cap still applies','--config','synapsor.actions.runner.json']);assert.equal(a.code,0);result.human.push(a);}
  blocker=admin();await blocker.connect();const pid=(await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
  await blocker.query('BEGIN');await blocker.query("SELECT portfolio_id FROM reserve_ops.portfolios WHERE portfolio_ref='PF-RACE' FOR UPDATE");
  const first=runWorker();result.first_source_wait=await waitForBlocked(pid,'collection worker');
  const second=runWorker();await blocker.query('COMMIT');await blocker.end();blocker=undefined;
  result.workers=await Promise.all([first,second]);assert(result.workers.every(w=>w.code===0));
  let after=ledgerSnapshot('a3-concurrent-workers');
- for(const r of result.requests){const queued=after.worker_queue.find(q=>q.proposal_id===r.proposal_id);if(queued?.status==='queued'){result.workers.push(await runWorker());after=ledgerSnapshot('a3-drained-'+r.proposal_id);}}
+ for(const proposal_id of result.proposal_ids){const r={proposal_id};const queued=after.worker_queue.find(q=>q.proposal_id===r.proposal_id);if(queued?.status==='queued'){result.workers.push(await runWorker());after=ledgerSnapshot('a3-drained-'+r.proposal_id);}}
  const applied=after.writeback_receipts.filter(r=>!before.writeback_receipts.some(b=>b.receipt_id===r.receipt_id));
  result.collection_receipts=applied;
  const sourceAfter=await sourceSnapshot('a3-collection-after');
@@ -37,7 +39,8 @@ try {
  const expected=structuredClone(source);const changed=claims.find(c=>c.reserve_cents===60000);Object.assign(expected.claims.find(c=>c.claim_ref===changed.claim_ref),changed);assert.deepEqual(sourceAfter,expected);
  // Separate owned competing UPDATE with the required version increment. The
  // worker must encounter the actual row lock before the owner commits.
- schedule('A3 owned source update');result.external_request=await client.call('app.request_change',args('CL-501',25000));assert(result.external_request.ok);
+ schedule('A3 owned source update');const externalBefore=ledgerSnapshot('a3-external-before');result.external_request=await client.call('app.request_change',args('CL-501',25000));assert(result.external_request.ok);
+ const externalAdmitted=ledgerSnapshot('a3-external-admitted'),externalCreated=externalAdmitted.proposals.filter(p=>!externalBefore.proposals.some(b=>b.proposal_id===p.proposal_id));assert.equal(externalCreated.length,1);assert.equal(externalCreated[0].object_id,'b0000000-0000-4000-8000-000000000501');assert.equal(JSON.parse(externalCreated[0].change_set_json).patch.reserve_cents,25000);result.external_proposal_id=externalCreated[0].proposal_id;
  blocker=admin();await blocker.connect();const ownerPid=(await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
  await blocker.query('BEGIN');await blocker.query("UPDATE reserve_ops.portfolios SET status='closed',version=version+1 WHERE portfolio_ref='PF-PENDING'");
  const external=runWorker();result.external_source_wait=await waitForBlocked(ownerPid,'source update worker');await blocker.query('COMMIT');await blocker.end();blocker=undefined;
@@ -45,7 +48,7 @@ try {
  const final=ledgerSnapshot('a3-final'),finalSource=await sourceSnapshot('a3-final');
  const ownerExpected=structuredClone(sourceAfter);const portfolio=ownerExpected.portfolios.find(p=>p.portfolio_ref==='PF-PENDING');portfolio.status='closed';portfolio.version++;
  assert.deepEqual(finalSource,ownerExpected);
- result.external_receipts=final.writeback_receipts.filter(r=>r.proposal_id===result.external_request.proposal_id);
+ result.external_receipts=final.writeback_receipts.filter(r=>r.proposal_id===result.external_proposal_id);
  assert(result.external_receipts.length>0);assert(result.external_receipts.every(r=>r.status!=='applied'));
  result.status='pass_observed_source_coordination';
 }catch(e){result.status='failed_or_incomplete';result.error=e.stack;process.exitCode=1;log('a3_failure',{message:e.message});}

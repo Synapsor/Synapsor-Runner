@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-09-12T22:54:33.228212+00:00",
+  "deadline": "2026-09-13T00:24:33.228212+00:00",
+  "operations": 24,
+  "maximum_operations": 240,
+  "worker_invocations": 4,
+  "schedules": {
+    "A1 identical and replay": 1,
+    "A2 final insurer slot": 1,
+    "A3 portfolio constraint": 1,
+    "A3 owned source update": 1
+  }
+}
