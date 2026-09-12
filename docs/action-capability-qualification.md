@@ -1,9 +1,183 @@
 # Action Capability Qualification
 
 This is an evidence inventory, not a claim that onboarding is complete or that
-arbitrary SQL/business logic is supported. Last updated: 2026-09-11.
+arbitrary SQL/business logic is supported. Last updated: 2026-09-12.
 
-## Current Bounded Isolation-First Pass
+## Bounded Pass Result: Operational Completion Failed
+
+The isolation-first known-case assignment reached its declared three-artifact
+limit. Final product source is `35e21a279c2f515bbc78dea846c16269a715df80`.
+Targeted relationship, private-source recovery and scope-evidence regressions
+passed. Insurance reached a generated real four-tool client and separately
+reviewed execution setup, but **valid requests failed before proposal creation**.
+No eligible execution, receipt, human-review delivery, concurrency result or
+same-client rule-edit demonstration is claimed. This is not a Gate 2 pass,
+unaided onboarding success, release qualification, or fulfillment of the CEO UX
+target. The historical Gate 1 acceptance and earlier failures remain unchanged.
+
+### Final Artifact And Checks
+
+The final frozen installation includes the local pre-release Spec, lockfile and
+all 7,569 entries. It was not patched during testing. Two earlier complete
+artifacts and their failed/incomplete runs are preserved below.
+
+| Item | SHA-256 or result |
+| --- | --- |
+| Complete installed tree | `e59245de2be15d8319a746a486cd8e7496ef94440496cb2c0a39f36b75529171` |
+| Installed manifest | `b345c091a3a19388d45c39ad674989ef9ff4eac505e02ce3b6cae57dbee96e27` |
+| Installed archive | `3342598ba9097b76635fce10d0017265252936edebf86c3e43326e684eb2acef` |
+| Package lock | `011315cf9356ae6aef081cbbc5bdad3bb523ee778a51324a4a466222a1b43053` |
+| Runner 1.8.0 archive | `85e0a6296d2c68cd2fb724cf08b06c34373b15759ca24f50d6c80ed73939cb77` |
+| Local Spec 1.11.0 archive | `27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e` |
+| Stable full regression | 6,051 passed; 447 optional skips; 292 files passed, 21 skipped |
+| Types/build/package checks | Passed, including five installed entrypoints matching the tested build |
+| Final focused regression | 113 passed: both private-catalog origins, preparation and host concurrency |
+| Owned live PostgreSQL | 14 passed |
+| Clean packed install with local Spec | Passed |
+
+The full test phase took 1,075.29 seconds; its complete command took 1,105.279
+seconds. Packed verification took 207.742 seconds. Skips and individual unit
+results do not establish public workflow completion.
+
+### Public Journey Results
+
+Each setup retained its original 45-minute/80-actual-provider-transport ceiling
+across resumes. Elapsed times below include operator inspection and measurement
+pauses; they are observed case spans, not provider latency benchmarks. Runtime
+used its separate predeclared ceiling. No positive source rows were adjusted to
+make a request qualify.
+
+| Final-artifact case | Observed span and actual transports | Result |
+| --- | --- | --- |
+| Insurance fresh | 42m39s setup; 38 OpenAI HTTP-200 transports | Read, Action, generated narrow writer, rescan, execution review, generated Claude configuration and handshake reached with substantial assistance. Runtime valid requests failed. |
+| Insurance original-checkpoint recovery | 25m09s; 16 transports, 15 HTTP 200 and one TLS failure | Fresh private-source consent and complete unchanged rule revalidation passed. Coverage still blocked review on writer-maintenance/environment requirements. Saved disabled; not full recovery completion. |
+| Editorial fresh | 16m47s across initial setup and resume; 19 HTTP-200 transports | Actual Read catalog contains both composite links; no empty-link clarification failure. Saved disabled atomic action; original database-clock requirement remains unmet. Recovery exposed a technical pending-edit conflict screen. |
+| Editorial original-checkpoint recovery | 7m31s; six HTTP-200 transports | Existing Read and exact Action digest retained. After repeating the clock requirement, model accurately explained the unsupported guarantee. Saved pending, no activation or execution. |
+
+**Insurance setup assistance:** initial wording explicitly identified the
+original per-outcome counters using knowledge from the failed earlier attempt.
+The operator reconfirmed the fixture's baseline private ceilings and every-writer
+counter-maintenance contract. Coverage confused that maintenance statement with
+privacy, attempted a refused privacy-only rewrite, and required further review
+and a Terra-authoring/Claude-runtime clarification. Reader rescan retained the
+job but needed one retry after incomplete policy-line coverage. These were not
+waived checks, but they are material onboarding friction.
+
+The owned administrator applied only the exact generated narrow writer SQL:
+claim reserve/version updates, the necessary non-effect lock grants, and six
+scoped policies. The source schema/policies changed only for this explicitly
+authorized writer provisioning; all 40 original business rows stayed unchanged.
+Explicit Read, Action and execution reviews were separate. The local fixture
+identity was entered through public setup; it is not production authentication.
+The generated Claude `.mcp.json` was unchanged during runtime.
+
+Actual Claude Code 2.1.269 / `claude-opus-5` used one persistent client session,
+four user turns, 18 actual tool calls and 14 actual Anthropic transports. Only
+`app.describe_data`, `app.explore_data`, `app.describe_actions` and
+`app.request_change` were exposed. Public supervised worker `--once` exited
+successfully with an empty queue; that is not evidence of an executed change.
+
+| Actual insurance runtime check | Result |
+| --- | --- |
+| Discovery and scoped business reads | Passed; 27 visible claims, permitted portfolio details through the complete three-key relationship; other insurer/adjuster records absent |
+| Eligible `CL-101`, desired 30,000 cents | Failed: `SEMANTIC_TARGET_DEPENDENCY_INVALID`, before a proposal |
+| Valid human-review `CL-102`, desired 50,000 cents | Same failure, including with a relationship-inclusive observed reference; no human-review delivery |
+| Active freeze, over-budget and closed claim controls | Refused uniformly with `SEMANTIC_ACTION_NOT_ELIGIBLE`, without the private cause |
+| 999, 100,001 and fractional 1,000.5 cents | Refused with `ARGUMENT_INVALID` |
+| Raw internal ID selection and version grouping | Refused with `EXPLORE_FIELD_FORBIDDEN` |
+| Private freeze resource discovery | Refused with `CATALOG_ENTRY_UNAVAILABLE` |
+| Execution/receipt/readback, concurrency, pending-history and same-client edit | Blocked or untested; not passed |
+
+Read-only control-store audit found zero proposals, approvals, jobs, receipts and
+queue entries after the failed runtime; 108 observed references and nine query
+audit records were present. All business rows were unchanged. The test client's
+feedback is retained, but its mistaken early-reference-expiry explanation and
+count of eligible attempts are not accepted as measured facts.
+
+### Confirmed Remaining Blockers
+
+1. **Selected row also present in a required collection.** The unchanged
+   insurance rule requires the selected claim to occur exactly once in its
+   complete portfolio collection. Evaluation emits a dependency per binding;
+   the selected target therefore legitimately appears under `selected_claim`
+   and `portfolio_claims`. `packages/mcp-server/src/proposal-builder.ts` counts
+   dependencies by physical resource/key alone and rejects the two as an invalid
+   exact target. The actual MCP failures and a separate read-only, in-memory
+   reproduction using the saved rule and original rows confirm this cause. The
+   reproduction is not authority injection or additional runtime qualification.
+   Removing collection verification or skipping the target guard is not a fix.
+2. **Generated correction prose treated as operator intent.** Artifact two's
+   actual inputs confirm that a diagnostic describing the wrong old counter
+   scope can itself become an enforced scope requirement. The final fresh run
+   avoided this using correct initial wording; a differently worded recovery
+   correction succeeded. Neither result fixes or disproves the recorded
+   provenance defect. Preserve original policy intent separately from repair
+   diagnostics in any later authorized repair.
+3. **Coverage and recovery still require unnecessary operator work.** Insurance
+   historical recovery correctly rebuilt the private source and full action,
+   then continued flagging an already supplied maintenance confirmation and
+   the later writer environment. Clarifying those facts did not clear that
+   gate. Do not equate missing execution setup with incorrect saved business
+   rules, or waive genuinely unverified writer guarantees.
+4. **Unsupported editorial clock is safe but awkwardly handled.** Actual fresh
+   Read input contains both supported links with their targets. Full three-pair
+   relationships survive the saved Action catalog. The separate missing-link
+   review menu was not needed in this fresh run, so its live menu path is not
+   claimed covered by that result. Coverage detects the database-origin UTC
+   mismatch but still launches an impossible correction; the conversation then
+   pauses and resume shows technical baseline digests. Historical recovery asks
+   the already-stated clock question once more, then accurately reports the
+   blocker. No activation option or source-clock substitution was accepted.
+
+### Recovery And Preservation Evidence
+
+Insurance recovery started from a whole isolated copy of the original stopped
+project. The operator excluded the public freeze table through the public editor
+and resumed. Runner offered new exact private-source consent **before** the stale
+checkpoint guard. The operator reviewed all insurer, adjuster and portfolio key
+pairs, then explicitly admitted private verification. No earlier review was
+fabricated. A read-only comparison verifies preservation of all four original
+components, all six eligibility expressions, typed inputs, effect, reviewer,
+private freeze fields and complete collections; the 8/3 limits retain the correct
+outcome selectors. Viewing/excluding a public resource was not private consent.
+
+Editorial historical recovery retained the exact original Action digest
+`sha256:daaf08677f9a0fe3edc3170cfafc9abcef8b1464ec79139be555fc1d40efc293`,
+including its atomic rule and approval classes. It retained the complete policy,
+existing Read and pending clock requirement. Neither recovery activated business
+authority or changed any source row. Editorial execution remains intentionally
+untested, not attributed to an invented writer-grant fix.
+
+Original projects, their SQLite companions and directories were protected by an
+enforced read-only namespace. Effective-store preflight ran before every writable
+Runner open. Full original-project manifest remains
+`03891eff63c155c4cd369e8a8ec2171cdd6524f0178b3822ea9a165f2c419c1c`;
+both historical frozen installations and all three new installations are checked
+against their original manifests. The earlier assignment's isolation failure
+remains recorded as a failure; current preservation does not erase it.
+
+Durable evidence is outside Git under
+`/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/`:
+
+- `isolation-completion-591555b/`: first artifact, tests, sentinel isolation and
+  full before/after preservation manifests.
+- `isolation-correction-200f452/`: second artifact, original failed correction
+  inputs and exact repair-provenance reproduction.
+- `isolation-final-5e3e78b/`: final frozen manifest/archive, all four known-case
+  projects, public terminal logs, actual provider meters and source/store audits.
+- Final insurance evidence: `insurance-fresh/public-journey-result.md`,
+  `runtime/claude-client.jsonl`, `runtime/anthropic-attempts.jsonl`,
+  `target-dependency-forensic.json`; recovery `checkpoint-retention-audit.json`.
+- Final editorial evidence: fresh `relationship-and-blocker-audit.json` and
+  `terminal-02.log`; historical recovery `terminal-01.log` and read-only audits.
+
+Final closure audit at 07:41 UTC confirms zero owned case/client/worker processes,
+containers or case locks; all new installed manifests still match. Owned source
+dumps, projects and diagnostics are preserved. No public remote or package publication is authorized.
+This bounded assignment stops with these failures preserved; further repairs and
+the full unseen qualification require a separately scoped continuation.
+
+## Implementation History Of This Pass
 
 Authorized after `591555b`, following implementation `3478de5`. This is a
 known-case repair and completion attempt, **not a new unseen Gate 2**. Historical
@@ -106,7 +280,8 @@ Correcting to outcome accounting therefore contradicts that generated input.
 The model's claim that outcome-specific accounting is unsupported is not the
 root cause. The original policy is preserved; this separate blocker is recorded,
 not bypassed or repaired by expanding the bounded assignment. Runtime, client,
-worker, receipts and rule edits have not been reached in this pass.
+worker, receipts and rule edits had not been reached at that second-artifact
+checkpoint. The final-artifact results above supersede that interim status.
 
 Budgets: at most three frozen artifacts for the listed defects, 45 minutes and
 80 actual provider attempts per fresh/recovery setup across resumes. If insurance

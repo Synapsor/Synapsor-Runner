@@ -1,6 +1,6 @@
 # Onboarding Generalization Audit
 
-R13 working candidate, 2026-09-11. This records source inspection and focused
+R13 working candidate, 2026-09-12. This records source inspection and focused
 regressions, not completion of unfamiliar-database qualification.
 
 Current bounded isolation-first follow-up starts at `591555b`, after `3478de5`.
@@ -8,9 +8,45 @@ It does not select new domains or replace Gate 2. The shared fixes are exact
 Read relationship prerequisite review/catalog rebuild, full private scope-pair
 retention, fresh private-collection checkpoint consent/revalidation, and saved
 policy-aware status. No domain-name branches, source-clock feature, four-tool
-changes or engine grammar were added. Known-case public results remain pending;
-see the current section of the qualification report. Complete original projects
+changes or engine grammar were added. The bounded pass is now stopped on product
+source `35e21a2`: targeted regressions passed, but insurance operational completion
+FAILED and editorial remains blocked by its original database-clock requirement.
+See the final result section of the qualification report. Complete original projects
 and frozen installations are read-only during isolated runs and manifest-checked.
+
+### Known-Case Generalization Limits
+
+The final installed artifact is `e59245de2be15d8319a746a486cd8e7496ef94440496cb2c0a39f36b75529171`,
+including local Spec and dependencies. These are known regression layouts, not
+newly selected unfamiliar domains and not evidence of a Gate 2 pass.
+
+- Actual editorial Read input now lists both supported composite links; saved
+  relationships retain the record key, publisher and editor pairs. Historical
+  recovery retains the exact original disabled Action digest. The missing-link
+  review menu itself is covered by orchestration regressions, not by a claim that
+  the final fresh run needed it. No clock source was invented or policy relaxed.
+- Insurance public exclusion followed by resume now obtains fresh private-source
+  consent before strict checkpoint validation. Read-only comparison confirms the
+  original conditions, typed effect, complete collections and 8/3 approval limits
+  survive. Later coverage still blocks that recovery on maintenance/environment
+  concerns, despite supplied clarification. This is not full recovery success.
+- Insurance fresh setup reaches the unchanged generated four-tool Claude client,
+  narrow writer/rescan and explicit execution review, but requires considerable
+  assistance. Valid requests fail when a physical target is also represented in
+  its required complete collection: proposal construction counts two binding-level
+  dependencies as an invalid target. This is a reusable runtime integration defect,
+  not a reason to remove the aggregate/freeze policy or add a domain-specific tool.
+- A separate retained failure shows generated coverage-correction text being
+  reinterpreted as original counter intent. Correct initial wording in the last
+  run avoided that failure; it did not repair the mechanism.
+- Negative/privacy controls passed in the actual client, but no successful source
+  effect, receipt, human-review delivery, concurrency or same-client rule change
+  was reached. No general capability or onboarding-success claim follows from
+  the regression totals or assisted setup alone.
+
+The three-artifact limit is exhausted. These new blockers are recorded for a
+separately scoped continuation, not automatic engine expansion or a fourth build.
+The earlier audit and frozen failures below remain historical evidence.
 
 | Layer | Finding and treatment |
 | --- | --- |
