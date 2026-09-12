@@ -57,11 +57,32 @@ Four kernel isolation tests and 14 owned PostgreSQL writer/rescan tests pass.
 The first full run caught a new type dependency cycle before tests; it is fixed
 and that failed log is retained. The second ran 5,997 passing application tests
 with 447 optional skips, but failed collecting the Node-test sandbox file through
-Vitest. That file now uses Vitest and its four checks pass there. A final complete
-run is pending. Clean packed-install checks with local Spec passed, including
-managed client configuration preservation. No new known-case execution or edit
-result is claimed. New transport tests also verify optional sanitized actual
+Vitest. That file now uses Vitest and its four checks pass there. The final complete
+run passed 6,001 tests with 447 optional skips, including types/build and package
+checks. Clean packed-install checks with local Spec passed, including
+managed client configuration preservation. New transport tests also verify optional sanitized actual
 request capture, without modifying transport bodies or retaining headers/secrets.
+
+First artifact: source `40cff1c`, complete installed tree
+`ca2cd173ccdf0dc1b2bd8706f1d8bbc537419d5f4c044b489b0e020db9832701`,
+including the exact local Spec archive and all 7,569 installed entries. Harness
+follow-up `200f452` does not change that product. Its fresh insurance run stopped
+at the declared 45-minute setup ceiling with one saved disabled Action and Read
+draft, unresolved policy coverage, and no source-row changes. It made 33 actual
+provider transports (32 HTTP 200, one TLS failure). Two earlier logical requests
+failed DNS before transport. Harness parent-project preflight and resolver-mount
+repairs required public pause/resume; this was not unaided completion. Original
+projects and both earlier frozen installations still match their full manifests.
+
+Actual sanitized coverage input exposed a narrow integration omission: scope
+evidence was generated only for public Read resources, leaving an already-reviewed
+private complete-collection binding without its inspected scope proof. The bounded
+correction reuses exact private-source and closed-RLS validators, comparing current
+and compiled catalogs canonically before reuse. It adds no public access, consent,
+business interpretation or execution readiness. A failing-before regression and
+90 passing targeted cases cover the correction and nearby private-source reviews.
+The corrected full regression and new artifact qualification are pending. Runtime,
+client, worker, receipts and rule edits have not been reached in this pass.
 
 Budgets: at most three frozen artifacts for the listed defects, 45 minutes and
 80 actual provider attempts per fresh/recovery setup across resumes. If insurance

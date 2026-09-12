@@ -8,11 +8,12 @@ import { activePolicySource, type PolicyCoverage, type PolicyPassage, type Polic
 import { hasReviewedCustomerReadEntry, reviewedReadEntryPaths } from "./read-relationship-access.js";
 import { policySourceConstraintEvidence, type PolicySourceInspection } from "./action-rule-source-evidence.js";
 import { rolePostureFingerprint, schemaFingerprintForInspection } from "@synapsor-runner/schema-inspector";
-import { normalizeActionRuleCatalog, type ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
+import { actionRuleRelationshipPairs, normalizeActionRuleCatalog, type ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import { inspectedPostgresScopeMapping } from "./inspected-scope-mapping.js";
 import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
 import { parseReviewedActionVersionFields, type ReviewedActionVersionField } from "./action-rule-authoring-checkpoint.js";
 import { prepareActionVersionField } from "./action-rule-version-review.js";
+import { preparePrivateActionSource } from "./action-rule-resource-review.js";
 import type { DerivedEffectEnvelopeSpecV1 } from "@synapsor/spec";
 import type { AskProvider } from "./model-ask.js";
 
@@ -161,14 +162,56 @@ export function policyCoverageDraft(input: {
     }
   };
   const actionScope = (action: typeof actions[number], binding: typeof actions[number]["verification_boundary"]["resources"][number]) => {
-    const proof = readScopes.get(binding.resource);
-    if (!proof || action.source_catalog?.generation_lock_fingerprint !== input.read.generation_lock_fingerprint
+    if (action.source_catalog?.generation_lock_fingerprint !== input.read.generation_lock_fingerprint
+      || action.verification_boundary.generation_lock_fingerprint !== input.read.generation_lock_fingerprint
+      || action.verification_boundary.source !== input.read.source
       || action.read_dependency?.name !== input.read.pack.name || action.read_dependency.digest !== readDigest
-      || binding.scope.mode !== "columns" || binding.scope.tenant_field !== proof.tenant.field
-      || binding.scope.principal_field && binding.scope.principal_field !== proof.principal.field) return null;
+      || binding.scope.mode !== "columns") return null;
     const resources = action.source_catalog.resources.filter(resource => resource.name === binding.resource);
     const resource = resources.length === 1 ? resources[0] : undefined;
-    if (!resource || resource.engine !== "postgres" || resource.source !== input.read.source
+    if (!resource || resource.engine !== "postgres" || resource.source !== input.read.source) return null;
+    let proof = readScopes.get(binding.resource);
+    // Private verification does not need public Read admission. Recheck only
+    // the already-compiled link and exact child scope through existing validators.
+    if (!proof && resource.verification_only && input.source && binding.source.kind === "relationship"
+      && binding.source.direction === "inverse" && !input.read.pack.resources.some(entry => entry.id === resource.name)) {
+      const source = binding.source;
+      const parents = action.verification_boundary.resources.filter(entry => entry.binding === source.from_binding);
+      const parent = parents.length === 1 ? parents[0] : undefined;
+      const parentProof = parent && readScopes.get(parent.resource);
+      const links = action.source_catalog.relationships.filter(entry => entry.name === source.relationship);
+      const link = links.length === 1 ? links[0] : undefined;
+      if (parentProof && parent?.scope.mode === "columns" && parent.scope.tenant_field === parentProof.tenant.field
+        && parent.scope.principal_field === parentProof.principal.field
+        && link?.from_resource === resource.name && link.to_resource === parent.resource
+        && canonicalJsonDigest(source.field_pairs) === canonicalJsonDigest(actionRuleRelationshipPairs(link))) {
+        try {
+          const built = buildActionRuleAuthoringCatalog({ boundary: input.read, inspection: input.source.inspection,
+            retainedCatalog: action.source_catalog });
+          const current = normalizeActionRuleCatalog(built.catalog), saved = normalizeActionRuleCatalog(action.source_catalog);
+          // Compiled catalogs normalize field order. Compare canonical records
+          // before reuse, without introducing any unreviewed current edge.
+          if (![resource.name, parent.resource].every(name => canonicalJsonDigest(current.resources.find(entry => entry.name === name))
+            === canonicalJsonDigest(saved.resources.find(entry => entry.name === name)))
+            || canonicalJsonDigest(current.relationships.find(entry => entry.name === source.relationship))
+              !== canonicalJsonDigest(saved.relationships.find(entry => entry.name === source.relationship))) return null;
+          const prepared = preparePrivateActionSource({ built, boundary: input.read, inspection: input.source.inspection,
+            resource: resource.name, parentResource: parent.resource });
+          const mapping = resource.tenant_key && inspectedPostgresScopeMapping({ inspection: input.source.inspection,
+            resource: { schema: resource.schema, table: resource.table, fields: resource.fields.map(field => field.name) },
+            tenantField: resource.tenant_key, tenantSetting: parentProof.tenant.setting, principalSetting: parentProof.principal.setting });
+          if (mapping && prepared.review.relationship === source.relationship && resource.principal_scope_key === mapping.principal.field) {
+            proof = { ...parentProof, resource: resource.name, schema: resource.schema, table: resource.table,
+              tenant: mapping.tenant, principal: mapping.principal, policy_fingerprint: mapping.policy_fingerprint,
+              policy_count: mapping.policy_names.length };
+          }
+        } catch {
+          // Changed/ambiguous metadata is still unresolved, never inferred from a name or model assertion.
+        }
+      }
+    }
+    if (!proof || binding.scope.tenant_field !== proof.tenant.field
+      || binding.scope.principal_field && binding.scope.principal_field !== proof.principal.field
       || resource.schema !== proof.schema || resource.table !== proof.table
       || resource.tenant_key !== proof.tenant.field
       || resource.principal_scope_key && resource.principal_scope_key !== proof.principal.field
