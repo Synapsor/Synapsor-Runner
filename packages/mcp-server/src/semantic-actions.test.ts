@@ -55,7 +55,7 @@ const stateType: ActionRuleScalarTypeSpecV1 = {
 const integer = { kind: "integer" } as const;
 
 function semanticFixture(options: { automaticApproval?: boolean; requiredApprovals?: number; businessInput?: boolean;
-  outcome?: string; aliases?: string[] } = {}) {
+  outcome?: string; aliases?: string[]; sharedLimits?: ActionRuleApprovalClassSourceV1["shared_limits"] } = {}) {
   const catalog: ActionRuleCatalogV1 = {
     schema_version: "synapsor.action-rule-catalog.v1",
     generation_lock_fingerprint: lock,
@@ -162,7 +162,7 @@ function semanticFixture(options: { automaticApproval?: boolean; requiredApprova
       rules: [{ outcome: rule.outcome, auto_approve_when: structuredClone(rule.require) }],
       required_role: "billing_reviewer",
       required_approvals: options.requiredApprovals ?? 1,
-      shared_limits: [
+      shared_limits: options.sharedLimits ?? [
         {
           id: "billing_pause_action_24h",
           kind: "count",
@@ -226,18 +226,28 @@ function createFixtureRuntime(options: {
   delegation?: SemanticActionRequestContext["delegation"];
   delegationRequired?: boolean;
   resourceFailure?: Error;
+  sharedLimits?: ActionRuleApprovalClassSourceV1["shared_limits"];
+  tenant?: string;
+  principal?: string;
+  clock?: () => string;
 } = {}) {
   const store = options.store ?? new ProposalStore();
   const { registry, activated } = semanticFixture({
     businessInput: options.businessInput,
     automaticApproval: options.automaticApproval,
     requiredApprovals: options.requiredApprovals,
+    sharedLimits: options.sharedLimits,
   });
+  const subjectAuthority = {
+    ...authorityContext(),
+    ...(options.tenant ? { tenant_scope_fingerprint: canonicalJsonDigest(options.tenant) } : {}),
+    ...(options.principal ? { principal_scope_fingerprint: canonicalJsonDigest(options.principal) } : {}),
+  };
   const subjectReferences = createSubjectReferenceService({
     store,
     registry,
     key: Buffer.alloc(32, 7),
-    clock: () => "2026-09-02T20:02:00.000Z",
+    clock: options.clock ?? (() => "2026-09-02T20:02:00.000Z"),
   });
   const queries: ActionRuleFactQueryV1[] = [];
   const preferences = options.preferences ?? [{
@@ -257,11 +267,11 @@ function createFixtureRuntime(options: {
       return {
         delegation: options.delegation,
         trusted_context: {
-          tenant_id: "acct_northstar",
-          principal: "customer_maya",
+          tenant_id: options.tenant ?? "acct_northstar",
+          principal: options.principal ?? "customer_maya",
           provenance: "http_claims",
         },
-        subject_authority: options.subjectAuthority?.() ?? authorityContext(),
+        subject_authority: options.subjectAuthority?.() ?? subjectAuthority,
         fact_loader: {
           engine: "postgres",
           async assertResourceCompatible() { if (options.resourceFailure) throw options.resourceFailure; },
@@ -273,8 +283,8 @@ function createFixtureRuntime(options: {
             const requestedId = identityPredicate?.operation === "eq" ? identityPredicate.value : undefined;
             return preferences.filter((preference) => preference.preference_id === requestedId).map((preference) => ({
               preference_id: preference.preference_id,
-              account_id: "acct_northstar",
-              principal_id: "customer_maya",
+              account_id: options.tenant ?? "acct_northstar",
+              principal_id: options.principal ?? "customer_maya",
               status: preference.status,
               version: preference.version,
             }));
@@ -283,7 +293,7 @@ function createFixtureRuntime(options: {
       };
     },
   });
-  return { store, registry, activated, subjectReferences, semanticActions, queries };
+  return { store, registry, activated, subjectReferences, semanticActions, queries, subjectAuthority };
 }
 
 async function issueSubject(
@@ -292,7 +302,7 @@ async function issueSubject(
   version = 4,
 ) {
   const [subject] = await fixture.subjectReferences.issue({
-    ...authorityContext(),
+    ...fixture.subjectAuthority,
     resource: "billing.preferences",
     evidence_bundle_id: `ev_explore_${preferenceId}`,
     observations: [{
@@ -753,6 +763,178 @@ describe("fixed semantic Action MCP", () => {
       expect(proposals.map(proposal => proposal.state).sort()).toEqual(["approved", "pending_review"]);
       expect(proposals.flatMap(proposal => secondStore.approvals(proposal.proposal_id))).toHaveLength(1);
     } finally { release(); await Promise.allSettled(work); secondStore.close(); firstStore.close(); await rm(directory, { recursive: true, force: true }); }
+  });
+
+  it.each(["insurer", "overall"] as const)("counts a later committed approval when an earlier claimed request resumes at the last %s slot", async scope => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "semantic-approval-time-"));
+    const firstStore = new ProposalStore(path.join(directory, "requests.sqlite"));
+    const secondStore = new ProposalStore(firstStore.path);
+    const baseTime = Date.parse("2026-09-02T20:02:00.000Z");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(baseTime);
+    let release!: () => void, arrived!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { arrived = resolve; });
+    const sharedLimits: ActionRuleApprovalClassSourceV1["shared_limits"] = [
+      { id: "overall_24h", kind: "count", scope: "capability", maximum: 8, window_seconds: 86400, capability: "billing.pause_notifications" },
+      { id: "insurer_24h", kind: "count", scope: "tenant", maximum: 3, window_seconds: 86400, capability: "billing.pause_notifications" },
+    ];
+    const preferences = Array.from({ length: 12 }, (_, i) => ({ preference_id: `claim-${i}`, status: "active" as const, version: 4 }));
+    const fixtures = new Map<string, ReturnType<typeof createFixtureRuntime>>();
+    const fixture = (tenant: string, principal: string, slow = false) => {
+      const key = `${tenant}:${principal}`;
+      if (!fixtures.has(key)) fixtures.set(key, createFixtureRuntime({ store: slow ? firstStore : secondStore,
+        automaticApproval: true, tenant, principal, preferences, sharedLimits, clock: () => new Date().toISOString(),
+        beforeLoad: async query => {
+          if (slow && query.predicates.some(p => p.operation === "eq" && p.value === "claim-10")) { arrived(); await gate; }
+        } }));
+      return fixtures.get(key)!;
+    };
+    const request = async (f: ReturnType<typeof createFixtureRuntime>, id: number) => ({
+      outcome: "billing.pause_notifications", subject_refs: { preference: await issueSubject(f, `claim-${id}`) },
+    });
+    let pending: Promise<Record<string, unknown>> | undefined;
+    try {
+      // All history enters through the real semantic request/approval path.
+      const history = scope === "insurer" ? ["insurer-a", "insurer-a"]
+        : ["insurer-a", "insurer-a", "insurer-a", "insurer-b", "insurer-b", "insurer-c", "insurer-c"];
+      for (const [id, tenant] of history.entries()) {
+        const f = fixture(tenant, "adjuster-history");
+        expect(await f.semanticActions.callTool(REQUEST_CHANGE_TOOL, await request(f, id))).toMatchObject({
+          authorization: { approval: "automatic" }, source_database_changed: false,
+        });
+      }
+      const first = fixture(scope === "insurer" ? "insurer-a" : "insurer-b", "adjuster-first", true);
+      const second = fixture(scope === "insurer" ? "insurer-a" : "insurer-c", "adjuster-second");
+      const firstRequest = await request(first, 10), secondRequest = await request(second, 11);
+      vi.setSystemTime(baseTime + 1000);
+      pending = first.semanticActions.callTool(REQUEST_CHANGE_TOOL, firstRequest);
+      await entered; // The first request has claimed its reference and is loading facts.
+      vi.setSystemTime(baseTime + 2000);
+      expect(await second.semanticActions.callTool(REQUEST_CHANGE_TOOL, secondRequest)).toMatchObject({
+        authorization: { approval: "automatic" }, source_database_changed: false,
+      });
+      const committed = secondStore.listProposals().flatMap(p => secondStore.approvals(p.proposal_id));
+      expect(committed).toHaveLength(history.length + 1);
+      vi.setSystemTime(baseTime + 3000);
+      release();
+      expect(await pending).toMatchObject({ proposal: { status: "pending_review" }, source_database_changed: false });
+      const proposals = firstStore.listProposals();
+      expect(proposals.filter(p => p.state === "approved")).toHaveLength(history.length + 1);
+      expect(proposals.filter(p => p.state === "pending_review")).toHaveLength(1);
+      expect(proposals.flatMap(p => firstStore.approvals(p.proposal_id))).toEqual(committed);
+      expect(preferences.every(p => p.status === "active" && p.version === 4)).toBe(true);
+    } finally {
+      release(); await pending?.catch(() => undefined); vi.useRealTimers(); secondStore.close(); firstStore.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each([2, 8])("grants exactly the available allowance under concurrent load (overall allowance=%s)", async maximum => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "semantic-approval-capacity-"));
+    const store = new ProposalStore(path.join(directory, "requests.sqlite"));
+    let entered!: () => void, release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const arrived = new Promise<void>(resolve => { entered = resolve; });
+    const fixture = createFixtureRuntime({ store, automaticApproval: true,
+      sharedLimits: [
+        { id: "overall", scope: "capability", kind: "count", maximum, window_seconds: 86400 },
+        { id: "insurer", scope: "tenant", kind: "count", maximum: 8, window_seconds: 86400 },
+      ],
+      preferences: [0, 1, 2].map(i => ({ preference_id: `capacity-${i}`, status: "active", version: 4 })),
+      beforeLoad: async query => {
+        if (query.predicates.some(p => p.operation === "eq" && p.value === "capacity-0")) { entered(); await gate; }
+      },
+    });
+    const work: Array<Promise<Record<string, unknown>>> = [];
+    try {
+      const requests = await Promise.all([0, 1, 2].map(async i => ({ outcome: "billing.pause_notifications",
+        subject_refs: { preference: await issueSubject(fixture, `capacity-${i}`) } })));
+      work.push(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, requests[0]!));
+      await arrived;
+      // A real duplicate waits at the product mutex while distinct requests progress.
+      work.push(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, requests[0]!));
+      const other = await Promise.all(requests.slice(1).map(r => fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, r)));
+      release();
+      const results = [...await Promise.all(work), ...other];
+      expect(results.every(r => r.ok === true && r.source_database_changed === false)).toBe(true);
+      const proposals = store.listProposals();
+      expect(proposals).toHaveLength(3);
+      expect(proposals.filter(p => p.state === "approved")).toHaveLength(Math.min(maximum, 3));
+      expect(proposals.filter(p => p.state === "pending_review")).toHaveLength(Math.max(3 - maximum, 0));
+      expect(proposals.flatMap(p => store.approvals(p.proposal_id))).toHaveLength(Math.min(maximum, 3));
+      for (const request of requests) expect(await fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request))
+        .toMatchObject({ request_disposition: "already_recorded" });
+      expect(store.listProposals().flatMap(p => store.approvals(p.proposal_id))).toHaveLength(Math.min(maximum, 3));
+    } finally { release(); await Promise.allSettled(work); store.close(); await rm(directory, { recursive: true, force: true }); }
+  });
+
+  it("retains a committed automatic decision across lost acknowledgement and restart before queue publication", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "semantic-approval-restart-"));
+    const storePath = path.join(directory, "requests.sqlite");
+    let store = new ProposalStore(storePath);
+    const create = (loseAcknowledgement: boolean) => createFixtureRuntime({ store, automaticApproval: true,
+      onProposalReady: async ({ proposal, activated }) => {
+        if (loseAcknowledgement) throw new Error("simulated lost acknowledgement before queue publication");
+        if (proposal.state === "approved") {
+          store.enqueueWorkerProposal({ proposal_id: proposal.proposal_id, execution_mode: "supervised_worker",
+            contract_digest: activated.action_boundary_digest });
+          return { execution: "queued", source_database_changed: false };
+        }
+        return { execution: "human_review", source_database_changed: false };
+      } });
+    try {
+      const first = create(true);
+      const request = { outcome: "billing.pause_notifications", subject_refs: { preference: await issueSubject(first) } };
+      await expect(first.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)).rejects.toThrow("simulated lost acknowledgement");
+      const [approved] = store.listProposals();
+      expect(approved!.state).toBe("approved");
+      const decisions = store.approvals(approved!.proposal_id);
+      expect(decisions).toHaveLength(1);
+      expect(store.getWorkerQueueItem(approved!.proposal_id)).toBeUndefined();
+      store.close(); store = new ProposalStore(storePath);
+      const restarted = create(false);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        expect(await restarted.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)).toMatchObject({
+          request_disposition: "already_recorded", authorization: { approval: "automatic", execution: "queued" },
+        });
+      }
+      expect(store.approvals(approved!.proposal_id)).toEqual(decisions);
+      expect(store.db.prepare("SELECT COUNT(*) AS n FROM worker_queue").get()).toEqual({ n: 1 });
+      // A permanently blocked worker still leaves the committed event counted.
+      const lease = store.claimWorkerItem({ workerId: "test-worker", executionMode: "supervised_worker",
+        contractDigest: restarted.activated.action_boundary_digest });
+      expect(lease?.proposal_id).toBe(approved!.proposal_id);
+      store.blockWorkerItem({ proposalId: approved!.proposal_id, workerId: "test-worker", leaseId: lease!.lease_id!,
+        errorCode: "TRUSTED_BINDING_MISSING" });
+      expect(store.approvals(approved!.proposal_id)).toEqual(decisions);
+      const next = createFixtureRuntime({ store, automaticApproval: true, preferences: [{ preference_id: "next", status: "active", version: 4 }] });
+      expect(await next.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: "billing.pause_notifications",
+        subject_refs: { preference: await issueSubject(next, "next") } })).toMatchObject({ proposal: { status: "pending_review" } });
+      expect(store.listProposals().flatMap(p => store.approvals(p.proposal_id))).toHaveLength(1);
+    } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
+  });
+
+  it("rolls back an aborted automatic decision without spending either allowance or reporting human-review success", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "semantic-approval-abort-"));
+    const store = new ProposalStore(path.join(directory, "requests.sqlite"));
+    const fixture = createFixtureRuntime({ store, automaticApproval: true,
+      preferences: [0, 1].map(i => ({ preference_id: `abort-${i}`, status: "active", version: 4 })) });
+    try {
+      store.db.exec(`CREATE TRIGGER fail_automatic_approval AFTER INSERT ON approvals
+        BEGIN SELECT RAISE(ABORT, 'simulated durable approval failure'); END`);
+      const request = { outcome: "billing.pause_notifications", subject_refs: { preference: await issueSubject(fixture, "abort-0") } };
+      await expect(fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)).rejects.toThrow("simulated durable approval failure");
+      const [pending] = store.listProposals();
+      expect(pending!.state).toBe("pending_review");
+      expect(store.approvals(pending!.proposal_id)).toEqual([]);
+      expect(store.getWorkerQueueItem(pending!.proposal_id)).toBeUndefined();
+      expect(store.events(pending!.proposal_id).some(e => e.kind === "proposal_approved")).toBe(false);
+      store.db.exec("DROP TRIGGER fail_automatic_approval");
+      expect(await fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: "billing.pause_notifications",
+        subject_refs: { preference: await issueSubject(fixture, "abort-1") } })).toMatchObject({ authorization: { approval: "automatic" } });
+      expect(store.listProposals().flatMap(p => store.approvals(p.proposal_id))).toHaveLength(1);
+    } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
   });
 
   it("loads scoped authoritative facts and creates one idempotent Runner-derived proposal", async () => {

@@ -600,14 +600,17 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
       },
     ): PolicyApprovalDecision {
       const actor = `policy:${options.policy}`;
-      const now = options.now ?? new Date().toISOString();
-      const window = utcDayWindow(now);
       const trippedLimits: PolicyApprovalLimitTrip[] = [];
       const nearLimits: PolicyApprovalLimitTrip[] = [];
       const boundaryTrippedLimits: ActionBoundaryApprovalLimitTrip[] = [];
       const boundaryNearLimits: ActionBoundaryApprovalLimitTrip[] = [];
       let quorumDeferred = false;
       this.transaction(() => {
+        // BEGIN IMMEDIATE has acquired the writer lock. Evaluate every limit
+        // and persist its approval event at this admission time, never at a
+        // request's earlier evidence time. `now` remains a trusted test override.
+        const now = options.now ?? new Date().toISOString();
+        const window = utcDayWindow(now);
         const proposal = this.requireProposal(proposalId);
         assertWritebackAllowed(proposal, "approved by policy");
         assertProposalIdentity(proposal, options.proposal_hash, options.proposal_version);

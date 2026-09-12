@@ -275,7 +275,9 @@ export function createSemanticActionRuntime(input: {
                   digest: decision.activated.action_boundary_digest,
                   limits: decision.approval.authority.shared_limits,
                 },
-                now: verifiedAt,
+                // Fact evidence keeps its claim time. Approval accounting must
+                // use the store's admission time, after any durable writer wait,
+                // so a later-started request already committed is still counted.
               });
               proposal = approvalDecision.proposal;
             }
