@@ -327,6 +327,38 @@ describe("conversational Action authoring tools", () => {
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
 
+  it("keeps generated repair diagnostics separate from original counter intent", async () => {
+    const diagnostic = "Recorded requirement at lines 57-62: The private routine-ceiling condition, maxima, rolling 24-hour window, and boundary/trusted-insurer scopes are drafted, but both history selectors have capability=null. They therefore count approved outcomes across the Action Boundary rather than only this reserve-adjustment outcome, contrary to the outcome-specific source requirement.";
+    const baseline = policyModelDraft();
+    const requests: string[] = [];
+    const steps = [call("runner.validate_action_draft", {}), say("The original per-outcome limits are retained.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async request => {
+      requests.push(JSON.stringify(request.body));
+      if (!steps.length) throw new Error("Repair diagnostics incorrectly became business intent");
+      return steps.shift()!;
+    }), existingDraft: baseline, intent: diagnostic,
+    operatorStatements: ["Allow at most 100 automatic approvals for this action and 1 per account and principal in a rolling 24-hour period."] });
+    expect(result.compiled.draft.approval).toEqual(baseline.approval);
+    expect(requests.join("\n")).toContain("Generated repair context (not operator intent)");
+    expect(requests.join("\n")).toContain(diagnostic);
+  });
+
+  it("still enforces original scope and accepted operator decisions during a generated repair", async () => {
+    const baseline = policyModelDraft();
+    const corrected = { ...baseline.approval, shared_limits: [...baseline.approval.shared_limits,
+      { id: "all_actions", kind: "count", scope: "boundary", maximum: 100, window_seconds: 86400 }] };
+    const requests: string[] = [];
+    const steps = [call("runner.validate_action_draft", {}),
+      call("runner.submit_approval_policy_draft", { status: "draft", ...corrected, changed_fields: ["shared_limits"] }),
+      call("runner.validate_action_draft", {}), say("Boundary-wide accounting is retained.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async request => {
+      requests.push(JSON.stringify(request.body)); return steps.shift()!;
+    }), existingDraft: baseline, intent: "Repair the saved accounting selector.",
+    operatorStatements: ["Allow at most 100 automatic approvals across the Action Boundary in a rolling 24-hour period."] });
+    expect(requests.some(request => request.includes("explicit boundary accounting"))).toBe(true);
+    expect(result.compiled.draft.approval.shared_limits.some(limit => limit.scope === "boundary")).toBe(true);
+  });
+
   it("preserves setup pending an authoritative source without treating the operator answer as a source fact", async () => {
     const question = "I cannot verify current admission from these records. Is there an authoritative admission source to connect, or should I save setup pending that source?";
     const answer = "No existing field proves admission. Keep the requirement; do not infer it from authentication or registrations. Save setup pending that source.";
@@ -1051,6 +1083,24 @@ describe("conversational Action authoring tools", () => {
 });
 
 describe("model-guided Action Rule authoring", () => {
+  it("labels retained operator statements separately in focused repair prompts", async () => {
+    const calls: string[] = [], requests: string[] = [];
+    const result = await generateModelActionRuleDraft({
+      session: { provider: "openai", model: "gpt-5.6-terra", dependencies: { requestJson: phaseResponder(calls, undefined, requests) } },
+      intent: "Generated diagnostic: repair the draft while preserving the original policy.",
+      operatorStatements: ["Let an eligible account request a temporary pause with human review."],
+      builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest,
+      egressAcknowledged: true, env: { OPENAI_API_KEY: "provider-test-key" },
+    });
+    expect(result.compiled.approval_class.mode).toBe("human");
+    expect(requests).toHaveLength(4);
+    for (const request of requests) {
+      expect(request).toContain("Generated repair context (not operator intent)");
+      expect(request).toContain("Original policy and accepted operator statements");
+      expect(request).not.toContain("Operator intent: \\\"Generated diagnostic");
+    }
+  });
+
   it("uses four focused required tools and compiles one disabled semantic authority", async () => {
     const calls: string[] = [];
     const requestBodies: string[] = [];

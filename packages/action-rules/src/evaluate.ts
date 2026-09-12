@@ -377,6 +377,7 @@ function normalizeAndValidateFacts(compiled: CompiledActionRuleV1, facts: Action
   if (Object.keys(facts.bindings).some((name) => !names.has(name))) throw new ActionRuleError("ACTION_RULE_FACTS_UNKNOWN", "Fact payload contains an unreviewed binding.");
   const normalizedBindings: ActionRuleFactSetV1["bindings"] = {};
   const dependencies: ActionRuleDependencyV1[] = [];
+  const physicalFacts = new Map<string, ActionRuleFactRowV1>();
   let pendingUnknown: { code: string; reason: string } | undefined;
   const byName = new Map(compiled.bindings.map((binding) => [binding.binding, binding]));
   const orderedBindings = compiled.verification_boundary.lock_order.map((name) => byName.get(name)!);
@@ -418,6 +419,17 @@ function normalizeAndValidateFacts(compiled: CompiledActionRuleV1, facts: Action
       const primaryToken = canonicalJsonStringify(primaryValue);
       if (seenKeys.has(primaryToken)) throw new ActionRuleError("ACTION_RULE_FACTS_UNKNOWN", `Verified ${binding.binding} rows repeat one primary key.`);
       seenKeys.add(primaryToken);
+      // Projections (and their digests) remain binding-specific. Shared fields
+      // for the same physical row must nevertheless describe one snapshot.
+      const identity = canonicalJsonStringify([binding.resource.source, binding.resource.schema, binding.resource.table,
+        binding.verification.primary_key, primaryValue]);
+      const previous = physicalFacts.get(identity) ?? {};
+      for (const [field, value] of Object.entries(row)) {
+        if (Object.hasOwn(previous, field) && previous[field] !== value) {
+          throw new ActionRuleError("ACTION_RULE_FACTS_UNKNOWN", "Verification bindings contain conflicting facts for one physical row.");
+        }
+      }
+      physicalFacts.set(identity, { ...previous, ...row });
       const versionColumn = binding.verification.version_field;
       const versionValue = versionColumn === undefined ? undefined : row[versionColumn];
       dependencies.push({

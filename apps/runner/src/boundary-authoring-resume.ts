@@ -51,6 +51,8 @@ export type BoundaryAuthoringActionRemoval = {
 export type BoundaryAuthoringActionRevision = {
   outcome: string;
   instruction: string;
+  /** Original statements retained separately from a generated repair instruction. */
+  operator_statements?: string[];
   baseline_digest: `sha256:${string}`;
   checkpoint?: ActionRuleAuthoringCheckpoint;
 };
@@ -68,12 +70,13 @@ export function prepareBoundaryActionRevision(
   next: Omit<BoundaryAuthoringActionRevision, "checkpoint">,
   pending?: BoundaryAuthoringActionRevision,
 ): BoundaryAuthoringActionRevision {
-  const checked = normalizeActionRevision({ outcome: next.outcome, instruction: next.instruction, baseline_digest: next.baseline_digest });
+  const { checkpoint: _checkpoint, ...checked } = normalizeActionRevision(next);
   if (!pending) return checked;
   if (pending.outcome !== checked.outcome || pending.baseline_digest !== checked.baseline_digest) {
     throw new Error("ACTION_REVISION_BASELINE_CHANGED: The saved edit belongs to another draft revision. Keep it pending and review the current draft before retrying; no saved or active authority was overwritten.");
   }
-  return pending.instruction === checked.instruction ? pending : checked;
+  return pending.instruction === checked.instruction
+    && canonicalJsonDigest(pending.operator_statements ?? null) === canonicalJsonDigest(checked.operator_statements ?? null) ? pending : checked;
 }
 
 export type BoundaryAuthoringResumeAction = {
@@ -296,6 +299,7 @@ export async function assertBoundaryAuthoringResumeCurrent(
     if ("revision" in target) {
       const pending = current.pending_action_revision;
       if (!pending || pending.outcome !== target.revision.outcome || pending.instruction !== target.revision.instruction
+        || canonicalJsonDigest(pending.operator_statements ?? null) !== canonicalJsonDigest(target.revision.operator_statements ?? null)
         || pending.baseline_digest !== target.revision.baseline_digest) throw resumeChanged();
     } else if (!(current.action?.intents ?? (current.action ? [current.action.intent] : [])).includes(target.intent)) {
       throw resumeChanged();
@@ -486,12 +490,25 @@ function normalizePrivateReadMetadataDigest(value: unknown): `sha256:${string}` 
 function normalizeActionRevision(value: unknown): BoundaryAuthoringActionRevision {
   if (!isRecord(value) || typeof value.outcome !== "string" || typeof value.instruction !== "string"
     || typeof value.baseline_digest !== "string"
-    || Object.keys(value).some(key => !["outcome", "instruction", "baseline_digest", "checkpoint"].includes(key))) {
+    || Object.keys(value).some(key => !["outcome", "instruction", "operator_statements", "baseline_digest", "checkpoint"].includes(key))) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Action revision checkpoint is invalid.");
+  }
+  if (value.operator_statements !== undefined && (!Array.isArray(value.operator_statements)
+    || value.operator_statements.length < 1 || value.operator_statements.length > 72
+    || value.operator_statements.reduce((total: number, text: unknown) => total + (typeof text === "string" ? text.length : 65_537), 0) > 65_536)) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Original operator statements exceed bounded repair context.");
   }
   return { outcome: reviewedName(value.outcome, "Action revision outcome", 200),
     instruction: reviewedText(value.instruction, "Action revision request", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS),
     baseline_digest: reviewedDigest(value.baseline_digest, "Action revision baseline"),
+    ...(value.operator_statements ? { operator_statements: (value.operator_statements as unknown[])
+      .map(text => {
+        if (typeof text !== "string" || !text.trim() || text.length > 32_768
+          || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) {
+          throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Original operator statement must be bounded safe text.");
+        }
+        return text;
+      }) } : {}),
     ...(value.checkpoint ? { checkpoint: parseActionRuleAuthoringCheckpoint(value.checkpoint) } : {}),
   };
 }
@@ -634,6 +651,16 @@ function assertNoPrivateRuntimeMaterial(value: unknown): void {
     /\b(?:tenant|principal)(?:[_ -]?id)?\s*(=|:|is)\s*["']?([A-Za-z0-9_-]{3,})/giu,
   )].some((match) => {
     if (/^(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed|unknown|unset|required|outside)$/iu.test(match[2]!)) return false;
+    // In a column-choice question, "is bound to <one of those columns>" names
+    // a schema binding, not an identity value. Only that explicit reference is
+    // exempt; assignments, unlisted values and other identities still fail.
+    if (match[1]!.toLowerCase() === "is" && match[2]!.toLowerCase() === "bound") {
+      const tail = serialized.slice(match.index! + match[0].length);
+      const field = /^\s+to\s+([A-Za-z_][A-Za-z0-9_]{0,127})(?=\s|[?.;,\\"])/u.exec(tail)?.[1];
+      const question = serialized.slice(Math.max(0, match.index! - 512), match.index!);
+      const choices = [...question.matchAll(/\bwhich column\b[^?"\\]{0,160}?\b([A-Za-z_][A-Za-z0-9_]{0,127})\s+or\s+([A-Za-z_][A-Za-z0-9_]{0,127})\s*\?/giu)];
+      if (field && choices.some(choice => choice[1] === field || choice[2] === field)) return false;
+    }
     // A descriptive "is the trusted ..." sentence is not a concrete value.
     // Keep literal assignments and other values subject to the existing guard.
     return !(match[1]!.toLowerCase() === "is" && match[2]!.toLowerCase() === "the"

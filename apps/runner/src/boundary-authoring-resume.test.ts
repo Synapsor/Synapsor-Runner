@@ -232,6 +232,28 @@ describe("Boundary authoring resume state", () => {
       draft_digest: `sha256:${"5".repeat(64)}` } }, binding)).toThrow("digest");
     expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingActionRemoval: "clinic.obsolete" as never })).toThrow("removal review");
   });
+  it("preserves exact operator provenance through revision save and invalidates a changed statement checkpoint", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-repair-provenance-"));
+    try {
+      const revision = { outcome: "gym.freeze", instruction: "Generated repair diagnostic.",
+        operator_statements: ["Original policy:\n\nKeep the cap per organization.\n", "Keep the existing reviewer."],
+        baseline_digest: `sha256:${"4".repeat(64)}` as const,
+        checkpoint: actionRuleAuthoringCheckpoint({ intent_digest: `sha256:${"5".repeat(64)}`,
+          context_digest: `sha256:${"6".repeat(64)}`, components: {}, operator_messages: [] }),
+      };
+      const input = { binding, stage: "authority_review" as const, jobIntent: "Apply the original policy.", provider: "openai" as const, model: "gpt-test" };
+      const state = buildBoundaryAuthoringResumeState({ ...input, pendingActionRevision: revision });
+      await writeBoundaryAuthoringResumeState(root, state);
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
+      expect(state.pending_action_revision?.operator_statements).toEqual(revision.operator_statements);
+      const changed = prepareBoundaryActionRevision({ ...revision, operator_statements: ["A different accepted policy."] }, revision);
+      expect(changed.checkpoint).toBeUndefined();
+      expect(() => revalidateBoundaryAuthoringResume({ ...state, pending_action_revision: changed }, binding)).toThrow("digest");
+      for (const statement of ["tenant_id = acme-corp", "Use postgres://operator:secret@db.example/app"]) {
+        expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingActionRevision: { ...revision, operator_statements: [statement] } })).toThrow(/BLOCKED/u);
+      }
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("retains a cited missing Action request and its exact existing identities through rescan", () => {
     const input = { binding, stage: "planning" as const, jobIntent: "Help admitted students manage enrollment.",
       provider: "openai" as const, model: "gpt-test" };
@@ -518,6 +540,8 @@ describe("Boundary authoring resume state", () => {
   });
 
   it.each([
+    "Before fixing the validation error, answer one question exactly. In the reviewed scope right now, which column is bound as the tenant - carrier_id or account_id? And is that 10-per-24-hours cap counted per carrier organisation or per customer account? If the tenant is bound to account_id then the cap is per account, which is not what I required.",
+    "Which column is bound as the tenant - scope_a or scope_b? If the tenant is bound to scope_b then the cap has the wrong scope.",
     "Yes. app.person is the authenticated patron's trusted identity and filters c01. app.tenant is the trusted library/account identity and filters c02. They are distinct even though both source columns are UUID. Keep these bindings private and outside model arguments.",
     "The tenant is the trusted account context; the principal is the reviewed authenticated person.",
   ])("retains descriptive trusted identity clarification through checkpoint save: %s", async (answer) => {
@@ -539,6 +563,10 @@ describe("Boundary authoring resume state", () => {
   });
 
   it.each(["tenant is acme-corp", "app.tenant = acme-corp", "principal_id: user-123", "tenant is the-account-123",
+    "tenant is bound to customer123",
+    "Which column is bound as the tenant - scope_a or scope_b? tenant is bound to acme-corp",
+    "Which column is bound as the tenant - scope_a or scope_b? tenant is bound to scope_b. principal_id = user-123",
+    "Which column is bound as the tenant - scope_a or scope_b? tenant = bound",
     "tenant is the trusted identity. principal_id = 45000000-0000-4000-8000-000000000001"])("still refuses concrete identity assignment: %s", (answer) => {
     expect(() => buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Review records.",
       provider: "openai", model: "gpt-test", conversation: [{ question: "Scope?", answer }],

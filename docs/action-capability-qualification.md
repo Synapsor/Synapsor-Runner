@@ -3,6 +3,57 @@
 This is an evidence inventory, not a claim that onboarding is complete or that
 arbitrary SQL/business logic is supported. Last updated: 2026-09-12.
 
+## Active bounded follow-up: proposal, scope and edit correctness
+
+A new assignment on 2026-09-12 authorizes only the saved insurance target-overlap
+repair, generated repair provenance, the named freight/gym controls, protected
+insurance recovery and one final fresh insurance journey. The previous closure
+below remains a failed operational qualification. This continuation has not yet
+produced a live receipt or a new frozen artifact and does not reopen unseen Gate 2.
+
+Current source regressions distinguish an exact compiled mutation binding from
+an overlapping complete collection, retain all dependency evidence and reject
+conflicting projections. Scope admission checks populated contradictory mappings
+against exact inspected RLS. Generated repair context is separated from retained
+operator statements. Interrupted jobs return to planning; unchanged edits remain
+pending unless the operator explicitly closes them. Approval edits retain unused
+verification fields. The design is recorded in `semantic-target-overlap-repair.md`.
+
+Public controls on the preserved prior artifact reproduced the gym split:
+selected and deferred client runs saved a disabled `<= 10` replacement and kept
+the active `<= 30` authority, six provider transports each. Actual process
+termination at the client picker followed by public resume saved `<= 30` while
+the model claimed `<= 10`. The interrupted control used nine transports,
+including six carried forward from an invalid Ctrl-C interruption attempt.
+All raw attempts and the invalid control remain evidence. The baseline's bytes
+and active authority stayed unchanged; execution was off. Both successful before
+controls also dropped an unused verification projection, covered by the repair.
+
+The saved freight components now have an exact current-compiler diagnosis:
+`rule.require.expressions[2]` is the normalized failure path. Isolated shipment
+and dock-slot status comparisons compile; the integer weight comparison fails
+because its literal has unit `kg` and the inspected integer column has no unit.
+An in-memory type-aligned counterfactual then fails the existing requirement for
+an overall count in addition to the trusted-scope count. This neither validates
+nor activates the saved cap. The earlier model's dock-slot explanation was not
+the compiler cause. Public corrected scope and truthful blocked handling remain
+to be qualified; no effect grammar or unit-inference shortcut has been added.
+
+Stable full regression completed successfully: **6,092 passed, 447 optional
+skips, 293 files passed and 21 skipped**, followed by dependency, license,
+command-surface, DSL, Cursor, package build and bundle-freshness checks. Types
+and the live PostgreSQL/MySQL semantic gate also passed. The initial full run
+retained eight failures, including mixed source/test loading during two late
+corrections; the independently reproduced unfinished-agenda lifecycle defect was
+repaired and seven integrated edit/lifecycle controls pass. The release gate is
+still running. Frozen public runtime, receipt/readback and cleanup qualification
+remain pending; the test totals do not establish those outcomes.
+
+Durable logs and manifests are under the external tracker evidence directory
+`r13-e07-20260911/proposal-receipt-scope-961d98c`. Original insurance and Claude
+evidence is manifest-protected; recovery uses whole-project namespace isolation
+and effective-store preflight. No public repository push or publication is allowed.
+
 ## Bounded Pass Result: Operational Completion Failed
 
 The isolation-first known-case assignment reached its declared three-artifact

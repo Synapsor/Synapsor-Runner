@@ -26,28 +26,42 @@ export async function reviewGuidedScopeAdmission(input: {
   progress?: <T>(message: string, operation: () => Promise<T>) => Promise<T>;
 }): Promise<{ ready: boolean; changed: boolean; reason?: string }> {
   const catalog = await loadBoundaryResourceReviewCatalog(input.projectRoot);
-  const unresolved = catalog.views.filter(view => !view.organization_scope && !view.tenant_key.selected
-    && !view.generated_candidate && !view.included);
-  if (!unresolved.length) return { ready: true, changed: false };
-  if (!input.egressAcknowledged) return { ready: false, changed: false, reason: "Review metadata sharing before asking the model about identity fields." };
+  const views = catalog.views.filter(view => !view.organization_scope);
+  if (!views.length) return { ready: true, changed: false };
   const inspection = await input.schemaInspector(input.inspectionInput);
   if (schemaFingerprintForInspection(inspection) !== catalog.bindings.schema_fingerprint
     || rolePostureFingerprint(inspection) !== catalog.bindings.role_posture_fingerprint) {
     return { ready: false, changed: false, reason: "The database structure or reader permissions changed. Rescan, then resume this saved identity review." };
   }
   const groups = new Map<string, Choice[][]>();
-  for (const view of unresolved) {
+  let unresolved = false;
+  for (const view of views) {
     const table = inspection.tables.find(table => `${table.schema}.${table.name}` === view.resource_id);
     if (!table) continue;
     const mappings = inspectedPostgresScopeCandidates(inspection, table.schema, table.name);
+    const resource = view.candidate ?? view.generated_candidate;
+    const tenant = view.tenant_key.selected, principal = view.principal_key.selected;
+    const settings = resource?.rls_session;
+    const missing = !tenant && !view.generated_candidate && !view.included;
+    const collapsed = Boolean(tenant && principal && (tenant === principal
+      || settings?.tenant_setting && settings.tenant_setting === settings.principal_setting));
+    const contradicts = Boolean(tenant && principal && mappings.length && !mappings.some(mapping =>
+      mapping.tenant.field === tenant && mapping.principal.field === principal
+      && (!settings?.tenant_setting || mapping.tenant.setting === settings.tenant_setting)
+      && (!settings?.principal_setting || mapping.principal.setting === settings.principal_setting)));
+    if (!missing && !collapsed && !contradicts) continue;
+    unresolved = true;
+    if ((collapsed || contradicts) && !mappings.length) return { ready: false, changed: false,
+      reason: `${view.resource_id} has conflicting organization/person bindings, and its current policies do not provide a supported exact correction. Review the source scope and rescan; no per-organization limit or corrected scope is established.` };
     if (!mappings.length) continue;
     const key = JSON.stringify(mappings.map(mapping => [mapping.tenant, mapping.principal]));
     const choices = mappings.map(mapping => ({ resourceId: view.resource_id, schema: table.schema, table: table.name, mapping }));
     groups.set(key, [...(groups.get(key) ?? []), choices]);
   }
-  if (!groups.size) return catalog.candidate.pack.resources.length
+  if (!groups.size) return !unresolved || catalog.candidate.pack.resources.length
     ? { ready: true, changed: false }
     : { ready: false, changed: false, reason: "No exact organization/person mapping could be verified from the current database policies. Review the source identity fields and row-access policies, rescan, then resume this saved job. No Read mapping was requested." };
+  if (!input.egressAcknowledged) return { ready: false, changed: false, reason: "Review metadata sharing before asking the model about identity fields." };
   const selected: Choice[] = [];
   for (const resources of groups.values()) {
     const options = resources[0]!.map(({ mapping }, index) => ({ id: `candidate_${index + 1}`, kind: "direct" as const,

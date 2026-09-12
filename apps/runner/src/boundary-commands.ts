@@ -5154,6 +5154,13 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   // these dependencies and is explicitly proceeding to the unfinished intent.
   const separatelySavedRevalidationOutcomes = resumeSelected && !input.continueSavedJob && !pendingJobRevision
     && !pendingReadRevision && !pendingActionAddition && !pendingActionRemoval
+    // An edit of this agenda resumes through its exact baseline below. An
+    // edit of a separately saved outcome must first recover that outcome;
+    // the unrelated unfinished agenda remains pending throughout the edit.
+    && (!pendingActionRevision || availableResume?.action?.outcome !== pendingActionRevision.outcome)
+    // Before the client choice, a new job has no planned Action agenda yet.
+    // Existing rules are not proof that this new request has been fulfilled.
+    && availableResume?.action !== undefined
     && !revalidatedCompletedOutcomes && !availableResume?.action?.completed_outcomes?.length
     ? savedActionRecoveryOutcomes({ boundaryName: context.candidate.pack.name,
       resumeBoundaryName: availableResume?.binding.boundary_name,
@@ -6323,7 +6330,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
               projectRoot: input.projectRoot,
               boundaryName: context.candidate.pack.name,
               outcome: selectedOutcome,
-              ...(revalidatedActionOutcomes ? { preserveVerificationFields: true } : {}),
+              preserveVerificationFields: true,
               ...(pendingReadRevision ? { preserveVerificationFields: true,
                 expectedReadDigest: reusableState?.action_read_digest_by_outcome.get(selectedOutcome) } : {}),
             });
@@ -6707,6 +6714,17 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           throw new Error("ACTION_OUTCOME_COLLISION: creation cannot replace an earlier outcome; reopen its exact disabled draft for revision.");
         }
         semanticActionModelDraft = semanticActionModelResult.compiled.draft;
+        if (semanticActionRevisionBaseline && !resumedOutcome && !revalidatedActionOutcomes
+          && semanticActionPolicyDigest(semanticActionRevisionBaseline) === semanticActionPolicyDigest(semanticActionModelDraft)
+          && !await confirmUnchangedActionRequest(input.session, semanticIntent, semanticActionRevisionBaseline)) {
+          pendingActionRevision = prepareBoundaryActionRevision({ outcome: semanticActionRevisionBaseline.outcome,
+            instruction: semanticIntent, baseline_digest: canonicalJsonDigest(semanticActionRevisionBaseline) }, pendingActionRevision);
+          resumeAction = { ...resumeAction!, intent: semanticIntent, outcome: semanticActionRevisionBaseline.outcome, strategy: "rule_derived" };
+          await persistAuthoringResume("authority_review");
+          return boundaryAssistResult({ tone: "warning", title: "The requested Action edit is still pending.",
+            lines: ["The proposed rule has no business-policy change. Runner did not mark the request complete or replace the saved rule."],
+            footer: "Resume the saved edit to correct it, or explicitly close it after reviewing the current rule." });
+        }
         // Private verification records can inherit the subject's scope through
         // compiler-checked links. Own-row promises still cover every subject
         // and mutation target, never every referenced lookup table.
@@ -8385,7 +8403,13 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     }
     return { source, key, draftRecord, report: policyReport?.report };
   };
-  const revisePolicyAction = async (entry: typeof semanticActionDrafts[number], instruction: string): Promise<boolean> => {
+  const originalPolicyStatements = () => [...new Set([
+    canonicalJobIntent ?? jobIntent,
+    activePolicySource(authoringConversation?.policySources)?.text,
+    ...(authoringConversation?.policySources?.operator_messages ?? []),
+    ...(authoringConversation?.turns.filter(turn => turn.kind === "clarification").map(turn => turn.answer) ?? []),
+  ].filter((text): text is string => Boolean(text?.trim())))];
+  const revisePolicyAction = async (entry: typeof semanticActionDrafts[number], instruction: string, operatorStatements?: string[]): Promise<boolean> => {
     const chat = input.authoringChat;
     if (!chat || !modelAssistSession || !input.session.chooseOption) return false;
     let savedRevision: string | undefined;
@@ -8393,14 +8417,17 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       const before = entry.result.compiled;
       pendingActionRevision = prepareBoundaryActionRevision({
         outcome: before.rule.outcome, instruction, baseline_digest: canonicalJsonDigest(before.draft),
+        ...(operatorStatements ? { operator_statements: operatorStatements } : {}),
       }, pendingActionRevision);
       await persistAuthoringResume("authority_review");
       if (resumePersistenceBlocked) throw checkpointSaveFailure("The edit request");
       const revised = await runWithProgress("Reconciling this action with your saved rules", () => (input.modelActionRuleGenerator ?? generateModelActionRuleDraft)({
         session: modelAssistSession!, intent: pendingActionRevision!.instruction, existingDraft: before.draft,
+        ...(pendingActionRevision!.operator_statements ? { operatorStatements: pendingActionRevision!.operator_statements } : {}),
         ...(pendingActionRevision!.checkpoint ? { checkpoint: pendingActionRevision!.checkpoint } : {}),
         onCheckpoint: async checkpoint => {
           await assertAuthoringResumeCurrent({ revision: { outcome: before.rule.outcome, instruction,
+            ...(operatorStatements ? { operator_statements: operatorStatements } : {}),
             baseline_digest: canonicalJsonDigest(before.draft) } }, true);
           const previousRevision = pendingActionRevision;
           try {
@@ -8436,6 +8463,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           session: input.session, modelLabel: boundaryModelLabel(modelAssistSession!),
           assertCurrent: async () => {
             await assertAuthoringResumeCurrent({ revision: { outcome: before.rule.outcome, instruction,
+              ...(operatorStatements ? { operator_statements: operatorStatements } : {}),
               baseline_digest: canonicalJsonDigest(before.draft) } });
             const fresh = await loadBoundaryReviewContext(input.projectRoot);
             const lock = await loadGenerationLockSnapshot(input.projectRoot, request.context.readBoundary.generation_lock_fingerprint);
@@ -8458,10 +8486,12 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         },
       }));
       if (revised.compiled.rule.outcome !== before.rule.outcome) throw new Error("The revision must preserve this exact outcome. No duplicate or active authority was changed.");
-      const compiledMeaning = (value: CompiledActionRuleModelDraftV1) => canonicalJsonDigest({ draft: value.draft,
-        catalog: value.loaded.authority.catalog, verification: value.verification_boundary,
-        effect: value.effect_envelope, rule: value.rule, approval: value.approval_class });
-      if (compiledMeaning(before) === compiledMeaning(revised.compiled)) {
+      if (semanticActionPolicyDigest(before.draft) === semanticActionPolicyDigest(revised.compiled.draft)) {
+        if (!await confirmUnchangedActionRequest(input.session, pendingActionRevision!.instruction, before.draft)) {
+          await persistAuthoringResume("authority_review");
+          chat.checkpoint("Action edit still pending", ["The rule is unchanged. Resume this edit to correct it or explicitly close the request after review."], "warning");
+          return false;
+        }
         pendingActionRevision = undefined;
         await persistAuthoringResume("authority_review");
         return false;
@@ -8807,7 +8837,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         else if (entry) await revisePolicyAction(entry, [
             "Apply this clarified business requirement to the same disabled action. Preserve other rules and execution intent.",
             ...revisionRequirements, `Operator answer: ${answer.trim()}`,
-          ].join("\n"));
+          ].join("\n"), originalPolicyStatements());
       }
       await ensurePolicyCoverage();
       // Recheck the actual candidate, not merely whether the answer sounds compliant.
@@ -8924,7 +8954,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ...item.passages.flatMap((passage) => (passage.counter_requirements ?? []).map((check) =>
             `Validated current history filter at ${check.path}: ${JSON.stringify(check.current_capability)}. The source-required filter is ${JSON.stringify(check.required_capability)}. Revise that existing limit's capability selector, preserving its maximum, window, trusted scope and all unrelated limits. Never rename diagnostic IDs as a substitute.`)),
           "Preserve all other rules, approval limits and requested execution. If success requires changing and consuming related records together, use supported atomic_updates; do not replace consumption with plan mismatch or split requests. If an exact version-guarded field or relationship is unavailable, explain that concrete prerequisite. Activation and writer authorization remain separate.",
-        ].join("\n"));
+        ].join("\n"), originalPolicyStatements());
         const rechecked = await ensurePolicyCoverage();
         modelActionRepairAttempt = rechecked?.key;
       }
@@ -8969,7 +8999,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         "Resolve this source requirement in the same disabled action. Preserve all other business rules, approval limits and requested execution.",
         ...item.passages.map((passage) => `Source lines ${passage.start}-${passage.end}: ${passage.interpretation}`),
         `Operator clarification: ${answer}`,
-      ].join("\n"));
+      ].join("\n"), originalPolicyStatements());
     if (changed) await ensurePolicyCoverage();
   };
   const clarifyAttachedRules = async (current: NonNullable<Awaited<ReturnType<typeof ensurePolicyCoverage>>>) => {
@@ -9069,6 +9099,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         await reloadReadReviewForModelRevision(input.projectRoot, context, reviewedAction);
         pendingActionRevision = choice === "keep_current" ? undefined : prepareBoundaryActionRevision({
           outcome: pending.outcome, instruction: pending.instruction, baseline_digest: currentBaseline,
+          ...(pending.operator_statements ? { operator_statements: pending.operator_statements } : {}),
         });
         await persistAuthoringResume("authority_review");
         if (resumePersistenceBlocked) throw checkpointSaveFailure("The pending edit review");
@@ -9082,7 +9113,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         return pauseAttachedRules();
       }
     }
-    if (pendingActionRevision) await revisePolicyAction(entry, pendingActionRevision.instruction);
+    if (pendingActionRevision) await revisePolicyAction(entry, pendingActionRevision.instruction, pendingActionRevision.operator_statements);
     if (pendingActionRevision) return pauseAttachedRules();
   }
   // Preparing the explicitly requested disabled configuration is mechanical.
@@ -10631,6 +10662,21 @@ async function loadActionRuleRevisionBaseline(input: {
     catalog: structuredClone(existing.authority.catalog),
     activatedAt: existing.authority.rules.find((rule) => rule.rule.outcome === input.outcome)!.activated_at,
   };
+}
+
+function semanticActionPolicyDigest(draft: ActionRuleModelDraftV1): `sha256:${string}` {
+  const { review: _review, ...policy } = draft;
+  return canonicalJsonDigest(policy);
+}
+
+async function confirmUnchangedActionRequest(session: BoundaryReviewInteractiveSession, instruction: string, draft: ActionRuleModelDraftV1): Promise<boolean> {
+  return Boolean(await session.confirm("Close this Action request with the current rule unchanged?", {
+    defaultValue: false,
+    context: ["The compiled business policy is unchanged. A new explanation or digest does not prove this request was fulfilled.",
+      `Pending request: ${instruction}`, `Outcome: ${draft.outcome}`,
+      `Current approval: ${JSON.stringify(draft.approval)}`,
+      "Choose No to keep the edit pending. Choose Yes only if the current rule already satisfies the request or you want to withdraw it."],
+  }));
 }
 
 function semanticActionRevisionDiffLines(

@@ -95,11 +95,27 @@ export function buildDerivedChangeSet(input: {
     }),
     value: effect.principal_scope.value,
   };
+  // A verification collection can include the selected physical row. Mutation
+  // authority belongs to the compiled binding, while every verification binding
+  // remains in the immutable evidence and transaction-time dependency check.
+  const envelope = activated.compiled.effect_envelope;
+  const targetBindings = activated.compiled.bindings.filter(binding => binding.binding === envelope.target_binding);
   const targetDependencies = semanticAuthority.dependencies.filter((dependency) =>
-    dependency.resource === effect.resource
+    dependency.binding === envelope.target_binding
+    && dependency.resource === effect.resource
     && dependency.primary_key.column === effect.primary_key.column
     && dependency.primary_key.value === effect.primary_key.value);
-  if (effect.operation === "single_row_update" && targetDependencies.length !== 1) {
+  if (effect.operation === "single_row_update" && (targetBindings.length !== 1
+    || activated.compiled.rule.effect.target_binding !== envelope.target_binding
+    || targetBindings[0]!.verification.cardinality !== "one"
+    || targetBindings[0]!.resource.name !== effect.resource
+    || targetBindings[0]!.resource.source !== effect.source
+    || targetBindings[0]!.resource.schema !== effect.schema
+    || targetBindings[0]!.resource.table !== effect.table
+    || targetBindings[0]!.verification.primary_key !== effect.primary_key.column
+    || targetDependencies.length !== 1
+    || targetDependencies[0]!.version?.column !== effect.expected_version?.column
+    || targetDependencies[0]!.version?.value !== effect.expected_version?.value)) {
     throw new McpRuntimeError("SEMANTIC_TARGET_DEPENDENCY_INVALID", "The eligible update is not bound to one exact target dependency.");
   }
   const targetDependency = targetDependencies[0];

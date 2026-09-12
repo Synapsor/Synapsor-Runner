@@ -5755,6 +5755,9 @@ function rlsExpressionSupportsScope(
   if (!expressionReferencesColumn(expression, column)) return false;
   const setting = settingForScopedColumn([expression], column) ?? "";
   const columnPattern = kind === "tenant" ? TENANT_SCOPE_NAME : PRINCIPAL_SCOPE_NAME;
+  // A familiar column name cannot override an explicit opposite identity
+  // binding in the inspected predicate (for example account_id -> principal).
+  if (settingNameSupportsScope(setting, kind === "tenant" ? "principal" : "tenant")) return false;
   return settingNameSupportsScope(setting, kind) || columnPattern.test(column);
 }
 

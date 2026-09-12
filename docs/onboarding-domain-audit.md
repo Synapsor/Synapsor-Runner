@@ -3,6 +3,18 @@
 R13 working candidate, 2026-09-12. This records source inspection and focused
 regressions, not completion of unfamiliar-database qualification.
 
+Current assignment: a new bounded proposal/receipt and scope/edit continuation
+starts from `961d98c`, whose product bytes match `35e21a2`. The following closure
+is historical, not permission for broader work. The shared target repair selects
+the compiled binding without discarding verification dependencies; renamed
+structure and adversarial facts exercise the same path. Scope correction uses
+current exact policy evidence and operator meaning review, including populated
+contradictions. No freight-specific unit heuristic, domain branch, new effect
+language or additional MCP tool is introduced. Public interrupted gym failure
+and exact freight compiler diagnostics are reproduced; corrected public controls,
+insurance receipt/readback and the final fresh journey are still pending. See
+`action-capability-qualification.md` for the active evidence checkpoint.
+
 Current bounded isolation-first follow-up starts at `591555b`, after `3478de5`.
 It does not select new domains or replace Gate 2. The shared fixes are exact
 Read relationship prerequisite review/catalog rebuild, full private scope-pair
