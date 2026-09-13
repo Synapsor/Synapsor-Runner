@@ -138,6 +138,47 @@ a verified connection, and a completed source change with a receipt are distinct
 states. Client behavior and production authentication still need integration
 testing; assignment alone is not verification.
 
+## Reviewed local clients sharing one project
+
+For synthetic local development, run `synapsor-runner action review --project-root .`,
+choose **Continue client setup**, then the managed MCP client. The resumed `start`
+client handoff uses the same setup. **Use the existing default local setup** keeps
+`.synapsor/local-test-runtime.json` compatible. **Review a new named local client
+revision** collects the reviewed tenant/principal values privately, shows the
+canonical project, identity contract and shared deployment/ledger, and requires
+explicit confirmation before saving. Installation is separately confirmed.
+
+Use a nonsensitive label. Each saved revision gets its own exact reference and
+managed client entry; creating another does not overwrite an earlier entry. All
+references share the project's existing policy deployment and ledger. Labels do
+not create new approval allowances. Select the intended entry in the client and
+use a separate process for each identity. Its launch configuration selects the
+fixed reference; MCP requests cannot select identity. Conflicting inherited
+identity variables are refused: launch from a process environment without those
+conflicting variables, never change a reviewed identity to accommodate them.
+
+To reuse a reference, choose **Select** for its exact label/revision. To change
+values, review a new revision, stop the intended old client and launch the new
+entry. The old reference never resolves to new values. Cancelling identity review
+leaves existing setup unchanged. Declining the later install leaves the already
+confirmed revision saved but uninstalled.
+
+**Retire future launches** prevents new launches of that exact reference. Already
+connected processes keep their validated context until explicitly stopped; this
+is not immediate session revocation. Retirement retains the private identity and
+its marker. To remove only its generated entry, use the existing operator command:
+
+```bash
+synapsor-runner mcp status claude-code --project --project-root . --local-client <exact-reference> --check-launch
+synapsor-runner mcp uninstall claude-code --project --project-root . --local-client <exact-reference>
+```
+
+Uninstalling an entry alone does not retire its reference or stop a running
+process. Profile management does not cancel work, refund approvals or requeue
+requests. It grants no business Read/Action/execution authority. Keep identity
+files private and out of Git. This is local development configuration, not
+production authentication.
+
 ## Typed Headless Authoring
 
 ### Manual Semantic Editor

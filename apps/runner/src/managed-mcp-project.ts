@@ -4,6 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyEdits, modify, parse, printParseErrorCode, type ParseError } from "jsonc-parser";
 import runnerPackage from "../package.json" with { type: "json" };
+import { localClientRuntimePath, loadLocalTestRuntimeIdentity } from "./local-test-runtime-identity.js";
+import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
 const managedServerNames = {
   explore: "synapsor",
@@ -11,7 +14,7 @@ const managedServerNames = {
 } as const;
 
 export type ManagedMcpProjectEntryKind = keyof typeof managedServerNames;
-type ManagedMcpProjectServerName = typeof managedServerNames[ManagedMcpProjectEntryKind];
+type ManagedMcpProjectServerName = typeof managedServerNames[ManagedMcpProjectEntryKind] | `synapsor-${string}`;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -147,12 +150,17 @@ export async function previewManagedMcpProjectInstall(input: {
   packageSpec?: string;
   authoring?: boolean;
   entryKind?: ManagedMcpProjectEntryKind;
+  localClient?: string;
 }): Promise<ManagedMcpProjectPreview> {
   const definition = managedClients[input.client];
   const paths = await resolveInstallPaths(input, definition);
   const existing = await readOptionalJsonDocument(paths.destination);
   const marker = await readMarker(paths.marker, definition, paths.serverName);
-  const entry = await managedEntry(paths.configArgument, paths.storeArgument, input.packageSpec, input.authoring === true);
+  if (input.localClient) {
+    if (!input.authoring || (input.entryKind ?? "explore") !== "explore") throw new Error("Named local clients require the reviewed four-tool authoring entry.");
+    await loadLocalTestRuntimeIdentity({ projectRoot: paths.projectRoot, runtimePath: localClientRuntimePath(input.localClient) });
+  }
+  const entry = await managedEntry(paths.configArgument, paths.storeArgument, input.packageSpec, input.authoring === true, input.localClient);
   assertSecretFree(entry, definition);
   const existingServersValue = existing?.value[definition.serversKey];
   if (existingServersValue !== undefined && !isRecord(existingServersValue)) {
@@ -193,7 +201,7 @@ export async function previewManagedMcpProjectInstall(input: {
   };
 }
 
-export async function installManagedMcpProject(input: {
+async function installManagedMcpProjectInner(input: {
   client: ManagedMcpProjectClient;
   projectRoot?: string;
   configPath?: string;
@@ -201,6 +209,7 @@ export async function installManagedMcpProject(input: {
   packageSpec?: string;
   authoring?: boolean;
   entryKind?: ManagedMcpProjectEntryKind;
+  localClient?: string;
   now?: string;
 }): Promise<ManagedMcpProjectPreview & { backup?: string }> {
   const definition = managedClients[input.client];
@@ -228,7 +237,7 @@ export async function installManagedMcpProject(input: {
   return { ...preview, state: "installed", ...(backup ? { backup } : {}) };
 }
 
-export async function installManagedMcpProjectSet(input: {
+async function installManagedMcpProjectSetInner(input: {
   client: ManagedMcpProjectClient;
   projectRoot?: string;
   entries: Array<{
@@ -237,6 +246,7 @@ export async function installManagedMcpProjectSet(input: {
     packageSpec?: string;
     authoring?: boolean;
     entryKind: ManagedMcpProjectEntryKind;
+    localClient?: string;
   }>;
   now?: string;
   removeEntryKinds?: ManagedMcpProjectEntryKind[];
@@ -319,14 +329,15 @@ export async function installManagedMcpProjectSet(input: {
   };
 }
 
-export async function uninstallManagedMcpProject(input: {
+async function uninstallManagedMcpProjectInner(input: {
   client: ManagedMcpProjectClient;
   projectRoot?: string;
   entryKind?: ManagedMcpProjectEntryKind;
+  localClient?: string;
   now?: string;
 }): Promise<{ changed: boolean; paths: ManagedMcpProjectPaths; backup?: string }> {
   const definition = managedClients[input.client];
-  const base = await resolveBasePaths(input.projectRoot, definition, input.entryKind);
+  const base = await resolveBasePaths(input.projectRoot, definition, input.entryKind, input.localClient);
   const existing = await readOptionalJsonDocument(base.destination);
   const marker = await readMarker(base.marker, definition, base.serverName);
   const paths = marker ? await pathsFromMarker(base, marker, definition) : defaultPaths(base);
@@ -358,9 +369,10 @@ export async function managedMcpProjectStatus(
   client: ManagedMcpProjectClient,
   projectRoot = process.cwd(),
   entryKind: ManagedMcpProjectEntryKind = "explore",
+  localClient?: string,
 ): Promise<ManagedMcpProjectStatus> {
   const definition = managedClients[client];
-  const base = await resolveBasePaths(projectRoot, definition, entryKind);
+  const base = await resolveBasePaths(projectRoot, definition, entryKind, localClient);
   const existing = await readOptionalJsonDocument(base.destination);
   const marker = await readMarker(base.marker, definition, base.serverName);
   const paths = marker ? await pathsFromMarker(base, marker, definition) : defaultPaths(base);
@@ -411,10 +423,11 @@ async function resolveInstallPaths(
     storePath?: string;
     authoring?: boolean;
     entryKind?: ManagedMcpProjectEntryKind;
+    localClient?: string;
   },
   definition: ManagedMcpProjectDefinition,
 ): Promise<ManagedMcpProjectPaths> {
-  const base = await resolveBasePaths(input.projectRoot, definition, input.entryKind);
+  const base = await resolveBasePaths(input.projectRoot, definition, input.entryKind, input.localClient);
   const config = resolveContained(base.projectRoot, input.configPath ?? "./synapsor.runner.json", "Runner config", definition);
   const store = resolveContained(base.projectRoot, input.storePath ?? "./.synapsor/local.db", "Runner store", definition);
   await rejectSymlinkChain(base.projectRoot, config, "Runner config");
@@ -431,14 +444,17 @@ async function resolveBasePaths(
   projectRootInput: string | undefined,
   definition: ManagedMcpProjectDefinition,
   entryKind: ManagedMcpProjectEntryKind = "explore",
+  localClient?: string,
 ): Promise<ManagedBasePaths> {
   const projectRoot = path.resolve(projectRootInput ?? process.cwd());
   await requireRealDirectory(projectRoot, `${definition.displayName} project root`);
   const destination = path.join(projectRoot, definition.destination);
-  const marker = path.join(projectRoot, entryKind === "explore"
+  if (localClient) localClientRuntimePath(localClient);
+  if (localClient && entryKind !== "explore") throw new Error("Named local clients use one unified entry.");
+  const marker = path.join(projectRoot, localClient ? definition.marker.replace(/\.json$/u, `-${localClient}.json`) : entryKind === "explore"
     ? definition.marker
     : definition.marker.replace(/\.json$/u, "-actions.json"));
-  const serverName = managedServerNames[entryKind];
+  const serverName: ManagedMcpProjectServerName = localClient ? `synapsor-${localClient.replace(".", "-")}` : managedServerNames[entryKind];
   await rejectSymlinkChain(projectRoot, destination, `${definition.displayName} project config`);
   await rejectSymlinkChain(projectRoot, marker, `${definition.displayName} ownership marker`);
   return {
@@ -501,6 +517,7 @@ async function managedEntry(
   storePath: string,
   packageSpec: string | undefined,
   authoring: boolean,
+  localClient?: string,
 ): Promise<JsonRecord> {
   const launcher = await resolveManagedMcpLauncher(packageSpec);
   return {
@@ -513,11 +530,11 @@ async function managedEntry(
         "serve",
         "--authoring",
         "--project-root",
-        path.posix.dirname(configPath),
+        localClient ? "." : path.posix.dirname(configPath),
         "--config",
         configPath,
         "--local-test-runtime",
-        ".synapsor/local-test-runtime.json",
+        localClient ? localClientRuntimePath(localClient) : ".synapsor/local-test-runtime.json",
       ]
       : [...launcher.args, "mcp", "serve", "--config", configPath, "--store", storePath],
   };
@@ -711,4 +728,19 @@ function finalNewline(value: string): string {
 
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function installManagedMcpProject(input: Parameters<typeof installManagedMcpProjectInner>[0]): ReturnType<typeof installManagedMcpProjectInner> {
+  return withProjectRuntimeAdmission(input.projectRoot ?? process.cwd(), root =>
+    withProjectAuthorityMutation(root, () => installManagedMcpProjectInner({ ...input, projectRoot: root })));
+}
+
+export function installManagedMcpProjectSet(input: Parameters<typeof installManagedMcpProjectSetInner>[0]): ReturnType<typeof installManagedMcpProjectSetInner> {
+  return withProjectRuntimeAdmission(input.projectRoot ?? process.cwd(), root =>
+    withProjectAuthorityMutation(root, () => installManagedMcpProjectSetInner({ ...input, projectRoot: root })));
+}
+
+export function uninstallManagedMcpProject(input: Parameters<typeof uninstallManagedMcpProjectInner>[0]): ReturnType<typeof uninstallManagedMcpProjectInner> {
+  return withProjectRuntimeAdmission(input.projectRoot ?? process.cwd(), root =>
+    withProjectAuthorityMutation(root, () => uninstallManagedMcpProjectInner({ ...input, projectRoot: root })));
 }

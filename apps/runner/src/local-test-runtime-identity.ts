@@ -3,9 +3,35 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
 export const LOCAL_TEST_RUNTIME_IDENTITY_VERSION = "synapsor.local-test-runtime-identity.v1";
 export const DEFAULT_LOCAL_TEST_RUNTIME_IDENTITY_PATH = ".synapsor/local-test-runtime.json";
+
+export function localRuntimeSelectionOption(args: string[], flag: "--local-client" | "--local-test-runtime"): string | undefined {
+  const indices = args.flatMap((value, index) => value === flag || value.startsWith(`${flag}=`) ? [index] : []);
+  if (!indices.length) return undefined;
+  const index = indices[0]!;
+  if (indices.length !== 1 || args[index] !== flag || !args[index + 1] || args[index + 1]!.startsWith("--")) {
+    throw new Error("LOCAL_TEST_RUNTIME_REFERENCE_INVALID: supply exactly one explicit reviewed local identity reference; no fallback is allowed.");
+  }
+  return args[index + 1];
+}
+
+export function localClientRuntimePath(reference: string): string {
+  if (!/^[a-z][a-z0-9-]{0,31}\.[a-f0-9]{64}$/u.test(reference)) {
+    throw new Error("LOCAL_TEST_RUNTIME_REFERENCE_INVALID: select an exact reviewed local client reference.");
+  }
+  return `.synapsor/local-test-runtime.${reference}.json`;
+}
+
+export function localClientReference(runtimePath: string): string | undefined {
+  const match = /^\.synapsor\/local-test-runtime\.(.+)\.json$/u.exec(runtimePath);
+  if (!match) return undefined;
+  localClientRuntimePath(match[1]!);
+  return match[1];
+}
 
 export type LocalTestRuntimeBinding = {
   role: "tenant" | "principal";
@@ -76,7 +102,7 @@ function boundaryIdentityContract(boundaries: Awaited<ReturnType<typeof loadActi
   })).sort((left, right) => canonicalJsonDigest(left).localeCompare(canonicalJsonDigest(right)));
 }
 
-async function authorityBinding(projectRoot: string): Promise<{ project_binding: `sha256:${string}`; bindings: LocalTestRuntimeBinding[] }> {
+export async function localTestRuntimeIdentityContract(projectRoot: string): Promise<{ project_binding: `sha256:${string}`; bindings: LocalTestRuntimeBinding[] }> {
   const root = await fs.realpath(projectRoot);
   const boundaries = await loadActivatedExplorationBoundaries(root);
   if (!boundaries.length || boundaries.some((boundary) => boundary.activation.state !== "active"
@@ -117,15 +143,15 @@ function containedRuntimePath(projectRoot: string, runtimePath = DEFAULT_LOCAL_T
   const root = path.resolve(projectRoot);
   const destination = path.resolve(root, runtimePath);
   const expected = path.resolve(root, DEFAULT_LOCAL_TEST_RUNTIME_IDENTITY_PATH);
-  if (destination !== expected) {
+  if (destination !== expected && (!localClientReference(runtimePath) || destination !== path.join(root, runtimePath))) {
     throw new Error("LOCAL_TEST_RUNTIME_PATH_INVALID: local test runtime must use the generated project runtime reference.");
   }
   return destination;
 }
 
-async function runtimeDirectory(projectRoot: string, create: boolean): Promise<{ root: string; directory: string; destination: string } | undefined> {
+async function runtimeDirectory(projectRoot: string, create: boolean, runtimePath?: string): Promise<{ root: string; directory: string; destination: string } | undefined> {
   const root = await fs.realpath(projectRoot);
-  const destination = containedRuntimePath(root);
+  const destination = containedRuntimePath(root, runtimePath);
   const directory = path.dirname(destination);
   if (create) await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const state = await fs.lstat(directory).catch((error: NodeJS.ErrnoException) => {
@@ -155,8 +181,24 @@ export async function saveLocalTestRuntimeIdentity(input: {
   values: Record<string, string>;
   now?: string;
   runtimePath?: string;
-}): Promise<{ path: string; bindings: LocalTestRuntimeBinding[] }> {
-  const authority = await authorityBinding(input.projectRoot);
+  profileName?: string;
+  expectedProjectBinding?: string;
+}): Promise<{ path: string; bindings: LocalTestRuntimeBinding[]; reference?: string }> {
+  if (input.profileName !== undefined) {
+    if (!/^[a-z][a-z0-9-]{0,31}$/u.test(input.profileName) || input.runtimePath !== undefined || !input.expectedProjectBinding) {
+      throw new Error("LOCAL_TEST_RUNTIME_REFERENCE_INVALID: a named client needs a reviewed label and exact current identity contract.");
+    }
+    return withProjectRuntimeAdmission(input.projectRoot, root => withProjectAuthorityMutation(root,
+      () => persistLocalTestRuntimeIdentity({ ...input, projectRoot: root })));
+  }
+  return persistLocalTestRuntimeIdentity(input);
+}
+
+async function persistLocalTestRuntimeIdentity(input: Parameters<typeof saveLocalTestRuntimeIdentity>[0]): ReturnType<typeof saveLocalTestRuntimeIdentity> {
+  const authority = await localTestRuntimeIdentityContract(input.projectRoot);
+  if (input.expectedProjectBinding !== undefined && input.expectedProjectBinding !== authority.project_binding) {
+    throw new Error("LOCAL_TEST_RUNTIME_BINDING_CHANGED: identity authority changed after review; review again before saving.");
+  }
   const requested = exactBindings(input.bindings);
   if (canonicalJsonDigest(requested) !== canonicalJsonDigest(authority.bindings)) {
     throw new Error("LOCAL_TEST_RUNTIME_BINDING_CHANGED: local test identity does not exactly match current reviewed environment bindings.");
@@ -168,8 +210,14 @@ export async function saveLocalTestRuntimeIdentity(input: {
     values: valuesForBindings(requested, input.values),
     created_at: input.now ?? new Date().toISOString(),
   };
-  if (input.runtimePath !== undefined) containedRuntimePath(input.projectRoot, input.runtimePath);
-  const runtime = await runtimeDirectory(input.projectRoot, true);
+  const reference = input.profileName === undefined ? undefined : `${input.profileName}.${canonicalJsonDigest(identity).slice(7)}`;
+  const runtimePath = reference ? localClientRuntimePath(reference) : input.runtimePath;
+  // Named revisions can only be created from reviewed values, never overwritten
+  // by supplying their path to the legacy default saver.
+  if (!reference && runtimePath !== undefined && path.resolve(input.projectRoot, runtimePath) !== path.resolve(input.projectRoot, DEFAULT_LOCAL_TEST_RUNTIME_IDENTITY_PATH)) {
+    throw new Error("LOCAL_TEST_RUNTIME_PATH_INVALID: use named client review to create a new fixed revision.");
+  }
+  const runtime = await runtimeDirectory(input.projectRoot, true, runtimePath);
   if (!runtime) throw new Error("LOCAL_TEST_RUNTIME_PATH_INVALID: local test runtime directory is unavailable.");
   const { destination } = runtime;
   const temporary = `${destination}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
@@ -181,12 +229,20 @@ export async function saveLocalTestRuntimeIdentity(input: {
     } finally {
       await handle.close();
     }
-    await fs.rename(temporary, destination);
+    if (reference) {
+      if (await fs.lstat(`${destination}.retired`).then(() => true, error => { if (error.code === "ENOENT") return false; throw error; })) {
+        throw new Error("LOCAL_TEST_RUNTIME_RETIRED: this exact local reference is retired.");
+      }
+      // Exclusive creation prevents a concurrent save from replacing a reviewed
+      // revision. The temporary hard link is removed before returning its ref.
+      await fs.link(temporary, destination);
+      await fs.unlink(temporary);
+    } else await fs.rename(temporary, destination);
     await fs.chmod(destination, 0o600);
   } finally {
     await fs.rm(temporary, { force: true }).catch(() => undefined);
   }
-  return { path: destination, bindings: requested };
+  return { path: destination, bindings: requested, ...(reference ? { reference } : {}) };
 }
 
 export async function loadLocalTestRuntimeIdentity(input: {
@@ -194,14 +250,22 @@ export async function loadLocalTestRuntimeIdentity(input: {
   runtimePath?: string;
 }): Promise<Record<string, string> | undefined> {
   if (input.runtimePath !== undefined) containedRuntimePath(input.projectRoot, input.runtimePath);
-  const runtime = await runtimeDirectory(input.projectRoot, false);
-  if (!runtime) return undefined;
+  const reference = input.runtimePath ? localClientReference(input.runtimePath) : undefined;
+  const runtime = await runtimeDirectory(input.projectRoot, false, input.runtimePath);
+  const missing = () => {
+    if (reference) throw new Error("LOCAL_TEST_RUNTIME_REFERENCE_MISSING: the selected reviewed local identity is missing; no default fallback is allowed.");
+    return undefined;
+  };
+  if (!runtime) return missing();
   const { destination } = runtime;
+  if (reference && await fs.lstat(`${destination}.retired`).then(() => true, error => { if (error.code === "ENOENT") return false; throw error; })) {
+    throw new Error("LOCAL_TEST_RUNTIME_RETIRED: this local identity reference is retired for future launches. Stop existing clients explicitly.");
+  }
   let handle: Awaited<ReturnType<typeof fs.open>>;
   try {
     handle = await fs.open(destination, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return missing();
     throw new Error("LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test identity file must be a regular owner-only file.");
   }
   let raw: string;
@@ -230,6 +294,9 @@ export async function loadLocalTestRuntimeIdentity(input: {
   try { parsed = JSON.parse(raw); } catch { throw new Error("LOCAL_TEST_RUNTIME_INVALID: local test identity file is not valid JSON."); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("LOCAL_TEST_RUNTIME_INVALID: local test identity file must be an object.");
   const value = parsed as Record<string, unknown>;
+  if (reference && !reference.endsWith(`.${canonicalJsonDigest(value).slice(7)}`)) {
+    throw new Error("LOCAL_TEST_RUNTIME_REFERENCE_CHANGED: the selected identity no longer matches its exact reviewed revision.");
+  }
   if (Object.keys(value).some((key) => !["schema_version", "project_binding", "bindings", "values", "created_at"].includes(key))
     || value.schema_version !== LOCAL_TEST_RUNTIME_IDENTITY_VERSION || typeof value.project_binding !== "string"
     || !Array.isArray(value.bindings) || !value.values || typeof value.values !== "object" || Array.isArray(value.values)
@@ -237,11 +304,40 @@ export async function loadLocalTestRuntimeIdentity(input: {
     throw new Error("LOCAL_TEST_RUNTIME_INVALID: local test identity file has an unsupported shape.");
   }
   const bindings = exactBindings(value.bindings as LocalTestRuntimeBinding[]);
-  const authority = await authorityBinding(input.projectRoot);
+  const authority = await localTestRuntimeIdentityContract(input.projectRoot);
   if (value.project_binding !== authority.project_binding || canonicalJsonDigest(bindings) !== canonicalJsonDigest(authority.bindings)) {
     throw new Error("LOCAL_TEST_RUNTIME_BINDING_CHANGED: local test identity no longer matches the current reviewed project or authority.");
   }
   return valuesForBindings(bindings, value.values as Record<string, string>);
+}
+
+/** Lists reference labels only; values stay in the private identity documents. */
+export async function listLocalTestRuntimeProfiles(projectRoot: string): Promise<Array<{ reference: string; retired: boolean }>> {
+  const runtime = await runtimeDirectory(projectRoot, false);
+  if (!runtime) return [];
+  const files = await fs.readdir(runtime.directory);
+  return files.filter(name => /^local-test-runtime\.[a-z][a-z0-9-]{0,31}\.[a-f0-9]{64}\.json$/u.test(name))
+    .sort().map(name => ({ reference: localClientReference(`.synapsor/${name}`)!, retired: files.includes(`${name}.retired`) }));
+}
+
+/** Future-launch retirement only. A running process keeps its cached context. */
+export async function retireLocalTestRuntimeProfile(projectRoot: string, reference: string): Promise<void> {
+  const runtimePath = localClientRuntimePath(reference);
+  await withProjectRuntimeAdmission(projectRoot, root => withProjectAuthorityMutation(root, async () => {
+    const runtime = await runtimeDirectory(root, false, runtimePath);
+    if (!runtime) throw new Error("LOCAL_TEST_RUNTIME_REFERENCE_MISSING: selected reference is missing.");
+    const stat = await fs.lstat(runtime.destination);
+    const uid = process.getuid?.();
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1
+      || (process.platform !== "win32" && ((stat.mode & 0o077) !== 0 || (uid !== undefined && stat.uid !== uid)))) {
+      throw new Error("LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: selected identity must be a regular private file.");
+    }
+    let file: Awaited<ReturnType<typeof fs.open>>;
+    try { file = await fs.open(`${runtime.destination}.retired`, "wx", 0o600); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") return; throw error; }
+    try { await file.writeFile("Retired for future launches; existing clients must be stopped explicitly.\n"); await file.sync(); }
+    finally { await file.close(); }
+  }));
 }
 
 export async function withLocalTestRuntimeIdentity<T>(input: {

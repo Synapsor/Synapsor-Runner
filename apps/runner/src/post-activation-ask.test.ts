@@ -42,6 +42,37 @@ describe("post-activation Ask handoff", () => {
     expect(ask).not.toHaveBeenCalled(); expect(install).not.toHaveBeenCalled(); expect(worker).not.toHaveBeenCalled();
   });
 
+  it("selects named client launch configuration without replacing the default or running a model", async () => {
+    const reference = `reviewed.${"a".repeat(64)}`;
+    const install = vi.fn(async () => 0), load = vi.fn(async () => ({ FIXTURE_TENANT: "private-value" }));
+    const check = vi.fn(async () => ({ ok: true, messages: [] })), ask = vi.fn(), worker = vi.fn();
+    const writes: string[] = [];
+    expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/named-handoff", includeActions: true,
+      selection: { route: "mcp-client", client: "claude-code" } }, {
+      env: {}, readRuntimeIdentity: async () => "local_environment",
+      reviewLocalClient: async () => ({ kind: "named", reference }),
+      readRuntimeBindings: async () => [{ role: "tenant", environment: "FIXTURE_TENANT" }],
+      runMcpInstall: install, loadLocalTestIdentity: load, checkClientLaunch: check, confirmLaunchCheck: async () => true,
+      readExecutionState: async () => ({ enabled: false, config_path: "synapsor.actions.runner.json", policies: [] }),
+      runAsk: ask, runWorker: worker, stdout: { write: value => { writes.push(String(value)); return true; } }, stderr: { write: () => true },
+    })).toBe(0);
+    expect(install).toHaveBeenCalledExactlyOnceWith(["install", "claude-code", "--project", "--authoring", "--project-root", "/tmp/named-handoff", "--local-client", reference]);
+    expect(load).toHaveBeenCalledExactlyOnceWith({ projectRoot: "/tmp/named-handoff", runtimePath: `.synapsor/local-test-runtime.${reference}.json` });
+    expect(check).toHaveBeenCalledExactlyOnceWith("/tmp/named-handoff", "claude-code", reference);
+    expect(ask).not.toHaveBeenCalled(); expect(worker).not.toHaveBeenCalled();
+    expect(writes.join("")).not.toContain("private-value");
+  });
+
+  it("leaves installation untouched when named identity review is cancelled", async () => {
+    const install = vi.fn(), ask = vi.fn(), check = vi.fn();
+    expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/named-declined", selection: { route: "mcp-client", client: "claude-code" } }, {
+      env: {}, readRuntimeIdentity: async () => "local_environment", reviewLocalClient: async () => ({ kind: "cancelled" }),
+      runMcpInstall: install, runAsk: ask, checkClientLaunch: check,
+      stdout: { write: () => true }, stderr: { write: () => true },
+    })).toBe(0);
+    expect(install).not.toHaveBeenCalled(); expect(ask).not.toHaveBeenCalled(); expect(check).not.toHaveBeenCalled();
+  });
+
   it("describes automatic policy fallback separately from human-only outcomes and omits inactive legacy actions", async () => {
     const writes: string[] = [];
     await expect(runPostActivationAskHandoff({ projectRoot: "/tmp/not-created-project", selection: { route: "later" } }, {

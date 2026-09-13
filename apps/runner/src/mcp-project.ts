@@ -1,4 +1,5 @@
 import path from "node:path";
+import { localClientRuntimePath, localRuntimeSelectionOption } from "./local-test-runtime-identity.js";
 import process from "node:process";
 import { stableStringArray } from "./cli-format.js";
 import { usage } from "./cli-help.js";
@@ -64,14 +65,17 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   const client = parseManagedMcpProjectClient(clientValue);
   const definition = managedMcpProjectDefinition(client);
   assertKnownOptions(rest, new Set([
-    "--project", "--project-root", "--config", "--store", "--authoring",
+    "--project", "--project-root", "--local-client", "--config", "--store", "--authoring",
     "--include-actions", "--action-config", "--dry-run", "--yes", "--json",
   ]), `mcp install ${client}`);
   if (!rest.includes("--project")) {
     throw new Error(`mcp install ${client} requires --project so Runner changes only the current project's ${definition.destination}`);
   }
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+  const localClient = localRuntimeSelectionOption(rest, "--local-client");
+  if (localClient) localClientRuntimePath(localClient);
   const requestedAuthoring = rest.includes("--authoring");
+  if (localClient && (!requestedAuthoring || rest.includes("--include-actions"))) throw new Error("--local-client requires --authoring with the unified four-tool entry.");
   let includeActions = rest.includes("--include-actions");
   if (includeActions && !requestedAuthoring) {
     throw new Error("--include-actions requires --authoring so local Explore and proposal tools remain separate managed MCP runtimes");
@@ -81,11 +85,11 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   }
   const configPath = runnerConfigPath(rest, "./synapsor.runner.json");
   const companion = await managedMcpProjectStatus(client, projectRoot, "actions");
-  if (requestedAuthoring && (companion.state === "unowned" || companion.state === "tampered")) {
+  if (!localClient && requestedAuthoring && (companion.state === "unowned" || companion.state === "tampered")) {
     throw new Error("The synapsor-actions entry is unowned or changed. Review it before installing the unified four-tool entry; Runner has not changed the client file.");
   }
   let foldSemanticCompanion = false;
-  if (requestedAuthoring && (includeActions || companion.state === "installed")) {
+  if (!localClient && requestedAuthoring && (includeActions || companion.state === "installed")) {
     const selectedActionConfig = path.resolve(projectRoot,
       optionalArg(rest, "--action-config") ?? (companion.state === "installed" ? companion.paths.configArgument : "./synapsor.actions.runner.json"));
     const companionConfig = await readRuntimeConfig(selectedActionConfig);
@@ -136,6 +140,7 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
     storePath,
     authoring,
     entryKind: "explore",
+    localClient,
   });
   const runtimes: ManagedMcpInstallRuntime[] = [{
     role: "read",
@@ -186,6 +191,8 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
       preview: actionPreview,
     });
   }
+  const localClientReview = localClient ? { reference: localClient,
+    ...await (await import("./reviewed-local-client-setup.js")).reviewedLocalClientDeployment(projectRoot) } : undefined;
   const reports = runtimes.map((runtime) => managedMcpProjectLifecycleReport(
     client,
     runtime.preview,
@@ -195,8 +202,15 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
   ));
   const report = includeActions
     ? managedMcpProjectSetLifecycleReport(client, reports)
-    : { ...reports[0]!, ...(foldSemanticCompanion && companion.state === "installed" ? { removes_owned_entry: "synapsor-actions" } : {}) };
+    : { ...reports[0]!, ...(localClientReview ? { local_client: localClientReview } : {}), ...(foldSemanticCompanion && companion.state === "installed" ? { removes_owned_entry: "synapsor-actions" } : {}) };
   const json = rest.includes("--json");
+  if (!json && localClientReview) writeReview([
+    "LOCAL DEVELOPMENT ONLY — exact reviewed client selection",
+    `Reference: ${localClientReview.reference}`, `Project: ${localClientReview.project}`,
+    `Identity contract: ${localClientReview.contract.project_binding}`,
+    localClientReview.deployment, localClientReview.storage,
+    "No new authority or approval allowance. Stop/relaunch to change identity; existing clients retain cached context.", "",
+  ].join("\n"));
   const removeCompanion = foldSemanticCompanion && companion.state === "installed";
   if (!json && removeCompanion) process.stdout.write("The owned synapsor-actions entry will be merged into synapsor: four fixed tools, separate Read and Action authority. The client file will be backed up.\n");
   if (rest.includes("--dry-run") || (!removeCompanion && runtimes.every((runtime) => runtime.preview.action === "unchanged"))) {
@@ -224,6 +238,7 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
       storePath: runtime.storePath,
       authoring: runtime.authoring,
       entryKind: runtime.entryKind,
+      localClient,
     })),
   });
   if (json) {
@@ -262,13 +277,16 @@ async function mcpProjectStatus(args: string[]): Promise<number> {
   const [clientValue, ...rest] = args;
   const client = parseManagedMcpProjectClient(clientValue);
   assertKnownOptions(rest, new Set([
-    "--project", "--project-root", "--include-actions", "--json", "--check-launch", "--timeout-ms",
+    "--project", "--project-root", "--local-client", "--include-actions", "--json", "--check-launch", "--timeout-ms",
   ]), `mcp status ${client}`);
   if (!rest.includes("--project")) throw new Error(`mcp status ${client} requires --project`);
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+  const localClient = localRuntimeSelectionOption(rest, "--local-client");
+  if (localClient) localClientRuntimePath(localClient);
   const companion = await managedMcpProjectStatus(client, projectRoot, "actions");
-  const primary = await managedMcpProjectStatus(client, projectRoot, "explore");
+  const primary = await managedMcpProjectStatus(client, projectRoot, "explore", localClient);
   const unified = companion.state === "not_installed" && primary.state === "installed" && isManagedAuthoringEntry(primary.entry);
+  if (localClient && rest.includes("--include-actions")) throw new Error("Named local clients use one unified entry.");
   const includeActions = rest.includes("--include-actions") && !unified;
   const checkLaunch = rest.includes("--check-launch");
   const timeoutMs = Number(optionalArg(rest, "--timeout-ms") ?? "10000");
@@ -283,6 +301,7 @@ async function mcpProjectStatus(args: string[]): Promise<number> {
       entryKind,
       checkLaunch,
       timeoutMs,
+      localClient,
     }));
   }
   if (includeActions) {
@@ -327,9 +346,10 @@ export async function managedMcpProjectStatusReport(input: {
   entryKind: ManagedMcpProjectEntryKind;
   checkLaunch: boolean;
   timeoutMs: number;
+  localClient?: string;
 }): Promise<ManagedMcpStatusReport> {
   const definition = managedMcpProjectDefinition(input.client);
-  const status = await managedMcpProjectStatus(input.client, input.projectRoot, input.entryKind);
+  const status = await managedMcpProjectStatus(input.client, input.projectRoot, input.entryKind, input.localClient);
   const authoring = status.state === "installed" && isManagedAuthoringEntry(status.entry);
   let tools: string[] = [];
   let launch: { checked: boolean; ok: boolean; message: string } = {
@@ -389,16 +409,19 @@ async function mcpProjectUninstall(args: string[]): Promise<number> {
   const client = parseManagedMcpProjectClient(clientValue);
   const definition = managedMcpProjectDefinition(client);
   assertKnownOptions(rest, new Set([
-    "--project", "--project-root", "--include-actions", "--dry-run", "--yes", "--json",
+    "--project", "--project-root", "--local-client", "--include-actions", "--dry-run", "--yes", "--json",
   ]), `mcp uninstall ${client}`);
   if (!rest.includes("--project")) throw new Error(`mcp uninstall ${client} requires --project`);
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+  const localClient = localRuntimeSelectionOption(rest, "--local-client");
+  if (localClient) localClientRuntimePath(localClient);
   const includeActions = rest.includes("--include-actions");
+  if (localClient && includeActions) throw new Error("Named local clients use one unified entry.");
   const statuses = [];
   for (const entryKind of (["explore", ...(includeActions ? ["actions" as const] : [])] as ManagedMcpProjectEntryKind[])) {
     statuses.push({
       entryKind,
-      status: await managedMcpProjectStatus(client, projectRoot, entryKind),
+      status: await managedMcpProjectStatus(client, projectRoot, entryKind, localClient),
     });
   }
   const entries = statuses.map(({ entryKind, status }) => ({
@@ -436,7 +459,7 @@ async function mcpProjectUninstall(args: string[]): Promise<number> {
   const removed = [];
   for (const { entryKind, status } of [...statuses].reverse()) {
     if (status.state !== "installed") continue;
-    removed.push(await uninstallManagedMcpProject({ client, projectRoot, entryKind }));
+    removed.push(await uninstallManagedMcpProject({ client, projectRoot, entryKind, localClient }));
   }
   const backups = removed.flatMap((result) => result.backup ? [result.backup] : []);
   if (json) process.stdout.write(`${JSON.stringify({

@@ -29,7 +29,8 @@ import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
 import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { readSemanticSupervisedExecutionState, restoreReviewedSemanticReadScope } from "./semantic-action-deployment.js";
 import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
-import { loadLocalTestRuntimeIdentity, saveLocalTestRuntimeIdentity, type LocalTestRuntimeBinding } from "./local-test-runtime-identity.js";
+import { reviewLocalClientSetup } from "./reviewed-local-client-setup.js";
+import { localClientRuntimePath, loadLocalTestRuntimeIdentity, saveLocalTestRuntimeIdentity, type LocalTestRuntimeBinding } from "./local-test-runtime-identity.js";
 import { clientHandoffMatchesActiveAuthority, pendingClientResponsibilities, readPostActivationReadiness,
   type PostActivationReadiness } from "./authoring-client-readiness.js";
 export { readPostActivationReadiness, type PostActivationReadiness } from "./authoring-client-readiness.js";
@@ -111,7 +112,8 @@ export type PostActivationAskDependencies = {
   hasActiveActions?: (projectRoot: string) => Promise<boolean>;
   runMcpInstall?: (args: string[]) => Promise<number>;
   confirmLaunchCheck?: () => Promise<boolean | undefined>;
-  checkClientLaunch?: (projectRoot: string, client: ManagedMcpProjectClient) => Promise<{ ok: boolean; messages: string[] }>;
+  reviewLocalClient?: typeof reviewLocalClientSetup;
+  checkClientLaunch?: (projectRoot: string, client: ManagedMcpProjectClient, localClient?: string) => Promise<{ ok: boolean; messages: string[] }>;
   readClientInstallation?: typeof managedMcpProjectStatus;
   readExecutionState?: typeof readSemanticSupervisedExecutionState;
   readReadiness?: typeof readPostActivationReadiness;
@@ -474,11 +476,22 @@ export async function runPostActivationAskHandoff(
       write(formatHttpMcpHandoff(input.projectRoot));
       return 0;
     }
+    let localClient: string | undefined;
+    if (runtimeIdentity === "local_environment" && (dependencies.reviewLocalClient || (process.stdin.isTTY && stdout.isTTY))) {
+      const reviewed = await (dependencies.reviewLocalClient ?? reviewLocalClientSetup)({ projectRoot: input.projectRoot });
+      if (reviewed.kind === "cancelled") { write("Local client setup closed. Existing client configurations and authority are unchanged.\n"); return 0; }
+      if (reviewed.kind === "retired") {
+        write(`Future launches are retired for ${reviewed.reference}. Stop any already-connected client explicitly; its cached context is unchanged. Client entries, business authority and recorded history are retained.\n`);
+        return 0;
+      }
+      if (reviewed.kind === "named") localClient = reviewed.reference;
+    }
     const installArgs = [
       "install", selection.client,
       "--project", "--authoring",
       "--project-root", input.projectRoot,
-      ...(includeActions ? ["--include-actions"] : []),
+      ...(includeActions && !localClient ? ["--include-actions"] : []),
+      ...(localClient ? ["--local-client", localClient] : []),
     ];
     let clientConfigured = false;
     let reviewedWorkerCommands: string[] = [];
@@ -495,8 +508,9 @@ export async function runPostActivationAskHandoff(
       if (!runtimeBindingFailure && runtimeIdentity === "local_environment" && runtimeBindings.length) {
         let existingIdentity: Record<string, string> | undefined;
         try {
-          existingIdentity = await (dependencies.loadLocalTestIdentity ?? loadLocalTestRuntimeIdentity)({ projectRoot: input.projectRoot });
+          existingIdentity = await (dependencies.loadLocalTestIdentity ?? loadLocalTestRuntimeIdentity)({ projectRoot: input.projectRoot, ...(localClient ? { runtimePath: localClientRuntimePath(localClient) } : {}) });
         } catch (error) {
+          if (localClient) throw error;
           write(`Saved local test identity cannot be reused: ${safeErrorMessage(error)}\nReview the current identity requirements before replacing it; client configuration is preserved.\n`);
         }
         if (existingIdentity) {
@@ -538,7 +552,7 @@ export async function runPostActivationAskHandoff(
       if (approvedCheck) {
         try {
           const check = dependencies.checkClientLaunch ?? checkConfiguredClientLaunch;
-          const checked = await check(input.projectRoot, selection.client);
+          const checked = localClient ? await check(input.projectRoot, selection.client, localClient) : await check(input.projectRoot, selection.client);
           connectionFailed = !checked.ok;
           if (checked.ok) connection = "verified MCP handshake and tool catalog; test connection closed";
           else write(`Connection check: ${formatMcpLaunchFailure(checked.messages.join("\n"))}\n`);
@@ -563,6 +577,7 @@ export async function runPostActivationAskHandoff(
       const execution = includeActions
         ? await (dependencies.readExecutionState ?? readSemanticSupervisedExecutionState)({ projectRoot: input.projectRoot })
         : undefined;
+      if (localClient) write(`Selected local client revision: ${localClient}. Identity applies only to this client launcher; workers retain their separately reviewed configuration.\n`);
       if (execution) {
         write(`Client mode: ${execution.enabled ? "execution configured; worker not started by setup; worker health not checked" : "proposal-only; automatic database updates are off"}. Completion requires a successful execution receipt.\n`);
       }
@@ -588,7 +603,7 @@ export async function runPostActivationAskHandoff(
           ]);
           reviewedWorkerCommands = workerArgs.map((args) => `${cliCommandName()} worker ${formatRetryArgs(args)}`);
           const missing = [...new Set(execution.policies.map((policy) => policy.write_url_env))].filter((name) => !env[name]?.trim());
-          const missingIdentity = runtimeBindings.filter((binding) => !configuredRuntimeBindings.has(binding.environment));
+          const missingIdentity = runtimeBindings.filter((binding) => localClient ? !env[binding.environment]?.trim() : !configuredRuntimeBindings.has(binding.environment));
           if (missing.length) {
             write(`Next: provide the reviewed writer environment ${missing.join(", ")} before starting the worker. Client configuration and boundaries are preserved.\n`);
           } else if (runtimeBindingFailure) {
@@ -1008,9 +1023,9 @@ function validateLocalTestIdentity(
   return result;
 }
 
-async function checkConfiguredClientLaunch(projectRoot: string, client: ManagedMcpProjectClient) {
-  const reports = [await managedMcpProjectStatusReport({ projectRoot, client, entryKind: "explore", checkLaunch: true, timeoutMs: 10_000 })];
-  if ((await managedMcpProjectStatus(client, projectRoot, "actions")).state === "installed") {
+async function checkConfiguredClientLaunch(projectRoot: string, client: ManagedMcpProjectClient, localClient?: string) {
+  const reports = [await managedMcpProjectStatusReport({ projectRoot, client, entryKind: "explore", checkLaunch: true, timeoutMs: 10_000, localClient })];
+  if (!localClient && (await managedMcpProjectStatus(client, projectRoot, "actions")).state === "installed") {
     reports.push(await managedMcpProjectStatusReport({ projectRoot, client, entryKind: "actions", checkLaunch: true, timeoutMs: 10_000 }));
   }
   return { ok: reports.every((report) => report.ok && report.launch.checked), messages: reports.map((report) => report.launch.message) };

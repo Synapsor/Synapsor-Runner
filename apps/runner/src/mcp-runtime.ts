@@ -42,7 +42,7 @@ import {
   loadActiveActionRuleAuthority,
   type LoadedActiveActionRuleAuthorityV1,
 } from "./action-rule-authority.js";
-import { withLocalTestRuntimeIdentity } from "./local-test-runtime-identity.js";
+import { withLocalTestRuntimeIdentity, localRuntimeSelectionOption } from "./local-test-runtime-identity.js";
 
 const EXPLORE_TOOL_NAMES = ["app.describe_data", "app.explore_data"] as const;
 const SEMANTIC_ACTION_TOOL_NAMES = [DESCRIBE_ACTIONS_TOOL, REQUEST_CHANGE_TOOL] as const;
@@ -137,6 +137,8 @@ function assertLocalExplorePresentation(args: readonly string[]): void {
 
 export async function mcpServe(args: string[]): Promise<number> {
   const transport = optionalArg(args, "--transport") ?? "stdio";
+  const selectedLocalRuntime = localRuntimeSelectionOption(args, "--local-test-runtime");
+  if (selectedLocalRuntime && transport !== "stdio") throw new Error("A reviewed local identity is available only to the local stdio launcher.");
   if (args.includes("--authoring")) {
     if (transport !== "stdio") {
       throw new Error("Scoped Explore is authoring-only and may be served only over local stdio.");
@@ -148,7 +150,7 @@ export async function mcpServe(args: string[]): Promise<number> {
     const modelAuthorityMetadata = explicitConfigPath || await fileExists(configPath)
       ? await readModelAuthorityMetadataMode(configPath)
       : "semantic";
-    await withLocalTestRuntimeIdentity({ projectRoot, runtimePath: optionalArg(args, "--local-test-runtime") }, async () => {
+    await withLocalTestRuntimeIdentity({ projectRoot, runtimePath: selectedLocalRuntime }, async () => {
       const config = await readLocalExploreRuntimeConfig(projectRoot, configPath);
       if (config) {
         await serveLocalExploreStdio({ projectRoot, config, configPath, modelAuthorityMetadata });
@@ -183,7 +185,7 @@ export async function mcpServe(args: string[]): Promise<number> {
       `Active local Read authority selected from ${configPath}; fixed Read and Action tools are available. Only activated outcomes permit proposals.\n`,
     );
     await withLocalTestRuntimeIdentity({ projectRoot: localExploreProjectRoot,
-      runtimePath: optionalArg(args, "--local-test-runtime") }, async () => {
+      runtimePath: selectedLocalRuntime }, async () => {
       await serveLocalExploreStdio({
         projectRoot: localExploreProjectRoot,
         config,

@@ -931,7 +931,7 @@ Drizzle input is parsed as a bounded TypeScript AST and is never imported or run
   ${cmd} mcp client-config --client cursor --transport streamable-http --config ./synapsor.runner.json
   ${cmd} mcp client-config --client vscode --transport streamable-http --config ./synapsor.runner.json
   ${cmd} mcp client-config --client openai-agents --config ./synapsor.runner.json --store ./.synapsor/local.db
-  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring [--project-root .] [--dry-run]
+  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring [--local-client <exact-reviewed-reference>] [--project-root .] [--dry-run]
   ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring --include-actions [--action-config ./synapsor.actions.runner.json] [--project-root .] [--dry-run]
   ${cmd} mcp install <cursor|claude-code|vscode> --project [--dry-run] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} mcp status <cursor|claude-code|vscode> --project [--include-actions] [--check-launch]
@@ -945,7 +945,7 @@ Stdio opens no network socket and needs no HTTP credential. Networked MCP is aut
 MCP clients see semantic tools. They do not receive raw SQL, write credentials, approval tools, or commit tools.
 `,
     "mcp install": `Usage:
-  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring [--project-root .] [--dry-run] [--yes]
+  ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring [--local-client <exact-reviewed-reference>] [--project-root .] [--dry-run] [--yes]
   ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring --include-actions [--action-config ./synapsor.actions.runner.json] [--project-root .] [--dry-run] [--yes]
   ${cmd} mcp install <cursor|claude-code|vscode> --project [--project-root .] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db] [--dry-run] [--yes]
 
@@ -969,6 +969,12 @@ explicit legacy compatibility, not prerequisites for current Read.
 
 The unified entry loads reviewed Action authority from synapsor.actions.runner.json.
 No additional client tools are needed when reviewed outcomes or rules change.
+For separately reviewed local development identities, use action review ->
+Continue client setup. --local-client selects one exact saved revision and its
+own entry; it never selects identity from MCP arguments or creates a new budget.
+Missing, changed and retired references are refused. Stop/relaunch to change a
+client identity; retirement blocks future launches, not already-connected clients.
+
 --include-actions retains a separate companion only for explicit legacy
 per-action compatibility. An unchanged Runner-owned semantic companion is
 migrated into the unified entry with a client-file backup. Edited or unowned
@@ -978,7 +984,7 @@ are never written to the project config. Approval, apply, policy editing,
 activation, credentials, and SQL remain outside both MCP entries.
 `,
     "mcp status": `Usage:
-  ${cmd} mcp status <cursor|claude-code|vscode> --project [--project-root .] [--include-actions] [--check-launch] [--timeout-ms 10000] [--json]
+  ${cmd} mcp status <cursor|claude-code|vscode> --project [--project-root .] [--local-client <exact-reviewed-reference>] [--include-actions] [--check-launch] [--timeout-ms 10000] [--json]
 
 Verify Runner's project-scoped client ownership marker and print the exact
 reviewed model-facing tools. --check-launch performs a real stdio initialize +
@@ -987,7 +993,7 @@ tools/list handshake with the configured command.
 report the four tools from their single entry.
 `,
     "mcp uninstall": `Usage:
-  ${cmd} mcp uninstall <cursor|claude-code|vscode> --project [--project-root .] [--include-actions] [--dry-run] [--yes] [--json]
+  ${cmd} mcp uninstall <cursor|claude-code|vscode> --project [--project-root .] [--local-client <exact-reviewed-reference>] [--include-actions] [--dry-run] [--yes] [--json]
 
 Remove only the Runner-owned Synapsor entry. Other client MCP servers and
 project settings are preserved, and edited/unowned entries fail closed.
