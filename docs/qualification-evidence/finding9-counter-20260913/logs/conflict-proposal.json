@@ -1,0 +1,357 @@
+{
+  "proposal": {
+    "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+    "proposal_version": 1,
+    "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+    "action": "freight.dispatch",
+    "state": "pending_review",
+    "scope_kind": "tenant",
+    "scope_id": "c1111111-1111-4111-8111-111111111111",
+    "tenant_id": "c1111111-1111-4111-8111-111111111111",
+    "principal": "a1111111-1111-4111-8111-111111111111",
+    "capability": "freight.dispatch",
+    "business_object": "public.shipments",
+    "object_id": "f0000000-0000-4000-8000-000000000005",
+    "source_kind": "external_postgres",
+    "source_id": "local_postgres",
+    "source_schema": "public",
+    "source_table": "shipments",
+    "source_database_mutated": false,
+    "change_set": {
+      "schema_version": "synapsor.change-set.v4",
+      "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+      "proposal_version": 1,
+      "action": "freight.dispatch",
+      "operation": "single_row_update",
+      "mode": "review_required",
+      "principal": {
+        "id": "a1111111-1111-4111-8111-111111111111",
+        "source": "environment"
+      },
+      "scope": {
+        "tenant_id": "c1111111-1111-4111-8111-111111111111",
+        "business_object": "public.shipments",
+        "object_id": "f0000000-0000-4000-8000-000000000005"
+      },
+      "source": {
+        "kind": "external_postgres",
+        "source_id": "local_postgres",
+        "schema": "public",
+        "table": "shipments",
+        "primary_key": {
+          "column": "id",
+          "value": "f0000000-0000-4000-8000-000000000005"
+        }
+      },
+      "before": {
+        "id": "f0000000-0000-4000-8000-000000000005",
+        "rev_no": 1
+      },
+      "patch": {
+        "status": "dispatched"
+      },
+      "after": {
+        "id": "f0000000-0000-4000-8000-000000000005",
+        "rev_no": 2,
+        "status": "dispatched",
+        "account_id": "a1111111-1111-4111-8111-111111111111"
+      },
+      "guards": {
+        "tenant": {
+          "column": "carrier_id",
+          "value": "c1111111-1111-4111-8111-111111111111"
+        },
+        "principal_scope": {
+          "schema_version": "synapsor.principal-scope.v1",
+          "column": "account_id",
+          "binding": "principal",
+          "provider": "environment",
+          "value_fingerprint": "sha256:637c9f24166d956f1cee6d4a33e7a2fd83c40ec2149f54ab6d547979eb886622",
+          "value": "a1111111-1111-4111-8111-111111111111"
+        },
+        "allowed_columns": [
+          "status"
+        ],
+        "expected_version": {
+          "column": "rev_no",
+          "value": 1
+        },
+        "version_advance": {
+          "column": "rev_no",
+          "strategy": "integer_increment"
+        }
+      },
+      "evidence": {
+        "bundle_id": "ev_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "query_fingerprint": "sha256:733f023aef6a0041e8a3310a8100fe41fbcec30096fed92b2d71c859c596faca",
+        "items": []
+      },
+      "approval": {
+        "status": "pending",
+        "mode": "human",
+        "approval_class": "freight.dispatch_approval",
+        "approval_policy_digest": "sha256:f95c9b93c4d90b771a7f35982e85be1dfea607788f34573ac3668fa2b25ee671",
+        "required_role": "dispatcher",
+        "required_approvals": 1
+      },
+      "writeback": {
+        "status": "not_applied",
+        "mode": "trusted_worker_required",
+        "executor": "semantic_rule"
+      },
+      "semantic_authority": {
+        "proof": {
+          "schema_version": "synapsor.eligibility-proof.v1",
+          "result": "eligible",
+          "action_boundary_name": "reviewed_staging_actions",
+          "action_boundary_digest": "sha256:7922fc764140ef616ec1337616df97d3496bd2e39b41e9955af4628c0544391e",
+          "verification_boundary_digest": "sha256:6c7d90871828b5071e34dcc86ca0fce91804a146cface3569c22c000e3cea731",
+          "effect_envelope_digest": "sha256:abb556408307749ae7dcd1926a714f6162d2a7c28c921f42455095d03823d63a",
+          "action_rule_name": "freight.dispatch",
+          "outcome": "freight.dispatch",
+          "action_rule_digest": "sha256:0b2048dc14688c765b58b3f37726c46620172322075ac7e83ba52e50b8c428f1",
+          "compiled_plan_digest": "sha256:55a10e9f7fd3a884035b6ee111665113297f006e17284f68ee2d7c6da4bd5c76",
+          "compiler_version": "synapsor.action-rule-compiler.v1",
+          "schema_lock_digest": "sha256:8d663e8c095c1f6603fa852d2139bf4e9a3428203ba6b1e5f316c90cde360ff1",
+          "generation_lock_fingerprint": "sha256:8e25b30e6b9258ebe46aa7a4ec7bd3cbe53d2096fb191e39726bd29a4c9db0a8",
+          "verification_transaction": {
+            "isolation": "repeatable_read",
+            "timezone": "UTC"
+          },
+          "trusted_context_digest": "sha256:7c7161df2e3669d87dce984bedb6c9d7408c6e70b1cd13e9bac67749398f8007",
+          "subject_bindings_digest": "sha256:fe59bbbda8044496012701f99177d959427ad70e36bf39aca9c35cb9ca248645",
+          "evidence_provenance_digest": "sha256:fa02984120ce00ae5a000f868331d63aa35526c5f04e22cd0c80c8cd666e6ac8",
+          "verified_facts_digest": "sha256:85dd1ad0638b2ccceae616de7ad1b62d464333b7984d31ce78b35f739c3d4395",
+          "dependency_set_digest": "sha256:531038504596af5db0c40665d5d52df839c42fdc567520113201efd3865b7615",
+          "derived_effect_digest": "sha256:4b495dc1cf8094e87bfa9fb5114cf4046314a8250c7ec088fc22dd3140283082",
+          "approval_class": "freight.dispatch_approval",
+          "approval_policy_digest": "sha256:f95c9b93c4d90b771a7f35982e85be1dfea607788f34573ac3668fa2b25ee671",
+          "approval_path": "human_review",
+          "verified_at": "2026-09-13T18:13:38.241Z",
+          "valid_until": "2026-09-13T18:18:38.241Z",
+          "uses": 1,
+          "proof_digest": "sha256:3e863d3b9e60260ebb4f5a6e268c654dcb34866da76bc3c59f96cd242b6f6608"
+        },
+        "subject_bindings": [
+          {
+            "binding": "shipment",
+            "resource": "public.shipments",
+            "subject_ref_digest": "sha256:bd43977526d3ed765aeb3451a8b34ad8616254fab0a235fd8205cdbb62c1a8a9"
+          }
+        ],
+        "dependencies": [
+          {
+            "binding": "shipment",
+            "resource": "public.shipments",
+            "primary_key": {
+              "column": "id",
+              "value": "f0000000-0000-4000-8000-000000000005"
+            },
+            "version": {
+              "column": "rev_no",
+              "value": 1
+            },
+            "row_digest": "sha256:65a7d7f1d1e21dbfb59103501dc9c8186e966a62b34ffd56146e8e37b2c016d3"
+          },
+          {
+            "binding": "slot",
+            "resource": "public.dock_slots",
+            "primary_key": {
+              "column": "id",
+              "value": "50000000-0000-4000-8000-000000000005"
+            },
+            "version": {
+              "column": "rev_no",
+              "value": 1
+            },
+            "row_digest": "sha256:22fb539f4c4b68644953666167341b490664a5759b9bc66f9c140e42fa1d3a38"
+          }
+        ],
+        "effect": {
+          "operation": "single_row_update",
+          "source": "local_postgres",
+          "resource": "public.shipments",
+          "schema": "public",
+          "table": "shipments",
+          "primary_key": {
+            "column": "id",
+            "value": "f0000000-0000-4000-8000-000000000005"
+          },
+          "tenant_guard": {
+            "column": "carrier_id",
+            "value": "c1111111-1111-4111-8111-111111111111"
+          },
+          "principal_scope": {
+            "column": "account_id",
+            "value": "a1111111-1111-4111-8111-111111111111"
+          },
+          "expected_version": {
+            "column": "rev_no",
+            "value": 1
+          },
+          "version_advance": {
+            "column": "rev_no",
+            "strategy": "integer_increment"
+          },
+          "allowed_columns": [
+            "status"
+          ],
+          "set": {
+            "status": "dispatched"
+          },
+          "effect_digest": "sha256:4b495dc1cf8094e87bfa9fb5114cf4046314a8250c7ec088fc22dd3140283082",
+          "atomic_updates": [
+            {
+              "operation": "single_row_update",
+              "source": "local_postgres",
+              "resource": "public.dock_slots",
+              "schema": "public",
+              "table": "dock_slots",
+              "primary_key": {
+                "column": "id",
+                "value": "50000000-0000-4000-8000-000000000005"
+              },
+              "tenant_guard": {
+                "column": "carrier_id",
+                "value": "c1111111-1111-4111-8111-111111111111"
+              },
+              "principal_scope": {
+                "column": "account_id",
+                "value": "a1111111-1111-4111-8111-111111111111"
+              },
+              "expected_version": {
+                "column": "rev_no",
+                "value": 1
+              },
+              "version_advance": {
+                "column": "rev_no",
+                "strategy": "integer_increment"
+              },
+              "allowed_columns": [
+                "status"
+              ],
+              "set": {
+                "status": "consumed"
+              },
+              "effect_digest": "sha256:3079f2fec729f6b01e13de5ef546f8252f7081bd3dd9d536539ca7c9d7242c5f"
+            }
+          ]
+        }
+      },
+      "source_database_mutated": false,
+      "integrity": {
+        "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3"
+      },
+      "created_at": "2026-09-13T18:13:38.241Z"
+    },
+    "created_at": "2026-09-13T18:13:38.241Z",
+    "updated_at": "2026-09-13T18:13:38.241Z"
+  },
+  "approval_progress": {
+    "approved": 0,
+    "required": 1,
+    "remaining": 1,
+    "rejected": false,
+    "complete": false
+  },
+  "freshness": {
+    "required": false,
+    "status": "not_required",
+    "proof": null
+  },
+  "events": [
+    {
+      "event_id": 27,
+      "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+      "kind": "proposal_created",
+      "actor": "a1111111-1111-4111-8111-111111111111",
+      "payload": {
+        "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+        "proposal_version": 1,
+        "source_database_mutated": false
+      },
+      "created_at": "2026-09-13T18:13:38.327Z"
+    },
+    {
+      "event_id": 28,
+      "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+      "kind": "evidence_recorded",
+      "actor": "runner",
+      "payload": {
+        "evidence_bundle_id": "ev_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "item_count": 1
+      },
+      "created_at": "2026-09-13T18:13:38.360Z"
+    }
+  ],
+  "receipts": [],
+  "evidence": {
+    "evidence_bundle_id": "ev_rule_8cbba2a704ca24b285ab6d55548e2d34",
+    "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+    "tenant_id": "c1111111-1111-4111-8111-111111111111",
+    "principal": "a1111111-1111-4111-8111-111111111111",
+    "capability": "freight.dispatch",
+    "source_id": "local_postgres",
+    "source_table": "public.shipments",
+    "business_object": "public.shipments",
+    "object_id": "f0000000-0000-4000-8000-000000000005",
+    "query_fingerprint": "sha256:733f023aef6a0041e8a3310a8100fe41fbcec30096fed92b2d71c859c596faca",
+    "payload": {
+      "kind": "semantic_action_eligibility",
+      "outcome": "freight.dispatch",
+      "result": "eligible",
+      "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+      "action_boundary_digest": "sha256:7922fc764140ef616ec1337616df97d3496bd2e39b41e9955af4628c0544391e",
+      "action_rule_digest": "sha256:0b2048dc14688c765b58b3f37726c46620172322075ac7e83ba52e50b8c428f1",
+      "compiled_plan_digest": "sha256:55a10e9f7fd3a884035b6ee111665113297f006e17284f68ee2d7c6da4bd5c76",
+      "verified_facts_digest": "sha256:85dd1ad0638b2ccceae616de7ad1b62d464333b7984d31ce78b35f739c3d4395",
+      "dependency_set_digest": "sha256:531038504596af5db0c40665d5d52df839c42fdc567520113201efd3865b7615",
+      "derived_effect_digest": "sha256:4b495dc1cf8094e87bfa9fb5114cf4046314a8250c7ec088fc22dd3140283082",
+      "approval_policy_digest": "sha256:f95c9b93c4d90b771a7f35982e85be1dfea607788f34573ac3668fa2b25ee671",
+      "approval_path": "human_review",
+      "subject_identity_values_persisted_in_evidence": false,
+      "source_database_changed": false
+    },
+    "items": [
+      {
+        "evidence_item_id": 3,
+        "evidence_bundle_id": "ev_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "item": {
+          "kind": "opaque_subject_provenance",
+          "binding": "shipment",
+          "resource": "public.shipments",
+          "subject_ref_digest": "sha256:bd43977526d3ed765aeb3451a8b34ad8616254fab0a235fd8205cdbb62c1a8a9",
+          "raw_identity_persisted": false
+        },
+        "created_at": "2026-09-13T18:13:38.241Z"
+      }
+    ],
+    "query_audit": [
+      {
+        "audit_id": 8,
+        "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "evidence_bundle_id": "ev_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "tenant_id": "c1111111-1111-4111-8111-111111111111",
+        "principal": "a1111111-1111-4111-8111-111111111111",
+        "capability": "freight.dispatch",
+        "business_object": "public.shipments",
+        "object_id": "f0000000-0000-4000-8000-000000000005",
+        "primary_key_value": "f0000000-0000-4000-8000-000000000005",
+        "source_id": "local_postgres",
+        "query_fingerprint": "sha256:733f023aef6a0041e8a3310a8100fe41fbcec30096fed92b2d71c859c596faca",
+        "table_name": "public.shipments",
+        "row_count": 2,
+        "payload": {
+          "kind": "semantic_action_verification",
+          "outcome": "freight.dispatch",
+          "parameterized": true,
+          "trusted_scope_applied": true,
+          "raw_sql_persisted": false,
+          "source_values_persisted": false
+        },
+        "created_at": "2026-09-13T18:13:38.241Z"
+      }
+    ],
+    "created_at": "2026-09-13T18:13:38.241Z"
+  }
+}

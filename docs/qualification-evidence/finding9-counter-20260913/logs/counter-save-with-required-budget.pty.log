@@ -1,0 +1,138 @@
+    SELECT MAINTAINED CONFLICT COUNTER
+    UPDATE target: public.dock_slots. Select the exact counter identified by the source owner.
+    Structurally suitable integers are not evidence of maintenance. No field is selected automatically.
+    Confirm each counter's maintenance next. All mappings save only with the validated disabled draft; activation remains
+    separate.
+
+      Cancel this draft submission
+      rev_no
+
+    Up/Down Navigate   Enter Select   Esc Back    SELECT MAINTAINED CONFLICT COUNTER
+    UPDATE target: public.dock_slots. Select the exact counter identified by the source owner.
+    Structurally suitable integers are not evidence of maintenance. No field is selected automatically.
+    Confirm each counter's maintenance next. All mappings save only with the validated disabled draft; activation remains
+    separate.
+
+    > Cancel this draft submission
+      rev_no
+
+    Up/Down Navigate   Enter Select   Esc Back    SELECT MAINTAINED CONFLICT COUNTER
+    UPDATE target: public.dock_slots. Select the exact counter identified by the source owner.
+    Structurally suitable integers are not evidence of maintenance. No field is selected automatically.
+    Confirm each counter's maintenance next. All mappings save only with the validated disabled draft; activation remains
+    separate.
+
+      Cancel this draft submission
+    > rev_no
+
+    Up/Down Navigate   Enter Select   Esc Back    REVIEW CHANGED-RECORD PROTECTION
+    Use public.dock_slots.rev_no to detect a record changed after a request was prepared.
+    The source owner must confirm that every source writer increments this counter on each update.
+    Runner will compare the observed counter and increment it in the same guarded transaction. Customers cannot supply the
+    counter as an input; existing Read visibility is unchanged and still needs its own privacy review.
+    This prepares a disabled mapping only. Business rules, execution permission and source data do not change.
+
+      Confirm this maintained counter
+        Record only this disabled mapping; no activation or source update.
+      Keep this mapping pending
+        The counter's meaning or maintenance still needs confirmation.
+
+    Up/Down Navigate   Enter Select   Esc Back    REVIEW CHANGED-RECORD PROTECTION
+    Use public.dock_slots.rev_no to detect a record changed after a request was prepared.
+    The source owner must confirm that every source writer increments this counter on each update.
+    Runner will compare the observed counter and increment it in the same guarded transaction. Customers cannot supply the
+    counter as an input; existing Read visibility is unchanged and still needs its own privacy review.
+    This prepares a disabled mapping only. Business rules, execution permission and source data do not change.
+
+    > Confirm this maintained counter
+        Record only this disabled mapping; no activation or source update.
+      Keep this mapping pending
+        The counter's meaning or maintenance still needs confirmation.
+
+    Up/Down Navigate   Enter Select   Esc Back    SELECT MAINTAINED CONFLICT COUNTER
+    UPDATE target: public.shipments. Select the exact counter identified by the source owner.
+    Structurally suitable integers are not evidence of maintenance. No field is selected automatically.
+    Confirm each counter's maintenance next. All mappings save only with the validated disabled draft; activation remains
+    separate.
+
+      Cancel this draft submission
+      rev_no
+      weight_kg
+
+    Up/Down Navigate   Enter Select   Esc Back    SELECT MAINTAINED CONFLICT COUNTER
+    UPDATE target: public.shipments. Select the exact counter identified by the source owner.
+    Structurally suitable integers are not evidence of maintenance. No field is selected automatically.
+    Confirm each counter's maintenance next. All mappings save only with the validated disabled draft; activation remains
+    separate.
+
+    > Cancel this draft submission
+      rev_no
+      weight_kg
+
+    Up/Down Navigate   Enter Select   Esc Back    SELECT MAINTAINED CONFLICT COUNTER
+    UPDATE target: public.shipments. Select the exact counter identified by the source owner.
+    Structurally suitable integers are not evidence of maintenance. No field is selected automatically.
+    Confirm each counter's maintenance next. All mappings save only with the validated disabled draft; activation remains
+    separate.
+
+      Cancel this draft submission
+    > rev_no
+      weight_kg
+
+    Up/Down Navigate   Enter Select   Esc Back    REVIEW CHANGED-RECORD PROTECTION
+    Use public.shipments.rev_no to detect a record changed after a request was prepared.
+    The source owner must confirm that every source writer increments this counter on each update.
+    Runner will compare the observed counter and increment it in the same guarded transaction. Customers cannot supply the
+    counter as an input; existing Read visibility is unchanged and still needs its own privacy review.
+    This prepares a disabled mapping only. Business rules, execution permission and source data do not change.
+
+      Confirm this maintained counter
+        Record only this disabled mapping; no activation or source update.
+      Keep this mapping pending
+        The counter's meaning or maintenance still needs confirmation.
+
+    Up/Down Navigate   Enter Select   Esc Back    REVIEW CHANGED-RECORD PROTECTION
+    Use public.shipments.rev_no to detect a record changed after a request was prepared.
+    The source owner must confirm that every source writer increments this counter on each update.
+    Runner will compare the observed counter and increment it in the same guarded transaction. Customers cannot supply the
+    counter as an input; existing Read visibility is unchanged and still needs its own privacy review.
+    This prepares a disabled mapping only. Business rules, execution permission and source data do not change.
+
+    > Confirm this maintained counter
+        Record only this disabled mapping; no activation or source update.
+      Keep this mapping pending
+        The counter's meaning or maintenance still needs confirmation.
+
+    Up/Down Navigate   Enter Select   Esc Back{
+  "ok": true,
+  "state": "saved_disabled",
+  "review_bundle_digest": "sha256:b88fc368198d325b89c6779047bf029b31233f406f3711396a7580ae82d79151",
+  "read_candidate_digest": "sha256:6a90f2bf3f7fc83745ab6dd2fb51b880ca821109cf8ad6df416e1e83cffeeba6",
+  "action_authority_digest": "sha256:717c24efc6fba6cf61e0e4a50d19944088d5008bdd718629b979fa5b45155794",
+  "action_outcomes": [
+    "freight.dispatch"
+  ],
+  "confirmed_read_decisions": 0,
+  "reviewed_conflict_counters": [
+    {
+      "resource": "public.dock_slots",
+      "field": "rev_no",
+      "maintenance": "all_writers_increment",
+      "proof_digest": "sha256:c8246973ddcbb21badd417936e6a8b170a0fc3799b2b5699e36b954d4fe3cd29"
+    },
+    {
+      "resource": "public.shipments",
+      "field": "rev_no",
+      "maintenance": "all_writers_increment",
+      "proof_digest": "sha256:ce4cc2938d41f9b70ce05e29954aeae8f2e662f09aa664398dac02ded4f805bc"
+    }
+  ],
+  "activation": "unsupported_from_structured_authoring",
+  "provenance": "external_draft",
+  "policy_epoch": 3,
+  "next_steps": {
+    "review_read": "synapsor-runner boundary review --project-root '/tmp/finding9-project' --access",
+    "review_actions": "synapsor-runner action review --project-root '/tmp/finding9-project'"
+  },
+  "source_database_changed": false
+}

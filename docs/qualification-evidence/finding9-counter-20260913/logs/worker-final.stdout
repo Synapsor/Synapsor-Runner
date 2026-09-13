@@ -1,0 +1,6 @@
+Supervised execution: active (control revision 0)
+Worker health: unknown. Queue state and lease counts do not prove that a worker process is running.
+Queue: 0 waiting · 0 leased · 0 retrying · 0 dead letter · 0 reconciliation
+COMPLETED wrp_rule_cb57f9c1733f75a6f69f143c074e72c0 mode=supervised_worker digest=sha256:7922fc764140ef616ec1337616df97d3496bd2e39b41e9955af4628c0544391e attempt=1/5
+COMPLETED wrp_rule_29ee164e8f8bff539ae2f80df1a86d03 mode=supervised_worker digest=sha256:7922fc764140ef616ec1337616df97d3496bd2e39b41e9955af4628c0544391e attempt=1/5
+BLOCKED wrp_rule_8cbba2a704ca24b285ab6d55548e2d34 mode=supervised_worker digest=sha256:7922fc764140ef616ec1337616df97d3496bd2e39b41e9955af4628c0544391e attempt=1/5 error=SEMANTIC_AUTHORITY_STALE

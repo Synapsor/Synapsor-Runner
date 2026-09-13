@@ -1,0 +1,9 @@
+{
+  "args": [
+    "worker",
+    "status",
+    "--config",
+    "./synapsor.actions.runner.json"
+  ],
+  "exit_code": 0
+}

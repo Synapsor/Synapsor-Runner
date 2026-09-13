@@ -1,0 +1,123 @@
+CHECK ['node', 'scripts/check-trusted-core-dependencies.mjs']
+Trusted-core dependency check passed (384 modules, 2045 internal edges).
+CHECK ['node', 'scripts/check-license-content.mjs']
+License/content check passed.
+CHECK ['node', 'scripts/verify-human-command-surface.mjs']
+Human command-surface verification passed.
+CHECK ['bash', 'scripts/verify-dsl-source-paths.sh']
+DSL source path check passed: .synapsor.sql preferred, .synapsor compatibility preserved
+CHECK ['node', 'scripts/verify-cursor-plugin.mjs']
+{
+  "ok": true,
+  "version": "1.7.1",
+  "official_format": true,
+  "package_digest": "sha256:38bbdcff74443206acbe343f80b9757a481dfc42a224ab567f011520b03a1029",
+  "files": 7,
+  "project_path_with_spaces": true,
+  "copied_install_idempotent": true,
+  "clean_uninstall": true,
+  "unrelated_cursor_config_preserved": true,
+  "secrets_embedded": false,
+  "activation_authority_embedded": false
+}
+CHECK ['node', 'scripts/verify-mcp-client-configs.mjs']
+generic-stdio.json: stdio tools/list verified
+claude-desktop.json: stdio tools/list verified
+cursor.json: stdio tools/list verified
+vscode.json: stdio tools/list verified
+support-plan-credit/claude-desktop.json: parsed and safety-scanned
+support-plan-credit/cursor-project.mcp.json: parsed and safety-scanned
+support-plan-credit/cursor-global.mcp.json: parsed and safety-scanned
+support-plan-credit/openai-agents-stdio.ts: parsed and safety-scanned
+support-plan-credit/openai-agents-streamable-http.ts: parsed and safety-scanned
+support-plan-credit/generic-stdio.json: parsed and safety-scanned
+support-plan-credit/generic-streamable-http.json: parsed and safety-scanned
+support-plan-credit/README.md: syntax-checked and safety-scanned
+support-plan-credit/claude-code.sh: syntax-checked and safety-scanned
+support-plan-credit/codex.config.toml: syntax-checked and safety-scanned
+support-plan-credit/vscode.mcp.json: syntax-checked and safety-scanned
+support-plan-credit/langchain.mjs: syntax-checked and safety-scanned
+support-plan-credit/google-adk.py: syntax-checked and safety-scanned
+support-plan-credit/llamaindex.py: syntax-checked and safety-scanned
+support-plan-credit/generic-stdio.mjs: syntax-checked and safety-scanned
+support-plan-credit/generic-streamable-http.mjs: syntax-checked and safety-scanned
+claude-code: current CLI accepted the stdio configuration (2.1.270 (Claude Code))
+codex: current CLI accepted the stdio configuration (codex-cli 0.154.0)
+support-plan-credit: stdio tools/list verified
+MCP client config examples are parseable, secret-free, and expose semantic tools only.
+CHECK ['bash', 'scripts/verify-local-runner.sh']
+
+  apps/runner/dist/runner.mjs  11.0mb ⚠️
+
+⚡ Done in 271ms
+
+  apps/runner/dist/authoring.mjs  193.0kb
+
+⚡ Done in 12ms
+
+  apps/runner/dist/shadow.mjs  529.1kb
+
+⚡ Done in 21ms
+
+  apps/runner/dist/runtime.mjs  1.6mb ⚠️
+
+⚡ Done in 66ms
+local runner verified in /tmp/tmp.p1rMLSyRp0
+CHECK ['node', 'scripts/verify-local-runner-bundle-freshness.mjs']
+Local Runner bundle freshness verification passed: diagnostics remain available; authority and authoring stay blocked.
+Runner launchers verified: 6 child-exit/shutdown cases passed.
+CHECK ['bash', 'scripts/verify-public-commands.sh']
+Warning: config path does not exist yet: ./synapsor.runner.json
+Paste this openai-agents MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Streamable HTTP endpoint: http://127.0.0.1:8766/mcp
+Authentication: openai-agents reads the bearer token from environment SYNAPSOR_RUNNER_HTTP_TOKEN; no token value was written.
+Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as SYNAPSOR_RUNNER_HTTP_TOKEN.
+public checkout commands verified
+CHECK ['bash', 'scripts/verify-packed-runner.sh']
+
+  apps/runner/dist/runner.mjs  11.0mb ⚠️
+
+⚡ Done in 267ms
+
+  apps/runner/dist/authoring.mjs  193.0kb
+
+⚡ Done in 11ms
+
+  apps/runner/dist/shadow.mjs  529.1kb
+
+⚡ Done in 14ms
+
+  apps/runner/dist/runtime.mjs  1.6mb ⚠️
+
+⚡ Done in 50ms
+Runner source manifest is pnpm-publishable: @synapsor/runner@1.8.0 (workspace:^1.11.0)
+
+  apps/runner/dist/runner.mjs  11.0mb ⚠️
+
+⚡ Done in 285ms
+
+  apps/runner/dist/authoring.mjs  193.0kb
+
+⚡ Done in 11ms
+
+  apps/runner/dist/shadow.mjs  529.1kb
+
+⚡ Done in 24ms
+
+  apps/runner/dist/runtime.mjs  1.6mb ⚠️
+
+⚡ Done in 75ms
+Runner packed manifest is registry-installable: @synapsor/runner@1.8.0 (^1.11.0)
+Using locally packed @synapsor/spec@1.11.0 for pre-release verification.
+Paste this openai-agents MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Streamable HTTP endpoint: http://127.0.0.1:8766/mcp
+Authentication: openai-agents reads the bearer token from environment SYNAPSOR_RUNNER_HTTP_TOKEN; no token value was written.
+Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as SYNAPSOR_RUNNER_HTTP_TOKEN.
+Paste this openai-agents MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Streamable HTTP endpoint: http://127.0.0.1:8766/mcp
+Authentication: openai-agents reads the bearer token from environment SYNAPSOR_RUNNER_HTTP_TOKEN; no token value was written.
+Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as SYNAPSOR_RUNNER_HTTP_TOKEN.
+packed runner verified in /tmp/tmp.xpNwr5BUTv

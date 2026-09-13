@@ -1,0 +1,8 @@
+{
+  "ok": false,
+  "code": "ACTION_RULE_REVISION_STALE",
+  "message": "ACTION_RULE_REVISION_STALE: the saved Action authority was built from a different inspected schema revision. Re-review the Read and Action dependency before exporting a combined structured draft.",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "disabled_authority_changed": false
+}

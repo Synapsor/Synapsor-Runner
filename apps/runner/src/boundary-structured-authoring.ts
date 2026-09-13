@@ -48,6 +48,9 @@ import { OperatorAuthorityRepository } from "./control-policy-operator-repositor
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
+import { createBoundaryReviewInteractiveSession, type BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
+import { reviewActionVersionField } from "./action-rule-version-review.js";
+import type { ReviewedActionVersionField } from "./action-rule-authoring-checkpoint.js";
 
 const INPUT_VERSION = "synapsor.boundary-draft-input.v1" as const;
 const EXTERNAL_DRAFT_ACTOR = "external_draft";
@@ -69,16 +72,17 @@ type StructuredBoundaryDraftInput = {
 };
 
 /**
- * Public, non-interactive semantic authoring surface. It can only export a
- * bounded template or persist disabled Read/Action revisions. Review and
- * activation stay in their existing human/operator paths.
+ * Public typed authoring exports templates or saves disabled Read/Action
+ * revisions. Optional counter selection uses the existing operator-terminal
+ * review; Read/Action activation remains separate.
  */
 export async function structuredBoundaryAuthoringCommand(
   args: string[],
   schemaInspector: typeof inspectDatabase = inspectDatabase,
+  counterReviewSession?: BoundaryReviewInteractiveSession,
 ): Promise<number> {
   try {
-    return await structuredBoundaryAuthoringCommandInner(args, schemaInspector);
+    return await structuredBoundaryAuthoringCommandInner(args, schemaInspector, counterReviewSession);
   } catch (error) {
     if (!args.includes("--json")) throw error;
     const code = structuredErrorCode(error);
@@ -101,9 +105,10 @@ export async function structuredBoundaryAuthoringCommand(
 async function structuredBoundaryAuthoringCommandInner(
   args: string[],
   schemaInspector: typeof inspectDatabase,
+  counterReviewSession?: BoundaryReviewInteractiveSession,
 ): Promise<number> {
   assertKnownOptions(args, new Set([
-    "--project-root", "--export-draft", "--draft", "--json", "--dry-run",
+    "--project-root", "--export-draft", "--draft", "--json", "--dry-run", "--review-counters",
   ]), "boundary structured authoring");
   const exportPath = optionalArg(args, "--export-draft");
   const draftPath = optionalArg(args, "--draft");
@@ -113,6 +118,11 @@ async function structuredBoundaryAuthoringCommandInner(
   if (exportPath && args.includes("--dry-run")) {
     throw new Error("--dry-run applies only to --draft validation; export does not change authority.");
   }
+  if (args.includes("--review-counters")) {
+    if (!draftPath) throw new Error("--review-counters requires --draft <file>; it reviews the submitted UPDATE targets.");
+    // The typed file and --json never supply or imply source-owner consent.
+    counterReviewSession ??= createBoundaryReviewInteractiveSession();
+  } else counterReviewSession = undefined;
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   // Reject malformed input before coordination can create local gate files.
   const input = draftPath
@@ -141,7 +151,7 @@ async function structuredBoundaryAuthoringCommandInner(
     return 0;
   }
 
-  const prepared = await prepareStructuredDraft(projectRoot, input!, schemaInspector);
+  const prepared = await prepareStructuredDraft(projectRoot, input!, schemaInspector, counterReviewSession);
   if (args.includes("--dry-run")) {
     write(args, { ok: true, state: "validated_disabled_preview", ...prepared.summary, source_database_changed: false });
     return 0;
@@ -263,6 +273,7 @@ async function prepareStructuredDraft(
   projectRoot: string,
   input: StructuredBoundaryDraftInput,
   schemaInspector: typeof inspectDatabase,
+  counterReviewSession?: BoundaryReviewInteractiveSession,
 ) {
   const context = await loadBoundaryReviewContext(projectRoot);
   if (input.review_bundle_digest !== context.bundle.bundle_digest) {
@@ -313,7 +324,7 @@ async function prepareStructuredDraft(
         nextLock: prospectiveLock,
         nextBoundary: prospectiveRead,
       });
-  const catalog = buildActionRuleAuthoringCatalog({ boundary: prospectiveRead, inspection,
+  let catalog = buildActionRuleAuthoringCatalog({ boundary: prospectiveRead, inspection,
     ...(retainedCatalog ? { retainedCatalog } : {}) });
   const replacementDrafts = new Map<string, StructuredActionEntry>();
   for (const rule of existing?.authority.rules ?? []) {
@@ -341,6 +352,49 @@ async function prepareStructuredDraft(
       continue;
     }
     replacementDrafts.set(draft.outcome, { draft });
+  }
+  const reviewedCounters: ReviewedActionVersionField[] = [];
+  const assertCounterMetadataCurrent = async () => {
+    const fresh = await schemaInspector({ engine: prospectiveLock.engine, databaseUrlEnv: prospectiveLock.source_env,
+      schema: prospectiveLock.inspected_schema, env: process.env });
+    if (schemaFingerprintForInspection(fresh) !== prospectiveLock.schema_fingerprint
+      || rolePostureFingerprint(fresh) !== prospectiveLock.role_posture_fingerprint) {
+      throw new Error("ACTION_VERSION_REVIEW_STALE: inspected source metadata changed during counter review. Rescan and review again; no draft was saved.");
+    }
+  };
+  if (counterReviewSession) {
+    const targets = [...new Set(input.actions.flatMap(({ effect }) => effect.operation === "update"
+      ? [effect.target_resource, ...(effect.atomic_updates?.map(member => member.target_resource) ?? [])] : []))].sort();
+    if (!targets.length) throw new Error("ACTION_VERSION_REVIEW_TARGET_REQUIRED: --review-counters requires a submitted UPDATE action.");
+    const assertCurrent = async () => {
+      await assertCounterMetadataCurrent();
+      const fresh = await loadBoundaryReviewContext(projectRoot);
+      if (fresh.bundle.bundle_digest !== input.review_bundle_digest
+        || canonicalJsonDigest(fresh.bundle.mutation_bindings) !== canonicalJsonDigest(input.bindings)) {
+        throw new Error("ACTION_VERSION_REVIEW_STALE: the saved Read or Action review changed during counter selection. Export the current draft; no authority changed.");
+      }
+    };
+    for (const resource of targets) {
+      await assertCurrent();
+      const fields = catalog.authoring.resources.find(item => item.name === resource)?.version_field_options ?? [];
+      if (!fields.length) throw new Error(`ACTION_VERSION_FIELD_UNSUPPORTED: ${resource} has no inspected counter options. No draft was saved.`);
+      const selected = await counterReviewSession.chooseOption?.("SELECT MAINTAINED CONFLICT COUNTER", [
+        { value: "cancel", label: "Cancel this draft submission" },
+        ...fields.map(field => ({ value: `field:${field}`, label: field })),
+      ], { initialValue: "cancel", requireExplicitSelection: true, context: [
+        `UPDATE target: ${resource}. Select the exact counter identified by the source owner.`,
+        "Structurally suitable integers are not evidence of maintenance. No field is selected automatically.",
+        "Confirm each counter's maintenance next. All mappings save only with the validated disabled draft; activation remains separate.",
+      ] });
+      if (!selected || selected === "cancel") throw new Error("ACTION_VERSION_REVIEW_CANCELLED: counter review cancelled. No Read or Action draft was saved.");
+      const field = fields.find(value => selected === `field:${value}`);
+      if (!field) throw new Error("ACTION_VERSION_FIELD_UNSUPPORTED: select one of the current inspected counter options. No draft was saved.");
+      const prepared = await reviewActionVersionField({ context: { readBoundary: prospectiveRead, readBoundaryDigest: readDigest, builtCatalog: catalog },
+        inspection, generationLock: prospectiveLock, resource, field, session: counterReviewSession, assertCurrent });
+      if (!prepared) throw new Error("ACTION_VERSION_REVIEW_CANCELLED: source-owner maintenance confirmation is pending. No Read or Action draft was saved.");
+      catalog = prepared.builtCatalog;
+      reviewedCounters.push(prepared.review);
+    }
   }
   const action = compileStructuredActionBundle({ entries: [...replacementDrafts.values()], catalog,
     readBoundary: prospectiveRead, readDigest,
@@ -378,12 +432,14 @@ async function prepareStructuredDraft(
     action,
     authoring,
     authoring_binding: input.bindings.authoring,
+    ...(reviewedCounters.length ? { assertCounterMetadataCurrent } : {}),
     summary: {
       review_bundle_digest: input.review_bundle_digest,
       read_candidate_digest: readDigest,
       ...(action ? { action_authority_digest: action.digest,
         action_outcomes: action.authority.rules.map((rule) => rule.rule.outcome).sort() } : {}),
       confirmed_read_decisions: 0,
+      ...(reviewedCounters.length ? { reviewed_conflict_counters: reviewedCounters } : {}),
       activation: "unsupported_from_structured_authoring",
       provenance: EXTERNAL_DRAFT_ACTOR,
     },
@@ -464,6 +520,7 @@ async function persistStructuredDraft(
   prepared: Awaited<ReturnType<typeof prepareStructuredDraft>>,
 ): Promise<number> {
   return withProjectRuntimeAdmission(projectRoot, (root) => withProjectAuthorityMutation(root, async (held) => {
+    await prepared.assertCounterMetadataCurrent?.();
     const binding = await openBoundProjectControlPolicies(held.projectRoot);
     if (!binding) throw new Error("STRUCTURED_DRAFT_REPOSITORY_REQUIRED: governed policy storage is required for disabled publication.");
     try {

@@ -1,0 +1,13 @@
+{
+  "command": [
+    "python3",
+    "-c",
+    "import subprocess; commands=[[\"node\",\"scripts/check-trusted-core-dependencies.mjs\"],[\"node\",\"scripts/check-license-content.mjs\"],[\"node\",\"scripts/verify-human-command-surface.mjs\"],[\"bash\",\"scripts/verify-dsl-source-paths.sh\"],[\"node\",\"scripts/verify-cursor-plugin.mjs\"],[\"node\",\"scripts/verify-mcp-client-configs.mjs\"],[\"bash\",\"scripts/verify-local-runner.sh\"],[\"node\",\"scripts/verify-local-runner-bundle-freshness.mjs\"],[\"bash\",\"scripts/verify-public-commands.sh\"],[\"bash\",\"scripts/verify-packed-runner.sh\"]]; [(print(\"CHECK\",c,flush=True),subprocess.run(c,check=True)) for c in commands]"
+  ],
+  "started_at": "2026-09-13T17:49:15.423844+00:00",
+  "network": "unshared namespace",
+  "originals": "read-only root; worktree and owned evidence writable",
+  "timeout_seconds": 1800,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T17:53:19.450750+00:00"
+}

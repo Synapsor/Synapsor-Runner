@@ -1,0 +1,26 @@
+{
+  "command": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/structured-counter-review.integration.test.ts",
+    "apps/runner/src/boundary-structured-authoring.test.ts",
+    "apps/runner/src/boundary-structured-authoring.integration.test.ts",
+    "apps/runner/src/action-rule-version-review.test.ts",
+    "apps/runner/src/action-rule-authoring.test.ts",
+    "apps/runner/src/action-rule-draft.test.ts",
+    "apps/runner/src/counter-maintenance-evidence.test.ts",
+    "apps/runner/src/cli-help.test.ts",
+    "apps/runner/src/guided-start.test.ts",
+    "--maxWorkers=3",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "started_at": "2026-09-13T17:46:52.578799+00:00",
+  "network": "unshared namespace",
+  "originals": "read-only root; worktree and owned evidence writable",
+  "timeout_seconds": 1800,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T17:49:13.344675+00:00"
+}

@@ -184,7 +184,7 @@ export function buildActionRuleAuthoringCatalog(input: {
       applies_to: "update",
       resource: resourceName,
       message: versionFieldOptions.length
-        ? `UPDATE needs a reviewed conflict counter. Structurally suitable fields: ${versionFieldOptions.join(", ")}. If the source owner identifies a maintained counter, use the guided counter review; structural suitability alone is not its business meaning. Private verification is still available without a version.`
+        ? `UPDATE needs a reviewed conflict counter. Structurally suitable fields: ${versionFieldOptions.join(", ")}. If the source owner identifies a maintained counter, use start --draft <file> --review-counters in an operator terminal, or the guided counter review; structural suitability alone is not its business meaning. Private verification is still available without a version.`
         : versionCandidates.length
         ? "UPDATE only: no unique conflict counter is selected. This does not block using this resource for private verification. Runner rechecks verification facts at execution; do not request a version for a resource that the action does not change."
         : "UPDATE only: no inspected conflict field is available, so this resource cannot be changed by a versioned update. Private verification remains supported without a version: Runner reloads, locks and compares the reviewed facts at execution. No schema change or writer grant is needed merely to verify this resource.",

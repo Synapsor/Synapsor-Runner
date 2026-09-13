@@ -1,0 +1,2 @@
+ALTER TABLE public.shipments ALTER COLUMN rev_no DROP NOT NULL;
+ALTER TABLE

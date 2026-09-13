@@ -1,0 +1,12 @@
+{
+  "closed_at": "2026-09-13T18:17:28.463233+00:00",
+  "container_id": "fd4afa7c5242164df32f8718887300b05110774e4ecc82fe3bcdf0754c337c61",
+  "network": "none",
+  "running": false,
+  "exit_code": 0,
+  "worker_runs": "three finite --supervised --once invocations, all exited",
+  "source_and_store_snapshot": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/finding9-counter-454a0d2-20260913/checkpoints/final-before-stop",
+  "retained_blocked_proposal": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+  "fixture_attempts": 1,
+  "provider_calls": 0
+}

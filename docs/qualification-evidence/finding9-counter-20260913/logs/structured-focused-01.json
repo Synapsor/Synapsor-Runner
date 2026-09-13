@@ -1,0 +1,17 @@
+{
+  "command": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/structured-counter-review.integration.test.ts",
+    "apps/runner/src/action-rule-version-review.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1"
+  ],
+  "started_at": "2026-09-13T17:43:49.561045+00:00",
+  "network": "unshared namespace",
+  "originals": "read-only root; worktree and owned evidence writable",
+  "timeout_seconds": 1800,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T17:44:25.781152+00:00"
+}

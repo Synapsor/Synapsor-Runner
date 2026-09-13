@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "activation": "disabled_unreviewed",
+  "storage": "control_repository",
+  "deployment_profile": "staging",
+  "boundary_id": "bnd_346f990ba9dc3395d468cbeb6437c252",
+  "candidate_digest": "sha256:665f8fee1e935a52668f31046bfa640c023d2503f0435eaacee811512a9436a5",
+  "review_revision": 1,
+  "authoring_binding": {
+    "repository_id": "9300c16e-331e-4fdb-b519-16bbc31e7777",
+    "deployment_id": "c8f40185-4721-47a5-8f3e-2f51b8458027",
+    "project_id": "21880b2e-b923-42f0-a552-dcb19aa9ff65",
+    "epoch": 1,
+    "revision_id": "policy:10b57ebe05bd5b62b7ed512d57620294745003a76b93be3d19daf8c7dcff3622"
+  },
+  "guided_project_created": true,
+  "config_path": "/tmp/finding9-project/synapsor.runner.json",
+  "store_path": "/tmp/finding9-project/.synapsor/local.db",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "next_action": "synapsor-runner boundary review --project-root '/tmp/finding9-project' --access",
+  "next_steps": {
+    "export_draft": "synapsor-runner start --project-root '/tmp/finding9-project' --export-draft '/tmp/finding9-project/boundary-authoring.json' --json",
+    "validate_draft": "synapsor-runner start --project-root '/tmp/finding9-project' --draft '/tmp/finding9-project/boundary-authoring.json' --dry-run --json",
+    "submit_disabled_draft": "synapsor-runner start --project-root '/tmp/finding9-project' --draft '/tmp/finding9-project/boundary-authoring.json' --json",
+    "review": "synapsor-runner boundary review --project-root '/tmp/finding9-project' --access",
+    "review_actions": "synapsor-runner action review --project-root '/tmp/finding9-project'"
+  }
+}

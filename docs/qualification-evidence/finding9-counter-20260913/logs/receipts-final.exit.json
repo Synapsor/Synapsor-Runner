@@ -1,0 +1,10 @@
+{
+  "args": [
+    "receipts",
+    "list",
+    "--details",
+    "--config",
+    "./synapsor.actions.runner.json"
+  ],
+  "exit_code": 0
+}

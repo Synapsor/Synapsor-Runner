@@ -1,0 +1,767 @@
+{
+  "schema_version": "synapsor.lifecycle-view.v1",
+  "selection": {
+    "mode": "handle",
+    "requested_handle": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+    "handle_kind": "proposal",
+    "filters": {},
+    "match_count": 1
+  },
+  "proposal": {
+    "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+    "proposal_version": 1,
+    "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+    "change_set_schema": "synapsor.change-set.v4",
+    "state": "failed",
+    "created_at": "2026-09-13T18:13:38.241Z",
+    "updated_at": "2026-09-13T18:14:55.861Z",
+    "contract": null,
+    "capability": "freight.dispatch",
+    "operation": "single_row_update",
+    "scope": {
+      "tenant_id": "c1111111-1111-4111-8111-111111111111",
+      "principal": "a1111111-1111-4111-8111-111111111111",
+      "principal_source": "environment",
+      "business_object": "public.shipments",
+      "object_id": "f0000000-0000-4000-8000-000000000005"
+    },
+    "target": {
+      "source_kind": "external_postgres",
+      "source_id": "local_postgres",
+      "schema": "public",
+      "table": "shipments",
+      "primary_key": {
+        "column": "id",
+        "value": "f0000000-0000-4000-8000-000000000005"
+      }
+    },
+    "change": {
+      "before": {
+        "id": "f0000000-0000-4000-8000-000000000005",
+        "rev_no": 1
+      },
+      "patch": {
+        "status": "dispatched"
+      },
+      "after": {
+        "id": "f0000000-0000-4000-8000-000000000005",
+        "rev_no": 2,
+        "status": "dispatched",
+        "account_id": "a1111111-1111-4111-8111-111111111111"
+      },
+      "frozen_set": null
+    },
+    "guards": {
+      "tenant": {
+        "column": "carrier_id",
+        "value": "c1111111-1111-4111-8111-111111111111"
+      },
+      "principal_scope": {
+        "schema_version": "synapsor.principal-scope.v1",
+        "column": "account_id",
+        "binding": "principal",
+        "provider": "environment",
+        "value_fingerprint": "sha256:637c9f24166d956f1cee6d4a33e7a2fd83c40ec2149f54ab6d547979eb886622",
+        "value": "a1111111-1111-4111-8111-111111111111"
+      },
+      "allowed_columns": [
+        "status"
+      ],
+      "expected_version": {
+        "column": "rev_no",
+        "value": 1
+      },
+      "version_advance": {
+        "column": "rev_no",
+        "strategy": "integer_increment"
+      }
+    },
+    "source_database_mutated": false
+  },
+  "approval": {
+    "status": "approved",
+    "source": "human",
+    "required_role": "dispatcher",
+    "policy": null,
+    "progress": {
+      "approved": 1,
+      "required": 1,
+      "remaining": 0,
+      "rejected": false,
+      "complete": true
+    },
+    "decisions": [
+      {
+        "approval_id": 3,
+        "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+        "approver": "fixture_dispatcher",
+        "status": "approved",
+        "reason": null,
+        "identity": {
+          "provider": "dev_env",
+          "verified": false,
+          "subject": "fixture_dispatcher",
+          "roles": [
+            "dispatcher"
+          ],
+          "key_id": null,
+          "algorithm": null,
+          "issuer": null,
+          "decision_hash": "sha256:65a6fe9760e5548a0e7926985b3d15ce978eadc53e3704131a301b85da46738d",
+          "integrity_hash": "sha256:6017b7dc9a2ad0c0be2b2545f619f5f9a7cdbcd5ec1f4f9fc24926fd75a1eff0"
+        },
+        "freshness_proof_digest": null,
+        "created_at": "2026-09-13T18:14:17.203Z"
+      }
+    ],
+    "tripped_policy_limits": []
+  },
+  "freshness": {
+    "required": false,
+    "target_count": 0,
+    "supporting_count": 0,
+    "latest_status": "not_required",
+    "latest_checked_at": null,
+    "latest_proof_digest": null,
+    "latest_safe_code": null,
+    "approval_proofs": [
+      {
+        "approval_id": 3,
+        "approver": "fixture_dispatcher",
+        "proof_digest": null
+      }
+    ],
+    "next_action": "Apply still revalidates target and supporting dependencies."
+  },
+  "evidence": {
+    "bundles": [
+      {
+        "evidence_bundle_id": "ev_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "tenant_id": "c1111111-1111-4111-8111-111111111111",
+        "principal": "a1111111-1111-4111-8111-111111111111",
+        "capability": "freight.dispatch",
+        "source_id": "local_postgres",
+        "source_table": "public.shipments",
+        "business_object": "public.shipments",
+        "object_id": "f0000000-0000-4000-8000-000000000005",
+        "query_fingerprint": "sha256:733f023aef6a0041e8a3310a8100fe41fbcec30096fed92b2d71c859c596faca",
+        "payload": {
+          "kind": "semantic_action_eligibility",
+          "outcome": "freight.dispatch",
+          "result": "eligible",
+          "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+          "action_boundary_digest": "sha256:7922fc764140ef616ec1337616df97d3496bd2e39b41e9955af4628c0544391e",
+          "action_rule_digest": "sha256:0b2048dc14688c765b58b3f37726c46620172322075ac7e83ba52e50b8c428f1",
+          "compiled_plan_digest": "sha256:55a10e9f7fd3a884035b6ee111665113297f006e17284f68ee2d7c6da4bd5c76",
+          "verified_facts_digest": "sha256:85dd1ad0638b2ccceae616de7ad1b62d464333b7984d31ce78b35f739c3d4395",
+          "dependency_set_digest": "sha256:531038504596af5db0c40665d5d52df839c42fdc567520113201efd3865b7615",
+          "derived_effect_digest": "sha256:4b495dc1cf8094e87bfa9fb5114cf4046314a8250c7ec088fc22dd3140283082",
+          "approval_policy_digest": "sha256:f95c9b93c4d90b771a7f35982e85be1dfea607788f34573ac3668fa2b25ee671",
+          "approval_path": "human_review",
+          "subject_identity_values_persisted_in_evidence": false,
+          "source_database_changed": false
+        },
+        "items": [
+          {
+            "evidence_item_id": 3,
+            "evidence_bundle_id": "ev_rule_8cbba2a704ca24b285ab6d55548e2d34",
+            "item": {
+              "kind": "opaque_subject_provenance",
+              "binding": "shipment",
+              "resource": "public.shipments",
+              "subject_ref_digest": "sha256:bd43977526d3ed765aeb3451a8b34ad8616254fab0a235fd8205cdbb62c1a8a9",
+              "raw_identity_persisted": false
+            },
+            "created_at": "2026-09-13T18:13:38.241Z"
+          }
+        ],
+        "created_at": "2026-09-13T18:13:38.241Z"
+      }
+    ],
+    "count": 1
+  },
+  "query_audit": {
+    "records": [
+      {
+        "audit_id": 8,
+        "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "evidence_bundle_id": "ev_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "tenant_id": "c1111111-1111-4111-8111-111111111111",
+        "principal": "a1111111-1111-4111-8111-111111111111",
+        "capability": "freight.dispatch",
+        "business_object": "public.shipments",
+        "object_id": "f0000000-0000-4000-8000-000000000005",
+        "primary_key_value": "f0000000-0000-4000-8000-000000000005",
+        "source_id": "local_postgres",
+        "query_fingerprint": "sha256:733f023aef6a0041e8a3310a8100fe41fbcec30096fed92b2d71c859c596faca",
+        "table_name": "public.shipments",
+        "row_count": 2,
+        "payload": {
+          "kind": "semantic_action_verification",
+          "outcome": "freight.dispatch",
+          "parameterized": true,
+          "trusted_scope_applied": true,
+          "raw_sql_persisted": false,
+          "source_values_persisted": false
+        },
+        "created_at": "2026-09-13T18:13:38.241Z"
+      }
+    ],
+    "count": 1
+  },
+  "writeback": {
+    "jobs": [
+      {
+        "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+        "kind": "direct_sql",
+        "status": "failed",
+        "protocol_version": "5.0",
+        "operation": "single_row_update",
+        "source_id": "local_postgres",
+        "engine": "postgres",
+        "target": {
+          "schema": "public",
+          "table": "shipments",
+          "primary_key": {
+            "column": "id",
+            "value": "f0000000-0000-4000-8000-000000000005"
+          },
+          "tenant_guard": {
+            "column": "carrier_id",
+            "value": "c1111111-1111-4111-8111-111111111111"
+          },
+          "principal_scope": {
+            "schema_version": "synapsor.principal-scope.v1",
+            "column": "account_id",
+            "binding": "principal",
+            "provider": "environment",
+            "value_fingerprint": "sha256:637c9f24166d956f1cee6d4a33e7a2fd83c40ec2149f54ab6d547979eb886622",
+            "value": "a1111111-1111-4111-8111-111111111111"
+          }
+        },
+        "allowed_columns": [
+          "status"
+        ],
+        "patch": {
+          "status": "dispatched"
+        },
+        "conflict_guard": {
+          "kind": "version_column",
+          "column": "rev_no",
+          "expected_value": 1
+        },
+        "version_advance": {
+          "column": "rev_no",
+          "strategy": "integer_increment"
+        },
+        "deduplication": null,
+        "frozen_set": null,
+        "idempotency_key": "semantic:wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "lease_expires_at": "2026-09-13T18:19:54.967Z",
+        "attempt_count": 1,
+        "created_at": "2026-09-13T18:14:54.980Z",
+        "updated_at": "2026-09-13T18:14:55.861Z"
+      }
+    ],
+    "intents": [
+      {
+        "intent_id": "wbi:wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "idempotency_key": "semantic:wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+        "runner_id": "local-runner",
+        "operation": "single_row_update",
+        "status": "failed",
+        "result": {
+          "protocol_version": "5.0",
+          "job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+          "runner_id": "local-runner",
+          "operation": "single_row_update",
+          "receipt_authority": "runner_ledger",
+          "status": "failed",
+          "affected_rows": 0,
+          "atomic_effects": [
+            {
+              "resource": "public.shipments",
+              "schema": "public",
+              "table": "shipments",
+              "effect_digest": "sha256:4b495dc1cf8094e87bfa9fb5114cf4046314a8250c7ec088fc22dd3140283082",
+              "target_identity": [
+                {
+                  "column": "id",
+                  "value": "f0000000-0000-4000-8000-000000000005"
+                },
+                {
+                  "column": "carrier_id",
+                  "value": "c1111111-1111-4111-8111-111111111111"
+                },
+                {
+                  "column": "account_id",
+                  "value": "a1111111-1111-4111-8111-111111111111"
+                }
+              ],
+              "affected_rows": 0
+            },
+            {
+              "resource": "public.dock_slots",
+              "schema": "public",
+              "table": "dock_slots",
+              "effect_digest": "sha256:3079f2fec729f6b01e13de5ef546f8252f7081bd3dd9d536539ca7c9d7242c5f",
+              "target_identity": [
+                {
+                  "column": "id",
+                  "value": "50000000-0000-4000-8000-000000000005"
+                },
+                {
+                  "column": "carrier_id",
+                  "value": "c1111111-1111-4111-8111-111111111111"
+                },
+                {
+                  "column": "account_id",
+                  "value": "a1111111-1111-4111-8111-111111111111"
+                }
+              ],
+              "affected_rows": 0
+            }
+          ],
+          "target_identity": [
+            {
+              "column": "id",
+              "value": "f0000000-0000-4000-8000-000000000005"
+            }
+          ],
+          "semantic_verification": {
+            "status": "refused",
+            "proof_digest": "sha256:3e863d3b9e60260ebb4f5a6e268c654dcb34866da76bc3c59f96cd242b6f6608",
+            "action_rule_digest": "sha256:0b2048dc14688c765b58b3f37726c46620172322075ac7e83ba52e50b8c428f1",
+            "compiled_plan_digest": "sha256:55a10e9f7fd3a884035b6ee111665113297f006e17284f68ee2d7c6da4bd5c76",
+            "proposal_dependency_set_digest": "sha256:531038504596af5db0c40665d5d52df839c42fdc567520113201efd3865b7615",
+            "effect_digest": "sha256:4b495dc1cf8094e87bfa9fb5114cf4046314a8250c7ec088fc22dd3140283082"
+          },
+          "result_hash": "sha256:0960fe237f21b79e51598c96cbd5da2207038df45f9033e3dd7bd879470f16a6",
+          "completed_at": "2026-09-13T18:14:55.861Z",
+          "error_code": "SEMANTIC_AUTHORITY_STALE"
+        },
+        "reconciliation_reason": null,
+        "created_at": "2026-09-13T18:14:55.746Z",
+        "updated_at": "2026-09-13T18:14:55.862Z"
+      }
+    ],
+    "worker_queue": {
+      "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+      "status": "blocked",
+      "attempts": 1,
+      "max_attempts": 5,
+      "next_attempt_at": "2026-09-13T18:14:17.249Z",
+      "lease_owner": null,
+      "lease_expires_at": null,
+      "last_error_code": "SEMANTIC_AUTHORITY_STALE",
+      "created_at": "2026-09-13T18:14:17.249Z",
+      "updated_at": "2026-09-13T18:14:56.285Z"
+    },
+    "receipts": [
+      {
+        "receipt_id": 3,
+        "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "runner_id": "local-runner",
+        "status": "failed",
+        "idempotency_key": "semantic:wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "receipt_authority": "runner_ledger",
+        "operation": "single_row_update",
+        "rows_affected": 0,
+        "source_database_mutated": false,
+        "safe_outcome_code": "FAILED",
+        "safe_error_code": "SEMANTIC_AUTHORITY_STALE",
+        "receipt_hash": "sha256:dce8b5354c816461c5f2db105bd269f5b33e839226ce717d6f8e2ac7a52f0fa6",
+        "executed_at": "2026-09-13T18:14:55.861Z",
+        "receipt": {
+          "schema_version": "synapsor.execution-receipt.v5",
+          "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+          "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+          "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+          "approval_id": "sha256:d9dc298cb74e6ee0b391df2b5f90963aec5345cb8127648c654fa092d98e787d",
+          "runner_id": "local-runner",
+          "operation": "single_row_update",
+          "receipt_authority": "runner_ledger",
+          "status": "failed",
+          "target": {
+            "source_id": "local_postgres",
+            "schema": "public",
+            "table": "shipments",
+            "identity": [
+              {
+                "column": "id",
+                "value": "f0000000-0000-4000-8000-000000000005"
+              }
+            ]
+          },
+          "rows_affected": 0,
+          "atomic_effects": [
+            {
+              "resource": "public.shipments",
+              "schema": "public",
+              "table": "shipments",
+              "effect_digest": "sha256:4b495dc1cf8094e87bfa9fb5114cf4046314a8250c7ec088fc22dd3140283082",
+              "target_identity": [
+                {
+                  "column": "id",
+                  "value": "f0000000-0000-4000-8000-000000000005"
+                },
+                {
+                  "column": "carrier_id",
+                  "value": "c1111111-1111-4111-8111-111111111111"
+                },
+                {
+                  "column": "account_id",
+                  "value": "a1111111-1111-4111-8111-111111111111"
+                }
+              ],
+              "affected_rows": 0
+            },
+            {
+              "resource": "public.dock_slots",
+              "schema": "public",
+              "table": "dock_slots",
+              "effect_digest": "sha256:3079f2fec729f6b01e13de5ef546f8252f7081bd3dd9d536539ca7c9d7242c5f",
+              "target_identity": [
+                {
+                  "column": "id",
+                  "value": "50000000-0000-4000-8000-000000000005"
+                },
+                {
+                  "column": "carrier_id",
+                  "value": "c1111111-1111-4111-8111-111111111111"
+                },
+                {
+                  "column": "account_id",
+                  "value": "a1111111-1111-4111-8111-111111111111"
+                }
+              ],
+              "affected_rows": 0
+            }
+          ],
+          "idempotency_key": "semantic:wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+          "semantic_verification": {
+            "status": "refused",
+            "proof_digest": "sha256:3e863d3b9e60260ebb4f5a6e268c654dcb34866da76bc3c59f96cd242b6f6608",
+            "action_rule_digest": "sha256:0b2048dc14688c765b58b3f37726c46620172322075ac7e83ba52e50b8c428f1",
+            "compiled_plan_digest": "sha256:55a10e9f7fd3a884035b6ee111665113297f006e17284f68ee2d7c6da4bd5c76",
+            "proposal_dependency_set_digest": "sha256:531038504596af5db0c40665d5d52df839c42fdc567520113201efd3865b7615",
+            "effect_digest": "sha256:4b495dc1cf8094e87bfa9fb5114cf4046314a8250c7ec088fc22dd3140283082"
+          },
+          "source_database_mutated": false,
+          "safe_outcome_code": "FAILED",
+          "safe_error_code": "SEMANTIC_AUTHORITY_STALE",
+          "executed_at": "2026-09-13T18:14:55.861Z",
+          "receipt_hash": "sha256:dce8b5354c816461c5f2db105bd269f5b33e839226ce717d6f8e2ac7a52f0fa6"
+        },
+        "created_at": "2026-09-13T18:14:55.861Z"
+      }
+    ],
+    "latest_outcome": {
+      "receipt_id": 3,
+      "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+      "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+      "runner_id": "local-runner",
+      "status": "failed",
+      "idempotency_key": "semantic:wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+      "receipt_authority": "runner_ledger",
+      "operation": "single_row_update",
+      "rows_affected": 0,
+      "source_database_mutated": false,
+      "safe_outcome_code": "FAILED",
+      "safe_error_code": "SEMANTIC_AUTHORITY_STALE",
+      "receipt_hash": "sha256:dce8b5354c816461c5f2db105bd269f5b33e839226ce717d6f8e2ac7a52f0fa6",
+      "executed_at": "2026-09-13T18:14:55.861Z",
+      "receipt": {
+        "schema_version": "synapsor.execution-receipt.v5",
+        "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "proposal_id": "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+        "approval_id": "sha256:d9dc298cb74e6ee0b391df2b5f90963aec5345cb8127648c654fa092d98e787d",
+        "runner_id": "local-runner",
+        "operation": "single_row_update",
+        "receipt_authority": "runner_ledger",
+        "status": "failed",
+        "target": {
+          "source_id": "local_postgres",
+          "schema": "public",
+          "table": "shipments",
+          "identity": [
+            {
+              "column": "id",
+              "value": "f0000000-0000-4000-8000-000000000005"
+            }
+          ]
+        },
+        "rows_affected": 0,
+        "atomic_effects": [
+          {
+            "resource": "public.shipments",
+            "schema": "public",
+            "table": "shipments",
+            "effect_digest": "sha256:4b495dc1cf8094e87bfa9fb5114cf4046314a8250c7ec088fc22dd3140283082",
+            "target_identity": [
+              {
+                "column": "id",
+                "value": "f0000000-0000-4000-8000-000000000005"
+              },
+              {
+                "column": "carrier_id",
+                "value": "c1111111-1111-4111-8111-111111111111"
+              },
+              {
+                "column": "account_id",
+                "value": "a1111111-1111-4111-8111-111111111111"
+              }
+            ],
+            "affected_rows": 0
+          },
+          {
+            "resource": "public.dock_slots",
+            "schema": "public",
+            "table": "dock_slots",
+            "effect_digest": "sha256:3079f2fec729f6b01e13de5ef546f8252f7081bd3dd9d536539ca7c9d7242c5f",
+            "target_identity": [
+              {
+                "column": "id",
+                "value": "50000000-0000-4000-8000-000000000005"
+              },
+              {
+                "column": "carrier_id",
+                "value": "c1111111-1111-4111-8111-111111111111"
+              },
+              {
+                "column": "account_id",
+                "value": "a1111111-1111-4111-8111-111111111111"
+              }
+            ],
+            "affected_rows": 0
+          }
+        ],
+        "idempotency_key": "semantic:wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "semantic_verification": {
+          "status": "refused",
+          "proof_digest": "sha256:3e863d3b9e60260ebb4f5a6e268c654dcb34866da76bc3c59f96cd242b6f6608",
+          "action_rule_digest": "sha256:0b2048dc14688c765b58b3f37726c46620172322075ac7e83ba52e50b8c428f1",
+          "compiled_plan_digest": "sha256:55a10e9f7fd3a884035b6ee111665113297f006e17284f68ee2d7c6da4bd5c76",
+          "proposal_dependency_set_digest": "sha256:531038504596af5db0c40665d5d52df839c42fdc567520113201efd3865b7615",
+          "effect_digest": "sha256:4b495dc1cf8094e87bfa9fb5114cf4046314a8250c7ec088fc22dd3140283082"
+        },
+        "source_database_mutated": false,
+        "safe_outcome_code": "FAILED",
+        "safe_error_code": "SEMANTIC_AUTHORITY_STALE",
+        "executed_at": "2026-09-13T18:14:55.861Z",
+        "receipt_hash": "sha256:dce8b5354c816461c5f2db105bd269f5b33e839226ce717d6f8e2ac7a52f0fa6"
+      },
+      "created_at": "2026-09-13T18:14:55.861Z"
+    }
+  },
+  "replay": {
+    "replay_id": null,
+    "state": null,
+    "generated_at": null
+  },
+  "compensation": {
+    "requested": false,
+    "lineage": null,
+    "inverse_receipts": []
+  },
+  "cloud": {
+    "synchronized": false,
+    "outbox": [],
+    "governance_events": []
+  },
+  "timeline": [
+    {
+      "sequence": "audit:8",
+      "occurred_at": "2026-09-13T18:13:38.241Z",
+      "kind": "query_audit_recorded",
+      "actor": "runner",
+      "payload": {
+        "audit_id": 8,
+        "evidence_bundle_id": "ev_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "query_fingerprint": "sha256:733f023aef6a0041e8a3310a8100fe41fbcec30096fed92b2d71c859c596faca",
+        "row_count": 2
+      }
+    },
+    {
+      "sequence": 27,
+      "occurred_at": "2026-09-13T18:13:38.327Z",
+      "kind": "proposal_created",
+      "actor": "a1111111-1111-4111-8111-111111111111",
+      "payload": {
+        "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+        "proposal_version": 1,
+        "source_database_mutated": false
+      }
+    },
+    {
+      "sequence": 28,
+      "occurred_at": "2026-09-13T18:13:38.360Z",
+      "kind": "evidence_recorded",
+      "actor": "runner",
+      "payload": {
+        "evidence_bundle_id": "ev_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "item_count": 1
+      }
+    },
+    {
+      "sequence": 29,
+      "occurred_at": "2026-09-13T18:14:17.206Z",
+      "kind": "proposal_approved",
+      "actor": "fixture_dispatcher",
+      "payload": {
+        "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+        "proposal_version": 1,
+        "reason": null,
+        "identity": {
+          "provider": "dev_env",
+          "verified": false,
+          "subject": "fixture_dispatcher",
+          "roles": [
+            "dispatcher"
+          ],
+          "decision_hash": "sha256:65a6fe9760e5548a0e7926985b3d15ce978eadc53e3704131a301b85da46738d",
+          "integrity_hash": "sha256:6017b7dc9a2ad0c0be2b2545f619f5f9a7cdbcd5ec1f4f9fc24926fd75a1eff0"
+        },
+        "freshness_proof_digest": null,
+        "approvals": 1,
+        "required_approvals": 1,
+        "remaining_approvals": 0
+      }
+    },
+    {
+      "sequence": 30,
+      "occurred_at": "2026-09-13T18:14:17.250Z",
+      "kind": "writeback_worker_queued",
+      "actor": "runner",
+      "payload": {
+        "execution_mode": "supervised_worker",
+        "contract_digest": "sha256:7922fc764140ef616ec1337616df97d3496bd2e39b41e9955af4628c0544391e",
+        "max_attempts": 5
+      }
+    },
+    {
+      "sequence": 31,
+      "occurred_at": "2026-09-13T18:14:54.392Z",
+      "kind": "writeback_worker_claimed",
+      "actor": "semantic_action_worker",
+      "payload": {
+        "attempt": 1,
+        "max_attempts": 5,
+        "execution_mode": "supervised_worker",
+        "contract_digest": "sha256:7922fc764140ef616ec1337616df97d3496bd2e39b41e9955af4628c0544391e",
+        "lease_id": "wlease_6f7072827dbde22b190c66f119bebe0a",
+        "lease_expires_at": "2026-09-13T18:19:54.388Z"
+      }
+    },
+    {
+      "sequence": 32,
+      "occurred_at": "2026-09-13T18:14:54.900Z",
+      "kind": "writeback_authorized",
+      "actor": "local_operator",
+      "payload": {
+        "identity": {
+          "provider": "dev_env",
+          "verified": false,
+          "subject": "local_operator",
+          "roles": [],
+          "decision_hash": "sha256:e8567934fcf4c9f2bd2532825ea262a6f047d632c4ca43785374c1810d6bbbf0",
+          "integrity_hash": "sha256:4f6098705bb121ca2aa18964707a3fea7f6b36f197d1f9d3f5cebfee4a952120"
+        },
+        "decision_hash": "sha256:e8567934fcf4c9f2bd2532825ea262a6f047d632c4ca43785374c1810d6bbbf0",
+        "integrity_hash": "sha256:4f6098705bb121ca2aa18964707a3fea7f6b36f197d1f9d3f5cebfee4a952120"
+      }
+    },
+    {
+      "sequence": 33,
+      "occurred_at": "2026-09-13T18:14:54.970Z",
+      "kind": "proposal_pending_worker",
+      "actor": "semantic_action_worker",
+      "payload": {
+        "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+        "proposal_version": 1
+      }
+    },
+    {
+      "sequence": 34,
+      "occurred_at": "2026-09-13T18:14:54.981Z",
+      "kind": "writeback_job_recorded",
+      "actor": "semantic_action_worker",
+      "payload": {
+        "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "proposal_hash": "sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3",
+        "source_id": "local_postgres"
+      }
+    },
+    {
+      "sequence": 35,
+      "occurred_at": "2026-09-13T18:14:55.746Z",
+      "kind": "writeback_intent_recorded",
+      "actor": "local-runner",
+      "payload": {
+        "intent_id": "wbi:wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "operation": "single_row_update"
+      }
+    },
+    {
+      "sequence": 36,
+      "occurred_at": "2026-09-13T18:14:55.787Z",
+      "kind": "writeback_intent_applying",
+      "actor": "local-runner",
+      "payload": {
+        "intent_id": "wbi:wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "operation": "single_row_update"
+      }
+    },
+    {
+      "sequence": 37,
+      "occurred_at": "2026-09-13T18:14:55.883Z",
+      "kind": "writeback_intent_failed",
+      "actor": "local-runner",
+      "payload": {
+        "intent_id": "wbi:wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "operation": "single_row_update",
+        "result_hash": "sha256:0960fe237f21b79e51598c96cbd5da2207038df45f9033e3dd7bd879470f16a6"
+      }
+    },
+    {
+      "sequence": 38,
+      "occurred_at": "2026-09-13T18:14:55.913Z",
+      "kind": "writeback_failed",
+      "actor": "local-runner",
+      "payload": {
+        "writeback_job_id": "wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+        "rows_affected": 0,
+        "source_database_mutated": false,
+        "receipt_hash": "sha256:dce8b5354c816461c5f2db105bd269f5b33e839226ce717d6f8e2ac7a52f0fa6",
+        "safe_error_code": "SEMANTIC_AUTHORITY_STALE"
+      }
+    },
+    {
+      "sequence": 39,
+      "occurred_at": "2026-09-13T18:14:56.286Z",
+      "kind": "writeback_worker_blocked",
+      "actor": "semantic_action_worker",
+      "payload": {
+        "error_code": "SEMANTIC_AUTHORITY_STALE",
+        "lease_id": "wlease_6f7072827dbde22b190c66f119bebe0a"
+      }
+    }
+  ],
+  "next": {
+    "read_only": "synapsor-runner lifecycle show proposal:wrp_rule_8cbba2a704ca24b285ab6d55548e2d34 --details",
+    "operator": "synapsor-runner worker dead-letter show wrp_rule_8cbba2a704ca24b285ab6d55548e2d34 --store ./.synapsor/local.db"
+  }
+}

@@ -1,0 +1,52 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/.codex/worktrees/9997/synapsor-runner
+
+(node:3376283) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3376273) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/manual-semantic-action-editor.test.ts (36 tests) 106ms
+ ❯ apps/runner/src/manual-counter-review.integration.test.ts (9 tests | 1 failed) 29558ms
+   × model-free maintained-counter operator review > explicitly selects one ambiguous counter and saves it through the normal disabled Action compiler and store 2882ms
+     → expected [ 'tenant_principal', 'capability' ] to deeply equal [ 'capability', 'tenant_principal' ]
+   ✓ model-free maintained-counter operator review > preserves an existing saved authority on pending  3193ms
+   ✓ model-free maintained-counter operator review > preserves an existing saved authority on cancel  3726ms
+   ✓ model-free maintained-counter operator review > preserves an existing saved authority on confirmed_then_cancel  2808ms
+   ✓ model-free maintained-counter operator review > preserves an existing saved authority on resource_back  3213ms
+   ✓ model-free maintained-counter operator review > preserves an existing saved authority on field_back  4328ms
+   ✓ model-free maintained-counter operator review > rejects stale inspected metadata before_review  2672ms
+   ✓ model-free maintained-counter operator review > rejects stale inspected metadata during_confirmation  2887ms
+   ✓ model-free maintained-counter operator review > rejects stale inspected metadata before_save  3848ms
+(node:3377564) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-rule-version-review.test.ts (23 tests) 67ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/manual-counter-review.integration.test.ts > model-free maintained-counter operator review > explicitly selects one ambiguous counter and saves it through the normal disabled Action compiler and store
+AssertionError: expected [ 'tenant_principal', 'capability' ] to deeply equal [ 'capability', 'tenant_principal' ]
+
+- Expected
++ Received
+
+  [
+-   "capability",
+    "tenant_principal",
++   "capability",
+  ]
+
+ ❯ apps/runner/src/manual-counter-review.integration.test.ts:102:90
+    100|     expect(saved.authority.rules[0]!.effect_envelope.writeback.mode).t…
+    101|     expect(saved.authority.rules[0]!.rule.effect.set).toEqual({ q_av: …
+    102|     expect(saved.authority.approval_classes[0]!.shared_limits.map(limi…
+       |                                                                                          ^
+    103|     expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefi…
+    104|     expect((await readProjectReadAuthoring(f.root))!.selected!.progres…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 67 passed (68)
+   Start at  10:39:28
+   Duration  39.31s (transform 6.19s, setup 0ms, collect 12.74s, tests 29.73s, environment 0ms, prepare 149ms)

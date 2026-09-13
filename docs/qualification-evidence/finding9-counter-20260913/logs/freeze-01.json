@@ -1,0 +1,12 @@
+{
+  "command": [
+    "python3",
+    "docs/qualification-evidence/finding9-counter-20260913/freeze.py"
+  ],
+  "started_at": "2026-09-13T17:53:32.781288+00:00",
+  "network": "unshared namespace",
+  "originals": "read-only root; worktree and owned evidence writable",
+  "timeout_seconds": 1800,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T17:53:37.055308+00:00"
+}

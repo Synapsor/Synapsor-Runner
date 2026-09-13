@@ -1,0 +1,270 @@
+Script started on 2026-09-13 11:06:12-07:00 [COMMAND="stty cols 140 rows 48 && python3 docs/qualification-evidence/finding9-counter-20260913/launch-installed.py start --from-env DATABASE_URL --schema public --rescan" TERM="dumb" TTY="/dev/pts/1" COLUMNS="80" LINES="24"]
+  Connecting and reconciling current schema metadata with every saved boundary...
+  RESCAN RECONCILIATION
+  Boundaries checked: 1
+  Reviewed authority preserved: 2 tables, 0 reviewed paths, 14 field policies
+  Prior decisions invalidated: 0
+  Newly available: 1 tables, 0 columns, 2 relationships
+  Removed: 0 tables, 0 columns, 0 relationships
+
+  Boundary reviewed_staging: preserved 2 tables, 0 reviewed paths, 14 field policies; 0 prior decisions invalidated.
+    - public.accounts: new table is available to review
+    - public.dock_slots: new relationship is available to review (1 hop)
+      dock_slots -> accounts
+      via columns: account_id
+      path ID: dock_slots_account_id_fkey
+    - public.shipments: new relationship is available to review (1 hop)
+      shipments -> accounts
+      via columns: account_id
+      path ID: shipments_account_id_fkey
+
+  No reconciled revision was activated. Existing exact authority files were preserved.
+  Review the disabled exact revision, then activate it separately even when no prior decision was invalidated.
+
+Boundary drafting
+  START BOUNDARY DRAFTING
+  Choose one path. The highlighted choice is not applied until you press Enter.
+
+  > Choose a drafting model for a new job  [recommended]
+      Keep the saved rules and client choice. The model receives current Read and Action settings, then asks only what should change.
+    Continue without a model
+    Open the manual Boundary editors
+    Advanced inputs
+
+  Up/Down Move   Enter Select   Esc Back  START BOUNDARY DRAFTING
+  Choose one path. The highlighted choice is not applied until you press Enter.
+
+    Choose a drafting model for a new job  [recommended]
+  > Continue without a model
+      Runner prepares explainable exact plan cards from reviewed schema evidence.
+    Open the manual Boundary editors
+    Advanced inputs
+
+  Up/Down Move   Enter Select   Esc Back  you> Continue without a model
+  you>   EDIT ACCESS - reviewed_staging
+  ACTIVE + DRAFT EDITS  2 tables  Complete
+  Reviewed database grammar: PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19)
+  14.2.0, 64-bit uses the full grammar; reviewed release line 17.
+  Local Ask plan check: BALANCED
+  Model output [SEMANTIC] - exact hashes stay operator-only
+  W Model chat can create or edit Read + Action authority anytime.
+  Describe the business rule; Runner validates it; only you activate it. Manual controls stay available.
+  1 PENDING BOUNDARY CHANGE IS NOT ACTIVE
+  C reviews and activates the exact disabled update.
+  TABLES IN THIS BOUNDARY
+  Enter edits columns. A shows tables with proven paths into this boundary.
+  C reviews and activates this whole boundary once. No separate table sign-off.
+
+  > public.dock_slots  [active + reviewed]
+    public.shipments  [active + reviewed]
+
+  Delegation setup closed.
+  The selected disabled draft, active authority, and source database are unchanged.
+
+  SELECTED TABLE
+  Up/Down Select   Enter Edit columns   R Remove from draft [AVAILABLE]   J Relationship paths [0 REVIEWED, 1 AVAILABLE]
+  P Privacy - withhold small groups [MIN 1, OVERRIDE]   G Metrics and numeric bands [AVAILABLE]
+  I Table label and description [AVAILABLE]   S Table sign-off - use C for the whole boundary [BOUNDARY LEVEL]
+  BOUNDARY
+  B/Esc Boundary overview   A Add related tables   M Map   N Rename   L Limits   W Model chat - create/edit Read + Action
+  Y Safe actions - prepare proposal [AVAILABLE]   T Ask plan check   O Model output [SEMANTIC: hashes operator-only]   C Review + activate
+  Q Quit
+  Edits stay disabled until separate activation.
+REVIEW EXACT BOUNDARY
+Boundary: reviewed_staging
+This confirmation grants Read authority only. Runner rechecks the schema and read-only role before activation; Action and execution reviews
+stay separate.
+
+Access: Model + Runner may return reviewed values to the model; Runner only keeps raw output local or tokenized but does not hide
+inferences from reviewed operations; Kept out is unavailable.
+Reviewed operations are listed by name. Any operation omitted from a field is unavailable.
+
+READ TABLE 1/2
+Resource: Dock slots (public.dock_slots)
+Owned synthetic freight records scoped to their carrier and customer account.
+Field access: 2 Model + Runner | 0 Runner only | 4 Kept out
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | Field                  | Database type | Access         | Reviewed operations                                                          |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | account_id             | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | carrier_id             | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | id                     | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | rev_no                 | integer       | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | slot_code              | text          | Model + Runner | Return value, Filter, Sort, Group / band, Missing-data measure               |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | status                 | text          | Model + Runner | Return value, Filter, Sort, Group / band, Missing-data measure               |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  Reviewer notes
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | Field                  | Review note                                                                                                   |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | account_id             | Kept out trusted scope, possible internal identifier; unavailable to model and Runner reads                   |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | carrier_id             | Kept out trusted scope, possible internal identifier; unavailable to model and Runner reads                   |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | id                     | Kept out record identity; unavailable to model and Runner reads                                               |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+  | REVIEWED SETTING     | VALUE                                                                                                           |
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+  | Value allowlists     | status: open | reserved | consumed                                                                              |
+  | Model vocabulary     | 0/2 field labels; 0/2 field descriptions; no opaque or coded model-facing vocabulary gaps                       |
+  | Numeric grouping     | None                                                                                                            |
+  | Reviewed links       | None                                                                                                            |
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+
+READ TABLE 2/2
+Resource: Shipments (public.shipments)
+Owned synthetic freight records scoped to their carrier and customer account.
+Field access: 3 Model + Runner | 0 Runner only | 5 Kept out
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | Field                  | Database type | Access         | Reviewed operations                                                          |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | account_id             | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | carrier_id             | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | id                     | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | ref_code               | text          | Model + Runner | Return value, Filter, Sort, Group / band, Missing-data measure               |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | rev_no                 | integer       | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | slot_id                | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | status                 | text          | Model + Runner | Return value, Filter, Sort, Group / band, Missing-data measure               |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | weight_kg              | integer       | Model + Runner | Return value, Filter, Sort, Numeric measure, Missing-data measure            |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  Reviewer notes
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | Field                  | Review note                                                                                                   |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | account_id             | Kept out trusted scope, possible internal identifier; unavailable to model and Runner reads                   |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | carrier_id             | Kept out trusted scope, possible internal identifier; unavailable to model and Runner reads                   |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | id                     | Kept out record identity; unavailable to model and Runner reads                                               |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | slot_id                | Kept out possible internal identifier; unavailable to model and Runner reads                                  |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+  | REVIEWED SETTING     | VALUE                                                                                                           |
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+  | Value allowlists     | status: ready | dispatched | cancelled                                                                          |
+  | Model vocabulary     | 0/3 field labels; 0/3 field descriptions; no opaque or coded model-facing vocabulary gaps                       |
+  | Numeric grouping     | None                                                                                                            |
+  | Reviewed links       | None                                                                                                            |
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+
+BOUNDARY-WIDE CONTROLS
++------------------------+-----------------------------------------------------------------------------------------------------------------+
+| LIMIT                  | REVIEWED VALUE                                                                                                  |
++------------------------+-----------------------------------------------------------------------------------------------------------------+
+| Tenant scope           | carrier_id on every table via database role app.tenant_id                                                       |
+| Principal scope        | Row filtering required for public.dock_slots.account_id, public.shipments.account_id via SYNAPSOR_PRINCIPAL     |
+| Small-group privacy    | Minimum group sizes: public.dock_slots=1 (owner override), public.shipments=1 (owner override)                  |
+| Ranked aggregates      | Validate at most 500 candidate groups, suppress small cohorts, then return at most top 25                       |
+| Query volume           | 1000 queries per trusted scope in a rolling 24-hour window; 120 requests per minute                             |
+| Disclosure controls    | 4000 extracted cells and 16 differencing variants per rolling 24-hour window                                    |
+| Writes                 | None - this boundary is local read-only Explore                                                                 |
++------------------------+-----------------------------------------------------------------------------------------------------------------+
+
+Exact fingerprint: sha256:ed78ed051e827f5ae3d5e74aae2ee232c2430edae9b1557c2d2c2e103caf47ef
+Source database changed: no. The model cannot perform this confirmation.
+
+  REVIEW EXACT BOUNDARY
+  Boundary: reviewed_staging
+  This confirmation grants Read authority only. Runner rechecks the schema and read-only role before activation; Action and execution
+  reviews
+  stay separate.
+
+  Access: Model + Runner may return reviewed values to the model; Runner only keeps raw output local or tokenized but does not hide
+  inferences from reviewed operations; Kept out is unavailable.
+  Reviewed operations are listed by name. Any operation omitted from a field is unavailable.
+
+  READ TABLE 1/2
+  Resource: Dock slots (public.dock_slots)
+  Owned synthetic freight records scoped to their carrier and customer account.
+  Field access: 2 Model + Runner | 0 Runner only | 4 Kept out
+    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+    ---+
+    | Field                  | Database type | Access         | Reviewed operations
+                                |
+    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+    ---+
+    | account_id             | uuid          | Kept out       | None
+                                |
+    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+    ---+
+    | carrier_id             | uuid          | Kept out       | None
+                                |
+    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+    ---+
+    | id                     | uuid          | Kept out       | None
+                                |
+    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+    ---+
+    | rev_no                 | integer       | Kept out       | None
+                                |
+    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+    ---+
+    | slot_code              | text          | Model + Runner | Return value, Filter, Sort, Group / band, Missing-data measure
+                                |
+    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+    ---+
+    | status                 | text          | Model + Runner | Return value, Filter, Sort, Group / band, Missing-data measure
+  ... 154 rows hidden ...
+
+  Activate "reviewed_staging" exactly as shown now? You will stay in /access. [y/N] [Esc Back]:
+
+    Y Yes   N No   Esc Back
+    PgUp/PgDn Scroll hidden detailsBOUNDARY REVIEW
+
+NAME              STATUS             TABLES  REVIEW
+----------------  -----------------  ------  --------
+reviewed_staging  REPLACEMENT DRAFT  2       Complete
+
+14/14 exact digest-bound decisions are recorded.
+Authority active: yes, earlier revision; this replacement is disabled
+Source database changed: no
+Exact reviewed fingerprint: sha256:ed78ed051e827f5ae3d5e74aae2ee232c2430edae9b1557c2d2c2e103caf47ef
+Activation adds this reviewed boundary to local read-only Explore. Each query remains inside exactly one active boundary.
+💐 ACTIVATION SUCCEEDED
+Reviewed boundary "reviewed_staging" is active for local read-only Explore.
+Exact fingerprint: sha256:ed78ed051e827f5ae3d5e74aae2ee232c2430edae9b1557c2d2c2e103caf47ef
+Source database changed: no
+/access is still open.
+Continue setting up this boundary, switch boundaries, or press Q/Esc when finished to return to Ask.
+  EDIT ACCESS - reviewed_staging
+  ACTIVE  2 tables  Complete
+  Reviewed database grammar: PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19)
+  14.2.0, 64-bit uses the full grammar; reviewed release line 17.
+  Local Ask plan check: BALANCED
+  Model output [SEMANTIC] - exact hashes stay operator-only
+  W Model chat can create or edit Read + Action authority anytime.
+  Describe the business rule; Runner validates it; only you activate it. Manual controls stay available.
+  TABLES IN THIS BOUNDARY
+  Enter edits columns. A shows tables with proven paths into this boundary.
+  C reviews and activates this whole boundary once. No separate table sign-off.
+
+  > public.dock_slots  [active + reviewed]
+    public.shipments  [active + reviewed]
+
+  SELECTED TABLE
+  Up/Down Select   Enter Edit columns   R Remove from draft [AVAILABLE]   J Relationship paths [0 REVIEWED, 1 AVAILABLE]
+  P Privacy - withhold small groups [MIN 1, OVERRIDE]   G Metrics and numeric bands [AVAILABLE]
+  I Table label and description [AVAILABLE]   S Table sign-off - use C for the whole boundary [BOUNDARY LEVEL]
+  BOUNDARY
+  B/Esc Boundary overview   A Add related tables   M Map   N Rename   L Limits   W Model chat - create/edit Read + Action
+  Y Safe actions - prepare proposal [AVAILABLE]   T Ask plan check   O Model output [SEMANTIC: hashes operator-only]   C Review + activate
+  Q Quit
+  Edits stay disabled until separate activation.Access editor closed. Reviewed authority is unchanged.
+Saved authority needs review: ACTION_RULE_READ_AUTHORITY_STALE: Action Rule outcome freight.dispatch is not bound to its exact active Read Boundary revision.
+The saved authority is unchanged; no source query or write ran.
+
+Script done on 2026-09-13 11:07:32-07:00 [COMMAND_EXIT_CODE="1"]

@@ -1,0 +1,246 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/.codex/worktrees/9997/synapsor-runner
+
+(node:3391120) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3391126) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3391127) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{
+  "ok": true,
+  "activation": "disabled_unreviewed",
+  "storage": "control_repository",
+  "deployment_profile": "staging",
+  "boundary_id": "bnd_8f7cb4323a36bc5e3f5025a976c8cc02",
+  "candidate_digest": "sha256:2cca49a71ef7320c908cb72288957c5b6a388544c85bcc0d483ba4f700c71365",
+  "review_revision": 1,
+  "authoring_binding": {
+    "repository_id": "8a3524c2-61cb-452b-b0fe-0e9d65847865",
+    "deployment_id": "954056fd-e360-47ce-bb2f-01345dbb17d6",
+    "project_id": "751c428a-dbc4-4386-8096-36e5f0e8d030",
+    "epoch": 1,
+    "revision_id": "policy:6332a81bdbe508910808aee7b9538141d245f7a963b1506a66fe20a941798675"
+  },
+  "guided_project_created": true,
+  "config_path": "/tmp/synapsor-structured-skeleton-0FYtAF/synapsor.runner.json",
+  "store_path": "/tmp/synapsor-structured-skeleton-0FYtAF/.synapsor/local.db",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "next_action": "synapsor-runner boundary review --project-root '/tmp/synapsor-structured-skeleton-0FYtAF' --access",
+  "next_steps": {
+    "export_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-0FYtAF' --export-draft '/tmp/synapsor-structured-skeleton-0FYtAF/boundary-authoring.json' --json",
+    "validate_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-0FYtAF' --draft '/tmp/synapsor-structured-skeleton-0FYtAF/boundary-authoring.json' --dry-run --json",
+    "submit_disabled_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-0FYtAF' --draft '/tmp/synapsor-structured-skeleton-0FYtAF/boundary-authoring.json' --json",
+    "review": "synapsor-runner boundary review --project-root '/tmp/synapsor-structured-skeleton-0FYtAF' --access",
+    "review_actions": "synapsor-runner action review --project-root '/tmp/synapsor-structured-skeleton-0FYtAF'"
+  }
+}
+{"ok":true,"state":"exported","path":"skeleton.json","source_database_changed":false}
+ ✓ apps/runner/src/boundary-structured-authoring.integration.test.ts (3 tests) 15133ms
+   ✓ public structured Boundary authoring integration > prepares private coded fields and two joint-limited actions through the real disabled-authority path  5992ms
+   ✓ public structured Boundary authoring integration > authors a private 16-credit approval condition without making credits a proposed patch or caller argument  4547ms
+   ✓ public structured Boundary authoring integration > exports incomplete saved intents as view-only skeletons without turning catalog candidates into actions  4592ms
+(node:3391954) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-rule-draft.test.ts (44 tests) 381ms
+(node:3392031) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/counter-maintenance-evidence.test.ts (46 tests) 258ms
+(node:3392072) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.resume"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.cancel","billing.pause","billing.resume"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-HMrFAM' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-HMrFAM'"},"source_database_changed":false}
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-GXS8Mv' --access"},"source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-lxfwZ7' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-lxfwZ7'"},"source_database_changed":false}
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.unrelated"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-RHuFTp' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-RHuFTp'"},"source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.unrelated"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-tlGMZ2' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-tlGMZ2'"},"source_database_changed":false}
+{
+  "ok": false,
+  "code": "STRUCTURED_DRAFT_INPUT_UNAVAILABLE",
+  "message": "ENOENT: no such file or directory, open '/tmp/synapsor-structured-authoring-qQduYu/missing.json'",
+  "next_action": "Correct the reported draft field and resubmit the same saved review bundle.",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "disabled_authority_changed": false
+}
+ ✓ apps/runner/src/boundary-structured-authoring.test.ts (14 tests) 141ms
+(node:3392115) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-rule-authoring.test.ts (45 tests) 109ms
+ ✓ apps/runner/src/structured-counter-review.integration.test.ts (10 tests) 45600ms
+   ✓ public model-free structured counter review > requires explicit ambiguous-field review, previews without saving, and retains the selected counter in a disabled Action  5178ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on pending  4723ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on cancel  4869ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on field_cancel  4406ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on invalid_field  4470ms
+   ✓ public model-free structured counter review > rejects stale inspected metadata before_review  4452ms
+   ✓ public model-free structured counter review > rejects stale inspected metadata during_confirmation  4101ms
+   ✓ public model-free structured counter review > rejects stale inspected metadata before_save  4827ms
+   ✓ public model-free structured counter review > rejects a concurrent saved Action revision after owner confirmation  4383ms
+   ✓ public model-free structured counter review > does not accept a file, --json or --yes as source-owner confirmation  4188ms
+(node:3393167) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-rule-version-review.test.ts (23 tests) 62ms
+Connecting and inspecting schema metadata...
+
+✓ Connected
+✓ Inspected 1 tables (metadata only; no rows read)
+The disabled Boundary review is saved in the local control store. No Read, Action or execution authority is active.
+Connecting and inspecting schema metadata...
+Connecting and inspecting schema metadata...
+
+✓ Connected
+✓ Inspected 1 tables (metadata only; no rows read)
+The disabled Boundary review is saved in the local control store. No Read, Action or execution authority is active.
+Connecting and inspecting schema metadata...
+
+✓ Connected
+✓ Inspected 1 tables (metadata only; no rows read)
+The disabled Boundary review is saved in the local control store. No Read, Action or execution authority is active.
+Connecting and inspecting schema metadata...
+
+✓ Connected
+✓ Inspected 1 tables (metadata only; no rows read)
+The disabled Boundary review is saved in the local control store. No Read, Action or execution authority is active.
+Existing Synapsor guided project found.
+Completed: connected, classified, boundary_generated
+Saved Read candidate: 1 table(s) in revision 2; 7/7 exact review decisions confirmed.
+Agent authority active: yes
+Source database changed: no
+No schema inspection, digest change, or file rewrite was performed.
+Continuing to model or MCP-client selection in this terminal.
+Metadata inspected. The disabled Boundary review is saved in the local control store.
+No Read, Action or execution authority is active. Source database changed: no.
+Structured authoring needs no TTY or model API; edit the exported typed draft before validation/submission:
+  synapsor-runner start --project-root '/tmp/synapsor-start-managed-reset-J3V5hP' --export-draft '/tmp/synapsor-start-managed-reset-J3V5hP/boundary-authoring.json' --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-managed-reset-J3V5hP' --draft '/tmp/synapsor-start-managed-reset-J3V5hP/boundary-authoring.json' --dry-run --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-managed-reset-J3V5hP' --draft '/tmp/synapsor-start-managed-reset-J3V5hP/boundary-authoring.json' --json
+  synapsor-runner boundary review --project-root '/tmp/synapsor-start-managed-reset-J3V5hP' --access
+  synapsor-runner action review --project-root '/tmp/synapsor-start-managed-reset-J3V5hP'
+Review the saved Read with C, then select Verified Action Boundary for the separate exact Action confirmation. No model or new job conversation is required.
+Read and Action authority require separate trusted human review. --yes and --dry-run never activate authority.
+The current MCP entry uses app.describe_data, app.explore_data, app.describe_actions and app.request_change; approval and apply stay outside model tools.
+Discarded curated review for disabled boundary "reviewed_staging".
+Preserved: Runner config, local ledger and evidence, and source database.
+Authority activated: no
+Source database changed: no
+Next: synapsor-runner boundary draft --from-env DATABASE_URL --project-root '.'
+Existing Synapsor guided project found.
+Completed: connected, classified, boundary_generated
+Saved Read candidate: 1 table(s) in the initial disabled revision; review has not started.
+Agent authority active: no
+Source database changed: no
+No schema inspection, digest change, or file rewrite was performed.
+Continuing from the saved disabled candidate. A new model conversation receives the current saved Read and Action state; the prior provider transcript is not retained.
+
+YOUR FIRST SAFE QUESTION
+Runner inspected 1 database object and prepared one conservative, connected starter boundary.
+A boundary is the reviewed data access your AI cannot exceed.
+
+  TABLES       Service Visits
+  AI CAN USE   3 fields across 1 table
+  KEPT OUT     1 field
+  ACCESS       read-only · tenant from operator environment
+  MODEL        Choose OpenAI, Anthropic, a local model, or an MCP client
+
+Suggested from this boundary:
+  "Which statuses have the most service visits?"
+
+Enter opens model choice first, then records one review and activates only this read-only boundary.
+Use /access later to add tables or boundaries without restarting this model session.
+The model cannot review, activate, or widen access.
+Model Anthropic / claude-owner-selected
+Press Enter to start, or M to change it again.
+
+✓ Ready
+reviewed_staging is active for local read-only Explore.
+The broader generated draft remains off until you edit access.
+Existing Synapsor guided project found.
+Completed: connected, classified, boundary_generated
+Saved Read candidate: 1 table(s) in the initial disabled revision; review has not started.
+Agent authority active: no
+Source database changed: no
+No schema inspection, digest change, or file rewrite was performed.
+Continuing from the saved disabled candidate. A new model conversation receives the current saved Read and Action state; the prior provider transcript is not retained.
+
+YOUR FIRST SAFE QUESTION
+Runner inspected 1 database object and prepared one conservative, connected starter boundary.
+A boundary is the reviewed data access your AI cannot exceed.
+
+  TABLES       Service Visits
+  AI CAN USE   3 fields across 1 table
+  KEPT OUT     1 field
+  ACCESS       read-only · tenant from operator environment
+  MODEL        Choose OpenAI, Anthropic, a local model, or an MCP client
+
+Suggested from this boundary:
+  "Which statuses have the most service visits?"
+
+Enter opens model choice first, then records one review and activates only this read-only boundary.
+Use /access later to add tables or boundaries without restarting this model session.
+The model cannot review, activate, or widen access.
+Quick Start paused. Nothing was activated.
+Run the same start command to resume this review.
+Metadata inspected. The disabled Boundary review is saved in the local control store.
+No Read, Action or execution authority is active. Source database changed: no.
+Structured authoring needs no TTY or model API; edit the exported typed draft before validation/submission:
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-H1lafB' --export-draft '/tmp/synapsor-start-no-open-H1lafB/boundary-authoring.json' --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-H1lafB' --draft '/tmp/synapsor-start-no-open-H1lafB/boundary-authoring.json' --dry-run --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-H1lafB' --draft '/tmp/synapsor-start-no-open-H1lafB/boundary-authoring.json' --json
+  synapsor-runner boundary review --project-root '/tmp/synapsor-start-no-open-H1lafB' --access
+  synapsor-runner action review --project-root '/tmp/synapsor-start-no-open-H1lafB'
+Review the saved Read with C, then select Verified Action Boundary for the separate exact Action confirmation. No model or new job conversation is required.
+Read and Action authority require separate trusted human review. --yes and --dry-run never activate authority.
+The current MCP entry uses app.describe_data, app.explore_data, app.describe_actions and app.request_change; approval and apply stay outside model tools.
+Rescan complete: the reviewed schema, database-server capabilities, database-role posture, and trusted-context authority are unchanged. No boundary revision was created.
+Structured authoring needs no TTY or model API; edit the exported typed draft before validation/submission:
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-H1lafB' --export-draft '/tmp/synapsor-start-no-open-H1lafB/boundary-authoring.json' --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-H1lafB' --draft '/tmp/synapsor-start-no-open-H1lafB/boundary-authoring.json' --dry-run --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-H1lafB' --draft '/tmp/synapsor-start-no-open-H1lafB/boundary-authoring.json' --json
+  synapsor-runner boundary review --project-root '/tmp/synapsor-start-no-open-H1lafB' --access
+  synapsor-runner action review --project-root '/tmp/synapsor-start-no-open-H1lafB'
+Review the saved Read with C, then select Verified Action Boundary for the separate exact Action confirmation. No model or new job conversation is required.
+Read and Action authority require separate trusted human review. --yes and --dry-run never activate authority.
+The current MCP entry uses app.describe_data, app.explore_data, app.describe_actions and app.request_change; approval and apply stay outside model tools.
+ ✓ apps/runner/src/guided-start.test.ts (43 tests) 133763ms
+   ✓ guided start surfaces > public status preserves the saved policy blocker instead of recommending activation from field signoffs  4823ms
+   ✓ guided start surfaces > start defaults to current job-first terminal review without opening Workbench  4395ms
+   ✓ guided start surfaces > onboard defaults to current job-first terminal review without opening Workbench  4552ms
+   ✓ guided start surfaces > start initializes the current disabled metadata without a TTY, model API or legacy selectors  12675ms
+   ✓ guided start surfaces > onboard initializes the current disabled metadata without a TTY, model API or legacy selectors  12752ms
+   ✓ guided start surfaces > start resumes interrupted fresh bootstrap through the same public entry  8239ms
+   ✓ guided start surfaces > onboard resumes interrupted fresh bootstrap through the same public entry  5081ms
+   ✓ guided start surfaces > start exports, validates and submits a real fresh disabled Read draft through the structured service  3866ms
+   ✓ guided start surfaces > onboard exports, validates and submits a real fresh disabled Read draft through the structured service  3236ms
+   ✓ guided start surfaces > opens a structured saved semantic Action through current review without a new job or provider  2758ms
+   ✓ guided start surfaces > keeps start publication and rollback inside one writer operation  6814ms
+   ✓ guided start surfaces > keeps boundary publication and rollback inside one writer operation  4911ms
+   ✓ guided start surfaces > reopens the saved guided job despite existing review progress or active Read (false)  4098ms
+   ✓ guided start surfaces > reopens the saved guided job despite existing review progress or active Read (true)  2519ms
+   ✓ guided start surfaces > offers explicit single-organization scope before saving a fresh unscoped database  2365ms
+   ✓ guided start surfaces > keeps a changed-schema rescan in the guided job without reusing a client checkpoint  3654ms
+   ✓ guided start surfaces > runs fresh Auto Boundary onboarding continuously in the CLI register  2875ms
+   ✓ guided start surfaces > opens the shipped fresh CLI at one-job Read and Action Boundary setup  2491ms
+   ✓ guided start surfaces > opens Workbench with a config-aligned startable MySQL authoring baseline  3292ms
+   ✓ guided start surfaces > resumes an active CLI project at provider selection without rescanning  3638ms
+   ✓ guided start surfaces > resumes and rescans a CLI-managed boundary project without a guided marker  2542ms
+   ✓ guided start surfaces > requires an explicit reset to discard the only disabled boundary review  2606ms
+   ✓ guided start surfaces > preserves an explicit single-organization posture across a guided rescan  3970ms
+   ✓ guided start surfaces > labels single-organization authority honestly on the first interactive review  2373ms
+   ✓ guided start surfaces > opens the detailed table, column, and path editor from Quick Start with E  2573ms
+   ✓ guided start surfaces > requires an explicit provider choice before activating and starting Ask  4192ms
+   ✓ guided start surfaces > regenerates a stale Quick Start draft in place and still requires a separate activation gesture  2786ms
+   ✓ guided start surfaces > changes the provider and exact model inside the same Quick Start review surface  2324ms
+   ✓ guided start surfaces > returns from model selection to Quick Start without losing the prior selection  2566ms
+   ✓ guided start surfaces > pauses Quick Start on Escape without opening detailed review or activating  3789ms
+   ✓ guided start surfaces > opens metadata-only Boundary authoring without concrete tenant or principal values  2461ms
+   ✓ guided start surfaces > keeps --no-open noninteractive and rejects conflicting CLI surface flags  2502ms
+ ✓ apps/runner/src/cli-help.test.ts (16 tests) 12ms
+
+ Test Files  9 passed (9)
+      Tests  244 passed (244)
+   Start at  10:46:52
+   Duration  140.37s (transform 4.80s, setup 0ms, collect 23.32s, tests 195.46s, environment 1ms, prepare 426ms)

@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-13T19:32:51.597012+00:00",
+  "combined_cli_help_sha256": "a41c8e7ebf895210d0c5a0bdcf71561143095964d948bd9f559a33146e1c4f6a",
+  "counter_start_and_onboard_examples_and_explanations_present": true,
+  "receipt_selection_and_save_options_present": true,
+  "resolution": "Automatic merge inspected deliberately: retained both sets of command documentation; no side taken wholesale.",
+  "finding9_evidence_files_unchanged": 126,
+  "finding9_status": "IMPLEMENTER_OWNED; pre-merge qualification does not transfer"
+}
