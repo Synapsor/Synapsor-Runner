@@ -1,0 +1,5 @@
+{
+  "commit": "318f1fb170c300fc533f0dea9ab873f3eef9a5cd",
+  "test_revision": "1c4c22a007ed5d7bea758e85e03e01507ada6780",
+  "existing_invalid_input_regression": "apps/runner/src/cli.test.ts unchanged"
+}

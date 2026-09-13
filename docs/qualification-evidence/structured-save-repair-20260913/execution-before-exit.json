@@ -1,0 +1,24 @@
+{
+  "name": "execution-before",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/boundary-structured-execution.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T02:22:48.319924+00:00",
+  "source_head": "d422ca533fffec39b707d2246b14c54422c2b0c9",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/test-environments/execution-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913/execution-before",
+  "source_manifest_sha256": "599926f8325abd7711f01776c0843d45bf3e610d8bebb5d29afb7b0f7a4687af",
+  "pid": 1442249,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T02:23:00.873071+00:00"
+}

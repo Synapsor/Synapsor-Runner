@@ -1,0 +1,21 @@
+{
+  "name": "types04",
+  "args": [
+    "node",
+    "node_modules/typescript/bin/tsc",
+    "-b",
+    "--pretty",
+    "false"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T03:14:26.252391+00:00",
+  "source_head": "1c4c22a007ed5d7bea758e85e03e01507ada6780",
+  "source_diff_sha256": "8d695a556bd7af9a05664f509825e646b2c7372d98db1ec9886848e88b09ca6d",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/test-environments/types04",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913/types04",
+  "source_manifest_sha256": "5451dec858986434be4735faf8def7f175229ec4afa3b7560354d3c9441026f8",
+  "pid": 1563288,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T03:14:30.085676+00:00"
+}

@@ -1,0 +1,3 @@
+(node:1430635) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"case":"exact automatic insurer limit edit preparation","status":"blocked_or_failed_preparation","error":"AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n1 !== 0\n\n    at operator (file:///home/sandesh-tiwari/Desktop/C++/Progress%20docs%20tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/reproduction/runtime-driver.mjs:157:793)\n    at async file:///home/sandesh-tiwari/Desktop/C++/Progress%20docs%20tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/reproduction/reproduce-save.mjs:13:16"}

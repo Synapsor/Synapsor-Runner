@@ -1,0 +1,49 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1463176) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/semantic-admission-publication.test.ts (25 tests) 106085ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_first  6186ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_process  7257ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: admission_first  6129ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: inactive_first  5576ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: unchanged  6129ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: disabled_draft  6339ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: failed_confirmation  6268ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: replacement_first  1033ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: replacement_process  2083ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_first  830ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: inactive_first  526ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: unchanged  823ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: disabled_draft  963ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: failed_confirmation  884ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_holds_publication  881ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_rollback  835ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: publication_busy  6002ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_busy  5860ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: replacement_first  5789ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: replacement_process  6742ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: admission_first  6080ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: inactive_first  5839ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: unchanged  5592ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: disabled_draft  5784ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: failed_confirmation  5649ms
+(node:1468487) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ packages/proposal-store/src/automatic-approval-admission.test.ts (7 tests) 19835ms
+   ✓ durable automatic approval admission > does not partially consume combined limits, merge insurers, count human decisions, or reset history on a stricter revision  6176ms
+   ✓ durable automatic approval admission > preserves the inclusive rolling-window boundary, then releases capacity only after expiry  5257ms
+   ✓ durable automatic approval admission > takes admission time after real cross-process SQLite writer exclusion  5852ms
+   ✓ PostgreSQL approval control store (local fixture) > serializes the final insurer slot across independent pools and commits only one event  514ms
+   ✓ PostgreSQL approval control store (local fixture) > serializes the final overall slot across independent pools and commits only one event  810ms
+   ✓ PostgreSQL approval control store (local fixture) > grants ample concurrent capacity, rolls back a definite pre-COMMIT failure, and preserves decisions on retry and restart  1153ms
+(node:1469467) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ packages/proposal-store/src/control-policy-postgres.test.ts (9 tests) 339ms
+
+ Test Files  3 passed (3)
+      Tests  41 passed (41)
+   Start at  19:31:51
+   Duration  129.98s (transform 1.69s, setup 0ms, collect 3.16s, tests 126.26s, environment 1ms, prepare 163ms)
+

@@ -1,0 +1,35 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1499180) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/control-policy-publication-recovery.test.ts (23 tests) 95353ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: committed  3716ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: cancel  4598ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: commit_race  3588ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: cancellation_lost  3950ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: unavailable  4825ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: mismatch  3712ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: concurrent  4120ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: repeated  3931ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: before_replace  4002ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: before_commit  4368ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: unknown_commit  3760ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: journal_cleanup  4442ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: newer_config  4220ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: corrupt_record  3928ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: missing_config  4609ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: unavailable  3741ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: lost_cancellation  4126ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: restore_race  4240ms
+   ✓ sqlite publication settlement > rejects mismatched bindings and unsafe paths before saving any config intent  3683ms
+   ✓ sqlite publication settlement > enforces cancellation as a no-op fence in the actual repository  4406ms
+   ✓ sqlite publication settlement > recovers after a real process death: before_config  4344ms
+   ✓ sqlite publication settlement > recovers after a real process death: before_commit  4546ms
+   ✓ sqlite publication settlement > recovers after a real process death: after_commit  4493ms
+
+ Test Files  1 passed (1)
+      Tests  23 passed (23)
+   Start at  19:47:14
+   Duration  96.70s (transform 618ms, setup 0ms, collect 1.14s, tests 95.35s, environment 0ms, prepare 42ms)
+

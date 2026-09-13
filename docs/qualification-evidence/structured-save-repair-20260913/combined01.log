@@ -1,0 +1,474 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1462989) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1462987) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1462980) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1462988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/control-policy-store.test.ts (19 tests | 1 skipped) 95032ms
+   ✓ governed policy-store binding and recovery > drains runtime work before reading the migration snapshot or installing its locator  3588ms
+   ✓ governed policy-store binding and recovery > imports exact active and disabled revisions without changing their provenance  5031ms
+   ✓ governed policy-store binding and recovery > opens current policies without rerunning ledger migrations and can borrow the actual runtime store  5150ms
+   ✓ governed policy-store binding and recovery > refuses a borrowed runtime connected to a different repository  5030ms
+   ✓ governed policy-store binding and recovery > refuses a changed or missing store before runtime creation can leave an empty shadow file  5060ms
+   ✓ governed policy-store binding and recovery > validates only the required store selection before constructing an authoring ledger  4939ms
+   ✓ governed policy-store binding and recovery > resumes a frozen pending import rather than rereading changed legacy files  5017ms
+   ✓ governed policy-store binding and recovery > recovers an import committed before the process lost its response without replaying it  5301ms
+   ✓ governed policy-store binding and recovery > does not load or trust the snapshot export after repository authority is established  5099ms
+   ✓ governed policy-store binding and recovery > refuses tampered pending input before importing any authority  5075ms
+   ✓ governed policy-store binding and recovery > does not create a shadow control store when the selection changes  4947ms
+   ✓ governed policy-store binding and recovery > fails closed for a missing or replaced bound repository  10194ms
+   ✓ governed policy-store binding and recovery > never falls back to file authority if the migration binding disappears  5083ms
+   ✓ governed policy-store binding and recovery > rejects unvalidated input before creating a binding or initializing policy tables  4958ms
+   ✓ governed policy-store binding and recovery > chooses one complete binding during concurrent migration  5062ms
+   ✓ governed policy-store binding and recovery > returns bounded busy when another migration really remains inside the cutover gate  10426ms
+   ✓ governed policy-store binding and recovery > binds migration files, local store and the snapshot reader to the locked canonical project  5065ms
+(node:1467564) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/owner-policy-connection.test.ts (56 tests | 28 skipped) 150675ms
+   ✓ sqlite owner connection exact execution recovery > recovers only added owner fields with independent exact execution consent and preserves immutable policies: management_only  5167ms
+   ✓ sqlite owner connection exact execution recovery > recovers only added owner fields with independent exact execution consent and preserves immutable policies: management_and_workload  5143ms
+   ✓ sqlite owner connection exact execution recovery > keeps caller-owned input mutations outside the confirmed connection binding  5434ms
+   ✓ sqlite owner connection exact execution recovery > preserves confirmed policy, bindings and receipt against in-flight public review mutation under the held lock  5249ms
+   ✓ sqlite owner connection exact execution recovery > rejects invalid confirmation without mutation: connection_digest  5070ms
+   ✓ sqlite owner connection exact execution recovery > rejects invalid confirmation without mutation: execution_digest  5185ms
+   ✓ sqlite owner connection exact execution recovery > rejects invalid confirmation without mutation: tamper  5254ms
+   ✓ sqlite owner connection exact execution recovery > rejects invalid confirmation without mutation: expired  5250ms
+   ✓ sqlite owner connection exact execution recovery > CLI decline leaves runtime, authority and drafts unchanged: cancel  5273ms
+   ✓ sqlite owner connection exact execution recovery > CLI decline leaves runtime, authority and drafts unchanged: details  5047ms
+   ✓ sqlite owner connection exact execution recovery > CLI decline leaves runtime, authority and drafts unchanged: execution_decline  4913ms
+   ✓ sqlite owner connection exact execution recovery > CLI accepts input through two decisions and exposes names without token or key values  5617ms
+   ✓ sqlite owner connection exact execution recovery > rejects configuration edits after preparation without overwriting the newer file  5102ms
+   ✓ sqlite owner connection exact execution recovery > rejects a newer parent epoch without changing configuration or execution  5070ms
+   ✓ sqlite owner connection exact execution recovery > refuses genuine unrelated changes: source  5105ms
+   ✓ sqlite owner connection exact execution recovery > refuses genuine unrelated changes: context  5523ms
+   ✓ sqlite owner connection exact execution recovery > refuses genuine unrelated changes: store  5587ms
+   ✓ sqlite owner connection exact execution recovery > accepts a previous configuration only when it proves the exact stored old binding  5236ms
+   ✓ sqlite owner connection exact execution recovery > uses stored execution policy when the editable export tries to disable it  5091ms
+   ✓ sqlite owner connection exact execution recovery > connects without inventing execution when no execution policy was migrated  5270ms
+   ✓ sqlite owner connection exact execution recovery > CLI requires only connection consent when there is no stored execution  5255ms
+   ✓ sqlite owner connection exact execution recovery > admits the migrated Action companion before the distinct generated Read configuration  5022ms
+   ✓ sqlite owner connection exact execution recovery > previews and configures four tools from the generated primary after execution migration  5197ms
+   ✓ sqlite owner connection exact execution recovery > default local launch rejects a changed Action source binding without falling back to Read  5108ms
+   ✓ sqlite owner connection exact execution recovery > default local launch rejects a changed Action context binding without falling back to Read  5024ms
+   ✓ sqlite owner connection exact execution recovery > default local launch rejects a changed Action authentication binding without falling back to Read  5171ms
+   ✓ sqlite owner connection exact execution recovery > rejects tampered Action authentication even when the primary fallback independently admits  5257ms
+   ✓ sqlite owner connection exact execution recovery > refuses an independently valid migrated Action configuration belonging to another project  10051ms
+(node:1470483) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-review-governed.test.ts (30 tests) 166759ms
+   ✓ public governed Action review > wires the public action command to client setup and returns without activating again  6130ms
+   ✓ public governed Action review > shows an already active Read revision truthfully and preserves it when repeated activation is declined  5637ms
+   ✓ public governed Action review > opens model-guided first-action setup before manual Read sign-off, without compatibility controls  5374ms
+   ✓ public governed Action review > starts the first action from saved Read authority without entering legacy proposal controls  5408ms
+   ✓ public governed Action review > routes the empty Action case from Boundary access into the manual semantic editor  5672ms
+   ✓ public governed Action review > uses the governed Read URL then the separately configured writer without consulting a legacy lock  5289ms
+   ✓ public governed Action review > opens the manual editor for an existing disabled outcome before Read activation  5583ms
+   ✓ public governed Action review > shows unfinished saved work and returns to the same disabled Action review without new egress or authority  5450ms
+   ✓ public governed Action review > returns directly from linked Read approval to the saved actions (accepted=true)  5464ms
+   ✓ public governed Action review > returns directly from linked Read approval to the saved actions (accepted=false)  5299ms
+   ✓ public governed Action review > returns directly from linked Read approval to the saved actions (accepted=inspection_failure)  5734ms
+   ✓ public governed Action review > wires standalone action review to the exact Read decision without restarting setup (accepted=true)  5501ms
+   ✓ public governed Action review > wires standalone action review to the exact Read decision without restarting setup (accepted=false)  5532ms
+   ✓ public governed Action review > does not start a model revision for a Read selection changed during linked Action review  5490ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (repair)  6524ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (repair_disabled)  6818ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (inspection_drift)  6308ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (structural_change)  6008ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (stale_selection)  6006ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (existing_edit)  6194ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (read_changed)  6085ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (read_pending)  6071ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (read_declined)  5925ms
+   ✓ public governed Action review > does not fall back to a legacy lock when the governed repository is unavailable  5340ms
+   ✓ public governed Action review > reaches the saved verified draft through action review at 52 columns without a legacy generation lock or new model job  5439ms
+   ✓ public governed Action review > reaches the saved verified draft through action review at 80 columns without a legacy generation lock or new model job  5545ms
+   ✓ public governed Action review > reaches the saved verified draft through action review at 120 columns without a legacy generation lock or new model job  5565ms
+   ✓ public governed Action review > reaches the saved verified draft through Read activation then Q at 80 columns without a legacy generation lock or new model job  5574ms
+   ✓ public governed Action review > pages exact writer requirements and the exported handoff through public Action review without changing pending authority  5794ms
+(node:1471395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/semantic-admission-publication.test.ts (25 tests | 11 skipped) 84318ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_first  6166ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_process  7016ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: admission_first  6176ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: inactive_first  5887ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: unchanged  5951ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: disabled_draft  5969ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: failed_confirmation  6089ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: replacement_first  5904ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: replacement_process  6401ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: admission_first  5970ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: inactive_first  5333ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: unchanged  5761ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: disabled_draft  5887ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: failed_confirmation  5801ms
+(node:1471834) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/control-policy-authoring-storage.integration.test.ts (7 tests) 39240ms
+   ✓ actual governed draft and resume storage boundaries (no provider or source database) > retains the committed draft and only previously saved answers when resume persistence fails before_write  5140ms
+   ✓ actual governed draft and resume storage boundaries (no provider or source database) > retains the committed draft and only previously saved answers when resume persistence fails partial_write  5271ms
+   ✓ actual governed draft and resume storage boundaries (no provider or source database) > retains the committed draft and only previously saved answers when resume persistence fails before_rename  5263ms
+   ✓ actual governed draft and resume storage boundaries (no provider or source database) > reopens exact persisted records after process termination between draft commit and resume write  7079ms
+   ✓ actual governed draft and resume storage boundaries (no provider or source database) > allows only one same-base save across independent processes and never persists the losing answer  6075ms
+   ✓ actual governed draft and resume storage boundaries (no provider or source database) > retries an uncertain authoring save after before_commit without a duplicate revision or lost pending work  5027ms
+   ✓ actual governed draft and resume storage boundaries (no provider or source database) > retries an uncertain authoring save after after_commit without a duplicate revision or lost pending work  5385ms
+(node:1473305) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"timestamp":"2026-09-13T02:36:02.016Z","level":"warn","event":"semantic_action_execution_held","code":"SEMANTIC_ACTION_QUEUE_UNAVAILABLE","next_action":"Review saved execution and runtime configuration; then retry the same approved request. Do not edit stored policy hashes.","source_database_changed":false}
+ ✓ apps/runner/src/semantic-action-runtime.test.ts (41 tests) 96426ms
+   ✓ composed semantic Action runtime > queues a third separately reviewed writer on the same held client without changing its read or trust context  6441ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: unreviewed_alias  5487ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_trust  5566ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_read  6030ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_alias_scope  5384ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: pending  5563ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: queue_failure  5596ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: policy_changed_after_read  5651ms
+   ✓ composed semantic Action runtime > does not reuse the held client's execution export after governed execution is revoked  5404ms
+   ✓ composed semantic Action runtime > refreshes only the selected nested configuration using its own relative-path base  5529ms
+   ✓ composed semantic Action runtime > fails closed for the selected custom publication: missing  5337ms
+   ✓ composed semantic Action runtime > fails closed for the selected custom publication: pending  5694ms
+   ✓ composed semantic Action runtime > fails closed for the selected custom publication: stale  5719ms
+   ✓ composed semantic Action runtime > fails closed for the selected custom publication: revoked  5644ms
+   ✓ composed semantic Action runtime > does not guess a publication file for a config-only caller: unchanged  5378ms
+   ✓ composed semantic Action runtime > does not guess a publication file for a config-only caller: binding_changed  5677ms
+   ✓ composed semantic Action runtime > does not guess a publication file for a config-only caller: revoked  5545ms
+(node:1474374) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"ok":true,"state":"exported","path":"structured-draft.json","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:303c7a36b4a441c4e3371667abf2d0524b21f10d6ad0dadd0f1874b36b0e94dc","read_candidate_digest":"sha256:f1085d25e90a96b0575921e6ec851b92c8017bcb8da3c069426fde432034e57c","confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":2,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-fresh-governed-structured-T1rhVh' --access"},"source_database_changed":false}
+ ✓ apps/runner/src/boundary-structured-execution.test.ts (16 tests) 89542ms
+   ✓ structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via start without altering current execution  6053ms
+   ✓ structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via onboard without altering current execution  5631ms
+   ✓ structured draft save with genuine stored execution > refuses missing_all execution context before export, preview and save without touching stored records  5622ms
+   ✓ structured draft save with genuine stored execution > refuses missing_companion execution context before export, preview and save without touching stored records  5468ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_project execution context before export, preview and save without touching stored records  5518ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_source execution context before export, preview and save without touching stored records  5279ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_store execution context before export, preview and save without touching stored records  5371ms
+   ✓ structured draft save with genuine stored execution > refuses ambiguous execution context before export, preview and save without touching stored records  5343ms
+   ✓ structured draft save with genuine stored execution > refuses stale execution context before export, preview and save without touching stored records  5640ms
+   ✓ structured draft save with genuine stored execution > does not require runtime configuration or writer credentials when no execution record exists  5693ms
+   ✓ structured draft save with genuine stored execution > rejects a competing draft change after preview and preserves the winner  5627ms
+   ✓ structured draft save with genuine stored execution > rejects a competing current change after preview and preserves the winner  5580ms
+   ✓ structured draft save with genuine stored execution > rejects a competing context change after preview and preserves the winner  5626ms
+   ✓ structured draft save with genuine stored execution > rejects a competing context_during_preparation change after preview and preserves the winner  5681ms
+   ✓ structured draft save with genuine stored execution > preserves atomic state and supports exact reopen after before_commit  5543ms
+   ✓ structured draft save with genuine stored execution > preserves atomic state and supports exact reopen after lost_acknowledgement  5865ms
+(node:1474720) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"ok":true,"state":"exported","path":"coded-draft.json","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:2b06381a382ed1b8736dbd0084fa5e024d7b226f4211309717f15a6075a78cdf","read_candidate_digest":"sha256:a7757de4d5c482104262ecc75d03a159721b3231f0a7ef63fdd12f484c1b69e8","confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":2,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-fresh-governed-coded-qD7cQg' --access"},"source_database_changed":false}
+ ✓ apps/runner/src/control-policy-fresh-authoring.test.ts (8 tests) 40961ms
+   ✓ fresh governed authoring bootstrap > rebinds a minimized Action catalog from exact governed metadata history without legacy snapshot files  5394ms
+   ✓ fresh governed authoring bootstrap > recovers from partial_write without publishing a partial checkpoint  5124ms
+   ✓ fresh governed authoring bootstrap > recovers from before_publish without publishing a partial checkpoint  5219ms
+   ✓ fresh governed authoring bootstrap > creates and resumes a disabled governed Read review without file-backed authority  5267ms
+   ✓ fresh governed authoring bootstrap > refuses a file-backed project instead of importing it as fresh authority  4784ms
+   ✓ fresh governed authoring bootstrap > refuses a generically valid checkpoint tampered to add active Read authority  5019ms
+   ✓ fresh governed authoring bootstrap > exports and submits a fresh disabled Read revision through the public structured service  5052ms
+   ✓ fresh governed authoring bootstrap > bootstraps a coded metadata-only review and submits explicit scope decisions as disabled Read authority  5101ms
+(node:1474766) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Active local Read authority selected from /tmp/synapsor-selected-execution-config-FO5YDe/synapsor.runner.json; fixed Read and Action tools are available. Only activated outcomes permit proposals.
+ ✓ apps/runner/src/semantic-writeback-authority.test.ts (14 tests | 6 skipped) 35980ms
+   ✓ semantic writeback authority orchestration > resolves a real approved v5 job to its outcome writer without changing the compiled source  4985ms
+   ✓ semantic writeback authority orchestration > accepts one exact approved v5 job and reloads active authority for transaction verification  5094ms
+   ✓ semantic writeback authority orchestration > accepts one exact policy approval while retaining a two-human fallback quorum  5093ms
+   ✓ semantic writeback authority orchestration > rejects approval-set and immutable-proposal drift before source execution  5201ms
+   ✓ semantic writeback authority orchestration > queues and leases an approved semantic proposal only for its exact active outcome authority  5326ms
+   ✓ semantic writeback authority orchestration > retains automatic approval history but never dispatches old unstarted work after a lower-limit replacement  5030ms
+   ✓ semantic writeback authority orchestration > leaves semantic work unleased after Action authority is deactivated  5239ms
+(node:1475732) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/semantic-action-delegation.test.ts (4 tests) 26697ms
+   ✓ delegated semantic Action runtime composition > discovers only current delegated outcomes, binds opaque subjects to the authenticated run, and creates no source write  5879ms
+   ✓ delegated semantic Action runtime composition > refuses workload/trusted-context mismatches, expired or missing workload credentials before opening a fact session  5002ms
+   ✓ delegated semantic Action runtime composition > refuses old references after a current owner change and refuses an existing proposal after revocation  5810ms
+   ✓ delegated semantic Action runtime composition > keeps non-delegated Action requests working while a configured delegated runtime refuses a missing governed repository  10003ms
+Active local Read authority selected from /tmp/synapsor-selected-execution-config-RWQkdp/synapsor.runner.json; fixed Read and Action tools are available. Only activated outcomes permit proposals.
+(node:1475813) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/mcp-runtime-execution-config.test.ts (10 tests) 30891ms
+   ✓ selected execution configuration through public MCP callers > queues through stdio after public connection and execution confirmations on a copied config  5867ms
+   ✓ selected execution configuration through public MCP callers > queues through streamable-http after public connection and execution confirmations on a copied config  5759ms
+   ✓ selected execution configuration through public MCP callers > passes the actual managed companion selection, not the launch filename  4815ms
+   ✓ selected execution configuration through public MCP callers > passes the actual managed primary selection, not the launch filename  4895ms
+   ✓ selected execution configuration through public MCP callers > default local launch uses the reviewed identity and preserves read-only override: false  4819ms
+   ✓ selected execution configuration through public MCP callers > default local launch uses the reviewed identity and preserves read-only override: true  4678ms
+(node:1476055) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/project-authority-mutation.test.ts (15 tests) 1176ms
+   ✓ project-local authority mutation exclusion > serializes independent processes and releases on return without recreating the inode  391ms
+   ✓ project-local authority mutation exclusion > serializes independent processes and releases on crash without recreating the inode  415ms
+ ✓ packages/proposal-store/src/automatic-approval-admission.test.ts (7 tests | 3 skipped) 16340ms
+   ✓ durable automatic approval admission > does not partially consume combined limits, merge insurers, count human decisions, or reset history on a stricter revision  5925ms
+   ✓ durable automatic approval admission > preserves the inclusive rolling-window boundary, then releases capacity only after expiry  4803ms
+   ✓ durable automatic approval admission > takes admission time after real cross-process SQLite writer exclusion  5571ms
+(node:1476435) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/project-runtime-admission.test.ts (12 tests) 629ms
+{
+  "ok": true,
+  "activation": "disabled_unreviewed",
+  "storage": "control_repository",
+  "deployment_profile": "staging",
+  "boundary_id": "bnd_95156851a2172976ed4cf4e8302d4543",
+  "candidate_digest": "sha256:2cca49a71ef7320c908cb72288957c5b6a388544c85bcc0d483ba4f700c71365",
+  "review_revision": 1,
+  "authoring_binding": {
+    "repository_id": "d3997378-0988-435e-81e8-7b2a7b0b0e67",
+    "deployment_id": "d0fdb2b4-3a92-4dbf-a9fd-23828160795b",
+    "project_id": "ecddf837-2d36-4293-a17c-1b6f92e49d0f",
+    "epoch": 1,
+    "revision_id": "policy:0bae1ab2a95443beb3862f67e0b8a3fd0c58f7c9da04e96227e6faec6e3d38be"
+  },
+  "guided_project_created": true,
+  "config_path": "/tmp/synapsor-structured-skeleton-BZTWoe/synapsor.runner.json",
+  "store_path": "/tmp/synapsor-structured-skeleton-BZTWoe/.synapsor/local.db",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "next_action": "synapsor-runner boundary review --project-root '/tmp/synapsor-structured-skeleton-BZTWoe' --access",
+  "next_steps": {
+    "export_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-BZTWoe' --export-draft '/tmp/synapsor-structured-skeleton-BZTWoe/boundary-authoring.json' --json",
+    "validate_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-BZTWoe' --draft '/tmp/synapsor-structured-skeleton-BZTWoe/boundary-authoring.json' --dry-run --json",
+    "submit_disabled_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-BZTWoe' --draft '/tmp/synapsor-structured-skeleton-BZTWoe/boundary-authoring.json' --json",
+    "review": "synapsor-runner boundary review --project-root '/tmp/synapsor-structured-skeleton-BZTWoe' --access",
+    "review_actions": "synapsor-runner action review --project-root '/tmp/synapsor-structured-skeleton-BZTWoe'"
+  }
+}
+{"ok":true,"state":"exported","path":"skeleton.json","source_database_changed":false}
+ ✓ apps/runner/src/boundary-structured-authoring.integration.test.ts (3 tests) 15607ms
+   ✓ public structured Boundary authoring integration > prepares private coded fields and two joint-limited actions through the real disabled-authority path  6175ms
+   ✓ public structured Boundary authoring integration > authors a private 16-credit approval condition without making credits a proposed patch or caller argument  4908ms
+   ✓ public structured Boundary authoring integration > exports incomplete saved intents as view-only skeletons without turning catalog candidates into actions  4523ms
+(node:1476586) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.resume"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.cancel","billing.pause","billing.resume"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-V3Lr6b' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-V3Lr6b'"},"source_database_changed":false}
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-J1I947' --access"},"source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-0nJnUb' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-0nJnUb'"},"source_database_changed":false}
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.unrelated"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-vW1tXy' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-vW1tXy'"},"source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.unrelated"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-IOpviC' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-IOpviC'"},"source_database_changed":false}
+{
+  "ok": false,
+  "code": "STRUCTURED_DRAFT_INPUT_UNAVAILABLE",
+  "message": "ENOENT: no such file or directory, open '/tmp/synapsor-structured-authoring-ra6MPh/missing.json'",
+  "next_action": "Correct the reported draft field and resubmit the same saved review bundle.",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "disabled_authority_changed": false
+}
+ ✓ apps/runner/src/boundary-structured-authoring.test.ts (14 tests) 129ms
+NEXT
+Resume the guided CLI and choose a model or MCP client:
+  cd '/tmp/synapsor-operator-policy-BjYq6x' && synapsor-runner start --from-env DATABASE_URL --cli
+Or open Ask directly with an explicit provider:
+  synapsor-runner try ask --project-root '/tmp/synapsor-operator-policy-BjYq6x' --provider openai --model gpt-5.6-terra
+Supervised execution: active (control revision 0)
+Worker health: unknown. Queue state and lease counts do not prove that a worker process is running.
+Queue: 0 waiting · 0 leased · 0 retrying · 0 dead letter · 0 reconciliation
+Worker queue is empty.
+{"timestamp":"2026-09-13T02:46:00.442Z","level":"warn","event":"semantic_action_execution_held","code":"POLICY_RUNTIME_RESTART_REQUIRED","next_action":"Review saved execution and runtime configuration; then retry the same approved request. Do not edit stored policy hashes.","source_database_changed":false}
+ ✓ apps/runner/src/control-policy-authority-codec.test.ts (420 tests | 174 skipped) 865179ms
+   ✓ exact stored operator authority > preserves independent active/draft pointers and the selected Read on restart  5138ms
+   ✓ Read writer migration coordination > keeps initialize writes on the locked canonical root after alias retargeting  5049ms
+   ✓ Read writer migration coordination > refuses stale legacy generation after a concurrently frozen migration  5303ms
+   ✓ Read writer migration coordination > refuses stale legacy baseline after a concurrently frozen migration  5183ms
+   ✓ Read writer migration coordination > refuses stale legacy progress after a concurrently frozen migration  5118ms
+   ✓ Read writer migration coordination > refuses stale legacy synchronize after a concurrently frozen migration  5188ms
+   ✓ Read writer migration coordination > refuses stale legacy create after a concurrently frozen migration  5485ms
+   ✓ Read writer migration coordination > refuses stale legacy switch after a concurrently frozen migration  5162ms
+   ✓ Read writer migration coordination > refuses stale legacy rename after a concurrently frozen migration  5152ms
+   ✓ Read writer migration coordination > refuses stale legacy delete after a concurrently frozen migration  5077ms
+   ✓ Read writer migration coordination > refuses stale legacy discard after a concurrently frozen migration  4989ms
+   ✓ Read writer migration coordination > refuses stale legacy reconcile after a concurrently frozen migration  5420ms
+   ✓ Read writer migration coordination > refuses stale legacy rescan after a concurrently frozen migration  5234ms
+   ✓ Read writer migration coordination > refuses stale legacy initialize after a concurrently frozen migration  5235ms
+   ✓ sqlite validated operator policy transactions > keeps the original Read review token while waiting for another authority writer  5366ms
+   ✓ sqlite validated operator policy transactions > atomically saves only a validated disabled Action companion with Read authoring  5725ms
+   ✓ sqlite validated operator policy transactions > retains partial coded metadata decisions and promotes only a fully valid disabled Read candidate  5483ms
+   ✓ sqlite validated operator policy transactions > rescans and renames incomplete metadata without publishing Read authority or losing reviewed answers  5585ms
+   ✓ sqlite validated operator policy transactions > reads current and paginated historical governed generation locks without legacy exports or pointer changes  6438ms
+   ✓ sqlite validated operator policy transactions > rebinds all retained Action outcomes before merging a later Read revision and refuses unproven replacements  5614ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: disabled  5180ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: unrelated_active  5199ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: selected_active  5123ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: selected_changed  5188ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: guided_active  5254ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: metadata  5250ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: stale_export  5152ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: no_authoring  4969ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: workbench  5211ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: wrong_store  5104ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: no_config  5118ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: no_config_cli  5347ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: bare  5279ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: deferred  4877ms
+   ✓ sqlite validated operator policy transactions > resumes governed startup without generated exports: deferred_json  5153ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: cli  5239ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: draft  5232ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: coded_cli  4888ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: coded_draft  5064ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: configured_scope  4980ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: configured_scope_draft  5378ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: unconfigured_cli  5210ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: unconfigured_draft  5055ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: inspection_race  5261ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: unsafe_role  4970ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: inspection_failure  5148ms
+   ✓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: review_failure  5175ms
+   ✓ sqlite validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'cli' false  5067ms
+   ✓ sqlite validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'cli' true  5244ms
+   ✓ sqlite validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'draft' false  5128ms
+   ✓ sqlite validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'draft' true  5264ms
+   ✓ sqlite validated operator policy transactions > binds Quick Start saves to the original review and returns the exact activation successor  5583ms
+   ✓ sqlite validated operator policy transactions > uses stored Quick Start candidates without export fallback: accept  5105ms
+   ✓ sqlite validated operator policy transactions > uses stored Quick Start candidates without export fallback: edit  5211ms
+   ✓ sqlite validated operator policy transactions > uses stored Quick Start candidates without export fallback: prompt_race  4991ms
+   ✓ sqlite validated operator policy transactions > uses stored Quick Start candidates without export fallback: inspection_race  4809ms
+   ✓ sqlite validated operator policy transactions > uses stored Quick Start candidates without export fallback: staging  4899ms
+   ✓ sqlite validated operator policy transactions > persists exact disabled edits independently, avoids duplicate history, and resumes current state  4508ms
+   ✓ sqlite validated operator policy transactions > commits complete Read authoring and selection atomically without changing active authority  4211ms
+   ✓ sqlite validated operator policy transactions > reopens, edits and switches stored Read reviews without file repair or stale overwrites  4138ms
+   ✓ sqlite validated operator policy transactions > rescans stored reviews atomically, retains exact catalogs, and rejects stale publication  5113ms
+   ✓ sqlite validated operator policy transactions > uses exact saved revisions for manual Workbench reads, progress and library switches  4172ms
+   ✓ sqlite validated operator policy transactions > binds Workbench field_metadata to its original saved review and returns the exact committed successor  4790ms
+   ✓ sqlite validated operator policy transactions > binds Workbench minimum_cohort_all to its original saved review and returns the exact committed successor  3918ms
+   ✓ sqlite validated operator policy transactions > retains the selected saved Read revision through Workbench workload analyze and recovery  4784ms
+   ✓ sqlite validated operator policy transactions > retains the selected saved Read revision through Workbench workload model and recovery  4829ms
+   ✓ sqlite validated operator policy transactions > retains the selected saved Read revision through Workbench workload apply and recovery  4426ms
+   ✓ sqlite validated operator policy transactions > retains the selected saved Read revision through Workbench workload receipt and recovery  4898ms
+   ✓ sqlite validated operator policy transactions > keeps the original saved job-mapping review through no-op and recovery  3915ms
+   ✓ sqlite validated operator policy transactions > keeps the original saved job-mapping review through expand and recovery  4609ms
+   ✓ sqlite validated operator policy transactions > keeps the original saved job-mapping review through preparation and recovery  4292ms
+   ✓ sqlite validated operator policy transactions > keeps the original saved job-mapping review through inspection and recovery  4817ms
+   ✓ sqlite validated operator policy transactions > keeps the original saved job-mapping review through refresh and recovery  4493ms
+   ✓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during current  4014ms
+   ✓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during stale  4251ms
+   ✓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during before_save  3738ms
+   ✓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during after_save  4430ms
+   ✓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during selection  4044ms
+   ✓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during unrelated  4325ms
+   ✓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during action_mismatch  4319ms
+   ✓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during analysis_mismatch  3687ms
+   ✓ sqlite validated operator policy transactions > stages a proven relationship only on the original saved active review with same policy locks without overwriting pending work  5410ms
+   ✓ sqlite validated operator policy transactions > stages a proven relationship only on the original saved active review with separate policy locks without overwriting pending work  4648ms
+   ✓ sqlite validated operator policy transactions > binds saved Read activation to the exact original selection, candidate and repository epoch  5011ms
+   ✓ sqlite validated operator policy transactions > refuses stale CLI consent and keeps the revised draft available for a new confirmation  3796ms
+   ✓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: complete  4039ms
+   ✓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: commit_failure  4461ms
+   ✓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: lost_response  3893ms
+   ✓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: unknown_commit  4525ms
+   ✓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: wrong_store  3951ms
+   ✓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: explicit_wrong_store  4045ms
+   ✓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: nested_wrong_store  4424ms
+   ✓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: concurrent  3832ms
+   ✓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: expired_after_review  4438ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'complete' 'signed_key'  4405ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'complete' 'jwt_oidc'  4287ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'commit_failure' 'signed_key'  4522ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'commit_failure' 'jwt_oidc'  4105ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'lost_response' 'signed_key'  5016ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'lost_response' 'jwt_oidc'  4194ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'unknown_commit' 'signed_key'  4534ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'unknown_commit' 'jwt_oidc'  4212ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'wrong_store' 'signed_key'  3885ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'nested_wrong_store' 'signed_key'  4330ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'concurrent' 'signed_key'  4005ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'expired_after_review' 'signed_key'  4503ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'tampered_candidate' 'signed_key'  4045ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'tampered_contract' 'signed_key'  4357ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'complete' 'signed_key'  4628ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'complete' 'jwt_oidc'  4011ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'commit_failure' 'signed_key'  4788ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'commit_failure' 'jwt_oidc'  4003ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'lost_response' 'signed_key'  4289ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'lost_response' 'jwt_oidc'  4217ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'unknown_commit' 'signed_key'  4088ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'unknown_commit' 'jwt_oidc'  4965ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'wrong_store' 'signed_key'  4028ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'nested_wrong_store' 'signed_key'  4165ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'concurrent' 'signed_key'  4360ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'expired_after_review' 'signed_key'  4192ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'tampered_candidate' 'signed_key'  4542ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'tampered_contract' 'signed_key'  3855ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'coded' 'complete' 'signed_key'  4909ms
+   ✓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'coded' 'commit_failure' 'signed_key'  4039ms
+   ✓ sqlite validated operator policy transactions > rejects an old headless bundle even when a later review has the same authority digest  4070ms
+   ✓ sqlite validated operator policy transactions > refuses a Workbench preview changed during inspection and resumes the exact review  4526ms
+   ✓ sqlite validated operator policy transactions > refuses a Workbench activate changed during inspection and resumes the exact review  4076ms
+   ✓ sqlite validated operator policy transactions > preserves the active identity when renaming a stored draft and uses its exact policy lock  4736ms
+   ✓ sqlite validated operator policy transactions > reads execution from the same repository, never from an edited export, and observes revocation  3900ms
+   ✓ sqlite validated operator policy transactions > opens fixed-tool Ask with stored execution despite an invalid worker export and checks the selected store  4270ms
+   ✓ sqlite validated operator policy transactions > requires saved-job revalidation after a writer policy changes the reviewed database contract  4307ms
+   ✓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (replacement_warning)  4301ms
+   ✓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (sequential)  5371ms
+   ✓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (decline)  4679ms
+   ✓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (policy_race)  5380ms
+   ✓ sqlite validated operator policy transactions > publishes execution only through exact writer review and preserves revocation across stale exports and reviews  4073ms
+   ✓ sqlite validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: failed  4465ms
+   ✓ sqlite validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: replacement_failed  4398ms
+   ✓ sqlite validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: lost_response  4237ms
+   ✓ sqlite validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: unknown_receipt  4844ms
+   ✓ sqlite validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: different_receipt  3789ms
+   ✓ sqlite validated operator policy transactions > recovers a terminated Action activation process: before_config  5414ms
+   ✓ sqlite validated operator policy transactions > recovers a terminated Action activation process: before_commit  4870ms
+   ✓ sqlite validated operator policy transactions > recovers a terminated Action activation process: after_commit  5463ms
+   ✓ sqlite validated operator policy transactions > refuses changed Action publication inputs before replacing authority: forged_draft  3770ms
+   ✓ sqlite validated operator policy transactions > refuses changed Action publication inputs before replacing authority: changed_draft  4238ms
+   ✓ sqlite validated operator policy transactions > refuses changed Action publication inputs before replacing authority: revoked_read  4053ms
+   ✓ sqlite validated operator policy transactions > refuses changed Action publication inputs before replacing authority: wrong_store  3820ms
+   ✓ sqlite validated operator policy transactions > refuses changed Action publication inputs before replacing authority: changed_config  4638ms
+   ✓ sqlite validated operator policy transactions > reopens Action review without repeating an interrupted activation: cancelled  4063ms
+   ✓ sqlite validated operator policy transactions > reopens Action review without repeating an interrupted activation: committed  4280ms
+   ✓ sqlite validated operator policy transactions > reopens Action review without repeating an interrupted activation: cleanup  4260ms
+   ✓ sqlite validated operator policy transactions > reopens Action review without repeating an interrupted activation: unavailable  3966ms
+   ✓ sqlite validated operator policy transactions > reopens Action review without repeating an interrupted activation: newer_config  4513ms
+   ✓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: disabled  3744ms
+   ✓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked  4295ms
+   ✓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_execution  4710ms
+   ✓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_unconfirmed  4017ms
+   ✓ sqlite validated operator policy transactions > reviews execution only against the selected outcome's current Read dependency  5107ms
+   ✓ sqlite validated operator policy transactions > does not treat corrupt stored Read authority as disabled during Action recovery  3645ms
+   ✓ sqlite validated operator policy transactions > recovers and disables an interrupted execution save with an explicit control-store environment  4481ms
+   ✓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: new_failed  4190ms
+   ✓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: same_failed  4449ms
+   ✓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: lost_response  4704ms
+   ✓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: unknown_receipt  3764ms
+   ✓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: different_receipt  4193ms
+   ✓ sqlite validated operator policy transactions > refreshes execution in a long-running client between approved requests without claiming completion  5329ms
+   ✓ sqlite validated operator policy transactions > serves and revokes the exact Read repository revision despite stale file exports  4152ms
+   ✓ sqlite validated operator policy transactions > publishes through the existing exact Read activation gate without rewriting an active file export  4035ms
+   ✓ sqlite validated operator policy transactions > serves Action drafts and active revisions from the repository through the existing gates and cached loader  3979ms
+   ✓ sqlite validated operator policy transactions > keeps the selected Read last even when repository ordering places its name first  4352ms
+   ✓ sqlite validated operator policy transactions > refuses an unrelated runtime ledger before Read inspection, scope resolution or Action facts  3760ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: read  4357ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_set  4138ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_inspection  3631ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_scope  4874ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_budget  3798ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: action  4100ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: action_loader  4410ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: lazy_action  3693ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: lazy_bind  4468ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: optional_init  3878ms
+   ✓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: queue  4221ms
+   ✓ sqlite validated operator policy transactions > uses the same live repository for discovery and observes revocation without reopening a locator  4295ms
+   ✓ sqlite validated operator policy transactions > atomically revokes Read authority and its selection without deleting the disabled draft  3732ms
+   ✓ sqlite validated operator policy transactions > refuses disabled-as-active, cross-scope, duplicate and wrong-key updates without partial changes  4324ms
+   ✓ sqlite validated operator policy transactions > refuses stale review and admits only one concurrent revision of the same snapshot  3900ms
+   ✓ sqlite validated operator policy transactions > preserves Action identity through Read revocation and rejects new stale Action or execution authority  3981ms
+ ✓ apps/runner/src/model-output-config.test.ts (3 tests) 15ms
+
+ Test Files  18 passed (18)
+      Tests  481 passed | 223 skipped (704)
+   Start at  19:31:50
+   Duration  870.83s (transform 6.31s, setup 0ms, collect 26.36s, tests 1755.60s, environment 3ms, prepare 877ms)
+

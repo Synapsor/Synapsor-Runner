@@ -1,0 +1,17 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1480262) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1480266) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/lifecycle-view.test.ts (9 tests) 372ms
+ ✓ apps/runner/src/lifecycle-cli.test.ts (2 tests) 5779ms
+   ✓ lifecycle CLI > makes bare/show/latest equivalent and supports no-id browsing and handle drill-down  5774ms
+ ✓ apps/runner/src/resource-lifecycle.test.ts (5 tests) 8ms
+
+ Test Files  3 passed (3)
+      Tests  16 passed (16)
+   Start at  19:38:41
+   Duration  12.42s (transform 4.15s, setup 0ms, collect 6.79s, tests 6.16s, environment 0ms, prepare 130ms)
+

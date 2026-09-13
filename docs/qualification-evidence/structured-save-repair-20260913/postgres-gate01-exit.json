@@ -1,0 +1,18 @@
+{
+  "name": "postgres-gate01",
+  "args": [
+    "bash",
+    "scripts/verify-publication-accounting-postgres.sh"
+  ],
+  "pg_control_store_fixture": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T02:31:50.966254+00:00",
+  "source_head": "d422ca533fffec39b707d2246b14c54422c2b0c9",
+  "source_diff_sha256": "491f1a0d8776d51e8a7e2c546ed95f8d994a1c4e3e98e151861c68f0dce9f3c8",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/test-environments/postgres-gate01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913/postgres-gate01",
+  "source_manifest_sha256": "5b6f450ec3a4c180ce1bb82bf4afe4b8e37964fcb11b6b81dac4cb0f5a5ca227",
+  "pid": 1463134,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T02:34:01.436094+00:00"
+}

@@ -1,0 +1,147 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1447095) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1447102) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/boundary-structured-execution.test.ts (2 tests | 2 failed) 9328ms
+   × structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via start without altering current execution 4805ms
+     → expected [ { revision: { …(7) }, …(1) }, …(4) ] to deeply equal [ { revision: { …(7) }, …(1) }, …(4) ]
+   × structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via onboard without altering current execution 4522ms
+     → expected [ { revision: { …(7) }, …(1) }, …(4) ] to deeply equal [ { revision: { …(7) }, …(1) }, …(4) ]
+{
+  "ok": true,
+  "activation": "disabled_unreviewed",
+  "storage": "control_repository",
+  "deployment_profile": "staging",
+  "boundary_id": "bnd_ad0f5a25e1ec7b95bef9d556ba692bd2",
+  "candidate_digest": "sha256:2cca49a71ef7320c908cb72288957c5b6a388544c85bcc0d483ba4f700c71365",
+  "review_revision": 1,
+  "authoring_binding": {
+    "repository_id": "8fa93b70-f738-474e-8fdf-848ccd905062",
+    "deployment_id": "642b06d3-5656-4cab-bc20-aa5a250ccc64",
+    "project_id": "46e229a4-e528-4a20-8be6-5e41a16664ec",
+    "epoch": 1,
+    "revision_id": "policy:7ec3b580b608d5a4ac05f13e22cebf30afcdf69b1f8eaec147f196978ea72cf6"
+  },
+  "guided_project_created": true,
+  "config_path": "/tmp/synapsor-structured-skeleton-aMFYpX/synapsor.runner.json",
+  "store_path": "/tmp/synapsor-structured-skeleton-aMFYpX/.synapsor/local.db",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "next_action": "synapsor-runner boundary review --project-root '/tmp/synapsor-structured-skeleton-aMFYpX' --access",
+  "next_steps": {
+    "export_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-aMFYpX' --export-draft '/tmp/synapsor-structured-skeleton-aMFYpX/boundary-authoring.json' --json",
+    "validate_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-aMFYpX' --draft '/tmp/synapsor-structured-skeleton-aMFYpX/boundary-authoring.json' --dry-run --json",
+    "submit_disabled_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-aMFYpX' --draft '/tmp/synapsor-structured-skeleton-aMFYpX/boundary-authoring.json' --json",
+    "review": "synapsor-runner boundary review --project-root '/tmp/synapsor-structured-skeleton-aMFYpX' --access",
+    "review_actions": "synapsor-runner action review --project-root '/tmp/synapsor-structured-skeleton-aMFYpX'"
+  }
+}
+{"ok":true,"state":"exported","path":"skeleton.json","source_database_changed":false}
+ ✓ apps/runner/src/boundary-structured-authoring.integration.test.ts (3 tests) 13201ms
+   ✓ public structured Boundary authoring integration > prepares private coded fields and two joint-limited actions through the real disabled-authority path  5197ms
+   ✓ public structured Boundary authoring integration > authors a private 16-credit approval condition without making credits a proposed patch or caller argument  4035ms
+   ✓ public structured Boundary authoring integration > exports incomplete saved intents as view-only skeletons without turning catalog candidates into actions  3969ms
+(node:1448014) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.resume"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.cancel","billing.pause","billing.resume"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-eVXLZ5' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-eVXLZ5'"},"source_database_changed":false}
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-1T2Hcc' --access"},"source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-ssdFwg' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-ssdFwg'"},"source_database_changed":false}
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.unrelated"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-k2t162' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-k2t162'"},"source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.unrelated"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-hjtQu1' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-hjtQu1'"},"source_database_changed":false}
+{
+  "ok": false,
+  "code": "STRUCTURED_DRAFT_INPUT_UNAVAILABLE",
+  "message": "ENOENT: no such file or directory, open '/tmp/synapsor-structured-authoring-3ARlTp/missing.json'",
+  "next_action": "Correct the reported draft field and resubmit the same saved review bundle.",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "disabled_authority_changed": false
+}
+ ✓ apps/runner/src/boundary-structured-authoring.test.ts (14 tests) 125ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/boundary-structured-execution.test.ts > structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via start without altering current execution
+ FAIL  apps/runner/src/boundary-structured-execution.test.ts > structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via onboard without altering current execution
+AssertionError: expected [ { revision: { …(7) }, …(1) }, …(4) ] to deeply equal [ { revision: { …(7) }, …(1) }, …(4) ]
+
+- Expected
++ Received
+
+@@ -2634,21 +2634,21 @@
+                    },
+                  },
+                },
+                "schema_version": "synapsor.auto-boundary-overrides.v1",
+              },
+-             "revision": 2,
++             "revision": 3,
+              "schema_version": "synapsor.boundary-review-progress.v3",
+-             "updated_at": "2026-09-13T02:25:00.253Z",
++             "updated_at": "2026-09-13T02:25:00.663Z",
+            },
+          },
+        ],
+        "selected_boundary_id": "bnd_6964afe50f9e7affe9daf850ba202678",
+        "type": "read_authoring",
+      },
+      "revision": {
+-       "authority_digest": "sha256:95984dd34dbedd4606d8514a627fdef61eb14a2b7d746a2a83d5cfa9aede9a5d",
++       "authority_digest": "sha256:8d0d15af009a0f7769590300b6345a9a16c69d4b2739b20959e7352eb20dd70b",
+        "content": {
+          "entries": [
+            {
+              "candidate_lock": {
+                "authority_dependencies": {
+@@ -3933,24 +3933,24 @@
+                      },
+                    },
+                  },
+                  "schema_version": "synapsor.auto-boundary-overrides.v1",
+                },
+-               "revision": 2,
++               "revision": 3,
+                "schema_version": "synapsor.boundary-review-progress.v3",
+-               "updated_at": "2026-09-13T02:25:00.253Z",
++               "updated_at": "2026-09-13T02:25:00.663Z",
+              },
+            },
+          ],
+          "schema_version": "synapsor.stored-operator-authority/v1",
+          "selected_boundary_id": "bnd_6964afe50f9e7affe9daf850ba202678",
+          "type": "read_authoring",
+        },
+-       "content_digest": "sha256:c9bf5735a45f6027cc39107869499c20a2814a0f3bfee9302098e09fd336bceb",
++       "content_digest": "sha256:68d52d49d7348878caf89b91bb3f327ef58745fbc74094c392adda6761fe06ce",
+        "kind": "management",
+        "name": "read_authoring",
+-       "revision_id": "policy:c9bf5735a45f6027cc39107869499c20a2814a0f3bfee9302098e09fd336bceb",
++       "revision_id": "policy:68d52d49d7348878caf89b91bb3f327ef58745fbc74094c392adda6761fe06ce",
+        "scope": {
+          "level": "operator",
+        },
+      },
+    },
+
+ ❯ apps/runner/src/boundary-structured-execution.test.ts:100:26
+     98|     expect(save, JSON.stringify(save)).toMatchObject({ code: 0, result…
+     99|     const after = await f.state();
+    100|     expect(after.active).toEqual(before.active);
+       |                          ^
+    101|     expect(await fs.readFile(f.configPath, "utf8")).toBe(configBefore);
+    102|     const candidate = after.drafts.find(entry => entry.policy.type ===…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  2 failed | 17 passed (19)
+   Start at  19:24:49
+   Duration  20.59s (transform 4.18s, setup 0ms, collect 12.96s, tests 22.65s, environment 0ms, prepare 138ms)
+

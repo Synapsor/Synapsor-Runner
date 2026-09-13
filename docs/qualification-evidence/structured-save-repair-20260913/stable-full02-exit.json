@@ -1,0 +1,26 @@
+{
+  "name": "stable-full02",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--maxWorkers=4",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913/stable-full02.json"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T03:15:52.030730+00:00",
+  "source_head": "318f1fb170c300fc533f0dea9ab873f3eef9a5cd",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/test-environments/stable-full02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913/stable-full02",
+  "source_manifest_sha256": "5451dec858986434be4735faf8def7f175229ec4afa3b7560354d3c9441026f8",
+  "pid": 1566613,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T03:35:51.057851+00:00"
+}

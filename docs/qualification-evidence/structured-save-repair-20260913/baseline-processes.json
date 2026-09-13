@@ -1,0 +1,392 @@
+{
+  "at": "2026-09-13T02:44:13.699878+00:00",
+  "previous_full_exit": 1,
+  "previous_container": {
+    "name": "synapsor-publication-273d01cd",
+    "id": "d5174ea779e203597ae117177cc04b1ea7f3002eac4c362b867955abaf6c4543",
+    "running": false
+  },
+  "prior_recorded_pids": [
+    {
+      "pid": 1331142,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1333884,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1298328,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1340542,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1201047,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1349695,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1294936,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1330590,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1176746,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1364731,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1188516,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1221608,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1132387,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1337953,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1351211,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1129007,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1163642,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1342662,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1212769,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1153927,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1130355,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1190203,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1110759,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1164621,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1364156,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1328999,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1298446,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1335858,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1338930,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1217198,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1364737,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1121761,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1232010,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1157590,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1336851,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1186324,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1356499,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1295780,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1353773,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1134680,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1364730,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1364749,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1291437,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1294807,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1125525,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1328121,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1190205,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1335885,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1336214,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1342898,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1343121,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1343222,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1343384,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1343572,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1331168,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1333990,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1334340,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1339137,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1339390,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1339827,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1340725,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1336881,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1337229,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1356585,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1356811,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1356987,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1338030,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1338328,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1351257,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1351538,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1354049,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1354251,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1354418,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1354521,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1354764,
+      "exists": false,
+      "name": null
+    },
+    {
+      "pid": 1355045,
+      "exists": false,
+      "name": null
+    }
+  ],
+  "current_container": "synapsor-structured-save-7ed59302"
+}

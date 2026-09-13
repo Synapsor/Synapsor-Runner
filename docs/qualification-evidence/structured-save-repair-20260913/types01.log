@@ -1,0 +1,2 @@
+apps/runner/src/boundary-structured-execution.test.ts(192,85): error TS2345: Argument of type '{ projectRoot: string; actor: string; }' is not assignable to parameter of type 'string'.
+apps/runner/src/boundary-structured-execution.test.ts(211,66): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.

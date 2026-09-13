@@ -1,0 +1,24 @@
+{
+  "name": "publication-recovery01",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/control-policy-publication-recovery.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T02:47:13.739646+00:00",
+  "source_head": "d422ca533fffec39b707d2246b14c54422c2b0c9",
+  "source_diff_sha256": "491f1a0d8776d51e8a7e2c546ed95f8d994a1c4e3e98e151861c68f0dce9f3c8",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/test-environments/publication-recovery01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913/publication-recovery01",
+  "source_manifest_sha256": "bfc95198c34e1cbdb0ef949a2cacce64911c416a850e9b9fc1727f0fd00ba43f",
+  "pid": 1499131,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T02:48:50.856189+00:00"
+}

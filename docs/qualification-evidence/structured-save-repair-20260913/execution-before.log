@@ -1,0 +1,47 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1442280) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/boundary-structured-execution.test.ts (2 tests | 2 failed) 6295ms
+   × structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via start without altering current execution 3652ms
+     → ENOENT: no such file or directory, open '/tmp/synapsor-structured-execution-ltyUc2/synapsor/generated/exploration-boundary.draft.json'
+   × structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via onboard without altering current execution 2642ms
+     → ENOENT: no such file or directory, open '/tmp/synapsor-structured-execution-GqlP25/synapsor/generated/exploration-boundary.draft.json'
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/boundary-structured-execution.test.ts > structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via start without altering current execution
+Error: ENOENT: no such file or directory, open '/tmp/synapsor-structured-execution-ltyUc2/synapsor/generated/exploration-boundary.draft.json'
+ ❯ activateExplorationBoundary apps/runner/src/auto-boundary.ts:2537:19
+    2535|   const lockPath = path.join(projectRoot, ".synapsor/generation-lock.j…
+    2536|   const draft = input.reviewDraft
+    2537|     ?? JSON.parse(await fs.readFile(draftPath, "utf8")) as Exploration…
+       |                   ^
+    2538|   const lock = input.generationLock
+    2539|     ?? JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLo…
+ ❯ fixture apps/runner/src/boundary-structured-execution.test.ts:47:3
+ ❯ apps/runner/src/boundary-structured-execution.test.ts:82:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  apps/runner/src/boundary-structured-execution.test.ts > structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via onboard without altering current execution
+Error: ENOENT: no such file or directory, open '/tmp/synapsor-structured-execution-GqlP25/synapsor/generated/exploration-boundary.draft.json'
+ ❯ activateExplorationBoundary apps/runner/src/auto-boundary.ts:2537:19
+    2535|   const lockPath = path.join(projectRoot, ".synapsor/generation-lock.j…
+    2536|   const draft = input.reviewDraft
+    2537|     ?? JSON.parse(await fs.readFile(draftPath, "utf8")) as Exploration…
+       |                   ^
+    2538|   const lock = input.generationLock
+    2539|     ?? JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLo…
+ ❯ fixture apps/runner/src/boundary-structured-execution.test.ts:47:3
+ ❯ apps/runner/src/boundary-structured-execution.test.ts:82:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  19:22:48
+   Duration  12.09s (transform 3.69s, setup 0ms, collect 5.60s, tests 6.30s, environment 0ms, prepare 40ms)
+

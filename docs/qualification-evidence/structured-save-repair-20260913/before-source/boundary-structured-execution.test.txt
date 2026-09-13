@@ -1,0 +1,120 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveRuntimeConfig, type RuntimeConfig } from "@synapsor-runner/mcp-server";
+import { onboard, start } from "./guided-start.js";
+import { loadBoundaryReviewContext } from "./boundary-commands.js";
+import { activateExplorationBoundary } from "./auto-boundary.js";
+import { activateActionRuleAuthority, readActionRuleAuthorityDraft } from "./action-rule-authority.js";
+import { semanticActionRuntimeConfig, semanticSupervisedExecutionConfig } from "./semantic-action-deployment.js";
+import { openBoundProjectControlPolicies } from "./control-policy-store.js";
+import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
+import { parseOperatorExecutionPolicy, encodeOperatorExecutionPolicy } from "./control-policy-execution.js";
+import { OPERATOR_EXECUTION_POLICY_KEY } from "./control-policy-record.js";
+import { structuredTestAction as action, structuredTestInspection as inspection } from "./structured-authoring-test-fixture.js";
+
+const roots: string[] = [];
+afterEach(async () => {
+  vi.restoreAllMocks(); vi.unstubAllEnvs();
+  for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+});
+
+async function fixture() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-structured-execution-")); roots.push(root);
+  vi.stubEnv("TEST_READ_URL", "postgresql://fixture.invalid/not-used");
+  for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "SYNAPSOR_DATABASE_WRITE_URL", "SYNAPSOR_RUNNER_CONFIG", "SYNAPSOR_MCP_CONFIG"]) vi.stubEnv(key, undefined);
+  const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+  const run = async (args: string[], spelling: "start" | "onboard" = "onboard", inspect = async () => inspection()) => {
+    output.mockClear();
+    const supplied = ["--project-root", root, ...args, "--json"];
+    const code = await (spelling === "start" ? start(supplied, { interactive: false, schemaInspector: inspect })
+      : onboard(["db", ...supplied], { interactive: false, schemaInspector: inspect }));
+    const text = output.mock.calls.map(([chunk]) => String(chunk)).join("");
+    return { code, result: JSON.parse(text) };
+  };
+  expect((await run(["--from-env", "TEST_READ_URL", "--schema", "warehouse"])).code).toBe(0);
+  expect((await run(["--export-draft", "initial.json"])).code).toBe(0);
+  const initial = JSON.parse(await fs.readFile(path.join(root, "initial.json"), "utf8"));
+  initial.read.resources = [{ resource_id: "warehouse.items", include: true, principal_key: "principal_id", row_identity: "item_id", tenant_key: "tenant_id",
+    selectable_fields: ["sku", "q_av", "reorder_point", "available", "item_id", "version"],
+    withhold_from_model_fields: ["item_id", "version", "available"], private_model_fields: ["item_id", "version", "available"], keep_out_fields: ["internal_note"] }];
+  initial.actions = [action("quantity", "q_av", 50, 20), action("reorder", "reorder_point", 30, 10)];
+  await fs.writeFile(path.join(root, "initial.json"), JSON.stringify(initial));
+  expect((await run(["--draft", "initial.json"])).code).toBe(0);
+  const context = await loadBoundaryReviewContext(root);
+  await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate, expectedDigest: context.bundle.candidate_digest,
+    reviewDraft: context.candidate, generationLock: context.lock, expectedAuthoring: context.bundle.mutation_bindings.authoring,
+    actor: "fixture_operator", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
+    confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection() });
+  const draft = (await readActionRuleAuthorityDraft(root, `${context.candidate.pack.name}_rules`))!;
+  const active = await activateActionRuleAuthority({ projectRoot: root, name: draft.authority.name, expected_digest: draft.digest,
+    actor: "fixture_operator", confirmation: `ACTIVATE ${draft.digest}` });
+  const primaryPath = path.join(root, "synapsor.runner.json"), configPath = path.join(root, "synapsor.actions.runner.json");
+  const primary = JSON.parse(await fs.readFile(primaryPath, "utf8"));
+  const raw = semanticSupervisedExecutionConfig({ sourceConfig: semanticActionRuntimeConfig({ projectRoot: root, sourceConfigPath: primaryPath,
+    outputConfigPath: configPath, sourceConfig: primary, draft, preserveActionRuntime: false }), activation: active,
+    outcome: "warehouse.quantity", profile: "staging", writeUrlEnv: "TEST_WRITE_URL", writerPostureFingerprint: `sha256:${"a".repeat(64)}` });
+  const config = resolveRuntimeConfig(raw as RuntimeConfig, root);
+  await fs.writeFile(configPath, JSON.stringify(raw), { mode: 0o600 });
+  const binding = (await openBoundProjectControlPolicies(root))!;
+  try {
+    const repository = new OperatorAuthorityRepository(binding, config), execution = encodeOperatorExecutionPolicy(config)!;
+    // Test setup uses the actual stored-execution parser and exact current Action.
+    // Installed qualification separately exercises the public operator review.
+    await repository.commit({ expected_epoch: (await repository.current()).epoch, actor: "fixture_operator", operation: "fixture_reviewed_execution",
+      active: [{ key: OPERATOR_EXECUTION_POLICY_KEY, policy: parseOperatorExecutionPolicy(execution.content, config) }] });
+  } finally { await binding.close(); }
+  const state = async () => {
+    const bound = (await openBoundProjectControlPolicies(root))!;
+    try { return await new OperatorAuthorityRepository(bound, config).current(); } finally { await bound.close(); }
+  };
+  const ledger = () => {
+    const db = new DatabaseSync(path.join(root, ".synapsor/local.db"), { readOnly: true });
+    try { return Object.fromEntries((db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[])
+      .map(({ name }) => [name, db.prepare(`SELECT * FROM "${name}"`).all()])); } finally { db.close(); }
+  };
+  return { root, run, state, ledger, config, configPath, primaryPath, active };
+}
+
+describe("structured draft save with genuine stored execution", () => {
+  it.each(["start", "onboard"] as const)("saves the exact disabled 3-to-1 candidate via %s without altering current execution", async spelling => {
+    const f = await fixture();
+    const before = await f.state(), configBefore = await fs.readFile(f.configPath, "utf8"), ledgerBefore = f.ledger();
+    expect(before.active.some(entry => entry.policy.type === "execution")).toBe(true);
+    expect((await f.run(["--export-draft", "edit.json"], spelling)).code).toBe(0);
+    const input = JSON.parse(await fs.readFile(path.join(f.root, "edit.json"), "utf8"));
+    const original = structuredClone(input);
+    for (const entry of input.actions) {
+      const limit = entry.approval.shared_limits.find((limit: { id: string }) => limit.id === "joint_company");
+      expect(limit).toMatchObject({ maximum: 3, scope: "tenant", window_seconds: 86400 }); limit.maximum = 1;
+    }
+    await fs.writeFile(path.join(f.root, "edit.json"), JSON.stringify(input));
+    const preview = await f.run(["--draft", "edit.json", "--dry-run"], spelling);
+    expect(preview).toMatchObject({ code: 0, result: { state: "validated_disabled_preview" } });
+    expect(await f.state()).toEqual(before);
+    const save = await f.run(["--draft", "edit.json"], spelling);
+    expect(save, JSON.stringify(save)).toMatchObject({ code: 0, result: { state: "saved_disabled" } });
+    const after = await f.state();
+    expect(after.active).toEqual(before.active);
+    expect(await fs.readFile(f.configPath, "utf8")).toBe(configBefore);
+    const candidate = after.drafts.find(entry => entry.policy.type === "action")!.policy;
+    expect(candidate.type).toBe("action");
+    if (candidate.type !== "action") throw new Error("Missing disabled Action");
+    expect(candidate.authority.state).toBe("disabled");
+    expect(candidate.authority.authority.catalog).toEqual(f.active.authority.catalog);
+    expect(candidate.authority.authority.approval_classes[0]!.shared_limits.find(limit => limit.id === "joint_company")!.maximum).toBe(1);
+    const withoutTimes = (rules: typeof f.active.authority.rules) => rules.map(({ activated_at: _time, ...rule }) => rule);
+    expect(withoutTimes(candidate.authority.authority.rules)).toEqual(withoutTimes(f.active.authority.rules));
+    const approvalBefore = structuredClone(f.active.authority.approval_classes);
+    approvalBefore[0]!.shared_limits.find(limit => limit.id === "joint_company")!.maximum = 1;
+    expect(candidate.authority.authority.approval_classes).toEqual(approvalBefore);
+    const afterLedger = f.ledger();
+    for (const [table, rows] of Object.entries(ledgerBefore)) if (!table.startsWith("control_policy_")) expect(afterLedger[table], table).toEqual(rows);
+    expect((await f.run(["--export-draft", "saved.json"], spelling)).code).toBe(0);
+    const saved = JSON.parse(await fs.readFile(path.join(f.root, "saved.json"), "utf8"));
+    expect(saved.actions).toEqual(input.actions);
+    expect(saved.read).toEqual(original.read);
+  });
+});

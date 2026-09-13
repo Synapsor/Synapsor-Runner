@@ -1,0 +1,34 @@
+{
+  "name": "synapsor-structured-save-7ed59302",
+  "owned": "/tmp/synapsor-structured-save-pg-UdRKKK",
+  "socket": "/tmp/synapsor-structured-save-pg-UdRKKK/socket",
+  "created_at": "2026-09-13T02:16:43.244Z",
+  "network": "none",
+  "auto_remove": false,
+  "fixture_database": "synapsor_structured_save",
+  "authentication": "New isolated synthetic fixture, trusted Unix socket inside private task-owned parent; no pre-existing credentials.",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "id": "2124e8ac01cb70cd9f8b33ccd20096ed8d5573588fe82a0097280020f02b6c3e",
+  "query": {
+    "database": "synapsor_structured_save",
+    "role": "postgres",
+    "version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit"
+  },
+  "ready_at": "2026-09-13T02:16:45.291Z",
+  "required_schema_table_transaction_lock_permissions": true,
+  "connectionString": "postgresql:///synapsor_structured_save?host=%2Ftmp%2Fsynapsor-structured-save-pg-UdRKKK%2Fsocket&user=postgres",
+  "readiness_attempts": [
+    {
+      "at": "2026-09-13T02:16:43.562Z",
+      "message": "Waiting for final server after initialization"
+    },
+    {
+      "at": "2026-09-13T02:16:44.161Z",
+      "message": "Waiting for final server after initialization"
+    },
+    {
+      "at": "2026-09-13T02:16:44.727Z",
+      "message": "Waiting for final server after initialization"
+    }
+  ]
+}

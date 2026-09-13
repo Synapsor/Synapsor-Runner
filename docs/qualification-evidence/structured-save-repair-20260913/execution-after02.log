@@ -1,0 +1,66 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1452364) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/boundary-structured-execution.test.ts (16 tests | 2 failed) 55114ms
+   ✓ structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via start without altering current execution  4265ms
+   ✓ structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via onboard without altering current execution  3337ms
+   ✓ structured draft save with genuine stored execution > refuses missing_all execution context before export, preview and save without touching stored records  2769ms
+   ✓ structured draft save with genuine stored execution > refuses missing_companion execution context before export, preview and save without touching stored records  4290ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_project execution context before export, preview and save without touching stored records  3021ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_source execution context before export, preview and save without touching stored records  2843ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_store execution context before export, preview and save without touching stored records  4287ms
+   ✓ structured draft save with genuine stored execution > refuses ambiguous execution context before export, preview and save without touching stored records  2977ms
+   ✓ structured draft save with genuine stored execution > refuses stale execution context before export, preview and save without touching stored records  2785ms
+   × structured draft save with genuine stored execution > does not require runtime configuration or writer credentials when no execution record exists 3852ms
+     → expected 2 to be +0 // Object.is equality
+   ✓ structured draft save with genuine stored execution > rejects a competing draft change after preview and preserves the winner  3273ms
+   × structured draft save with genuine stored execution > rejects a competing current change after preview and preserves the winner 2828ms
+     → The "path" argument must be of type string or an instance of Buffer or URL. Received an instance of Object
+   ✓ structured draft save with genuine stored execution > rejects a competing context change after preview and preserves the winner  3650ms
+   ✓ structured draft save with genuine stored execution > rejects a competing context_during_preparation change after preview and preserves the winner  3354ms
+   ✓ structured draft save with genuine stored execution > preserves atomic state and supports exact reopen after before_commit  2953ms
+   ✓ structured draft save with genuine stored execution > preserves atomic state and supports exact reopen after lost_acknowledgement  4628ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/boundary-structured-execution.test.ts > structured draft save with genuine stored execution > does not require runtime configuration or writer credentials when no execution record exists
+AssertionError: expected 2 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 2
+
+ ❯ apps/runner/src/boundary-structured-execution.test.ts:167:66
+    165|     await fs.rename(f.configPath, f.configPath + ".unavailable");
+    166|     await fs.rename(f.primaryPath, f.primaryPath + ".unavailable");
+    167|     expect((await f.run(["--export-draft", "draft.json"])).code).toBe(…
+       |                                                                  ^
+    168|     expect((await f.run(["--draft", "draft.json", "--dry-run"])).code)…
+    169|     const before = await f.state();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  apps/runner/src/boundary-structured-execution.test.ts > structured draft save with genuine stored execution > rejects a competing current change after preview and preserves the winner
+TypeError: The "path" argument must be of type string or an instance of Buffer or URL. Received an instance of Object
+ ❯ withProjectAuthorityMutation apps/runner/src/project-authority-mutation.ts:21:25
+     19|   options: { permit?: ProjectAuthorityMutationPermit; waitMs?: number;…
+     20| ): Promise<T> {
+     21|   const root = await fs.realpath(projectRoot);
+       |                         ^
+     22|   const waitMs = options.waitMs ?? 5_000;
+     23|   if (!Number.isSafeInteger(waitMs) || waitMs < 0 || waitMs > 60_000) …
+ ❯ Module.deactivateActionRuleAuthority apps/runner/src/action-rule-authority.ts:677:10
+ ❯ apps/runner/src/boundary-structured-execution.test.ts:192:55
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 14 passed (16)
+   Start at  19:27:11
+   Duration  61.19s (transform 3.83s, setup 0ms, collect 5.88s, tests 55.11s, environment 0ms, prepare 40ms)
+

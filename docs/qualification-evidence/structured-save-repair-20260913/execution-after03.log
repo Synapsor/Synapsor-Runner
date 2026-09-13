@@ -1,0 +1,28 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1455798) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/boundary-structured-execution.test.ts (16 tests) 54631ms
+   ✓ structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via start without altering current execution  3821ms
+   ✓ structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via onboard without altering current execution  2968ms
+   ✓ structured draft save with genuine stored execution > refuses missing_all execution context before export, preview and save without touching stored records  4567ms
+   ✓ structured draft save with genuine stored execution > refuses missing_companion execution context before export, preview and save without touching stored records  2804ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_project execution context before export, preview and save without touching stored records  2780ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_source execution context before export, preview and save without touching stored records  4372ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_store execution context before export, preview and save without touching stored records  3111ms
+   ✓ structured draft save with genuine stored execution > refuses ambiguous execution context before export, preview and save without touching stored records  2870ms
+   ✓ structured draft save with genuine stored execution > refuses stale execution context before export, preview and save without touching stored records  4169ms
+   ✓ structured draft save with genuine stored execution > does not require runtime configuration or writer credentials when no execution record exists  2831ms
+   ✓ structured draft save with genuine stored execution > rejects a competing draft change after preview and preserves the winner  2894ms
+   ✓ structured draft save with genuine stored execution > rejects a competing current change after preview and preserves the winner  4074ms
+   ✓ structured draft save with genuine stored execution > rejects a competing context change after preview and preserves the winner  2797ms
+   ✓ structured draft save with genuine stored execution > rejects a competing context_during_preparation change after preview and preserves the winner  2957ms
+   ✓ structured draft save with genuine stored execution > preserves atomic state and supports exact reopen after before_commit  4486ms
+   ✓ structured draft save with genuine stored execution > preserves atomic state and supports exact reopen after lost_acknowledgement  3127ms
+
+ Test Files  1 passed (1)
+      Tests  16 passed (16)
+   Start at  19:28:32
+   Duration  60.41s (transform 3.64s, setup 0ms, collect 5.55s, tests 54.63s, environment 0ms, prepare 40ms)
+

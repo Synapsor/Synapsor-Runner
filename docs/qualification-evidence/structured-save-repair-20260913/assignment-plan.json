@@ -1,0 +1,45 @@
+{
+  "assignment": "Repair structured disabled draft save with existing execution context; installed documented edit and both publication orders; retain prior history",
+  "started_at": "2026-09-13T02:15:49.512625+00:00",
+  "overall_deadline": "2026-09-13T08:15:49.512625+00:00",
+  "baseline": "d422ca533fffec39b707d2246b14c54422c2b0c9",
+  "branch": "codex/tui-safe-action-control-plane",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912",
+  "budgets": {
+    "implementation_minutes": 120,
+    "focused_runs": 24,
+    "fixture_minutes": 60,
+    "combined_runs": 2,
+    "stable_full_runs": 2,
+    "stable_full_timeout_minutes": 60,
+    "postgres_gate_runs": 2,
+    "offline_attempts": 2,
+    "freeze_attempts": 2,
+    "installed_minutes": 90,
+    "installed_operations": 400,
+    "worker_invocations": 20,
+    "schedules_per_case": 2,
+    "final_verification_minutes": 180
+  },
+  "stage_a": "NOT PASSED",
+  "stage_b": "NOT STARTED",
+  "verified_ancestors": [
+    "a2b6b5f",
+    "b16f92a",
+    "03e3f44",
+    "f9d2839",
+    "d422ca5"
+  ],
+  "budget_amendments": [
+    {
+      "at": "2026-09-13T03:13:54.495119+00:00",
+      "reason": "The sole first full run exposed two genuine named-path regressions in new preflight ordering. Authorized bounded repair iteration needs one final current-source integrated result. Preserve first full failure; no reset of elapsed/count budgets.",
+      "stable_full_runs_before": 1,
+      "stable_full_runs_after": 2,
+      "maximum_additional_full_runs": 1,
+      "overall_and_final_verification_time_budgets": "unchanged"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1444634) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/boundary-structured-execution.test.ts (2 tests | 2 failed) 7447ms
+   × structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via start without altering current execution 3164ms
+     → {"code":2,"result":{"ok":false,"code":"POLICY_EXECUTION_CONTEXT_REQUIRED","message":"POLICY_EXECUTION_CONTEXT_REQUIRED: reviewed execution policy is unavailable; no execution is authorized.","source_database_changed":false,"active_authority_changed":false,"disabled_authority_changed":false}}: expected { Object (code, result) } to match object { code: +0, …(1) }
+(6 matching properties omitted from actual)
+   × structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via onboard without altering current execution 4282ms
+     → {"code":2,"result":{"ok":false,"code":"POLICY_EXECUTION_CONTEXT_REQUIRED","message":"POLICY_EXECUTION_CONTEXT_REQUIRED: reviewed execution policy is unavailable; no execution is authorized.","source_database_changed":false,"active_authority_changed":false,"disabled_authority_changed":false}}: expected { Object (code, result) } to match object { code: +0, …(1) }
+(6 matching properties omitted from actual)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/boundary-structured-execution.test.ts > structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via start without altering current execution
+ FAIL  apps/runner/src/boundary-structured-execution.test.ts > structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via onboard without altering current execution
+AssertionError: {"code":2,"result":{"ok":false,"code":"POLICY_EXECUTION_CONTEXT_REQUIRED","message":"POLICY_EXECUTION_CONTEXT_REQUIRED: reviewed execution policy is unavailable; no execution is authorized.","source_database_changed":false,"active_authority_changed":false,"disabled_authority_changed":false}}: expected { Object (code, result) } to match object { code: +0, …(1) }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "code": 0,
++   "code": 2,
+    "result": {
+-     "state": "saved_disabled",
++     "active_authority_changed": false,
++     "code": "POLICY_EXECUTION_CONTEXT_REQUIRED",
++     "disabled_authority_changed": false,
++     "message": "POLICY_EXECUTION_CONTEXT_REQUIRED: reviewed execution policy is unavailable; no execution is authorized.",
++     "ok": false,
++     "source_database_changed": false,
+    },
+  }
+
+ ❯ apps/runner/src/boundary-structured-execution.test.ts:98:40
+     96|     expect(await f.state()).toEqual(before);
+     97|     const save = await f.run(["--draft", "edit.json"], spelling);
+     98|     expect(save, JSON.stringify(save)).toMatchObject({ code: 0, result…
+       |                                        ^
+     99|     const after = await f.state();
+    100|     expect(after.active).toEqual(before.active);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  19:23:44
+   Duration  13.32s (transform 3.74s, setup 0ms, collect 5.67s, tests 7.45s, environment 0ms, prepare 43ms)
+

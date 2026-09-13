@@ -1,0 +1,43 @@
+{
+  "at": "2026-09-13T03:41:48.045912+00:00",
+  "phase": "Offline passed; coherent evidence commit and immutable freeze",
+  "next": "Freeze new complete tested installation, record manifest and entrypoint identities; prepare four fresh original40-row runtime copies and check reviewed identities before installed schedules.",
+  "completed": {
+    "before_onboard": "preview exit0/save exit2 POLICY_EXECUTION_CONTEXT_REQUIRED; all persisted state unchanged",
+    "before_start": "same; separate owned copy",
+    "preservation": "91404 entries",
+    "execution_after03": "16 passed exit0",
+    "types02": "exit0",
+    "postgres_gate01": "41 passed exit0",
+    "lifecycle01": "16 passed exit0",
+    "combined01": "481 passed/223 skipped, 18 files, exit0",
+    "publication_recovery01": "23 passed exit0",
+    "stable_full": "6132 passed/2 failed/461 skipped, 295 files passed/1 failed/21 skipped; actual child exit1",
+    "cli_invalid_after": "2 passed/157 filter-skipped exit0",
+    "execution_after04": "33 passed exit0",
+    "types04": "full referenced build exit0",
+    "stable_full02": "6134 passed/461 skipped;296 files passed/21 skipped; actual exit0",
+    "offline": "all10 checks exit0, first attempt",
+    "preservation_pre_install": "91404 entries unchanged"
+  },
+  "budgets_used": {
+    "focused_runs": 9,
+    "combined_runs": 1,
+    "postgres_gates": 1,
+    "stable_full_runs": 2,
+    "offline": 1,
+    "freeze": 1,
+    "types_runs": 4
+  },
+  "stage_a": "NOT PASSED",
+  "stage_b": "NOT STARTED",
+  "running": {},
+  "prepared_not_executed": [
+    "new artifact",
+    "installed A1/insurer-A2",
+    "same-client edit",
+    "installed replacement/admission orderings"
+  ],
+  "product_commit": "318f1fb170c300fc533f0dea9ab873f3eef9a5cd",
+  "new_named_failure": "docs/qualification-evidence/structured-save-repair-20260913/full-suite-save-preflight-finding.md"
+}
