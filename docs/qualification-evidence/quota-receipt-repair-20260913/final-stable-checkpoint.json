@@ -1,0 +1,26 @@
+{
+  "recorded_at": "2026-09-13T20:20:21.351683+00:00",
+  "source_manifest_sha256": "678492f45d206f42ced972bf17551a9130b89c81f46a6fba8d70d084149ef889",
+  "full_suite": {
+    "exit": 0,
+    "passed": 6203,
+    "skipped": 461,
+    "evidence": "stable-full02-exit.json"
+  },
+  "types": {
+    "exit": 0,
+    "evidence": "final-types-exit.json"
+  },
+  "postgres_accounting_publication_receipt": {
+    "exit": 0,
+    "passed": 42,
+    "evidence": "final-postgres-exit.json"
+  },
+  "offline_gates": {
+    "all_exits": 0,
+    "count": 10,
+    "evidence": "offline-package-plan.json"
+  },
+  "remaining_separate_failure": "remaining-postgres-review-env.md; four existing explicit-environment recovery UI assertions FAILED, not repaired or waived",
+  "next_step": "Freeze new complete merged artifact, then two tournament recoveries and fresh known-case tournament/software execution and edits. No case authoring calls spent yet."
+}

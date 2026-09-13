@@ -10,7 +10,7 @@ const sql=await fs.readFile(path.join(R,'project',relative),'utf8'),hash=v=>crea
 const roles=[...sql.matchAll(/CREATE ROLE "(runner_writer_[a-f0-9]+)" NOLOGIN/g)].map(m=>m[1]);assert.equal(roles.length,1);
 assert(!/CREATE POLICY|ALTER POLICY|\bUPDATE\s+"?(?:tournament_ops|release_ops)/i.test(sql),'No policy or business fact repair in receipt/writer provisioning');
 const psql=input=>execFileSync('docker',['exec','-i',c.container,'psql','-X','-U','postgres','-d',c.database,'-v','ON_ERROR_STOP=1','-A','-t'],{input,encoding:'utf8',stdio:['pipe','pipe','pipe']});
-const parts=fixture.table_order.map(t=>`SELECT '${t}' n,json_agg(t ORDER BY 1) v FROM ${fixture.schema}.${t} t`);
+const parts=fixture.table_order.map(t=>`SELECT '${t}' n,json_agg(t ORDER BY t) v FROM ${fixture.schema}.${t} t`);
 const query=`SELECT json_build_object('database',current_database(),'rows',(SELECT json_object_agg(n,v) FROM (${parts.join(' UNION ALL ')}) s),'policies',(SELECT json_agg(p ORDER BY tablename,policyname) FROM pg_policies p WHERE schemaname='${fixture.schema}'))::text;`;
 const before=psql(query);await fs.writeFile(path.join(R,'private/provision-before.json'),before,{flag:'wx'});
 await fs.writeFile(path.join(R,'logs/administrator-grants.log'),psql(sql),{flag:'wx'});

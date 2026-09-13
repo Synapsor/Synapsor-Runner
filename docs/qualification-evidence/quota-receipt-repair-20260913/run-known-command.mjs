@@ -6,7 +6,7 @@ process.umask(0o077);
 const E=path.dirname(fileURLToPath(import.meta.url)),plan=JSON.parse(await fs.readFile(path.join(E,'assignment-plan.json'))),O=plan.owned_root;
 let [runId,...args]=process.argv.slice(2);assert(['fresh-tournament','fresh-software','recovery-tournament-original','recovery-tournament-assisted'].includes(runId));
 const administrator=args[0]==='--administrator';if(administrator)args.shift();
-const supervisor=args[0]==='--supervisor';if(supervisor){args.shift();assert(['approve','reject'].includes(args[0]),'Supervisor role only for explicit operator proposal decisions');}
+const supervisor=args[0]==='--supervisor';if(supervisor){args.shift();assert(args[0]==='proposals'&&['approve','reject'].includes(args[1]),'Supervisor role only for explicit operator proposal decisions');}
 const owned=path.join(O,'runs',runId),state=JSON.parse(await fs.readFile(path.join(owned,'run-state.json'))),F=state.artifact_directory;
 assert(!args.some(arg=>/postgres(?:ql)?:\/\/|sk-|--api-key/.test(arg)));
 execFileSync(process.execPath,[path.join(F,'freeze-repair.mjs'),'--verify'],{stdio:'pipe'});

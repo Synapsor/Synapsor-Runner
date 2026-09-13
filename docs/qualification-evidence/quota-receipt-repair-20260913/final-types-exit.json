@@ -1,0 +1,20 @@
+{
+  "name": "final-types",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T20:11:36.502615+00:00",
+  "source_head": "a9dbfd6c542e180f64abdae19a75d1bd4674c938",
+  "source_diff_sha256": "03b22d8604fb83f1683a2ea88821e6e7a486b48e84efef816d9840373cb21625",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/final-types",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/final-types",
+  "source_manifest_sha256": "678492f45d206f42ced972bf17551a9130b89c81f46a6fba8d70d084149ef889",
+  "pid": 3743082,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T20:11:37.170414+00:00"
+}

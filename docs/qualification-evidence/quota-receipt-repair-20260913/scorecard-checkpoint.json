@@ -1,0 +1,43 @@
+{
+  "at": "2026-09-13T19:54:22.069073+00:00",
+  "status": "IN_PROGRESS",
+  "canonical_branch": "codex/tui-safe-action-control-plane",
+  "merge_commit": "48728e01ab16c59742a45e0020e65801e6884bf5",
+  "product": {
+    "commit": "eda73ae035272335f70507824e9ee0250e9ff97c",
+    "quota_revision": "d7c4e0162eecbb29098dec2b4c7169fb8dd7ff5e",
+    "receipt_revision": "c3c35d19a1b7a60d91aa3b599dd03cb4b8817197",
+    "counter_revision": "811ed6a33a00d113c5c35d5f3a10c4fa9363dc66",
+    "test_revision": "48728e01ab16c59742a45e0020e65801e6884bf5",
+    "canonical_branch": "codex/tui-safe-action-control-plane",
+    "finding9_status": "IMPLEMENTER_OWNED; pending independent acceptance; old artifact qualification not transferred",
+    "merged_revision": "48728e01ab16c59742a45e0020e65801e6884bf5"
+  },
+  "final_installed_tree": null,
+  "historical_stage_a": "ACCEPTED for278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2 only",
+  "original_stage_b": "NOT_PASSED",
+  "finding9": "IMPLEMENTER_OWNED, merged regressions do not transfer old installed qualification",
+  "rows": {
+    "quota_composed": "PASSED deterministic fresh/pending/save/restart; source-final07190pass1skip",
+    "receipt_prepared_public": "PASSED on DEVELOPMENT tree0deb78b36ba762be1d8c05d437abe30c42a67a53b512523da9af8b1605dbf3ad only;0authorcalls,2workers,actual source receipt/rollback/replay",
+    "merged_combined": "PASSED523/1skip before final explicit-env forwarding",
+    "merged_counter_focused": "PASSED33 before final explicit-env forwarding",
+    "merged_pg_accounting_publication_source_atomic": "PASSED42 before final explicit-env forwarding; backend labels kept per test",
+    "merged_pg_receipt_execution_review": "PASSED12 on final product; excludes4 separately FAILED older UI recovery cases",
+    "older_pg_saved_job_review": "FAILED4; stopped separate repair decision; remaining-postgres-review-env.md",
+    "stable_full02": "RUNNING, actual exit pending",
+    "final_types": "NOT_RUN",
+    "final_offline_package_gates": "NOT_RUN",
+    "final_pg_accounting_publication_receipts": "NOT_RUN",
+    "final_frozen_installation": "NOT_CREATED",
+    "tournament_recovery_original": "NOT_RUN",
+    "tournament_recovery_assisted": "NOT_RUN",
+    "tournament_fresh_onboarding": "NOT_RUN",
+    "tournament_execution_receipt_readback": "NOT_RUN",
+    "tournament_ordinary_language_edit": "NOT_RUN",
+    "software_fresh_onboarding": "NOT_RUN",
+    "software_execution_receipt_readback": "NOT_RUN",
+    "software_ordinary_language_edit": "NOT_RUN",
+    "original_add_remove_qualification_rows": "NOT_RUN; not waived or inferred from named edits"
+  }
+}
