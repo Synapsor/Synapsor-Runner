@@ -1,0 +1,29 @@
+{
+  "name": "merged-postgres",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/semantic-atomic-postgres.test.ts",
+    "apps/runner/src/semantic-admission-publication.test.ts",
+    "packages/proposal-store/src/automatic-approval-admission.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T19:36:56.308299+00:00",
+  "source_head": "48728e01ab16c59742a45e0020e65801e6884bf5",
+  "source_diff_sha256": "870d088e47764f371b49665e4b69653e2933229fe9be7d315356ea20c033de5b",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/merged-postgres",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/merged-postgres",
+  "source_manifest_sha256": "5f770311bfeb4f6fb6ea2d9da40c78b690aa750efb76012a0507a547c5800068",
+  "pid": 3659227,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T19:38:25.529110+00:00"
+}

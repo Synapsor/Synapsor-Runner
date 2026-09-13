@@ -11,7 +11,7 @@ import {DatabaseSync} from 'node:sqlite';
 process.umask(0o077);
 const E=path.dirname(fileURLToPath(import.meta.url));
 const plan=JSON.parse(await fs.readFile(path.join(E,'assignment-plan.json'))),O=plan.owned_root;
-const [runId,label]=process.argv.slice(2);
+const [runId,label,expectedReadback]=process.argv.slice(2);
 assert(/^(recovery-tournament-(original|assisted)|recovery-software|prepared-software|fresh-(tournament|software))$/.test(runId));
 assert(/^[a-z0-9-]+$/.test(label));
 assert(!(await fs.stat(path.join(O,'one-public-run.lock')).catch(()=>null)),'Stop the public CLI before taking a whole-directory checkpoint');
@@ -34,7 +34,8 @@ for(const file of await files(P)){
   try{const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();stores[rel]=Object.fromEntries(tables.map(({name})=>[name,db.prepare('SELECT count(*) AS n FROM "'+name.replaceAll('"','""')+'"').get().n]));}finally{db.close();}
  }
 }
-const facts=JSON.parse(await fs.readFile(path.join(R,runId==='prepared-software'?'deterministic/controls-after-source.json':'private/source-facts.json'))),c=JSON.parse(await fs.readFile(path.join(R,'case.json')));
+if(expectedReadback) assert(/^deterministic\/[a-z0-9-]+-source\.json$/.test(expectedReadback),'Select an owned independently verified readback');
+const facts=JSON.parse(await fs.readFile(path.join(R,expectedReadback??(runId==='prepared-software'?'deterministic/controls-after-source.json':'private/source-facts.json')))),c=JSON.parse(await fs.readFile(path.join(R,'case.json')));
 const source=new Client({connectionString:connection.adminUrl,connectionTimeoutMillis:3000});await source.connect();const rows={},counts={};
 try{
  assert.equal((await source.query('SELECT current_database() AS name')).rows[0].name,connection.database);

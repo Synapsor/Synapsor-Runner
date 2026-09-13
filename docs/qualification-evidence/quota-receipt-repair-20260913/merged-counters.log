@@ -1,0 +1,25 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3659318) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3659311) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-rule-version-review.test.ts (23 tests) 72ms
+ ✓ apps/runner/src/structured-counter-review.integration.test.ts (10 tests) 44091ms
+   ✓ public model-free structured counter review > requires explicit ambiguous-field review, previews without saving, and retains the selected counter in a disabled Action  5461ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on pending  5402ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on cancel  4250ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on field_cancel  4508ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on invalid_field  4456ms
+   ✓ public model-free structured counter review > rejects stale inspected metadata before_review  4557ms
+   ✓ public model-free structured counter review > rejects stale inspected metadata during_confirmation  4661ms
+   ✓ public model-free structured counter review > rejects stale inspected metadata before_save  3321ms
+   ✓ public model-free structured counter review > rejects a concurrent saved Action revision after owner confirmation  4202ms
+   ✓ public model-free structured counter review > does not accept a file, --json or --yes as source-owner confirmation  3272ms
+
+ Test Files  2 passed (2)
+      Tests  33 passed (33)
+   Start at  12:36:56
+   Duration  50.70s (transform 4.44s, setup 0ms, collect 8.51s, tests 44.16s, environment 1ms, prepare 109ms)
+

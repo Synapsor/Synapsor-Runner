@@ -1,0 +1,24 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3670653) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/control-policy-authority-codec.test.ts (420 tests | 408 skipped) 10484ms
+   ✓ postgres validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (replacement_warning)  1302ms
+   ✓ postgres validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (sequential)  1828ms
+   ✓ postgres validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (decline)  1178ms
+   ✓ postgres validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (policy_race)  1374ms
+   ✓ postgres validated operator policy transactions > publishes execution only through exact writer review and preserves revocation across stale exports and reviews  781ms
+   ✓ postgres validated operator policy transactions > reviews execution only against the selected outcome's current Read dependency  521ms
+   ✓ postgres validated operator policy transactions > recovers and disables an interrupted execution save with an explicit control-store environment  508ms
+   ✓ postgres validated operator policy transactions > confirms execution publication from its exact transaction receipt: new_failed  581ms
+   ✓ postgres validated operator policy transactions > confirms execution publication from its exact transaction receipt: same_failed  747ms
+   ✓ postgres validated operator policy transactions > confirms execution publication from its exact transaction receipt: lost_response  537ms
+   ✓ postgres validated operator policy transactions > confirms execution publication from its exact transaction receipt: unknown_receipt  568ms
+   ✓ postgres validated operator policy transactions > confirms execution publication from its exact transaction receipt: different_receipt  558ms
+
+ Test Files  1 passed (1)
+      Tests  12 passed | 408 skipped (420)
+   Start at  12:40:47
+   Duration  17.46s (transform 4.45s, setup 0ms, collect 6.75s, tests 10.48s, environment 0ms, prepare 43ms)
+

@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-13T19:41:38.101818+00:00",
+  "source": "48728e01ab16c59742a45e0020e65801e6884bf5",
+  "initial_filter_attempt": {
+    "command_record": "merged-postgres-execution-review-exit.json",
+    "exit": 0,
+    "matched_tests": 0,
+    "verdict": "NOT_RUN; literal display separator in regex matched no tests. Original all420skipped retained."
+  },
+  "actual_attempt": {
+    "command_record": "merged-postgres-execution-review02-exit.json",
+    "exit": 1,
+    "passed": 11,
+    "failed": 5,
+    "skipped": 404
+  },
+  "new_integration_failure": {
+    "test": "recovers and disables an interrupted execution save with an explicit control-store environment",
+    "cause": "New readSavedExecutionRequirements reopened Read authoring without carrying explicit env; current receipt setup path must forward same env.",
+    "repair": "Optional env on existing readProjectReadAuthoring, passed only from new receipt requirement lookup. No environment process mutation or store fallback."
+  },
+  "separate_prior_path": {
+    "tests": [
+      "keeps Action recovery review available with unavailable Read authority: disabled",
+      "keeps Action recovery review available with unavailable Read authority: revoked",
+      "keeps Action recovery review available with unavailable Read authority: revoked_execution",
+      "keeps Action recovery review available with unavailable Read authority: revoked_unconfirmed"
+    ],
+    "expected": "Existing Action recovery review remains inspectable with unavailable Read authority and explicitly supplied local PostgreSQL control-store environment.",
+    "actual": "TEST_POLICY_URL is required for this project's bound control store.",
+    "classification": "PRODUCT_FAILURE in existing saved-job status path; no authority/source effect or bypass observed.",
+    "trace": "reviewVerifiedActionAuthority calls readSavedActionJobReview without env; that helper calls readProjectReadAuthoring without env. Both call sites already present at454a0d2. Fixture deliberately removes process.env.TEST_POLICY_URL and passes env explicitly.",
+    "repair_status": "STOPPED_FOR_SEPARATE_DECISION; old caller not changed. The four failed cases are not converted to pass by excluding them from the new integration rerun.",
+    "scope_limit": "Observed in explicit host env while process env lacks the bound URL. Does not establish failure for installed CLI processes configured with their scoped environment."
+  }
+}

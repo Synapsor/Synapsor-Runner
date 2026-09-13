@@ -147,3 +147,138 @@ Agent authority active: yes
 Source database changed: no
 No schema inspection, digest change, or file rewrite was performed.
 Continuing to model or MCP-client selection in this terminal.
+Metadata inspected. The disabled Boundary review is saved in the local control store.
+No Read, Action or execution authority is active. Source database changed: no.
+Structured authoring needs no TTY or model API; edit the exported typed draft before validation/submission:
+  synapsor-runner start --project-root '/tmp/synapsor-start-managed-reset-tJRvd9' --export-draft '/tmp/synapsor-start-managed-reset-tJRvd9/boundary-authoring.json' --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-managed-reset-tJRvd9' --draft '/tmp/synapsor-start-managed-reset-tJRvd9/boundary-authoring.json' --dry-run --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-managed-reset-tJRvd9' --draft '/tmp/synapsor-start-managed-reset-tJRvd9/boundary-authoring.json' --json
+  synapsor-runner boundary review --project-root '/tmp/synapsor-start-managed-reset-tJRvd9' --access
+  synapsor-runner action review --project-root '/tmp/synapsor-start-managed-reset-tJRvd9'
+Review the saved Read with C, then select Verified Action Boundary for the separate exact Action confirmation. No model or new job conversation is required.
+Read and Action authority require separate trusted human review. --yes and --dry-run never activate authority.
+The current MCP entry uses app.describe_data, app.explore_data, app.describe_actions and app.request_change; approval and apply stay outside model tools.
+Discarded curated review for disabled boundary "reviewed_staging".
+Preserved: Runner config, local ledger and evidence, and source database.
+Authority activated: no
+Source database changed: no
+Next: synapsor-runner boundary draft --from-env DATABASE_URL --project-root '.'
+Existing Synapsor guided project found.
+Completed: connected, classified, boundary_generated
+Saved Read candidate: 1 table(s) in the initial disabled revision; review has not started.
+Agent authority active: no
+Source database changed: no
+No schema inspection, digest change, or file rewrite was performed.
+Continuing from the saved disabled candidate. A new model conversation receives the current saved Read and Action state; the prior provider transcript is not retained.
+
+YOUR FIRST SAFE QUESTION
+Runner inspected 1 database object and prepared one conservative, connected starter boundary.
+A boundary is the reviewed data access your AI cannot exceed.
+
+  TABLES       Service Visits
+  AI CAN USE   3 fields across 1 table
+  KEPT OUT     1 field
+  ACCESS       read-only · tenant from operator environment
+  MODEL        Choose OpenAI, Anthropic, a local model, or an MCP client
+
+Suggested from this boundary:
+  "Which statuses have the most service visits?"
+
+Enter opens model choice first, then records one review and activates only this read-only boundary.
+Use /access later to add tables or boundaries without restarting this model session.
+The model cannot review, activate, or widen access.
+Model Anthropic / claude-owner-selected
+Press Enter to start, or M to change it again.
+
+✓ Ready
+reviewed_staging is active for local read-only Explore.
+The broader generated draft remains off until you edit access.
+Existing Synapsor guided project found.
+Completed: connected, classified, boundary_generated
+Saved Read candidate: 1 table(s) in the initial disabled revision; review has not started.
+Agent authority active: no
+Source database changed: no
+No schema inspection, digest change, or file rewrite was performed.
+Continuing from the saved disabled candidate. A new model conversation receives the current saved Read and Action state; the prior provider transcript is not retained.
+
+YOUR FIRST SAFE QUESTION
+Runner inspected 1 database object and prepared one conservative, connected starter boundary.
+A boundary is the reviewed data access your AI cannot exceed.
+
+  TABLES       Service Visits
+  AI CAN USE   3 fields across 1 table
+  KEPT OUT     1 field
+  ACCESS       read-only · tenant from operator environment
+  MODEL        Choose OpenAI, Anthropic, a local model, or an MCP client
+
+Suggested from this boundary:
+  "Which statuses have the most service visits?"
+
+Enter opens model choice first, then records one review and activates only this read-only boundary.
+Use /access later to add tables or boundaries without restarting this model session.
+The model cannot review, activate, or widen access.
+Quick Start paused. Nothing was activated.
+Run the same start command to resume this review.
+Metadata inspected. The disabled Boundary review is saved in the local control store.
+No Read, Action or execution authority is active. Source database changed: no.
+Structured authoring needs no TTY or model API; edit the exported typed draft before validation/submission:
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-qOiije' --export-draft '/tmp/synapsor-start-no-open-qOiije/boundary-authoring.json' --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-qOiije' --draft '/tmp/synapsor-start-no-open-qOiije/boundary-authoring.json' --dry-run --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-qOiije' --draft '/tmp/synapsor-start-no-open-qOiije/boundary-authoring.json' --json
+  synapsor-runner boundary review --project-root '/tmp/synapsor-start-no-open-qOiije' --access
+  synapsor-runner action review --project-root '/tmp/synapsor-start-no-open-qOiije'
+Review the saved Read with C, then select Verified Action Boundary for the separate exact Action confirmation. No model or new job conversation is required.
+Read and Action authority require separate trusted human review. --yes and --dry-run never activate authority.
+The current MCP entry uses app.describe_data, app.explore_data, app.describe_actions and app.request_change; approval and apply stay outside model tools.
+Rescan complete: the reviewed schema, database-server capabilities, database-role posture, and trusted-context authority are unchanged. No boundary revision was created.
+Structured authoring needs no TTY or model API; edit the exported typed draft before validation/submission:
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-qOiije' --export-draft '/tmp/synapsor-start-no-open-qOiije/boundary-authoring.json' --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-qOiije' --draft '/tmp/synapsor-start-no-open-qOiije/boundary-authoring.json' --dry-run --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-no-open-qOiije' --draft '/tmp/synapsor-start-no-open-qOiije/boundary-authoring.json' --json
+  synapsor-runner boundary review --project-root '/tmp/synapsor-start-no-open-qOiije' --access
+  synapsor-runner action review --project-root '/tmp/synapsor-start-no-open-qOiije'
+Review the saved Read with C, then select Verified Action Boundary for the separate exact Action confirmation. No model or new job conversation is required.
+Read and Action authority require separate trusted human review. --yes and --dry-run never activate authority.
+The current MCP entry uses app.describe_data, app.explore_data, app.describe_actions and app.request_change; approval and apply stay outside model tools.
+ ✓ apps/runner/src/guided-start.test.ts (43 tests) 148485ms
+   ✓ guided start surfaces > public status preserves the saved policy blocker instead of recommending activation from field signoffs  5091ms
+   ✓ guided start surfaces > start defaults to current job-first terminal review without opening Workbench  4490ms
+   ✓ guided start surfaces > onboard defaults to current job-first terminal review without opening Workbench  4509ms
+   ✓ guided start surfaces > start initializes the current disabled metadata without a TTY, model API or legacy selectors  13089ms
+   ✓ guided start surfaces > onboard initializes the current disabled metadata without a TTY, model API or legacy selectors  12642ms
+   ✓ guided start surfaces > start resumes interrupted fresh bootstrap through the same public entry  8022ms
+   ✓ guided start surfaces > onboard resumes interrupted fresh bootstrap through the same public entry  8034ms
+   ✓ guided start surfaces > start exports, validates and submits a real fresh disabled Read draft through the structured service  4533ms
+   ✓ guided start surfaces > onboard exports, validates and submits a real fresh disabled Read draft through the structured service  4546ms
+   ✓ guided start surfaces > opens a structured saved semantic Action through current review without a new job or provider  4946ms
+   ✓ guided start surfaces > keeps start publication and rollback inside one writer operation  8209ms
+   ✓ guided start surfaces > keeps boundary publication and rollback inside one writer operation  8394ms
+   ✓ guided start surfaces > reopens the saved guided job despite existing review progress or active Read (false)  3061ms
+   ✓ guided start surfaces > reopens the saved guided job despite existing review progress or active Read (true)  4585ms
+   ✓ guided start surfaces > offers explicit single-organization scope before saving a fresh unscoped database  2771ms
+   ✓ guided start surfaces > keeps a changed-schema rescan in the guided job without reusing a client checkpoint  2933ms
+   ✓ guided start surfaces > runs fresh Auto Boundary onboarding continuously in the CLI register  3714ms
+   ✓ guided start surfaces > opens the shipped fresh CLI at one-job Read and Action Boundary setup  3096ms
+   ✓ guided start surfaces > opens Workbench with a config-aligned startable MySQL authoring baseline  2668ms
+   ✓ guided start surfaces > resumes an active CLI project at provider selection without rescanning  3159ms
+   ✓ guided start surfaces > resumes and rescans a CLI-managed boundary project without a guided marker  4114ms
+   ✓ guided start surfaces > requires an explicit reset to discard the only disabled boundary review  2744ms
+   ✓ guided start surfaces > preserves an explicit single-organization posture across a guided rescan  2579ms
+   ✓ guided start surfaces > labels single-organization authority honestly on the first interactive review  3656ms
+   ✓ guided start surfaces > opens the detailed table, column, and path editor from Quick Start with E  2460ms
+   ✓ guided start surfaces > requires an explicit provider choice before activating and starting Ask  2516ms
+   ✓ guided start surfaces > regenerates a stale Quick Start draft in place and still requires a separate activation gesture  3090ms
+   ✓ guided start surfaces > changes the provider and exact model inside the same Quick Start review surface  3290ms
+   ✓ guided start surfaces > returns from model selection to Quick Start without losing the prior selection  2315ms
+   ✓ guided start surfaces > pauses Quick Start on Escape without opening detailed review or activating  2289ms
+   ✓ guided start surfaces > opens metadata-only Boundary authoring without concrete tenant or principal values  4100ms
+   ✓ guided start surfaces > keeps --no-open noninteractive and rejects conflicting CLI surface flags  2729ms
+(node:3657066) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/saved-action-job-review.test.ts (15 tests) 13ms
+
+ Test Files  18 passed (18)
+      Tests  523 passed | 1 skipped (524)
+   Start at  12:33:24
+   Duration  160.24s (transform 10.22s, setup 0ms, collect 44.85s, tests 269.14s, environment 4ms, prepare 1.50s)
+

@@ -1,0 +1,458 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3665751) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts (420 tests | 5 failed | 404 skipped) 10999ms
+   ↓ exact stored operator authority > stores an ambiguous metadata scaffold without making it a valid Read policy
+   ↓ exact stored operator authority > refuses malformed metadata-only authoring: missing_stage
+   ↓ exact stored operator authority > refuses malformed metadata-only authoring: missing_catalog
+   ↓ exact stored operator authority > refuses malformed metadata-only authoring: nonempty
+   ↓ exact stored operator authority > refuses malformed metadata-only authoring: enabled
+   ↓ exact stored operator authority > refuses malformed metadata-only authoring: lock
+   ↓ exact stored operator authority > refuses malformed metadata-only authoring: budget
+   ↓ exact stored operator authority > refuses malformed metadata-only authoring: catalog
+   ↓ exact stored operator authority > refuses malformed metadata-only authoring: self_attested_catalog
+   ↓ exact stored operator authority > binds private authoring catalogs to exact inspected evidence without granting their fields
+   ↓ exact stored operator authority > preserves exact authoring candidates, confirmations, stable identities and independent schema snapshots
+   ↓ exact stored operator authority > refuses malformed authoring baseline_digest without repairing its reviewed state
+   ↓ exact stored operator authority > refuses malformed authoring candidate_digest without repairing its reviewed state
+   ↓ exact stored operator authority > refuses malformed authoring confirmation without repairing its reviewed state
+   ↓ exact stored operator authority > refuses malformed authoring duplicate_identity without repairing its reviewed state
+   ↓ exact stored operator authority > refuses malformed authoring duplicate_name without repairing its reviewed state
+   ↓ exact stored operator authority > refuses malformed authoring selection without repairing its reviewed state
+   ↓ exact stored operator authority > refuses malformed authoring active_candidate without repairing its reviewed state
+   ↓ exact stored operator authority > refuses malformed authoring lock without repairing its reviewed state
+   ↓ exact stored operator authority > refuses malformed authoring legacy without repairing its reviewed state
+   ↓ exact stored operator authority > roundtrips inventory Read authority, draft and generation provenance without a new review
+   ↓ exact stored operator authority > roundtrips university Read authority, draft and generation provenance without a new review
+   ↓ exact stored operator authority > retains distinct activation receipts even when the authority digest is unchanged
+   ↓ exact stored operator authority > preserves independent active/draft pointers and the selected Read on restart
+   ↓ exact stored operator authority > refuses a changed content rather than normalizing it into authority
+   ↓ exact stored operator authority > refuses a changed authority rather than normalizing it into authority
+   ↓ exact stored operator authority > refuses a changed scope rather than normalizing it into authority
+   ↓ exact stored operator authority > refuses a changed name rather than normalizing it into authority
+   ↓ exact stored operator authority > refuses a changed identity rather than normalizing it into authority
+   ↓ exact stored operator authority > refuses a changed lock rather than normalizing it into authority
+   ↓ exact stored operator authority > refuses invalid migration pointers: draft_as_active
+   ↓ exact stored operator authority > refuses invalid migration pointers: active_as_draft
+   ↓ exact stored operator authority > refuses invalid migration pointers: missing_revision
+   ↓ exact stored operator authority > refuses invalid migration pointers: cross_name
+   ↓ exact stored operator authority > refuses invalid migration pointers: duplicate
+   ↓ exact stored operator authority > refuses invalid migration pointers: missing_selection
+   ↓ exact stored operator authority > can preserve a fully revoked Read set without reactivating its history
+   ↓ exact stored operator authority > keeps worker authority separate from its export and from credential values
+   ↓ exact stored operator authority > does not turn disabled or missing execution configuration into enabled authority
+   ↓ exact stored operator authority > preserves legacy file-based execution enable and disable without implicitly migrating the project
+   ↓ Read writer migration coordination > keeps a newer legacy review when queued Quick Start accept resumes
+   ↓ Read writer migration coordination > keeps a newer legacy review when queued Quick Start edit resumes
+   ↓ Read writer migration coordination > refuses changed legacy confirmations even when the saved candidate is identical
+   ↓ Read writer migration coordination > refuses changed legacy policy provenance even when the saved candidate is identical
+   ↓ Read writer migration coordination > refuses changed legacy revision even when the saved candidate is identical
+   ↓ Read writer migration coordination > refuses stale legacy library synchronize without discarding a newer saved limit
+   ↓ Read writer migration coordination > refuses stale legacy library create without discarding a newer saved limit
+   ↓ Read writer migration coordination > refuses stale legacy library switch without discarding a newer saved limit
+   ↓ Read writer migration coordination > refuses stale legacy library rename without discarding a newer saved limit
+   ↓ Read writer migration coordination > refuses stale legacy library delete without discarding a newer saved limit
+   ↓ Read writer migration coordination > refuses stale legacy library discard without discarding a newer saved limit
+   ↓ Read writer migration coordination > keeps generation writes on the locked canonical root after alias retargeting
+   ↓ Read writer migration coordination > keeps progress writes on the locked canonical root after alias retargeting
+   ↓ Read writer migration coordination > keeps baseline writes on the locked canonical root after alias retargeting
+   ↓ Read writer migration coordination > keeps rescan writes on the locked canonical root after alias retargeting
+   ↓ Read writer migration coordination > keeps discard writes on the locked canonical root after alias retargeting
+   ↓ Read writer migration coordination > keeps initialize writes on the locked canonical root after alias retargeting
+   ↓ Read writer migration coordination > refuses stale legacy generation after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy baseline after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy progress after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy synchronize after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy create after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy switch after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy rename after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy delete after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy discard after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy reconcile after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy rescan after a concurrently frozen migration
+   ↓ Read writer migration coordination > refuses stale legacy initialize after a concurrently frozen migration
+   ↓ Read writer migration coordination > rechecks the original legacy resource preview after waiting for a newer edit
+   ↓ Read writer migration coordination > rechecks the original legacy batch preview after waiting for a newer edit
+   ↓ Read writer migration coordination > rechecks the original legacy exact preview after waiting for a newer edit
+   ↓ sqlite validated operator policy transactions > keeps the original Read review token while waiting for another authority writer
+   ↓ sqlite validated operator policy transactions > atomically saves only a validated disabled Action companion with Read authoring
+   ↓ sqlite validated operator policy transactions > retains partial coded metadata decisions and promotes only a fully valid disabled Read candidate
+   ↓ sqlite validated operator policy transactions > rescans and renames incomplete metadata without publishing Read authority or losing reviewed answers
+   ↓ sqlite validated operator policy transactions > reads current and paginated historical governed generation locks without legacy exports or pointer changes
+   ↓ sqlite validated operator policy transactions > rebinds all retained Action outcomes before merging a later Read revision and refuses unproven replacements
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: disabled
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: unrelated_active
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: selected_active
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: selected_changed
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: guided_active
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: metadata
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: stale_export
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: no_authoring
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: workbench
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: wrong_store
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: no_config
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: no_config_cli
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: bare
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: deferred
+   ↓ sqlite validated operator policy transactions > resumes governed startup without generated exports: deferred_json
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: cli
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: draft
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: coded_cli
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: coded_draft
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: configured_scope
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: configured_scope_draft
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: unconfigured_cli
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: unconfigured_draft
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: inspection_race
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: unsafe_role
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: inspection_failure
+   ↓ sqlite validated operator policy transactions > publishes initial governed metadata only into an empty saved review: review_failure
+   ↓ sqlite validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'cli' false
+   ↓ sqlite validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'cli' true
+   ↓ sqlite validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'draft' false
+   ↓ sqlite validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'draft' true
+   ↓ sqlite validated operator policy transactions > binds Quick Start saves to the original review and returns the exact activation successor
+   ↓ sqlite validated operator policy transactions > uses stored Quick Start candidates without export fallback: accept
+   ↓ sqlite validated operator policy transactions > uses stored Quick Start candidates without export fallback: edit
+   ↓ sqlite validated operator policy transactions > uses stored Quick Start candidates without export fallback: prompt_race
+   ↓ sqlite validated operator policy transactions > uses stored Quick Start candidates without export fallback: inspection_race
+   ↓ sqlite validated operator policy transactions > uses stored Quick Start candidates without export fallback: staging
+   ↓ sqlite validated operator policy transactions > persists exact disabled edits independently, avoids duplicate history, and resumes current state
+   ↓ sqlite validated operator policy transactions > commits complete Read authoring and selection atomically without changing active authority
+   ↓ sqlite validated operator policy transactions > reopens, edits and switches stored Read reviews without file repair or stale overwrites
+   ↓ sqlite validated operator policy transactions > rescans stored reviews atomically, retains exact catalogs, and rejects stale publication
+   ↓ sqlite validated operator policy transactions > uses exact saved revisions for manual Workbench reads, progress and library switches
+   ↓ sqlite validated operator policy transactions > binds Workbench field_metadata to its original saved review and returns the exact committed successor
+   ↓ sqlite validated operator policy transactions > binds Workbench minimum_cohort_all to its original saved review and returns the exact committed successor
+   ↓ sqlite validated operator policy transactions > retains the selected saved Read revision through Workbench workload analyze and recovery
+   ↓ sqlite validated operator policy transactions > retains the selected saved Read revision through Workbench workload model and recovery
+   ↓ sqlite validated operator policy transactions > retains the selected saved Read revision through Workbench workload apply and recovery
+   ↓ sqlite validated operator policy transactions > retains the selected saved Read revision through Workbench workload receipt and recovery
+   ↓ sqlite validated operator policy transactions > keeps the original saved job-mapping review through no-op and recovery
+   ↓ sqlite validated operator policy transactions > keeps the original saved job-mapping review through expand and recovery
+   ↓ sqlite validated operator policy transactions > keeps the original saved job-mapping review through preparation and recovery
+   ↓ sqlite validated operator policy transactions > keeps the original saved job-mapping review through inspection and recovery
+   ↓ sqlite validated operator policy transactions > keeps the original saved job-mapping review through refresh and recovery
+   ↓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during current
+   ↓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during stale
+   ↓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during before_save
+   ↓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during after_save
+   ↓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during selection
+   ↓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during unrelated
+   ↓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during action_mismatch
+   ↓ sqlite validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during analysis_mismatch
+   ↓ sqlite validated operator policy transactions > stages a proven relationship only on the original saved active review with same policy locks without overwriting pending work
+   ↓ sqlite validated operator policy transactions > stages a proven relationship only on the original saved active review with separate policy locks without overwriting pending work
+   ↓ sqlite validated operator policy transactions > binds saved Read activation to the exact original selection, candidate and repository epoch
+   ↓ sqlite validated operator policy transactions > refuses stale CLI consent and keeps the revised draft available for a new confirmation
+   ↓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: complete
+   ↓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: commit_failure
+   ↓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: lost_response
+   ↓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: unknown_commit
+   ↓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: wrong_store
+   ↓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: explicit_wrong_store
+   ↓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: nested_wrong_store
+   ↓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: concurrent
+   ↓ sqlite validated operator policy transactions > commits governed headless Read consent in the actual policy store: expired_after_review
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'complete' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'complete' 'jwt_oidc'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'commit_failure' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'commit_failure' 'jwt_oidc'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'lost_response' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'lost_response' 'jwt_oidc'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'unknown_commit' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'unknown_commit' 'jwt_oidc'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'wrong_store' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'nested_wrong_store' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'concurrent' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'expired_after_review' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'tampered_candidate' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'tampered_contract' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'complete' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'complete' 'jwt_oidc'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'commit_failure' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'commit_failure' 'jwt_oidc'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'lost_response' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'lost_response' 'jwt_oidc'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'unknown_commit' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'unknown_commit' 'jwt_oidc'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'wrong_store' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'nested_wrong_store' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'concurrent' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'expired_after_review' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'tampered_candidate' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'tampered_contract' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'coded' 'complete' 'signed_key'
+   ↓ sqlite validated operator policy transactions > atomically records signed Read edits in the configured repository: 'coded' 'commit_failure' 'signed_key'
+   ↓ sqlite validated operator policy transactions > rejects an old headless bundle even when a later review has the same authority digest
+   ↓ sqlite validated operator policy transactions > refuses a Workbench preview changed during inspection and resumes the exact review
+   ↓ sqlite validated operator policy transactions > refuses a Workbench activate changed during inspection and resumes the exact review
+   ↓ sqlite validated operator policy transactions > preserves the active identity when renaming a stored draft and uses its exact policy lock
+   ↓ sqlite validated operator policy transactions > reads execution from the same repository, never from an edited export, and observes revocation
+   ↓ sqlite validated operator policy transactions > opens fixed-tool Ask with stored execution despite an invalid worker export and checks the selected store
+   ↓ sqlite validated operator policy transactions > requires saved-job revalidation after a writer policy changes the reviewed database contract
+   ↓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (replacement_warning)
+   ↓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (sequential)
+   ↓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (decline)
+   ↓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (policy_race)
+   ↓ sqlite validated operator policy transactions > publishes execution only through exact writer review and preserves revocation across stale exports and reviews
+   ↓ sqlite validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: failed
+   ↓ sqlite validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: replacement_failed
+   ↓ sqlite validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: lost_response
+   ↓ sqlite validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: unknown_receipt
+   ↓ sqlite validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: different_receipt
+   ↓ sqlite validated operator policy transactions > recovers a terminated Action activation process: before_config
+   ↓ sqlite validated operator policy transactions > recovers a terminated Action activation process: before_commit
+   ↓ sqlite validated operator policy transactions > recovers a terminated Action activation process: after_commit
+   ↓ sqlite validated operator policy transactions > refuses changed Action publication inputs before replacing authority: forged_draft
+   ↓ sqlite validated operator policy transactions > refuses changed Action publication inputs before replacing authority: changed_draft
+   ↓ sqlite validated operator policy transactions > refuses changed Action publication inputs before replacing authority: revoked_read
+   ↓ sqlite validated operator policy transactions > refuses changed Action publication inputs before replacing authority: wrong_store
+   ↓ sqlite validated operator policy transactions > refuses changed Action publication inputs before replacing authority: changed_config
+   ↓ sqlite validated operator policy transactions > reopens Action review without repeating an interrupted activation: cancelled
+   ↓ sqlite validated operator policy transactions > reopens Action review without repeating an interrupted activation: committed
+   ↓ sqlite validated operator policy transactions > reopens Action review without repeating an interrupted activation: cleanup
+   ↓ sqlite validated operator policy transactions > reopens Action review without repeating an interrupted activation: unavailable
+   ↓ sqlite validated operator policy transactions > reopens Action review without repeating an interrupted activation: newer_config
+   ↓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: disabled
+   ↓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked
+   ↓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_execution
+   ↓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_unconfirmed
+   ↓ sqlite validated operator policy transactions > reviews execution only against the selected outcome's current Read dependency
+   ↓ sqlite validated operator policy transactions > does not treat corrupt stored Read authority as disabled during Action recovery
+   ↓ sqlite validated operator policy transactions > recovers and disables an interrupted execution save with an explicit control-store environment
+   ↓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: new_failed
+   ↓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: same_failed
+   ↓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: lost_response
+   ↓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: unknown_receipt
+   ↓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: different_receipt
+   ↓ sqlite validated operator policy transactions > refreshes execution in a long-running client between approved requests without claiming completion
+   ↓ sqlite validated operator policy transactions > serves and revokes the exact Read repository revision despite stale file exports
+   ↓ sqlite validated operator policy transactions > publishes through the existing exact Read activation gate without rewriting an active file export
+   ↓ sqlite validated operator policy transactions > serves Action drafts and active revisions from the repository through the existing gates and cached loader
+   ↓ sqlite validated operator policy transactions > keeps the selected Read last even when repository ordering places its name first
+   ↓ sqlite validated operator policy transactions > refuses an unrelated runtime ledger before Read inspection, scope resolution or Action facts
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: read
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_set
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_inspection
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_scope
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_budget
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: action
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: action_loader
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: lazy_action
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: lazy_bind
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: optional_init
+   ↓ sqlite validated operator policy transactions > requires an explicit runtime restart after repository cutover: queue
+   ↓ sqlite validated operator policy transactions > uses the same live repository for discovery and observes revocation without reopening a locator
+   ↓ sqlite validated operator policy transactions > atomically revokes Read authority and its selection without deleting the disabled draft
+   ↓ sqlite validated operator policy transactions > refuses disabled-as-active, cross-scope, duplicate and wrong-key updates without partial changes
+   ↓ sqlite validated operator policy transactions > refuses stale review and admits only one concurrent revision of the same snapshot
+   ↓ sqlite validated operator policy transactions > preserves Action identity through Read revocation and rejects new stale Action or execution authority
+   ↓ postgres validated operator policy transactions > keeps the original Read review token while waiting for another authority writer
+   ↓ postgres validated operator policy transactions > atomically saves only a validated disabled Action companion with Read authoring
+   ↓ postgres validated operator policy transactions > retains partial coded metadata decisions and promotes only a fully valid disabled Read candidate
+   ↓ postgres validated operator policy transactions > rescans and renames incomplete metadata without publishing Read authority or losing reviewed answers
+   ↓ postgres validated operator policy transactions > reads current and paginated historical governed generation locks without legacy exports or pointer changes
+   ↓ postgres validated operator policy transactions > rebinds all retained Action outcomes before merging a later Read revision and refuses unproven replacements
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: disabled
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: unrelated_active
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: selected_active
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: selected_changed
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: guided_active
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: metadata
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: stale_export
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: no_authoring
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: workbench
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: wrong_store
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: no_config
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: no_config_cli
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: bare
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: deferred
+   ↓ postgres validated operator policy transactions > resumes governed startup without generated exports: deferred_json
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: cli
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: draft
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: coded_cli
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: coded_draft
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: configured_scope
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: configured_scope_draft
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: unconfigured_cli
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: unconfigured_draft
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: inspection_race
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: unsafe_role
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: inspection_failure
+   ↓ postgres validated operator policy transactions > publishes initial governed metadata only into an empty saved review: review_failure
+   ↓ postgres validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'cli' false
+   ↓ postgres validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'cli' true
+   ↓ postgres validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'draft' false
+   ↓ postgres validated operator policy transactions > resumes a stored rescan only when its exact selected Read is active: 'draft' true
+   ↓ postgres validated operator policy transactions > binds Quick Start saves to the original review and returns the exact activation successor
+   ↓ postgres validated operator policy transactions > uses stored Quick Start candidates without export fallback: accept
+   ↓ postgres validated operator policy transactions > uses stored Quick Start candidates without export fallback: edit
+   ↓ postgres validated operator policy transactions > uses stored Quick Start candidates without export fallback: prompt_race
+   ↓ postgres validated operator policy transactions > uses stored Quick Start candidates without export fallback: inspection_race
+   ↓ postgres validated operator policy transactions > uses stored Quick Start candidates without export fallback: staging
+   ↓ postgres validated operator policy transactions > persists exact disabled edits independently, avoids duplicate history, and resumes current state
+   ↓ postgres validated operator policy transactions > commits complete Read authoring and selection atomically without changing active authority
+   ↓ postgres validated operator policy transactions > reopens, edits and switches stored Read reviews without file repair or stale overwrites
+   ↓ postgres validated operator policy transactions > rescans stored reviews atomically, retains exact catalogs, and rejects stale publication
+   ↓ postgres validated operator policy transactions > uses exact saved revisions for manual Workbench reads, progress and library switches
+   ↓ postgres validated operator policy transactions > binds Workbench field_metadata to its original saved review and returns the exact committed successor
+   ↓ postgres validated operator policy transactions > binds Workbench minimum_cohort_all to its original saved review and returns the exact committed successor
+   ↓ postgres validated operator policy transactions > retains the selected saved Read revision through Workbench workload analyze and recovery
+   ↓ postgres validated operator policy transactions > retains the selected saved Read revision through Workbench workload model and recovery
+   ↓ postgres validated operator policy transactions > retains the selected saved Read revision through Workbench workload apply and recovery
+   ↓ postgres validated operator policy transactions > retains the selected saved Read revision through Workbench workload receipt and recovery
+   ↓ postgres validated operator policy transactions > keeps the original saved job-mapping review through no-op and recovery
+   ↓ postgres validated operator policy transactions > keeps the original saved job-mapping review through expand and recovery
+   ↓ postgres validated operator policy transactions > keeps the original saved job-mapping review through preparation and recovery
+   ↓ postgres validated operator policy transactions > keeps the original saved job-mapping review through inspection and recovery
+   ↓ postgres validated operator policy transactions > keeps the original saved job-mapping review through refresh and recovery
+   ↓ postgres validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during current
+   ↓ postgres validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during stale
+   ↓ postgres validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during before_save
+   ↓ postgres validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during after_save
+   ↓ postgres validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during selection
+   ↓ postgres validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during unrelated
+   ↓ postgres validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during action_mismatch
+   ↓ postgres validated operator policy transactions > binds the saved Workbench job artifact to its exact Read dependency during analysis_mismatch
+   ↓ postgres validated operator policy transactions > stages a proven relationship only on the original saved active review with same policy locks without overwriting pending work
+   ↓ postgres validated operator policy transactions > stages a proven relationship only on the original saved active review with separate policy locks without overwriting pending work
+   ↓ postgres validated operator policy transactions > binds saved Read activation to the exact original selection, candidate and repository epoch
+   ↓ postgres validated operator policy transactions > refuses stale CLI consent and keeps the revised draft available for a new confirmation
+   ↓ postgres validated operator policy transactions > commits governed headless Read consent in the actual policy store: complete
+   ↓ postgres validated operator policy transactions > commits governed headless Read consent in the actual policy store: commit_failure
+   ↓ postgres validated operator policy transactions > commits governed headless Read consent in the actual policy store: lost_response
+   ↓ postgres validated operator policy transactions > commits governed headless Read consent in the actual policy store: unknown_commit
+   ↓ postgres validated operator policy transactions > commits governed headless Read consent in the actual policy store: wrong_store
+   ↓ postgres validated operator policy transactions > commits governed headless Read consent in the actual policy store: explicit_wrong_store
+   ↓ postgres validated operator policy transactions > commits governed headless Read consent in the actual policy store: nested_wrong_store
+   ↓ postgres validated operator policy transactions > commits governed headless Read consent in the actual policy store: concurrent
+   ↓ postgres validated operator policy transactions > commits governed headless Read consent in the actual policy store: expired_after_review
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'complete' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'complete' 'jwt_oidc'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'commit_failure' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'commit_failure' 'jwt_oidc'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'lost_response' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'lost_response' 'jwt_oidc'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'unknown_commit' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'unknown_commit' 'jwt_oidc'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'wrong_store' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'nested_wrong_store' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'concurrent' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'expired_after_review' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'tampered_candidate' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'single' 'tampered_contract' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'complete' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'complete' 'jwt_oidc'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'commit_failure' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'commit_failure' 'jwt_oidc'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'lost_response' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'lost_response' 'jwt_oidc'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'unknown_commit' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'unknown_commit' 'jwt_oidc'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'wrong_store' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'nested_wrong_store' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'concurrent' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'expired_after_review' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'tampered_candidate' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'batch' 'tampered_contract' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'coded' 'complete' 'signed_key'
+   ↓ postgres validated operator policy transactions > atomically records signed Read edits in the configured repository: 'coded' 'commit_failure' 'signed_key'
+   ↓ postgres validated operator policy transactions > rejects an old headless bundle even when a later review has the same authority digest
+   ↓ postgres validated operator policy transactions > refuses a Workbench preview changed during inspection and resumes the exact review
+   ↓ postgres validated operator policy transactions > refuses a Workbench activate changed during inspection and resumes the exact review
+   ↓ postgres validated operator policy transactions > preserves the active identity when renaming a stored draft and uses its exact policy lock
+   ↓ postgres validated operator policy transactions > reads execution from the same repository, never from an edited export, and observes revocation
+   ↓ postgres validated operator policy transactions > opens fixed-tool Ask with stored execution despite an invalid worker export and checks the selected store
+   ↓ postgres validated operator policy transactions > requires saved-job revalidation after a writer policy changes the reviewed database contract
+   ✓ postgres validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (replacement_warning)  1155ms
+   ✓ postgres validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (sequential)  1631ms
+   ✓ postgres validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (decline)  1058ms
+   ✓ postgres validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (policy_race)  1120ms
+   ✓ postgres validated operator policy transactions > publishes execution only through exact writer review and preserves revocation across stale exports and reviews  916ms
+   ↓ postgres validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: failed
+   ↓ postgres validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: replacement_failed
+   ↓ postgres validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: lost_response
+   ↓ postgres validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: unknown_receipt
+   ↓ postgres validated operator policy transactions > recovers Action runtime publication from the exact activation receipt: different_receipt
+   ↓ postgres validated operator policy transactions > recovers a terminated Action activation process: before_config
+   ↓ postgres validated operator policy transactions > recovers a terminated Action activation process: before_commit
+   ↓ postgres validated operator policy transactions > recovers a terminated Action activation process: after_commit
+   ↓ postgres validated operator policy transactions > refuses changed Action publication inputs before replacing authority: forged_draft
+   ↓ postgres validated operator policy transactions > refuses changed Action publication inputs before replacing authority: changed_draft
+   ↓ postgres validated operator policy transactions > refuses changed Action publication inputs before replacing authority: revoked_read
+   ↓ postgres validated operator policy transactions > refuses changed Action publication inputs before replacing authority: wrong_store
+   ↓ postgres validated operator policy transactions > refuses changed Action publication inputs before replacing authority: changed_config
+   ↓ postgres validated operator policy transactions > reopens Action review without repeating an interrupted activation: cancelled
+   ↓ postgres validated operator policy transactions > reopens Action review without repeating an interrupted activation: committed
+   ↓ postgres validated operator policy transactions > reopens Action review without repeating an interrupted activation: cleanup
+   ↓ postgres validated operator policy transactions > reopens Action review without repeating an interrupted activation: unavailable
+   ↓ postgres validated operator policy transactions > reopens Action review without repeating an interrupted activation: newer_config
+   × postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: disabled 159ms
+     → TEST_POLICY_URL is required for this project's bound control store.
+   × postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked 255ms
+     → TEST_POLICY_URL is required for this project's bound control store.
+   × postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_execution 540ms
+     → TEST_POLICY_URL is required for this project's bound control store.
+   × postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_unconfirmed 320ms
+     → TEST_POLICY_URL is required for this project's bound control store.
+   ✓ postgres validated operator policy transactions > reviews execution only against the selected outcome's current Read dependency  594ms
+   ↓ postgres validated operator policy transactions > does not treat corrupt stored Read authority as disabled during Action recovery
+   × postgres validated operator policy transactions > recovers and disables an interrupted execution save with an explicit control-store environment 176ms
+     → TEST_POLICY_URL is required for this project's bound control store.
+   ✓ postgres validated operator policy transactions > confirms execution publication from its exact transaction receipt: new_failed  591ms
+   ✓ postgres validated operator policy transactions > confirms execution publication from its exact transaction receipt: same_failed  797ms
+   ✓ postgres validated operator policy transactions > confirms execution publication from its exact transaction receipt: lost_response  541ms
+   ✓ postgres validated operator policy transactions > confirms execution publication from its exact transaction receipt: unknown_receipt  641ms
+   ✓ postgres validated operator policy transactions > confirms execution publication from its exact transaction receipt: different_receipt  501ms
+   ↓ postgres validated operator policy transactions > refreshes execution in a long-running client between approved requests without claiming completion
+   ↓ postgres validated operator policy transactions > serves and revokes the exact Read repository revision despite stale file exports
+   ↓ postgres validated operator policy transactions > publishes through the existing exact Read activation gate without rewriting an active file export
+   ↓ postgres validated operator policy transactions > serves Action drafts and active revisions from the repository through the existing gates and cached loader
+   ↓ postgres validated operator policy transactions > keeps the selected Read last even when repository ordering places its name first
+   ↓ postgres validated operator policy transactions > refuses an unrelated runtime ledger before Read inspection, scope resolution or Action facts
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: read
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_set
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_inspection
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_scope
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: read_budget
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: action
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: action_loader
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: lazy_action
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: lazy_bind
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: optional_init
+   ↓ postgres validated operator policy transactions > requires an explicit runtime restart after repository cutover: queue
+   ↓ postgres validated operator policy transactions > uses the same live repository for discovery and observes revocation without reopening a locator
+   ↓ postgres validated operator policy transactions > atomically revokes Read authority and its selection without deleting the disabled draft
+   ↓ postgres validated operator policy transactions > refuses disabled-as-active, cross-scope, duplicate and wrong-key updates without partial changes
+   ↓ postgres validated operator policy transactions > refuses stale review and admits only one concurrent revision of the same snapshot
+   ↓ postgres validated operator policy transactions > preserves Action identity through Read revocation and rejects new stale Action or execution authority
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: disabled
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_execution
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_unconfirmed
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > postgres validated operator policy transactions > recovers and disables an interrupted execution save with an explicit control-store environment
+Error: TEST_POLICY_URL is required for this project's bound control store.
+ ❯ failure apps/runner/src/control-policy-store.ts:431:24
+    429| 
+    430| function failure(code: string, message: string): Error & { code: strin…
+    431|   return Object.assign(new Error(message), { code });
+       |                        ^
+    432| }
+    433| 
+ ❯ openExistingRepository apps/runner/src/control-policy-store.ts:285:21
+ ❯ openBoundRepository apps/runner/src/control-policy-store.ts:184:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 11 passed | 404 skipped (420)
+   Start at  12:38:50
+   Duration  17.54s (transform 4.12s, setup 0ms, collect 6.28s, tests 11.00s, environment 0ms, prepare 54ms)
+

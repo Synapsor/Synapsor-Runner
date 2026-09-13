@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-13T19:36:35.917720+00:00",
+  "executed": false,
+  "basis": "Read actual qualificationSandboxArguments contract: root writable mount already exists; it rejects duplicate logical mount equal to ownedRoot. Prepared fresh helpers copied recovery alias and would fail before application start. Use aliases only for recovery checkpoints, matching already-used authoring wrapper.",
+  "other_preparation": "Generic public client preparation reuses executed prepared-software flow. Separate editing budget transition requires recorded same-artifact receipt/readback completion; preserves all initial attempts and grants only30 new edit calls. Operator fixture setup and later supervised decisions use their declared phase clocks.",
+  "product_behavior_changed": false
+}
