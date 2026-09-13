@@ -269,6 +269,12 @@ for (const backend of ["sqlite", "postgres", "file_authority_sqlite"] as const) 
       if(ordering === "replacement_first" || ordering === "replacement_process" || ordering === "inactive_first" || ordering === "admission_rollback" || ordering === "admission_busy") {
         if(ordering === "admission_rollback") expect(result).toMatchObject({error: {message: "injected exception after revision lock, before decision"}});
         else expect(result).toMatchObject({error: {code: ordering === "admission_busy" ? "POLICY_MUTATION_BUSY" : "SEMANTIC_ACTION_UNAVAILABLE"}});
+        if (["replacement_first", "replacement_process", "inactive_first"].includes(ordering)) {
+          // Definitive refusal can follow creation of an unapproved proposal.
+          expect(proposals.filter(p => p.state === "pending_review")).toHaveLength(1);
+          expect(result).toHaveProperty("error.message");
+          expect((result as {error: {message: string}}).error.message).not.toMatch(/no proposal .*created/i);
+        }
         expect(approvals).toHaveLength(1);
         expect(proposals.filter(p => p.state === "approved")).toHaveLength(1);
         if(fresh) expect(fresh).toMatchObject({proposal: {status: ordering === "admission_busy" ? "approved" : "pending_review"}});

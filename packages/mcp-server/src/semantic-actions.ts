@@ -301,15 +301,15 @@ export function createSemanticActionRuntime(input: {
           if (error instanceof ActionRuleError) {
             if (error.code === "ACTION_RULE_NOT_ELIGIBLE" && error.path === "outcome") {
               throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE",
-                "The requested outcome is not available in the current authorized catalog. Refresh the action list before retrying. No proposal or source change was created.");
+                "The requested outcome is not available in the current authorized catalog. Refresh the action list. An operator can inspect existing requests before deciding whether to retry. No source change was executed.");
             }
             throw new McpRuntimeError(
               error.code === "ACTION_RULE_NOT_ELIGIBLE"
                 ? "SEMANTIC_ACTION_NOT_ELIGIBLE"
                 : "SEMANTIC_ACTION_UNAVAILABLE",
               error.code === "ACTION_RULE_NOT_ELIGIBLE"
-                ? "Current authoritative facts do not permit this reviewed outcome. No proposal or source change was created."
-                : "Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.",
+                ? "Current authoritative facts do not permit this reviewed outcome. No source change was executed. An unapproved proposal may remain; ask the operator to inspect existing requests before retrying."
+                : "Runner could not prove this reviewed outcome from current authoritative facts. No source change was executed. An unapproved proposal may remain; ask the operator to inspect existing requests before retrying.",
             );
           }
           throw error;

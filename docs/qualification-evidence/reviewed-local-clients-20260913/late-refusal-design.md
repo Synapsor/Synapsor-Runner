@@ -1,0 +1,7 @@
+# Truthful late refusal without lifecycle changes
+
+The definitive Action admission can reject a request after its pending_review proposal was saved. The shared ActionRuleError reporting catch incorrectly asserted no proposal was created. Two new before-fix SQLite publication regressions corroborate the retained proposal and fail this absence claim; approvals/history/queue safety still holds. Original strict records and the earlier wrong same-subject fresh-control script remain preserved.
+
+Remove the unsupported absence claim from this catch, keep SEMANTIC_ACTION_UNAVAILABLE / SEMANTIC_ACTION_NOT_ELIGIBLE and existing early catalog refresh guidance. Report no executed source change, allow an unapproved proposal to remain, and direct the client to operator inspection before retrying. No extra record identities or metadata, proposal deletion, duplicate relaxation, refund, cancellation or requeue implementation.
+
+The existing early unknown-outcome test establishes zero proposals. The replacement-first/inactive publication cases establish a retained unapproved proposal and unchanged approval count. Both now use truthful compatible reporting. Existing proposals reject is an identified operator route; its applicability to the installed stranded record is to be verified on the final owned fixture, not assumed from its name. Same-subject duplicate and distinct-subject current human-review controls remain separate.
