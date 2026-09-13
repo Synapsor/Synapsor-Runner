@@ -1,0 +1,161 @@
+⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/action-review-governed.test.ts > public governed Action review > pages exact writer requirements and the exported handoff through public Action review without changing pending authority
+AssertionError: expected [ Array(4) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "details",
++   "export",
++   "details",
++   "pause",
++ ]
+
+ ❯ apps/runner/src/action-review-governed.test.ts:697:29
+    695|     const enable = vi.spyOn(semanticDeployment, "enableSemanticSupervi…
+    696|     expect(await actionCommand(["review", "--project-root", root])).to…
+    697|     expect(recoveryChoices).toEqual([]);
+       |                             ^
+    698|     expect(displayed.map((page) => page.title)).toEqual(["Writer requi…
+    699|     expect(displayed.every((page) => page.back === "Return to pending …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (replacement_warning)
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (sequential)
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (decline)
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (policy_race)
+Error: SEMANTIC_RECEIPT_REVIEW_REQUIRED: Review receipt mode and the exact writer reference in action review (execution setup), or writeback setup --outcome <name> --receipt-mode <runner_ledger|source_db> --write-url-env <NAME>. A preview alone does not save the selection, provision receipts or verify execution. No execution was enabled.
+ ❯ fail apps/runner/src/semantic-receipt-setup.ts:29:75
+     27| const keyFor = (outcome: string): ControlPolicyKey => ({ scope: { leve…
+     28|   name: `semantic_receipts_${canonicalJsonDigest({ outcome }).slice(7)…
+     29| function fail(code: string, message: string): never { throw Object.ass…
+       |                                                                           ^
+     30| 
+     31| /** Operator setup only. This record is never consulted for business a…
+ ❯ selectedSemanticReceipts apps/runner/src/semantic-receipt-setup.ts:131:5
+ ❯ previewSemanticSupervisedExecution apps/runner/src/semantic-action-deployment.ts:418:56
+ ❯ reviewInput apps/runner/src/control-policy-authority-codec.test.ts:2776:52
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:2781:49
+ ❯ useRepository apps/runner/src/control-policy-authority-codec.test.ts:622:13
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:2730:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > publishes execution only through exact writer review and preserves revocation across stale exports and reviews
+Error: SEMANTIC_RECEIPT_REVIEW_REQUIRED: Review receipt mode and the exact writer reference in action review (execution setup), or writeback setup --outcome <name> --receipt-mode <runner_ledger|source_db> --write-url-env <NAME>. A preview alone does not save the selection, provision receipts or verify execution. No execution was enabled.
+ ❯ fail apps/runner/src/semantic-receipt-setup.ts:29:75
+     27| const keyFor = (outcome: string): ControlPolicyKey => ({ scope: { leve…
+     28|   name: `semantic_receipts_${canonicalJsonDigest({ outcome }).slice(7)…
+     29| function fail(code: string, message: string): never { throw Object.ass…
+       |                                                                           ^
+     30| 
+     31| /** Operator setup only. This record is never consulted for business a…
+ ❯ selectedSemanticReceipts apps/runner/src/semantic-receipt-setup.ts:131:5
+ ❯ previewSemanticSupervisedExecution apps/runner/src/semantic-action-deployment.ts:418:56
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:2883:25
+ ❯ useRepository apps/runner/src/control-policy-authority-codec.test.ts:622:13
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:2866:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_execution
+Error: SEMANTIC_RECEIPT_REVIEW_REQUIRED: Review receipt mode and the exact writer reference in action review (execution setup), or writeback setup --outcome <name> --receipt-mode <runner_ledger|source_db> --write-url-env <NAME>. A preview alone does not save the selection, provision receipts or verify execution. No execution was enabled.
+ ❯ fail apps/runner/src/semantic-receipt-setup.ts:29:75
+     27| const keyFor = (outcome: string): ControlPolicyKey => ({ scope: { leve…
+     28|   name: `semantic_receipts_${canonicalJsonDigest({ outcome }).slice(7)…
+     29| function fail(code: string, message: string): never { throw Object.ass…
+       |                                                                           ^
+     30| 
+     31| /** Operator setup only. This record is never consulted for business a…
+ ❯ selectedSemanticReceipts apps/runner/src/semantic-receipt-setup.ts:131:5
+ ❯ previewSemanticSupervisedExecution apps/runner/src/semantic-action-deployment.ts:418:56
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:3149:27
+ ❯ useRepository apps/runner/src/control-policy-authority-codec.test.ts:622:13
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:3125:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/14]⎯
+
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > reviews execution only against the selected outcome's current Read dependency
+Error: SEMANTIC_RECEIPT_REVIEW_REQUIRED: Review receipt mode and the exact writer reference in action review (execution setup), or writeback setup --outcome <name> --receipt-mode <runner_ledger|source_db> --write-url-env <NAME>. A preview alone does not save the selection, provision receipts or verify execution. No execution was enabled.
+ ❯ fail apps/runner/src/semantic-receipt-setup.ts:29:75
+     27| const keyFor = (outcome: string): ControlPolicyKey => ({ scope: { leve…
+     28|   name: `semantic_receipts_${canonicalJsonDigest({ outcome }).slice(7)…
+     29| function fail(code: string, message: string): never { throw Object.ass…
+       |                                                                           ^
+     30| 
+     31| /** Operator setup only. This record is never consulted for business a…
+ ❯ selectedSemanticReceipts apps/runner/src/semantic-receipt-setup.ts:131:5
+ ❯ previewSemanticSupervisedExecution apps/runner/src/semantic-action-deployment.ts:418:56
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:3225:25
+ ❯ useRepository apps/runner/src/control-policy-authority-codec.test.ts:622:13
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:3197:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/14]⎯
+
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > recovers and disables an interrupted execution save with an explicit control-store environment
+Error: SEMANTIC_RECEIPT_REVIEW_REQUIRED: Review receipt mode and the exact writer reference in action review (execution setup), or writeback setup --outcome <name> --receipt-mode <runner_ledger|source_db> --write-url-env <NAME>. A preview alone does not save the selection, provision receipts or verify execution. No execution was enabled.
+ ❯ fail apps/runner/src/semantic-receipt-setup.ts:29:75
+     27| const keyFor = (outcome: string): ControlPolicyKey => ({ scope: { leve…
+     28|   name: `semantic_receipts_${canonicalJsonDigest({ outcome }).slice(7)…
+     29| function fail(code: string, message: string): never { throw Object.ass…
+       |                                                                           ^
+     30| 
+     31| /** Operator setup only. This record is never consulted for business a…
+ ❯ selectedSemanticReceipts apps/runner/src/semantic-receipt-setup.ts:131:5
+ ❯ previewSemanticSupervisedExecution apps/runner/src/semantic-action-deployment.ts:418:56
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:3275:25
+ ❯ useRepository apps/runner/src/control-policy-authority-codec.test.ts:622:13
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:3258:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/14]⎯
+
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: new_failed
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: lost_response
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: unknown_receipt
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: different_receipt
+Error: SEMANTIC_RECEIPT_REVIEW_REQUIRED: Review receipt mode and the exact writer reference in action review (execution setup), or writeback setup --outcome <name> --receipt-mode <runner_ledger|source_db> --write-url-env <NAME>. A preview alone does not save the selection, provision receipts or verify execution. No execution was enabled.
+ ❯ fail apps/runner/src/semantic-receipt-setup.ts:29:75
+     27| const keyFor = (outcome: string): ControlPolicyKey => ({ scope: { leve…
+     28|   name: `semantic_receipts_${canonicalJsonDigest({ outcome }).slice(7)…
+     29| function fail(code: string, message: string): never { throw Object.ass…
+       |                                                                           ^
+     30| 
+     31| /** Operator setup only. This record is never consulted for business a…
+ ❯ selectedSemanticReceipts apps/runner/src/semantic-receipt-setup.ts:131:5
+ ❯ previewSemanticSupervisedExecution apps/runner/src/semantic-action-deployment.ts:418:56
+ ❯ reviewedInput apps/runner/src/control-policy-authority-codec.test.ts:3323:27
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:3329:26
+ ❯ useRepository apps/runner/src/control-policy-authority-codec.test.ts:622:13
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:3306:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/14]⎯
+
+ FAIL  apps/runner/src/control-policy-authority-codec.test.ts > sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: same_failed
+Error: SEMANTIC_RECEIPT_REVIEW_REQUIRED: Review receipt mode and the exact writer reference in action review (execution setup), or writeback setup --outcome <name> --receipt-mode <runner_ledger|source_db> --write-url-env <NAME>. A preview alone does not save the selection, provision receipts or verify execution. No execution was enabled.
+ ❯ fail apps/runner/src/semantic-receipt-setup.ts:29:75
+     27| const keyFor = (outcome: string): ControlPolicyKey => ({ scope: { leve…
+     28|   name: `semantic_receipts_${canonicalJsonDigest({ outcome }).slice(7)…
+     29| function fail(code: string, message: string): never { throw Object.ass…
+       |                                                                           ^
+     30| 
+     31| /** Operator setup only. This record is never consulted for business a…
+ ❯ selectedSemanticReceipts apps/runner/src/semantic-receipt-setup.ts:131:5
+ ❯ previewSemanticSupervisedExecution apps/runner/src/semantic-action-deployment.ts:418:56
+ ❯ reviewedInput apps/runner/src/control-policy-authority-codec.test.ts:3323:27
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:3328:77
+ ❯ useRepository apps/runner/src/control-policy-authority-codec.test.ts:622:13
+ ❯ apps/runner/src/control-policy-authority-codec.test.ts:3306:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/14]⎯
+
+
+ Test Files  2 failed | 295 passed | 21 skipped (318)
+      Tests  14 failed | 6177 passed | 461 skipped (6652)
+   Start at  12:02:48
+   Duration  1251.15s (transform 24.95s, setup 0ms, collect 386.03s, tests 4501.91s, environment 107ms, prepare 35.96s)
+
+ ELIFECYCLE  Test failed. See above for more details.

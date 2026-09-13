@@ -1,0 +1,23 @@
+{
+  "name": "scope-decisions-before",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/action-rule-model.test.ts",
+    "-t",
+    "explicit later scope replacement|saves and reloads a fresh clarification"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T18:05:59.397965+00:00",
+  "source_head": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "source_diff_sha256": "a13956e567deccfe069f3e2e564a74425f1ace86e605607b3bbfa4f8bd20cd3f",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/scope-decisions-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-decisions-before",
+  "source_manifest_sha256": "c723339dd77aff37900b28a3f8d23a13bb4586c5cfc8e1c2477f34101d590ac6",
+  "pid": 3439477,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T18:06:02.168118+00:00"
+}

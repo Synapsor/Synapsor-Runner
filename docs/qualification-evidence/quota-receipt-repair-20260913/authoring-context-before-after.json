@@ -1,0 +1,23 @@
+{
+  "original_observation": {
+    "artifact": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+    "input": "input-0007.json",
+    "sha256": "2b8e3d9c80d0f9f1baa533e302ebe7d7374bfc0025b4d5cbb408c73bd768452f"
+  },
+  "before_context": [
+    {
+      "code": "ACTION_RULE_DRAFT_INVALID",
+      "message": "approval.shared_limits must preserve the operator's explicit tenant_principal accounting (\"each principal\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+      "repair": "model",
+      "category": "draft_structure",
+      "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+    }
+  ],
+  "after_context": [],
+  "after_basis": "scope-final07 composed exact saved explanation test: overall6 and tenant2 validate with no tenant_principal demand; no replacement diagnostic for a valid draft",
+  "authoring_prompt_templates_changed": false,
+  "context_change": "Quota-preservation diagnostics now derive only from limiting operator requirements and explicit decisions; role glossary alone no longer creates missing-scope repair instruction. Genuine requirements use existing diagnostic wording; unresolved alternative scopes retain an explicit bounded clarification diagnostic.",
+  "product_prompt_domain_exceptions_added": false,
+  "policy_domain_terms_only_in_tests": true,
+  "model_generated_draft_or_repair_prose_is_operator_intent": false
+}

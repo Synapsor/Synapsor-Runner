@@ -1,0 +1,31 @@
+{
+  "name": "receipt-fixture11",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/action-review-governed.test.ts",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "apps/runner/src/semantic-receipt-setup.test.ts",
+    "--maxWorkers=3",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "-t",
+    "pages exact writer|requires new execution review after a compiled|publishes execution only through exact|keeps Action recovery review available|reviews execution only against the selected|recovers and disables an interrupted execution|confirms execution publication from its exact|reviewed semantic receipt setup"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T19:30:24.126838+00:00",
+  "source_head": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "source_diff_sha256": "a89fc644887da587576c403cff258473008195c32f9959b34057ef530be7b3bc",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/receipt-fixture11",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/receipt-fixture11",
+  "source_manifest_sha256": "320747d82d1778e8442a612824606fbeb5fd3ba1f48c1b44235f0caefdecbd13",
+  "pid": 3642513,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T19:31:46.601869+00:00"
+}

@@ -1,0 +1,48 @@
+{
+  "at": "2026-09-13T19:08:37.997739+00:00",
+  "artifact_tree": "0deb78b36ba762be1d8c05d437abe30c42a67a53b512523da9af8b1605dbf3ad",
+  "status": "PASSED_PREPARED_PUBLIC_DEPLOYMENT",
+  "fresh_onboarding": false,
+  "new_authoring_calls": 0,
+  "worker_invocations": 2,
+  "initial_source_rows": 504,
+  "original_source_facts": "unchanged except explicitly executed B01 candidate/slot and increments; all original policies/reader grants unchanged",
+  "receipt_mode": "source_db/precreated, same PostgreSQL database/transaction",
+  "control_store": "SQLite",
+  "receipt_success": "one applied source receipt plus separate control-ledger audit copy; two guarded business updates; identical replay no duplicate",
+  "receipt_failure": "existing BEFORE UPDATE source receipt exception observes both effects in same transaction before raising; both business changes and fresh receipt rolled back; committed automatic approval retained",
+  "controls": "restart own-context29 rows; valid300second request pending review; failed check/hold/unavailable slot refused; internal finding/private check resource refused with no added authority or effects",
+  "setup_sequence": [
+    "missing selection rejected",
+    "explicit source_db preview then exact SAVE RECEIPT SETUP confirmation persisted only staged management record",
+    "public action review generated dedicated NOLOGIN writer plus exact existing receipt DDL and grants",
+    "fixture owner applied exact grants.sql and separately enabled local LOGIN; original policies/rows unchanged",
+    "one URI construction harness error correctly refused privileged connection; fixed query-user only and restarted",
+    "effective restricted writer and receipt rollback probe passed; separate public execution confirmation enabled source_db",
+    "public Continue client setup reviewed hidden default identity, installed exact launcher and verified4tools",
+    "normal request/finite public worker/source-owner readback and controls"
+  ],
+  "pending_responsibilities": [
+    "production authenticated session integration is not established",
+    "broader client responsibilities/privacy coverage remain explicit; controls prove only actual tested rejection layers",
+    "human-review case persisted, not executed in prepared run",
+    "fresh final-artifact onboarding and ordinary-language edit still pending"
+  ],
+  "raw_results": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/prepared-execution-result.json",
+      "sha256": "56eb557347c5821a06f92f097254932dfb52d0706eb923e0b659fcca7eebcb6e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/prepared-rollback-result.json",
+      "sha256": "87922e58ae169928a87ef06fdf037d0f4ffaf8af7fd469eb5b01abf2f1064187"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/prepared-controls-result.json",
+      "sha256": "eb312809e9634911b9f4cea5422e4d257562911f04ab4a0f9a2ef1ad01a56c78"
+    }
+  ],
+  "snapshot": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/checkpoints/quiescent-final-prepared",
+  "stopped_container_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/owned-cleanup-prepared-software.json",
+  "snapshot_measurement_note": "Initial checkpoint overlapped read-only setup preview; later quiescent checkpoint has exact same project-copy hash, b31c39edbd52d8b902ef103a4a3bd4cd5a1245f16bb3a0fabfdacfffef59019e. Both retained."
+}

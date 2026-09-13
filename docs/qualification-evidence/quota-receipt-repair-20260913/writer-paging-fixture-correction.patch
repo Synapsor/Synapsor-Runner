@@ -1,0 +1,24 @@
+*** Begin Patch
+*** Update File: apps/runner/src/action-review-governed.test.ts
+@@
+ import * as semanticDeployment from "./semantic-action-deployment.js";
++import { previewSemanticReceiptSelection, saveSemanticReceiptSelection } from "./semantic-receipt-setup.js";
+@@
+         if (title === "VERIFIED ACTION BOUNDARY") return mode === "activate" ? "activate" : "enable_execution:university.enroll";
++        if (title === "Review saved receipt setup") {
++          expect(context?.join("\n")).toContain('"authority":"runner_ledger"');
++          return "keep";
++        }
+         if (title === "Check your write connection") return "check";
+@@
+     mode = "recover"; homeVisits = 0; confirm.mockClear();
+     vi.stubEnv("SYNAPSOR_DATABASE_WRITE_URL", "postgresql://fixture.invalid/writer-not-used");
++    // This test pages an already-reviewed writer recovery. Prepare its exact
++    // receipt prerequisite before capturing the authority/configuration baseline.
++    const receiptInput = { projectRoot: root, configPath: path.join(root, "synapsor.actions.runner.json"),
++      outcome: "university.enroll", writeUrlEnv: "SYNAPSOR_DATABASE_WRITE_URL",
++      receipts: { authority: "runner_ledger" as const } };
++    const receiptPreview = await previewSemanticReceiptSelection(receiptInput);
++    await saveSemanticReceiptSelection({ ...receiptInput, confirmation: receiptPreview.confirmation });
+     const active = await readActionRuleAuthorityActivation(root);
+*** End Patch

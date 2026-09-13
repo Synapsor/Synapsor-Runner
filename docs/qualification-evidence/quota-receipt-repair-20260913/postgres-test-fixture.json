@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-quota-receipt-tests-eee6ce10",
+  "id": "d8badd16278cad448deddf7da565e870bcdb421ee8cd2e8edc25b8430f31ad19",
+  "label": "quota-receipt-repair-20260913",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "quota_receipt_tests",
+  "socket": "/tmp/synapsor-quota-receipt-pg-WqkkXl/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/private/live-postgres.json",
+  "ready_at": "2026-09-13T18:32:37.441Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

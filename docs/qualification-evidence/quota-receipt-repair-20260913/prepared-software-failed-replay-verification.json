@@ -1,0 +1,29 @@
+{
+  "at": "2026-09-13T19:21:37.885350+00:00",
+  "status": "PASSED",
+  "actual_public_status": "attention_required",
+  "no_execution_receipt_in_public_response": true,
+  "unchanged_durable_tables": {
+    "proposals": true,
+    "approvals": true,
+    "worker_queue": true,
+    "writeback_jobs": true,
+    "writeback_receipts": true
+  },
+  "source_after_replay_unchanged": true,
+  "raw_files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/prepared-rollback-result.json",
+      "sha256": "87922e58ae169928a87ef06fdf037d0f4ffaf8af7fd469eb5b01abf2f1064187"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/rollback-after-ledger.json",
+      "sha256": "963655ef74f9404354448afcbe6585e09a3c17f3cde966d63dc341a8324a175a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/rollback-replay-ledger.json",
+      "sha256": "963655ef74f9404354448afcbe6585e09a3c17f3cde966d63dc341a8324a175a"
+    }
+  ],
+  "limitation": "Failure remains attention_required; no refund, requeue or recovery route was added or exercised."
+}

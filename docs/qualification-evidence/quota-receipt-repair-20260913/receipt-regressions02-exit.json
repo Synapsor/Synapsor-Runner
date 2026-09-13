@@ -1,0 +1,22 @@
+{
+  "name": "receipt-regressions02",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/semantic-receipt-setup.test.ts",
+    "apps/runner/src/action-rule-model.test.ts"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T18:24:39.493498+00:00",
+  "source_head": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "source_diff_sha256": "30b614b11592aa8ff6ffed04f02db02031ce86dff0aa57a748febd79cc249691",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/receipt-regressions02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/receipt-regressions02",
+  "source_manifest_sha256": "ebd74b9329fa7d2e69f74becb6bad70f6377270c72caa6d038e5cb8a48a8883e",
+  "pid": 3484783,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T18:24:57.814003+00:00"
+}

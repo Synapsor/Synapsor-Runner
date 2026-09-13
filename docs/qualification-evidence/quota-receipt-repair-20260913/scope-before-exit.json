@@ -1,0 +1,24 @@
+{
+  "name": "scope-before",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/action-policy-scope.test.ts",
+    "apps/runner/src/action-rule-model.test.ts",
+    "-t",
+    "role glossary|independent limits after role|saved role explanation"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T17:59:08.981296+00:00",
+  "source_head": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "source_diff_sha256": "de814abc72d31a7131da08635cc88e509da737bc51709259ad4a75ebebbe8120",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/scope-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-before",
+  "source_manifest_sha256": "9778c4fa6d75d92bfbeeff08355ae39303c36e9b7f80a1ddeeb579077e2dd950",
+  "pid": 3423292,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T17:59:11.735614+00:00"
+}

@@ -1,0 +1,24 @@
+{
+  "name": "scope-final07",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/action-policy-scope.test.ts",
+    "apps/runner/src/action-rule-model.test.ts",
+    "apps/runner/src/boundary-authoring-resume.test.ts",
+    "apps/runner/src/boundary-authoring-resume-concurrency.test.ts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T18:35:39.060807+00:00",
+  "source_head": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "source_diff_sha256": "cc73212af00429543b759bca85a24cd9489a4775afbdb592bd2450665c9a8d56",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/scope-final07",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-final07",
+  "source_manifest_sha256": "d4ccf961ae8fd4d0d419c79e84efc69e376a39d280cfb1222f2e882ec0704793",
+  "pid": 3511970,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T18:35:44.023886+00:00"
+}

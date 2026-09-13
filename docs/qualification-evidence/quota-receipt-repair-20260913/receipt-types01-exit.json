@@ -1,0 +1,20 @@
+{
+  "name": "receipt-types01",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T18:19:44.799940+00:00",
+  "source_head": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "source_diff_sha256": "78e2ca9556d3d34fbff4c27901ddda2d94ca64df5d874b4cf91613ed7f8f8244",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/receipt-types01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/receipt-types01",
+  "source_manifest_sha256": "020dde709e6d4cc672e9387adb444474de30ca83f98db062c2db181759ffb420",
+  "pid": 3472242,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T18:19:58.362964+00:00"
+}

@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-13T19:18:06.392062+00:00",
+  "authorization": "User branch-integration follow-up; continue active quota/receipt repair first",
+  "canonical_branch": "codex/tui-safe-action-control-plane",
+  "integration_branch": "codex/model-free-reviewed-counter",
+  "integration_head": "7431f89ad0c05d927e23c5241be6788249d0a536",
+  "merge_base": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "sequence": [
+    "finish current full-suite attempt without source changes",
+    "preserve its actual result; correct demonstrated writer-handoff fixture prerequisite and run focused test",
+    "commit coherent quota/receipt product/tests/evidence",
+    "merge Finding9 preserving both branches/evidence and deliberately combine cli-help additions",
+    "run merged scope/deployment and Finding9 structured/boundary/counter regressions; command/help; types; stable full and offline gates with separate exits",
+    "freeze complete new merged installation; use only it for remaining known-case recoveries/fresh/runtime/edit checks"
+  ],
+  "budgets": "Existing implementation/stable budgets retained; use already-declared second full attempt after the demonstrated fixture correction and newly authorized merge. No fresh case or editing counters reset.",
+  "finding9_status": "IMPLEMENTER_OWNED, not independently accepted; its pre-merge installed pass does not transfer",
+  "pre_merge_prepared_software_status": "Historical development artifact result only; repeat fresh software on final merged candidate once gates pass"
+}

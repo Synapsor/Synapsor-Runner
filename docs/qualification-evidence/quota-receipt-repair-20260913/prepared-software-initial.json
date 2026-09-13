@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-13T18:43:21.804Z",
+  "command": [
+    "writeback",
+    "setup",
+    "--config",
+    "synapsor.actions.runner.json",
+    "--profile",
+    "development",
+    "--json"
+  ],
+  "exit": 1,
+  "code": "SEMANTIC_RECEIPT_REVIEW_REQUIRED",
+  "meaning": "missing explicit selection is now an actionable incomplete prerequisite, not not_applicable success",
+  "artifact": "0deb78b36ba762be1d8c05d437abe30c42a67a53b512523da9af8b1605dbf3ad",
+  "classification": "installed development regression, not stable candidate or fresh onboarding",
+  "log": "first non-TTY result was observed through exec; public-invocations.jsonl records preflight/start/actual exit. Wrapper now saves complete output for all later non-TTY commands.",
+  "original_stage_b": "NOT_PASSED"
+}

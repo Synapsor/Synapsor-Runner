@@ -1,0 +1,23 @@
+{
+  "name": "receipt-focused01",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/semantic-action-deployment.test.ts",
+    "apps/runner/src/saved-action-job-review.test.ts",
+    "apps/runner/src/verified-action-review.test.ts"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T18:21:53.191970+00:00",
+  "source_head": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "source_diff_sha256": "f8f949a9edbf8b433d9b943704b03cb620c72a8e171c0f21d94519ddaeaf4d2b",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/receipt-focused01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/receipt-focused01",
+  "source_manifest_sha256": "a7ba0eb31fe2b71f7552939fb3a4d1abd9e0d69dfb9acebcc1fe6ab714780b89",
+  "pid": 3477494,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T18:21:59.825702+00:00"
+}

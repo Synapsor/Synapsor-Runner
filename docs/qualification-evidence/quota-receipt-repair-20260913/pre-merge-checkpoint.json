@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-13T19:32:26.160909+00:00",
+  "quota_commit": "d7c4e0162eecbb29098dec2b4c7169fb8dd7ff5e",
+  "receipt_commit": "c3c35d19a1b7a60d91aa3b599dd03cb4b8817197",
+  "focused_result": "receipt-fixture11: exit0,28 passed,433 excluded/opt-in skips; all14 prior failing paths and both interactive mode confirmations included",
+  "next": "merge7431f89 into canonical branch; inspect both help additions, rerun merged gates; frozen development result does not transfer"
+}

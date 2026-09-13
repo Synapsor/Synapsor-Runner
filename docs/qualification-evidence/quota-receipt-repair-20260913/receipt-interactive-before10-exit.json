@@ -1,0 +1,27 @@
+{
+  "name": "receipt-interactive-before10",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/semantic-receipt-setup.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "-t",
+    "saves the confirmed interactive"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T19:29:50.296673+00:00",
+  "source_head": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "source_diff_sha256": "07b610909ff19936f21e7d1547374694efcd3a76d384d168b1f268a5ae6cc96e",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/receipt-interactive-before10",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/receipt-interactive-before10",
+  "source_manifest_sha256": "beeaa0540200cda580498d454d8cc074ab3dcdfbedcc48ebab0083c6d67a4125",
+  "pid": 3640528,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T19:30:04.268275+00:00"
+}

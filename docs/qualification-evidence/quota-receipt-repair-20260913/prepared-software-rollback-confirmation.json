@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-13T19:03:11.943704+00:00",
+  "status": "PASSED",
+  "marker": "OWNED_RECEIPT_FAILURE_AFTER_BOTH_EFFECTS",
+  "meaning": "Receipt BEFORE UPDATE hook read both changed business rows/version2 inside that transaction and then raised the deliberate persistence exception. Independent owner readback proved both rolled back and existing source receipt unchanged. Committed approval remains counted.",
+  "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/postgres-after-receipt-failure.log",
+  "log_sha256": "b4762811c79840dc7a04e801ed0f8fb6e607305d2aa7e8a55ac001622b5c6bbb",
+  "raw_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/prepared-rollback-result.json",
+  "raw_result_sha256": "87922e58ae169928a87ef06fdf037d0f4ffaf8af7fd469eb5b01abf2f1064187",
+  "failure_injection_removed": true,
+  "no_requeue_or_refund": true
+}

@@ -1,0 +1,22 @@
+{
+  "name": "scope-after01",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/action-policy-scope.test.ts",
+    "apps/runner/src/action-rule-model.test.ts"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T18:04:00.464880+00:00",
+  "source_head": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "source_diff_sha256": "16e3ea4f3e4389bf05ec81eb6a933c200199730c4c3da62602e0aedb69f7390c",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/scope-after01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-after01",
+  "source_manifest_sha256": "e7707ce8ce3e9c7eb3cab78368445accdb3603fc8c50d2f24d2b53b1b7f26d4d",
+  "pid": 3434530,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T18:04:03.928574+00:00"
+}

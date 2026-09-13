@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-13T19:16:20.883161+00:00",
+  "full_suite_state": "STILL_RUNNING; failure observed, final exit pending",
+  "test_file": "apps/runner/src/action-review-governed.test.ts",
+  "test": "public governed Action review > pages exact writer requirements and the exported handoff through public Action review without changing pending authority",
+  "source_sha256": "3b2c2eed8f9eb19827be0e40839a01397e19e02895af20fc6c08851fa02fc31a",
+  "actual": "recoveryChoices remains all4 entries instead of []",
+  "trace": "This scripted prompter accepts only writer/check/recovery menus; no receipt selection exists in its governed fixture. New required Select receipt storage menu precedes writer check. The prompter throws its unexpected-title assertion, which the normal setup error boundary reports as incomplete. No writer recovery choice is consumed.",
+  "classification": "DEMONSTRATED_TEST_SETUP_MISMATCH with new reviewed receipt prerequisite; unchanged source full suite must finish before correction",
+  "proposed_test_only_correction": "Explicitly preview/confirm/save runner_ledger with the intended writer through existing new operator setup API before recording immutable authority baseline; handle Keep exact reviewed selection. Retain all existing paging, no text entry, unchanged authority/config and separate-enable assertions.",
+  "budget": "Use the one declared additional full-suite attempt for demonstrated setup/harness correction; do not reset initial full result or counters."
+}

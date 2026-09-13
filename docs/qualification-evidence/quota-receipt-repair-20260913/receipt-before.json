@@ -1,0 +1,45 @@
+{
+  "at": "2026-09-13T18:02:00.325253+00:00",
+  "args": [
+    "writeback",
+    "setup",
+    "--config",
+    "synapsor.actions.runner.json",
+    "--profile",
+    "development",
+    "--json"
+  ],
+  "exit": 0,
+  "preflight_exit": 0,
+  "actual": {
+    "ok": true,
+    "applied": false,
+    "plan": {
+      "schema_version": "synapsor.writeback-setup.v1",
+      "config_path": "synapsor.actions.runner.json",
+      "source": null,
+      "engine": null,
+      "profile": "development",
+      "executor": "app_owned_or_none",
+      "receipt_mode": "not_applicable",
+      "execution": "not_applicable",
+      "source_objects": [],
+      "writer_grants": [],
+      "sql_preview": "",
+      "receipt_schema": null,
+      "receipt_table": null,
+      "writer_role": null,
+      "setup_connection_env": null,
+      "apply_allowed": false,
+      "source_database_changed": false,
+      "next_action": "No direct-SQL source needs receipt setup. Verify the app-owned executor or keep this project read-only.",
+      "digest": "sha256:d30b79a56056c7aba6564d1e7affa8d9e4187a4f71e8fc432475b904431a7898"
+    }
+  },
+  "original_project_not_opened": true,
+  "owned_copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/before-software",
+  "source_database_connections": 0,
+  "provider_calls": 0,
+  "artifact_tree": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+  "classification": "Installed before reproduction, exact saved reviewed project in whole-directory owned alias; no source access needed for this incorrectly empty preview"
+}

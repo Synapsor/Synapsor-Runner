@@ -1,0 +1,23 @@
+{
+  "name": "receipt-composed04",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/semantic-receipt-setup.test.ts",
+    "apps/runner/src/verified-action-execution-review.test.ts",
+    "apps/runner/src/writer-provisioning.test.ts"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T18:28:55.970873+00:00",
+  "source_head": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "source_diff_sha256": "60dc036876b95218af276a26326d7c41f5dc30bf848b916f4e978254a47e1d9d",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/receipt-composed04",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/receipt-composed04",
+  "source_manifest_sha256": "d4755936eb8fe9ed1d9f1bb977b68651b361c696a236c5d4a453cbf9acac4402",
+  "pid": 3494830,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T18:29:27.837054+00:00"
+}

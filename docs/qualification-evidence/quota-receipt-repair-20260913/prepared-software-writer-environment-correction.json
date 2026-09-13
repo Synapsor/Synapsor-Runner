@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-13T18:55:41.465820+00:00",
+  "original_attempt": "action-review-02.ansi",
+  "classification": "HARNESS_ENVIRONMENT_ERROR",
+  "cause": "Hostless Unix socket URI retained user=postgres query; URL.username assignment was ineffective. Public verification correctly rejected privileged/table-owner connection before enabling execution.",
+  "correction": "Explicit user query replaced with exact generated dedicated role; whole original attempt preserved; restart required to receive corrected per-process env.",
+  "source_or_authority_changes": false,
+  "budget_reset": false
+}
