@@ -30,9 +30,11 @@ import {
   type PolicyApprovalLimit,
   type PolicyApprovalLimitTrip,
   type ActionBoundaryApprovalContext,
+  type AutomaticApprovalActionRevision,
   type ActionBoundaryApprovalLimitTrip,
   type PolicyApprovalDecision,
 } from "./domain-types.js";
+import { automaticApprovalActionRevision, assertAutomaticApprovalActionRevision } from "./automatic-approval-authority.js";
 import {
   isRecord,
 } from "./common.js";
@@ -595,6 +597,7 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
         reason: string;
         limits?: PolicyApprovalLimit[];
         action_boundary?: ActionBoundaryApprovalContext;
+        action_revision?: AutomaticApprovalActionRevision;
         now?: string;
         freshness_proof_digest?: string;
       },
@@ -606,6 +609,13 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
       const boundaryNearLimits: ActionBoundaryApprovalLimitTrip[] = [];
       let quorumDeferred = false;
       this.transaction(() => {
+        if (options.action_revision) {
+          const expected = automaticApprovalActionRevision(options.action_revision);
+          const active = this.db.prepare(`SELECT name, revision_id FROM control_policy_active
+            WHERE deployment_id = ? AND scope_key = '{"level":"operator"}' AND kind = 'action' AND revision_id IS NOT NULL`)
+            .all(expected.deployment_id);
+          assertAutomaticApprovalActionRevision(active, expected);
+        }
         // BEGIN IMMEDIATE has acquired the writer lock. Evaluate every limit
         // and persist its approval event at this admission time, never at a
         // request's earlier evidence time. `now` remains a trusted test override.

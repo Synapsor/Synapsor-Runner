@@ -91,6 +91,7 @@ export type {
   ActionBoundaryApprovalContext,
   ActionBoundaryApprovalLimitTrip,
   PolicyApprovalDecision,
+  AutomaticApprovalActionRevision,
   WorkerPolicyExecutionLimits,
   MaybePromise,
   ProposalRuntimeStore,

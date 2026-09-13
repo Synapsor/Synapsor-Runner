@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { postgresControlPolicyRepository, type ControlPolicyRepository } from "./control-policy-repository.js";
+import { automaticApprovalActionRevision, assertAutomaticApprovalActionRevision } from "./automatic-approval-authority.js";
 import {
   canonicalJsonStringify,
   parseWritebackJob,
@@ -463,7 +464,20 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
     proposalId: string,
     options: Parameters<ProposalRuntimeStore["approveProposalByPolicy"]>[1],
   ): Promise<PolicyApprovalDecision> {
-    return await this.withWrite("approveProposalByPolicy", (store) => store.approveProposalByPolicy(proposalId, options));
+    const { action_revision, ...decision } = options;
+    const expected = action_revision && automaticApprovalActionRevision(action_revision);
+    return await this.withWrite("approveProposalByPolicy", (store) => store.approveProposalByPolicy(proposalId, decision),
+      expected ? async (client) => {
+        // Publication updates this existing row before changing any pointer.
+        // Hold it through the ledger COMMIT, never copy policy into the transient store.
+        await client.query("SET LOCAL lock_timeout = '5s'");
+        const deployment = await client.query(`SELECT deployment_id FROM ${quotePostgresIdentifier(this.schema)}.control_policy_deployments
+          WHERE deployment_id = $1 FOR SHARE`, [expected.deployment_id]);
+        if (deployment.rows.length !== 1) throw new ProposalStoreError("POLICY_REVISION_CONFLICT", "The governed Action deployment is unavailable.");
+        const active = await client.query(`SELECT name, revision_id FROM ${quotePostgresIdentifier(this.schema)}.control_policy_active
+          WHERE deployment_id = $1 AND scope_key = '{"level":"operator"}' AND kind = 'action' AND revision_id IS NOT NULL`, [expected.deployment_id]);
+        assertAutomaticApprovalActionRevision(active.rows, expected);
+      } : undefined);
   }
 
   async getProposal(proposalId: string): Promise<StoredProposal | undefined> {
@@ -1073,13 +1087,15 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
       });
   }
 
-  private async withWrite<T>(operation: string, callback: (store: ProposalStore) => T): Promise<T> {
+  private async withWrite<T>(operation: string, callback: (store: ProposalStore) => T,
+    beforeDecision?: (client: PostgresRuntimeClient) => Promise<void>): Promise<T> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       const locked = await acquirePostgresRuntimeStoreLock(client, `synapsor-runner:${this.schema}:runtime-store`, this.lockTimeoutMs);
       if (!locked) throw new ProposalStoreError("POSTGRES_RUNTIME_STORE_LOCK_TIMEOUT", `Postgres runtime store lock is held for schema ${this.schema} while running ${operation}`);
       if (this.autoMigrate) await client.query(sharedPostgresRuntimeStoreMigration(this.schema));
+      await beforeDecision?.(client);
       const store = await this.transientStoreFromPostgres(client);
       let result: T;
       try {
@@ -1096,6 +1112,9 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
       return result;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
+      if (beforeDecision && (error as { code?: string }).code === "55P03") {
+        throw new ProposalStoreError("POLICY_MUTATION_BUSY", "Policy coordination remained busy for five seconds; no automatic decision was committed.");
+      }
       throw error;
     } finally {
       client.release();

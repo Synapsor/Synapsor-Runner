@@ -358,6 +358,33 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
       });
       return {
         trusted_context: trustedContext,
+        approveAutomatic: async (proposalId, options) => {
+          try {
+            if (policyStore) {
+              if (!loaded.policy_revision) throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Current governed Action revision is unavailable.");
+              await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+              return await input.store.approveProposalByPolicy(proposalId, { ...options, action_revision: loaded.policy_revision });
+            }
+            return await withProjectAuthorityMutation(projectRoot, async () => {
+              // File-backed authority and the ledger have separate storage. The
+              // existing cross-process writer mutex orders publication with commit.
+              const latest = await loadAuthority();
+              if (canonicalJsonDigest(latest.activation) !== canonicalJsonDigest(loaded.activation)) {
+                throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The exact reviewed Action activation changed before automatic approval.");
+              }
+              if (latest.unavailable_outcomes?.includes(expected.compiled.outcome)) {
+                throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Current Action dependency is unavailable.");
+              }
+              assertSameRuleRevision(expected, resolveActivatedActionRule(latest.registry, expected.compiled.outcome));
+              return await input.store.approveProposalByPolicy(proposalId, options);
+            });
+          } catch (error) {
+            if ((error as { code?: string }).code === "POLICY_REVISION_CONFLICT" || (error as { code?: string }).code === "ENOENT") {
+              throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Action Rule authority changed before automatic approval.");
+            }
+            throw error;
+          }
+        },
         subject_authority: {
           source_id: current.compiled.source,
           read_boundary_digest: current.read_boundary_digest,

@@ -692,6 +692,8 @@ export type SemanticActionRequestContext = {
   trusted_context: TrustedContext;
   subject_authority: SubjectReferenceAuthorityContext;
   fact_loader: ActionRuleFactLoaderAdapterV1;
+  /** Trusted host coordination, after fact preparation and through approval commit. */
+  approveAutomatic?: ProposalRuntimeStore["approveProposalByPolicy"];
   delegation?: {
     checkProposal: SemanticProposalDelegationCheck;
     checkExisting(proposal_id: string, authority: SemanticAuthorityV1): Promise<void>;

@@ -83,6 +83,7 @@ import {
   type PolicyApprovalLimit,
   type PolicyApprovalLimitTrip,
   type ActionBoundaryApprovalContext,
+  type AutomaticApprovalActionRevision,
   type PolicyApprovalDecision,
   type WorkerPolicyExecutionLimits,
   type RecordHandlerWritebackJobInput,
@@ -150,6 +151,7 @@ export interface ProposalStoreProposalMethods {
         reason: string;
         limits?: PolicyApprovalLimit[];
         action_boundary?: ActionBoundaryApprovalContext;
+        action_revision?: AutomaticApprovalActionRevision;
         now?: string;
         freshness_proof_digest?: string;
       },

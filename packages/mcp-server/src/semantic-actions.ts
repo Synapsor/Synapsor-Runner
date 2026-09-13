@@ -265,7 +265,8 @@ export function createSemanticActionRuntime(input: {
             await ensureSemanticEvidence(input.store, proposal);
             await resolvedContext.delegation?.checkExisting(proposal.proposal_id, decision.semantic_authority);
             if (decision.approval.path === "automatic_eligible") {
-              const approvalDecision = await input.store.approveProposalByPolicy(proposal.proposal_id, {
+              const approve = resolvedContext.approveAutomatic ?? input.store.approveProposalByPolicy.bind(input.store);
+              const approvalDecision = await approve(proposal.proposal_id, {
                 policy: decision.approval.authority.name,
                 proposal_hash: proposal.proposal_hash,
                 proposal_version: proposal.proposal_version,

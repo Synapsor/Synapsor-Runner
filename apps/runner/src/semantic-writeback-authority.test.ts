@@ -329,6 +329,33 @@ describe("semantic writeback authority orchestration", () => {
     }
   });
 
+  it("retains automatic approval history but never dispatches old unstarted work after a lower-limit replacement", async () => {
+    const fixture = await writebackFixture({automaticApproval: true});
+    const original = await loadActiveActionRuleAuthority(fixture.root);
+    const config = semanticWorkerConfig(fixture.config, original.registry.rules[0]!.action_boundary_digest);
+    await fs.writeFile(fixture.configPath, JSON.stringify(config));
+    const store = new ProposalStore(fixture.storePath);
+    try {
+      await enqueueApprovedForSupervisedWorker(store, config, fixture.configPath, {});
+      const approvals = store.approvals(fixture.job.proposal_id);
+      expect(approvals).toHaveLength(1);
+      expect(approvals[0]!.approver).toBe("policy:billing.standard_change");
+      expect(store.getWorkerQueueItem(fixture.job.proposal_id)?.status).toBe("queued");
+      await fixture.replaceLimit(1);
+      const replacement = await loadActiveActionRuleAuthority(fixture.root);
+      expect(replacement.authority.digest).not.toBe(original.authority.digest);
+      await expect(claimSupervisedWorkerItem(store, config, fixture.configPath, {workerId: "semantic_worker"})).resolves.toBeUndefined();
+      expect(store.approvals(fixture.job.proposal_id)).toEqual(approvals);
+      expect(store.getWorkerQueueItem(fixture.job.proposal_id)).toMatchObject({status: "queued", lease_id: undefined, lease_owner: undefined});
+      expect(store.receipts(fixture.job.proposal_id)).toEqual([]);
+      if(process.env.SYNAPSOR_TEST_EVIDENCE_DIR) await fs.writeFile(path.join(process.env.SYNAPSOR_TEST_EVIDENCE_DIR, "old-unstarted-work.json"), JSON.stringify({
+        original: original.authority.digest, replacement: replacement.authority.digest,
+        approvals, queue: store.getWorkerQueueItem(fixture.job.proposal_id), receipts: store.receipts(fixture.job.proposal_id),
+        source_execution: "not dispatched", already_dispatched: "not exercised by this case"
+      }, null, 2));
+    } finally {store.close();}
+  });
+
   it("leaves semantic work unleased after Action authority is deactivated", async () => {
     const fixture = await writebackFixture();
     const authority = await loadActiveActionRuleAuthority(fixture.root);
@@ -566,7 +593,7 @@ async function writebackFixture(options: {
     }],
   };
   const activatedAt = new Date().toISOString();
-  const draft = buildActionRuleAuthorityDraft({
+  const createDraft = (maximum?: number) => buildActionRuleAuthorityDraft({
     name: "billing_active_rules",
     action_boundary_name: "billing_actions",
     catalog: source.catalog,
@@ -577,7 +604,7 @@ async function writebackFixture(options: {
       effect_envelope: source.envelope,
       rule: source.rule,
     }],
-    ...(options.automaticApproval ? { approval_classes: [approvalClass] } : {}),
+    ...(options.automaticApproval ? { approval_classes: [{...approvalClass, shared_limits: approvalClass.shared_limits.map(l => ({...l, maximum: maximum ?? l.maximum}))}] } : {}),
     reviews: [{
       outcome: source.rule.outcome,
       when: "The preference is active.",
@@ -591,6 +618,7 @@ async function writebackFixture(options: {
     }],
     now: activatedAt,
   });
+  const draft = createDraft();
   await writeActionRuleAuthorityDraft(root, draft);
   await activateActionRuleAuthority({
     projectRoot: root,
@@ -707,7 +735,12 @@ async function writebackFixture(options: {
   };
   const configPath = path.join(root, "synapsor.runner.json");
   await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-  return { root, config, configPath, storePath, job, factLoader };
+  return { root, config, configPath, storePath, job, factLoader, replaceLimit: async (maximum: number) => {
+    const replacement = createDraft(maximum);
+    await writeActionRuleAuthorityDraft(root, replacement);
+    return activateActionRuleAuthority({projectRoot: root, name: replacement.authority.name, expected_digest: replacement.digest,
+      confirmation: `ACTIVATE ${replacement.digest}`, actor: "action reviewer"});
+  }};
 }
 
 function authoritySource(schema = "billing"): {

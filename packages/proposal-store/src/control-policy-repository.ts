@@ -499,6 +499,9 @@ export function postgresControlPolicyRepository(pool: PostgresRuntimePool, schem
       const client = await pool.connect();
       try {
         await client.query(mode === "read" ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN");
+        // Automatic decisions can share-lock the deployment through ledger COMMIT.
+        // A competing policy writer must return bounded busy, not wait indefinitely.
+        if (mode !== "read") await client.query("SET LOCAL lock_timeout = '5s'");
         if (mode === "migration") {
           await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`${schema}:control-policy-migration`]);
           await client.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
@@ -513,6 +516,9 @@ export function postgresControlPolicyRepository(pool: PostgresRuntimePool, schem
         return result;
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);
+        if ((error as { code?: string }).code === "55P03") {
+          throw new ProposalStoreError("POLICY_MUTATION_BUSY", "Policy coordination remained busy for five seconds; this policy transaction was rolled back.");
+        }
         throw error;
       } finally { client.release(); }
     },

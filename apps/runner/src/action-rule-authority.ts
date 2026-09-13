@@ -3,7 +3,7 @@ import type { Dirent } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
-import type { ControlPolicyCommit, ControlPolicyRevision, ControlPolicyScopeSnapshot } from "@synapsor-runner/proposal-store";
+import type { ControlPolicyCommit, ControlPolicyRevision, ControlPolicyScopeSnapshot, AutomaticApprovalActionRevision } from "@synapsor-runner/proposal-store";
 import { publishPolicyConfiguration } from "./control-policy-config-publication.js";
 import { openBoundProjectControlPolicies, assertProjectControlPolicyBinding, commitImmutableControlPolicies,
   type BoundProjectPolicyStore } from "./control-policy-store.js";
@@ -65,6 +65,7 @@ export type ActionRuleAuthorityActivationV1 = {
 
 export type LoadedActiveActionRuleAuthorityV1 = LoadedActionRuleAuthorityV1 & {
   activation: ActionRuleAuthorityActivationV1;
+  policy_revision?: AutomaticApprovalActionRevision;
   unavailable_outcomes?: string[];
 };
 
@@ -337,7 +338,9 @@ async function checkedStoredActionResult(projectRoot: string, binding: BoundProj
   const result = await checkLoadedReadDependencies(projectRoot, loaded, activation, { ...options, read_boundaries: reads });
   const latest = await binding.repository.deployment(binding.deployment_id);
   if (latest?.epoch !== current.epoch) throw authorityError("POLICY_REVISION_CONFLICT", "Action authority changed while loading its Read dependencies. Retry using the current revision.");
-  return result;
+  const active = current.active[0]!;
+  return { ...result, policy_revision: Object.freeze({ deployment_id: binding.deployment_id,
+    action_name: active.name, revision_id: active.revision_id }) };
 }
 
 export async function writeActionRuleAuthorityDraft(

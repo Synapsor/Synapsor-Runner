@@ -1138,6 +1138,14 @@ export type ActionBoundaryApprovalContext = {
   limits: ActionBoundarySharedLimitV1[];
 };
 
+/** Trusted runtime binding to the existing governed operator Action record.
+ * The store checks this inside the same transaction as the automatic decision. */
+export type AutomaticApprovalActionRevision = {
+  deployment_id: string;
+  action_name: string;
+  revision_id: string;
+};
+
 export type ActionBoundaryApprovalLimitTrip = ActionBoundarySharedLimitV1 & {
   observed: number;
   proposed: number;
@@ -1206,7 +1214,8 @@ export type ProposalRuntimeStore = {
       proposal_version: number;
       reason: string;
       limits?: PolicyApprovalLimit[];
-      action_boundary?: ActionBoundaryApprovalContext;
+        action_boundary?: ActionBoundaryApprovalContext;
+        action_revision?: AutomaticApprovalActionRevision;
       now?: string;
       freshness_proof_digest?: string;
     },
