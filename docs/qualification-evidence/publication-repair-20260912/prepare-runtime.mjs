@@ -9,7 +9,7 @@ process.umask(0o077);
 const evidence=path.dirname(fileURLToPath(import.meta.url));
 const taskRoot='/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912';
 const prior='/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/proposal-receipt-scope-961d98c/insurance-recovery';
-const caseName=process.argv[2];assert(['main','overall','collection','edit'].includes(caseName));
+const caseName=process.argv[2];assert(['main','overall','collection','collection_02','edit'].includes(caseName));
 const artifactRoot=path.join(taskRoot,'frozen');
 const artifact=JSON.parse(await fs.readFile(path.join(artifactRoot,'installed-artifact-manifest.json')));
 execFileSync(process.execPath,[path.join(artifactRoot,'freeze-repair.mjs'),'--verify'],{stdio:'pipe'});

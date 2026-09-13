@@ -1,0 +1,20 @@
+2026-09-13T01:35:33.402210198Z 2026-09-13 01:35:33.401 UTC [1173] ERROR:  canceling statement due to statement timeout
+2026-09-13T01:35:33.402277634Z 2026-09-13 01:35:33.401 UTC [1173] CONTEXT:  while locking tuple (0,4) in relation "portfolios"
+2026-09-13T01:35:33.402292757Z 2026-09-13 01:35:33.401 UTC [1173] STATEMENT:  SELECT "adjuster_id", "insurer_id", "per_claim_ceiling_cents", "portfolio_id", "reserve_cap_cents", "routine_ceiling_cents", "status", "version"
+2026-09-13T01:35:33.402306205Z 	FROM "reserve_ops"."portfolios"
+2026-09-13T01:35:33.402321329Z 	WHERE (("insurer_id" = $1 AND "adjuster_id" = $2 AND "portfolio_id" = $3))
+2026-09-13T01:35:33.402332600Z 	  AND "insurer_id" = $4
+2026-09-13T01:35:33.402342413Z 	  AND "adjuster_id" = $5
+2026-09-13T01:35:33.402385994Z 	ORDER BY "portfolio_id" ASC
+2026-09-13T01:35:33.402395927Z 	LIMIT $6
+2026-09-13T01:35:33.402403348Z 	FOR UPDATE
+2026-09-13T01:35:41.813397091Z 2026-09-13 01:35:41.813 UTC [1177] ERROR:  canceling statement due to statement timeout
+2026-09-13T01:35:41.813437835Z 2026-09-13 01:35:41.813 UTC [1177] CONTEXT:  while locking tuple (0,4) in relation "portfolios"
+2026-09-13T01:35:41.813445562Z 2026-09-13 01:35:41.813 UTC [1177] STATEMENT:  SELECT "adjuster_id", "insurer_id", "per_claim_ceiling_cents", "portfolio_id", "reserve_cap_cents", "routine_ceiling_cents", "status", "version"
+2026-09-13T01:35:41.813452695Z 	FROM "reserve_ops"."portfolios"
+2026-09-13T01:35:41.813458004Z 	WHERE (("insurer_id" = $1 AND "adjuster_id" = $2 AND "portfolio_id" = $3))
+2026-09-13T01:35:41.813463883Z 	  AND "insurer_id" = $4
+2026-09-13T01:35:41.813468486Z 	  AND "adjuster_id" = $5
+2026-09-13T01:35:41.813472855Z 	ORDER BY "portfolio_id" ASC
+2026-09-13T01:35:41.813477454Z 	LIMIT $6
+2026-09-13T01:35:41.813481823Z 	FOR UPDATE

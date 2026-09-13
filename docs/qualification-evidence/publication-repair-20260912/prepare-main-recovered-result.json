@@ -1,0 +1,15 @@
+{
+  "command": [
+    "node",
+    "docs/qualification-evidence/publication-repair-20260912/prepare-runtime.mjs",
+    "main"
+  ],
+  "exec_session": 25463,
+  "actual_exit_code": 0,
+  "preparation_created_at": "2026-09-13T01:28:21.331Z",
+  "prepared": "main",
+  "database": "insurance_stagea_main",
+  "original_rows_preserved": 40,
+  "artifact_tree": "b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0",
+  "environment_record": "Initial host preparation used the shell environment; fixture URLs were explicitly selected from the owned local PostgreSQL fixture. Subsequent preparation and all runtime drivers use run-owned.py with a cleared environment. No provider is used by preparation."
+}

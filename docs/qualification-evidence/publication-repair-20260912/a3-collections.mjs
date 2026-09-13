@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {PublicMcp,admin,operator,sourceSnapshot,ledgerSnapshot,hostSnapshot,runtime,timeout,schedule,log} from './runtime-driver.mjs';
 const result={case:'A3 complete portfolio collection and owned source transaction',status:'running'};
 const client=new PublicMcp();const workers=[];let blocker;
-const runWorker=()=>{const work=operator(['worker','run','--supervised','--once','--yes','--config','synapsor.actions.runner.json','--worker-id','semantic_action_worker']);workers.push(work);return work;};
+const runWorker=(onSpawn)=>{const work=operator(['worker','run','--supervised','--once','--yes','--config','synapsor.actions.runner.json','--worker-id','semantic_action_worker'],{},onSpawn);workers.push(work);return work;};
 async function waitForBlocked(pid,label){
  const observer=admin();await observer.connect();try{const end=Date.now()+12000;
  while(Date.now()<end){const r=await observer.query('SELECT pid,usename,application_name,state,wait_event_type,wait_event,pg_blocking_pids(pid) AS blockers FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))',[pid]);
@@ -26,9 +26,11 @@ try {
  blocker=admin();await blocker.connect();const pid=(await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
  await blocker.query('BEGIN');await blocker.query("SELECT portfolio_id FROM reserve_ops.portfolios WHERE portfolio_ref='PF-RACE' FOR UPDATE");
  const first=runWorker();result.first_source_wait=await waitForBlocked(pid,'collection worker');
- const second=runWorker();result.second_while_first_blocked=await timeout(second,20000,'second worker under unchanged concurrency one');
- assert.equal(result.second_while_first_blocked.code,0);result.workers_before_release=await hostSnapshot('a3-second-worker-before-first-release');
- result.effect_scheduling='First effect transaction observed waiting; second worker completed while first remained held under concurrency one; effect attempts serialized';
+ const spawned=new Promise(resolve=>{result.second_spawn_resolve=resolve;});
+ const second=runWorker(pid=>result.second_spawn_resolve(pid));
+ result.second_worker_pid=await timeout(spawned,1500,'second worker process launch');delete result.second_spawn_resolve;
+ result.workers_before_release=await hostSnapshot('a3-second-worker-before-first-release');
+ result.effect_scheduling='First effect transaction observed waiting; second process launched before release. Concurrency limit remains one; this observation does not establish overlapping effect transactions.';
  await blocker.query('COMMIT');await blocker.end();blocker=undefined;
  result.workers=await Promise.all([first,second]);assert(result.workers.every(w=>w.code===0));
  let after=ledgerSnapshot('a3-concurrent-workers');

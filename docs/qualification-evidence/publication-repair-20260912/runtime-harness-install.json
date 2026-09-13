@@ -1,0 +1,50 @@
+{
+  "owned": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime",
+  "sources": [
+    {
+      "name": "runtime-driver.mjs",
+      "sha256": "9be8d8c070cb2f482b5d5fb5fe55420e1600829a1d703a4703165a1559b1a2ea"
+    },
+    {
+      "name": "storage-preflight.mjs",
+      "sha256": "f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2"
+    },
+    {
+      "name": "a1-identical.mjs",
+      "sha256": "ac0ec8118b3fed4d9fe31fe08e9abe28188e43215d066579b72e6aa725a6dc4e"
+    },
+    {
+      "name": "a2-insurer.mjs",
+      "sha256": "e840bf095ad6772d9d6ab69cbce1ceb70bb15a82ad3412ab1f142cbd9c5a4828"
+    },
+    {
+      "name": "a2-overall.mjs",
+      "sha256": "7b435fb395865b08ae2455cae70730b0809ccc3705750e33a421ffa0529f6bda"
+    },
+    {
+      "name": "a3-collections.mjs",
+      "sha256": "b163a5953a502c04b96cad3f9a4d16d1dd2a7b499ed124127f91e90c7664fea4"
+    },
+    {
+      "name": "a4-contexts.mjs",
+      "sha256": "00682a2dbf9042c58ddd06aee1a133ea7aabca2b8abeffbd43988891dbaa8833"
+    },
+    {
+      "name": "operator-cli.mjs",
+      "sha256": "a5b8af02910f128f4db198ef57088ca7b015eb6bcad710e068d3b7ae7bd4ae39"
+    },
+    {
+      "name": "prepare-edit.mjs",
+      "sha256": "ec5930af8812729aed36c81161d7caff0c48bd6420a1fbc83f644e7fb558194d"
+    },
+    {
+      "name": "a5-publication-edit.mjs",
+      "sha256": "277b540d3a8f25ce113252dae73104e80cd48f317491ef30b10117d80d9c2eb8"
+    },
+    {
+      "name": "check-installed-context.mjs",
+      "sha256": "6a3ce0527de8683c8e89043a2916a189a664b2e6c1aa454172770a167e9142cc"
+    }
+  ],
+  "dependencies": "new complete immutable installed artifact only"
+}

@@ -1,0 +1,17 @@
+{
+  "budget": {
+    "started_at": "2026-09-13T01:30:18.612Z",
+    "deadline": "2026-09-13T03:00:18.613Z",
+    "operations": 48,
+    "maximum_operations": 400,
+    "worker_invocations": 6,
+    "schedules": {
+      "A1 identical and replay": 1,
+      "A2 final insurer slot": 1,
+      "A3 portfolio constraint": 2,
+      "A3 owned source update": 1
+    }
+  },
+  "corroborated_operation_events": 48,
+  "no_budget_reset": true
+}

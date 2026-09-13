@@ -1,0 +1,34 @@
+{
+  "frozen_at": "2026-09-13T01:27:37.375Z",
+  "purpose": "new publication-consistency repair verification and bounded local Stage A",
+  "cases": [
+    "owned insurance recovery A1-A4 and sequential exact limit edit"
+  ],
+  "product_commit": "b16f92aa01d52d6b51e74e0e1574fac7de14635b",
+  "test_commit": "03e3f447e1f79ffbc804b0e8b396bddb510e3e12",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "f9d28398ac6b896f2824d04ba28b858d6ae5cd48",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/frozen/installed",
+  "installed_tree_sha256": "b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "1bdb01a5cffc444530b6617ffd1c7eff8454db111098b95c0243d0bb684b06a2",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "b06ce84101b69b4c2ca34e6798cc80d8e8a94b2330804dbea6787dbfbc20a796"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "freeze_exit_code": 0
+}

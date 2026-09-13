@@ -1,0 +1,18 @@
+{
+  "reason": "Demonstrated A3 harness-induced source statement timeout; record process spawn instead of waiting for completion under the blocker",
+  "files": [
+    {
+      "name": "a3-collections.mjs",
+      "sha256": "dd1f192068d4c4be52a2e85a183805e228799eb5f9b371ae90c7cbd3b20353fb"
+    },
+    {
+      "name": "runtime-driver.mjs",
+      "sha256": "6a7877b75779ac252f6b9d0363ac7dc341b2e3ef78f39eb686fd057d3fbaffb9"
+    },
+    {
+      "name": "prepare-runtime.mjs",
+      "sha256": "a86ad3016dadc91c5c7c4511fd1f6e2e52721602837f17c877260b14c8302b9f"
+    }
+  ],
+  "frozen_installation_modified": false
+}

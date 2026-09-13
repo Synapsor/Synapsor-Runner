@@ -1,0 +1,22 @@
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.
+Debugger listening on ws://127.0.0.1:40307/43a74fe2-1e16-4a40-809a-1ce1545c7836
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.
+Debugger ending on ws://127.0.0.1:40307/43a74fe2-1e16-4a40-809a-1ce1545c7836
+For help, see: https://nodejs.org/en/docs/inspector
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.
+Debugger listening on ws://127.0.0.1:46831/3a5177f9-6b2c-400e-8d5c-113fd785d4a9
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.
+Debugger ending on ws://127.0.0.1:46831/3a5177f9-6b2c-400e-8d5c-113fd785d4a9
+For help, see: https://nodejs.org/en/docs/inspector

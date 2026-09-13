@@ -1,0 +1,98 @@
+2026-09-12T23:53:48.841615971Z ********************************************************************************
+2026-09-12T23:53:48.841686370Z WARNING: POSTGRES_HOST_AUTH_METHOD has been set to "trust". This will allow
+2026-09-12T23:53:48.841696790Z          anyone with access to the Postgres port to access your database without
+2026-09-12T23:53:48.841702376Z          a password, even if POSTGRES_PASSWORD is set. See PostgreSQL
+2026-09-12T23:53:48.841707176Z          documentation about "trust":
+2026-09-12T23:53:48.841711973Z          https://www.postgresql.org/docs/current/auth-trust.html
+2026-09-12T23:53:48.841716506Z          In Docker's default configuration, this is effectively any other
+2026-09-12T23:53:48.841721159Z          container on the same system.
+2026-09-12T23:53:48.841725553Z 
+2026-09-12T23:53:48.841729701Z          It is not recommended to use POSTGRES_HOST_AUTH_METHOD=trust. Replace
+2026-09-12T23:53:48.841734330Z          it with "-e POSTGRES_PASSWORD=password" instead to set a password in
+2026-09-12T23:53:48.841739213Z          "docker run".
+2026-09-12T23:53:48.841743771Z ********************************************************************************
+2026-09-12T23:53:51.020301476Z initdb: warning: enabling "trust" authentication for local connections
+2026-09-12T23:53:51.020511345Z initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-09-12T23:53:51.941145176Z 2026-09-12 23:53:51.940 UTC [1] LOG:  starting PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-09-12T23:53:51.948310598Z 2026-09-12 23:53:51.947 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-09-12T23:53:51.974048157Z 2026-09-12 23:53:51.973 UTC [96] LOG:  database system was shut down at 2026-09-12 23:53:51 UTC
+2026-09-12T23:53:51.989036910Z 2026-09-12 23:53:51.988 UTC [1] LOG:  database system is ready to accept connections
+2026-09-12T23:58:52.073877463Z 2026-09-12 23:58:52.073 UTC [94] LOG:  checkpoint starting: time
+2026-09-12T23:59:13.490009337Z 2026-09-12 23:59:13.489 UTC [94] LOG:  checkpoint complete: wrote 214 buffers (1.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=21.182 s, sync=0.180 s, total=21.417 s; sync files=296, longest=0.013 s, average=0.001 s; distance=2712 kB, estimate=2712 kB; lsn=0/1BBBA98, redo lsn=0/1BBBA08
+2026-09-13T00:08:52.690630988Z 2026-09-13 00:08:52.690 UTC [94] LOG:  checkpoint starting: time
+2026-09-13T00:09:08.511198551Z 2026-09-13 00:09:08.510 UTC [94] LOG:  checkpoint complete: wrote 153 buffers (0.9%); 1 WAL file(s) added, 0 removed, 0 recycled; write=15.262 s, sync=0.472 s, total=15.821 s; sync files=285, longest=0.011 s, average=0.002 s; distance=2333 kB, estimate=2674 kB; lsn=0/1E03110, redo lsn=0/1E03080
+2026-09-13T00:18:52.108444590Z 2026-09-13 00:18:52.108 UTC [94] LOG:  checkpoint starting: time
+2026-09-13T00:19:32.202833461Z 2026-09-13 00:19:32.202 UTC [488] ERROR:  canceling statement due to lock timeout
+2026-09-13T00:19:32.202856471Z 2026-09-13 00:19:32.202 UTC [488] CONTEXT:  while updating tuple (0,4) in relation "control_policy_deployments"
+2026-09-13T00:19:32.202861167Z 2026-09-13 00:19:32.202 UTC [488] STATEMENT:  UPDATE "publication_46a8e5c78bc94585878e9072fe5b6ba2"."control_policy_deployments" SET epoch = epoch + 1
+2026-09-13T00:19:32.202864612Z 	        WHERE deployment_id = $1 AND epoch = $2 RETURNING epoch
+2026-09-13T00:19:36.452721615Z 2026-09-13 00:19:36.452 UTC [94] LOG:  checkpoint complete: wrote 348 buffers (2.1%); 0 WAL file(s) added, 0 removed, 1 recycled; write=34.786 s, sync=9.481 s, total=44.345 s; sync files=3187, longest=0.013 s, average=0.003 s; distance=15648 kB, estimate=15648 kB; lsn=0/372FAE8, redo lsn=0/2D4B468
+2026-09-13T00:19:38.031116727Z 2026-09-13 00:19:38.030 UTC [499] ERROR:  canceling statement due to lock timeout
+2026-09-13T00:19:38.031172375Z 2026-09-13 00:19:38.030 UTC [499] CONTEXT:  while locking tuple (0,4) in relation "control_policy_deployments"
+2026-09-13T00:19:38.031185660Z 2026-09-13 00:19:38.030 UTC [499] STATEMENT:  SELECT deployment_id FROM "publication_0c8bffb66018476d8119fc59ab7fad1d".control_policy_deployments
+2026-09-13T00:19:38.031195771Z 	          WHERE deployment_id = $1 FOR SHARE
+2026-09-13T00:22:44.282550739Z 2026-09-13 00:22:44.282 UTC [624] ERROR:  canceling statement due to lock timeout
+2026-09-13T00:22:44.282620502Z 2026-09-13 00:22:44.282 UTC [624] CONTEXT:  while updating tuple (0,4) in relation "control_policy_deployments"
+2026-09-13T00:22:44.282636419Z 2026-09-13 00:22:44.282 UTC [624] STATEMENT:  UPDATE "publication_57299fccd5b1400bb9ce20685f2d776a"."control_policy_deployments" SET epoch = epoch + 1
+2026-09-13T00:22:44.282648425Z 	        WHERE deployment_id = $1 AND epoch = $2 RETURNING epoch
+2026-09-13T00:22:50.121498395Z 2026-09-13 00:22:50.121 UTC [634] ERROR:  canceling statement due to lock timeout
+2026-09-13T00:22:50.121549254Z 2026-09-13 00:22:50.121 UTC [634] CONTEXT:  while locking tuple (0,4) in relation "control_policy_deployments"
+2026-09-13T00:22:50.121602085Z 2026-09-13 00:22:50.121 UTC [634] STATEMENT:  SELECT deployment_id FROM "publication_490e4cfe8008444199feb3863aab2c8a".control_policy_deployments
+2026-09-13T00:22:50.121610535Z 	          WHERE deployment_id = $1 FOR SHARE
+2026-09-13T00:23:52.479354810Z 2026-09-13 00:23:52.479 UTC [94] LOG:  checkpoint starting: time
+2026-09-13T00:24:40.768372040Z 2026-09-13 00:24:40.768 UTC [94] LOG:  checkpoint complete: wrote 475 buffers (2.9%); 0 WAL file(s) added, 0 removed, 2 recycled; write=47.543 s, sync=0.648 s, total=48.290 s; sync files=1525, longest=0.012 s, average=0.001 s; distance=21317 kB, estimate=21317 kB; lsn=0/4222970, redo lsn=0/421CBC0
+2026-09-13T00:28:33.352019294Z 2026-09-13 00:28:33.351 UTC [769] ERROR:  canceling statement due to lock timeout
+2026-09-13T00:28:33.352047373Z 2026-09-13 00:28:33.351 UTC [769] CONTEXT:  while updating tuple (0,4) in relation "control_policy_deployments"
+2026-09-13T00:28:33.352053289Z 2026-09-13 00:28:33.351 UTC [769] STATEMENT:  UPDATE "publication_7d0b97ced25a44648a454c0529c3124c"."control_policy_deployments" SET epoch = epoch + 1
+2026-09-13T00:28:33.352057294Z 	        WHERE deployment_id = $1 AND epoch = $2 RETURNING epoch
+2026-09-13T00:28:39.189050531Z 2026-09-13 00:28:39.188 UTC [780] ERROR:  canceling statement due to lock timeout
+2026-09-13T00:28:39.189099712Z 2026-09-13 00:28:39.188 UTC [780] CONTEXT:  while locking tuple (0,4) in relation "control_policy_deployments"
+2026-09-13T00:28:39.189109738Z 2026-09-13 00:28:39.188 UTC [780] STATEMENT:  SELECT deployment_id FROM "publication_d32af4c52dd2467a928c78ec7c049b65".control_policy_deployments
+2026-09-13T00:28:39.189117357Z 	          WHERE deployment_id = $1 FOR SHARE
+2026-09-13T00:28:52.868920973Z 2026-09-13 00:28:52.868 UTC [94] LOG:  checkpoint starting: time
+2026-09-13T00:29:37.859181670Z 2026-09-13 00:29:37.858 UTC [796] ERROR:  insert or update on table "control_policy_active" violates foreign key constraint "control_policy_active_deployment_id_scope_key_kind_name_re_fkey"
+2026-09-13T00:29:37.859211978Z 2026-09-13 00:29:37.858 UTC [796] DETAIL:  Key (deployment_id, scope_key, kind, name, revision_id)=(interrupted, {"level":"operator"}, action, university.enroll, missing) is not present in table "control_policy_revisions".
+2026-09-13T00:29:37.859217491Z 2026-09-13 00:29:37.858 UTC [796] STATEMENT:  INSERT INTO "synapsor_policy_1195860_765a92d7"."control_policy_active" (deployment_id, scope_key, kind, name, revision_id)
+2026-09-13T00:29:37.859221068Z 	            VALUES ($1, $2, $3, $4, $5) ON CONFLICT (deployment_id, scope_key, kind, name)
+2026-09-13T00:29:37.859224391Z 	            DO UPDATE SET revision_id = excluded.revision_id
+2026-09-13T00:29:37.951405498Z 2026-09-13 00:29:37.951 UTC [795] ERROR:  insert or update on table "control_policy_active" violates foreign key constraint "control_policy_active_deployment_id_scope_key_kind_name_re_fkey"
+2026-09-13T00:29:37.951425427Z 2026-09-13 00:29:37.951 UTC [795] DETAIL:  Key (deployment_id, scope_key, kind, name, revision_id)=(owners, {"level":"principal","principal":"maya","tenant_id":"beta"}, action, university.enroll, acme-v1) is not present in table "control_policy_revisions".
+2026-09-13T00:29:37.951437045Z 2026-09-13 00:29:37.951 UTC [795] STATEMENT:  INSERT INTO "synapsor_policy_1195860_765a92d7"."control_policy_active" (deployment_id, scope_key, kind, name, revision_id)
+2026-09-13T00:29:37.951438610Z 	            VALUES ($1, $2, $3, $4, $5) ON CONFLICT (deployment_id, scope_key, kind, name)
+2026-09-13T00:29:37.951440183Z 	            DO UPDATE SET revision_id = excluded.revision_id
+2026-09-13T00:29:37.956013757Z 2026-09-13 00:29:37.955 UTC [795] ERROR:  duplicate key value violates unique constraint "control_policy_revisions_pkey"
+2026-09-13T00:29:37.956027235Z 2026-09-13 00:29:37.955 UTC [795] DETAIL:  Key (deployment_id, revision_id)=(immutable, v1) already exists.
+2026-09-13T00:29:37.956028816Z 2026-09-13 00:29:37.955 UTC [795] STATEMENT:  INSERT INTO "synapsor_policy_1195860_765a92d7"."control_policy_revisions"
+2026-09-13T00:29:37.956030151Z 	          (deployment_id, scope_key, kind, name, revision_id, epoch, authority_digest, content_digest, content_json)
+2026-09-13T00:29:37.956031451Z 	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+2026-09-13T00:29:44.789598219Z 2026-09-13 00:29:44.789 UTC [94] LOG:  checkpoint complete: wrote 428 buffers (2.6%); 0 WAL file(s) added, 0 removed, 0 recycled; write=51.147 s, sync=0.679 s, total=51.921 s; sync files=1510, longest=0.012 s, average=0.001 s; distance=10263 kB, estimate=20212 kB; lsn=0/4F68B50, redo lsn=0/4C228A8
+2026-09-13T00:33:52.890304005Z 2026-09-13 00:33:52.889 UTC [94] LOG:  checkpoint starting: time
+2026-09-13T00:34:10.271495219Z 2026-09-13 00:34:10.271 UTC [94] LOG:  checkpoint complete: wrote 173 buffers (1.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=17.181 s, sync=0.146 s, total=17.382 s; sync files=68, longest=0.004 s, average=0.003 s; distance=3440 kB, estimate=18535 kB; lsn=0/4F7EB58, redo lsn=0/4F7EAC8
+2026-09-13T01:28:53.371530098Z 2026-09-13 01:28:53.370 UTC [94] LOG:  checkpoint starting: time
+2026-09-13T01:30:34.451507768Z 2026-09-13 01:30:34.451 UTC [94] LOG:  checkpoint complete: wrote 973 buffers (5.9%); 0 WAL file(s) added, 0 removed, 1 recycled; write=97.391 s, sync=3.651 s, total=101.081 s; sync files=1249, longest=0.014 s, average=0.003 s; distance=4397 kB, estimate=17121 kB; lsn=0/60AAA10, redo lsn=0/53C9FC0
+2026-09-13T01:33:53.503199951Z 2026-09-13 01:33:53.502 UTC [94] LOG:  checkpoint starting: time
+2026-09-13T01:35:33.402210198Z 2026-09-13 01:35:33.401 UTC [1173] ERROR:  canceling statement due to statement timeout
+2026-09-13T01:35:33.402277634Z 2026-09-13 01:35:33.401 UTC [1173] CONTEXT:  while locking tuple (0,4) in relation "portfolios"
+2026-09-13T01:35:33.402292757Z 2026-09-13 01:35:33.401 UTC [1173] STATEMENT:  SELECT "adjuster_id", "insurer_id", "per_claim_ceiling_cents", "portfolio_id", "reserve_cap_cents", "routine_ceiling_cents", "status", "version"
+2026-09-13T01:35:33.402306205Z 	FROM "reserve_ops"."portfolios"
+2026-09-13T01:35:33.402321329Z 	WHERE (("insurer_id" = $1 AND "adjuster_id" = $2 AND "portfolio_id" = $3))
+2026-09-13T01:35:33.402332600Z 	  AND "insurer_id" = $4
+2026-09-13T01:35:33.402342413Z 	  AND "adjuster_id" = $5
+2026-09-13T01:35:33.402385994Z 	ORDER BY "portfolio_id" ASC
+2026-09-13T01:35:33.402395927Z 	LIMIT $6
+2026-09-13T01:35:33.402403348Z 	FOR UPDATE
+2026-09-13T01:35:41.813397091Z 2026-09-13 01:35:41.813 UTC [1177] ERROR:  canceling statement due to statement timeout
+2026-09-13T01:35:41.813437835Z 2026-09-13 01:35:41.813 UTC [1177] CONTEXT:  while locking tuple (0,4) in relation "portfolios"
+2026-09-13T01:35:41.813445562Z 2026-09-13 01:35:41.813 UTC [1177] STATEMENT:  SELECT "adjuster_id", "insurer_id", "per_claim_ceiling_cents", "portfolio_id", "reserve_cap_cents", "routine_ceiling_cents", "status", "version"
+2026-09-13T01:35:41.813452695Z 	FROM "reserve_ops"."portfolios"
+2026-09-13T01:35:41.813458004Z 	WHERE (("insurer_id" = $1 AND "adjuster_id" = $2 AND "portfolio_id" = $3))
+2026-09-13T01:35:41.813463883Z 	  AND "insurer_id" = $4
+2026-09-13T01:35:41.813468486Z 	  AND "adjuster_id" = $5
+2026-09-13T01:35:41.813472855Z 	ORDER BY "portfolio_id" ASC
+2026-09-13T01:35:41.813477454Z 	LIMIT $6
+2026-09-13T01:35:41.813481823Z 	FOR UPDATE
+2026-09-13T01:38:23.445906487Z 2026-09-13 01:38:23.445 UTC [94] LOG:  checkpoint complete: wrote 2890 buffers (17.6%); 0 WAL file(s) added, 0 removed, 1 recycled; write=269.522 s, sync=0.369 s, total=269.943 s; sync files=785, longest=0.012 s, average=0.001 s; distance=13199 kB, estimate=16729 kB; lsn=0/60AF320, redo lsn=0/60ADDA8
+2026-09-13T01:38:53.476362194Z 2026-09-13 01:38:53.475 UTC [94] LOG:  checkpoint starting: time
+2026-09-13T01:40:30.373339925Z 2026-09-13 01:40:30.373 UTC [94] LOG:  checkpoint complete: wrote 966 buffers (5.9%); 0 WAL file(s) added, 0 removed, 0 recycled; write=96.693 s, sync=0.163 s, total=96.898 s; sync files=318, longest=0.012 s, average=0.001 s; distance=4413 kB, estimate=15497 kB; lsn=0/64FEEB8, redo lsn=0/64FD2F8
+2026-09-13T01:43:53.474302477Z 2026-09-13 01:43:53.473 UTC [94] LOG:  checkpoint starting: time
+2026-09-13T01:43:54.042486980Z 2026-09-13 01:43:54.042 UTC [94] LOG:  checkpoint complete: wrote 6 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.509 s, sync=0.020 s, total=0.569 s; sync files=6, longest=0.012 s, average=0.004 s; distance=13 kB, estimate=13949 kB; lsn=0/6500770, redo lsn=0/6500718

@@ -1,0 +1,32 @@
+{
+  "artifact_tree": "b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0",
+  "A2_overall": {
+    "status": "blocked",
+    "reason": "No supported alternate reviewed local identities sharing one applicable durable budget; 44-row fixture prepared but no overall schedule run"
+  },
+  "A2_shared_principals": {
+    "status": "blocked",
+    "reason": "Same unsupported prerequisite; no copied-per-context allowances used"
+  },
+  "A4_cross_context": {
+    "status": "blocked",
+    "reason": "Only original legitimate context is available; positive controls pass but normally-issued cross-context reference schedule not run"
+  },
+  "exact_automatic_limit_edit": {
+    "status": "failed_preparation_product",
+    "code": "POLICY_EXECUTION_CONTEXT_REQUIRED",
+    "evidence": "installed-edit-save-finding.md"
+  },
+  "installed_publication_order": {
+    "status": "not_run",
+    "reason": "Disabled draft save failed; no reviewed replacement to activate"
+  },
+  "installed_old_unstarted_after_edit": {
+    "status": "not_run",
+    "reason": "Same prerequisite; separate host integration passed"
+  },
+  "already_dispatched_during_edit": {
+    "status": "not_run",
+    "reason": "No installed edit committed; no new guarantee"
+  }
+}

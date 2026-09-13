@@ -1,6 +1,6 @@
 {
-  "at": "2026-09-13T01:27:12.708707+00:00",
-  "phase": "Offline complete; commit evidence and freeze new installation",
+  "at": "2026-09-13T01:52:38.679875+00:00",
+  "phase": "Bounded work complete; stopped on unrelated installed draft-save defect; private delivery pending",
   "product_revision": "b16f92aa01d52d6b51e74e0e1574fac7de14635b",
   "migration_test_revision": "3be534f828bbaf0ec655fb689abe60869bf59114",
   "stable_pid": 1232010,
@@ -23,7 +23,15 @@
     "types08": "exit 0; final source",
     "offline01": "6 checks pass; package report-link failure preserved",
     "offline02": "remaining 4 checks exit 0; all 10 completed",
-    "preservation_pre_install": "77559 unchanged"
+    "preservation_pre_install": "77559 unchanged",
+    "identity_positive": "All 4 owned copies pass doctor/normal MCP startup/own allowed read",
+    "installed_a1": "exit 0; one proposal/approval/queue/receipt/effect; stored receipt and readback, replay/restart",
+    "installed_a2_insurer": "exit 0; same principal only, count 2 to exactly 3, human-review loser",
+    "installed_a3": "Attempt1 harness source timeout preserved; fresh collection_02 exit0 all assertions",
+    "installed_edit": "export and dry-run pass; save exit2 POLICY_EXECUTION_CONTEXT_REQUIRED; no installed publication/worker schedule",
+    "final_readbacks": "all exit0; failed edit and unused overall source/authority/history unchanged",
+    "preservation_final": "77559 entries unchanged",
+    "artifact_final": "7569 entries unchanged"
   },
   "budgets": {
     "combined_runs_used": 3,
@@ -33,11 +41,24 @@
     "stable_full_runs_launched": 1,
     "installed_runs": 0,
     "offline_runs": 2,
-    "freeze_attempts": 0,
+    "freeze_attempts": 1,
     "overall_deadline": "2026-09-13T07:51:08.979874+00:00",
-    "focused_fixture_correction_runs": 3
+    "focused_fixture_correction_runs": 3,
+    "installed_budget": {
+      "started_at": "2026-09-13T01:30:18.612Z",
+      "deadline": "2026-09-13T03:00:18.613Z",
+      "operations": 48,
+      "maximum_operations": 400,
+      "worker_invocations": 6,
+      "schedules": {
+        "A1 identical and replay": 1,
+        "A2 final insurer slot": 1,
+        "A3 portfolio constraint": 2,
+        "A3 owned source update": 1
+      }
+    }
   },
-  "remaining": "Freeze new immutable installation from coherent source, prepare owned fixtures and supported identity prerequisites, bounded installed checks, final report/private backup delivery/cleanup.",
+  "remaining": "Push intended commits only to verified private backup ref, record actual ref/exit in owned delivery.json and primary trackers, then STOP. No further local test/product work authorized in this run.",
   "last_stable_observation": {
     "at": "2026-09-13T01:06:29.396168+00:00",
     "status": "running, interim17 failures in composed runtime fixture",
@@ -47,5 +68,16 @@
   "stable_exit": 1,
   "stable_completed": "2026-09-13T01:06:26.944132+00:00",
   "test_revision": "03e3f447e1f79ffbc804b0e8b396bddb510e3e12",
-  "documentation_revision": "3aa8e0d2baf67281cceb74c5c26a2df994b3f0f5"
+  "documentation_revision": "3aa8e0d2baf67281cceb74c5c26a2df994b3f0f5",
+  "artifact_tree": "b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0",
+  "artifact_source": "f9d28398ac6b896f2824d04ba28b858d6ae5cd48",
+  "stage_a": "NOT PASSED",
+  "stage_b": "NOT STARTED",
+  "next_repair_decision": "docs/qualification-evidence/publication-repair-20260912/installed-edit-save-finding.md",
+  "cleanup": {
+    "owned_container_stopped": true,
+    "recorded_processes_running": 0,
+    "original_entries_unchanged": 77559,
+    "new_artifact_unchanged": true
+  }
 }

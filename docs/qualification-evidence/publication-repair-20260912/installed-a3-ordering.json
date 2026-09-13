@@ -1,0 +1,267 @@
+{
+  "observations": [
+    {
+      "at": "2026-09-13T01:39:12.901Z",
+      "event": "operator_process",
+      "pid": 1351257,
+      "args": [
+        "doctor",
+        "--config",
+        "synapsor.actions.runner.json",
+        "--json"
+      ]
+    },
+    {
+      "at": "2026-09-13T01:40:38.305Z",
+      "event": "operator_process",
+      "pid": 1354251,
+      "args": [
+        "proposals",
+        "approve",
+        "wrp_rule_7e38c44cf5e9d6f2d2c92418a278767c",
+        "--yes",
+        "--reason",
+        "Reviewed exact owned synthetic collection request for 60000 cents; original hard cap still applies",
+        "--config",
+        "synapsor.actions.runner.json"
+      ]
+    },
+    {
+      "at": "2026-09-13T01:40:41.103Z",
+      "event": "operator_process",
+      "pid": 1354418,
+      "args": [
+        "proposals",
+        "approve",
+        "wrp_rule_b7fb8b812e64b2b996fbfa2a4c52fd65",
+        "--yes",
+        "--reason",
+        "Reviewed exact owned synthetic collection request for 60000 cents; original hard cap still applies",
+        "--config",
+        "synapsor.actions.runner.json"
+      ]
+    },
+    {
+      "at": "2026-09-13T01:40:43.775Z",
+      "event": "operator_process",
+      "pid": 1354521,
+      "args": [
+        "worker",
+        "run",
+        "--supervised",
+        "--once",
+        "--yes",
+        "--config",
+        "synapsor.actions.runner.json",
+        "--worker-id",
+        "semantic_action_worker"
+      ]
+    },
+    {
+      "at": "2026-09-13T01:40:49.827Z",
+      "event": "source_lock_wait",
+      "label": "collection worker",
+      "blocker": 1252,
+      "rows": [
+        {
+          "pid": 1257,
+          "usename": "runner_writer_639afbe3356e",
+          "application_name": "",
+          "state": "active",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid",
+          "blockers": [
+            1252
+          ]
+        }
+      ]
+    },
+    {
+      "at": "2026-09-13T01:40:50.282Z",
+      "event": "operator_process",
+      "pid": 1354764,
+      "args": [
+        "worker",
+        "run",
+        "--supervised",
+        "--once",
+        "--yes",
+        "--config",
+        "synapsor.actions.runner.json",
+        "--worker-id",
+        "semantic_action_worker"
+      ]
+    },
+    {
+      "at": "2026-09-13T01:40:50.291Z",
+      "event": "pg_host_snapshot",
+      "name": "a3-second-worker-before-first-release",
+      "rows": [
+        {
+          "pid": 1257,
+          "usename": "runner_writer_639afbe3356e",
+          "application_name": "",
+          "state": "active",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid",
+          "xact_start": "2026-09-13T01:40:49.685Z",
+          "query_start": "2026-09-13T01:40:49.804Z",
+          "blockers": [
+            1252
+          ]
+        }
+      ]
+    },
+    {
+      "process_pid": 1354521,
+      "timestamp": "2026-09-13T01:40:48.064Z",
+      "level": "info",
+      "event": "operator_decision",
+      "action": "apply",
+      "proposal_id": "wrp_rule_7e38c44cf5e9d6f2d2c92418a278767c",
+      "capability": "reserve_ops.adjust_claim_reserve",
+      "tenant": "b0000000-0000-4000-8000-000000000001",
+      "subject": "local_operator",
+      "identity_provider": "dev_env",
+      "identity_verified": false
+    },
+    {
+      "process_pid": 1354521,
+      "timestamp": "2026-09-13T01:40:50.444Z",
+      "level": "info",
+      "event": "writeback_outcome",
+      "proposal_id": "wrp_rule_7e38c44cf5e9d6f2d2c92418a278767c",
+      "capability": "reserve_ops.adjust_claim_reserve",
+      "tenant": "b0000000-0000-4000-8000-000000000001",
+      "runner_id": "semantic_action_worker",
+      "executor": "sql_update",
+      "status": "applied",
+      "rows_affected": 1,
+      "receipt_hash": "sha256:4ef7885a3f1f07243f1300ca9a75d3d243be05d0e718b80f1f581b3c567a16eb",
+      "dry_run": false,
+      "source_database_changed": true
+    },
+    {
+      "process_pid": 1354764,
+      "timestamp": "2026-09-13T01:40:55.312Z",
+      "level": "info",
+      "event": "operator_decision",
+      "action": "apply",
+      "proposal_id": "wrp_rule_b7fb8b812e64b2b996fbfa2a4c52fd65",
+      "capability": "reserve_ops.adjust_claim_reserve",
+      "tenant": "b0000000-0000-4000-8000-000000000001",
+      "subject": "local_operator",
+      "identity_provider": "dev_env",
+      "identity_verified": false
+    },
+    {
+      "process_pid": 1354764,
+      "timestamp": "2026-09-13T01:40:57.265Z",
+      "level": "error",
+      "event": "writeback_outcome",
+      "proposal_id": "wrp_rule_b7fb8b812e64b2b996fbfa2a4c52fd65",
+      "capability": "reserve_ops.adjust_claim_reserve",
+      "tenant": "b0000000-0000-4000-8000-000000000001",
+      "runner_id": "semantic_action_worker",
+      "executor": "sql_update",
+      "status": "failed",
+      "rows_affected": 0,
+      "error_code": "SEMANTIC_AUTHORITY_STALE",
+      "receipt_hash": "sha256:c67c1b4c12ef846a2309c31e65265ea11c84535a4bba0e6d553e64adf312dec2",
+      "dry_run": false,
+      "source_database_changed": false
+    },
+    {
+      "at": "2026-09-13T01:40:59.032Z",
+      "event": "operator_process",
+      "pid": 1355045,
+      "args": [
+        "worker",
+        "run",
+        "--supervised",
+        "--once",
+        "--yes",
+        "--config",
+        "synapsor.actions.runner.json",
+        "--worker-id",
+        "semantic_action_worker"
+      ]
+    },
+    {
+      "at": "2026-09-13T01:41:06.567Z",
+      "event": "source_lock_wait",
+      "label": "source update worker",
+      "blocker": 1265,
+      "rows": [
+        {
+          "pid": 1270,
+          "usename": "runner_writer_639afbe3356e",
+          "application_name": "",
+          "state": "active",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid",
+          "blockers": [
+            1265
+          ]
+        }
+      ]
+    },
+    {
+      "process_pid": 1355045,
+      "timestamp": "2026-09-13T01:41:03.634Z",
+      "level": "info",
+      "event": "operator_decision",
+      "action": "apply",
+      "proposal_id": "wrp_rule_a75c04dc8651b04e812d64151ff20118",
+      "capability": "reserve_ops.adjust_claim_reserve",
+      "tenant": "b0000000-0000-4000-8000-000000000001",
+      "subject": "local_operator",
+      "identity_provider": "dev_env",
+      "identity_verified": false
+    },
+    {
+      "process_pid": 1355045,
+      "timestamp": "2026-09-13T01:41:06.718Z",
+      "level": "error",
+      "event": "writeback_outcome",
+      "proposal_id": "wrp_rule_a75c04dc8651b04e812d64151ff20118",
+      "capability": "reserve_ops.adjust_claim_reserve",
+      "tenant": "b0000000-0000-4000-8000-000000000001",
+      "runner_id": "semantic_action_worker",
+      "executor": "sql_update",
+      "status": "failed",
+      "rows_affected": 0,
+      "error_code": "SEMANTIC_AUTHORITY_STALE",
+      "receipt_hash": "sha256:47cee324b54c2acdc64147afef57b4b7ed2ae9e74f6a01784ac4f69b44b7f827",
+      "dry_run": false,
+      "source_database_changed": false
+    }
+  ],
+  "statement": "The first effect was observed waiting on the owned portfolio lock. The second process was launched before release. The worker limit remained one; simultaneous source effect transactions were not established. First collection outcome and later attempt/receipt are recorded explicitly.",
+  "first_wait": [
+    {
+      "pid": 1257,
+      "usename": "runner_writer_639afbe3356e",
+      "application_name": "",
+      "state": "active",
+      "wait_event_type": "Lock",
+      "wait_event": "transactionid",
+      "blockers": [
+        1252
+      ]
+    }
+  ],
+  "external_wait": [
+    {
+      "pid": 1270,
+      "usename": "runner_writer_639afbe3356e",
+      "application_name": "",
+      "state": "active",
+      "wait_event_type": "Lock",
+      "wait_event": "transactionid",
+      "blockers": [
+        1265
+      ]
+    }
+  ]
+}

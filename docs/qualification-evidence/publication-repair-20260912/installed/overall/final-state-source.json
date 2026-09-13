@@ -1,0 +1,486 @@
+{
+  "portfolios": [
+    {
+      "portfolio_id": "b0000000-0000-4000-8000-000000000100",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_ref": "PF-ROUTINE",
+      "status": "active",
+      "reserve_cap_cents": 300000,
+      "per_claim_ceiling_cents": 90000,
+      "routine_ceiling_cents": 40000,
+      "version": 1
+    },
+    {
+      "portfolio_id": "b0000000-0000-4000-8000-000000000200",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_ref": "PF-FROZEN",
+      "status": "active",
+      "reserve_cap_cents": 200000,
+      "per_claim_ceiling_cents": 90000,
+      "routine_ceiling_cents": 40000,
+      "version": 1
+    },
+    {
+      "portfolio_id": "b0000000-0000-4000-8000-000000000300",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_ref": "PF-CAPPED",
+      "status": "active",
+      "reserve_cap_cents": 170000,
+      "per_claim_ceiling_cents": 90000,
+      "routine_ceiling_cents": 40000,
+      "version": 1
+    },
+    {
+      "portfolio_id": "b0000000-0000-4000-8000-000000000400",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_ref": "PF-RACE",
+      "status": "active",
+      "reserve_cap_cents": 100000,
+      "per_claim_ceiling_cents": 90000,
+      "routine_ceiling_cents": 40000,
+      "version": 1
+    },
+    {
+      "portfolio_id": "b0000000-0000-4000-8000-000000000500",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_ref": "PF-PENDING",
+      "status": "active",
+      "reserve_cap_cents": 300000,
+      "per_claim_ceiling_cents": 90000,
+      "routine_ceiling_cents": 40000,
+      "version": 1
+    },
+    {
+      "portfolio_id": "b0000000-0000-4000-8000-000000000600",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_ref": "PF-CLOSED",
+      "status": "closed",
+      "reserve_cap_cents": 200000,
+      "per_claim_ceiling_cents": 90000,
+      "routine_ceiling_cents": 40000,
+      "version": 1
+    },
+    {
+      "portfolio_id": "b0000000-0000-4000-8000-000000000700",
+      "insurer_id": "b0000000-0000-4000-8000-000000000003",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_ref": "PF-OTHER-INSURER",
+      "status": "active",
+      "reserve_cap_cents": 300000,
+      "per_claim_ceiling_cents": 90000,
+      "routine_ceiling_cents": 40000,
+      "version": 1
+    },
+    {
+      "portfolio_id": "b0000000-0000-4000-8000-000000000800",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000004",
+      "portfolio_ref": "PF-OTHER-ADJUSTER",
+      "status": "active",
+      "reserve_cap_cents": 300000,
+      "per_claim_ceiling_cents": 90000,
+      "routine_ceiling_cents": 40000,
+      "version": 1
+    },
+    {
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_ref": "PF-LIMITS",
+      "status": "active",
+      "reserve_cap_cents": 500000,
+      "per_claim_ceiling_cents": 90000,
+      "routine_ceiling_cents": 40000,
+      "version": 1
+    },
+    {
+      "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+      "insurer_id": "b0000000-0000-4000-8000-000000000005",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_ref": "PF-OVERALL-THIRD",
+      "status": "active",
+      "reserve_cap_cents": 300000,
+      "per_claim_ceiling_cents": 90000,
+      "routine_ceiling_cents": 40000,
+      "version": 1
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000101",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000100",
+      "claim_ref": "CL-101",
+      "status": "active",
+      "reserve_cents": 30000,
+      "service_label": "standard",
+      "version": 2
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000102",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000100",
+      "claim_ref": "CL-102",
+      "status": "active",
+      "reserve_cents": 30000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000103",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000100",
+      "claim_ref": "CL-103",
+      "status": "active",
+      "reserve_cents": 10000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000104",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000100",
+      "claim_ref": "CL-104",
+      "status": "active",
+      "reserve_cents": 20000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000105",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000100",
+      "claim_ref": "CL-105",
+      "status": "closed",
+      "reserve_cents": 90000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000201",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000200",
+      "claim_ref": "CL-201",
+      "status": "active",
+      "reserve_cents": 20000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000301",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000300",
+      "claim_ref": "CL-301",
+      "status": "active",
+      "reserve_cents": 20000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000302",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000300",
+      "claim_ref": "CL-302",
+      "status": "active",
+      "reserve_cents": 70000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000303",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000300",
+      "claim_ref": "CL-303",
+      "status": "active",
+      "reserve_cents": 70000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000401",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000400",
+      "claim_ref": "CL-401",
+      "status": "active",
+      "reserve_cents": 30000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000402",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000400",
+      "claim_ref": "CL-402",
+      "status": "active",
+      "reserve_cents": 30000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000501",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000500",
+      "claim_ref": "CL-501",
+      "status": "active",
+      "reserve_cents": 10000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000502",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000500",
+      "claim_ref": "CL-502",
+      "status": "active",
+      "reserve_cents": 10000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000503",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000500",
+      "claim_ref": "CL-503",
+      "status": "active",
+      "reserve_cents": 10000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000601",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000600",
+      "claim_ref": "CL-601",
+      "status": "active",
+      "reserve_cents": 10000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000701",
+      "insurer_id": "b0000000-0000-4000-8000-000000000003",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000700",
+      "claim_ref": "CL-701",
+      "status": "active",
+      "reserve_cents": 10000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000801",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000004",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000800",
+      "claim_ref": "CL-801",
+      "status": "active",
+      "reserve_cents": 10000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000901",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-901",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000902",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-902",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000903",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-903",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000904",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-904",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000905",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-905",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000906",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-906",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000907",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-907",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000908",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-908",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000909",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-909",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000910",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-910",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000911",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-911",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000000912",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000900",
+      "claim_ref": "CL-912",
+      "status": "active",
+      "reserve_cents": 1000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000001001",
+      "insurer_id": "b0000000-0000-4000-8000-000000000005",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+      "claim_ref": "CL-1001",
+      "status": "active",
+      "reserve_cents": 10000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000001002",
+      "insurer_id": "b0000000-0000-4000-8000-000000000005",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+      "claim_ref": "CL-1002",
+      "status": "active",
+      "reserve_cents": 10000,
+      "service_label": "standard",
+      "version": 1
+    },
+    {
+      "claim_id": "b0000000-0000-4000-8000-000000001003",
+      "insurer_id": "b0000000-0000-4000-8000-000000000005",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+      "claim_ref": "CL-1003",
+      "status": "active",
+      "reserve_cents": 10000,
+      "service_label": "standard",
+      "version": 1
+    }
+  ],
+  "freezes": [
+    {
+      "freeze_id": "b0000000-0000-4000-8000-000000001001",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000100",
+      "active": false,
+      "version": 1
+    },
+    {
+      "freeze_id": "b0000000-0000-4000-8000-000000002001",
+      "insurer_id": "b0000000-0000-4000-8000-000000000001",
+      "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+      "portfolio_id": "b0000000-0000-4000-8000-000000000200",
+      "active": true,
+      "version": 1
+    }
+  ]
+}

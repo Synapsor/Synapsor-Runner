@@ -8,7 +8,7 @@ try {
  const bytes=await fs.readFile(path.join(owner.project,'.synapsor/local-test-runtime.json'));
  result.identity_file_sha256=createHash('sha256').update(bytes).digest('hex');
  result.reviewed_bindings=JSON.parse(bytes).bindings;
- result.doctor=await operator(['doctor','--config','synapsor.runner.json','--json']);assert.equal(result.doctor.code,0);
+ result.doctor=await operator(['doctor','--config','synapsor.actions.runner.json','--json']);assert.equal(result.doctor.code,0);
  await client.start({inspector:false});result.describe=await client.call('app.describe_data',{});
  result.rows=await client.call('app.explore_data',{plan:{kind:'rows',resource:'reserve_ops.claims',select:['claim_ref','reserve_cents']}});
  assert(result.rows.ok);assert(result.rows.data.some(r=>r.claim_ref==='CL-103'));

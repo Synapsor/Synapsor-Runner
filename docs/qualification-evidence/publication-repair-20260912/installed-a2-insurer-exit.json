@@ -1,0 +1,26 @@
+{
+  "name": "installed-a2-insurer",
+  "args": [
+    "node",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/a2-insurer.mjs"
+  ],
+  "case": "main",
+  "environment_names": [
+    "COLUMNS",
+    "HOME",
+    "LANG",
+    "LINES",
+    "NO_COLOR",
+    "PATH",
+    "SYNAPSOR_CASE",
+    "TERM"
+  ],
+  "started_at": "2026-09-13T01:34:10.141971+00:00",
+  "artifact_tree": "b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0",
+  "source_commit": "f9d28398ac6b896f2824d04ba28b858d6ae5cd48",
+  "product_commit": "b16f92aa01d52d6b51e74e0e1574fac7de14635b",
+  "test_commit": "03e3f447e1f79ffbc804b0e8b396bddb510e3e12",
+  "pid": 1340542,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T01:34:20.790742+00:00"
+}

@@ -1,0 +1,138 @@
+[
+  {
+    "case": "main",
+    "ownership": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/main/ownership.json",
+    "database": "insurance_stagea_main",
+    "created_at": "2026-09-13T01:28:21.331Z",
+    "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+    "rows": {
+      "portfolios": 9,
+      "claims": 29,
+      "freezes": 2
+    },
+    "original_rows_preserved": 40,
+    "additions": {
+      "portfolios": [],
+      "claims": []
+    },
+    "artifact_tree": "b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0"
+  },
+  {
+    "case": "overall",
+    "ownership": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/overall/ownership.json",
+    "database": "insurance_stagea_overall",
+    "created_at": "2026-09-13T01:29:07.316Z",
+    "source_baseline_sha256": "16831887f34122739a6f53865be7cc8b57a74ec1dea148eea8249fc9d6eca0e5",
+    "rows": {
+      "portfolios": 10,
+      "claims": 32,
+      "freezes": 2
+    },
+    "original_rows_preserved": 40,
+    "additions": {
+      "portfolios": [
+        {
+          "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+          "insurer_id": "b0000000-0000-4000-8000-000000000005",
+          "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+          "portfolio_ref": "PF-OVERALL-THIRD",
+          "status": "active",
+          "reserve_cap_cents": 300000,
+          "per_claim_ceiling_cents": 90000,
+          "routine_ceiling_cents": 40000,
+          "version": 1
+        }
+      ],
+      "claims": [
+        {
+          "claim_id": "b0000000-0000-4000-8000-000000001001",
+          "insurer_id": "b0000000-0000-4000-8000-000000000005",
+          "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+          "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+          "claim_ref": "CL-1001",
+          "status": "active",
+          "reserve_cents": 10000,
+          "service_label": "standard",
+          "version": 1
+        },
+        {
+          "claim_id": "b0000000-0000-4000-8000-000000001002",
+          "insurer_id": "b0000000-0000-4000-8000-000000000005",
+          "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+          "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+          "claim_ref": "CL-1002",
+          "status": "active",
+          "reserve_cents": 10000,
+          "service_label": "standard",
+          "version": 1
+        },
+        {
+          "claim_id": "b0000000-0000-4000-8000-000000001003",
+          "insurer_id": "b0000000-0000-4000-8000-000000000005",
+          "adjuster_id": "b0000000-0000-4000-8000-000000000002",
+          "portfolio_id": "b0000000-0000-4000-8000-000000001000",
+          "claim_ref": "CL-1003",
+          "status": "active",
+          "reserve_cents": 10000,
+          "service_label": "standard",
+          "version": 1
+        }
+      ]
+    },
+    "artifact_tree": "b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0"
+  },
+  {
+    "case": "collection",
+    "ownership": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection/ownership.json",
+    "database": "insurance_stagea_collection",
+    "created_at": "2026-09-13T01:29:28.293Z",
+    "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+    "rows": {
+      "portfolios": 9,
+      "claims": 29,
+      "freezes": 2
+    },
+    "original_rows_preserved": 40,
+    "additions": {
+      "portfolios": [],
+      "claims": []
+    },
+    "artifact_tree": "b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0"
+  },
+  {
+    "case": "collection_02",
+    "ownership": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection_02/ownership.json",
+    "database": "insurance_stagea_collection_02",
+    "created_at": "2026-09-13T01:38:38.371Z",
+    "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+    "rows": {
+      "portfolios": 9,
+      "claims": 29,
+      "freezes": 2
+    },
+    "original_rows_preserved": 40,
+    "additions": {
+      "portfolios": [],
+      "claims": []
+    },
+    "artifact_tree": "b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0"
+  },
+  {
+    "case": "edit",
+    "ownership": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/edit/ownership.json",
+    "database": "insurance_stagea_edit",
+    "created_at": "2026-09-13T01:30:10.714Z",
+    "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+    "rows": {
+      "portfolios": 9,
+      "claims": 29,
+      "freezes": 2
+    },
+    "original_rows_preserved": 40,
+    "additions": {
+      "portfolios": [],
+      "claims": []
+    },
+    "artifact_tree": "b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0"
+  }
+]

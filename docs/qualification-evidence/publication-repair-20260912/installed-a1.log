@@ -1,0 +1,269 @@
+(node:1338930) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{
+  "case": "A1 identical/replay",
+  "status": "pass_single_process",
+  "wait_boundary": {
+    "point": "subject_wait",
+    "line": 30730,
+    "function": "withSubjectRequestTurn",
+    "locals": {
+      "key": "sha256:f32026f30284bc04bb3d8be0e0407e5130fe7c1998ef2d64485c10f5f2c6366c",
+      "waiting": true,
+      "size": 1
+    }
+  },
+  "responses": [
+    {
+      "ok": true,
+      "outcome": "reserve_ops.adjust_claim_reserve",
+      "status": "approved_pending_execution",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Adjust claim reserve",
+        "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+        "fields": [
+          "reserve_cents"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "automatic",
+        "execution": "queued"
+      },
+      "proposal": {
+        "status": "approved",
+        "approval": "automatically approved; apply remains a separate authority"
+      },
+      "execution": "queued",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": false,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    {
+      "ok": true,
+      "outcome": "reserve_ops.adjust_claim_reserve",
+      "status": "approved_pending_execution",
+      "request_disposition": "already_recorded",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Adjust claim reserve",
+        "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+        "fields": [
+          "reserve_cents"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "automatic",
+        "execution": "queued"
+      },
+      "proposal": {
+        "status": "approved",
+        "approval": "automatically approved; apply remains a separate authority"
+      },
+      "execution": "queued",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": false,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    }
+  ],
+  "canonical_proposal_id": "wrp_rule_414d5ef2ef21c87ca5101fc235af1f42",
+  "worker": {
+    "pid": 1339390,
+    "code": 0,
+    "signal": null,
+    "stdout": "",
+    "stderr": "{\"timestamp\":\"2026-09-13T01:33:42.657Z\",\"level\":\"info\",\"event\":\"operator_decision\",\"action\":\"apply\",\"proposal_id\":\"wrp_rule_414d5ef2ef21c87ca5101fc235af1f42\",\"capability\":\"reserve_ops.adjust_claim_reserve\",\"tenant\":\"b0000000-0000-4000-8000-000000000001\",\"subject\":\"local_operator\",\"identity_provider\":\"dev_env\",\"identity_verified\":false}\n{\"timestamp\":\"2026-09-13T01:33:45.053Z\",\"level\":\"info\",\"event\":\"writeback_outcome\",\"proposal_id\":\"wrp_rule_414d5ef2ef21c87ca5101fc235af1f42\",\"capability\":\"reserve_ops.adjust_claim_reserve\",\"tenant\":\"b0000000-0000-4000-8000-000000000001\",\"runner_id\":\"semantic_action_worker\",\"executor\":\"sql_update\",\"status\":\"applied\",\"rows_affected\":1,\"receipt_hash\":\"sha256:0d43f9a55a66db0027c2d826a95a1baaa0c3926591898bad7c7c63fa376d760f\",\"dry_run\":false,\"source_database_changed\":true}\n{\"timestamp\":\"2026-09-13T01:33:45.750Z\",\"level\":\"info\",\"event\":\"worker_item_completed\",\"proposal_id\":\"wrp_rule_414d5ef2ef21c87ca5101fc235af1f42\",\"worker_id\":\"semantic_action_worker\",\"status\":\"applied\",\"attempt\":1}\n"
+  },
+  "stored_receipt": {
+    "receipt_id": 2,
+    "receipt_hash": "sha256:3617f4b3395ceed6084edb9e81528d62a2f34c35fea87cc1e3f0f136f1f0b7d1",
+    "status": "applied",
+    "rows_affected": 1
+  },
+  "replay": {
+    "ok": true,
+    "outcome": "reserve_ops.adjust_claim_reserve",
+    "status": "completed",
+    "request_disposition": "already_recorded",
+    "status_check": {
+      "tool": "app.request_change",
+      "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+      "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+    },
+    "execution_receipt": {
+      "verified": true,
+      "status": "applied",
+      "source_database_changed": true
+    },
+    "result_summary": {
+      "description": "Adjust claim reserve",
+      "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+      "fields": [
+        "reserve_cents"
+      ],
+      "values_disclosed": false,
+      "next": "Re-read the reviewed resource to present current source values."
+    },
+    "authorization": {
+      "eligibility": "verified",
+      "approval": "automatic",
+      "execution": "completed"
+    },
+    "proposal": {
+      "status": "applied",
+      "approval": "automatically approved; apply remains a separate authority"
+    },
+    "execution": "completed",
+    "eligibility": "verified from current authoritative facts",
+    "exact_effect": "Runner-derived and sealed in the operator proposal record",
+    "source_database_changed": true,
+    "model_authority": {
+      "supplied_outcome_and_opaque_subjects_only": false,
+      "supplied_only_reviewed_business_inputs": true,
+      "supplied_patch": false,
+      "approval": false,
+      "apply": false
+    }
+  },
+  "boundaries": [
+    {
+      "point": "subject_wait",
+      "line": 30730,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:f32026f30284bc04bb3d8be0e0407e5130fe7c1998ef2d64485c10f5f2c6366c",
+        "waiting": false,
+        "size": 1
+      }
+    },
+    {
+      "point": "subject_recheck",
+      "line": 30731,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:f32026f30284bc04bb3d8be0e0407e5130fe7c1998ef2d64485c10f5f2c6366c",
+        "waited": false,
+        "size": 1
+      }
+    },
+    {
+      "point": "subject_wait",
+      "line": 30730,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:f32026f30284bc04bb3d8be0e0407e5130fe7c1998ef2d64485c10f5f2c6366c",
+        "waiting": true,
+        "size": 1
+      }
+    },
+    {
+      "point": "subject_recheck",
+      "line": 30731,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:f32026f30284bc04bb3d8be0e0407e5130fe7c1998ef2d64485c10f5f2c6366c",
+        "waited": true,
+        "size": 1
+      }
+    },
+    {
+      "point": "subject_wait",
+      "line": 30730,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:f32026f30284bc04bb3d8be0e0407e5130fe7c1998ef2d64485c10f5f2c6366c",
+        "waiting": false,
+        "size": 1
+      }
+    },
+    {
+      "point": "subject_recheck",
+      "line": 30731,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:f32026f30284bc04bb3d8be0e0407e5130fe7c1998ef2d64485c10f5f2c6366c",
+        "waited": false,
+        "size": 1
+      }
+    }
+  ],
+  "restart_replay": {
+    "ok": true,
+    "outcome": "reserve_ops.adjust_claim_reserve",
+    "status": "completed",
+    "request_disposition": "already_recorded",
+    "status_check": {
+      "tool": "app.request_change",
+      "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+      "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+    },
+    "execution_receipt": {
+      "verified": true,
+      "status": "applied",
+      "source_database_changed": true
+    },
+    "result_summary": {
+      "description": "Adjust claim reserve",
+      "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+      "fields": [
+        "reserve_cents"
+      ],
+      "values_disclosed": false,
+      "next": "Re-read the reviewed resource to present current source values."
+    },
+    "authorization": {
+      "eligibility": "verified",
+      "approval": "automatic",
+      "execution": "completed"
+    },
+    "proposal": {
+      "status": "applied",
+      "approval": "automatically approved; apply remains a separate authority"
+    },
+    "execution": "completed",
+    "eligibility": "verified from current authoritative facts",
+    "exact_effect": "Runner-derived and sealed in the operator proposal record",
+    "source_database_changed": true,
+    "model_authority": {
+      "supplied_outcome_and_opaque_subjects_only": false,
+      "supplied_only_reviewed_business_inputs": true,
+      "supplied_patch": false,
+      "approval": false,
+      "apply": false
+    }
+  },
+  "counts": {
+    "new_proposals": 1,
+    "new_approvals": 1,
+    "new_queue": 1,
+    "new_receipts": 1,
+    "new_source_effects": 1
+  }
+}

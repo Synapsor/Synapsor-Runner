@@ -1,0 +1,458 @@
+[
+  {
+    "pid": 1331142,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/identity-main-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1333884,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/identity-main-02-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1298328,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/composed-fixtures-03-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1340542,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/installed-a2-insurer-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1201047,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/combined-02-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1349695,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/prepare-collection-02-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1294936,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/focused-types-06-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1330590,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/prepare-edit-fixture-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1176746,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/publication-controls-04-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1364731,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/final-main-state-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1188516,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/focused-types-04-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1221608,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/combined-03-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1132387,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/migration-isolated-02-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1337953,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/identity-overall-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1351211,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/identity-collection-02-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1129007,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/migration-isolated-01-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1163642,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/publication-controls-03-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1342662,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/installed-a3-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1212769,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/migration-corrected-01-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1153927,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/publication-controls-01-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1130355,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/after-publication-01-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1190203,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/combined-01-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1110759,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/before-publication-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1164621,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/migration-load-02-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1364156,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/final-edit-state-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1328999,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/prepare-collection-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1298446,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/focused-types-08-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1335858,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/identity-collection-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1338930,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/installed-a1-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1217198,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/focused-types-05-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1364737,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/final-collection-attempt1-state-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1121761,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/focused-types-01-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1232010,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/stable-full-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1157590,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/publication-controls-02-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1336851,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/identity-edit-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1186324,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/focused-types-03-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1356499,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/installed-edit-prepare-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1295780,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/focused-types-07-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1353773,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/installed-a3-02-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1134680,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/migration-load-01-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1364730,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/final-overall-state-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1364749,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/final-collection-02-state-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1291437,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/composed-fixtures-01-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1294807,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/composed-fixtures-02-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1125525,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/focused-types-02-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1328121,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/prepare-overall-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1190205,
+    "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/postgres-gate-01-exit.json",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1335885,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1336214,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1342898,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1343121,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1343222,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1343384,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1343572,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1331168,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/main/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1333990,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/main/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1334340,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/main/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1339137,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/main/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1339390,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/main/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1339827,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/main/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1340725,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/main/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1336881,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/edit/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1337229,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/edit/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1356585,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/edit/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1356811,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/edit/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1356987,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/edit/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1338030,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/overall/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1338328,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/overall/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1351257,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection_02/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1351538,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection_02/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1354049,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection_02/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1354251,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection_02/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1354418,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection_02/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1354521,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection_02/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1354764,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection_02/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  },
+  {
+    "pid": 1355045,
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/collection_02/deterministic/events.jsonl",
+    "running": false,
+    "command": null
+  }
+]

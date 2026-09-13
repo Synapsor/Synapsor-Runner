@@ -1,0 +1,38 @@
+{
+  "case": "exact automatic insurer limit edit preparation",
+  "status": "blocked_or_failed_preparation",
+  "export": {
+    "pid": 1356585,
+    "code": 0,
+    "signal": null,
+    "stdout": "{\n  \"ok\": true,\n  \"state\": \"exported\",\n  \"path\": \"automatic-limit-edit.json\",\n  \"source_database_changed\": false\n}\n",
+    "stderr": ""
+  },
+  "change": {
+    "outcome": "reserve_ops.adjust_claim_reserve",
+    "id": "reserve_adjustment_per_insurer_24h",
+    "scope": "tenant",
+    "window_seconds": 86400,
+    "before": 3,
+    "after": 1
+  },
+  "input_identity": {
+    "before_sha256": "f6857c6f6360e4450e4d8575a4d475f984e383f9857b3271799f007c69f01ed4",
+    "after_sha256": "27d16dad0ebe906964b5802c8b7eb074223782315b204b197b63500fe4841211"
+  },
+  "dry_run": {
+    "pid": 1356811,
+    "code": 0,
+    "signal": null,
+    "stdout": "{\n  \"ok\": true,\n  \"state\": \"validated_disabled_preview\",\n  \"review_bundle_digest\": \"sha256:78d4563cd26e8e5b48c6377a22213fdc9c4e7d72a372deb9b58eca22724f1d0d\",\n  \"read_candidate_digest\": \"sha256:a1465f6f38499a7711fc4e171a6d233da85063fec9a69c3b02e07e933ebe1ae2\",\n  \"action_authority_digest\": \"sha256:815042d655b7d3fa74ff889809209e8a123bb938cf7ba789865e899cacff110d\",\n  \"action_outcomes\": [\n    \"reserve_ops.adjust_claim_reserve\"\n  ],\n  \"confirmed_read_decisions\": 0,\n  \"activation\": \"unsupported_from_structured_authoring\",\n  \"provenance\": \"external_draft\",\n  \"source_database_changed\": false\n}\n",
+    "stderr": ""
+  },
+  "save": {
+    "pid": 1356987,
+    "code": 2,
+    "signal": null,
+    "stdout": "{\n  \"ok\": false,\n  \"code\": \"POLICY_EXECUTION_CONTEXT_REQUIRED\",\n  \"message\": \"POLICY_EXECUTION_CONTEXT_REQUIRED: reviewed execution policy is unavailable; no execution is authorized.\",\n  \"source_database_changed\": false,\n  \"active_authority_changed\": false,\n  \"disabled_authority_changed\": false\n}\n",
+    "stderr": ""
+  },
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n2 !== 0\n\n    at file:///home/sandesh-tiwari/Desktop/C++/Progress%20docs%20tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/prepare-edit.mjs:22:99\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)"
+}

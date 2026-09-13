@@ -1,7 +1,8 @@
 # Bounded rule-publication repair and local verification
 
-Status: implementation and host verification completed; offline packaging and
-installed matrix in progress. Stage A is NOT PASSED. Stage B is NOT STARTED.
+Status: bounded implementation and applicable verification complete; stopped on
+the separate installed draft-save defect and unsupported local identity prerequisites.
+Stage A is NOT PASSED. Stage B is NOT STARTED.
 This report continues 779b2dc without replacing any historical failure.
 
 ## Source and evidence
@@ -12,7 +13,7 @@ b16f92aa01d52d6b51e74e0e1574fac7de14635b. Separate migration fixture correction:
 3be534f828bbaf0ec655fb689abe60869bf59114. Composed fixture correction: 03e3f44.
 Report-only package reference correction: 3aa8e0d. Exact source manifests,
 commands, times, logs and exit statuses accompany every run. The final installation
-will record its own tree, local Spec, lockfile and dependency identities.
+records its own tree, local Spec, lockfile and dependency identities.
 
 Original strict source, old failed stores, the previous accounting failure and
 frozen installation c4300519538be9cb2befd08b8d99b0b897a33801cbd57f48cf4f088ea417e10e
@@ -118,21 +119,21 @@ focused checks pass, with final types08 exit 0. This does not retroactively pass
 the full suite. No second full suite was run. See full-suite-outcome.md and
 composed-fixture-correction.md for exact setup corrections and limitations.
 
-## Installed checks (pending execution)
+## Installed prerequisites and coverage limits
 
 The prepared local identity is bound to one project identity contract and one
 fixed local-test-runtime.json. The supported managed setup reuses a valid file;
 there is no reviewed replacement/per-client path in this prepared flow. Do not
 remove or edit it, use integration-only setters, or copy separate budgets to claim
 common allowance. See installed-identity-prerequisites.md. The original matching
-context will receive diagnostic/startup/own-row positive checks before schedules.
+context received diagnostic/startup/own-row positive checks before every schedule.
 Alternate/common-budget A2 and foreign-context A4 remain blocked unless the actual
 supported prerequisite is established. Historical package passes are not reused.
 
 The overall owned fixture extension remains exactly one synthetic third-insurer
 portfolio plus three valid claims: 44 rows with the original 40 preserved, same
 schema and 8/3 policy. No approval history is inserted. Actual preparations and
-installed results will be recorded separately below. Prepared scripts are not
+installed results are recorded separately below. Prepared scripts are not
 executed results; no missing-ID equality is treated as proposal identity.
 
 ## Offline delivery checkpoint
@@ -143,3 +144,112 @@ report-only correction and exact command plans explain the split. No skipped
 checker or source behavior change. Offline package installation used cached
 existing dependencies and locally packed Spec under an unshared network namespace.
 Pre-install preservation verified all 77,559 original entries unchanged.
+
+## Final installed results
+
+New complete offline installation: source/evidence checkpoint f9d28398ac6b896f2824d04ba28b858d6ae5cd48,
+product b16f92a, test 03e3f447e1f79ffbc804b0e8b396bddb510e3e12. Runner 1.8.0 and
+local Spec 1.11.0. Tree b2ec50b72e3c178cdb8fd67ed8f7af8250a00840720d0ceca33de8f21a14c8b0,
+7,569 entries; lockfile 1bdb01a5cffc444530b6617ffd1c7eff8454db111098b95c0243d0bb684b06a2.
+Full manifest/archive stay in the owned frozen/ directory; artifact-summary.json
+and freeze-command.log record exact package and archive hashes. The new artifact
+was never patched, and the previous package is not reused as current evidence.
+
+All installed business checks below use PostgreSQL business rows with a SQLite
+control store. They do NOT constitute real PostgreSQL control-store installation
+coverage; the explicit host integration gate supplies that separate evidence.
+
+| Check | Final status | What was actually established |
+| --- | --- | --- |
+| Configured original identity | PASS | Applicable Action-companion doctor, normal four-tool startup and own allowed rows in every used copy; identity bytes unchanged |
+| A1 identical/replay/restart | PASS, one process | One canonical proposal, approval, queue entry, stored applied receipt and independently verified row effect; identical replay and MCP restart added none |
+| A2 last insurer slot | PASS, same principal only | Two legitimate automatic approvals before contention; second request completed while first facts were held; exactly one further automatic approval and one human-review loser, source unchanged |
+| A2 overall/shared-principal variants | BLOCKED | Alternate reviewed local identities sharing the SAME applicable ledger cannot be prepared through the supported local flow; no independent copied-budget substitution |
+| A3 collection | PASS on fresh corrected fixture | First real source lock wait observed; two worker processes overlapped with unchanged concurrency one; one 60000-cent change applied, aggregate became 90000, competing change refused |
+| A3 source coordination | PASS | Owned portfolio status/version UPDATE actually blocked worker verification; after owner commit, stale source effect was refused and independently read back |
+| A4 cross-context references | BLOCKED | Positive original context passes; no second valid reviewed context exists for normally issued foreign references. No deeper rejection claimed from startup alone |
+| Exact automatic-limit edit | FAILED at preparation, product | Export and exact 3-to-1 dry-run pass; disabled save exits 2 with POLICY_EXECUTION_CONTEXT_REQUIRED |
+| Installed publication order / old unstarted after edit | NOT RUN | Failed draft save prevents a reviewed replacement; host publication and worker controls remain separately labeled |
+
+A1 canonical proposal wrp_rule_414d5ef2ef21c87ca5101fc235af1f42 has stored receipt ID 2,
+hash sha256:3617f4b3395ceed6084edb9e81528d62a2f34c35fea87cc1e3f0f136f1f0b7d1;
+rows_affected=1 and semantic verification reverified. Claim CL-103 changed from
+10000/version1 to 25000/version2; the independent whole-source comparison allows
+no other change. Stored result, receipt, replay and restart snapshots are saved.
+
+The A2 baseline is legitimate: original policy approval for CL-101 at
+2026-09-12T18:10:52.231Z with its prior applied receipt, then A1's normal CL-103
+approval. These are automatic policy decisions, not proposals/reservations/human
+approvals/queue entries counted as approvals. Persisted selector/history records
+show 2 to exactly 3, with one pending_review loser. The overall fixture contains
+one additional third-insurer portfolio plus three valid claims (44 rows); it was
+not used to claim any overall admission result. All 40 old rows were preserved.
+
+Two demonstrated harness errors are preserved: the initial doctor selected the
+Read-only primary instead of its reviewed Action companion; and A3 attempt 1 held
+a blocker beyond the unchanged three-second statement timeout while waiting for
+the second worker to finish. Exact database timeout logs and failed receipts remain
+in the untouched collection attempt. Fresh collection_02 repeated the existing
+schedule with process-spawn acknowledgement; original assertions passed. No
+product behavior, request serialization, worker limit or timeout was changed.
+See identity-diagnostic-config-correction.md and a3-harness-timeout-correction.md.
+A3 does not claim simultaneous effect transactions from overlapping processes.
+
+The new product issue is documented in installed-edit-save-finding.md with exact
+commands, inputs, outputs and static call trace. Final independent readback proves
+its active/draft policy records, decisions, queue, receipts and source unchanged.
+The save was not retried, no worker ran against the edit fixture, and the prepared
+publication script is not an executed result. No unrelated product repair began.
+
+Initial host fixture preparation used the shell environment, selected only the
+explicit owned fixture URL and invoked no provider. All subsequent host preparation
+and runtime drivers used a cleared environment; MCP/operator subprocesses received
+only their required owned DB URLs and matching reviewed values. Tests and packaging
+used private writable /var/tmp, NO_COLOR=1, umask0077, unrelated/provider credentials
+absent; full suite also had DB credentials absent. Existing dependencies and offline
+packing were used; no registry/model/customer call or deployment occurred.
+
+Runtime budget: 48 recorded operations corroborated against event logs, 6 worker
+invocations, A1 once, A2 insurer once, A3 collection twice (first harness timeout),
+A3 source-update once. The original 90-minute deadline was not reset. No fourth
+combined run, second full suite or third package attempt occurred. The separate
+installed blockers end these paths even though some budget remains.
+
+## Stopping point and next decision
+
+The publication repair is verified in the named host configurations. The stable
+full suite still has its actual failed result, with subsequent fixture corrections
+verified only in focused runs. Required installed rows remain blocked/unrun, so
+there is no overall Stage A pass. Stage B remains NOT STARTED.
+
+Next repair decision: installed-edit-save-finding.md. Separately decide how to
+prepare supported reviewed local contexts sharing one durable allowance before
+claiming installed overall/A4 coverage. After those prerequisites are repaired,
+use fresh owned fixtures and rerun applicable qualification; do not reuse these
+stopped stores or pretend the prepared scripts already ran. No arbitrary clock-skew,
+multi-host, universal exactly-once, production or unseen-domain guarantee is made.
+
+## Preservation and delivery closure
+
+All 77,559 original entries were verified unchanged after the final readbacks and
+cleanup (preservation-final.json). The new 7,569-entry installation retained its
+exact b2ec50b7…a14c8b0 tree hash (artifact-final-verification.json). Every recorded
+test/application PID was checked: 76 recorded PIDs, none still running. The one
+owned PostgreSQL container synapsor-publication-273d01cd was identified by its exact
+ID/label/network, dumped and logged before stop, then confirmed stopped. It was
+not removed; owned SQLite files and failed fixtures remain available. Six custom
+PostgreSQL dumps passed pg_restore --list, with hashes in cleanup/saved-state.json.
+Roles were saved without passwords. No original resource was stopped or removed.
+
+Private delivery destination was independently verified as
+https://github.com/Synapsor/Synapsor-Runner-Backup (private), branch
+codex/tui-safe-action-control-plane. Only that explicit backup ref is used; public
+origin, release and deployment are untouched. The post-push ref/exit confirmation
+is saved outside the commit at the owned task root's delivery.json and in the
+existing primary tracker. Product, migration test, composed test, documentation
+and evidence changes are separate commits. Raw databases, credentials, .env files,
+npm tarballs and the installed dependency tree are retained only in owned local
+artifacts, not committed.
+
+STOP after private delivery. Next issue: installed-edit-save-finding.md.
+Stage A NOT PASSED. Stage B NOT STARTED.

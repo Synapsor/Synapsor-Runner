@@ -1,0 +1,23 @@
+{
+  "case": "configured local identity prerequisite",
+  "status": "blocked_or_failed_prerequisite",
+  "identity_file_sha256": "8ec546f2ea3c7eca321e541fc9dfaec6721406b739f0bd457694fb2b10ea3983",
+  "reviewed_bindings": [
+    {
+      "role": "principal",
+      "environment": "SYNAPSOR_PRINCIPAL"
+    },
+    {
+      "role": "tenant",
+      "environment": "SYNAPSOR_TENANT_ID"
+    }
+  ],
+  "doctor": {
+    "pid": 1331168,
+    "code": 1,
+    "signal": null,
+    "stdout": "{\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"POLICY_EXECUTION_BINDING_CHANGED\",\n    \"message\": \"POLICY_EXECUTION_BINDING_CHANGED: reviewed execution policy is unavailable; no execution is authorized. If only owner sign-in settings changed, run policy connection --config <this-runtime-config> to review the exact binding. Unrelated changes require restoring or reviewing their configuration; do not edit policy-store hashes.\"\n  },\n  \"recovery\": {\n    \"state_preserved\": \"The command stopped without discarding existing durable state; inspect that state before retrying.\",\n    \"source_database_changed\": null,\n    \"next_action\": \"Run \\\"/usr/bin/node\\\" \\\"/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/frozen/installed/node_modules/@synapsor/runner/dist/cli.js\\\" doctor --help.\"\n  }\n}\n",
+    "stderr": "{\"timestamp\":\"2026-09-13T01:30:20.355Z\",\"level\":\"warn\",\"event\":\"cli_rejected\",\"command\":\"doctor\",\"error_code\":\"POLICY_EXECUTION_BINDING_CHANGED\"}\nPOLICY_EXECUTION_BINDING_CHANGED: reviewed execution policy is unavailable; no execution is authorized. If only owner sign-in settings changed, run policy connection --config <this-runtime-config> to review the exact binding. Unrelated changes require restoring or reviewing their configuration; do not edit policy-store hashes.\n"
+  },
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n1 !== 0\n\n    at file:///home/sandesh-tiwari/Desktop/C++/Progress%20docs%20tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/runtime/check-installed-context.mjs:11:93\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)"
+}
