@@ -1,0 +1,98 @@
+{
+  "at": "2026-09-13T17:26:52.379381+00:00",
+  "artifact": {
+    "frozen_at": "2026-09-13T16:20:23.794Z",
+    "source_commit": "7eef52206b2c43ae9c88c1b3760cc1ddf6d6529d",
+    "installed_tree_sha256": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+    "manifest_sha256": "fd690f250d93475cd93f4cb5c940c4b6042989569de3cc7700179ba6b5f2ca7a",
+    "archive_sha256": "2083f38664220464ef4a189bf7d38f5e9965557c175b65ccf773a8f0d9f8a868",
+    "package_lock_sha256": "aa83ff8282358ce8f6b2865242be668b7f89ba32aa2055c6476a5d7441ff01fc",
+    "entries": 7569,
+    "tarballs": [
+      {
+        "name": "synapsor-runner-1.8.0.tgz",
+        "sha256": "c516d4ec5cbfd550b7e7c538e31e7b35d30e23b75e4880d8ef5a448f711c894b"
+      },
+      {
+        "name": "synapsor-spec-1.11.0.tgz",
+        "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+      }
+    ]
+  },
+  "classification": "KNOWN-CASE repair verification; original unseen Stage B NOT PASSED",
+  "stage_a": "Historical acceptance remains specific to278b66c; new build automated regressions reported separately",
+  "overall": "NOT_PASSED; bounded repair verification STOPPED for review",
+  "rows": [
+    {
+      "check": "Composed checkpoint and public deterministic sequences",
+      "state": "PASSED"
+    },
+    {
+      "check": "Full stable suite/types/offline package",
+      "state": "PASSED",
+      "tests": 6165,
+      "skips": 461
+    },
+    {
+      "check": "Original tournament checkpoint exact save/restart",
+      "state": "PASSED",
+      "new_calls": 14,
+      "prior_calls": 16
+    },
+    {
+      "check": "Original tournament onboarding continuation",
+      "state": "BLOCKED",
+      "reason": "New scope-intent parser requires principal accounting from role definition"
+    },
+    {
+      "check": "Assisted tournament checkpoint continuation",
+      "state": "FAILED_POLICY_MISMATCH",
+      "new_calls": 17,
+      "prior_calls": 24,
+      "reason": "Extra principal quota saved disabled; not accepted/activated"
+    },
+    {
+      "check": "Software stopped checkpoint named fact/receipt prerequisite retention",
+      "state": "PASSED_NARROW_CHECK",
+      "new_calls": 8,
+      "prior_calls": 50,
+      "transport_errors": 1
+    },
+    {
+      "check": "Software stopped checkpoint complete policy review",
+      "state": "BLOCKED",
+      "reason": "Post-write readback, coordinator selection, truthful completion status unresolved"
+    },
+    {
+      "check": "Fresh tournament known-case onboarding",
+      "state": "BLOCKED",
+      "new_calls": 31,
+      "clarification_save": "PASSED",
+      "reason": "Unchanged authoring scope-intent parser requires unrequested principal accounting"
+    },
+    {
+      "check": "Fresh software known-case onboarding",
+      "state": "BLOCKED_DEPLOYMENT",
+      "new_calls": 31,
+      "read_action_reviews": "PASSED",
+      "reason": "Existing semantic public setup cannot establish required source-atomic receipt; see software-receipt-setup-blocker.json"
+    },
+    {
+      "check": "New installed executions/receipts/readback",
+      "state": "NOT_RUN"
+    },
+    {
+      "check": "Ordinary-language edits and same connected client",
+      "state": "NOT_RUN"
+    }
+  ],
+  "runtime_case_calls": 0,
+  "editing_calls": 0,
+  "worker_invocations": 0,
+  "new_authoring_calls": 101,
+  "fresh_source_rows_unchanged": {
+    "tournament": 104,
+    "software": 504
+  },
+  "interpretation": "No overall success; named checkpoint/fact corrections are distinct from actual onboarding, execution and edit completion."
+}

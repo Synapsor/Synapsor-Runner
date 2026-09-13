@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-13T16:58:15.812700+00:00",
+  "run": "fresh-software",
+  "classification": "Model coverage submission rejected by unchanged privacy evidence validator; product cause not established",
+  "error": "POLICY_COVERAGE_INVALID: Field privacy evidence is not present: release_ops.build_checks.check_kind. Use exact fields from read_access or Action scoped_bindings; do not infer private access from an absent resource.",
+  "calls_so_far": 16,
+  "next_step": "One normal UI Resolve required decisions recheck under same50-call budget. Preserve first failure; no assertion, catalog, policy or product change. Stop if this same blockage recurs.",
+  "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/fresh-software/logs/public-01.log"
+}

@@ -1,0 +1,24 @@
+{
+  "at": "2026-09-13T17:11:13.653Z",
+  "authority_digest": "sha256:d09019d42b59328a5394dd4dbdd227f073eee7bf6950e423ee98f88485ecb99f",
+  "content_sha256": "741fe997b18a5278f50afa367f4dfe1e68bcb44c5ca80fae89ac3934d74555da",
+  "public_route": "Inspect exact reading permissions -> Privacy findings and recorded meanings -> Resources and fields -> internal_finding",
+  "metadata_oracle": "Exact current SQLite control-policy draft; read-only inspection only",
+  "expected_public_fields": {
+    "release_ops.build_candidates": [
+      "candidate_ref",
+      "application_name",
+      "candidate_state"
+    ],
+    "release_ops.release_slots": [
+      "slot_ref",
+      "slot_state"
+    ]
+  },
+  "all_model_analysis_allowlists_empty": true,
+  "tenant_and_principal_keys": "tenant_id/principal_id",
+  "checks_resource_absent_from_public_read": true,
+  "source_unchanged": true,
+  "displayed_limitation": "Attached-rule privacy verification unavailable for exact revision; no general privacy certification claimed. Exact allowlists independently reviewed against original policy; existing activation checks remain enabled.",
+  "operator_review": "Confirm only requested Read capability; Action/execution remain separate"
+}

@@ -1,0 +1,94 @@
+{
+  "at": "2026-09-13T17:24:34.682983+00:00",
+  "records": [
+    {
+      "run": "fresh-software",
+      "container": "synapsor-authoring-fresh-software-cfaf3854",
+      "container_id": "ea1190e5b3a75724c7b78ee643d8115c9700f5b6c020e82b4fb242d4d24a586c",
+      "label": "authoring-review-repair-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "8f8711de2123628846630662be1edc3cbc943c790338cf52f98f892127863a73",
+        "postgres.log": "5dbc09961968e137b627e8e72281a1139241c05c5bc3119008fa3f9aba4a3782",
+        "source.dump": "08532d0440f47574370934b6f493c7db6007003f8b985b45fdf260c00c829fde"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/closure/fresh-software",
+      "removed": false
+    },
+    {
+      "run": "fresh-tournament",
+      "container": "synapsor-authoring-fresh-tournament-db6fd961",
+      "container_id": "e2ce1e99ef87a41e90ec87c740ecdbdb88ad2012c74e8812c47787c37a135988",
+      "label": "authoring-review-repair-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "ed0e3f9c75c4fc11009d1bd78bd3e87c739a612b3f1f987763e4249430a73d51",
+        "postgres.log": "7cfb5e56ffd5c5b56f82193684fd0b187ac523f83ac440f5e9cc677b42d11309",
+        "source.dump": "0f7a23876098e79a29c6cc219a0c28bcf802f2ee03c92869a080b001f168d9cb"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/closure/fresh-tournament",
+      "removed": false
+    },
+    {
+      "run": "recovery-software",
+      "container": "synapsor-authoring-recovery-software-e45d38a0",
+      "container_id": "d54e21f9e0e4bdc328b00f20e68362c7e128c6c34fbc56347ade1f6a4b92e7e4",
+      "label": "authoring-review-repair-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "4e502725d94966e0ea8ec038119d1fe655bb4ab7ced71be56a51277da85325d0",
+        "postgres.log": "9486814954ebe363f0baeb5c5d02ced8fa8b8bd016fedf7b6ef26f0092a83c11",
+        "source.dump": "f55ad064d521ec582fa83f51d5165137b12aa0e5401f490df2f38bf132e6eb51"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/closure/recovery-software",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-authoring-recovery-tournament-assisted-4fe044c7",
+      "container_id": "2b0cc20446dd2c88614440d2eb09e175c189a19f2fd29a03f89630585565f23b",
+      "label": "authoring-review-repair-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "16e9c7ac00261b6b4bebfbec0f69c71f18bf8438316509b5c02a2c1db3569d91",
+        "postgres.log": "1c7b4ce9579d298ed70376f48ff9e9814c1436e0f97013bc50b6142e0b41f9da",
+        "source.dump": "1975d76b0f6dabb58b5c81034e3476a2fb1de5cccfc117da00661175ac1414e3"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/closure/recovery-tournament-assisted",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-original",
+      "container": "synapsor-authoring-recovery-tournament-original-f9b5d6a6",
+      "container_id": "f771aefbe325dff0e55f0561c14ed05dc0443be0ab1afe9086a100aa53efbb88",
+      "label": "authoring-review-repair-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "a4b984c3011cf4190969b8e25a3292f633f21ee31057d34ea6ddf4859da2ed88",
+        "postgres.log": "e3677bdd6b32621ef0fa26390f27d17c17d3bde85d2530334278fe64c383e6c1",
+        "source.dump": "2e75d803ef7808bd9aabfb9e4ffad4d2f5fea52369b8d6ea1a34a52bd68c00bc"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/closure/recovery-tournament-original",
+      "removed": false
+    }
+  ],
+  "workers_started": 0,
+  "case_runtime_clients_started": 0,
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-13T16:51:22.570Z",
+  "runId": "fresh-tournament",
+  "label": "stopped-scope-intent",
+  "classification": "fresh KNOWN-CASE regression",
+  "artifact_tree": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+  "prior_calls": 0,
+  "new_authoring_calls": 31,
+  "complete_response_captures": 31,
+  "cli_exits": [
+    0
+  ],
+  "preflight_exits": [
+    0
+  ],
+  "resume_stage": "authority_review",
+  "exact_original_answer_paths": [
+    ".conversation[6].answer",
+    ".pending_action_revision.operator_statements[2]"
+  ],
+  "stores": {
+    ".synapsor/authority-write-lock.sqlite": {},
+    ".synapsor/runtime-admission.sqlite": {}
+  },
+  "source_counts": {
+    "events": 8,
+    "results": 96
+  },
+  "source_unchanged": true,
+  "project_copy_sha256": "f03e9e96408786fce4f860366bfcc65a8128a5af4cc63633434a71cb5ef5915c",
+  "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/fresh-tournament/checkpoints/stopped-scope-intent"
+}

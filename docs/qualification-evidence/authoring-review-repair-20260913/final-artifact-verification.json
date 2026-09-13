@@ -1,0 +1,15 @@
+{
+  "new": {
+    "verified_at": "2026-09-13T17:23:37.493Z",
+    "tree": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+    "entries": 7569,
+    "exit": 0
+  },
+  "accepted_historical": {
+    "verified_at": "2026-09-13T17:23:53.819Z",
+    "tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "entries": 7569,
+    "exit": 0
+  },
+  "commands": "node <each owned frozen/freeze-repair.mjs> --verify; complete file/mode/symlink comparison, no install or patch"
+}

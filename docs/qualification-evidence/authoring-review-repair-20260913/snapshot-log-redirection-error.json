@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-13T17:23:19.360593+00:00",
+  "command": "snapshot-known-run fresh-software with redirection to nonexistent owned logs directory",
+  "actual": "shell refused redirection before node launch; snapshot not executed",
+  "correction": "Same snapshot command executed without redirection; existing tool output and checkpoint result retained",
+  "actual_corrected_exit": 0
+}

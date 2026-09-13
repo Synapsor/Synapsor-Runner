@@ -1,0 +1,84 @@
+{
+  "at": "2026-09-13T16:37:37.626312+00:00",
+  "run": "recovery-software",
+  "capture": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/recovery-software/meter/output-0003.txt",
+  "sha256": "ca6c36d6d76d4d7cd3694a0f998414ea97bd7572949c1b93942b235a41c3eaba",
+  "classification": "Live revised coverage response, not yet complete review/deployment",
+  "passages": [
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "implemented",
+      "interpretation": "The operator clarified that the entire reviewed local database is the approved synthetic fixture, with no mixed production records or per-record classifier. The Action is confined to reviewed PostgreSQL candidate and slot effects and has no deployment, signing, or external-system effect. This establishes source-level job scope, not execution authority.",
+      "draft_paths": [
+        "/actions/0/effect",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/effect",
+        "/runner_evidence/runtime_contract/deployment_profile"
+      ],
+      "topic": "Synthetic-fixture-only job scope",
+      "responsibility": "operator",
+      "issue_kind": "coverage_link",
+      "next_step": "Keep this Action limited to the reviewed fixture database.",
+      "operator_message_id": 2
+    },
+    {
+      "start": 5,
+      "end": 5,
+      "disposition": "implemented",
+      "interpretation": "Elapsed seconds are an inspected non-null integer and have an enforced nonnegative check. The Action also explicitly requires every loaded elapsed_seconds value to be non-null before summing, preventing SQL null aggregation from qualifying an unknown fact.",
+      "draft_paths": [
+        "/actions/0/require",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/scoped_bindings/checks/fields/elapsed_seconds",
+        "/runner_evidence/source_constraints/resources/release_ops.build_checks/columns/elapsed_seconds/nullable",
+        "/runner_evidence/source_constraints/resources/release_ops.build_checks/check_constraints/build_checks_elapsed_seconds_check"
+      ],
+      "topic": "Known nonnegative elapsed check times",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain the explicit non-null eligibility test and source constraints."
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "Runner supports a source_db receipt that can commit with supported direct-SQL effects, but this disabled revision has not selected or reviewed that receipt mode, its source receipt objects, or writer grants. The required source receipt is therefore a supported but unconfigured execution prerequisite, not established by the control ledger or the current effect.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "topic": "Atomic source receipt",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure and review a source_db receipt that commits with both guarded row updates.",
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "needs_decision",
+      "interpretation": "Dedicated writer review, exact-revision execution enablement, source-receipt setup, and worker startup remain unverified deployment work. Approval alone is not completion.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "topic": "Supervised execution handoff",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure a dedicated writer, enable this exact Action revision, review receipt setup, and start its worker.",
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "unsupported",
+      "interpretation": "The current receipt contract distinguishes independent source readback from statuses and receipts, but the disabled Action and reviewed execution evidence do not configure or establish an independent readback of both changed rows after execution. Client status presentation cannot prove that verification occurred.",
+      "draft_paths": [
+        "/actions/0/review",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/execution",
+        "/runner_evidence/runtime_contract/receipts"
+      ],
+      "topic": "Post-execution readback",
+      "responsibility": "runner",
+      "issue_kind": "unsupported_requirement",
+      "next_step": "Can reviewed execution be extended to perform and record an independent readback of both changed rows after execution?"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "role": "authoring",
+  "attempt": 1,
+  "started_at": "2026-09-13T16:20:53.510Z",
+  "classification": "neutral configured-provider prerequisite, not Runner or Stage B qualification",
+  "source_metadata_sent": false,
+  "identity_values_sent": false,
+  "status": "passed",
+  "requested_model": "gpt-5.6-terra",
+  "provider": "openai",
+  "endpoint": "https://api.openai.com/v1/responses",
+  "settings": {
+    "store": false,
+    "max_output_tokens": 1024,
+    "tool_choice": "qualification_ping",
+    "parallel_tool_calls": false
+  },
+  "child_pid": 3209506,
+  "signal": null,
+  "response": {
+    "started": "2026-09-13T16:20:53.551Z",
+    "finished": "2026-09-13T16:20:56.162Z",
+    "provider": "openai",
+    "requested_model": "gpt-5.6-terra",
+    "returned_model": "gpt-5.6-terra",
+    "endpoint": "https://api.openai.com/v1/responses",
+    "http_status": 200,
+    "request_id": "req_84adb71918d042dcb9f5fee2414f6b11",
+    "tool_name": "qualification_ping",
+    "tool_arguments": "{\"ready\":true}",
+    "usage": {
+      "input_tokens": 139,
+      "input_tokens_details": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0
+      },
+      "output_tokens": 19,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 158
+    },
+    "failure": null,
+    "source_metadata_sent": false,
+    "secrets_recorded": false
+  },
+  "actual_provider_attempts": 1,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T16:20:56.174Z"
+}

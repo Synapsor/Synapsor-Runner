@@ -1,0 +1,25 @@
+[
+  {
+    "at": "2026-09-13T16:21:58.695577+00:00",
+    "run": "recovery-tournament-original",
+    "original": "logs/public-01.log and public-invocations.jsonl preflight exit1",
+    "cause": "Moving timed plan creation after preflight exposed observer startup reading absent meter/plan.json. No application/database open and no provider call occurred.",
+    "correction": "Read-only storage preflight receives database destination configuration without provider key or observer. Actual packaged CLI still uses the unchanged complete observer with a newly declared finite plan after successful preflight.",
+    "counter_reset": false,
+    "product_or_candidate_changed": false
+  },
+  {
+    "at": "2026-09-13T16:28:21.434844+00:00",
+    "operation": "snapshot-known-run recovery-tournament-original saved-and-restarted",
+    "cause": "Snapshot helper assumed better-sqlite3 dependency; frozen package uses installed Node SQLite instead. Failed before DB open or copying project. Empty attempted checkpoint directory retained.",
+    "correction": "Use existing node:sqlite DatabaseSync readOnly true; create uniquely named corrected checkpoint.",
+    "provider_or_product_activity": false
+  },
+  {
+    "at": "2026-09-13T16:52:37.302422+00:00",
+    "operation": "quiescent snapshot accounting measurement",
+    "cause": "Suffix-only SQLite scan included empty lock files and omitted actual .synapsor/local.db. Original whole project copies and byte hashes retained the real ledger unchanged. Prior stores field is incomplete, not a zero-approval oracle.",
+    "correction": "Identify SQLite files by header; separately audit actual local.db in all four stopped snapshots read-only. Keep the original attempt reports and add a corroborating ledger-audit.json.",
+    "source_or_product_changed": false
+  }
+]

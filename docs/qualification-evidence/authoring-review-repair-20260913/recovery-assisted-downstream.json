@@ -1,0 +1,186 @@
+{
+  "at": "2026-09-13T16:33:36.668182+00:00",
+  "run": "recovery-tournament-assisted",
+  "verdict": "STOPPED_POLICY_MISMATCH",
+  "named_guard": "Public carried-forward revision passed prior checkpoint refusal and saved disabled draft; no private-material error observed. This is not correct-policy completion.",
+  "cause_reference": "recovery-tournament-downstream.json",
+  "before": [
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification/checkpoints/assisted-stopped/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+      "sha256": "bf0d08e5f201f83f8f521560834b745c8dffbfc2931dddbfa8f12ac228d6602a",
+      "state": "disabled",
+      "approval_classes": [
+        {
+          "name": "league.result_ratification_approval",
+          "mode": "policy",
+          "rules": [
+            {
+              "outcome": "league.result_ratification",
+              "auto_approve_when": {
+                "kind": "compare",
+                "left": {
+                  "binding": "result",
+                  "field": "stage",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "qualifying",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "championship",
+                      "qualifying"
+                    ],
+                    "kind": "string",
+                    "max_length": 12
+                  }
+                }
+              }
+            }
+          ],
+          "required_role": "league_supervisor",
+          "required_approvals": 1,
+          "shared_limits": [
+            {
+              "id": "league_automatic_ratifications_24h",
+              "kind": "count",
+              "scope": "tenant",
+              "maximum": 2,
+              "window_seconds": 86400
+            },
+            {
+              "id": "overall_automatic_ratifications_24h",
+              "kind": "count",
+              "scope": "boundary",
+              "maximum": 6,
+              "window_seconds": 86400
+            }
+          ]
+        }
+      ],
+      "action_boundary": {
+        "schema_version": "synapsor.semantic-action-boundary.v1",
+        "name": "reviewed_staging_actions",
+        "rules": [
+          {
+            "approval_policy_digest": "sha256:0b7e92c9f6fa06571bde6bf9d775324a1e7f93c5e24795d2ef97a307132adaf8",
+            "approval_mode": "policy",
+            "outcome": "league.result_ratification",
+            "effect_envelope_digest": "sha256:94a88fac3b82047b3d56ac1074f7fe887643e2c199585ce5a9afd95cf0b3469a",
+            "action_rule_digest": "sha256:b26554f58b18d0aaae6ca00df7f9db23cee7aed02bcbe7ec8d884136236bf94d",
+            "compiled_plan_digest": "sha256:9848ce3198e7a0a0f1065e6a7b71d1195debc48d65c1b5c0c760b2c37344e12d",
+            "approval_class": "league.result_ratification_approval",
+            "operation": "update",
+            "target_resource": "tournament_ops.results",
+            "allowed_fields": [
+              "result_state"
+            ],
+            "max_rows": 1,
+            "writeback": {
+              "mode": "direct_sql",
+              "supervised_worker": "allowed"
+            }
+          }
+        ],
+        "digest": "sha256:33efa99dcc7690e18adf5c9c49c8ba2a305d494b1d91aefafa14006500e2e378"
+      }
+    }
+  ],
+  "after": [
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/recovery-tournament-assisted/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+      "sha256": "756e68b1b7898b3f7fd2681c966514cfc10659ea50c0043bc8c46a19e78dd321",
+      "state": "disabled",
+      "approval_classes": [
+        {
+          "name": "league.result_ratification_approval",
+          "mode": "policy",
+          "rules": [
+            {
+              "outcome": "league.result_ratification",
+              "auto_approve_when": {
+                "kind": "compare",
+                "left": {
+                  "binding": "result",
+                  "field": "stage",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "qualifying",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "championship",
+                      "qualifying"
+                    ],
+                    "kind": "string",
+                    "max_length": 12
+                  }
+                }
+              }
+            }
+          ],
+          "required_role": "league_supervisor",
+          "required_approvals": 1,
+          "shared_limits": [
+            {
+              "id": "league_automatic_ratifications_24h",
+              "kind": "count",
+              "scope": "tenant",
+              "maximum": 2,
+              "window_seconds": 86400
+            },
+            {
+              "id": "overall_automatic_ratifications_24h",
+              "kind": "count",
+              "scope": "boundary",
+              "maximum": 6,
+              "window_seconds": 86400
+            },
+            {
+              "id": "referee_automatic_ratifications_24h",
+              "kind": "count",
+              "scope": "tenant_principal",
+              "maximum": 2,
+              "window_seconds": 86400
+            }
+          ]
+        }
+      ],
+      "action_boundary": {
+        "schema_version": "synapsor.semantic-action-boundary.v1",
+        "name": "reviewed_staging_actions",
+        "rules": [
+          {
+            "approval_policy_digest": "sha256:984bb893b3dcb04bd1da856c7c7be29074d539e327a02a927e2b813382b21a5f",
+            "approval_mode": "policy",
+            "outcome": "league.result_ratification",
+            "effect_envelope_digest": "sha256:94a88fac3b82047b3d56ac1074f7fe887643e2c199585ce5a9afd95cf0b3469a",
+            "action_rule_digest": "sha256:b26554f58b18d0aaae6ca00df7f9db23cee7aed02bcbe7ec8d884136236bf94d",
+            "compiled_plan_digest": "sha256:9848ce3198e7a0a0f1065e6a7b71d1195debc48d65c1b5c0c760b2c37344e12d",
+            "approval_class": "league.result_ratification_approval",
+            "operation": "update",
+            "target_resource": "tournament_ops.results",
+            "allowed_fields": [
+              "result_state"
+            ],
+            "max_rows": 1,
+            "writeback": {
+              "mode": "direct_sql",
+              "supervised_worker": "allowed"
+            }
+          }
+        ],
+        "digest": "sha256:1ca86f99cc72fa596d6ff0807e1fb8df149c91081e7c1942e475bbb99b655e9c"
+      }
+    }
+  ],
+  "operator_accepted_extra_scope": false,
+  "activation": false,
+  "runtime": false,
+  "limit_consequence": "The extra principal cap2 is redundant while its containing tenant cap2 uses the same window and counted set; this run does not demonstrate an extra runtime denial or grant. It is an unrequested policy component introduced to satisfy a mis-scoped authoring requirement, so the draft was not accepted or activated."
+}

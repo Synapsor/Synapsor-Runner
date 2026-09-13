@@ -1,0 +1,59 @@
+{
+  "at": "2026-09-13T16:44:30.628163+00:00",
+  "runs": [
+    {
+      "run": "recovery-tournament-original",
+      "prior": 16,
+      "new_requests": 14,
+      "complete_responses": 14,
+      "transport_errors": [],
+      "cli_exits": [
+        0,
+        0
+      ],
+      "classification": "stopped bounded recovery, never fresh onboarding"
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "prior": 24,
+      "new_requests": 17,
+      "complete_responses": 16,
+      "transport_errors": [
+        {
+          "at": "2026-09-13T16:33:05.079Z",
+          "pid": 10,
+          "ppid": 2,
+          "type": "transport_error",
+          "index": 17,
+          "code": "ASK_CANCELLED"
+        }
+      ],
+      "cli_exits": [
+        0
+      ],
+      "classification": "stopped bounded recovery, never fresh onboarding"
+    },
+    {
+      "run": "recovery-software",
+      "prior": 50,
+      "new_requests": 8,
+      "complete_responses": 7,
+      "transport_errors": [
+        {
+          "at": "2026-09-13T16:34:20.080Z",
+          "pid": 10,
+          "ppid": 2,
+          "type": "transport_error",
+          "index": 1,
+          "code": "ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC"
+        }
+      ],
+      "cli_exits": [
+        0,
+        0
+      ],
+      "classification": "stopped bounded recovery, never fresh onboarding"
+    }
+  ],
+  "provider_wait_or_hands_on_not_inferred": true
+}

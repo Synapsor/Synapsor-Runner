@@ -1,0 +1,360 @@
+{
+  "at": "2026-09-13T16:41:33.479023+00:00",
+  "run": "recovery-software",
+  "source_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/recovery-software/project/.synapsor/boundary-authoring/policy-sources/0b02717e-a714-4f6f-901a-c2d616bb5a65.json",
+  "source_record_sha256": "a19d490004129f7de102b1d0a3070bf553422d46e16e779aeb277661023985e6",
+  "source_digest": "sha256:d35a5f499c394493bc5d87e35abae695c0038b092ac0c2ddc82c5f4f25cea4a0",
+  "draft_digest": "sha256:2eff6af3cbfb21917e10e62a72237988a1ef31b454e02353e91a7478b7d3724f",
+  "verdict": "NAMED_FACTS_RETAINED; COMPLETE_REVIEW_BLOCKED",
+  "stored_passages": [
+    {
+      "start": 1,
+      "end": 1,
+      "disposition": "background",
+      "interpretation": "Document title only; it establishes no operational requirement.",
+      "draft_paths": [],
+      "topic": "Document title",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "No action is required."
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "implemented",
+      "interpretation": "The prepared effect is limited to guarded PostgreSQL updates in the reviewed fixture source and has no deployment, binary-signing, or external-contact effect. The operator clarified that the entire supplied local database is the approved synthetic fixture, so no per-record classifier is required.",
+      "draft_paths": [
+        "/actions/0/effect",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/effect"
+      ],
+      "operator_clarification": "The entire supplied local database is the synthetic fixture described in the owner information. There are no production records mixed into it and no per-record synthetic/non-synthetic classification. That sentence describes the approved source and the job's scope: use only this reviewed fixture database, and never deploy software, sign binaries, or contact another system. There are no deployment or signing hooks in this source. Keep the candidate, slot, check, privacy and approval requirements unchanged.",
+      "topic": "Synthetic fixture-only sealing",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain the reviewed fixture-only scope for this disabled revision."
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "implemented",
+      "interpretation": "Candidate and related-slot access is constrained by inspected trusted tenant and principal scope. The related-only slot Read has only the reviewed candidate entry path, implementing restriction to the coordinator's assigned organization records; authenticated-session wiring remains separate.",
+      "draft_paths": [
+        "/runner_evidence/read_access/release_ops.build_candidates",
+        "/runner_evidence/read_access/release_ops.release_slots",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/scoped_bindings"
+      ],
+      "topic": "Assigned organization scope",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain the reviewed tenant and principal bindings on every Read and Action load."
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "Record scope is configured, but connecting an authenticated coordinator session to the reviewed trusted tenant and principal bindings is not verified. This is deployment wiring, not a missing Action predicate.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+      ],
+      "topic": "Authenticated coordinator identity",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, connect authenticated coordinator sessions to the reviewed tenant and principal bindings.",
+      "deployment_prerequisite": "authenticated_identity"
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "implemented",
+      "interpretation": "Only candidate reference, application name, candidate state, slot reference, and slot state are returned. Database identifiers, versions, security hold, internal finding, and check records have neither returned values nor model-analysis permission; holds and check facts remain private Action verification inputs.",
+      "draft_paths": [
+        "/runner_evidence/read_access/release_ops.build_candidates",
+        "/runner_evidence/read_access/release_ops.release_slots",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/scoped_bindings/candidate/fields/security_hold",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/scoped_bindings/checks/fields/check_state",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/scoped_bindings/checks/fields/elapsed_seconds"
+      ],
+      "topic": "Public and private build information",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Preserve these field-visibility and private-verification boundaries.",
+      "field_checks": [
+        {
+          "resource": "release_ops.build_candidates",
+          "field": "candidate_ref",
+          "expectation": "business_visible"
+        },
+        {
+          "resource": "release_ops.build_candidates",
+          "field": "application_name",
+          "expectation": "business_visible"
+        },
+        {
+          "resource": "release_ops.build_candidates",
+          "field": "candidate_state",
+          "expectation": "business_visible"
+        },
+        {
+          "resource": "release_ops.release_slots",
+          "field": "slot_ref",
+          "expectation": "business_visible"
+        },
+        {
+          "resource": "release_ops.release_slots",
+          "field": "slot_state",
+          "expectation": "business_visible"
+        },
+        {
+          "resource": "release_ops.build_candidates",
+          "field": "candidate_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.build_candidates",
+          "field": "tenant_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.build_candidates",
+          "field": "principal_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.build_candidates",
+          "field": "version",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.build_candidates",
+          "field": "security_hold",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.build_candidates",
+          "field": "internal_finding",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.build_candidates",
+          "field": "slot_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.release_slots",
+          "field": "slot_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.release_slots",
+          "field": "tenant_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.release_slots",
+          "field": "principal_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.release_slots",
+          "field": "version",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.build_checks",
+          "field": "candidate_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.build_checks",
+          "field": "check_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.build_checks",
+          "field": "check_state",
+          "expectation": "private"
+        },
+        {
+          "resource": "release_ops.build_checks",
+          "field": "elapsed_seconds",
+          "expectation": "private"
+        }
+      ]
+    },
+    {
+      "start": 5,
+      "end": 5,
+      "disposition": "implemented",
+      "interpretation": "The prepared Action privately requires a staged candidate, false security hold, and the exact related ready slot. Its complete_locked check collection is capped at 12 with overflow ineligible, requires at least two passed checks, explicitly rejects null elapsed facts, and requires a total no greater than 600 seconds. Inspected structure also establishes non-null integer elapsed values and an enforced nonnegative check.",
+      "draft_paths": [
+        "/actions/0/verification",
+        "/actions/0/require",
+        "/actions/0/derive",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/scoped_bindings/candidate",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/scoped_bindings/slot",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/scoped_bindings/checks",
+        "/runner_evidence/source_constraints/resources/release_ops.build_checks/columns/elapsed_seconds/nullable",
+        "/runner_evidence/source_constraints/resources/release_ops.build_checks/check_constraints/build_checks_elapsed_seconds_check"
+      ],
+      "topic": "Safe seal eligibility",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain complete locked-collection verification and refusal behavior."
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "implemented",
+      "interpretation": "One prepared supervised direct-SQL transaction changes the candidate only to sealed and its exact related slot only to consumed. Both compiled effects have Runner-owned integer version advancement in the guarded transaction, and a failed update rolls back all listed updates. The non-null candidate relationship and unconditional unique candidate slot key establish one slot per candidate in the scoped relationship.",
+      "draft_paths": [
+        "/actions/0/effect",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/effect",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/scoped_bindings/slot",
+        "/runner_evidence/source_constraints/resources/release_ops.build_candidates/unique_constraints/build_candidates_slot_id_key"
+      ],
+      "topic": "Atomic candidate and slot transition",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Keep the paired update in this single Action and transaction."
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "A source-atomic receipt is supported for the prepared direct-SQL effect, but this disabled revision has not selected and reviewed source_db receipt objects, narrow provisioning, and writer grants. The operator requires that exact source receipt mode and rejects a control-ledger substitute or split updates.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "operator_clarification": "Require the existing source receipt mode with explicit generated narrow receipt provisioning. The source owner can apply the exact reviewed prerequisite SQL and rescan through the public flow. This is not a new request for arbitrary schema migration or a different engine feature. If the public model-assisted route cannot establish the atomic two-row effect and receipt mode, stop and record that prerequisite; never silently use two independent updates or claim a ledger receipt is source-atomic.",
+      "topic": "Atomic source receipt",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, apply and rescan the reviewed narrow source-receipt provisioning, then configure source_db receipt mode with the paired transaction.",
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "implemented",
+      "interpretation": "Automatic approval is limited to totals at or below 120 seconds. The two ledger limits select approved history for this outcome only, use inclusive rolling 24-hour windows, and preserve the required maxima: three for the same trusted tenant/software organization and eight boundary-wide. The tenant selector uses the same reviewed tenant field across candidate, check, and slot bindings, so it is shared across that organization's coordinators.",
+      "draft_paths": [
+        "/actions/0/approval",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/automatic_limits",
+        "/runner_evidence/runtime_contract/approval",
+        "/runner_evidence/runtime_contract/approval_counter_selection"
+      ],
+      "topic": "Automatic seal caps",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain both outcome capability selectors and their existing scope, window, and maximum."
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "implemented",
+      "interpretation": "Valid requests slower than 120 seconds or exceeding either automatic cap fall back to one release_supervisor approval. Eligibility is evaluated before approval, so invalid checks, holds, stale versions, and unavailable slots are refused rather than overridden by human review.",
+      "draft_paths": [
+        "/actions/0/approval",
+        "/actions/0/review",
+        "/runner_evidence/runtime_contract/approval",
+        "/runner_evidence/runtime_contract/conflict_protection"
+      ],
+      "topic": "Human review fallback",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain the release-supervisor fallback and eligibility-first refusal."
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "implemented",
+      "interpretation": "The disabled Action is correctly prepared for separately supervised direct-SQL execution: approved requests require separate exact-revision enablement and a running worker, and approval alone is not completion.",
+      "draft_paths": [
+        "/actions/0/effect",
+        "/actions/0/review",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/execution"
+      ],
+      "topic": "Separately supervised execution",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Keep execution separately supervised; do not treat this disabled draft as completed work."
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "needs_decision",
+      "interpretation": "Dedicated writer review, source-receipt configuration, execution enablement, and worker startup are supported but unverified later deployment work. This does not alter the prepared business effect.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "topic": "Supervised execution handoff",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, review the dedicated writer and grants, configure the source receipt, enable this exact revision, and start the worker.",
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "unsupported",
+      "interpretation": "The receipt contract distinguishes source receipts from independent source readback. The current Action and execution evidence do not configure a recorded independent readback of both changed rows after execution; application status presentation cannot establish that verification occurred.",
+      "draft_paths": [
+        "/actions/0/review",
+        "/runner_evidence/actions/release_ops.seal_build_candidate/execution",
+        "/runner_evidence/runtime_contract/receipts"
+      ],
+      "topic": "Post-execution readback",
+      "responsibility": "runner",
+      "issue_kind": "unsupported_requirement",
+      "next_step": "Can reviewed execution be extended to perform and record an independent readback of both changed rows after execution?"
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "The client must capture the coordinator's intended candidate selection; Runner verifies the submitted scoped reference but cannot prove the human made that selection.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+      ],
+      "topic": "Coordinator selection",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign the client responsibility for capturing the coordinator's intended candidate selection.",
+      "application_obligations": [
+        "customer_selection"
+      ]
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "needs_decision",
+      "interpretation": "The client must present returned request status and receipts truthfully; it cannot treat approval, queuing, or failure as completion.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/status_presentation"
+      ],
+      "topic": "Truthful completion status",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign the client responsibility for presenting returned statuses and receipts accurately.",
+      "application_obligations": [
+        "status_presentation"
+      ]
+    },
+    {
+      "start": 3,
+      "end": 9,
+      "disposition": "implemented",
+      "interpretation": "The saved rules.txt v1 snapshot is retained by the authoring lifecycle, and accepted operator clarifications remain bound to the current disabled authoring workflow. This does not assert activation, execution, or resolution of the source-receipt and readback gaps.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/authoring_lifecycle"
+      ],
+      "topic": "Retained policy context",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Resume from the retained versioned policy snapshot and revalidate changed evidence."
+    }
+  ],
+  "restart": "Public start restored saved guided setup and prior consent; model was not invoked during restart check.",
+  "authority": "Read/Action remain disabled; no writer/worker/receipt setup performed",
+  "limitations": "No claim of a complete live policy review, actual source receipt or edited behavior. Remaining post-write readback / selection / completion responsibilities require resolution; no new receipt engine added."
+}

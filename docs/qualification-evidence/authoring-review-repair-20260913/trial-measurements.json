@@ -1,0 +1,1707 @@
+{
+  "at": "2026-09-13T17:20:56.160503+00:00",
+  "runs": [
+    {
+      "run": "fresh-software",
+      "classification": "fresh KNOWN-CASE regression",
+      "artifact_tree": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+      "first_public_start": "2026-09-13T16:51:23.787Z",
+      "initial_deadline": "2026-09-13T18:06:23.787Z",
+      "prior_authoring_calls": 0,
+      "new_authoring_calls": 31,
+      "maximum_initial_calls": 50,
+      "reserved_editing_calls": 30,
+      "complete_response_captures": 31,
+      "transport_errors": [],
+      "cli_exits": [
+        0,
+        0
+      ],
+      "cli_still_running": false,
+      "completed_cli_process_wall_seconds": 1732.192,
+      "first_start_to_last_exit_seconds": 1747.341,
+      "provider_transport_wait_seconds": 302.44,
+      "recorded_complete_provider_wait_seconds": 302.44,
+      "provider_wait_definition": "transport attempt through complete response body; incomplete/error responses prevent a complete total",
+      "hands_on_seconds": null,
+      "first_reviewable_draft_seconds": null,
+      "first_verified_receipt_seconds": null,
+      "edit_to_review_seconds": null,
+      "edit_to_changed_behavior_seconds": null,
+      "measurement_limits": "Wall time includes coordinator evidence/review and pauses; not a human usability measure. Missing measurements are unknown, not zero. A zero CLI exit is not successful qualification.",
+      "request_roles": [
+        {
+          "capture": "input-0001.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": null,
+          "available_tools": []
+        },
+        {
+          "capture": "input-0002.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__plan_boundary_job"
+          },
+          "available_tools": [
+            "runner__plan_boundary_job"
+          ]
+        },
+        {
+          "capture": "input-0003.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__submit_read_workloads"
+          },
+          "available_tools": [
+            "runner__submit_read_workloads"
+          ]
+        },
+        {
+          "capture": "input-0004.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0005.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0006.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0007.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0008.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0009.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0010.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0011.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0012.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0013.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0014.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0015.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0016.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0017.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0018.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0019.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0020.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0021.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0022.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0023.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": null,
+          "available_tools": []
+        },
+        {
+          "capture": "input-0024.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0025.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0026.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0027.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0028.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0029.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0030.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0031.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        }
+      ]
+    },
+    {
+      "run": "fresh-tournament",
+      "classification": "fresh KNOWN-CASE regression",
+      "artifact_tree": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+      "first_public_start": "2026-09-13T16:41:54.007Z",
+      "initial_deadline": "2026-09-13T17:56:54.007Z",
+      "prior_authoring_calls": 0,
+      "new_authoring_calls": 31,
+      "maximum_initial_calls": 50,
+      "reserved_editing_calls": 30,
+      "complete_response_captures": 31,
+      "transport_errors": [],
+      "cli_exits": [
+        0
+      ],
+      "cli_still_running": false,
+      "completed_cli_process_wall_seconds": 530.245,
+      "first_start_to_last_exit_seconds": 530.246,
+      "provider_transport_wait_seconds": 288.077,
+      "recorded_complete_provider_wait_seconds": 288.077,
+      "provider_wait_definition": "transport attempt through complete response body; incomplete/error responses prevent a complete total",
+      "hands_on_seconds": null,
+      "first_reviewable_draft_seconds": null,
+      "first_verified_receipt_seconds": null,
+      "edit_to_review_seconds": null,
+      "edit_to_changed_behavior_seconds": null,
+      "measurement_limits": "Wall time includes coordinator evidence/review and pauses; not a human usability measure. Missing measurements are unknown, not zero. A zero CLI exit is not successful qualification.",
+      "request_roles": [
+        {
+          "capture": "input-0001.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": null,
+          "available_tools": []
+        },
+        {
+          "capture": "input-0002.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__plan_boundary_job"
+          },
+          "available_tools": [
+            "runner__plan_boundary_job"
+          ]
+        },
+        {
+          "capture": "input-0003.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__submit_read_workloads"
+          },
+          "available_tools": [
+            "runner__submit_read_workloads"
+          ]
+        },
+        {
+          "capture": "input-0004.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0005.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0006.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0007.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0008.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0009.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0010.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0011.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0012.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0013.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0014.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0015.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0016.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0017.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0018.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0019.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0020.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0021.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0022.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0023.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": null,
+          "available_tools": []
+        },
+        {
+          "capture": "input-0024.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0025.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0026.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0027.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0028.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0029.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0030.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0031.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        }
+      ]
+    },
+    {
+      "run": "recovery-software",
+      "classification": "KNOWN-CASE checkpoint recovery",
+      "artifact_tree": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+      "first_public_start": "2026-09-13T16:33:37.945Z",
+      "initial_deadline": "2026-09-13T17:03:37.945Z",
+      "prior_authoring_calls": 50,
+      "new_authoring_calls": 8,
+      "maximum_initial_calls": 20,
+      "reserved_editing_calls": 0,
+      "complete_response_captures": 7,
+      "transport_errors": [
+        {
+          "at": "2026-09-13T16:34:20.080Z",
+          "pid": 10,
+          "ppid": 2,
+          "type": "transport_error",
+          "index": 1,
+          "code": "ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC"
+        }
+      ],
+      "cli_exits": [
+        0,
+        0
+      ],
+      "cli_still_running": false,
+      "completed_cli_process_wall_seconds": 473.647,
+      "first_start_to_last_exit_seconds": 475.078,
+      "provider_transport_wait_seconds": null,
+      "recorded_complete_provider_wait_seconds": 97.32900000000001,
+      "provider_wait_definition": "transport attempt through complete response body; incomplete/error responses prevent a complete total",
+      "hands_on_seconds": null,
+      "first_reviewable_draft_seconds": null,
+      "first_verified_receipt_seconds": null,
+      "edit_to_review_seconds": null,
+      "edit_to_changed_behavior_seconds": null,
+      "measurement_limits": "Wall time includes coordinator evidence/review and pauses; not a human usability measure. Missing measurements are unknown, not zero. A zero CLI exit is not successful qualification.",
+      "request_roles": [
+        {
+          "capture": "input-0001.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0002.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0003.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0004.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0005.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0006.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0007.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0008.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        }
+      ]
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "classification": "KNOWN-CASE checkpoint recovery",
+      "artifact_tree": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+      "first_public_start": "2026-09-13T16:28:51.832Z",
+      "initial_deadline": "2026-09-13T16:58:51.832Z",
+      "prior_authoring_calls": 24,
+      "new_authoring_calls": 17,
+      "maximum_initial_calls": 20,
+      "reserved_editing_calls": 0,
+      "complete_response_captures": 16,
+      "transport_errors": [
+        {
+          "at": "2026-09-13T16:33:05.079Z",
+          "pid": 10,
+          "ppid": 2,
+          "type": "transport_error",
+          "index": 17,
+          "code": "ASK_CANCELLED"
+        }
+      ],
+      "cli_exits": [
+        0
+      ],
+      "cli_still_running": false,
+      "completed_cli_process_wall_seconds": 253.272,
+      "first_start_to_last_exit_seconds": 253.273,
+      "provider_transport_wait_seconds": null,
+      "recorded_complete_provider_wait_seconds": 205.978,
+      "provider_wait_definition": "transport attempt through complete response body; incomplete/error responses prevent a complete total",
+      "hands_on_seconds": null,
+      "first_reviewable_draft_seconds": null,
+      "first_verified_receipt_seconds": null,
+      "edit_to_review_seconds": null,
+      "edit_to_changed_behavior_seconds": null,
+      "measurement_limits": "Wall time includes coordinator evidence/review and pauses; not a human usability measure. Missing measurements are unknown, not zero. A zero CLI exit is not successful qualification.",
+      "request_roles": [
+        {
+          "capture": "input-0001.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0002.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0003.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0004.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0005.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0006.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0007.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0008.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0009.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0010.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0011.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0012.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0013.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0014.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0015.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0016.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0017.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        }
+      ]
+    },
+    {
+      "run": "recovery-tournament-original",
+      "classification": "KNOWN-CASE checkpoint recovery",
+      "artifact_tree": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+      "first_public_start": "2026-09-13T16:22:00.157Z",
+      "initial_deadline": "2026-09-13T16:52:00.157Z",
+      "prior_authoring_calls": 16,
+      "new_authoring_calls": 14,
+      "maximum_initial_calls": 20,
+      "reserved_editing_calls": 0,
+      "complete_response_captures": 14,
+      "transport_errors": [],
+      "cli_exits": [
+        0,
+        0
+      ],
+      "cli_still_running": false,
+      "completed_cli_process_wall_seconds": 272.245,
+      "first_start_to_last_exit_seconds": 301.958,
+      "provider_transport_wait_seconds": 122.382,
+      "recorded_complete_provider_wait_seconds": 122.382,
+      "provider_wait_definition": "transport attempt through complete response body; incomplete/error responses prevent a complete total",
+      "hands_on_seconds": null,
+      "first_reviewable_draft_seconds": null,
+      "first_verified_receipt_seconds": null,
+      "edit_to_review_seconds": null,
+      "edit_to_changed_behavior_seconds": null,
+      "measurement_limits": "Wall time includes coordinator evidence/review and pauses; not a human usability measure. Missing measurements are unknown, not zero. A zero CLI exit is not successful qualification.",
+      "request_roles": [
+        {
+          "capture": "input-0001.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0002.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0003.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0004.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": {
+            "type": "function",
+            "name": "runner__review_policy_coverage"
+          },
+          "available_tools": [
+            "runner__review_policy_coverage"
+          ]
+        },
+        {
+          "capture": "input-0005.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0006.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0007.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0008.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0009.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0010.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0011.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0012.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0013.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        },
+        {
+          "capture": "input-0014.json",
+          "model": "gpt-5.6-terra",
+          "tool_choice": "auto",
+          "available_tools": [
+            "runner__submit_verification_boundary_draft",
+            "runner__submit_effect_envelope_draft",
+            "runner__submit_action_rule_draft",
+            "runner__submit_approval_policy_draft",
+            "runner__inspect_action_relationships",
+            "runner__review_action_relationship",
+            "runner__review_version_field",
+            "runner__review_private_action_source",
+            "runner__pause_action_draft",
+            "runner__finish_without_new_actions",
+            "runner__inspect_action_draft",
+            "runner__validate_action_draft"
+          ]
+        }
+      ]
+    }
+  ]
+}

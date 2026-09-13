@@ -25,7 +25,8 @@ try {
  sandbox.splice(sandbox.length-1,0,'--ro-bind',connection.socket,connection.logicalSocket,'--bind',path.join(owned,'var-tmp'),'/var/tmp','--setenv','NO_COLOR','1');
  for(const rel of ['authoring-input','private','verifier','schema.sql','case.json','frozen-input-manifest.json'])for(const base of new Set([owned,state.logicalCase]))sandbox.splice(sandbox.length-1,0,'--ro-bind',path.join(owned,rel),path.join(base,rel));
  assert.equal(spawnSync('stty',['cols','150','rows','46'],{stdio:'inherit'}).status,0);
- const pre=spawnSync('bwrap',[...sandbox,process.execPath,path.join(H,'storage-preflight.mjs'),...args],{env,encoding:'utf8'});
+ const preEnv={...env}; for(const key of ['OPENAI_API_KEY','NODE_OPTIONS','QUALIFICATION_PROVIDER_METER'])delete preEnv[key];
+ const pre=spawnSync('bwrap',[...sandbox,process.execPath,path.join(H,'storage-preflight.mjs'),...args],{env:preEnv,encoding:'utf8'});
  await log({event:'preflight',args,code:pre.status,stdout:pre.stdout,stderr:pre.stderr});assert.equal(pre.status,0,'Effective-store preflight refused before writable application open');
  if(!state.first_public_start) {
   state.first_public_start=new Date().toISOString();state.phase='initial';state.status='RUNNING';

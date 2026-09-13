@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-13T17:05:40.067546+00:00",
+  "operation": "Close unchanged Action request through explicit reviewed decision",
+  "reason": "The whole owned source is synthetic by original owner contract; no mixed/per-row category exists. Existing atomic business rule satisfies that source-level constraint without adding a row predicate. This accepts a supporting owner clarification, not withdrawing a policy requirement.",
+  "authority_before": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/fresh-software/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+    "sha256": "507aa96535cecc92646c6a4ea15c34ff77329f16291a3edbf4602dec3760bb4a"
+  },
+  "no_operator_json_edit": true,
+  "not_activation": true,
+  "authority_after_sha256": "507aa96535cecc92646c6a4ea15c34ff77329f16291a3edbf4602dec3760bb4a",
+  "compiled_authority_unchanged": true,
+  "checked_at": "2026-09-13T17:06:31.840027+00:00"
+}

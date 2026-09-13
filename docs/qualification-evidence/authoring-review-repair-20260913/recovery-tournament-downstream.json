@@ -1,0 +1,147 @@
+{
+  "at": "2026-09-13T16:25:47.093866+00:00",
+  "run": "recovery-tournament-original",
+  "artifact": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+  "classification": "new downstream authoring validation obstacle; preserve and stop path, no product repair authorized here",
+  "named_save_repair": "Exact original answer durably present in conversation[6].answer, pending_action_revision.operator_statements[3], pending_action_revision.checkpoint.operator_messages[0] without private-material refusal",
+  "observation": "Actual draft diagnostics alternate tenant and tenant_principal accounting based on ordinary role wording; exact semantic requirement is shared tenant allowance. No scope weakening applied. Model counter narration is not established as a second host defect.",
+  "captured_diagnostics": [
+    {
+      "input": "input-0007.json",
+      "sha256": "2b8e3d9c80d0f9f1baa533e302ebe7d7374bfc0025b4d5cbb408c73bd768452f",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant_principal accounting (\"each principal\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    },
+    {
+      "input": "input-0008.json",
+      "sha256": "4d43fdc64147af353dded49dcd6dead7b63f24367ab783aadb9bcc541965d9bc",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant_principal accounting (\"each principal\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    },
+    {
+      "input": "input-0009.json",
+      "sha256": "ac93c775605a2961dd13db226b299e7931c049350ad989d4d600a0fb717cf122",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant_principal accounting (\"each principal\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    },
+    {
+      "input": "input-0009.json",
+      "sha256": "ac93c775605a2961dd13db226b299e7931c049350ad989d4d600a0fb717cf122",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant accounting (\"Each tenant\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    },
+    {
+      "input": "input-0010.json",
+      "sha256": "17cb5ea896e9813de6f3d02ee7c1d111b18c47794202d361639ab51a0686ef80",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant_principal accounting (\"each principal\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    },
+    {
+      "input": "input-0010.json",
+      "sha256": "17cb5ea896e9813de6f3d02ee7c1d111b18c47794202d361639ab51a0686ef80",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant accounting (\"Each tenant\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    },
+    {
+      "input": "input-0011.json",
+      "sha256": "4981eb9ebcd90e64430166f5870b50038c9afff64bacdf50fdeef191d666957e",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant_principal accounting (\"each principal\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    },
+    {
+      "input": "input-0011.json",
+      "sha256": "4981eb9ebcd90e64430166f5870b50038c9afff64bacdf50fdeef191d666957e",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant accounting (\"Each tenant\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    },
+    {
+      "input": "input-0011.json",
+      "sha256": "4981eb9ebcd90e64430166f5870b50038c9afff64bacdf50fdeef191d666957e",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant_principal accounting (\"each principal\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    },
+    {
+      "input": "input-0014.json",
+      "sha256": "9167d600ff3c27b369ff65da42654a35648234367efb96d5053d93b79f5eea2f",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant_principal accounting (\"each principal\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    }
+  ],
+  "code_trace": {
+    "producer": "apps/runner/src/action-policy-scope.ts:107 explicitTrustedPolicyScopes",
+    "consumer": "apps/runner/src/action-rule-model.ts:981 assertExplicitApprovalIntentPreserved",
+    "cause": "Every each principal phrase is inferred as tenant_principal accounting without requiring an attached quota statement. A role-definition sentence therefore becomes an additional scope requirement. The original Each tenant phrase also yields tenant.",
+    "product_changes": "none; saved separately for repair decision",
+    "severity": "normal authoring input can reach it; no instrumentation required beyond observation; it refuses draft validation and does not grant authority"
+  }
+}

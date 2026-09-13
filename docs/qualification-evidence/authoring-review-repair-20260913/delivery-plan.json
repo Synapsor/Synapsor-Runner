@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-13T17:28:23.715121+00:00",
+  "remote": "backup",
+  "push_url": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "verified_private": true,
+  "repository": "Synapsor/Synapsor-Runner-Backup",
+  "branch": "codex/tui-safe-action-control-plane",
+  "product_commit": "dba1800d069406e6d1e45ce3ef4e19721ef76617",
+  "frozen_source_commit": "7eef52206b2c43ae9c88c1b3760cc1ddf6d6529d",
+  "planned_commit": "Intended authoring repair evidence, bounded harness corrections and final report only",
+  "push_completed": false,
+  "actual_delivery_receipt": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/delivery.json"
+}

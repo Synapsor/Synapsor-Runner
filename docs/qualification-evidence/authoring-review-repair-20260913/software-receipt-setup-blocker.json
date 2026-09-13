@@ -1,0 +1,80 @@
+{
+  "at": "2026-09-13T17:23:19.360593+00:00",
+  "classification": "NEW DOWNSTREAM PUBLIC SETUP BLOCKER; no product repair attempted",
+  "artifact_tree": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+  "public_command": "writeback setup --config synapsor.actions.runner.json --profile development --json",
+  "public_exit": 0,
+  "actual": {
+    "ok": true,
+    "applied": false,
+    "plan": {
+      "schema_version": "synapsor.writeback-setup.v1",
+      "config_path": "synapsor.actions.runner.json",
+      "source": null,
+      "engine": null,
+      "profile": "development",
+      "executor": "app_owned_or_none",
+      "receipt_mode": "not_applicable",
+      "execution": "not_applicable",
+      "source_objects": [],
+      "writer_grants": [],
+      "sql_preview": "",
+      "receipt_schema": null,
+      "receipt_table": null,
+      "writer_role": null,
+      "setup_connection_env": null,
+      "apply_allowed": false,
+      "source_database_changed": false,
+      "next_action": "No direct-SQL source needs receipt setup. Verify the app-owned executor or keep this project read-only.",
+      "digest": "sha256:d30b79a56056c7aba6564d1e7affa8d9e4187a4f71e8fc432475b904431a7898"
+    }
+  },
+  "expected_prerequisite": "Source-atomic receipt with both guarded source updates, selected and reviewed through existing supported setup; runner_ledger is not equivalent.",
+  "active_action_digest": "sha256:7422a667328a905dc7a280e7586797f1b7869820e515225ce2fde4dbfa91ba16",
+  "source_trace": [
+    {
+      "path": "apps/runner/src/semantic-action-deployment.ts",
+      "lines": [
+        145,
+        767
+      ],
+      "observation": "Draft writer inspection uses runner_ledger, and semanticSupervisedExecutionConfig unconditionally writes source.receipts = { authority: runner_ledger }."
+    },
+    {
+      "path": "apps/runner/src/writeback-domain.ts",
+      "lines": [
+        106
+      ],
+      "observation": "sourceNeedsSqlWriteback only scans config.capabilities proposal entries; semantic Action rules are not discovered."
+    },
+    {
+      "path": "apps/runner/src/writeback-setup.ts",
+      "lines": [
+        499,
+        514,
+        618
+      ],
+      "observation": "writeback setup supports configuring source objects for an already-selected receipt authority, not selection of semantic Action receipt authority; no receipt-mode option."
+    }
+  ],
+  "source_files": [
+    {
+      "path": "apps/runner/src/semantic-action-deployment.ts",
+      "sha256": "cea8cb270e3e1ba7cd2f7add6d4ca56a790dfa6b17d95f9893245bb26ae7a5d7"
+    },
+    {
+      "path": "apps/runner/src/writeback-domain.ts",
+      "sha256": "63051a6f6cc3e32d88f07b7e60a87033c25822b0d2820781836f51940494d04f"
+    },
+    {
+      "path": "apps/runner/src/writeback-setup.ts",
+      "sha256": "9dc012bacc481456954f0cca224639957be8868578f36f168800c8733bc87c2b"
+    }
+  ],
+  "reachability": "Normal public start -> Read review -> Action review -> administrator handoff -> writeback setup; no timing instrumentation is required.",
+  "limits": "This proves a semantic setup-route gap, not absence of the source_db receipt engine or failure of atomic adapter execution. Writer posture, RLS helper compatibility, identity, worker and source effects were not tested. No receipt mode substitution or hand-edited configuration was attempted.",
+  "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/fresh-software/checkpoints/stopped-source-receipt-setup",
+  "public_log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/fresh-software/logs/writeback-preview.log",
+  "public_log_sha256": "dbd8e24522a40619fae77f0163b4fdba52b099c7f489e4d62e88d43355ba4bb6",
+  "next_decision": "Separately decide whether to expose existing source_db selection/setup through reviewed semantic deployment; do not build a new receipt engine."
+}

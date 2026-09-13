@@ -1,0 +1,27 @@
+{
+  "at": "2026-09-13T16:50:44.340945+00:00",
+  "run": "fresh-tournament",
+  "verdict": "BLOCKED_NEW_AUTHORING_SCOPE_PARSER",
+  "new_calls": 31,
+  "initial_ceiling": 50,
+  "editing_reserved_unused": 30,
+  "reason": "Same exact legitimate clarification saved successfully, then unchanged explicitTrustedPolicyScopes requires each-principal accounting. Model asks for an extra referee cap. No policy alteration or added scope accepted.",
+  "relationship": "Fresh known-case reproduction of the issue also found during recovery; not a new checkpoint privacy failure.",
+  "evidence": [
+    {
+      "capture": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/fresh-tournament/meter/input-0031.json",
+      "sha256": "bb11b8337a869613350a82275c78f30b90e4cc366e44e75e1c816bbe68c9f606",
+      "diagnostics": [
+        {
+          "code": "ACTION_RULE_DRAFT_INVALID",
+          "message": "approval.shared_limits must preserve the operator's explicit tenant_principal accounting (\"each principal\"); repair the model draft from the existing intent without asking the operator to repeat it.",
+          "repair": "model",
+          "category": "draft_structure",
+          "next_action": "Correct the named draft component using the reviewed catalog, then validate again. Keep trusted scope, intended effects and approval rules unchanged; do not invent missing business evidence."
+        }
+      ]
+    }
+  ],
+  "product_code_changed": false,
+  "authority_or_execution_enabled": false
+}

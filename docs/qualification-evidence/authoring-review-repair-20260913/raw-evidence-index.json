@@ -1,0 +1,10 @@
+{
+  "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/raw-evidence-index.json",
+  "sha256": "c2d099fdef7c6186af72e636d266d9a8d06cbfe0580bbea4a0f84fba6dd8e016",
+  "files": 738,
+  "roots": [
+    "runs",
+    "closure"
+  ],
+  "contents": "Full owned stopped projects, raw provider captures, terminal logs/timing, preflight records, checkpoints/readbacks/dumps, final container logs. No raw identity material or databases copied into Git."
+}

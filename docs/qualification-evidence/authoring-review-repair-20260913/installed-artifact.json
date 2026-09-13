@@ -1,0 +1,19 @@
+{
+  "frozen_at": "2026-09-13T16:20:23.794Z",
+  "source_commit": "7eef52206b2c43ae9c88c1b3760cc1ddf6d6529d",
+  "installed_tree_sha256": "240f6c80e7b2c1d48b5fdc6780a1c8ac5cc84783cdc7a210ba65a731801bfec9",
+  "manifest_sha256": "fd690f250d93475cd93f4cb5c940c4b6042989569de3cc7700179ba6b5f2ca7a",
+  "archive_sha256": "2083f38664220464ef4a189bf7d38f5e9965557c175b65ccf773a8f0d9f8a868",
+  "package_lock_sha256": "aa83ff8282358ce8f6b2865242be668b7f89ba32aa2055c6476a5d7441ff01fc",
+  "entries": 7569,
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "c516d4ec5cbfd550b7e7c538e31e7b35d30e23b75e4880d8ef5a448f711c894b"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ]
+}
