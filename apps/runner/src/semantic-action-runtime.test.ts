@@ -1,3 +1,7 @@
+import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
+import { buildAutoBoundary, activateExplorationBoundary, writeAutoBoundaryArtifacts, explorationBoundaryCandidateDigest,
+  AUTO_BOUNDARY_OVERRIDES_VERSION } from "./auto-boundary.js";
+import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import {
   createActionRuleAuthority,
   type ActionRuleCatalogV1,
@@ -65,7 +69,7 @@ describe("composed semantic Action runtime", () => {
       const tools = f.services.semanticActions.listTools();
       for (const outcome of f.outcomes.slice(0, 2)) expect(await f.request(outcome)).toMatchObject({ execution: "queued", source_database_changed: false });
       const before = structuredClone(f.initial);
-      f.addThirdAuthority();
+      await f.addThirdAuthority();
       await f.publish(f.current);
       await expect(readOperatorExecutionConfig({ projectRoot, config: f.initial, policyStore: f.binding }))
         .rejects.toMatchObject({ code: "POLICY_EXECUTION_BINDING_CHANGED" });
@@ -90,7 +94,7 @@ describe("composed semantic Action runtime", () => {
       const f = await heldExecutionFixture();
       const log = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       try {
-        f.addThirdAuthority();
+        await f.addThirdAuthority();
         let expectedCode = "POLICY_RUNTIME_CONFIG_CHANGED";
         if (mode === "reviewed_trust") f.current.trusted_context = { provider: "static_dev", values: { tenant_id: "other", principal: "private_changed_identity" } };
         if (mode === "reviewed_read") f.current.sources!.local_postgres!.read_url_env = "PRIVATE_CHANGED_READ_URL";
@@ -140,7 +144,7 @@ describe("composed semantic Action runtime", () => {
   it("does not reuse the held client's execution export after governed execution is revoked", async () => {
     const f = await heldExecutionFixture();
     try {
-      f.addThirdAuthority();
+      await f.addThirdAuthority();
       await f.publish(f.current);
       await f.revoke();
       expect(await f.request(f.outcomes[2]!)).toMatchObject({ execution: "not_enabled", source_database_changed: false });
@@ -155,7 +159,7 @@ describe("composed semantic Action runtime", () => {
     const canonical = JSON.stringify({ ...f.initial, trusted_context: { provider: "environment" } });
     try {
       await fs.writeFile(canonicalPath, canonical);
-      f.addThirdAuthority();
+      await f.addThirdAuthority();
       await f.publish(f.current);
       expect(JSON.parse(await fs.readFile(f.configPath, "utf8")).action_rules.project_root).toBe("..");
       expect(await f.request(f.outcomes[2]!)).toMatchObject({ execution: "queued", proposal: { status: "approved" }, source_database_changed: false });
@@ -169,7 +173,7 @@ describe("composed semantic Action runtime", () => {
     const f = await heldExecutionFixture({ configName: "runtime/custom.runner.json" });
     const log = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
-      f.addThirdAuthority();
+      await f.addThirdAuthority();
       await f.publish(f.current);
       const canonicalPath = path.join(projectRoot, "synapsor.actions.runner.json");
       const canonical = JSON.stringify(f.current);
@@ -208,7 +212,7 @@ describe("composed semantic Action runtime", () => {
     try {
       let outcome = f.outcomes[0]!;
       if (mode === "binding_changed") {
-        f.addThirdAuthority();
+        await f.addThirdAuthority();
         await f.publish(f.current);
         outcome = f.outcomes[2]!;
       } else {
@@ -895,10 +899,43 @@ describe("composed semantic Action runtime", () => {
   });
 });
 
+async function reviewedRead(root: string) {
+  const columns = ["preference_id", "account_id", "principal_id", "status", "version"];
+  const inspection: SchemaInspection = {
+    engine: "postgres", server_version: "PostgreSQL 17", current_user: "reader", inspected_at: new Date().toISOString(),
+    schemas: ["billing"], warnings: [], role_posture: {verified: true, superuser: false, bypass_rls: false, read_only: true,
+      writable_relations: [], owned_relations: [], reasons: []},
+    tables: [{schema: "billing", name: "preferences", type: "table", writable: false,
+      columns: columns.map((name, ordinal_position) => ({name, ordinal_position, data_type: name === "version" ? "integer" : "text",
+        nullable: false, generated: false, suggestions: {tenant: name === "account_id", conflict: name === "version", sensitive: false,
+          immutable: name.endsWith("id"), large_or_binary: false}})),
+      primary_key: ["preference_id"], unique_constraints: [{name: "preferences_pkey", columns: ["preference_id"]}],
+      check_constraints: [], foreign_keys: [], row_level_security: false, indexes: [],
+      role_posture: {owner: "owner", current_role_is_owner: false, current_role_can_assume_owner: false,
+        privileges: {select: true, insert: false, update: false, delete: false, truncate: false, references: false, trigger: false},
+        row_security_forced: false, row_security_effective_for_current_role: false},
+      suggestions: {tenant_columns: ["account_id"], conflict_columns: ["version"], sensitive_columns: [], default_visible_columns: ["status"]}}],
+  };
+  const reviewed = (value: string) => ({value, actor: "fixture_operator", reason: "Reviewed existing preference scope", decided_at: new Date().toISOString()});
+  const build = buildAutoBoundary({inspection, inspectedSchema: "billing", sourceEnv: "DATABASE_URL", deploymentProfile: "staging",
+    overrides: {schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: {"billing.preferences": {
+      tenant_key: reviewed("account_id"), principal_key: reviewed("principal_id")}}},
+    project: {root, package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"]}});
+  const candidate = recommendedBoundaryReviewCandidate(build.exploration_boundary);
+  await writeAutoBoundaryArtifacts({projectRoot: root, build});
+  const read = await activateExplorationBoundary({projectRoot: root, candidate,
+    expectedDigest: explorationBoundaryCandidateDigest(candidate), actor: "fixture_operator",
+    confirmation: `ACTIVATE ${explorationBoundaryCandidateDigest(candidate)}`, confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection});
+  return {read, build};
+}
+
 async function heldExecutionFixture(options: { configName?: string; configOnly?: boolean; relativeBindings?: boolean } = {}) {
   const outcomes = ["billing.pause_notifications", "billing.pause_digest_notifications", "billing.pause_reminder_notifications"];
-  let authority = authorityFixture("active", { automaticApproval: true, outcomes: outcomes.slice(0, 2) });
-  vi.spyOn(actionAuthority, "createActiveActionRuleAuthorityLoader").mockReturnValue(async () => authority);
+  const {read, build} = await reviewedRead(projectRoot);
+  const authorityOptions = { automaticApproval: true, generationLock: read.generation_lock_fingerprint,
+    readDigest: read.activation.digest, readName: read.pack.name };
+  let authority = authorityFixture("active", { ...authorityOptions, outcomes: outcomes.slice(0, 2) });
   const storePath = path.join(projectRoot, "control.db"), configPath = path.join(projectRoot, options.configName ?? "synapsor.actions.runner.json");
   const policy = (outcome: string, write_url_env: string) => ({ outcome, write_url_env,
     action_boundary_digest: authority.authority.action_boundary.digest, mode: "supervised_worker" as const,
@@ -908,7 +945,9 @@ async function heldExecutionFixture(options: { configName?: string; configOnly?:
     sources: { local_postgres: { engine: "postgres", read_url_env: "DATABASE_URL", write_url_env: "FIRST_WRITER", read_only: false,
       receipts: { authority: "runner_ledger" } } },
     supervised_worker: { enabled: true, profile: "staging", capabilities: [], outcomes: outcomes.slice(0, 2).map((outcome) => policy(outcome, "FIRST_WRITER")) } };
-  const records = [encodeOperatorAuthority({ type: "read_selection", selected_name: null }), encodeOperatorExecutionPolicy(initial)!];
+  const records = [encodeOperatorAuthority({ type: "read", boundary: read, generation_lock: build.lock }),
+    encodeOperatorAuthority({ type: "read_selection", selected_name: read.pack.name }),
+    encodeOperatorAuthority({ type: "action", authority: actionAuthority.parseStoredActionRuleAuthority(authority.activation) }), encodeOperatorExecutionPolicy(initial)!];
   const binding = (await migrateProjectControlPolicies({ projectRoot, config: initial, storePath, actor: "fixture_operator",
     readLegacySnapshot: async () => ({ revisions: records, active: records.map((r) => ({ scope: r.scope, kind: r.kind, name: r.name, revision_id: r.revision_id })), drafts: [], provenance: [] }),
     validateSnapshot: async (snapshot) => validateOperatorPolicySnapshot(snapshot, { runtimeConfig: initial }),
@@ -917,6 +956,7 @@ async function heldExecutionFixture(options: { configName?: string; configOnly?:
     ? { ...value, action_rules: { ...value.action_rules!, project_root: path.relative(path.dirname(configPath), projectRoot) || "." } } : value);
   await fs.mkdir(path.dirname(configPath), { recursive: true });
   await fs.writeFile(configPath, serialize(initial));
+  await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), JSON.stringify(initial));
   const runtimeStore = await createProjectRuntimeStore({ projectRoot, config: initial, storePath });
   if (!(runtimeStore instanceof ProposalStore)) throw new Error("Expected the fixture's SQLite runtime store");
   const store = runtimeStore;
@@ -928,16 +968,24 @@ async function heldExecutionFixture(options: { configName?: string; configOnly?:
     ...(options.configOnly ? {} : { configPath }),
     deployment_scope: "held_fixture", workflow_session_id: "held_fixture", factSessionFactory: facts }))!;
   const subjects = new Map<string, string>();
-  const issue = () => services.subjectReferences.issue({ source_id: "local_postgres", read_boundary_digest: readBoundary,
-    generation_lock_fingerprint: lock, workflow_session_id: services.workflow_session_id, resource: "billing.preferences",
+  const issue = () => services.subjectReferences.issue({ source_id: "local_postgres", read_boundary_digest: read.activation.digest,
+    generation_lock_fingerprint: read.generation_lock_fingerprint, workflow_session_id: services.workflow_session_id, resource: "billing.preferences",
     ...subjectReferenceScopeFingerprints({ key, deployment_scope: "held_fixture", source_id: "local_postgres", tenant: "acct_northstar", principal: "customer_maya" }),
     evidence_bundle_id: "held_fixture", observations: [{ row_index: 0, primary_key_value: "preference-42", observed_version_value: 4 }],
   });
   const current = structuredClone(initial);
   const alias = `local_postgres_writer_${canonicalJsonDigest({ source: "local_postgres", write_url_env: "THIRD_WRITER" }).slice(7, 19)}`;
   return { initial, current, configPath, alias, outcomes, services, store, binding, facts,
-    addThirdAuthority: () => {
-      authority = authorityFixture("active", { automaticApproval: true, outcomes });
+    addThirdAuthority: async () => {
+      const next = authorityFixture("active", { ...authorityOptions, outcomes });
+      const draft = actionAuthority.buildActionRuleAuthorityDraft({ name: next.authority.name,
+        action_boundary_name: next.authority.action_boundary.name, catalog: next.authority.catalog,
+        rules: next.authority.rules, approval_classes: next.authority.approval_classes,
+        reviews: next.activation.reviews, now: new Date().toISOString() });
+      await actionAuthority.writeActionRuleAuthorityDraft(projectRoot, draft);
+      await actionAuthority.activateActionRuleAuthority({ projectRoot, name: draft.authority.name,
+        expected_digest: draft.digest, confirmation: `ACTIVATE ${draft.digest}`, actor: "fixture_operator" });
+      authority = await actionAuthority.loadActiveActionRuleAuthority(projectRoot);
       current.sources![alias] = { ...initial.sources!.local_postgres!, write_url_env: "THIRD_WRITER" };
       current.supervised_worker!.outcomes = outcomes.map((outcome, index) => policy(outcome, index === 2 ? "THIRD_WRITER" : "FIRST_WRITER"));
     },
@@ -949,7 +997,7 @@ async function heldExecutionFixture(options: { configName?: string; configOnly?:
           event: { event_id: randomUUID(), actor: "fixture_operator", occurred_at: new Date().toISOString(), receipt: { operation: "review_execution" } } } });
     },
     revoke: async () => {
-      const revision = records[1]!;
+      const revision = records[3]!;
       await binding.repository.commit({ deployment_id: binding.deployment_id,
         expected_epoch: (await binding.repository.deployment(binding.deployment_id))!.epoch,
         revisions: [], active: [{ scope: revision.scope, kind: revision.kind, name: revision.name, revision_id: null }],
@@ -965,7 +1013,7 @@ async function heldExecutionFixture(options: { configName?: string; configOnly?:
 
 function authorityFixture(
   requiredStatus: "active" | "paused",
-  options: { singleOrganization?: string; automaticApproval?: boolean; requiredApprovals?: number; sharedApprovalLimits?: boolean; outcomes?: string[] } = {},
+  options: { singleOrganization?: string; automaticApproval?: boolean; requiredApprovals?: number; sharedApprovalLimits?: boolean; outcomes?: string[]; generationLock?: `sha256:${string}`; readDigest?: `sha256:${string}`; readName?: string } = {},
 ): LoadedActiveActionRuleAuthorityV1 {
   const stringId = { kind: "string", max_length: 64, comparison: "exact" } as const;
   const statusType: ActionRuleScalarTypeSpecV1 = {
@@ -976,7 +1024,7 @@ function authorityFixture(
   };
   const catalog: ActionRuleCatalogV1 = {
     schema_version: "synapsor.action-rule-catalog.v1",
-    generation_lock_fingerprint: lock,
+    generation_lock_fingerprint: options.generationLock ?? lock,
     resources: [{
       name: "billing.preferences",
       source: "local_postgres",
@@ -1002,7 +1050,7 @@ function authorityFixture(
     name: "billing.pause_verification",
     source: "local_postgres",
     context: "trusted_context",
-    generation_lock_fingerprint: lock,
+    generation_lock_fingerprint: options.generationLock ?? lock,
     resources: [{
       binding: "preference",
       resource: "billing.preferences",
@@ -1133,8 +1181,8 @@ function authorityFixture(
         }
       : {}),
     rules: rules.map((entry) => ({
-      read_boundary_name: "reviewed_billing",
-      read_boundary_digest: readBoundary,
+      read_boundary_name: options.readName ?? "reviewed_billing",
+      read_boundary_digest: options.readDigest ?? readBoundary,
       verification_boundary: verification,
       effect_envelope: envelope,
       rule: entry,
@@ -1148,14 +1196,14 @@ function authorityFixture(
       state: "active",
       authority: loaded.authority,
       digest: loaded.authority.digest,
-      reviews: [{
-        outcome: "billing.pause_notifications",
+      reviews: rules.map((entry) => ({
+        outcome: entry.outcome,
         when: "The preference is active.",
         then: "Propose pausing notifications.",
         refused: ["The preference is already paused."],
         human_review: "One reviewer must approve.",
         examples: [{ kind: "eligible", scenario: "Active preference", result: "Create a proposal" }],
-      }],
+      })),
       actor: "test",
       activated_at: "2026-09-03T06:00:00.000Z",
     },

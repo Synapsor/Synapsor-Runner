@@ -1,3 +1,4 @@
+import { encodeOperatorAuthority } from "./control-policy-authority-codec.js";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -79,7 +80,8 @@ async function fixture(options: { delegated?: boolean } = {}) {
   const ownerPolicy = make(ownerKey, { schema_version: "synapsor.managed-owner-policy.v1", parent_name: parentKey.name,
     parent_revision_id: parent.revision_id, parent_authority_digest: parent.authority_digest,
     definition: policyFixture.definition, compiled_digest: compiledOwner.digest }, compiledOwner.digest);
-  const snapshot: ControlPolicyMigrationSnapshot = { revisions: [parent, ownerPolicy], active: [parent, ownerPolicy]
+  const actionRecord = encodeOperatorAuthority({ type: "action", authority: actionAuthority.parseStoredActionRuleAuthority(reviewed.activation) });
+  const snapshot: ControlPolicyMigrationSnapshot = { revisions: [actionRecord, parent, ownerPolicy], active: [actionRecord, parent, ownerPolicy]
     .map(({ scope, kind, name, revision_id }) => ({ scope, kind, name, revision_id })), drafts: [],
     provenance: [{ path: ".synapsor/frozen-delegation.json", digest: canonicalJsonDigest({ parent, ownerPolicy }) }] };
   const env: NodeJS.ProcessEnv = { SUBJECT_KEY: subjectKey, WORKLOAD_SECRET: workloadSecret, WORKLOAD_TOKEN: await workloadToken() };
@@ -89,15 +91,17 @@ async function fixture(options: { delegated?: boolean } = {}) {
     action_rules: { project_root: root, subject_reference_hmac_key_env: "SUBJECT_KEY", subject_reference_namespace: "delegation-test",
       ...(options.delegated === false ? {} : { owner_delegation: { parent_name: parentKey.name, credential_env: "WORKLOAD_TOKEN",
         authentication: { provider: "jwt_hs256", issuer, audience, secret_env: "WORKLOAD_SECRET" } } }) } };
+  let policyRevision: import("@synapsor-runner/proposal-store").AutomaticApprovalActionRevision | undefined;
   if (options.delegated !== false) {
     const migrated = await migrateProjectControlPolicies({ projectRoot: root, storePath: controlPath, config, env, actor: "test-operator",
       readLegacySnapshot: async () => structuredClone(snapshot), validateSnapshot: async (candidate) => { expect(candidate).toEqual(snapshot); } });
+    policyRevision = { deployment_id: migrated.binding.deployment_id, action_name: actionRecord.name, revision_id: actionRecord.revision_id };
     await migrated.binding.close();
   }
   const store = new ProposalStore(controlPath); stores.push(store);
   const factLoader = vi.fn(async () => structuredClone(policyFixture.facts.bindings.request!.rows));
   const factSessionFactory = vi.fn(async () => ({ fact_loader: { engine: "postgres" as const, load: factLoader }, close: async () => undefined }));
-  vi.spyOn(actionAuthority, "createActiveActionRuleAuthorityLoader").mockReturnValue(async () => reviewed);
+  vi.spyOn(actionAuthority, "createActiveActionRuleAuthorityLoader").mockReturnValue(async () => ({ ...reviewed, ...(policyRevision ? { policy_revision: policyRevision } : {}) }));
   const services = await createOptionalActionRuleRuntimeServices({ projectRoot: root, config, env, store,
     factSessionFactory, key: Buffer.from(subjectKey), deployment_scope: "delegation-test", workflow_session_id: "authenticated-runner-session" });
   if (!services) throw new Error("Expected reviewed Action runtime");

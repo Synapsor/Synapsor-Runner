@@ -63,6 +63,8 @@ describe("model output config preference", () => {
       result_format: 2,
     };
     await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o640 });
+    await fs.chmod(configPath, 0o640);
+    expect((await fs.stat(configPath)).mode & 0o777).toBe(0o640);
 
     await expect(updateModelAuthorityMetadataMode({
       configPath,

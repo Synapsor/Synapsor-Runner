@@ -1,3 +1,4 @@
+import { encodeOperatorAuthority } from "./control-policy-authority-codec.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -236,8 +237,10 @@ async function delegatedExecutionFixture() {
       ] }],
   });
   const authority = { ...loaded, activation: { schema_version: "synapsor.action-rule-authority-activation.v1" as const, state: "active" as const,
-    authority: loaded.authority, digest: loaded.authority.digest, actor: "fixture_operator", activated_at: "2026-09-09T00:00:00.000Z", reviews: [] } };
-  vi.spyOn(actionAuthority, "createActiveActionRuleAuthorityLoader").mockReturnValue(async () => authority);
+    authority: loaded.authority, digest: loaded.authority.digest, actor: "fixture_operator", activated_at: "2026-09-09T00:00:00.000Z", reviews: [{ outcome: policy.compiled.outcome,
+      when: "Reviewed facts permit the request.", then: "Create a proposal.", refused: ["Facts do not permit the request."],
+      human_review: "A human review may be required.", examples: [{kind: "eligible" as const, scenario: "Eligible", result: "Create a proposal"}] }] } };
+
   vi.spyOn(actionAuthority, "loadActiveActionRuleAuthority").mockResolvedValue(authority);
   const owner = { level: "principal", tenant_id: "acme", principal: "maya" } as const;
   const parentKey: ControlPolicyKey = { scope: { level: "operator" }, kind: "parent", name: "runtime_parent" };
@@ -272,10 +275,13 @@ async function delegatedExecutionFixture() {
   await fs.writeFile(canonicalPath, canonicalText);
   await fs.copyFile(canonicalPath, configPath);
   await fs.writeFile(connectionPath, JSON.stringify(connections));
-  const revisions = [parent, ownerPolicy, encodeOperatorExecutionPolicy(initial)!];
+  const actionRecord = encodeOperatorAuthority({ type: "action", authority: actionAuthority.parseStoredActionRuleAuthority(authority.activation) });
+  const revisions = [actionRecord, parent, ownerPolicy, encodeOperatorExecutionPolicy(initial)!];
   const snapshot = { revisions, active: revisions.map(({ scope, kind, name, revision_id }) => ({ scope, kind, name, revision_id })), drafts: [], provenance: [] };
   const { binding } = await migrateProjectControlPolicies({ projectRoot: root, config: initial, storePath, env, actor: "fixture_operator",
     readLegacySnapshot: async () => structuredClone(snapshot), validateSnapshot: async (candidate) => { expect(candidate).toEqual(snapshot); } });
+  vi.spyOn(actionAuthority, "createActiveActionRuleAuthorityLoader").mockReturnValue(async () => ({ ...authority,
+    policy_revision: { deployment_id: binding.deployment_id, action_name: actionRecord.name, revision_id: actionRecord.revision_id } }));
   const facts = vi.fn(async (_input: Parameters<NonNullable<semanticRuntime.ActionRuleRuntimeServiceInput["factSessionFactory"]>>[0]) => ({
     fact_loader: { engine: "postgres" as const, load: async () => structuredClone(policy.facts.bindings.request!.rows) }, close: async () => undefined,
   }));
