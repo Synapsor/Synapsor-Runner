@@ -1,0 +1,112 @@
+{
+  "at": "2026-09-13T21:34:49.487419+00:00",
+  "artifact_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "classification": "FRESH_KNOWN_CASE_NAMED_COMPLETION; not unseen qualification",
+  "status": "PASSED_NAMED_ATOMIC_EXECUTION_AND_AUTOMATIC_THRESHOLD_EDIT",
+  "original_stage_b": "NOT_PASSED",
+  "original_rows": 504,
+  "source_change": "Only primary-B01 candidate_state staged->sealed/version+1 and its reserved slot ready->consumed/version+1; all other original rows equal independent baseline",
+  "receipt_mode": "source_db, same PostgreSQL transaction as both guarded updates; separate SQLite control audit copy",
+  "receipt": {
+    "status": "applied",
+    "rows_affected": 2,
+    "canonical_bytes_sha256": "eea142cc958f75ac97a4c4291f821fde46ac4b3534674197e03a3f48221f1dac"
+  },
+  "calls": {
+    "initial_authoring": 34,
+    "reserved_edit_authoring_used": 8,
+    "runtime_provider": 11,
+    "runtime_user_turns": 3,
+    "initial_transport_failure": "call5 TLS bad-record-MAC, preserved; one resume within original50call/75minute budget; 33 initial completed captures"
+  },
+  "public_route": "start with original rules -> exact maintained-counter owner reviews -> Read/Action activation -> explicit Source database receipt selection -> generated receipt infrastructure and narrow writer handoff -> source-owner reviewed apply -> reader rescan -> actual writer/receipt rollback probe -> separate execution confirmation -> public Continue client setup -> configured Claude Code four-tool client -> finite public worker",
+  "rescan": "business schema, reader posture and trusted-context fingerprints unchanged;13 confirmations retained,0 invalidated; receipt schema is not public Read",
+  "identity": "reviewed default local synthetic coordinator; own29 rows; four tools; later fresh normal MCP process own29 rows again",
+  "edit": {
+    "ordinary_language": "automatic total_check_seconds120to60 only; eligibility600 and caps8/3 unchanged",
+    "disabled_pause_resume": true,
+    "semantic_diff": "software-edit-semantic-diff.json",
+    "same_persistent_runtime_session": "1732c838-bc61-430b-8ddc-42a4e4396067",
+    "source_receipt_selection_and_source_bindings_unchanged": true,
+    "writer_posture_unchanged": true,
+    "new_execution_review": true,
+    "old_90_second_B17": "legitimate automatic approval under old current rule, queued; current finite worker leaves it unleased/unexecuted, within86400second queueTTL",
+    "fresh_90_second_B18": "same connected model client, fresh reference, eligible pending_human_review; persisted without approval/queue/effect",
+    "fresh_40_second_B03": "new normal MCP process positive control receives third organization automatic approval; remains queued, no extra effect",
+    "final_counts": {
+      "proposals": 5,
+      "automatic_approvals": 3,
+      "human_review_pending": 2,
+      "control_receipts": 1,
+      "source_receipts": 1
+    },
+    "already_dispatched": "NOT_RUN"
+  },
+  "controls": [
+    "B01 same-reference replay before/after execution: same stored request and verified receipt, no duplicate effect/receipt",
+    "B19 total300 valid human-review pending; no supervisor execution tested",
+    "B20 duration601,B21 failed,B22 pending,B23 too-few,B24 collection overflow,B25 security hold,B26 unavailable slot refused without extra proposal/effect",
+    "internal_finding and private build_checks Read refused; actual issuer/policy surface retained"
+  ],
+  "receipt_failure_evidence": "fresh final installed run exercises success/replay only. Actual rollback on required receipt persistence failure is covered separately by final-source PostgreSQL engine gate and prepared public deployment on historical development tree; do not relabel the latter as this package.",
+  "unrun_original_qualification_rows": [
+    "add retirement job",
+    "remove retirement job",
+    "full original Stage B qualification",
+    "installed fresh receipt-failure injection"
+  ],
+  "limitations": [
+    "Source permissions and narrow role reviewed/applied by synthetic fixture owner; no production/session/auth claim",
+    "Read policy privacy-verification-unavailable warning remains; manual exact review and representative runtime controls do not settle every privacy requirement",
+    "Model inaccurately described slot consumption as downstream outside the proposal; actual governed atomic_updates and receipts/readback establish the two-row operation",
+    "Model called public discovery unchanged and speculated about the human-review reason; exact operator policy diff and durable policy evaluation establish the threshold change",
+    "No universal exactly-once, arbitrary clock-skew tolerance, multi-host durability or simultaneous effect-transaction claim",
+    "Committed approvals remain counted even when old unstarted work becomes blocked; no refund/requeue"
+  ],
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/initial-completion.json",
+      "sha256": "7520e8df68c2d87950aa593227b8a9176ccb1e25e50acfbae82f564b430c15ee"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/preedit-controls-result.json",
+      "sha256": "618cdb813d761635ebb5f2e183688d48ec9078ac7b5e66fa243b1997a4bccff8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/old-work-result.json",
+      "sha256": "c869914e0d94debfb35e41b7f912fb91ae63bd68e4b45dbf5b65c8db0a9db3f9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/postedit-result.json",
+      "sha256": "7849a5a9b378112a40fb273d420931c78a49cd4f48736ba04bca2453b83ec886"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/stdout.jsonl",
+      "sha256": "61cc8d1265f4c6efd87bf46ad0c9c147cc20d55b2d1d6e6c0b26c393f8772e94"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/provider-attempts.jsonl",
+      "sha256": "ef2c4bd50a3e8509c73139f6eea49d8158c109bcf0b6a0c69ffe07223bc57ad7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/public-02-resume.log",
+      "sha256": "6fea7b59f04d9ddf1f2baac233cc0276d322d5760e4b137fa99f5880b45920fe"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/public-03-execution-review.log",
+      "sha256": "37872a220e9064e470e8923c0f148e091de3c63c7fbacdc26f950cd81a2d1177"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/public-04-edit.log",
+      "sha256": "cb8cf1ec34b8fcb4ac01f9984eef808cc1f801dca3a9603a42d82205dd192c46"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/public-05-publish-edit.log",
+      "sha256": "a066019e4eb69143576a7b08addeb487b889942edd8239691ce4a34b4737aab6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/checkpoints/final-known-case/result.json",
+      "sha256": "f223c771caecd6a8b436fc414438f46b69267b1ddfe502c1eb131982896508c7"
+    }
+  ]
+}

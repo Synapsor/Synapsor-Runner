@@ -1,0 +1,22 @@
+{
+  "name": "checkpoint-prose",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "tsx",
+    "docs/qualification-evidence/quota-receipt-repair-20260913/checkpoint-prose-reproduction.ts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T20:24:31.950972+00:00",
+  "source_head": "fbf5efdab77fa5011544524592d58fa007388e95",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/test-environments/checkpoint-prose",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/checkpoint-prose",
+  "source_manifest_sha256": "678492f45d206f42ced972bf17551a9130b89c81f46a6fba8d70d084149ef889",
+  "pid": 3778167,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T20:24:33.760868+00:00"
+}

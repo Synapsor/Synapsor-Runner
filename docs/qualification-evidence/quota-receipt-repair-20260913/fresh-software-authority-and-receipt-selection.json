@@ -1,0 +1,31 @@
+{
+  "at": "2026-09-13T21:25:15.057967+00:00",
+  "artifact_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "read_digest": "sha256:a91351724426e866f15372afdd8a8c3ba689685450e4eac090dd53d4323f3948",
+  "action_digest": "sha256:d73691ab2a054255134579a5aaa50201e2303bd8a9845dbed9d5636bffc59710",
+  "authority_file_sha256": "402894e7cb4c8b19e2b6305cd01e8909a50ebce68be730c02ce4b0bb807124a2",
+  "receipt_selection_review": "sha256:2b181bd1839a29dbd5bc561dbd0eeff9305644dfed2c7688345c5595feaf1f39",
+  "receipt_mode": "source_db; synapsor_receipts.synapsor_writeback_receipts; WRITER_DATABASE_URL",
+  "read_fields": {
+    "build_candidates": [
+      "candidate_ref",
+      "application_name",
+      "candidate_state"
+    ],
+    "release_slots_relationship_only": [
+      "slot_ref",
+      "slot_state"
+    ]
+  },
+  "private": "build_checks excluded from public Read; internal_finding/security_hold/identity/version not selectable, filterable, sortable, groupable or aggregated",
+  "privacy_warning": "attached-rule privacy verification unavailable, retained; exact permissions manually reviewed",
+  "quota_scopes": [
+    "boundary8",
+    "tenant3"
+  ],
+  "window_seconds": 86400,
+  "counter_and_relationships": "candidate and slot version reviewed; full tenant/principal composite FK; checks complete_locked max12 overflow ineligible; allwriters maintained counters confirmed through public owner review",
+  "rescan": "unchanged schema, reader posture, identity; 13 confirmations retained; no invalidated decisions",
+  "execution": "live configured writer and receipt rollback probe passed before separate public execution confirmation; no effect yet",
+  "source_setup": "original UUID RLS applies to public including narrow new role; no RLS change; 504 business rows unchanged after provisioning"
+}

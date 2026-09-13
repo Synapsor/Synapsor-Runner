@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-13T21:23:13.553Z",
+  "artifact_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "container": "synapsor-quota-receipt-fresh-software-00135601",
+  "container_id": "d28d6cc13ed85bb96fec57b25c7550a4360b2cba39b499930e668ac3ce1a2374",
+  "sql_file": ".synapsor/writer-handoffs/review-zaSv5c/grants.sql",
+  "sql_sha256": "7e8c9196922230618547ac97b4a118050b863e7d2aa053386ffcb2e4779bdc54",
+  "administrator": "authorized synthetic fixture owner",
+  "local_authentication": "network none, private Unix socket, dedicated LOGIN role",
+  "business_rows_and_original_policies_unchanged": true,
+  "baseline_sha256": "06a452aa28745ef693601900e9bd6751ebb39031528daeca880e7e94e221e7a3",
+  "writer_reinspection": "PENDING",
+  "execution_enabled": false,
+  "source_execution": "NOT_RUN"
+}

@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-13T21:32:52.564158+00:00",
+  "records": [
+    {
+      "run": "fresh-software",
+      "container": "synapsor-quota-receipt-fresh-software-00135601",
+      "container_id": "d28d6cc13ed85bb96fec57b25c7550a4360b2cba39b499930e668ac3ce1a2374",
+      "label": "quota-receipt-repair-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "23060a5a47786166f7a50ea223ef0cd019da9e030a8a049d69a81210fd4b7e21",
+        "postgres.log": "d059637acbdcfd0764ccc0d533adc6a2646b015001c3da21346088f7faba846e",
+        "source.dump": "eb011b74d0be15aa63af1249a4cad7de70d52266426bca029a7697b943b5f8db"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/closure/fresh-software",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual worker/client invocations retained in each deterministic/events.jsonl and budget.json; no zero-runtime claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

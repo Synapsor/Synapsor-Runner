@@ -1,0 +1,35 @@
+[
+  {
+    "run": "fresh-software",
+    "captured_call_purposes": {
+      "narration/business question": 8,
+      "job planning": 2,
+      "Read draft preparation": 1,
+      "relationship inspection or explicit review preparation": 5,
+      "incomplete transport": 1,
+      "authoring tool step": 5,
+      "Action draft/revision preparation": 10,
+      "attached-policy interpretation/recheck": 10
+    },
+    "repeated_adjacent_coverage_topic_submissions": 4,
+    "interpretation": "submission counts, not accepted business review cycles; a call can contain multiple purposes; no durable review acceptance inferred from model submission",
+    "repeated_question_observations": "Tournament repeated maintained-counter/all-writers confirmation; deployment separation required engineering explanation. Software owner questions answered for both maintained counters, synthetic-only resources and organization/coordinator meaning.",
+    "exact_operator_review_cycle_count": null
+  },
+  {
+    "run": "fresh-tournament",
+    "captured_call_purposes": {
+      "narration/business question": 9,
+      "job planning": 2,
+      "Read draft preparation": 1,
+      "relationship inspection or explicit review preparation": 6,
+      "authoring tool step": 8,
+      "Action draft/revision preparation": 9,
+      "attached-policy interpretation/recheck": 12
+    },
+    "repeated_adjacent_coverage_topic_submissions": 2,
+    "interpretation": "submission counts, not accepted business review cycles; a call can contain multiple purposes; no durable review acceptance inferred from model submission",
+    "repeated_question_observations": "Tournament repeated maintained-counter/all-writers confirmation; deployment separation required engineering explanation. Software owner questions answered for both maintained counters, synthetic-only resources and organization/coordinator meaning.",
+    "exact_operator_review_cycle_count": null
+  }
+]

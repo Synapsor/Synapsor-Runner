@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-13T20:43:34.045Z",
+  "artifact_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "container": "synapsor-quota-receipt-fresh-tournament-3122376c",
+  "container_id": "b556da7b3d207622446f7e25aa42314548583e3faa57033077a0461cd730e82d",
+  "sql_file": ".synapsor/writer-handoffs/review-TWaAyi/grants.sql",
+  "sql_sha256": "06d11eab8e06408eb37e5e4804934ddfd04414838a5ed859f5f0715682fdf4a0",
+  "administrator": "authorized synthetic fixture owner",
+  "local_authentication": "network none, private Unix socket, dedicated LOGIN role",
+  "business_rows_and_original_policies_unchanged": true,
+  "baseline_sha256": "4d8f2d996d0ea3601c4151c5514ada8e3da2cb5ef3f7234d83f980badb361b18",
+  "writer_reinspection": "PENDING",
+  "execution_enabled": false,
+  "source_execution": "NOT_RUN"
+}

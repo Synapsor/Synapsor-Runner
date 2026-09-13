@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-13T20:43:58.083408+00:00",
+  "records": [
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-quota-receipt-recovery-tournament-assisted-c2f3d555",
+      "container_id": "063abc8dcc431c3580daaa1a40eb020d06a01d0f11bb6bf5f128d16c01dcdca8",
+      "label": "quota-receipt-repair-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "44c88f003500a021d47a11a19f2a246a6e7db0339a1d054bec7e10d9f99aa760",
+        "postgres.log": "efa23ea23ba0cd2f61f7de1988f8a93ceaaf315b05f548fd75ddf3ef93604e0c",
+        "source.dump": "5461f7b75b8ec34f3325bb6652b336e06f8ed797af324f55ffdb7b7400bc403f"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/closure/recovery-tournament-assisted",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual worker/client invocations retained in each deterministic/events.jsonl and budget.json; no zero-runtime claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

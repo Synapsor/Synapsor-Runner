@@ -1,0 +1,13 @@
+{
+  "verdict": "STOPPED_SAVED_SELECTOR_MISMATCH",
+  "quota_repair_observed": "Unrequested tenant_principal cap removed; tenant2/boundary6/window86400 retained",
+  "mismatch": "Both original limits lacked a capability selector; saved revision adds capability league.result_ratification to each. No explicit operator acceptance of that selector change.",
+  "comparison": "assisted-first-saved-diff.json; other rule difference is regenerated activated_at metadata inside the still-disabled envelope; catalog unchanged",
+  "calls": 16,
+  "complete_response_captures": 15,
+  "last_attempt": "operator cancelled while policy coverage review was still running; not provider failure",
+  "source_unchanged": true,
+  "authorities": "disabled; no approvals/proposals/effects",
+  "history": "Original unwanted-cap checkpoint preserved; new stopped checkpoint separately saved",
+  "next_decision": "Exact-selector preservation under disabled quota correction remains unverified; no observed false denial or widened grant, since no runtime ran."
+}

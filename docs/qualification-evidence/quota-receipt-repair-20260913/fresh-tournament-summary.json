@@ -1,0 +1,100 @@
+{
+  "at": "2026-09-13T21:03:26.221421+00:00",
+  "artifact_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "classification": "FRESH_KNOWN_CASE_NAMED_COMPLETION; not unseen qualification",
+  "status": "PASSED_NAMED_EXECUTION_AND_AUTOMATIC_LIMIT_EDIT",
+  "original_stage_b": "NOT_PASSED",
+  "original_rows": 104,
+  "source_change": "Only primary-R01 result_state finished->ratified and maintained version+1; all other original business rows equal independent baseline",
+  "receipt_mode": "runner_ledger; not source-atomic",
+  "receipt": {
+    "status": "applied",
+    "rows_affected": 1,
+    "canonical_bytes_sha256": "85c9b6dae585fee7a4d2b0b62ef842b04423e05793e38d93b13e6e6f8855e649"
+  },
+  "calls": {
+    "initial_authoring": 39,
+    "reserved_edit_authoring_used": 8,
+    "runtime_provider": 15,
+    "neutral_preflight": "separate prior record; not case calls",
+    "runtime_first_attempt": {
+      "model_calls": 0,
+      "status": "harness startup refusal; retained; second attempt original deadline"
+    }
+  },
+  "public_route": "start --from-env DATABASE_URL --schema tournament_ops --cli -> original rules consent -> exact counter review -> Read review -> Action review -> explicit Runner-ledger selection -> generated writer handoff -> owner-reviewed grants -> boundary rescan -> separate writer/execution review -> Continue client setup -> configured Claude Code four-tool runtime",
+  "rescan": "unchanged schema/reader/trusted context; no invalidated decisions; receipt selection persisted and survived exact limit edit",
+  "identity": "reviewed default local identity; own24 permitted rows; exact4tools; source owner/supervisor development identity does not establish production authentication",
+  "edit": {
+    "request": "league automatic maximum2to1",
+    "ordinary_language": true,
+    "disabled_pause_resume": true,
+    "exact_diff": "tournament-edit-semantic-diff.json",
+    "same_persistent_runtime_session": "3bf960b1-af8a-4fef-b658-2402662add9c",
+    "fresh_current_control": "primary-R02 verified eligible then persisted pending_review, no approval/queue/effect",
+    "retained_history": {
+      "automatic_approvals": 1,
+      "human_approvals": 1,
+      "canonical_receipts": 1
+    },
+    "old_unstarted": "primary-R17 supervisor-approved under old authority; remains queued/unleased after finite current-config worker, no effect/receipt; within86400second queue TTL; contract differs from current",
+    "already_dispatched": "not exercised"
+  },
+  "controls": [
+    "R17 championship human review; separately supervisor-approved and not executed",
+    "R18 invalid wins,R19 invalid losses,R20 private integrity hold,R21 closed event refused with no proposals/effects",
+    "integrity_hold/referee_private_note public Read refused",
+    "model grouped readback not permitted; ordinary rows succeeded",
+    "same reference replay before and after execution produced no additional proposal/approval/receipt"
+  ],
+  "unrun_original_qualification_rows": [
+    "add withdrawal job",
+    "remove withdrawal job",
+    "initial-onboarding pause before activation; tested pause was during edit"
+  ],
+  "limitations": [
+    "Operator explanations of separate deployment requirements were engineering assistance; recorded in public-assistance-record.json",
+    "Prior model policy-review repetitions remain observed usability cost",
+    "No universal exactly-once, arbitrary clock-skew, multi-host or production-authentication claim",
+    "Committed automatic approval continues consuming rolling allowance even if later work blocks; no refund/requeue"
+  ],
+  "measurements": "Per-command timestamps and raw provider attempts retained. Human hands-on and exact first fully-reviewable-draft time are unknown.",
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/initial-completion.json",
+      "sha256": "c94ae99380f80daa5250d4f7020a6c2b8863e85e14f597188e936a246138b1d1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/preedit-controls-result.json",
+      "sha256": "acd0cf20d1947fe33bf7baf5049f0a297f9f8011611a051d607cd489e4081f26"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/postedit02-result.json",
+      "sha256": "40cff5895151cd083f89548239f90fd1389134351167844e34d6d989db162871"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/stdout.jsonl",
+      "sha256": "507e04853b43bd3677e20421be95b4e3c075693806110896c0fddb453f72d55c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/provider-attempts.jsonl",
+      "sha256": "d13187225255a5b95bb13f2d2b05f0ff1facf8f316167603e065629d2809c9d0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/public-01.log",
+      "sha256": "dc17b7d5ebcd7335feb5e730206ad83c2efa24974dafc5a7221529609d3f6ded"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/public-edit-01.log",
+      "sha256": "051124e07c040f678ad0b1d080adbdc46dc0c020a2af9db9c37df258aa5edfec"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/edit-resume-publication.log",
+      "sha256": "a8970ba51ac7600b57d08574d10cffab6421e58d62aa724f5f64d066d0c6bc4e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/checkpoints/final-known-case/result.json",
+      "sha256": "7074bf015690c467451edb37302faa18ed9ec9dfa2907e734335ed0f9be76c5e"
+    }
+  ]
+}

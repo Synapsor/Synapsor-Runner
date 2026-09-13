@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-13T21:08:33.460820+00:00",
+  "case": "fresh-software",
+  "artifact_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "classification": "ENVIRONMENT_TRANSPORT_FAILURE; not a product assertion failure",
+  "observation": "Provider attempt5 errored ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC after4 completedresponses. No response/policy decision from attempt5. Public UI generic provider-unavailable, exited through Save and continue later.",
+  "cause": "TLS transport error observed; external/network root cause not established",
+  "budget": "5calls consumed including error; same original50call/75minute interview budget and30reserved edit calls. No fresh-attempt reset.",
+  "next": "One bounded resume of same saved job through public start. If transport failure repeats, stop that provider path; no provider/credential changes."
+}

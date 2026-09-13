@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-13T21:03:26.683027+00:00",
+  "records": [
+    {
+      "run": "fresh-tournament",
+      "container": "synapsor-quota-receipt-fresh-tournament-3122376c",
+      "container_id": "b556da7b3d207622446f7e25aa42314548583e3faa57033077a0461cd730e82d",
+      "label": "quota-receipt-repair-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "082ed0531477138b5d706afecb1b97700c27d8bc6757ad60a853c5e36fe0d6fb",
+        "postgres.log": "ff0f354165b4366802de06b1517fa31c12dab8a0bf1e718bb6031c5529257053",
+        "source.dump": "c6ab2125aef8c9fa146c74bd6195d34f5832ea5038718271cfdda824e5a17c34"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/closure/fresh-tournament",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual worker/client invocations retained in each deterministic/events.jsonl and budget.json; no zero-runtime claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

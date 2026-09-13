@@ -1,0 +1,74 @@
+{
+  "at": "2026-09-13T20:23:58.190Z",
+  "runId": "recovery-tournament-original",
+  "label": "stopped-review-prose",
+  "classification": "KNOWN-CASE checkpoint recovery",
+  "artifact_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "prior_calls": 31,
+  "new_authoring_calls": 5,
+  "complete_response_captures": 5,
+  "cli_exits": [
+    0
+  ],
+  "preflight_exits": [
+    0
+  ],
+  "resume_stage": "authority_review",
+  "exact_original_answer_paths": [
+    ".conversation[6].answer",
+    ".pending_action_revision.operator_statements[2]"
+  ],
+  "stores": {
+    ".synapsor/local.db": {
+      "proposal_store_schema": 1,
+      "proposals": 0,
+      "proposal_events": 0,
+      "approvals": 0,
+      "writeback_receipts": 0,
+      "evidence_bundles": 0,
+      "evidence_items": 0,
+      "observed_subject_references": 0,
+      "query_audit": 0,
+      "explore_privacy_releases": 0,
+      "explore_budget_reservations": 0,
+      "writeback_jobs": 0,
+      "idempotency_receipts": 0,
+      "writeback_intents": 0,
+      "replay_records": 0,
+      "shadow_human_actions": 0,
+      "shadow_studies": 0,
+      "shadow_study_cases": 0,
+      "shadow_outcomes": 0,
+      "runner_state": 0,
+      "cloud_outbox": 0,
+      "cloud_governance_events": 0,
+      "policy_recommendations": 0,
+      "attention_events": 0,
+      "attention_items": 0,
+      "notification_deliveries": 0,
+      "worker_queue": 0,
+      "control_policy_identity": 1,
+      "control_policy_deployments": 1,
+      "control_policy_revisions": 10,
+      "control_policy_active": 2,
+      "control_policy_drafts": 2,
+      "control_policy_events": 8,
+      "control_policy_reviews": 0,
+      "control_policy_budget_accounts": 0,
+      "control_policy_budget_requests": 0,
+      "control_policy_budget_entries": 0,
+      "control_policy_budget_receipts": 0,
+      "control_policy_effect_admissions": 0,
+      "control_policy_effect_receipts": 0,
+      "control_policy_runtime_proofs": 0
+    }
+  },
+  "source_counts": {
+    "events": 8,
+    "results": 96
+  },
+  "source_unchanged": true,
+  "source_oracle": "original source-facts manifest",
+  "project_copy_sha256": "32080d838ba41d3ec0eb7cb192026ad698b46102eb5c86ec962b3fc05a04c138",
+  "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/checkpoints/stopped-review-prose"
+}

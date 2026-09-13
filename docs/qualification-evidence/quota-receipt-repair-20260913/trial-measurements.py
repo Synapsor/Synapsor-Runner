@@ -15,7 +15,10 @@ for R in sorted((O/'runs').iterdir()):
  state=json.loads((R/'run-state.json').read_text())
  if not state['first_public_start']:continue
  inv=[json.loads(l) for l in (R/'public-invocations.jsonl').read_text().splitlines()]
- events=[json.loads(l) for l in (R/'meter/events.jsonl').read_text().splitlines()]
+ event_path=R/'meter/events.jsonl'
+ if not event_path.exists():
+  assert state['maximum_initial_calls']==0, 'Missing authoring evidence on a metered run'
+ events=[json.loads(l) for l in event_path.read_text().splitlines()] if event_path.exists() else []
  attempts={e['index']:e for e in events if e['type']=='transport_attempt'}
  completions={e['index']:e for e in events if e['type']=='response_complete'}
  starts=[];intervals=[]
@@ -29,7 +32,7 @@ for R in sorted((O/'runs').iterdir()):
   names=[t.get('name',t.get('function',{}).get('name')) for t in tools]
   choice=request.get('tool_choice');purposes.append({'capture':p.name,'model':request.get('model'),'tool_choice':choice,'available_tools':names})
  records.append({'run':R.name,'classification':state['classification'],'artifact_tree':state['artifact_tree'],
-  'first_public_start':state['first_public_start'],'initial_deadline':state['initial_deadline'],
+  'first_public_start':state['first_public_start'],'initial_deadline':state.get('initial_deadline'),
   'prior_authoring_calls':state['prior_authoring_calls'],'new_authoring_calls':len(attempts),
   'new_initial_calls':state['initial_authoring_calls'] if state.get('edit_started_at') else len(attempts),
   'new_edit_calls':len(attempts)-state['initial_authoring_calls'] if state.get('edit_started_at') else 0,

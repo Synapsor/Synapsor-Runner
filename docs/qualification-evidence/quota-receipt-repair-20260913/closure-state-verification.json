@@ -1,0 +1,41 @@
+{
+  "at": "2026-09-13T21:40:16.038551+00:00",
+  "source_files_verified": 950,
+  "source_changes": [],
+  "preserved_required_ancestors": true,
+  "owned_runs": [
+    {
+      "run": "fresh-software",
+      "container": "synapsor-quota-receipt-fresh-software-00135601",
+      "id": "d28d6cc13ed85bb96fec57b25c7550a4360b2cba39b499930e668ac3ce1a2374",
+      "running": false
+    },
+    {
+      "run": "fresh-tournament",
+      "container": "synapsor-quota-receipt-fresh-tournament-3122376c",
+      "id": "b556da7b3d207622446f7e25aa42314548583e3faa57033077a0461cd730e82d",
+      "running": false
+    },
+    {
+      "run": "prepared-software",
+      "container": "synapsor-quota-receipt-prepared-software-70ffa94e",
+      "id": "b3934df9207bca159d9d49d5fd9dc3028810de9c041aa6afab3423f02f9aa217",
+      "running": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-quota-receipt-recovery-tournament-assisted-c2f3d555",
+      "id": "063abc8dcc431c3580daaa1a40eb020d06a01d0f11bb6bf5f128d16c01dcdca8",
+      "running": false
+    },
+    {
+      "run": "recovery-tournament-original",
+      "container": "synapsor-quota-receipt-recovery-tournament-original-e8a69602",
+      "id": "3450faa563a6f1c73ff64eecab3d8c21e841a0205ff563ba562d4674eed854f4",
+      "running": false
+    }
+  ],
+  "test_postgres": "separately saved/stopped in owned-cleanup-test-postgres.json",
+  "runtime_models": "both stopped with code0; no further provider runs",
+  "working_tree_scope": "only intended qualification evidence/harness/report changes"
+}

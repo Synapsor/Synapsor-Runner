@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-13T21:29:32.404053+00:00",
+  "artifact_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "differences": [
+    {
+      "path": ".action_boundary.digest",
+      "before": "sha256:d73691ab2a054255134579a5aaa50201e2303bd8a9845dbed9d5636bffc59710",
+      "after": "sha256:e6910aa733e2ba0cfcc36c75180f760de624ec102a1ea3afae2cc13db2bf6f42"
+    },
+    {
+      "path": ".action_boundary.rules[0].approval_policy_digest",
+      "before": "sha256:a9d99361ae939942c12e233815a713b07f956938390a91d292e751ca31e7943b",
+      "after": "sha256:34e4166390b56da3f4176a03bae9058c28c742716c7ae00ab7f6067e8441ae9d"
+    },
+    {
+      "path": ".approval_classes[0].rules[0].auto_approve_when.right.value",
+      "before": 120,
+      "after": 60
+    },
+    {
+      "path": ".digest",
+      "before": "sha256:039f0bfc33defb39bf66b6514972a010dcba4e3a096e62ca3db668dfa6e60290",
+      "after": "sha256:39c344e4ef366dcb9edf6098fdfce2d6c175b68171e9ed464e5d2776e4a7b039"
+    },
+    {
+      "path": ".rules[0].activated_at",
+      "before": "2026-09-13T21:15:14.985Z",
+      "after": "2026-09-13T21:28:42.838Z"
+    }
+  ],
+  "classification": "actual saved authority comparison, excluding no fields"
+}

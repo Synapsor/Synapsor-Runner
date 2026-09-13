@@ -1,0 +1,37 @@
+{
+  "at": "2026-09-13T20:56:01.066701+00:00",
+  "artifact": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "before": "sha256:49356631aa4a77cbc48abfa79ad732af024eb3a1fad1f9fb153671d684e8f4a0",
+  "after": "sha256:ba7f77e6a99f304ffed4f7e37237f2661724bf9b1c99b3892117f05ee6ae2e4d",
+  "state": "disabled",
+  "exact_only_business_change": "tenant automatic maximum2to1",
+  "diff": [
+    {
+      "path": ".digest",
+      "before": "sha256:49356631aa4a77cbc48abfa79ad732af024eb3a1fad1f9fb153671d684e8f4a0",
+      "after": "sha256:ba7f77e6a99f304ffed4f7e37237f2661724bf9b1c99b3892117f05ee6ae2e4d"
+    },
+    {
+      "path": ".action_boundary.rules[0].approval_policy_digest",
+      "before": "sha256:66f8da79b01d95d8bc551f45508d2e729de9190125867030b0c2cadd81d24ae2",
+      "after": "sha256:f46a1ba2b39bf9629410b5c498e2f19b8cb193670f35f79e9ab974c4f44ee157"
+    },
+    {
+      "path": ".action_boundary.digest",
+      "before": "sha256:552ef2e803ababa888db1c26f45c82e7f0b25b318eef6ff41d740eb825d98717",
+      "after": "sha256:06527fc8ec731c2f203c65a99a8161ffc4116f7542ab7990d462fba22bdbb884"
+    },
+    {
+      "path": ".rules[0].activated_at",
+      "before": "2026-09-13T20:38:34.536Z",
+      "after": "2026-09-13T20:54:15.237Z"
+    },
+    {
+      "path": ".approval_classes[0].shared_limits[1].maximum",
+      "before": 2,
+      "after": 1
+    }
+  ],
+  "all_rule_eligibility_effect_catalog_unchanged": true,
+  "approval_other_than_exact_maximum_unchanged": true
+}

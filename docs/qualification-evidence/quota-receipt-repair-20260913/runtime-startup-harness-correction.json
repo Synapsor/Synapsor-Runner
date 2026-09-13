@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-13T20:48:28.675185+00:00",
+  "first_attempt": "fresh-tournament/model-runtime;0 provider attempts,0userturns,SIGTERM from wrapper",
+  "demonstrated_error": "New wrapper killed client for non-/v1 startup request; existing successful neutral-preflight.mjs refuses the request without killing client.",
+  "correction": "Only unsupported non-/v1 routes get local503 and are not forwarded; no fabricated success/authentication. Actual messages retain exact4tool check,private value guard,30call cap and termination on refusal.",
+  "rerun": "one new model-runtime-02 directory; prior evidence unchanged, original60min deadline retained, zero spent calls carried forward",
+  "product_change": false
+}

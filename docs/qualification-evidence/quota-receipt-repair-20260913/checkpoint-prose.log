@@ -1,0 +1,3 @@
+[{"explanation":"The per-league limit is scoped to the tenant: maximum 2 in 86,400 seconds, shared across referees in that league.","accepted":false,"error":"Error: BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state."},{"explanation":"The per-league limit is scoped to the tenant, with maximum 2 in 86,400 seconds, shared across referees in that league.","accepted":true}]
+(node:3778220) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)

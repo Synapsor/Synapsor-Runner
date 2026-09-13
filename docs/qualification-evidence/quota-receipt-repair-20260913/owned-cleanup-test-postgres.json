@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-13T21:31:44.702437+00:00",
+  "container": "synapsor-quota-receipt-tests-eee6ce10",
+  "id": "d8badd16278cad448deddf7da565e870bcdb421ee8cd2e8edc25b8430f31ad19",
+  "active_client_backends_before_stop": 0,
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/closure/test-postgres.sql",
+      "sha256": "5c37dfde7f5ada7cf37abae6eb30b75fa5d95d15b6f1394eb016afdf2e3902ac"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/closure/test-postgres.log",
+      "sha256": "85a293354732ef620509dc2a81ce78f15a91e40d6fd338e18c7e36d4fde58be8"
+    }
+  ],
+  "status": "saved_owned_state_and_stopped_not_removed"
+}

@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-13T20:29:17.384036+00:00",
+  "original_attempt": "trial-measurements.py stopped at FileNotFoundError for prepared-software/meter/events.jsonl; no earlier result overwritten",
+  "cause": "Prepared public setup has zero authoring allowance/calls and no provider meter file",
+  "correction": "Only permit an absent file when declared maximum_initial_calls is zero; keep missing evidence errors for actual metered authoring runs",
+  "product_change": false,
+  "second_attempt": "After absent-meter correction, prepared-software had no initial_deadline because it was setup-only. KeyError retained in task transcript; no result written.",
+  "second_correction": "Represent setup-only initial authoring deadline as null; retain actual public setup start/end and zero authoring allowance/calls."
+}

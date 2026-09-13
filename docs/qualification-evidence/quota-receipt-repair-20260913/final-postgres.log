@@ -1,0 +1,49 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3743180) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3743186) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ packages/proposal-store/src/automatic-approval-admission.test.ts (7 tests) 17664ms
+   ✓ durable automatic approval admission > does not partially consume combined limits, merge insurers, count human decisions, or reset history on a stricter revision  5482ms
+   ✓ durable automatic approval admission > preserves the inclusive rolling-window boundary, then releases capacity only after expiry  4589ms
+   ✓ durable automatic approval admission > takes admission time after real cross-process SQLite writer exclusion  5146ms
+   ✓ PostgreSQL approval control store (local fixture) > serializes the final insurer slot across independent pools and commits only one event  484ms
+   ✓ PostgreSQL approval control store (local fixture) > serializes the final overall slot across independent pools and commits only one event  743ms
+   ✓ PostgreSQL approval control store (local fixture) > grants ample concurrent capacity, rolls back a definite pre-COMMIT failure, and preserves decisions on retry and restart  1179ms
+ ✓ apps/runner/src/semantic-admission-publication.test.ts (25 tests) 83371ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_first  5601ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_process  6872ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: admission_first  4661ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: inactive_first  5051ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: unchanged  4085ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: disabled_draft  5324ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: failed_confirmation  4373ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: replacement_first  1064ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: replacement_process  2194ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_first  879ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: inactive_first  606ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: unchanged  1129ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: disabled_draft  1133ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: failed_confirmation  1022ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_holds_publication  1050ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_rollback  891ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: publication_busy  6093ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_busy  5893ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: replacement_first  3365ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: replacement_process  3891ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: admission_first  4730ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: inactive_first  2904ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: unchanged  2730ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: disabled_draft  4814ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: failed_confirmation  3010ms
+(node:3748726) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/semantic-atomic-postgres.test.ts (10 tests) 1190ms
+
+ Test Files  3 passed (3)
+      Tests  42 passed (42)
+   Start at  13:11:37
+   Duration  88.55s (transform 2.03s, setup 0ms, collect 4.37s, tests 102.23s, environment 0ms, prepare 132ms)
+

@@ -1,0 +1,2446 @@
+{
+  "at": "2026-09-13T21:34:49.487419+00:00",
+  "classification": "hash/path index only; owned raw evidence is private, not model-authoring authority",
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/administrator-grants.log",
+      "size": 163,
+      "sha256": "20fce953a1cc478e2ceeb2b0a5aceb8e2633ce8c82f872e44c0381289a86fc10"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/administrator-local-login.log",
+      "size": 11,
+      "sha256": "53de5f815cdf2b2984d828314f9351a70c2fb68095d6d46089bab1f0f30c751d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/client-setup-01.ansi",
+      "size": 20853,
+      "sha256": "349d839d423dc45e7cf896de10eb3ec5ed6ff806d363d512ca2dc9beb71a5fda"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/command-1789334599338-6ed06b.log",
+      "size": 5704,
+      "sha256": "cb3090449702e57514587455807dd982c9bc449e66fbe6ca9e6fe47f27f501b1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/postgres-startup.log",
+      "size": 3812,
+      "sha256": "ca44c6061d0ed6a7916fecdcf5cf8c9818c1a4a61bfef26e290f33f551aa2ee4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/public-01.log",
+      "size": 24764,
+      "sha256": "12d15de0bd0f3b070d7772d13932c5e50dfa252b5d3748f41a7269e8f7144b98"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/public-02-resume.log",
+      "size": 491700,
+      "sha256": "6fea7b59f04d9ddf1f2baac233cc0276d322d5760e4b137fa99f5880b45920fe"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/public-03-execution-review.log",
+      "size": 9088,
+      "sha256": "37872a220e9064e470e8923c0f148e091de3c63c7fbacdc26f950cd81a2d1177"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/public-04-edit.log",
+      "size": 78977,
+      "sha256": "cb8cf1ec34b8fcb4ac01f9984eef808cc1f801dca3a9603a42d82205dd192c46"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/logs/public-05-publish-edit.log",
+      "size": 12143,
+      "sha256": "a066019e4eb69143576a7b08addeb487b889942edd8239691ce4a34b4737aab6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0001.json",
+      "size": 130,
+      "sha256": "d06a70391292a75ad8bef1f1ee7ddd63bce99ad74ddfa781bc1fbf36719d993e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0002.json",
+      "size": 130,
+      "sha256": "2b9557ff540ca3c34923916f64118a2a67aa4428813ddcc17ca92d1c5d2c8883"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0003.json",
+      "size": 130,
+      "sha256": "a78f43afe205dbf0710de181f43ccfe124a837b94e756ea1cb9c66dd0bc069fb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0004.json",
+      "size": 130,
+      "sha256": "415ef9b05feff5a46bc5d594f0ab27471f30b87743fef673e87e9a4ff459ef16"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0005.json",
+      "size": 130,
+      "sha256": "cd5fd29d4e29281928e00e3070dbe5007c34a6c637e56608279d417ee31e5700"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0006.json",
+      "size": 130,
+      "sha256": "0bdb46b4601869b14b0443672b77628ba4d04759da7222fd3be3aee6b5e6082d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0007.json",
+      "size": 130,
+      "sha256": "ac1d52dd799666bb30126544661125bd2a8ecd33549300c1c1d98205fc56c033"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0008.json",
+      "size": 130,
+      "sha256": "68a86dcedd8db7ff91a8370395c34263deb90a2d6f562b148b408e02ede85214"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0009.json",
+      "size": 130,
+      "sha256": "d4787c3cb0e2e0ab91e9d93b32ebf4110041917ff49972ecb5f12269ac6de7b6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0010.json",
+      "size": 131,
+      "sha256": "741d11ee61ecd6df4e041fb865344a68ff0d7deac951ef5011cc398d2bf9c892"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0011.json",
+      "size": 131,
+      "sha256": "32a212d02dcf4de6b110384ee1fafbb1d5639235b7fff46e9123d77844a4e846"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0012.json",
+      "size": 131,
+      "sha256": "cab42776200415de5e52283ff6b4da6157c5086309549b0ec6247498af538afa"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0013.json",
+      "size": 131,
+      "sha256": "fa8e31e7927a83b1038696d974c7bb08684729bbbbe44ed9637e3721abd507d0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0014.json",
+      "size": 131,
+      "sha256": "42f8b001cfab8ed0bca38f7570ae704dca929b8fd0ed7157b095eb4da670ccfc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0015.json",
+      "size": 131,
+      "sha256": "e5168f6aa61f09e683df88fee1777b442a06ac3e9f77acdf1a487d659609e303"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0016.json",
+      "size": 131,
+      "sha256": "1529abec1beade2cd0ff1fa4900c1f7c2cf672df124afde650c43c7b0f5aa3df"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0017.json",
+      "size": 131,
+      "sha256": "3ae3db59cc8efe33ce87f1fe217b1b50cad57d2cfef052ded02d6ed745184967"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0018.json",
+      "size": 131,
+      "sha256": "e7e10e27e15958e843d979e175b09e6562d415fecd09113b8d9095d470e628db"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0019.json",
+      "size": 131,
+      "sha256": "d2c360fac21e7eb87f317ed4724ae6312f340bc8f480811774d2c138165454a3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0020.json",
+      "size": 131,
+      "sha256": "bec96edc8be9a8672fde841ed85ee731595d33a4141feaf058a0ed3301493307"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0021.json",
+      "size": 131,
+      "sha256": "aedfee36a09aedf4f40e3aabcabf914764169ecbc129547ba1a1ef718e57223e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0022.json",
+      "size": 131,
+      "sha256": "702ffb835b5c1769c016c4c9bd165b4342573aa0c97d7adcb921c9e6360fe63b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0023.json",
+      "size": 131,
+      "sha256": "cecb09c78faaa58dda0d53edf067aaaebedbb8ef8fa90d6c087ec4430d2ac2d1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0024.json",
+      "size": 131,
+      "sha256": "088035e584f9122f0b70799ede74124ce2f8b6bb8cb3824e8b25830df89d4a87"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0025.json",
+      "size": 131,
+      "sha256": "4ffcba9fa3afde97af0902bae259afb4c29fbd81530df2ac0cbf500a69d6a1f1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0026.json",
+      "size": 131,
+      "sha256": "aa777852af3ca9eac57a5250d56b67af93314f0df9e22c77f90712ee6dcc83a6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0027.json",
+      "size": 131,
+      "sha256": "7095c30d66b408e9f2f97dd45758cc6f9a01108ccef847d195810833cace5095"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0028.json",
+      "size": 131,
+      "sha256": "f561fd42a98879a62cf1a4e593a94509552cac767ca2a5b4484ba94bdbd95586"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0029.json",
+      "size": 131,
+      "sha256": "4239a351cdadf3fa0c26c53feb3b2068b959002ca6ee111ef0a6bdcc73877bda"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0030.json",
+      "size": 131,
+      "sha256": "8a5d8e3e1896142e6f0c02c289c5b00af7bcafedf0252f93fd3045f536fb8bd9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0031.json",
+      "size": 131,
+      "sha256": "e5dabb8500d6d0019724c1804d9e1a6c3febc3ffc40bcf3bf15bb959e60cd55b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0032.json",
+      "size": 131,
+      "sha256": "0e151714ac1eba76512e725a694b6be8e1add6f6d918f914436f59e463c3bba1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0033.json",
+      "size": 131,
+      "sha256": "7b1167d91b7feb82b3f0b4d83ff08cf3e1ba529d2e29a790dfdbe354a07cb258"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0034.json",
+      "size": 131,
+      "sha256": "e7e3bef2c6d3da408595cb85a35b65002165c78c852188e5e204c6860d384a5d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0035.json",
+      "size": 131,
+      "sha256": "6533c5243477b6aeee4b0f06deab658cdb93eecbee6782f246a71e13c950d542"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0036.json",
+      "size": 131,
+      "sha256": "3954da1732a7b93909841763a31c151b2355c87fe53f603fad761559a2f8fb42"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0037.json",
+      "size": 131,
+      "sha256": "f4d2cd4223df38d81dab45cc79b5adafeb5577e8bdc53eccc1dee6254c840048"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0038.json",
+      "size": 131,
+      "sha256": "09047e51aa747f16b31b5dd8eb28b5d24717bc1ce6cd6f08fa3006e637aa60d1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0039.json",
+      "size": 131,
+      "sha256": "faced8b3cc885a88dd9b0ae29d7f907bfa4f58311c571af0c5e511ede0be525d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0040.json",
+      "size": 131,
+      "sha256": "46c41dc201199a9865ce14c008c4b63440b25fa04bf20cd501f0808c4ffc9084"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0041.json",
+      "size": 131,
+      "sha256": "35bbc46864b39e0d115bf902652b291a3b1f7ceb14c52fdcad1860045f2d8ed9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/attempt-0042.json",
+      "size": 131,
+      "sha256": "5196f91b497644ae7b94fe1ba344000c1b2d7af9406d12ad3b7141885973a3c2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/events.jsonl",
+      "size": 16023,
+      "sha256": "50f3163967036fe39bca2aefdd3ac3c9a112b37099e9ebf7a6c228ca01faef14"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/initial-plan-closed.json",
+      "size": 447,
+      "sha256": "bf67cdcf8915411e476cc21901ec57bc91bcaeb4a7f8b29107bc436e36f2546d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0001.json",
+      "size": 3515,
+      "sha256": "fd177cbe94a622cbe0422ddd31c30d1ee3855086f70a3e661d80faae704a4fda"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0002.json",
+      "size": 20596,
+      "sha256": "5fc4c2e8e82e615d32130202aedc6cb2cb182b3b4698d9c82e3c63197c3383f4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0003.json",
+      "size": 47916,
+      "sha256": "5029ba482707ef9af9fdb1d5849a1151e1843b2c50400771219f1bdd92ea6b0c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0004.json",
+      "size": 122530,
+      "sha256": "178ec426f6e86283739f25d9e30e24ddde323245b4b21bd64ef1c2248acde176"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0005.json",
+      "size": 124225,
+      "sha256": "e1834953541563d46668debfc1b14dc25618c5558fecf271b6e51caf73fd70af"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0006.json",
+      "size": 122530,
+      "sha256": "d556cf20885f71c46856df2461286554fa32186668bbce5537b19e5e240f5b66"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0007.json",
+      "size": 124225,
+      "sha256": "78e825e6ada5f2e846e7357047c3646c5a4570c9af06df383286b228dc344f38"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0008.json",
+      "size": 126054,
+      "sha256": "c3484ce5ff98536fd64fa00231240e57dfaf611ba4d9e20d52dd58df072a8f00"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0009.json",
+      "size": 127768,
+      "sha256": "15ed62ac4b54878871d6aa55b9d2cd59c4336be830fa5bd53226c3f6737d28f0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0010.json",
+      "size": 129618,
+      "sha256": "0c1bb9b05af166314cab06a09596c38ea6e4b883a8112b8a9353fa360137f9e2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0011.json",
+      "size": 132164,
+      "sha256": "4d9dd1acb936e13392259bad7d353d0cc8ff621b1696f50c46b86b2cde9ef686"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0012.json",
+      "size": 135514,
+      "sha256": "091931cee64e6ebc3d2569a318d31fb3e5abbf6604d1f0d4ba9896f82b3d15d9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0013.json",
+      "size": 124866,
+      "sha256": "b4609ab6492c0304bd06302575ea4e310e6f0e92eba69d3b30e1982b7329a9c3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0014.json",
+      "size": 130035,
+      "sha256": "9899b12ac320e7a8ac28633578f0043d0d2b2eb71981e400aef5066a21ae3cc4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0015.json",
+      "size": 135204,
+      "sha256": "fe18e1558bc55c934805f236d83b8ab2d2d986ee26516cd983d41239b037e388"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0016.json",
+      "size": 140373,
+      "sha256": "970cc5c4a5d7d42d97b60e99f2caa3673d4705c6faf114e5ed48f90108a63413"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0017.json",
+      "size": 145275,
+      "sha256": "91b59855b8590752218769acd19d2b1892a94d85db053d593efbf904dc392ef7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0018.json",
+      "size": 155501,
+      "sha256": "5a338f633662eff12dea9ab6e7ebae89afe018dc7088ce8b32930224cdeb347b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0019.json",
+      "size": 163174,
+      "sha256": "cd537f7495f1a01d34828e4ff442423e9d45ee34c8ebb19ab20acd681e3f7df0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0020.json",
+      "size": 165298,
+      "sha256": "d80470498219db6ef970ee587350103102d97d32e0912412ff1856ce62d90fa8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0021.json",
+      "size": 153611,
+      "sha256": "991ac3a2df9990d16fcacc94152db4e71ab06286ba8e8f53e814f3886aa008ef"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0022.json",
+      "size": 167708,
+      "sha256": "d978c974da1fdc9dfd70b5c1f7a0b6aa274b60199268331bd082a8d8716a2dd1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0023.json",
+      "size": 11402,
+      "sha256": "2e10ed0e431190ad6ba6f691d09c8a80b7521df95f98dcd7a905fa19472ec854"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0024.json",
+      "size": 159877,
+      "sha256": "33c09e58e696caafb019186420e8f68ee2611d65c1c4312d1cd54bc7649658a3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0025.json",
+      "size": 174559,
+      "sha256": "ea19f6449572f05a9e1298aff346832718ad9d8ca9c912dd22b78570f8881b72"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0026.json",
+      "size": 13389,
+      "sha256": "62ee29f99d5e0bb7a5a930b654825f0ba01b8d00fecd4e4e189f051827cb6fdb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0027.json",
+      "size": 162245,
+      "sha256": "a9f10b20fa2a7c0ac22eb2d8786aa066cdf1bce9221c552b9a17df9d968ac684"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0028.json",
+      "size": 176318,
+      "sha256": "2757e8d4e4d5247275599fa4689ebbeced7404d8db40390f8a501be6f4bccc16"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0029.json",
+      "size": 164431,
+      "sha256": "53b773c68cec006731330c905760a8d4c496bdba4e06007a0936619a6e123c1d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0030.json",
+      "size": 179487,
+      "sha256": "8b701a530a4682994f0c98d473cef080d68d87399f7a378697a0c5f16374b4fb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0031.json",
+      "size": 142542,
+      "sha256": "1ea476f1a8a7ea27b6f9cead21e49f88021e28fb65a1ef8f19b99aae0c5a5acd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0032.json",
+      "size": 150375,
+      "sha256": "687a36eecce2bc5ab7565f836c0b1f74bc6901c997e3f30f940c88b829bf5f2f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0033.json",
+      "size": 152499,
+      "sha256": "e80a9e8ae9db0e583a882c064e54b8ead2d9c1706997266fb6274285bcc2f9e8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0034.json",
+      "size": 163939,
+      "sha256": "f4fac8de7d6913c6b9e25536c8f3ae7e64b7e2b067fd6c1ebef6966ff7c5f9f3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0035.json",
+      "size": 18515,
+      "sha256": "01ce5eecec57f8a9ea76204e264f47f973eca9684c9da8086662cbe94f050498"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0036.json",
+      "size": 40080,
+      "sha256": "9f624c3e8983a98151d664e7aeecb64496fdb5ad2fd16879149f2bb12192dbec"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0037.json",
+      "size": 140840,
+      "sha256": "7d39e9c8c95b53672b4351d43b3ed285ac11bc79e2dce62fb5f902a088aa9c2b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0038.json",
+      "size": 148712,
+      "sha256": "ce286d76fb75511b26494a0497d0d2c420ba842fab2ff493b977d6542379e456"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0039.json",
+      "size": 159476,
+      "sha256": "3d7a6bc2e97bbcff5d91d08ff7c1c403a27208f708425f29b3f961ff8c9ea731"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0040.json",
+      "size": 161599,
+      "sha256": "db776137af94206910a3de28c412a06c07fb90d76ef34ec9349fd13b444874b3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0041.json",
+      "size": 162592,
+      "sha256": "ea4b075c6eb48ff86f04abe102670771d7183c443d9083bfb967c4b869cd40bc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/input-0042.json",
+      "size": 167944,
+      "sha256": "1061ebbd834a41f45396bd3c04a49702c1813cf1373d396c2b9d8bd9b9a94573"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0001.txt",
+      "size": 15156,
+      "sha256": "2c11ee4eb0a37387f14e926b79aac24ccb026ee415e236acd71ae512db926622"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0002.txt",
+      "size": 179401,
+      "sha256": "9ad10081f85286e4843bc757c9907589f7e0e63386957a521262371b8b80a4bd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0003.txt",
+      "size": 62553,
+      "sha256": "cab6e3bb35511ceb4dea17531572dab98b434adaf57589ac8bdca1757ce32db8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0004.txt",
+      "size": 170019,
+      "sha256": "1b84da7c42347c32c5dc2e608db61b609e122f53e9da00a3665cb89109e99566"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0006.txt",
+      "size": 170187,
+      "sha256": "ba842e33843c68f8e3df0a68030e7ff5c0384e4ea718ca4d072a4e97342f0ef6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0007.txt",
+      "size": 169506,
+      "sha256": "70e348d1027b1ecb8d15dcc19f2b52e0644b6f091356c7538e2eee23bdb595af"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0008.txt",
+      "size": 165518,
+      "sha256": "755505ff54b80c19b8af12bf3a0faadd3ee231dc9642d1f61c5c024639972fa7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0009.txt",
+      "size": 169506,
+      "sha256": "a6f0fbf325ea5d274c935f2ce50fe028707d820ed577275edb353adb2dddbd0c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0010.txt",
+      "size": 209885,
+      "sha256": "8e05a56bb1c3d109cb9dd42d3f538fd014f8fbced9e9629cf7e71da1b3ae9d53"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0011.txt",
+      "size": 206417,
+      "sha256": "c077efd895a158b66135f1804560bdf2a40b12d6b84cbcc6bf97c56408e03faf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0012.txt",
+      "size": 200464,
+      "sha256": "9276ed32836ccdec04f840213123de3d14c206f4fa14e76e1d677b00a851e19c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0013.txt",
+      "size": 291204,
+      "sha256": "1de1cad5e779ab5e3d6060b424707c3a36aaafc08d94b0193a4e4dbdd8fab9f4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0014.txt",
+      "size": 290051,
+      "sha256": "ab6526b7a798c10a2009a408e35cd2729a2d18b98a9e73a789380040bf72afce"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0015.txt",
+      "size": 289667,
+      "sha256": "451b0657dbc5bcbda72a8e268666bef88f5c167b774ef82033cce412983a4a02"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0016.txt",
+      "size": 274832,
+      "sha256": "2313c50e338aac6f075e42632d30362dbb808d9cbcaa026d612d06803eb2fa06"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0017.txt",
+      "size": 366123,
+      "sha256": "c09058379b840d31c51f7b164e752a52e79f02be23a5116efef9b8af1a0908fe"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0018.txt",
+      "size": 199755,
+      "sha256": "f8f17c09dded45f2b2a4c2268989d53b9a71aadaa3434c31376ee2cdd1ee0cf7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0019.txt",
+      "size": 161192,
+      "sha256": "d98acc2a4292205739b3b353b12b1d9b74aa80761d3c6011a29ce57cd5521738"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0020.txt",
+      "size": 196605,
+      "sha256": "a811cf219055c30281be46f8081756a948cb134b8ae51c9f8b488f6727687c22"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0021.txt",
+      "size": 817111,
+      "sha256": "8b36831aba06229dbdfb9045442cf865efccafa9e7aaa753574d1a50006cd264"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0022.txt",
+      "size": 780684,
+      "sha256": "8105a022c7758f508f1ad057a2f654db9050f968ece0a422c91d2a6d96ec45e4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0023.txt",
+      "size": 34241,
+      "sha256": "3c3acc238d823627bae6fd2bda47df6e17c2257326be4828cc9a42858ea0a225"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0024.txt",
+      "size": 811208,
+      "sha256": "f0472145ceeeff7906ede3ab88e91d44674fab43c803be4fc403d7b91aed5b5a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0025.txt",
+      "size": 821220,
+      "sha256": "00d10c4f439682bcb96ab5903dcb89a6d9989dd138b709793451e4416074b109"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0026.txt",
+      "size": 38460,
+      "sha256": "54d5581a1596058c9d716f84aa929938301f2575d95ce68d345616e751016796"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0027.txt",
+      "size": 766706,
+      "sha256": "03c2dcf3547536ece65bfaacc60bb20b43b1a07b95c9b26068a4adabdf0af853"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0028.txt",
+      "size": 744675,
+      "sha256": "cd1946cf585dbb60b6702187e648e2da81cc93703eed5606e43f6cfee7b35cf1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0029.txt",
+      "size": 808436,
+      "sha256": "c0eed8b2769e80d0e48d6f5543ef29b1b61b615893579158193288baa0152e48"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0030.txt",
+      "size": 813572,
+      "sha256": "a754c1e5316b6ef9a2bc64c06fa25e652cdeae5abdecceb9f5c381fd2c58edd9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0031.txt",
+      "size": 214379,
+      "sha256": "ff612c2bc5e5ecc561da96540a0d2e2ee2a83f66a7c9f4ffd5f0b78baf35f01a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0032.txt",
+      "size": 163970,
+      "sha256": "066315afa6217a21c1942b973e7235b0058bdaf8a096117e5faffc2e7a3cd7a0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0033.txt",
+      "size": 180801,
+      "sha256": "3d451c8ae760068641c1e776415af3955612e612a86ada4295cfe8f35eedbd25"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0034.txt",
+      "size": 875073,
+      "sha256": "3112c64a5efc58436725a962965a5821dd26ef21c127b201dc67f5f4b498b823"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0035.txt",
+      "size": 17099,
+      "sha256": "803c69c6867cdc1767bcde0cc3e1f1df0c7c6e3854c853803951a25451d3e2cd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0036.txt",
+      "size": 102332,
+      "sha256": "990a2d1ddf80e7b0d61254a9e8eca6cdee86aea05bfdcc146a6d5e144fd68dee"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0037.txt",
+      "size": 214892,
+      "sha256": "854978cc6050364b198a47d9d192341396d68b3c954b3b3e1fce671a0d8487fa"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0038.txt",
+      "size": 356830,
+      "sha256": "541096fa8a29d02eaf0627fd27968593bec42103a83b78679379817f0ea1ecf5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0039.txt",
+      "size": 163970,
+      "sha256": "b0d15e70409f89d7a9a3bd2c7d2fcd638011857eaefa1276d3ec9116a98b72cd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0040.txt",
+      "size": 192150,
+      "sha256": "ae99e8e259f68ffd27921fedaf7fba6318985203f7d6f1460adb46624e6263d0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0041.txt",
+      "size": 205436,
+      "sha256": "65b2677825e74863b1e88b629fd42bb328b472e272bbe544486483a6b96871c4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/output-0042.txt",
+      "size": 771306,
+      "sha256": "f17a0f805b091b69b4d104e96d227a0f803e9f84cfffbb068c6338083cfd1c9a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/meter/plan.json",
+      "size": 524,
+      "sha256": "8719e5fd85079bb476f14b9eee13af417948da11bff6f1cd96dfd818dea948e0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/budget.json",
+      "size": 135,
+      "sha256": "681d5072909b159d2174ca62e4df5e185e94aec43b51e2aeb33cd2824eb016a9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/controls-after-ledger.json",
+      "size": 751351,
+      "sha256": "a3bcb7d4bbcad35a1d237417b740d1fbbed4043c8638134e2c623d700978ab06"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/controls-after-source.json",
+      "size": 212550,
+      "sha256": "0bfb3143b34480edd806082cf13638fd6fd4f605c010dea33c9be817ee5a98ea"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/controls-before-ledger.json",
+      "size": 652391,
+      "sha256": "b7259e7b025ff869932622a5c9547240b488ae0f7628acd6e0b2ef095f19bca7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/controls-before-source.json",
+      "size": 212550,
+      "sha256": "0bfb3143b34480edd806082cf13638fd6fd4f605c010dea33c9be817ee5a98ea"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/controls-human-pending-ledger.json",
+      "size": 742499,
+      "sha256": "cedffd67241ec3024a3d0fc98d24bcccf2212293008107265e13fd70a93b75be"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/events.jsonl",
+      "size": 128812,
+      "sha256": "86f30e93e54b43773cc834a5bcc8233731b65a0234cef6f90ead57b1863203f2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/initial-admitted-ledger.json",
+      "size": 629937,
+      "sha256": "84c2fadd346b4bbb13d15f850f5e35e9e957bb6adcc72c8bec8116e17489a3da"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/initial-admitted-source.json",
+      "size": 211338,
+      "sha256": "c0ed6ee6ddf5c701bd73b01f369b6c797c66f05e584ba32945de6fc184d127e8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/initial-after-ledger.json",
+      "size": 652391,
+      "sha256": "b7259e7b025ff869932622a5c9547240b488ae0f7628acd6e0b2ef095f19bca7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/initial-after-source.json",
+      "size": 212550,
+      "sha256": "0bfb3143b34480edd806082cf13638fd6fd4f605c010dea33c9be817ee5a98ea"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/initial-before-ledger.json",
+      "size": 535518,
+      "sha256": "6bacc7fb7a9d336badfd8b01e132b03b52950aea6b49283cbeb45ae4f1f3a39e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/initial-before-result.json",
+      "size": 309,
+      "sha256": "188c3cdc7f25adb976496c38c901d755703c58a5a32f767640dbbd226380b00d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/initial-before-source.json",
+      "size": 211338,
+      "sha256": "c0ed6ee6ddf5c701bd73b01f369b6c797c66f05e584ba32945de6fc184d127e8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/initial-completion.json",
+      "size": 2131,
+      "sha256": "7520e8df68c2d87950aa593227b8a9176ccb1e25e50acfbae82f564b430c15ee"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/initial-execute-result.json",
+      "size": 2131,
+      "sha256": "7520e8df68c2d87950aa593227b8a9176ccb1e25e50acfbae82f564b430c15ee"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/mcp-stderr.log",
+      "size": 813,
+      "sha256": "48c89d3c17a1a6ee487b94999b9dd2a0a4a4fcdaa74d86e685ea723c0454d265"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/old-work-after-ledger.json",
+      "size": 919536,
+      "sha256": "de7e78790e5647e4c4ecb81fbde1d144024df62075856f724430109628ac1721"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/old-work-after-source.json",
+      "size": 212550,
+      "sha256": "0bfb3143b34480edd806082cf13638fd6fd4f605c010dea33c9be817ee5a98ea"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/old-work-before-ledger.json",
+      "size": 826789,
+      "sha256": "8374d2ac570a17a309d9023e1d0038dc78e38a509a5f274978cd712e58dafb67"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/old-work-before-source.json",
+      "size": 212550,
+      "sha256": "0bfb3143b34480edd806082cf13638fd6fd4f605c010dea33c9be817ee5a98ea"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/old-work-result.json",
+      "size": 3522,
+      "sha256": "c869914e0d94debfb35e41b7f912fb91ae63bd68e4b45dbf5b65c8db0a9db3f9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/postedit-after-worker-ledger.json",
+      "size": 1054004,
+      "sha256": "42e5fbdc82ac0572a6c2e01a08141c779f050adacf1d6916402abcad4d8c0977"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/postedit-after-worker-source.json",
+      "size": 212550,
+      "sha256": "0bfb3143b34480edd806082cf13638fd6fd4f605c010dea33c9be817ee5a98ea"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/postedit-before-worker-ledger.json",
+      "size": 1051932,
+      "sha256": "147c5c4c2285b3ad45d6f7cbd305e2aa6a9001586cc4ac1708427239feafd4fe"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/postedit-final-ledger.json",
+      "size": 1147432,
+      "sha256": "8ff4673e9a63bb7f431ee7fdfc93ceba0a947bb08d79b52d038a3070d8b8f179"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/postedit-final-source.json",
+      "size": 212550,
+      "sha256": "0bfb3143b34480edd806082cf13638fd6fd4f605c010dea33c9be817ee5a98ea"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/postedit-result.json",
+      "size": 2894,
+      "sha256": "7849a5a9b378112a40fb273d420931c78a49cd4f48736ba04bca2453b83ec886"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/deterministic/preedit-controls-result.json",
+      "size": 7100,
+      "sha256": "618cdb813d761635ebb5f2e183688d48ec9078ac7b5e66fa243b1997a4bccff8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/budget.json",
+      "size": 490,
+      "sha256": "b4ad8e28b0b87bc9170666f63f36e2511305799261c480765ab9696d29bd8d44"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/launch.jsonl",
+      "size": 1083,
+      "sha256": "a9645bf60f33b7a96d6338aeb139383aca73355f409b042471647dbcc753abe0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/mcp.json",
+      "size": 533,
+      "sha256": "45f551dfc2701c986949f53154edfc4d088f3e040ccbf20a93bbf6c15c14a3ca"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/operator-prompts.jsonl",
+      "size": 795,
+      "sha256": "6c6c0bfdadd63dd9bcf6ed6bbff2592665129db51fb7a84bb17c0399049d6c96"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/provider-attempts.jsonl",
+      "size": 2851,
+      "sha256": "ef2c4bd50a3e8509c73139f6eea49d8158c109bcf0b6a0c69ffe07223bc57ad7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/stdout.jsonl",
+      "size": 248170,
+      "sha256": "61cc8d1265f4c6efd87bf46ad0c9c147cc20d55b2d1d6e6c0b26c393f8772e94"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/store-preflight.json",
+      "size": 1542,
+      "sha256": "3bf24fa42dd4405999cd32ea32a21fc18243c320417d41e6bb3164b5e94c9e3b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/transport-results.jsonl",
+      "size": 1353,
+      "sha256": "809a544bca53ec52eb5eeadf76ba0fae88d1ad458d2d1c2a5466386e0810073e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-software/model-runtime/unsupported-startup-request.jsonl",
+      "size": 133,
+      "sha256": "7b0087cf8b029bbebb471d3d696192a83e0fdd177bdc188c6a2c46e5c7362ed8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/administrator-grants.log",
+      "size": 88,
+      "sha256": "2d581dc7113731d130449f8e0ecdf7b8a7e4bbf626a42b949d39e6f8135e45a8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/administrator-local-login.log",
+      "size": 11,
+      "sha256": "53de5f815cdf2b2984d828314f9351a70c2fb68095d6d46089bab1f0f30c751d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/client-setup-01.ansi",
+      "size": 20685,
+      "sha256": "21edd2e347a129497aa02447fd53d711a3de4edeaf4add59d3de17e8e2a38f6d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/command-1789332224967-44aa41.log",
+      "size": 5664,
+      "sha256": "8b06d343955e6160fcd17a636210bfeb7c91df3c67c8bfddfd7281c93ebe709d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/command-1789332697060-8d1cff.log",
+      "size": 9156,
+      "sha256": "48df7e70c23dd92a173385daab13533f13a31c59a5e91b172ebaeb56450cf5f5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/edit-resume-publication.log",
+      "size": 12070,
+      "sha256": "a8970ba51ac7600b57d08574d10cffab6421e58d62aa724f5f64d066d0c6bc4e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/execution-review-01.log",
+      "size": 9015,
+      "sha256": "12e0bb0ec2333781657cd5d98333c098cae89f29707c08f12e5aab097e3d6c16"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/postgres-startup.log",
+      "size": 3812,
+      "sha256": "9ad16e1a958aa73244b134d99f28d71e58e87b8742cf054b86494268ef7948a7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/public-01.log",
+      "size": 595256,
+      "sha256": "dc17b7d5ebcd7335feb5e730206ad83c2efa24974dafc5a7221529609d3f6ded"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/logs/public-edit-01.log",
+      "size": 69172,
+      "sha256": "051124e07c040f678ad0b1d080adbdc46dc0c020a2af9db9c37df258aa5edfec"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0001.json",
+      "size": 130,
+      "sha256": "66f7dd8bd3251156211ff67871c2572ce94742aab19c7c3ca6675d4814ba51d6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0002.json",
+      "size": 130,
+      "sha256": "5ed79318195c108b1177946103e05ce66fa8115a992b96ea961bfd913b6d154d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0003.json",
+      "size": 130,
+      "sha256": "625a158de64e3dff4e3782d8de5d28a1f54f67fc1d9a412a4df2605ffcab86d3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0004.json",
+      "size": 130,
+      "sha256": "1b9ecbeb0d979b60791c11304a94170b8617f62e58731f740293bc8a2d9aa2c5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0005.json",
+      "size": 130,
+      "sha256": "e9cdea5b742384dfb672caaa28c7455e54224dd07737c26e1fa84198a7f73014"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0006.json",
+      "size": 130,
+      "sha256": "dbff8076c3cea31e22a1c1c733395a838f0a001d69c2b3eaaefc3674335a53a8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0007.json",
+      "size": 130,
+      "sha256": "b31b6c4785f7d2867bc66759782b603f24b84e2b1a8e45dd8ebb3e2d291d045e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0008.json",
+      "size": 130,
+      "sha256": "69c82f52b9c7cfe7dcdecdad254153575661e936e272759f8a63f1251b0f5ee2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0009.json",
+      "size": 130,
+      "sha256": "0366c434abe58dc934791ef235f9eb558b61f6d5671de222ec514a17dbb2e5e8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0010.json",
+      "size": 131,
+      "sha256": "70f87356fe3b524e8c4ea1496cae3c7304534dd37e027775fdba602cfe165949"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0011.json",
+      "size": 131,
+      "sha256": "bd1d5a77b1fb4e555b1af9782474c8880c2aaea404760c7312493af43ac72c55"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0012.json",
+      "size": 131,
+      "sha256": "460902d082fa04afb781e494f9e6b41d0ee5482540af6a0e28befc306c6b23df"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0013.json",
+      "size": 131,
+      "sha256": "1bc46656806a37fc2cef58f3363fd1f5db807d3f870e0b2e4521fc38b023e48a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0014.json",
+      "size": 131,
+      "sha256": "f3f0f851459b45b89bf78c6cc416fb1f694cdfbf724b5e09d8d312b4dd186843"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0015.json",
+      "size": 131,
+      "sha256": "91f72fade8c71a65a1e104cfdf0a750ecfa43c40df594d676704fecd6ba1d115"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0016.json",
+      "size": 131,
+      "sha256": "9f0cddca1519e9be6287f35105e9a2d5cab6cb4109577c02b63575363f8063f9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0017.json",
+      "size": 131,
+      "sha256": "9fe6db79dccb4ff5aedd8678c8eb603f2ddb738365999465a172c5a8fab0cfc3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0018.json",
+      "size": 131,
+      "sha256": "6d1261fcb5da442ed308ec01a01c2adf6d21501dff6e3edb691b06ac2da01a9e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0019.json",
+      "size": 131,
+      "sha256": "e48a5af14d1023f880ece291075c50f3eb138fca303fa3a43371f0ed50be018e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0020.json",
+      "size": 131,
+      "sha256": "f29ea1a004216db58498e8fa1edac908eb18f3f67dd14fad4b626366e6962af5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0021.json",
+      "size": 131,
+      "sha256": "b7499ca1f81fa369425e2f629cda730062c3655ea4edfbb09b7ca94d4aae2d0d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0022.json",
+      "size": 131,
+      "sha256": "a81fb3ced9b1879eeab416f0437f9c18f6ff1458b00eacb9e4619568e007d7ae"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0023.json",
+      "size": 131,
+      "sha256": "7f5e21ba91fa8291e98a91729ad3ca4786df4eea26d43edc74bb35d4b39bf867"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0024.json",
+      "size": 131,
+      "sha256": "ea2885724108a25fdd36107843d3b27467524e744d7b92ae9d757a2c720df42e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0025.json",
+      "size": 131,
+      "sha256": "231c787999d72f157bcc1feb78c05fd351c6e09874684a3af6b224116074854f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0026.json",
+      "size": 131,
+      "sha256": "b4b72508b75297bbda8ebbc76dffb99e720007ac367c960bc3a258ccf92f6e51"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0027.json",
+      "size": 131,
+      "sha256": "099ed06e8d2ceb33eb0691668569ca82542af66dc8980ac1c774678dbacbe30f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0028.json",
+      "size": 131,
+      "sha256": "457f8022e2f27dc75cb210ff41b6c6f527175e8ff303ae9fd0b1b82d31eb9942"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0029.json",
+      "size": 131,
+      "sha256": "b479fe947be9dd0c8132c5e17a7f091cab8b6b61a4343501956d202021e4f3b7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0030.json",
+      "size": 131,
+      "sha256": "c6326fbb4054e7dcfc2c9c96587bb1d4ad01cfcac4580427a39c60c3f1636d05"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0031.json",
+      "size": 131,
+      "sha256": "9dcba645c83d86b63442dee73e30284e0056b01b0f13680ad10a4ba789aaabb6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0032.json",
+      "size": 131,
+      "sha256": "742f8d7ad0e03bee5d39ffe01a7098e04f586d7eb078a0960418c17a8d5a0d0d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0033.json",
+      "size": 131,
+      "sha256": "48a8cca9df3b3a1773e1af47b1febcb034d68d1ab7518569cd5f2fa4c9355e16"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0034.json",
+      "size": 131,
+      "sha256": "092f6fd6e638a10af492c2a1974568b20f648d19fd02b9ac7729d1d52ffbcf5d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0035.json",
+      "size": 131,
+      "sha256": "bf8352e3816ac25278ad184746b625e15c1e3f46b106b1d7b4ec7f606dffef13"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0036.json",
+      "size": 131,
+      "sha256": "655f264cfd445e5413c9fb95cacd783049f9e963684dd490c1cdd688618b262e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0037.json",
+      "size": 131,
+      "sha256": "bd8adc93f65b4da62277d8212ce6465e1f9c03845900f9f15aedf09d943b57a9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0038.json",
+      "size": 131,
+      "sha256": "d2f9378c50ab5b0871e6bed54ef792842270c0b9ddfba5fde06e67371e492384"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0039.json",
+      "size": 131,
+      "sha256": "c72e622598ec2041abe7130895658870139cb57d8d5e6bd659a0bc7cf26f53a7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0040.json",
+      "size": 131,
+      "sha256": "746d8994320d9a13e5004832d9e748b7bdc1c8dfd5a0d270fe10f74a5cc17e70"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0041.json",
+      "size": 131,
+      "sha256": "8c21587715703cbece1b3666b6ff906be86672e0c5a3c5eb25a3ea7f5cd3864b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0042.json",
+      "size": 131,
+      "sha256": "1d9f43d072e00c7127cf84847d76563479f1640d1a1de9a1f3b9946e0d36fd60"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0043.json",
+      "size": 131,
+      "sha256": "eb2312a1b585c00dfaea5e206f1db2962252cf1f1e91d94da4cea0346c25449b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0044.json",
+      "size": 131,
+      "sha256": "3872d623f09b61923c914e4199bbb68d2d008965febf343e5307d687a3ba4f26"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0045.json",
+      "size": 131,
+      "sha256": "fb1829599baa65321e29b46d8de908b3aaa7807dbadbd3c6c8ceca365e872a3b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0046.json",
+      "size": 131,
+      "sha256": "e766f4fb9c550e897ef43fd80918a6616d0d2141d37f53007d0a170335092771"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/attempt-0047.json",
+      "size": 131,
+      "sha256": "82526859bb0d1bdf033de6d7be9fe57dcb05c0759925f0ffba8ca0d669118e49"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/events.jsonl",
+      "size": 17686,
+      "sha256": "faa9b94df40de69cab4622377da10166ca0d2edfa7356f224bb73eca493fe3d0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/initial-plan-closed.json",
+      "size": 449,
+      "sha256": "ce2b8f24a28fde90da76a4046924ef17413b41cfa4fa0e221c529134f135c04d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0001.json",
+      "size": 3515,
+      "sha256": "fd177cbe94a622cbe0422ddd31c30d1ee3855086f70a3e661d80faae704a4fda"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0002.json",
+      "size": 19663,
+      "sha256": "d9725be7cd027071fd876783be49bc875c7c5db6c3976e4920b06acfb849897a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0003.json",
+      "size": 45296,
+      "sha256": "c471f37d525a5a020338c83ca0e6907efc1d44e8e5937216a92fb7beaaba9c7e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0004.json",
+      "size": 117605,
+      "sha256": "ec131e8a4ee1efc4e3ef37e97c785630e604d37d88fb05c3f72623d81c5c7dde"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0005.json",
+      "size": 119276,
+      "sha256": "20daae0afb7e20b540c40ec6c2159a7cb4e75328b5fd407c74baa5bdfe9807d5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0006.json",
+      "size": 121073,
+      "sha256": "e4780dfd47a9453c6242dcf1ebf46169bc15820102b1f083d0a11be5e2685641"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0007.json",
+      "size": 122830,
+      "sha256": "79744d855558f28aa2094c639d7fe86be152cb3be2d149ab8d9400de64cc4810"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0008.json",
+      "size": 124931,
+      "sha256": "49c8104c1676cb4270fe736c34fcedeadd4455cb6d8a97d0a18e09f63927049a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0009.json",
+      "size": 132683,
+      "sha256": "ce5cb1f070c926c7325927ce8cd30dc2c0180126b03edb7506227480c574c045"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0010.json",
+      "size": 138816,
+      "sha256": "7f45a638aea99f9bd2fa20acaf7f245ee6e3f476619c6df42fec1aceb67796ef"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0011.json",
+      "size": 140667,
+      "sha256": "d1592276816a4efb7482932652d423991d711ac0f532e0ce6981e77eced4ca4d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0012.json",
+      "size": 128976,
+      "sha256": "bc5d29c4774534f18103ad37ad977c9ab86a69b12b3086ae75755da2229465f2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0013.json",
+      "size": 145575,
+      "sha256": "41d76de1ec48c5f17b70d0faf445d49a740d07c9a9d6820c9d1d017e044bb220"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0014.json",
+      "size": 10885,
+      "sha256": "6ea18065ffa2d01320f9b5e26f27bea88bf254d0594e6b37a24ecfe732e45cd8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0015.json",
+      "size": 135448,
+      "sha256": "6e6db9dc1bd39df9583fabf80410f93ca8da9b73fe873422a583bbdb60a67688"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0016.json",
+      "size": 150359,
+      "sha256": "f11b3b4254d989e99ce03a9c51212208c57817595e31a0f3ee89bb39c2eda71f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0017.json",
+      "size": 135595,
+      "sha256": "bca620daf0c7aac07d046f3d7189732b2cc2233e364e48a4c1fad6affbeecd00"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0018.json",
+      "size": 148595,
+      "sha256": "32c88fb5eb40ba02da34273aa94abf4ad1ed44b8c29525e78dd38a680056589a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0019.json",
+      "size": 131550,
+      "sha256": "f8a8e8c6bdc8b851f677c8438eec22b6f3a30f7c525c9da5ecd6cdabdf0e1135"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0020.json",
+      "size": 133221,
+      "sha256": "a40606b8923a913ff27d1c86748be18ca3a66e52893c70802035d185001b90f9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0021.json",
+      "size": 135018,
+      "sha256": "e257a8b58c1bfa21b802163236439795ee6bbe2d1b960e03ee69b14c2e96faad"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0022.json",
+      "size": 137074,
+      "sha256": "c630e663bcefa8b6344c73e4edab332f17f544858eb0a6474706b98e06764fad"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0023.json",
+      "size": 14027,
+      "sha256": "a09ce1e6e4537e910668481ea206fa9ee58696874db7ee32d08cc57b19093dce"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0024.json",
+      "size": 134903,
+      "sha256": "5561e4d12c1cd5ee5426b63eb57599d0e2f6ecb270512a10c80890d6576cb7c3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0025.json",
+      "size": 136700,
+      "sha256": "0ca8dfa61d2c98cd0a428e4e404d584fd395a675398012c64be0ce78c0442d1b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0026.json",
+      "size": 142790,
+      "sha256": "72761c22dd1f9ddee4b79d8eb4c15d664f6f706056ac6f341ab84330a4e5e1a0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0027.json",
+      "size": 144846,
+      "sha256": "d25f7d8d5837d4d18dc6f679def8a126598e8f4fdd22b373d966e76fc053c46b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0028.json",
+      "size": 139477,
+      "sha256": "2534406673973744a1d2dbab66725d129be44def794d5be4a59f72cfd8912bab"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0029.json",
+      "size": 156912,
+      "sha256": "31027b3a038712a74dfb57edce161f18cc9ecee5c0af28be72b8465bf1c20df7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0030.json",
+      "size": 142922,
+      "sha256": "bc41e15e8fee126e06290593dd1dcc8a6ea76ee8c7579323d7b7e591d344775a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0031.json",
+      "size": 159153,
+      "sha256": "b06f0f77d1ac02dbfc17f12887c4f9c5b79cf038dcfa7fe7cc3fce219b8a93e9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0032.json",
+      "size": 138968,
+      "sha256": "5ce6357b6699dbdb55aff1a325247a4e58c27540371f9f33d426fee8f72b7531"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0033.json",
+      "size": 140765,
+      "sha256": "f52806500098f0ee795db36c23d1cdd1857ceb1d7131be2cd84ba471f8bc790f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0034.json",
+      "size": 146855,
+      "sha256": "2ad1fbeab7c87ea971995e52cf00d86a2f5c096ee4fba692ffb022b7f51c93df"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0035.json",
+      "size": 152832,
+      "sha256": "fca0b6d62224f31884c4915ff469a1df0539517c6a9847ccea079d72759b0694"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0036.json",
+      "size": 161268,
+      "sha256": "1d84a09b7481ddc6d07686a5b1507784bda8e03150d502311698e23dedc39de5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0037.json",
+      "size": 167746,
+      "sha256": "a9a4864326f3a62e3948422b8fa8a07638d940c1807769f15b20079c55cb6768"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0038.json",
+      "size": 169597,
+      "sha256": "7522b8c6299139cbd5c1cadbdfe93f23722ba6e583670ba76fe3ffa63aa0924b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0039.json",
+      "size": 141874,
+      "sha256": "c4d3835af417738521342acf88170f45c290bbe196aa0773a0cc96602a582e37"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0040.json",
+      "size": 20524,
+      "sha256": "1579c14771aa37e35d5bfc10a385ed2b1aad717c3899cc8d9c674ac136437a08"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0041.json",
+      "size": 41824,
+      "sha256": "fbb67f228ba462a250feb3a8a17fd6b9b96b7c66a1b38fc1a15f6b2768253944"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0042.json",
+      "size": 137067,
+      "sha256": "9ab8d68ef1c30536ffe380a72cd39508506576084585ad9e4e6a0108289ca8bb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0043.json",
+      "size": 143387,
+      "sha256": "eb143e0c592e6bffdeb5501ed3dc2e8b0544f427ba5bd0d929de2f538086784a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0044.json",
+      "size": 144313,
+      "sha256": "0b27ecb976c7df9ab45cef8267fb97b686f6b74d57e53cec7bc6dcd509359209"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0045.json",
+      "size": 145239,
+      "sha256": "49c5e0f208aa587e3faf70bba26080e15a03ff299185b164dc2bae4b64facb77"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0046.json",
+      "size": 147090,
+      "sha256": "912df7a3e450b9dce5de3b150fd042a46c96da9cde5e7a1ba0283cb2c1a78c3a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/input-0047.json",
+      "size": 144463,
+      "sha256": "8ca3349b9cba2a4aae192764a252f53503afdf8afe3aab980c1a066408ce7e8e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0001.txt",
+      "size": 15156,
+      "sha256": "a93fc3e47e0c199ec10013413231349d7feae3e3fc8fdfadc9cb46f8276bd9af"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0002.txt",
+      "size": 107898,
+      "sha256": "b8497e31f41079d114bd7e73b560af443f41d3e0648608678d0fd2ee4f397ff9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0003.txt",
+      "size": 65914,
+      "sha256": "9418d9f0f834cb1be3d8de8cbf719e05560bcbff4f822c50db9288abba8f15fb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0004.txt",
+      "size": 170285,
+      "sha256": "7442c9f80ec8101d89493e8a810d78c92cea36d6c14bcd0e02a04509a7fa76b7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0005.txt",
+      "size": 169201,
+      "sha256": "c08dabd8d498b2d146bf7a7afa7ee68a45c70830efba945d30dc26a2498e8dcc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0006.txt",
+      "size": 190327,
+      "sha256": "8e7ae28b68d6194cd4e914cbe88e07fa0b7ec75ee304ce8576d4c5949b04bfe3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0007.txt",
+      "size": 186008,
+      "sha256": "4f38f7a32e8e3ddb1f8c3e3f725709cdd111ff7d058fe4ac20850e74bad0a702"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0008.txt",
+      "size": 334177,
+      "sha256": "16f4f56a18dc546fa202faf3039bc735dc0e0e27c43ae10d91736cce26263269"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0009.txt",
+      "size": 208407,
+      "sha256": "b6032ed7738527968d40b05c36da6369393bd246eaf3928fe0a8162e68402a47"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0010.txt",
+      "size": 161192,
+      "sha256": "c4cada2b754d00ff66a39664ac35da388a2179a4d2f36e9b4e8d68036e60d37b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0011.txt",
+      "size": 224921,
+      "sha256": "c51be1b746a4c9c4c33b3dbc8392225c22cdecbe8d93d5098798dc2bd264231e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0012.txt",
+      "size": 869834,
+      "sha256": "0c7ab4b51fea442dc796e250f3d0b0b535cbad6ece59d90a74029a40c811ba54"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0013.txt",
+      "size": 859006,
+      "sha256": "58431a9081e0bc123d0db69bab5bcdf02d96c34050bb67a34abfded83033e2af"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0014.txt",
+      "size": 42956,
+      "sha256": "c7bf3f4f3e09e1f646edc3901a6cdf31077fe9b6f418134956342fe774feeda5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0015.txt",
+      "size": 770461,
+      "sha256": "e7dcce701cb78b26d49af6184c0924bbc51cdfdc54d3434e88b0cba3877b6bbf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0016.txt",
+      "size": 761230,
+      "sha256": "26a833bc48f119124777ab5df0ffcc3d203e9c42a2060c83472e26524a8d7f4a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0017.txt",
+      "size": 734329,
+      "sha256": "d9b73fc96c8208e35612bf65334dce1b393bc4172e957e4fedef318447b80d6a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0018.txt",
+      "size": 736346,
+      "sha256": "5040ec8dc3fa26286018e26c5de18399847279258c48f703e021a3c8040c4524"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0019.txt",
+      "size": 173882,
+      "sha256": "c335e9da3cf3a197e265653cdd7dd09c6d90af8b16d2924f87b0c9c4054f83a7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0020.txt",
+      "size": 171979,
+      "sha256": "eb380cba9f5904d8173cddc3a6dc897057630f0068a69fef05926681c0a812da"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0021.txt",
+      "size": 168891,
+      "sha256": "5ff055c3983248e530e5d246d45f12eeb62ad93ac927623e643f0ce1d447990f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0022.txt",
+      "size": 189997,
+      "sha256": "46e280de3d6047b6087a4140acb4c075fb6379694d5be22c6290348b0a32a79b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0023.txt",
+      "size": 30071,
+      "sha256": "38ea235fc05777fee717a1392b4dc19bf27f2da9259480fbd69ffac5ac834218"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0024.txt",
+      "size": 177120,
+      "sha256": "3d3dc122cb4057b4ae6047eeb37de17f806c24286891aac1a54b35f5f3de0c5f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0025.txt",
+      "size": 196865,
+      "sha256": "c9aa8dcb2f3794e1db650e142079dd0c4b021687997852f1f83521b4ba2f8157"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0026.txt",
+      "size": 163970,
+      "sha256": "7c9ed6ff6f386e479040b0d9bfb36bf11e2128e875479de00a03c11ad495c92a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0027.txt",
+      "size": 187615,
+      "sha256": "c8b3c1640e1979a87a2e0ede2cd2d937d7c8acc944d59f3be8ec466c3a4a8bb0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0028.txt",
+      "size": 901067,
+      "sha256": "0d9caf6fcfba69844527dd8d815be92c73094ddb0f6cfe7fe6989445e645f612"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0029.txt",
+      "size": 894817,
+      "sha256": "fd6fe621b40c9dffdefe85127fd2221e2427581437b7e7a685571f9cb9206649"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0030.txt",
+      "size": 838823,
+      "sha256": "75550e20608af91647ad0d7a0bab07a87b03c6515f4977ac8edf4bf33672cf36"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0031.txt",
+      "size": 807047,
+      "sha256": "b162d813bab649c2f894fb2afcad1e881d7afe8da8b672a300c6e1b8c9bb0126"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0032.txt",
+      "size": 176823,
+      "sha256": "024317bba7d9e99bc146e29ba5517e2bdb3be3aad4742c011d9c1badb50a4c35"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0033.txt",
+      "size": 196865,
+      "sha256": "94403a1228e17ff060b043111a3d93821eb0ccd1fc6abf91ab0ba205ed67c439"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0034.txt",
+      "size": 192005,
+      "sha256": "3c395d178544b85a975cdec2fe1dc9ff1f6e7b7b92e34929f2086d5e646a8c84"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0035.txt",
+      "size": 325388,
+      "sha256": "7db6759a9e508f6ef7236270453ae0c6c354335385143be5dadaf73fa0227baf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0036.txt",
+      "size": 216208,
+      "sha256": "4a1ed4ade01f87f088b3f22d291f7269828f52cd2e34b9a2a6023eae8adb3c6b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0037.txt",
+      "size": 163970,
+      "sha256": "d2eb617f0b479e65984e3eb6f917d80059ddd4a4655a0c82d813c1e978b610fe"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0038.txt",
+      "size": 187216,
+      "sha256": "969180ac19e554c77a6a44002e7d0b3a45e4fae9b232ac5f410ee0c65b9b01e7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0039.txt",
+      "size": 821591,
+      "sha256": "972370ee6cd63812d52e5222346939ea623a939a3905f9b6e54dfc463201ec07"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0040.txt",
+      "size": 17372,
+      "sha256": "35b4a9b13681f3183abf5246c82b60066f207123fe3e757999571e898d45e55b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0041.txt",
+      "size": 87640,
+      "sha256": "7f731a67c433bcc0fe36b48e05af0f689a6b8938199f1c981971a6083287e68b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0042.txt",
+      "size": 217305,
+      "sha256": "f5aad6cb93a420fe186642386335f2f48f80f677878f2e55ed529af39588d37f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0043.txt",
+      "size": 181635,
+      "sha256": "9da8e67a3bc28d5569c2a42206a4166809f40944934254fe884a98f8cbf75df9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0044.txt",
+      "size": 186391,
+      "sha256": "55184db72fd07e9b2662cf950695078b194d0adf62494bca2417d23ebd826669"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0045.txt",
+      "size": 170645,
+      "sha256": "1d5b96124606bbd1cbff1a3f2a8839cc9aa21e316ba957efe3a19ca6bbbb8afd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0046.txt",
+      "size": 196119,
+      "sha256": "c5a93c6c31b10b2e4b01241eef75968e2d97513896fa6de496841aab6858b6df"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/output-0047.txt",
+      "size": 788940,
+      "sha256": "49d488957b1eb87e7287970a36df8b1b384b295521014ba20e88f9eac7ef3dd1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/meter/plan.json",
+      "size": 526,
+      "sha256": "32391c87aa1161fe999c8b7652e80ac5353e9db715f48eabb74e635974cbbf80"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/budget.json",
+      "size": 134,
+      "sha256": "bee1a56800a0eb083719f5f2d00424b058aca9211eaff6ca228f8cfe05547f84"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/controls-after-ledger.json",
+      "size": 629360,
+      "sha256": "de4e594f14b9db7b89e0b8d33dc6561a288150cb231d2aab7a953761782b1a22"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/controls-after-source.json",
+      "size": 56594,
+      "sha256": "5e7f22bffa9423170bc16a92f1755e02c833d502b2fd5ff275af60e57832e97d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/controls-before-ledger.json",
+      "size": 544770,
+      "sha256": "23b365e1bd005039b658aab365b7694d4b1e4970f749c9fff2e23fdfe0d1a18b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/controls-before-source.json",
+      "size": 56594,
+      "sha256": "5e7f22bffa9423170bc16a92f1755e02c833d502b2fd5ff275af60e57832e97d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/controls-human-pending-ledger.json",
+      "size": 621386,
+      "sha256": "66c645a915ad08e77b2a63d387689f99fd49081e545be76d35c70c6753b7b4d7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/events.jsonl",
+      "size": 47969,
+      "sha256": "7b6e52186307371ab772f20ec8b43b254a2fe6d085e87cef9486ea975fb99f3e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/initial-admitted-ledger.json",
+      "size": 452199,
+      "sha256": "330a9c1339dcb853c19963b0b941ac500d1569c2738a0f010291a712ed25dd90"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/initial-admitted-source.json",
+      "size": 56594,
+      "sha256": "a1827e14f37fb9a6eaf36eb7681cfbfa4a1802f1b84e86fa8c30736a0db4c200"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/initial-after-ledger.json",
+      "size": 480003,
+      "sha256": "e1dcca1c988fb35110a8f1493ff0fa8c164b9d371e45fde62f306a5859d77d63"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/initial-after-source.json",
+      "size": 56594,
+      "sha256": "5e7f22bffa9423170bc16a92f1755e02c833d502b2fd5ff275af60e57832e97d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/initial-before-ledger.json",
+      "size": 370962,
+      "sha256": "0ffc3bf234c5283f78b1cf5efadae661c11e1c8a2933334f5a4d60562312dbe6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/initial-before-result.json",
+      "size": 309,
+      "sha256": "5efae085d3b37d87ecf58bc3346722c8e5e488108ac599d5d24acab44fa02ad6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/initial-before-source.json",
+      "size": 56594,
+      "sha256": "a1827e14f37fb9a6eaf36eb7681cfbfa4a1802f1b84e86fa8c30736a0db4c200"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/initial-completion.json",
+      "size": 2150,
+      "sha256": "c94ae99380f80daa5250d4f7020a6c2b8863e85e14f597188e936a246138b1d1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/initial-execute-result.json",
+      "size": 2150,
+      "sha256": "c94ae99380f80daa5250d4f7020a6c2b8863e85e14f597188e936a246138b1d1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/mcp-stderr.log",
+      "size": 271,
+      "sha256": "1090257d4fe49c842d5a6ab27e01714f0d8625a6c61a29e5db2d333e99c72bf7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/postedit-before-worker-ledger.json",
+      "size": 744453,
+      "sha256": "dbefaf6758c4d746e28f981865f111b5b69111663282499f88c742a9331c5084"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/postedit-result.json",
+      "size": 746,
+      "sha256": "af6505ce6360ff1ac43cf3f1d8862f66467427877f1b1b69086d95245f5cdd8f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/postedit-stop-ledger.json",
+      "size": 744453,
+      "sha256": "dbefaf6758c4d746e28f981865f111b5b69111663282499f88c742a9331c5084"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/postedit-stop-source.json",
+      "size": 56594,
+      "sha256": "5e7f22bffa9423170bc16a92f1755e02c833d502b2fd5ff275af60e57832e97d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/postedit02-after-worker-ledger.json",
+      "size": 746525,
+      "sha256": "890373efddb369223d2ce266ae64127339bce665d50b06cdc167c399f03f5555"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/postedit02-after-worker-source.json",
+      "size": 56594,
+      "sha256": "5e7f22bffa9423170bc16a92f1755e02c833d502b2fd5ff275af60e57832e97d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/postedit02-before-worker-ledger.json",
+      "size": 744453,
+      "sha256": "dbefaf6758c4d746e28f981865f111b5b69111663282499f88c742a9331c5084"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/postedit02-result.json",
+      "size": 1725,
+      "sha256": "40cff5895151cd083f89548239f90fd1389134351167844e34d6d989db162871"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/deterministic/preedit-controls-result.json",
+      "size": 6309,
+      "sha256": "acd0cf20d1947fe33bf7baf5049f0a297f9f8011611a051d607cd489e4081f26"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime/budget.json",
+      "size": 420,
+      "sha256": "0070026de35deecdbaac115644fccddfac36f4a213dee93dc83ed47e23333427"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime/launch.jsonl",
+      "size": 1085,
+      "sha256": "bac6238bc471405b09bfb7a08d58744f45d9ebcb464105a2cebe9d72b1d066dd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime/mcp.json",
+      "size": 533,
+      "sha256": "45f551dfc2701c986949f53154edfc4d088f3e040ccbf20a93bbf6c15c14a3ca"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime/store-preflight.json",
+      "size": 1556,
+      "sha256": "dcc722e23cf9434b9880710792a1bdc09ca7ba972b2d41f4334f451b83e6d49a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime/transport-refusal.jsonl",
+      "size": 132,
+      "sha256": "262c02486f60a4abb356e3afcc2664df3be5385ec23da133d676fd15d9dd1065"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/budget.json",
+      "size": 501,
+      "sha256": "5e3c23ed393ff1577d27851d02f897f1fac68d0262b489e5721baa9011d3bb04"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/launch.jsonl",
+      "size": 1088,
+      "sha256": "29b070cc3a8fd6efe76e7fae9df9b1c611f45286975266ddcdcf3d6aa808bdd1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/mcp.json",
+      "size": 533,
+      "sha256": "45f551dfc2701c986949f53154edfc4d088f3e040ccbf20a93bbf6c15c14a3ca"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/operator-prompts.jsonl",
+      "size": 790,
+      "sha256": "e2e91dec9d53b3fd8d3753c83a96bd0b2f8de562a16146ee6cc096b7de7bfe37"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/provider-attempts.jsonl",
+      "size": 3891,
+      "sha256": "d13187225255a5b95bb13f2d2b05f0ff1facf8f316167603e065629d2809c9d0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/stdout.jsonl",
+      "size": 225090,
+      "sha256": "507e04853b43bd3677e20421be95b4e3c075693806110896c0fddb453f72d55c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/store-preflight.json",
+      "size": 1556,
+      "sha256": "dcc722e23cf9434b9880710792a1bdc09ca7ba972b2d41f4334f451b83e6d49a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/transport-results.jsonl",
+      "size": 1845,
+      "sha256": "dd032023a1205cd050e36f15b5c6e61fea07604038f7e4de10d3a6f3d4d942fd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/fresh-tournament/model-runtime-02/unsupported-startup-request.jsonl",
+      "size": 133,
+      "sha256": "fafabefd5fa54c815d8a0df767d2cac190d12b9e9223ded4c4e2f18ff2f6950d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/action-review-01.ansi",
+      "size": 16333,
+      "sha256": "bf76071e7fa4ea1e52e88b30224e4ec7a5a76a08d9a488fee7d7f030406fbeae"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/action-review-01.ansi.timing",
+      "size": 2572,
+      "sha256": "6f5d3ebe51a8f5fb2b75f10d56fa90a4523ef7f2b9a912666bbeeba45f9ffd12"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/action-review-02.ansi",
+      "size": 17510,
+      "sha256": "773375746856ecf277212875250286628093fae348560e0813539986aeb472fe"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/action-review-02.ansi.timing",
+      "size": 4477,
+      "sha256": "44b0410adae60eb572de1b86d7f8b42317ed312f6dc9ecb8092a8c239ab85758"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/action-review-03.ansi",
+      "size": 18861,
+      "sha256": "6f4a057f90162a4f839f557447408dc185355906f95c5236977321d4933d9024"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/action-review-03.ansi.timing",
+      "size": 2855,
+      "sha256": "29dcf57b5c1674d5e38ea7a14abf000fe6e55a6f840217a5642f545b1a158867"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/administrator-grants.log",
+      "size": 163,
+      "sha256": "20fce953a1cc478e2ceeb2b0a5aceb8e2633ce8c82f872e44c0381289a86fc10"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/administrator-local-login.log",
+      "size": 11,
+      "sha256": "53de5f815cdf2b2984d828314f9351a70c2fb68095d6d46089bab1f0f30c751d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/client-setup-01.ansi",
+      "size": 21392,
+      "sha256": "071455f06d41590226745d954ca8382a733df5a7f1f44fad4a6b6369fc8783d0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/command-1789325087053-9e80bf.log",
+      "size": 2338,
+      "sha256": "9e6c420ef898da94cc4eb82e9307df871a2d6ed2b1995d5f105d7ce8fa31ecab"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/command-1789325109812-4cf68c.log",
+      "size": 2275,
+      "sha256": "7d5af5cbd1a292e6e2df5f656d2f2dff2c4072af078cfd7c043b77e990221828"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/command-1789325792109-1559f4.log",
+      "size": 1221,
+      "sha256": "6a73c88180b13f0417c0fcd16c45c53bf4ca42507f6762b9f5fe3d00954d7bfd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/command-1789326278253-e092c9.log",
+      "size": 754,
+      "sha256": "2ac4b58adea225909416d87f0269f3f1d3aacc0071cfccbc1f4bf5f260148254"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/command-1789326329210-845ba7.log",
+      "size": 788,
+      "sha256": "dd371da51fa137b092769a2417f819e75d78c5add289b931f42bb01354634afb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/command-1789326356895-e8f2d8.log",
+      "size": 2504,
+      "sha256": "45be835f084e95fd06e9f299ca2e34fd6b71d2b081e09721a413c3f31fe19e57"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/postgres-after-receipt-failure.log",
+      "size": 5827,
+      "sha256": "b4762811c79840dc7a04e801ed0f8fb6e607305d2aa7e8a55ac001622b5c6bbb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/logs/postgres-startup.log",
+      "size": 3888,
+      "sha256": "5d7a411630964a8598c98e7b2ec34be897f0f80c2d6c3beb264ec2d1ec891b20"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/budget.json",
+      "size": 135,
+      "sha256": "2719737d48df53e7e3b9011913d267936c7059944232761918fa5f8cb5a722dd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/controls-after-ledger.json",
+      "size": 932305,
+      "sha256": "9caefa8def0341865e03b94e579b686544bfa6ad6c406dbc57909e7cb04c2615"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/controls-after-source.json",
+      "size": 212550,
+      "sha256": "6729588e03f556cb2ec3c6e8c3e865394bcce63383dada5ff1f5cb944bba6524"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/controls-before-ledger.json",
+      "size": 837216,
+      "sha256": "963655ef74f9404354448afcbe6585e09a3c17f3cde966d63dc341a8324a175a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/controls-before-source.json",
+      "size": 212550,
+      "sha256": "6729588e03f556cb2ec3c6e8c3e865394bcce63383dada5ff1f5cb944bba6524"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/controls-human-ledger.json",
+      "size": 927326,
+      "sha256": "cea0f37080d2e1945dfedf7a1c3f2199aec9830dcdc1624559c85ea7cc07e369"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/events.jsonl",
+      "size": 172274,
+      "sha256": "d4dac85068a0739a522db58e21f0f62a39f937531c1b0dd026e14e06ea1b099e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/execution-admitted-ledger.json",
+      "size": 702979,
+      "sha256": "866e3039365cdfa60c674221e47f14a51258535e5e0e685d13e97cc90dd6dc92"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/execution-admitted-source.json",
+      "size": 211338,
+      "sha256": "c0ed6ee6ddf5c701bd73b01f369b6c797c66f05e584ba32945de6fc184d127e8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/execution-after-ledger.json",
+      "size": 725433,
+      "sha256": "7ec4897b6e38e8e1b51cb2e532e6186315e8ccecd02e798bc808b8db6ae6bb19"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/execution-after-source.json",
+      "size": 212550,
+      "sha256": "6729588e03f556cb2ec3c6e8c3e865394bcce63383dada5ff1f5cb944bba6524"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/execution-before-ledger.json",
+      "size": 610056,
+      "sha256": "d323ea7d8be68ec971517a845f85eeececb2b833c3d930e03e59e808473698fd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/execution-before-source.json",
+      "size": 211338,
+      "sha256": "c0ed6ee6ddf5c701bd73b01f369b6c797c66f05e584ba32945de6fc184d127e8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/execution-replay-ledger.json",
+      "size": 725433,
+      "sha256": "7ec4897b6e38e8e1b51cb2e532e6186315e8ccecd02e798bc808b8db6ae6bb19"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/execution-replay-source.json",
+      "size": 212550,
+      "sha256": "6729588e03f556cb2ec3c6e8c3e865394bcce63383dada5ff1f5cb944bba6524"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/initial-ledger.json",
+      "size": 610056,
+      "sha256": "d323ea7d8be68ec971517a845f85eeececb2b833c3d930e03e59e808473698fd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/initial-public-reads.json",
+      "size": 15953,
+      "sha256": "47b40cf53c6556e8e6fe206b57c9e97e79bf86fedd8ae02c82b026fd868fe0ab"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/initial-source.json",
+      "size": 211338,
+      "sha256": "c0ed6ee6ddf5c701bd73b01f369b6c797c66f05e584ba32945de6fc184d127e8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/mcp-stderr.log",
+      "size": 1084,
+      "sha256": "1aa6544ea33e93a36de2f6b2a67c143047827a799c628ea89d0648453c1af474"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/prepared-controls-result.json",
+      "size": 5668,
+      "sha256": "eb312809e9634911b9f4cea5422e4d257562911f04ab4a0f9a2ef1ad01a56c78"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/prepared-execution-result.json",
+      "size": 9420,
+      "sha256": "56eb557347c5821a06f92f097254932dfb52d0706eb923e0b659fcca7eebcb6e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/prepared-rollback-result.json",
+      "size": 8378,
+      "sha256": "87922e58ae169928a87ef06fdf037d0f4ffaf8af7fd469eb5b01abf2f1064187"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/receipt-failure-injection.sql",
+      "size": 802,
+      "sha256": "59f704b98703710824b6f1447cc5d9d29c16ca92e9e7e56858cd319894b5afb7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/rollback-admitted-ledger.json",
+      "size": 818172,
+      "sha256": "81c2ca0a05c61758bef3887bc1f98b0ceeba66fa1c0dd0fd3e7202a87822ea0c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/rollback-admitted-source.json",
+      "size": 212550,
+      "sha256": "6729588e03f556cb2ec3c6e8c3e865394bcce63383dada5ff1f5cb944bba6524"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/rollback-after-ledger.json",
+      "size": 837216,
+      "sha256": "963655ef74f9404354448afcbe6585e09a3c17f3cde966d63dc341a8324a175a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/rollback-after-source.json",
+      "size": 212550,
+      "sha256": "6729588e03f556cb2ec3c6e8c3e865394bcce63383dada5ff1f5cb944bba6524"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/rollback-before-ledger.json",
+      "size": 725433,
+      "sha256": "7ec4897b6e38e8e1b51cb2e532e6186315e8ccecd02e798bc808b8db6ae6bb19"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/rollback-before-source.json",
+      "size": 212550,
+      "sha256": "6729588e03f556cb2ec3c6e8c3e865394bcce63383dada5ff1f5cb944bba6524"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/rollback-replay-ledger.json",
+      "size": 837216,
+      "sha256": "963655ef74f9404354448afcbe6585e09a3c17f3cde966d63dc341a8324a175a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/prepared-software/deterministic/rollback-replay-source.json",
+      "size": 212550,
+      "sha256": "6729588e03f556cb2ec3c6e8c3e865394bcce63383dada5ff1f5cb944bba6524"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/logs/postgres-startup.log",
+      "size": 3812,
+      "sha256": "25ab89ad9f0bbee18f3711d40f60865e0a934d09d8c9dba83ed8426a3c3afd9c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/logs/public-01.log",
+      "size": 588061,
+      "sha256": "71300ce95f5662f0f299eb923080417d2a8f2afd370dccd0b3c06f32d100aba8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0001.json",
+      "size": 130,
+      "sha256": "5b405dc85b05a89197a201e0ac0b3f75b78563888327ed5e55d1386925edc37b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0002.json",
+      "size": 130,
+      "sha256": "d58fd509efdf7c098060c1e2dcc68271ab8d8d389c1540dbdee6c73e311a01ad"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0003.json",
+      "size": 130,
+      "sha256": "53a88a38b363315687e7c4877777f64f129d170b07f4040c7c4a057f0ac48b07"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0004.json",
+      "size": 130,
+      "sha256": "84f4320e7afa278b7341ca4529c44211895b941d7a541edaa56cf1c1bc0ab216"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0005.json",
+      "size": 130,
+      "sha256": "482f327a062feedcd7a7c1c5a8592b6af94282b03f3600b58b60a6e8b61ee3dd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0006.json",
+      "size": 130,
+      "sha256": "daad0a20e53f037049dfba9b109f281efab802043266f53ffa25bb88bfde821f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0007.json",
+      "size": 130,
+      "sha256": "a4d1a1da639432bf5ae67b2c7e7493ab0b241aada8ab945e4f86286c9e76486e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0008.json",
+      "size": 130,
+      "sha256": "5f68f389620349f90a369436018c38c18eaf49381a6cce4f1f7a10dc515fd642"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0009.json",
+      "size": 130,
+      "sha256": "930e283788ce131553e1d09abb6b494b89c7640d649ddc9fbe5e0338271e2c70"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0010.json",
+      "size": 131,
+      "sha256": "ac5aaeda9a67c4eb8d0ea9e69492a72248328bc8ead4695665ac7875fdb6658d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0011.json",
+      "size": 131,
+      "sha256": "03ab42ba20e217948fb24144a5329717ebd15ad1cda21bfbce18f153dbf2dd76"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0012.json",
+      "size": 131,
+      "sha256": "b6727a2f02b4aa70d907f2883be7f5a6a164de8c370afdde6186f6c02fda61f6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0013.json",
+      "size": 131,
+      "sha256": "c92693101dccdc63a569cb6211817d53751c43d7036a663fc0e104a0e05eb87e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0014.json",
+      "size": 131,
+      "sha256": "067db3b82411ec6651f2a944b381bf68c7078bb2a46a0efaff37120fa42db8f7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0015.json",
+      "size": 131,
+      "sha256": "57959e714bafe9879271880dcd9d2c93bdfdfafc84f0c69014430695ee435303"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/attempt-0016.json",
+      "size": 131,
+      "sha256": "6f1369d7237997386bf82373b7ff689ded8155d72667892bfd93702df3bb76dc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/events.jsonl",
+      "size": 6085,
+      "sha256": "1ab8e9cfc410dc3f1c379ffbd6cda8172e0ffeb803480b225309bcfa442e76ae"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0001.json",
+      "size": 13075,
+      "sha256": "677f3dc0b51f33e20ade0acba998d053312f75217cbebfd908eeb63301f242be"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0002.json",
+      "size": 35218,
+      "sha256": "4e5ebb7e1718c9661d2ea834364a979fe5de654c6e3cabc29bb3cc6be6f9c97d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0003.json",
+      "size": 131330,
+      "sha256": "52b99529149bbdc9af43e2dbbf502db7635ed1b777531349a192d066e03bdeb2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0004.json",
+      "size": 137607,
+      "sha256": "a4d301e2d05cfb906cec877fd30a18bb2eabb567d4e1a9564bb26a253b9ed5a9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0005.json",
+      "size": 139478,
+      "sha256": "8796f036d3f8f3c14de1ae50b57cbabf757ecb99115e2a5b1e9bd6ee21e36634"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0006.json",
+      "size": 141030,
+      "sha256": "7b4d2a4ee7412eef769647d792d8baef42f33cee7187b8bd0f1b2add1a6a2e63"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0007.json",
+      "size": 158621,
+      "sha256": "68fdf23834bd8f47209661ba4d84be6b7355da54f131acf373a01eece6f0b058"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0008.json",
+      "size": 145447,
+      "sha256": "44770283b9c374cb9262e05e27e94bf11704903b51f21fb6beee0d32bdf715c2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0009.json",
+      "size": 163618,
+      "sha256": "8f283b0e91a09619f97ab053f5da7e0b29947aedac9903050e2f41b43ddcba98"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0010.json",
+      "size": 138629,
+      "sha256": "1670b83920d404f046d4dea1a2b819a38089725f3a6afc9b062b295f08b0d900"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0011.json",
+      "size": 145041,
+      "sha256": "f3f3e9bc18d3e9b39245eab7fa2aba039532d80a07a42491a22cc093a180aa14"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0012.json",
+      "size": 146912,
+      "sha256": "e1ab2553476af00bcf3ed887f163d9076959e8aa3f42f3f41514052c8e0db535"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0013.json",
+      "size": 145072,
+      "sha256": "861df4435bc18b044a903375a1bdec8f1640030591841689e01296fb53342e07"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0014.json",
+      "size": 160340,
+      "sha256": "dea15b11c9397ed41e143039274fd8c60cd6d48fc99a3c5dff85d3b8d7f2626b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0015.json",
+      "size": 146620,
+      "sha256": "6f4af817b0fd6ebedea7914c2b91e23eaacf5390352117025ad20828388650b7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/input-0016.json",
+      "size": 162060,
+      "sha256": "60f45620fce48c02b60c6e8d44cc6eb01e1e9fc86fab2cda493a6a2de6447ad1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0001.txt",
+      "size": 17099,
+      "sha256": "a99f7802d888a0c7e8efa99cdcd9768e0ec50af9e958ff4e48789c8574adbdea"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0002.txt",
+      "size": 105646,
+      "sha256": "c187eea80a29ce2023373ec1ddd8037785f989cdaf7288c8ed84f9f6c18818ae"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0003.txt",
+      "size": 215689,
+      "sha256": "d55750a76005f856aa9c8ab9f21e9f6d90bc8f24fa3ab900286260b1df0d1a03"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0004.txt",
+      "size": 163970,
+      "sha256": "b37b3a40e7c6f57dba678664a7d8b9523b2b2a1fdacbc732026394a22b61df2a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0005.txt",
+      "size": 192743,
+      "sha256": "c8710fa16e26217e25f65b0d51d305f41d7345b59fbed28fe95eb90476cc7c6f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0006.txt",
+      "size": 896305,
+      "sha256": "6e567d0e86f5e6c3cda3e9e54eb7455febe1b333436616e8df7ecb24119d7150"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0007.txt",
+      "size": 883323,
+      "sha256": "e52bb9168bd4d4f03bdd43f073cbc6f0077fa5f77c783b349df25ec91786e6c5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0008.txt",
+      "size": 915318,
+      "sha256": "8065256887d4e141585b0da89ca88f3d2cc165853823eb853bb7bca86c911196"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0009.txt",
+      "size": 918155,
+      "sha256": "91abd487dcd5d6fd76dd4dff4095c67519cb1a8fa260248f1f7169dad414ef55"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0010.txt",
+      "size": 218787,
+      "sha256": "65cadd403ea1fb4571681347b8f0f62584592aebe3611e994807b28e97380fce"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0011.txt",
+      "size": 163970,
+      "sha256": "70fb06a3977edbb47b5642ff0ec20350d9e28c9c46c6947a221957f6c3b8a1fc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0012.txt",
+      "size": 191230,
+      "sha256": "1603db747cf45d0e08e67b6b64409f02b7451c227a15470efe04a67e891e0514"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0013.txt",
+      "size": 847078,
+      "sha256": "01d1649d5c934dbce78ccdb42bb885925012e9bf21b6b6bb6dabc1f21dea2b61"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0014.txt",
+      "size": 825269,
+      "sha256": "51d0f3fb110576633bc8a7c9bec869e0e7aca2f26833b4fff0d954c1ffd691cc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/output-0015.txt",
+      "size": 853617,
+      "sha256": "472770dc39d04273c3cf3808036cf016286871e25b60685cf04a385a1b2da331"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-assisted/meter/plan.json",
+      "size": 460,
+      "sha256": "e84f1dd5a4b1955ad48535e1e88e75e714140f74d518ce28982bb1779215504a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/logs/postgres-startup.log",
+      "size": 3812,
+      "sha256": "0832a0edbbe22ce6c0e3e6427933234cd78d0e77d49c7e3da60514e56dcafc7b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/logs/public-01.log",
+      "size": 119146,
+      "sha256": "023d06d3ec48c7953ac7b1bbf88f116a677d3a8898df25127c665a5c5316bb3c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/attempt-0001.json",
+      "size": 130,
+      "sha256": "6aa94546093f9ec3a759311ec46ba0744a314e49314070c11eaf9b60ef494615"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/attempt-0002.json",
+      "size": 130,
+      "sha256": "44dda281b63fb89b06311757e6c073fc0c71eaedd1f11eec4061c03b0955dc38"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/attempt-0003.json",
+      "size": 130,
+      "sha256": "8f4a19e8074717f7b755cd3f9647c9d5de91d9bf3aa9e68c816feb346a3beb26"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/attempt-0004.json",
+      "size": 130,
+      "sha256": "2c44deb3bba69189d85e5e6fa1baff4136b2f25d404031d7d1a10b7686d5c312"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/attempt-0005.json",
+      "size": 130,
+      "sha256": "d8399a1ca1fa0b3df7b15efe64dca426686f11f28934f220689c130ad8ed95d3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/events.jsonl",
+      "size": 2054,
+      "sha256": "073d071140d13555c39808f7dba8acabbce55241eeaf634569f6b1d532c59e1f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/input-0001.json",
+      "size": 132611,
+      "sha256": "534d07c5b142fb12f3bd39d05d8f07b8bed5a2ab3250c0e0cf3eca6caea13c09"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/input-0002.json",
+      "size": 134799,
+      "sha256": "b90b97f4b6be8ebde0dfd691fcfda19559d259056e45dc0f46e90b8d9bbaf37a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/input-0003.json",
+      "size": 138768,
+      "sha256": "c01c2349dfa05bfa08465bfc7ab8e85389b772cde371a43b3435e2478d04285d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/input-0004.json",
+      "size": 153167,
+      "sha256": "316af35b6e1751b2847ae2c1120a75beaf6a611983e6e683f026cb85aa818c0d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/input-0005.json",
+      "size": 15378,
+      "sha256": "8c5717f4233e35c47582dd47dd25bb484831bcb54374a8a7cb190ef12c458db7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/output-0001.txt",
+      "size": 169321,
+      "sha256": "43648b473f189ac59742ea8acddb601cf053a5f6fe93bc79dee9e0777fd2a9ad"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/output-0002.txt",
+      "size": 197768,
+      "sha256": "2ea7f2933ed5c9fc811edb473175341afea44917c84631bc08a82defcee93da4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/output-0003.txt",
+      "size": 825682,
+      "sha256": "4c36784cca966596e7ed2ef935aef0f6dd006a477bcbf56e9dd874e771432962"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/output-0004.txt",
+      "size": 827308,
+      "sha256": "1c48a6e811e1d637ba25f9218e6f9eaa613e736eb3d371bbf3705cb32959a971"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/output-0005.txt",
+      "size": 26897,
+      "sha256": "b1c80dd7c88d6c5ebed6c0fb8d2a4a2c45879c2ce18cbd852d0059d311b13c84"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/plan.json",
+      "size": 460,
+      "sha256": "5f29e45ec8ed2232e9db9f549ef224066bc55c6984357f20a60eb3ddfe68498a"
+    }
+  ]
+}

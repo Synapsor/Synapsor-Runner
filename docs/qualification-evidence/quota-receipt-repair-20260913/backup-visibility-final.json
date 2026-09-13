@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-13T21:41:48.387160+00:00",
+  "push_remote": "backup",
+  "push_url": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "verified": {
+    "isPrivate": true,
+    "nameWithOwner": "Synapsor/Synapsor-Runner-Backup",
+    "url": "https://github.com/Synapsor/Synapsor-Runner-Backup"
+  },
+  "permitted_ref": "refs/heads/codex/tui-safe-action-control-plane",
+  "public_release": false
+}

@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-13T21:37:40.369489+00:00",
+  "status": "BOUNDED_WORK_DELIVERED_WITH_STOPPED_RECOVERY_PATHS",
+  "canonical_branch": "codex/tui-safe-action-control-plane",
+  "merge_commit": "48728e01ab16c59742a45e0020e65801e6884bf5",
+  "product": {
+    "commit": "eda73ae035272335f70507824e9ee0250e9ff97c",
+    "quota_revision": "d7c4e0162eecbb29098dec2b4c7169fb8dd7ff5e",
+    "receipt_revision": "c3c35d19a1b7a60d91aa3b599dd03cb4b8817197",
+    "counter_revision": "811ed6a33a00d113c5c35d5f3a10c4fa9363dc66",
+    "test_revision": "48728e01ab16c59742a45e0020e65801e6884bf5",
+    "canonical_branch": "codex/tui-safe-action-control-plane",
+    "finding9_status": "IMPLEMENTER_OWNED; pending independent acceptance; old artifact qualification not transferred",
+    "merged_revision": "48728e01ab16c59742a45e0020e65801e6884bf5"
+  },
+  "final_installed_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "historical_stage_a": "ACCEPTED for278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2 only",
+  "original_stage_b": "NOT_PASSED",
+  "finding9": "IMPLEMENTER_OWNED, merged regressions do not transfer old installed qualification",
+  "rows": {
+    "quota_composed": "PASSED deterministic fresh/pending/save/restart; source-final07190pass1skip",
+    "receipt_prepared_public": "PASSED on DEVELOPMENT tree0deb78b36ba762be1d8c05d437abe30c42a67a53b512523da9af8b1605dbf3ad only;0authorcalls,2workers,actual source receipt/rollback/replay",
+    "merged_combined": "PASSED523/1skip before final explicit-env forwarding",
+    "merged_counter_focused": "PASSED33 before final explicit-env forwarding",
+    "merged_pg_accounting_publication_source_atomic": "PASSED42 before final explicit-env forwarding; backend labels kept per test",
+    "merged_pg_receipt_execution_review": "PASSED12 on final product; excludes4 separately FAILED older UI recovery cases",
+    "older_pg_saved_job_review": "FAILED4; stopped separate repair decision; remaining-postgres-review-env.md",
+    "stable_full02": "PASSED: completed whole suite6203pass461skip,exit0",
+    "final_types": "PASSED exit0",
+    "final_offline_package_gates": "PASSED all10 independent exits0",
+    "final_pg_accounting_publication_receipts": "PASSED42,exit0; realPGcontrol and PGsource/SQLitecontrol separately labelled",
+    "final_frozen_installation": "VERIFIED7569entries before and after public runs",
+    "tournament_recovery_original": "STOPPED_PRODUCT_FAILURE after correct quotas: checkpoint prose tenant: maximum misread as identity;5calls",
+    "tournament_recovery_assisted": "STOPPED_SAVED_SELECTOR_MISMATCH: unwanted principal cap removed but unsolicited capability selectors added;16calls/15complete, cancelled review",
+    "tournament_fresh_onboarding": "PASSED_NAMED_KNOWN_CASE:39calls, public reviews/setup, original104rows",
+    "tournament_execution_receipt_readback": "PASSED Runner-ledger actual receipt+one-row effect+independent readback;15runtimecalls",
+    "tournament_ordinary_language_edit": "PASSED exact2to1,8calls, disabled pause/resume, same client, retained history and old unstarted work",
+    "software_fresh_onboarding": "PASSED_NAMED_KNOWN_CASE:34calls including retained TLS call5 failure; original504rows",
+    "software_execution_receipt_readback": "PASSED source_db actual source receipt+candidate/slot2row effect+independent readback;11runtimecalls",
+    "software_ordinary_language_edit": "PASSED exact120to60,8calls,disabled pause/resume,same client;90human/40automatic;retained source receipt/history;old unstarted work not dispatched",
+    "original_add_remove_qualification_rows": "NOT_RUN for both cases; not waived or inferred from named edits",
+    "software_fresh_installed_receipt_failure": "NOT_RUN in fresh final installation; separate final-source engine gate and historical prepared deployment rollback evidence"
+  },
+  "source_commit": "fbf5efdab77fa5011544524592d58fa007388e95",
+  "limits": [
+    "Known-case repairs only; Original Stage B NOT_PASSED",
+    "Historical Stage A acceptance remains tied to278b66c...; no new Stage A acceptance claimed",
+    "Source control/receipt checks are separate from production authentication, multi-host and arbitrary-clock tolerance",
+    "Original recovery failures and4extraPGUI failures prevent a blanket all-checks-pass conclusion"
+  ]
+}

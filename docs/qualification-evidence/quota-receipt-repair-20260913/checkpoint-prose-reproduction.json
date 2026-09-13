@@ -1,0 +1,14 @@
+{
+  "classification": "READ_ONLY_SOURCE_DIAGNOSTIC; installed failure is separately preserved",
+  "results": [
+    {
+      "explanation": "The per-league limit is scoped to the tenant: maximum 2 in 86,400 seconds, shared across referees in that league.",
+      "accepted": false,
+      "error": "Error: BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state."
+    },
+    {
+      "explanation": "The per-league limit is scoped to the tenant, with maximum 2 in 86,400 seconds, shared across referees in that league.",
+      "accepted": true
+    }
+  ]
+}

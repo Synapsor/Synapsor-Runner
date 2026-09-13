@@ -1,0 +1,36 @@
+{
+  "frozen_at": "2026-09-13T20:20:41.468Z",
+  "purpose": "role-definition quota preservation and reviewed semantic receipt setup; bounded known-case recoveries, fresh confirmations and edits",
+  "cases": [
+    "known tournament role-quota recovery / onboarding / edit",
+    "known software source receipt deployment / onboarding / edit"
+  ],
+  "product_commit": "eda73ae035272335f70507824e9ee0250e9ff97c",
+  "test_commit": "48728e01ab16c59742a45e0020e65801e6884bf5",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "fbf5efdab77fa5011544524592d58fa007388e95",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/frozen/installed",
+  "installed_tree_sha256": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "8de5486a4232f127bdce4ad739c7543c6e7e11e19c8d85366ec258e93bdd45d6",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "d12fae5681d12ff7bc12ca66a60f8cbc23e326ca17fdbdd8f3c07a22e7c6b2e5"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "installed-artifact-manifest.json_sha256": "3c4e309471338d89ca90e74eb21d9067f72cd6b8fe505d17082e2fa909ff8487",
+  "installed-artifact.tar.gz_sha256": "748500f796d89494e91f3a62c4ca69b2e7dfd3d623130ae9033e1ce1e7bcdfb1"
+}

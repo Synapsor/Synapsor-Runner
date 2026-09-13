@@ -1,0 +1,33 @@
+{
+  "at": "2026-09-13T20:25:17.703413+00:00",
+  "verdict": "STOPPED_NEW_DOWNSTREAM_CHECKPOINT_FAILURE",
+  "artifact_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "quota_result": "Exact restored 6 boundary /2 tenant /86400 /league.ratify_result policy retained; no tenant_principal demanded",
+  "operator_action": "Explicitly closed the obsolete request to encode receipt/readback as business-rule components; kept receipt/readback as separate deployment responsibilities. No claim receipt was already configured.",
+  "observed_failure": "Later policy review emitted ACTION_CHECKPOINT_NOT_SAVED / BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED.",
+  "trace": "Captured model explanation says: The per-league limit is scoped to the tenant: maximum 2 in 86,400 seconds, shared across referees in that league. The existing literal-identity guard interprets tenant: maximum as a concrete identity assignment. Read-only source reproduction rejects that exact sentence and accepts the comma-form control. No actual tenant/principal identity value is present in the sentence.",
+  "source_diagnostic": "checkpoint-prose-reproduction.json; exit0 means the diagnostic completed, not product correctness",
+  "state": "Disabled Read/Action; zero proposals/approvals/effects; original104 rows unchanged; source/frozen installation not edited",
+  "calls": 5,
+  "cli_exit": 0,
+  "exit_interpretation": "Explicit disabled exit after failure, not recovery completion",
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/logs/public-01.log",
+      "sha256": "023d06d3ec48c7953ac7b1bbf88f116a677d3a8898df25127c665a5c5316bb3c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/output-0002.txt",
+      "sha256": "2ea7f2933ed5c9fc811edb473175341afea44917c84631bc08a82defcee93da4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/input-0003.json",
+      "sha256": "c01c2349dfa05bfa08465bfc7ab8e85389b772cde371a43b3435e2478d04285d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/checkpoints/stopped-review-prose/result.json",
+      "sha256": "c961dbf9db6dda55189e47675ea764c2569f8f842fb81cadd4afeaaf2e2a50cc"
+    }
+  ],
+  "decision": "Separate follow-up for checkpoint scanning of model prose; no repair in this stable artifact. Independent safe cases continue."
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "path": ".digest",
+    "before": "sha256:54fc97f1559f2300402ee1da5ad341822ac0f3e93ee8a0a3c7dcfe5dffeb1c28",
+    "after": "sha256:bcc68596ccf094ba5970c3c63982bba7afc764557437f36a57a030860bdeb560"
+  },
+  {
+    "path": ".action_boundary.digest",
+    "before": "sha256:1ca86f99cc72fa596d6ff0807e1fb8df149c91081e7c1942e475bbb99b655e9c",
+    "after": "sha256:b4f9042107daa40454f6285ddd21b483ded78e5554a35bf4226855e743232768"
+  },
+  {
+    "path": ".action_boundary.rules[0].approval_policy_digest",
+    "before": "sha256:984bb893b3dcb04bd1da856c7c7be29074d539e327a02a927e2b813382b21a5f",
+    "after": "sha256:020e25a203df10e8c1314cc44dc2b03cb514cba3b244b892d1f5d6c2017e0f3f"
+  },
+  {
+    "path": ".rules[0].activated_at",
+    "before": "2026-09-13T16:32:16.281Z",
+    "after": "2026-09-13T20:27:21.709Z"
+  },
+  {
+    "path": ".approval_classes[0].shared_limits",
+    "before": [
+      {
+        "id": "league_automatic_ratifications_24h",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 2,
+        "window_seconds": 86400
+      },
+      {
+        "id": "overall_automatic_ratifications_24h",
+        "kind": "count",
+        "scope": "boundary",
+        "maximum": 6,
+        "window_seconds": 86400
+      },
+      {
+        "id": "referee_automatic_ratifications_24h",
+        "kind": "count",
+        "scope": "tenant_principal",
+        "maximum": 2,
+        "window_seconds": 86400
+      }
+    ],
+    "after": [
+      {
+        "id": "league_automatic_ratifications_24h",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 2,
+        "window_seconds": 86400,
+        "capability": "league.result_ratification"
+      },
+      {
+        "id": "overall_automatic_ratifications_24h",
+        "kind": "count",
+        "scope": "boundary",
+        "maximum": 6,
+        "window_seconds": 86400,
+        "capability": "league.result_ratification"
+      }
+    ]
+  }
+]

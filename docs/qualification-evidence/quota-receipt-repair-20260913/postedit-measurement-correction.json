@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-13T21:01:08.242862+00:00",
+  "original_attempt": "tournament deterministic/postedit-result.json; failed before worker invocation",
+  "demonstrated_cause": "Node SQLite returns null-prototype records; parsed JSON baseline has ordinary objects. Values shown in assertion are equal but deepStrictEqual compares prototypes.",
+  "correction": "Normalize current SQLite records through JSON serialization, matching the existing durable baseline representation; retain all record, value and source assertions. New postedit02 snapshot/result names preserve first attempt.",
+  "additional_measurement": "Read actual worker proposal_ttl_seconds86400 and assert old work has not expired; public reference TTL300 is a different mechanism.",
+  "product_change": false
+}
