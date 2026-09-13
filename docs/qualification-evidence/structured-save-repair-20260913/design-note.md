@@ -1,0 +1,11 @@
+# Structured draft execution context repair design
+
+Before repair both installed public spellings reproduce successful export/preview followed by POLICY_EXECUTION_CONTEXT_REQUIRED on disabled save. Independent complete ledger, configuration, identity and 40-row source comparisons pass. Baseline source d422ca5 retains accounting a2b6b5f and publication b16f92a; the historical installed tree b2ec50... remains read-only. The first reproduction launcher failure was dependency setup before application startup, separately retained.
+
+persistStructuredDraft constructs OperatorAuthorityRepository(binding) and currentState(false) decodes active execution with undefined runtimeConfig. parseOperatorExecutionPolicy correctly refuses. The real repository must retain that check and all existing execution/Read/Action records.
+
+Reuse resolveSynapsorProject for reviewed project discovery (including ambiguity checks), and readLocalExploreRuntimeConfig for the existing managed Action-companion selection and readRuntimeConfig/openProjectControlPolicies/executionBindingDigest validation. Only a present governed execution revision requires execution configuration; ordinary disabled drafting without execution keeps its existing prerequisites. No new --config option, guessed file search, draft-supplied authority, writer/client/identity override or optional execution parser.
+
+Read-only export/preview preflight validates present execution against that configuration. Save reloads after preparation under runtime admission then authority mutation, before opening and validating the complete repository. The existing epoch/authoring revision CAS and atomic disabled save remain authoritative. Cooperating configuration publication uses the same authority mutex; migration acquires runtime exclusion first. No source facts/compilation, conversations or effects run under the small save coordination section. Missing/mismatched/stale/ambiguous context fails before save. Current execution validation is distinct from disabled candidate validation; candidate activation and execution review remain separate.
+
+Existing accounting clock selection and publication ordering are not modified. Native writer/authority/runtime wait bounds and clock assumptions remain limitations. This task is not identity management or Stage B.

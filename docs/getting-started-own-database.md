@@ -86,6 +86,15 @@ without publishing. Submission saves disabled drafts, not human confirmations.
 implemented: legacy `action activate --headless` is not a substitute for the
 separate current Read/Action review.
 
+For an execution-enabled project, export, preview and save also validate the
+existing reviewed runtime/Action configuration. Keep that configuration in place;
+the structured commands do not accept `--config` or execution authority from the
+draft. A preview is not a reservation: a configuration or policy change can make
+the later save stale. Re-export and review the current candidate in that case.
+Saving refreshes disabled draft/review bookkeeping while preserving active
+Read, Action and execution authority. Publishing a replacement Action still
+requires its own review and a separate execution review for the new revision.
+
 These saved-draft review commands need no model provider or new job conversation.
 In Read review, inspect the saved fields and scope, then use `C` for the exact
 Read activation. In Action review, select **Verified Action Boundary**, inspect

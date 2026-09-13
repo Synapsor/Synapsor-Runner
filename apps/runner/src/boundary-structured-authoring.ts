@@ -46,6 +46,8 @@ import { loadActionRuleIntentSkeletons } from "./action-rule-intent-skeleton.js"
 import { openBoundProjectControlPolicies } from "./control-policy-store.js";
 import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
+import { resolveSynapsorProject } from "./project-resolution.js";
 
 const INPUT_VERSION = "synapsor.boundary-draft-input.v1" as const;
 const EXTERNAL_DRAFT_ACTOR = "external_draft";
@@ -112,6 +114,17 @@ async function structuredBoundaryAuthoringCommandInner(
     throw new Error("--dry-run applies only to --draft validation; export does not change authority.");
   }
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  // Export/preview must not advertise a saveable execution-backed project
+  // whose reviewed runtime binding is already unavailable. This is read-only;
+  // persistence repeats the check after preparation and under writer exclusion.
+  await withProjectRuntimeAdmission(projectRoot, async (root) => {
+    const binding = await openBoundProjectControlPolicies(root);
+    if (!binding) return;
+    try {
+      const config = await structuredExecutionContext(root, binding);
+      if (config) await new OperatorAuthorityRepository(binding, config).current();
+    } finally { await binding.close(); }
+  });
   if (exportPath) {
     const payload = await exportStructuredDraft(projectRoot, schemaInspector);
     const target = await newExportFile(projectRoot, exportPath);
@@ -447,11 +460,12 @@ async function persistStructuredDraft(
   projectRoot: string,
   prepared: Awaited<ReturnType<typeof prepareStructuredDraft>>,
 ): Promise<number> {
-  return withProjectAuthorityMutation(projectRoot, async (held) => {
+  return withProjectRuntimeAdmission(projectRoot, (root) => withProjectAuthorityMutation(root, async (held) => {
     const binding = await openBoundProjectControlPolicies(held.projectRoot);
     if (!binding) throw new Error("STRUCTURED_DRAFT_REPOSITORY_REQUIRED: governed policy storage is required for disabled publication.");
     try {
-      const repository = new OperatorAuthorityRepository(binding);
+      const config = await structuredExecutionContext(held.projectRoot, binding);
+      const repository = new OperatorAuthorityRepository(binding, config);
       const current = await repository.current();
       assertCurrentAuthoringBinding(prepared.authoring_binding, binding, current);
       const companion = prepared.action ? [{
@@ -490,7 +504,29 @@ async function persistStructuredDraft(
     } finally {
       await binding.close();
     }
-  });
+  }));
+}
+
+/** Resolve existing execution, never execution material from the edited draft.
+ * The managed local entry selects the reviewed Action companion and verifies
+ * its actual store/project and execution digest. No execution record means no
+ * new writer, runtime file or client prerequisite for disabled authoring. */
+async function structuredExecutionContext(projectRoot: string,
+  binding: NonNullable<Awaited<ReturnType<typeof openBoundProjectControlPolicies>>>) {
+  const execution = await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id,
+    scope: { level: "operator" }, kinds: ["execution"] });
+  if (!execution.active.length && !execution.drafts.length) return undefined;
+  const selected = await resolveSynapsorProject(projectRoot);
+  if (selected) {
+    const relative = path.relative(projectRoot, await fs.realpath(selected.config_path));
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      throw new Error("POLICY_RUNTIME_PROJECT_CHANGED: structured authoring requires this project's reviewed runtime configuration.");
+    }
+  }
+  const { readLocalExploreRuntimeConfig } = await import("./mcp-runtime.js");
+  const config = await readLocalExploreRuntimeConfig(projectRoot, selected?.config_path);
+  if (!config) throw new Error("POLICY_EXECUTION_CONTEXT_REQUIRED: restore this project's reviewed runtime configuration before exporting or saving a disabled draft.");
+  return config;
 }
 
 function assertCurrentAuthoringBinding(expected: ReadAuthoringBindings | undefined,

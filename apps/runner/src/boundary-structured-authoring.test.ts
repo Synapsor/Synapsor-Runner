@@ -54,6 +54,7 @@ vi.mock("./control-policy-read-authoring.js", () => ({ readAuthoringCatalog: () 
 vi.mock("./control-policy-store.js", () => ({ openBoundProjectControlPolicies: vi.fn(async () => ({
   repository_id: "00000000-0000-4000-8000-000000000001", deployment_id: "00000000-0000-4000-8000-000000000002",
   project_id: "00000000-0000-4000-8000-000000000003", close: vi.fn(),
+  repository: { scopeSnapshot: vi.fn(async () => ({ active: [], drafts: [] })) },
 })) }));
 vi.mock("./control-policy-operator-repository.js", () => ({
   OperatorAuthorityRepository: class {
