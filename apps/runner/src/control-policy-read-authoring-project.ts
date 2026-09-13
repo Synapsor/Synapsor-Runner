@@ -15,8 +15,8 @@ export type ProjectReadAuthoring = {
 
 /** No file fallback or normalization once the project is governed. The token
  * belongs to this original read and must travel with the operator's preview. */
-export async function readProjectReadAuthoring(projectRoot: string): Promise<ProjectReadAuthoring | undefined> {
-  const binding = await openBoundProjectControlPolicies(projectRoot);
+export async function readProjectReadAuthoring(projectRoot: string, env?: NodeJS.ProcessEnv): Promise<ProjectReadAuthoring | undefined> {
+  const binding = await openBoundProjectControlPolicies(projectRoot, env);
   if (!binding) return undefined;
   try {
     return authoringState(binding, await new OperatorAuthorityRepository(binding).currentReadState());

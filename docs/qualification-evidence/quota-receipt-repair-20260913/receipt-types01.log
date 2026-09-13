@@ -1,0 +1,38 @@
+
+> synapsor-runner-monorepo@1.8.0 typecheck /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+> tsc -b --pretty false
+
+apps/runner/src/semantic-receipt-setup.ts(55,37): error TS18048: 'rule' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(57,98): error TS18048: 'rule' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(61,13): error TS2339: Property 'read_only' does not exist on type 'RuntimeSourceConfig | undefined'.
+apps/runner/src/semantic-receipt-setup.ts(61,35): error TS2339: Property 'write_url_env' does not exist on type 'RuntimeSourceConfig | undefined'.
+apps/runner/src/semantic-receipt-setup.ts(61,59): error TS2339: Property 'receipts' does not exist on type 'RuntimeSourceConfig | undefined'.
+apps/runner/src/semantic-receipt-setup.ts(63,15): error TS18048: 'rule' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(64,15): error TS18048: 'rule' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(64,60): error TS18048: 'rule' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(65,22): error TS18048: 'rule' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(68,24): error TS18048: 'rule' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(78,34): error TS18048: 'rule' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(80,80): error TS18048: 'rule' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(81,16): error TS18048: 'rule' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(94,17): error TS18048: 'setup' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(94,50): error TS18048: 'setup' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(94,80): error TS18048: 'setup' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(95,21): error TS18048: 'setup' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(96,35): error TS18048: 'setup' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(96,35): error TS18048: 'setup.source' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(97,64): error TS18048: 'setup' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(97,90): error TS18048: 'setup' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(98,24): error TS18048: 'setup' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(98,58): error TS18048: 'setup' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(110,26): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+apps/runner/src/semantic-receipt-setup.ts(112,44): error TS2345: Argument of type 'BoundProjectPolicyStore | undefined' is not assignable to parameter of type 'BoundProjectPolicyStore'.
+  Type 'undefined' is not assignable to type 'BoundProjectPolicyStore'.
+apps/runner/src/semantic-receipt-setup.ts(117,23): error TS18048: 'binding' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.ts(125,10): error TS18048: 'setup.selection' is possibly 'undefined'.
+apps/runner/src/writeback-setup.ts(548,11): error TS2322: Type '{ write_url_env: string; receipts: { authority: "runner_ledger"; } | { authority: "source_db"; provisioning: "precreated"; schema: string; table: string; }; engine?: SourceEngine | undefined; ... 5 more ...; credential_scope?: RuntimeCredentialScopeConfig; }' is not assignable to type 'RuntimeSourceConfig'.
+  Types of property 'engine' are incompatible.
+    Type 'SourceEngine | undefined' is not assignable to type 'SourceEngine'.
+      Type 'undefined' is not assignable to type 'SourceEngine'.
+ ELIFECYCLE  Command failed with exit code 1.

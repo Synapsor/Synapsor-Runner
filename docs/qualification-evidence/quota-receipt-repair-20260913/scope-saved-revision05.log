@@ -1,0 +1,149 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+ ✓ apps/runner/src/action-policy-scope.test.ts (22 tests) 27ms
+(node:3501183) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3501184) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3501190) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/boundary-authoring-resume.test.ts (43 tests) 106ms
+ ✓ apps/runner/src/boundary-authoring-resume-concurrency.test.ts (12 tests) 484ms
+   ✓ authoring resume filesystem compare-and-save > serializes real independent processes using the same saved revision and canonical project alias  354ms
+ ❯ apps/runner/src/action-rule-model.test.ts (113 tests | 1 failed | 1 skipped) 1033ms
+   ✓ structured Action draft schema > accepts the compiler-valid nested update fixture without merging component names 171ms
+   ✓ structured Action draft schema > accepts the compiler-valid nested insert fixture without merging component names 58ms
+   ✓ structured Action draft schema > retains nested policy predicates, shared limits and expression definitions 49ms
+   ✓ structured Action draft schema > rejects flattened phases, provider envelopes, unknown fields and invalid effect variants 41ms
+   ✓ conversational Action authoring tools > reviews an existing counter through a bounded host operation and restores it before resuming draft components 33ms
+   ✓ conversational Action authoring tools > does not repeat declined counter review or treat it as mapped 3ms
+   ✓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (extra) 2ms
+   ✓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (invalid_name) 3ms
+   ✓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (changed_read) 3ms
+   ✓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (wrong_field) 2ms
+   ✓ conversational Action authoring tools > revalidates retained partial components after a host-mediated Read edit without asking answered questions 9ms
+   ✓ conversational Action authoring tools > restores a reviewed private source before checkpoint validation and carries it through later components 8ms
+   ✓ conversational Action authoring tools > cannot turn a retained checkpoint into authority when the current catalog no longer supports its fields 5ms
+   ✓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (reviewed) 8ms
+   ✓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (declined) 2ms
+   ✓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (public_read_changed) 2ms
+   ✓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (unrelated_intent) 2ms
+   ✓ conversational Action authoring tools > does not repeat a declined source transfer or send its metadata into later model turns 2ms
+   ✓ conversational Action authoring tools > rejects an alleged private mapping that changes public reads 2ms
+   ↓ conversational Action authoring tools > qualifies live creation and a day-two edit through the same tools
+   ✓ conversational Action authoring tools > keeps generated repair diagnostics separate from original counter intent 17ms
+   ✓ conversational Action authoring tools > preserves the saved role explanation without demanding an unrequested principal quota during revision 7ms
+   × conversational Action authoring tools > corrects an unaccepted extra quota through disabled revision, with restart and stale-save protection 84ms
+     → ENOENT: no such file or directory, open '/tmp/synapsor-role-quota-revision-oltFWj/.synapsor/action-rules/revisions/51d0faf199f7fbff042734fa2d98479ce46e5adc165774449db3db21928cc22b/authority.json'
+   ✓ conversational Action authoring tools > honors an explicit later scope replacement without carrying the old principal quota forward 14ms
+   ✓ conversational Action authoring tools > saves and reloads a fresh clarification without converting its role definition into accounting 13ms
+   ✓ conversational Action authoring tools > still enforces original scope and accepted operator decisions during a generated repair 7ms
+   ✓ conversational Action authoring tools > preserves setup pending an authoritative source without treating the operator answer as a source fact 3ms
+   ✓ conversational Action authoring tools > does not honor a fabricated pause or claim a failed checkpoint was saved 3ms
+   ✓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (valid) 5ms
+   ✓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (nonnullable) 9ms
+   ✓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (unknown_enum) 6ms
+   ✓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (timestamp_value) 6ms
+   ✓ conversational Action authoring tools > scopes private linked facts separately from subjects and every changed record (atomic=false) 5ms
+   ✓ conversational Action authoring tools > scopes private linked facts separately from subjects and every changed record (atomic=true) 5ms
+   ✓ conversational Action authoring tools > authors public discovery vocabulary through the same bounded rule tool 7ms
+   ✓ conversational Action authoring tools > changes discovery only with a declared revision scope (false) 5ms
+   ✓ conversational Action authoring tools > changes discovery only with a declared revision scope (true) 5ms
+   ✓ conversational Action authoring tools > repairs per-action counters using the original multi-action job without repeating the business question 8ms
+   ✓ conversational Action authoring tools > repairs an incomplete tool submission internally instead of asking the operator to submit draft components 7ms
+   ✓ conversational Action authoring tools > bounds repeated incomplete tool submissions without a human clarification loop 2ms
+   ✓ conversational Action authoring tools > continues saved drafting progress without asking for another operator turn: The reviewed relationship paths are prepared in the disabled draft; no authority is active. 6ms
+   ✓ conversational Action authoring tools > continues saved drafting progress without asking for another operator turn: The seat draft is partially prepared. The remaining business rules are not yet prepared. 5ms
+   ✓ conversational Action authoring tools > continues saved drafting progress without asking for another operator turn: The restoration draft is partially prepared; the prerequisite, 30-day rule and approval still need preparation. 5ms
+   ✓ conversational Action authoring tools > still asks a genuine business question after saving a component (structured: false) 2ms
+   ✓ conversational Action authoring tools > still asks a genuine business question after saving a component (structured: true) 1ms
+   ✓ conversational Action authoring tools > continues relationship-only progress without treating inspection or unchanged saves as new progress 2ms
+   ✓ conversational Action authoring tools > bounds progress-only continuation and retains the partial draft for resume 2ms
+   ✓ conversational Action authoring tools > offers honest compatible-provider recovery without extending retries (http://127.0.0.1:11434/v1) 7ms
+   ✓ conversational Action authoring tools > offers honest compatible-provider recovery without extending retries (https://provider.example/v1) 7ms
+   ✓ conversational Action authoring tools > keeps a joint-limit repair from changing the reviewer or other saved components 7ms
+   ✓ conversational Action authoring tools > streams business questions but defers a compiled recap only when policy review owns the turn (false) 4ms
+   ✓ conversational Action authoring tools > streams business questions but defers a compiled recap only when policy review owns the turn (true) 3ms
+   ✓ conversational Action authoring tools > allows an explicit read-only pivot but rejects an invented cancellation message 6ms
+   ✓ conversational Action authoring tools > repairs approval-only execution without another business question (resumed: false) 5ms
+   ✓ conversational Action authoring tools > repairs approval-only execution without another business question (resumed: true) 6ms
+   ✓ conversational Action authoring tools > discovers and prepares an exact composite link in chat, retaining it across pause/resume 8ms
+   ✓ conversational Action authoring tools > reports ambiguous, missing and unsupported relationships without guessing or granting access 1ms
+   ✓ conversational Action authoring tools > lets the model choose component order and repair compiler feedback without a user interruption 6ms
+   ✓ conversational Action authoring tools > retains draft state across more than two business questions and treats blank input as no decision 7ms
+   ✓ conversational Action authoring tools > finishes clarification of an already-correct baseline without requiring a fake edit or another answer 9ms
+   ✓ conversational Action authoring tools > edits only the selected component of an existing rule, without recreating its effect 10ms
+   ✓ conversational Action authoring tools > applies an explicitly revised input bound without losing other rule or approval settings 6ms
+   ✓ conversational Action authoring tools > repairs a caller-version mistake internally without asking the customer for a hidden value 6ms
+   ✓ conversational Action authoring tools > reopens a same-job draft after mistaken second-action creation (resume: false) 14ms
+   ✓ conversational Action authoring tools > reopens a same-job draft after mistaken second-action creation (resume: true) 16ms
+   ✓ conversational Action authoring tools > keeps genuine outcome collisions closed and gives a guided revision recovery 3ms
+   ✓ conversational Action authoring tools > keeps validity separate from automatic eligibility when revising one policy 16ms
+   ✓ conversational Action authoring tools > rejects stale or out-of-agenda reopen requests and can reuse an already-correct draft 11ms
+   ✓ conversational Action authoring tools > resumes disabled components after an interruption and rejects a changed structural binding 8ms
+   ✓ model-guided Action Rule authoring > labels retained operator statements separately in focused repair prompts 4ms
+   ✓ model-guided Action Rule authoring > uses four focused required tools and compiles one disabled semantic authority 5ms
+   ✓ model-guided Action Rule authoring > uses the same operation-aware Effect contract for Anthropic authoring 5ms
+   ✓ model-guided Action Rule authoring > infers one unambiguous UPDATE subject when a provider omits target_binding 4ms
+   ✓ model-guided Action Rule authoring > internally corrects an explicit UPDATE binding that points at another subject 4ms
+   ✓ model-guided Action Rule authoring > asks one business clarification rather than guessing between UPDATE subjects 10ms
+   ✓ model-guided Action Rule authoring > fails before Rule or approval drafting when UPDATE has no reviewed subject target 2ms
+   ✓ model-guided Action Rule authoring > keeps INSERT free of target_binding and retains Runner-derived deduplication 4ms
+   ✓ model-guided Action Rule authoring > normalizes an omitted empty approval-limit list before authority validation 3ms
+   ✓ model-guided Action Rule authoring > repairs a per-person counter that weakens an explicit customer-account limit 6ms
+   ✓ model-guided Action Rule authoring > repairs omitted automatic-policy limits from the stated intent without repeating them to the operator 7ms
+   ✓ model-guided Action Rule authoring > redirects a redundant tenant-wide limit question when tenant plus principal is already exact 7ms
+   ✓ model-guided Action Rule authoring > repairs a compiled policy that weakened an explicit tenant plus principal scope 5ms
+   ✓ model-guided Action Rule authoring > repairs crossed maxima and windows instead of accepting all requested values somewhere 6ms
+   ✓ model-guided Action Rule authoring > preserves slash-delimited tenant/principal accounting without inventing a tenant-only limit 4ms
+   ✓ model-guided Action Rule authoring > recognizes a trusted tenant plus principal pair as one combined accounting scope 7ms
+   ✓ model-guided Action Rule authoring > edits one exact reviewed baseline without letting the model rename its authority or target 7ms
+   ✓ model-guided Action Rule authoring > retains an automatic policy when a revision changes only its fallback quorum 6ms
+   ✓ model-guided Action Rule authoring > keeps all four model phases for an ambiguous multi-phase revision 5ms
+   ✓ model-guided Action Rule authoring > reconciles a newly reviewed trusted scope field before compiling the Action target 4ms
+   ✓ model-guided Action Rule authoring > asks a genuine business clarification and resumes the same focused phase 6ms
+   ✓ model-guided Action Rule authoring > permits one compiler-directed mechanical repair without broadening the effect 5ms
+   ✓ model-guided Action Rule authoring > routes an invalid effect-field bound back to the effect phase 4ms
+   ✓ model-guided Action Rule authoring > routes a rule expression binding error back to the rule phase 4ms
+   ✓ model-guided Action Rule authoring > turns an omitted required circuit breaker into one bounded business clarification 6ms
+   ✓ model-guided Action Rule authoring > binds model-supplied approval limit targets to the validated semantic outcome 6ms
+   ✓ model-guided Action Rule authoring > explains that lifetime approval counts are unsupported and accepts one exact rolling replacement 5ms
+   ✓ model-guided Action Rule authoring > keeps a second missing approval breaker in the same bounded model conversation 8ms
+   ✓ model-guided Action Rule authoring > redirects database-mechanics questions to the model instead of burdening the operator 4ms
+   ✓ model-guided Action Rule authoring > keeps reviewer and rolling-count relationship questions behind Runner 6ms
+   ✓ model-guided Action Rule authoring > keeps the proposal ledger out of private source verification bindings 4ms
+   ✓ model-guided Action Rule authoring > keeps authenticated ownership in trusted scope instead of asking for another rule field 4ms
+   ✓ model-guided Action Rule authoring > answers approval-policy separation mechanics without interrupting the operator 4ms
+   ✓ model-guided Action Rule authoring > does not ask the operator for an unshown accepted binding name 4ms
+   ✓ model-guided Action Rule authoring > adds source identity needed for deterministic derivation without asking the operator 5ms
+   ✓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: What validated Verification binding and exact field represent the required billing reviewer? 4ms
+   ✓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: What is the fixed reviewer-role label for a warehouse manager (for example, warehouse_manager)? 4ms
+   ✓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: What fixed reviewed reviewer-role label should represent a human warehouse manager? 4ms
+   ✓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: Runner requires a fixed control-store reviewer-role label; please provide the established label. 4ms
+   ✓ model-guided Action Rule authoring > redirects derived-expression mechanics while preserving two genuine business clarifications 7ms
+   ✓ model-guided Action Rule authoring > names the final unresolved business question when the bounded dialogue is exhausted 2ms
+   ✓ model-guided Action Rule authoring > lets the model repair one refused required-tool payload before completing the phase 4ms
+   ✓ model-guided Action Rule authoring > derives internal outcome names without asking the operator 4ms
+   ✓ model-guided Action Rule authoring > uses a flat status envelope for OpenAI-compatible authoring while retaining Runner validation 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/action-rule-model.test.ts > conversational Action authoring tools > corrects an unaccepted extra quota through disabled revision, with restart and stale-save protection
+Error: ENOENT: no such file or directory, open '/tmp/synapsor-role-quota-revision-oltFWj/.synapsor/action-rules/revisions/51d0faf199f7fbff042734fa2d98479ce46e5adc165774449db3db21928cc22b/authority.json'
+ ❯ apps/runner/src/action-rule-model.test.ts:407:38
+    405|       await expect(writeActionRuleAuthorityDraftIfCurrent(root, initia…
+    406|       expect(await readActionRuleAuthorityDraft(root, corrected.author…
+    407|       const oldRevision = JSON.parse(await fs.readFile(path.join(root,…
+       |                                      ^
+    408|       expect(oldRevision.authority.approval_classes[0].shared_limits).…
+    409|       await expect(fs.stat(path.join(root, ".synapsor/action-rules/act…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 188 passed | 1 skipped (190)
+   Start at  11:31:45
+   Duration  3.98s (transform 1.72s, setup 0ms, collect 3.95s, tests 1.65s, environment 1ms, prepare 365ms)
+

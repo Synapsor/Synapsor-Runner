@@ -1,0 +1,27 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3494862) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3494863) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3494869) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/writer-provisioning.test.ts (11 tests) 395ms
+ ✓ apps/runner/src/verified-action-execution-review.test.ts (24 tests) 74ms
+ ✓ apps/runner/src/semantic-receipt-setup.test.ts (9 tests) 28022ms
+   ✓ reviewed semantic receipt setup > requires a selection instead of reporting semantic source writes not applicable  2428ms
+   ✓ reviewed semantic receipt setup > previews, confirms and reloads a selection without changing active execution or source bindings  2590ms
+   ✓ reviewed semantic receipt setup > keeps exactly one selection under competing confirmations and refuses stale bindings  4068ms
+   ✓ reviewed semantic receipt setup > preserves an explicitly reviewed Runner-ledger mode and does not provision source objects  2700ms
+   ✓ reviewed semantic receipt setup > retains the selected mode over an approval-limit replacement and unchanged metadata reload  2646ms
+   ✓ reviewed semantic receipt setup > failed persistence does not replace the selection or permit stale confirmation after a later save  4085ms
+   ✓ reviewed semantic receipt setup > includes the exact missing receipt infrastructure in the narrow administrator handoff  3136ms
+   ✓ reviewed semantic receipt setup > requires actual receipt objects and writer verification before the separate execution review  2819ms
+   ✓ reviewed semantic receipt setup > declining the actual setup review leaves no saved selection  3548ms
+
+ Test Files  3 passed (3)
+      Tests  44 passed (44)
+   Start at  11:28:56
+   Duration  31.36s (transform 2.23s, setup 0ms, collect 7.27s, tests 28.49s, environment 1ms, prepare 405ms)
+

@@ -1,0 +1,46 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3642641) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3642642) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3642635) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-review-governed.test.ts (30 tests | 29 skipped) 6247ms
+   ✓ public governed Action review > pages exact writer requirements and the exported handoff through public Action review without changing pending authority  6245ms
+ ✓ apps/runner/src/semantic-receipt-setup.test.ts (11 tests) 48835ms
+   ✓ reviewed semantic receipt setup > requires a selection instead of reporting semantic source writes not applicable  4057ms
+   ✓ reviewed semantic receipt setup > previews, confirms and reloads a selection without changing active execution or source bindings  4612ms
+   ✓ reviewed semantic receipt setup > keeps exactly one selection under competing confirmations and refuses stale bindings  4893ms
+   ✓ reviewed semantic receipt setup > preserves an explicitly reviewed Runner-ledger mode and does not provision source objects  3931ms
+   ✓ reviewed semantic receipt setup > retains the selected mode over an approval-limit replacement and unchanged metadata reload  4885ms
+   ✓ reviewed semantic receipt setup > failed persistence does not replace the selection or permit stale confirmation after a later save  4452ms
+   ✓ reviewed semantic receipt setup > includes the exact missing receipt infrastructure in the narrow administrator handoff  4038ms
+   ✓ reviewed semantic receipt setup > requires actual receipt objects and writer verification before the separate execution review  4905ms
+   ✓ reviewed semantic receipt setup > saves the confirmed interactive runner_ledger selection and keeps it after reopening  4235ms
+   ✓ reviewed semantic receipt setup > saves the confirmed interactive source_db selection and keeps it after reopening  4383ms
+   ✓ reviewed semantic receipt setup > declining the actual setup review leaves no saved selection  4440ms
+ ✓ apps/runner/src/control-policy-authority-codec.test.ts (420 tests | 404 skipped) 69068ms
+   ✓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (replacement_warning)  5512ms
+   ✓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (sequential)  5971ms
+   ✓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (decline)  5498ms
+   ✓ sqlite validated operator policy transactions > requires new execution review after a compiled two-to-three outcome replacement (policy_race)  5592ms
+   ✓ sqlite validated operator policy transactions > publishes execution only through exact writer review and preserves revocation across stale exports and reviews  4591ms
+   ✓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: disabled  4486ms
+   ✓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked  4030ms
+   ✓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_execution  4762ms
+   ✓ sqlite validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_unconfirmed  4373ms
+   ✓ sqlite validated operator policy transactions > reviews execution only against the selected outcome's current Read dependency  3165ms
+   ✓ sqlite validated operator policy transactions > recovers and disables an interrupted execution save with an explicit control-store environment  4196ms
+   ✓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: new_failed  3091ms
+   ✓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: same_failed  3022ms
+   ✓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: lost_response  4492ms
+   ✓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: unknown_receipt  3455ms
+   ✓ sqlite validated operator policy transactions > confirms execution publication from its exact transaction receipt: different_receipt  2829ms
+
+ Test Files  3 passed (3)
+      Tests  28 passed | 433 skipped (461)
+   Start at  12:30:25
+   Duration  80.91s (transform 13.36s, setup 0ms, collect 30.71s, tests 124.15s, environment 1ms, prepare 285ms)
+

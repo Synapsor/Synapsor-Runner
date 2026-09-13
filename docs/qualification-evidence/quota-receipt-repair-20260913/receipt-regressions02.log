@@ -1,0 +1,133 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3484815) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3484817) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-rule-model.test.ts (112 tests | 1 skipped) 968ms
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts (5 tests | 5 failed) 14282ms
+   × reviewed semantic receipt setup > requires a selection instead of reporting semantic source writes not applicable 2529ms
+     → SEMANTIC_ACTION_CONFIG_INVALID: Invalid Synapsor runner config:
+$.trusted_context.tenant_env UNKNOWN_FIELD: Unknown field tenant_env.
+$.trusted_context.principal_env UNKNOWN_FIELD: Unknown field principal_env.
+   × reviewed semantic receipt setup > previews, confirms and reloads a selection without changing active execution or source bindings 2455ms
+     → SEMANTIC_ACTION_CONFIG_INVALID: Invalid Synapsor runner config:
+$.trusted_context.tenant_env UNKNOWN_FIELD: Unknown field tenant_env.
+$.trusted_context.principal_env UNKNOWN_FIELD: Unknown field principal_env.
+   × reviewed semantic receipt setup > keeps exactly one selection under competing confirmations and refuses stale bindings 3628ms
+     → SEMANTIC_ACTION_CONFIG_INVALID: Invalid Synapsor runner config:
+$.trusted_context.tenant_env UNKNOWN_FIELD: Unknown field tenant_env.
+$.trusted_context.principal_env UNKNOWN_FIELD: Unknown field principal_env.
+   × reviewed semantic receipt setup > preserves an explicitly reviewed Runner-ledger mode and does not provision source objects 3186ms
+     → SEMANTIC_ACTION_CONFIG_INVALID: Invalid Synapsor runner config:
+$.trusted_context.tenant_env UNKNOWN_FIELD: Unknown field tenant_env.
+$.trusted_context.principal_env UNKNOWN_FIELD: Unknown field principal_env.
+   × reviewed semantic receipt setup > declining the actual setup review leaves no saved selection 2481ms
+     → SEMANTIC_ACTION_CONFIG_INVALID: Invalid Synapsor runner config:
+$.trusted_context.tenant_env UNKNOWN_FIELD: Unknown field tenant_env.
+$.trusted_context.principal_env UNKNOWN_FIELD: Unknown field principal_env.
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > requires a selection instead of reporting semantic source writes not applicable
+Error: SEMANTIC_ACTION_CONFIG_INVALID: Invalid Synapsor runner config:
+$.trusted_context.tenant_env UNKNOWN_FIELD: Unknown field tenant_env.
+$.trusted_context.principal_env UNKNOWN_FIELD: Unknown field principal_env.
+ ❯ validateRuntimeConfig apps/runner/src/semantic-action-deployment.ts:996:11
+    994|     loadRuntimeConfigFromFile(temporary);
+    995|   } catch (error) {
+    996|     throw new Error(
+       |           ^
+    997|       `SEMANTIC_ACTION_CONFIG_INVALID: ${error instanceof Error ? erro…
+    998|     );
+ ❯ activateSemanticActionRuntimeUnlocked apps/runner/src/semantic-action-deployment.ts:261:5
+ ❯ runScope apps/runner/src/project-authority-mutation.ts:77:16
+ ❯ withProjectAuthorityMutation apps/runner/src/project-authority-mutation.ts:62:12
+ ❯ fixture apps/runner/src/semantic-receipt-setup.test.ts:150:3
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:159:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > previews, confirms and reloads a selection without changing active execution or source bindings
+Error: SEMANTIC_ACTION_CONFIG_INVALID: Invalid Synapsor runner config:
+$.trusted_context.tenant_env UNKNOWN_FIELD: Unknown field tenant_env.
+$.trusted_context.principal_env UNKNOWN_FIELD: Unknown field principal_env.
+ ❯ validateRuntimeConfig apps/runner/src/semantic-action-deployment.ts:996:11
+    994|     loadRuntimeConfigFromFile(temporary);
+    995|   } catch (error) {
+    996|     throw new Error(
+       |           ^
+    997|       `SEMANTIC_ACTION_CONFIG_INVALID: ${error instanceof Error ? erro…
+    998|     );
+ ❯ activateSemanticActionRuntimeUnlocked apps/runner/src/semantic-action-deployment.ts:261:5
+ ❯ runScope apps/runner/src/project-authority-mutation.ts:77:16
+ ❯ withProjectAuthorityMutation apps/runner/src/project-authority-mutation.ts:62:12
+ ❯ fixture apps/runner/src/semantic-receipt-setup.test.ts:150:3
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:167:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > keeps exactly one selection under competing confirmations and refuses stale bindings
+Error: SEMANTIC_ACTION_CONFIG_INVALID: Invalid Synapsor runner config:
+$.trusted_context.tenant_env UNKNOWN_FIELD: Unknown field tenant_env.
+$.trusted_context.principal_env UNKNOWN_FIELD: Unknown field principal_env.
+ ❯ validateRuntimeConfig apps/runner/src/semantic-action-deployment.ts:996:11
+    994|     loadRuntimeConfigFromFile(temporary);
+    995|   } catch (error) {
+    996|     throw new Error(
+       |           ^
+    997|       `SEMANTIC_ACTION_CONFIG_INVALID: ${error instanceof Error ? erro…
+    998|     );
+ ❯ activateSemanticActionRuntimeUnlocked apps/runner/src/semantic-action-deployment.ts:261:5
+ ❯ runScope apps/runner/src/project-authority-mutation.ts:77:16
+ ❯ withProjectAuthorityMutation apps/runner/src/project-authority-mutation.ts:62:12
+ ❯ fixture apps/runner/src/semantic-receipt-setup.test.ts:150:3
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:190:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > preserves an explicitly reviewed Runner-ledger mode and does not provision source objects
+Error: SEMANTIC_ACTION_CONFIG_INVALID: Invalid Synapsor runner config:
+$.trusted_context.tenant_env UNKNOWN_FIELD: Unknown field tenant_env.
+$.trusted_context.principal_env UNKNOWN_FIELD: Unknown field principal_env.
+ ❯ validateRuntimeConfig apps/runner/src/semantic-action-deployment.ts:996:11
+    994|     loadRuntimeConfigFromFile(temporary);
+    995|   } catch (error) {
+    996|     throw new Error(
+       |           ^
+    997|       `SEMANTIC_ACTION_CONFIG_INVALID: ${error instanceof Error ? erro…
+    998|     );
+ ❯ activateSemanticActionRuntimeUnlocked apps/runner/src/semantic-action-deployment.ts:261:5
+ ❯ runScope apps/runner/src/project-authority-mutation.ts:77:16
+ ❯ withProjectAuthorityMutation apps/runner/src/project-authority-mutation.ts:62:12
+ ❯ fixture apps/runner/src/semantic-receipt-setup.test.ts:150:3
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:211:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > declining the actual setup review leaves no saved selection
+Error: SEMANTIC_ACTION_CONFIG_INVALID: Invalid Synapsor runner config:
+$.trusted_context.tenant_env UNKNOWN_FIELD: Unknown field tenant_env.
+$.trusted_context.principal_env UNKNOWN_FIELD: Unknown field principal_env.
+ ❯ validateRuntimeConfig apps/runner/src/semantic-action-deployment.ts:996:11
+    994|     loadRuntimeConfigFromFile(temporary);
+    995|   } catch (error) {
+    996|     throw new Error(
+       |           ^
+    997|       `SEMANTIC_ACTION_CONFIG_INVALID: ${error instanceof Error ? erro…
+    998|     );
+ ❯ activateSemanticActionRuntimeUnlocked apps/runner/src/semantic-action-deployment.ts:261:5
+ ❯ runScope apps/runner/src/project-authority-mutation.ts:77:16
+ ❯ withProjectAuthorityMutation apps/runner/src/project-authority-mutation.ts:62:12
+ ❯ fixture apps/runner/src/semantic-receipt-setup.test.ts:150:3
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:222:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  5 failed | 111 passed | 1 skipped (117)
+   Start at  11:24:39
+   Duration  17.81s (transform 2.50s, setup 0ms, collect 5.37s, tests 15.25s, environment 1ms, prepare 200ms)
+

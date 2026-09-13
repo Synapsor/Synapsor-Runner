@@ -1,0 +1,44 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3505867) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3505873) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-policy-scope.test.ts (22 tests) 50ms
+(node:3505866) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3505895) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3505885) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3505886) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3505874) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3505904) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/boundary-authoring-resume.test.ts (43 tests) 247ms
+ ✓ apps/runner/src/boundary-authoring-resume-concurrency.test.ts (12 tests) 892ms
+   ✓ authoring resume filesystem compare-and-save > serializes real independent processes using the same saved revision and canonical project alias  674ms
+ ✓ apps/runner/src/writer-provisioning.test.ts (11 tests) 587ms
+ ✓ apps/runner/src/saved-action-job-review.test.ts (15 tests) 40ms
+ ✓ apps/runner/src/verified-action-execution-review.test.ts (24 tests) 86ms
+ ✓ apps/runner/src/action-rule-model.test.ts (113 tests | 1 skipped) 1559ms
+ ✓ apps/runner/src/semantic-action-deployment.test.ts (28 tests) 1455ms
+ ✓ apps/runner/src/semantic-receipt-setup.test.ts (9 tests) 27885ms
+   ✓ reviewed semantic receipt setup > requires a selection instead of reporting semantic source writes not applicable  2868ms
+   ✓ reviewed semantic receipt setup > previews, confirms and reloads a selection without changing active execution or source bindings  2620ms
+   ✓ reviewed semantic receipt setup > keeps exactly one selection under competing confirmations and refuses stale bindings  4038ms
+   ✓ reviewed semantic receipt setup > preserves an explicitly reviewed Runner-ledger mode and does not provision source objects  2397ms
+   ✓ reviewed semantic receipt setup > retains the selected mode over an approval-limit replacement and unchanged metadata reload  2469ms
+   ✓ reviewed semantic receipt setup > failed persistence does not replace the selection or permit stale confirmation after a later save  3909ms
+   ✓ reviewed semantic receipt setup > includes the exact missing receipt infrastructure in the narrow administrator handoff  3085ms
+   ✓ reviewed semantic receipt setup > requires actual receipt objects and writer verification before the separate execution review  2897ms
+   ✓ reviewed semantic receipt setup > declining the actual setup review leaves no saved selection  3602ms
+
+ Test Files  9 passed (9)
+      Tests  276 passed | 1 skipped (277)
+   Start at  11:33:37
+   Duration  33.01s (transform 7.32s, setup 0ms, collect 28.26s, tests 32.80s, environment 2ms, prepare 1.38s)
+

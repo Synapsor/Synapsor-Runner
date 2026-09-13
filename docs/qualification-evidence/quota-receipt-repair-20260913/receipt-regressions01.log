@@ -1,0 +1,101 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+ ✓ apps/runner/src/action-policy-scope.test.ts (19 tests) 24ms
+(node:3482032) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts (5 tests | 5 failed) 15377ms
+   × reviewed semantic receipt setup > requires a selection instead of reporting semantic source writes not applicable 2478ms
+     → Cannot read properties of undefined (reading 'trim')
+   × reviewed semantic receipt setup > previews, confirms and reloads a selection without changing active execution or source bindings 4176ms
+     → Cannot read properties of undefined (reading 'trim')
+   × reviewed semantic receipt setup > keeps exactly one selection under competing confirmations and refuses stale bindings 2567ms
+     → Cannot read properties of undefined (reading 'trim')
+   × reviewed semantic receipt setup > preserves an explicitly reviewed Runner-ledger mode and does not provision source objects 2431ms
+     → Cannot read properties of undefined (reading 'trim')
+   × reviewed semantic receipt setup > declining the actual setup review leaves no saved selection 3723ms
+     → Cannot read properties of undefined (reading 'trim')
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > requires a selection instead of reporting semantic source writes not applicable
+TypeError: Cannot read properties of undefined (reading 'trim')
+ ❯ safeName apps/runner/src/action-rule-authority.ts:871:28
+    869| 
+    870| function safeName(value: string): string {
+    871|   const normalized = value.trim();
+       |                            ^
+    872|   if (!/^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/u.test(normalized)) {
+    873|     throw authorityError("ACTION_RULE_NAME_INVALID", "Action Rule auth…
+ ❯ readActionRuleAuthorityDraft apps/runner/src/action-rule-authority.ts:424:3
+ ❯ fixture apps/runner/src/semantic-receipt-setup.test.ts:149:23
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:159:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > previews, confirms and reloads a selection without changing active execution or source bindings
+TypeError: Cannot read properties of undefined (reading 'trim')
+ ❯ safeName apps/runner/src/action-rule-authority.ts:871:28
+    869| 
+    870| function safeName(value: string): string {
+    871|   const normalized = value.trim();
+       |                            ^
+    872|   if (!/^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/u.test(normalized)) {
+    873|     throw authorityError("ACTION_RULE_NAME_INVALID", "Action Rule auth…
+ ❯ readActionRuleAuthorityDraft apps/runner/src/action-rule-authority.ts:424:3
+ ❯ fixture apps/runner/src/semantic-receipt-setup.test.ts:149:23
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:167:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > keeps exactly one selection under competing confirmations and refuses stale bindings
+TypeError: Cannot read properties of undefined (reading 'trim')
+ ❯ safeName apps/runner/src/action-rule-authority.ts:871:28
+    869| 
+    870| function safeName(value: string): string {
+    871|   const normalized = value.trim();
+       |                            ^
+    872|   if (!/^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/u.test(normalized)) {
+    873|     throw authorityError("ACTION_RULE_NAME_INVALID", "Action Rule auth…
+ ❯ readActionRuleAuthorityDraft apps/runner/src/action-rule-authority.ts:424:3
+ ❯ fixture apps/runner/src/semantic-receipt-setup.test.ts:149:23
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:190:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > preserves an explicitly reviewed Runner-ledger mode and does not provision source objects
+TypeError: Cannot read properties of undefined (reading 'trim')
+ ❯ safeName apps/runner/src/action-rule-authority.ts:871:28
+    869| 
+    870| function safeName(value: string): string {
+    871|   const normalized = value.trim();
+       |                            ^
+    872|   if (!/^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/u.test(normalized)) {
+    873|     throw authorityError("ACTION_RULE_NAME_INVALID", "Action Rule auth…
+ ❯ readActionRuleAuthorityDraft apps/runner/src/action-rule-authority.ts:424:3
+ ❯ fixture apps/runner/src/semantic-receipt-setup.test.ts:149:23
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:211:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > declining the actual setup review leaves no saved selection
+TypeError: Cannot read properties of undefined (reading 'trim')
+ ❯ safeName apps/runner/src/action-rule-authority.ts:871:28
+    869| 
+    870| function safeName(value: string): string {
+    871|   const normalized = value.trim();
+       |                            ^
+    872|   if (!/^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/u.test(normalized)) {
+    873|     throw authorityError("ACTION_RULE_NAME_INVALID", "Action Rule auth…
+ ❯ readActionRuleAuthorityDraft apps/runner/src/action-rule-authority.ts:424:3
+ ❯ fixture apps/runner/src/semantic-receipt-setup.test.ts:149:23
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:222:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  5 failed | 19 passed (24)
+   Start at  11:23:40
+   Duration  18.94s (transform 1.83s, setup 0ms, collect 3.30s, tests 15.40s, environment 1ms, prepare 257ms)
+

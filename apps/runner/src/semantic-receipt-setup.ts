@@ -52,7 +52,7 @@ export async function inspectSemanticReceiptSetup(input: {
     if (!rule) fail("SEMANTIC_RECEIPT_OUTCOME_REQUIRED", "Select one current source-writing outcome with --outcome <name>.");
     const source = config.sources?.[rule.compiled.source];
     if (!source) fail("SEMANTIC_RECEIPT_SOURCE_MISSING", "Restore the current Action source binding.");
-    const requirements = await readSavedExecutionRequirements({ projectRoot: root, boundaryName: rule.read_boundary_name });
+    const requirements = await readSavedExecutionRequirements({ projectRoot: root, boundaryName: rule.read_boundary_name, env: input.env });
     // Read-only -> writable and receipt configuration are the later reviewed
     // deployment, not a new business/Read contract. A rule-limit edit also leaves
     // this contract unchanged. Source/scope/effect changes invalidate selection.

@@ -1,0 +1,31 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3564511) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3564524) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/semantic-action-deployment.test.ts (28 tests) 2226ms
+   ✓ complete Action Boundary execution re-review > retires one action from the same client only after activation and cannot resurrect it from the active baseline  347ms
+(node:3565044) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/writer-provisioning.test.ts (11 tests) 569ms
+ ✓ apps/runner/src/semantic-receipt-setup.test.ts (9 tests) 30464ms
+   ✓ reviewed semantic receipt setup > requires a selection instead of reporting semantic source writes not applicable  4068ms
+   ✓ reviewed semantic receipt setup > previews, confirms and reloads a selection without changing active execution or source bindings  3449ms
+   ✓ reviewed semantic receipt setup > keeps exactly one selection under competing confirmations and refuses stale bindings  2659ms
+   ✓ reviewed semantic receipt setup > preserves an explicitly reviewed Runner-ledger mode and does not provision source objects  3086ms
+   ✓ reviewed semantic receipt setup > retains the selected mode over an approval-limit replacement and unchanged metadata reload  3996ms
+   ✓ reviewed semantic receipt setup > failed persistence does not replace the selection or permit stale confirmation after a later save  2930ms
+   ✓ reviewed semantic receipt setup > includes the exact missing receipt infrastructure in the narrow administrator handoff  3236ms
+   ✓ reviewed semantic receipt setup > requires actual receipt objects and writer verification before the separate execution review  4234ms
+   ✓ reviewed semantic receipt setup > declining the actual setup review leaves no saved selection  2803ms
+(node:3566044) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/verified-action-execution-review.test.ts (24 tests) 85ms
+
+ Test Files  4 passed (4)
+      Tests  72 passed (72)
+   Start at  12:00:09
+   Duration  39.35s (transform 7.49s, setup 0ms, collect 18.28s, tests 33.34s, environment 1ms, prepare 375ms)
+

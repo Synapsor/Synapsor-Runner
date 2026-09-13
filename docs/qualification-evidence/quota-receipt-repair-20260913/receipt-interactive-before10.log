@@ -1,0 +1,52 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3640634) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts (11 tests | 2 failed | 9 skipped) 5830ms
+   ↓ reviewed semantic receipt setup > requires a selection instead of reporting semantic source writes not applicable
+   ↓ reviewed semantic receipt setup > previews, confirms and reloads a selection without changing active execution or source bindings
+   ↓ reviewed semantic receipt setup > keeps exactly one selection under competing confirmations and refuses stale bindings
+   ↓ reviewed semantic receipt setup > preserves an explicitly reviewed Runner-ledger mode and does not provision source objects
+   ↓ reviewed semantic receipt setup > retains the selected mode over an approval-limit replacement and unchanged metadata reload
+   ↓ reviewed semantic receipt setup > failed persistence does not replace the selection or permit stale confirmation after a later save
+   ↓ reviewed semantic receipt setup > includes the exact missing receipt infrastructure in the narrow administrator handoff
+   ↓ reviewed semantic receipt setup > requires actual receipt objects and writer verification before the separate execution review
+   × reviewed semantic receipt setup > saves the confirmed interactive runner_ledger selection and keeps it after reopening 2913ms
+     → function(...s) {
+    let n = T(t);
+    n.called = !0, n.callCount++, n.calls.push(s);
+    let d = n.next.shift(...<omitted>... } could not be cloned.
+   × reviewed semantic receipt setup > saves the confirmed interactive source_db selection and keeps it after reopening 2912ms
+     → function(...s) {
+    let n = T(t);
+    n.called = !0, n.callCount++, n.calls.push(s);
+    let d = n.next.shift(...<omitted>... } could not be cloned.
+   ↓ reviewed semantic receipt setup > declining the actual setup review leaves no saved selection
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > saves the confirmed interactive runner_ledger selection and keeps it after reopening
+ FAIL  apps/runner/src/semantic-receipt-setup.test.ts > reviewed semantic receipt setup > saves the confirmed interactive source_db selection and keeps it after reopening
+DataCloneError: function(...s) {
+    let n = T(t);
+    n.called = !0, n.callCount++, n.calls.push(s);
+    let d = n.next.shift(...<omitted>... } could not be cloned.
+ ❯ saveSemanticReceiptSelection apps/runner/src/semantic-receipt-setup.ts:111:18
+    109| 
+    110| export async function saveSemanticReceiptSelection(input: Parameters<t…
+    111|   const frozen = structuredClone(input);
+       |                  ^
+    112|   return withProjectAuthorityMutation(input.projectRoot, async held =>…
+    113|     const preview = await previewSemanticReceiptSelection({ ...frozen,…
+ ❯ reviewSemanticReceiptSetup apps/runner/src/semantic-receipt-setup.ts:182:9
+ ❯ apps/runner/src/semantic-receipt-setup.test.ts:305:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 9 skipped (11)
+   Start at  12:29:51
+   Duration  12.32s (transform 3.50s, setup 0ms, collect 6.12s, tests 5.83s, environment 0ms, prepare 70ms)
+

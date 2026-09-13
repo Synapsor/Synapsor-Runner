@@ -72,10 +72,10 @@ export async function readSavedActionJobReview(input: {
 
 /** Exact saved deployment passages for operator setup. These are explanatory
  * source statements, never executable requirements or permission to provision. */
-export async function readSavedExecutionRequirements(input: { projectRoot: string; boundaryName: string }) {
+export async function readSavedExecutionRequirements(input: { projectRoot: string; boundaryName: string; env?: NodeJS.ProcessEnv }) {
   const { loadPolicySources, activePolicySource, policyTextLines } = await import("./authoring-policy-source.js");
   let selected;
-  try { selected = (await readProjectReadAuthoring(input.projectRoot))?.selected; }
+  try { selected = (await readProjectReadAuthoring(input.projectRoot, input.env))?.selected; }
   catch (error) {
     if ((error as { code?: string }).code !== "POLICY_READ_AUTHORING_MISSING") throw error;
   }

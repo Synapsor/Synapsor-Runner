@@ -1,0 +1,21 @@
+
+> synapsor-runner-monorepo@1.8.0 build:runner-package /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+> tsc -b && node scripts/build-runner-package.mjs
+
+Semantic protocol schemas verified (6).
+
+  apps/runner/dist/runner.mjs  11.0mb ⚠️
+
+⚡ Done in 242ms
+
+  apps/runner/dist/authoring.mjs  193.0kb
+
+⚡ Done in 12ms
+
+  apps/runner/dist/shadow.mjs  529.1kb
+
+⚡ Done in 15ms
+
+  apps/runner/dist/runtime.mjs  1.6mb ⚠️
+
+⚡ Done in 89ms

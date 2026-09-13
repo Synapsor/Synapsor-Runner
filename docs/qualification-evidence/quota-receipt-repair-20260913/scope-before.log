@@ -1,0 +1,212 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+ ❯ apps/runner/src/action-policy-scope.test.ts (15 tests | 5 failed | 10 skipped) 28ms
+   × Action approval policy scope wording > does not derive a principal quota from a role glossary: Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six. 15ms
+     → expected true to be false // Object.is equality
+   × Action approval policy scope wording > does not derive a principal quota from a role glossary: Each principal represents an assigned coordinator. Each tenant means one organization. 2ms
+     → expected true to be false // Object.is equality
+   × Action approval policy scope wording > does not derive a principal quota from a role glossary: Each tenant is an organization; every principal is a person in that organization. 1ms
+     → expected true to be false // Object.is equality
+   × Action approval policy scope wording > does not derive a principal quota from a role glossary: Every principal refers to an assigned person. Across the Action Boundary allow at most six automatic approvals per day. 1ms
+     → expected true to be false // Object.is equality
+   × Action approval policy scope wording > retains actual independent limits after role definitions, including a shared later window 7ms
+     → expected [] to deeply equal ArrayContaining{…}
+   ↓ Action approval policy scope wording > honors an explicit later replacement of joint counters without changing unrelated limits
+   ↓ Action approval policy scope wording > preserves explicit joint counters instead of separate per-action allowances: Across both actions allow at most 10 automatic approvals overall and at most 3 per account in a rolling 24-hour period.
+   ↓ Action approval policy scope wording > preserves explicit joint counters instead of separate per-action allowances: The two actions share one joint maximum of 10 automatic approvals overall and 3 per account in a rolling 24-hour period; do not apply either limit separately to each action.
+   ↓ Action approval policy scope wording > does not invent joint limits from ambiguous or separate intent: Allow 10 automatic approvals overall and 3 per account in a rolling 24-hour period for this action.
+   ↓ Action approval policy scope wording > does not invent joint limits from ambiguous or separate intent: Across both actions use automatic approvals with reasonable shared limits.
+   ↓ Action approval policy scope wording > does not invent joint limits from ambiguous or separate intent: Across both actions allow at most 10 automatic approvals overall and 3 per customer in a rolling 24-hour period.
+   ↓ Action approval policy scope wording > does not invent joint limits from ambiguous or separate intent: Allow 10 automatic approvals overall and 3 per account in a rolling 24-hour period, not across both actions.
+   ↓ Action approval policy scope wording > distinguishes an account from a signed-in person and one exact object
+   ↓ Action approval policy scope wording > does not guess whether a bare customer means an account or a person
+   ↓ Action approval policy scope wording > preserves the exact account-wide maximum and rolling window
+(node:3423333) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/action-rule-model.test.ts (110 tests | 1 failed | 109 skipped) 38ms
+   ↓ structured Action draft schema > accepts the compiler-valid nested update fixture without merging component names
+   ↓ structured Action draft schema > accepts the compiler-valid nested insert fixture without merging component names
+   ↓ structured Action draft schema > retains nested policy predicates, shared limits and expression definitions
+   ↓ structured Action draft schema > rejects flattened phases, provider envelopes, unknown fields and invalid effect variants
+   ↓ conversational Action authoring tools > reviews an existing counter through a bounded host operation and restores it before resuming draft components
+   ↓ conversational Action authoring tools > does not repeat declined counter review or treat it as mapped
+   ↓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (extra)
+   ↓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (invalid_name)
+   ↓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (changed_read)
+   ↓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (wrong_field)
+   ↓ conversational Action authoring tools > revalidates retained partial components after a host-mediated Read edit without asking answered questions
+   ↓ conversational Action authoring tools > restores a reviewed private source before checkpoint validation and carries it through later components
+   ↓ conversational Action authoring tools > cannot turn a retained checkpoint into authority when the current catalog no longer supports its fields
+   ↓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (reviewed)
+   ↓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (declined)
+   ↓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (public_read_changed)
+   ↓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (unrelated_intent)
+   ↓ conversational Action authoring tools > does not repeat a declined source transfer or send its metadata into later model turns
+   ↓ conversational Action authoring tools > rejects an alleged private mapping that changes public reads
+   ↓ conversational Action authoring tools > qualifies live creation and a day-two edit through the same tools
+   ↓ conversational Action authoring tools > keeps generated repair diagnostics separate from original counter intent
+   × conversational Action authoring tools > preserves the saved role explanation without demanding an unrequested principal quota during revision 37ms
+     → ACTION_RULE_MODEL_CLARIFICATION_REQUIRED: The original shared limits validate unchanged.
+   ↓ conversational Action authoring tools > still enforces original scope and accepted operator decisions during a generated repair
+   ↓ conversational Action authoring tools > preserves setup pending an authoritative source without treating the operator answer as a source fact
+   ↓ conversational Action authoring tools > does not honor a fabricated pause or claim a failed checkpoint was saved
+   ↓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (valid)
+   ↓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (nonnullable)
+   ↓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (unknown_enum)
+   ↓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (timestamp_value)
+   ↓ conversational Action authoring tools > scopes private linked facts separately from subjects and every changed record (atomic=false)
+   ↓ conversational Action authoring tools > scopes private linked facts separately from subjects and every changed record (atomic=true)
+   ↓ conversational Action authoring tools > authors public discovery vocabulary through the same bounded rule tool
+   ↓ conversational Action authoring tools > changes discovery only with a declared revision scope (false)
+   ↓ conversational Action authoring tools > changes discovery only with a declared revision scope (true)
+   ↓ conversational Action authoring tools > repairs per-action counters using the original multi-action job without repeating the business question
+   ↓ conversational Action authoring tools > repairs an incomplete tool submission internally instead of asking the operator to submit draft components
+   ↓ conversational Action authoring tools > bounds repeated incomplete tool submissions without a human clarification loop
+   ↓ conversational Action authoring tools > continues saved drafting progress without asking for another operator turn: The reviewed relationship paths are prepared in the disabled draft; no authority is active.
+   ↓ conversational Action authoring tools > continues saved drafting progress without asking for another operator turn: The seat draft is partially prepared. The remaining business rules are not yet prepared.
+   ↓ conversational Action authoring tools > continues saved drafting progress without asking for another operator turn: The restoration draft is partially prepared; the prerequisite, 30-day rule and approval still need preparation.
+   ↓ conversational Action authoring tools > still asks a genuine business question after saving a component (structured: false)
+   ↓ conversational Action authoring tools > still asks a genuine business question after saving a component (structured: true)
+   ↓ conversational Action authoring tools > continues relationship-only progress without treating inspection or unchanged saves as new progress
+   ↓ conversational Action authoring tools > bounds progress-only continuation and retains the partial draft for resume
+   ↓ conversational Action authoring tools > offers honest compatible-provider recovery without extending retries (http://127.0.0.1:11434/v1)
+   ↓ conversational Action authoring tools > offers honest compatible-provider recovery without extending retries (https://provider.example/v1)
+   ↓ conversational Action authoring tools > keeps a joint-limit repair from changing the reviewer or other saved components
+   ↓ conversational Action authoring tools > streams business questions but defers a compiled recap only when policy review owns the turn (false)
+   ↓ conversational Action authoring tools > streams business questions but defers a compiled recap only when policy review owns the turn (true)
+   ↓ conversational Action authoring tools > allows an explicit read-only pivot but rejects an invented cancellation message
+   ↓ conversational Action authoring tools > repairs approval-only execution without another business question (resumed: false)
+   ↓ conversational Action authoring tools > repairs approval-only execution without another business question (resumed: true)
+   ↓ conversational Action authoring tools > discovers and prepares an exact composite link in chat, retaining it across pause/resume
+   ↓ conversational Action authoring tools > reports ambiguous, missing and unsupported relationships without guessing or granting access
+   ↓ conversational Action authoring tools > lets the model choose component order and repair compiler feedback without a user interruption
+   ↓ conversational Action authoring tools > retains draft state across more than two business questions and treats blank input as no decision
+   ↓ conversational Action authoring tools > finishes clarification of an already-correct baseline without requiring a fake edit or another answer
+   ↓ conversational Action authoring tools > edits only the selected component of an existing rule, without recreating its effect
+   ↓ conversational Action authoring tools > applies an explicitly revised input bound without losing other rule or approval settings
+   ↓ conversational Action authoring tools > repairs a caller-version mistake internally without asking the customer for a hidden value
+   ↓ conversational Action authoring tools > reopens a same-job draft after mistaken second-action creation (resume: false)
+   ↓ conversational Action authoring tools > reopens a same-job draft after mistaken second-action creation (resume: true)
+   ↓ conversational Action authoring tools > keeps genuine outcome collisions closed and gives a guided revision recovery
+   ↓ conversational Action authoring tools > keeps validity separate from automatic eligibility when revising one policy
+   ↓ conversational Action authoring tools > rejects stale or out-of-agenda reopen requests and can reuse an already-correct draft
+   ↓ conversational Action authoring tools > resumes disabled components after an interruption and rejects a changed structural binding
+   ↓ model-guided Action Rule authoring > labels retained operator statements separately in focused repair prompts
+   ↓ model-guided Action Rule authoring > uses four focused required tools and compiles one disabled semantic authority
+   ↓ model-guided Action Rule authoring > uses the same operation-aware Effect contract for Anthropic authoring
+   ↓ model-guided Action Rule authoring > infers one unambiguous UPDATE subject when a provider omits target_binding
+   ↓ model-guided Action Rule authoring > internally corrects an explicit UPDATE binding that points at another subject
+   ↓ model-guided Action Rule authoring > asks one business clarification rather than guessing between UPDATE subjects
+   ↓ model-guided Action Rule authoring > fails before Rule or approval drafting when UPDATE has no reviewed subject target
+   ↓ model-guided Action Rule authoring > keeps INSERT free of target_binding and retains Runner-derived deduplication
+   ↓ model-guided Action Rule authoring > normalizes an omitted empty approval-limit list before authority validation
+   ↓ model-guided Action Rule authoring > repairs a per-person counter that weakens an explicit customer-account limit
+   ↓ model-guided Action Rule authoring > repairs omitted automatic-policy limits from the stated intent without repeating them to the operator
+   ↓ model-guided Action Rule authoring > redirects a redundant tenant-wide limit question when tenant plus principal is already exact
+   ↓ model-guided Action Rule authoring > repairs a compiled policy that weakened an explicit tenant plus principal scope
+   ↓ model-guided Action Rule authoring > repairs crossed maxima and windows instead of accepting all requested values somewhere
+   ↓ model-guided Action Rule authoring > preserves slash-delimited tenant/principal accounting without inventing a tenant-only limit
+   ↓ model-guided Action Rule authoring > recognizes a trusted tenant plus principal pair as one combined accounting scope
+   ↓ model-guided Action Rule authoring > edits one exact reviewed baseline without letting the model rename its authority or target
+   ↓ model-guided Action Rule authoring > retains an automatic policy when a revision changes only its fallback quorum
+   ↓ model-guided Action Rule authoring > keeps all four model phases for an ambiguous multi-phase revision
+   ↓ model-guided Action Rule authoring > reconciles a newly reviewed trusted scope field before compiling the Action target
+   ↓ model-guided Action Rule authoring > asks a genuine business clarification and resumes the same focused phase
+   ↓ model-guided Action Rule authoring > permits one compiler-directed mechanical repair without broadening the effect
+   ↓ model-guided Action Rule authoring > routes an invalid effect-field bound back to the effect phase
+   ↓ model-guided Action Rule authoring > routes a rule expression binding error back to the rule phase
+   ↓ model-guided Action Rule authoring > turns an omitted required circuit breaker into one bounded business clarification
+   ↓ model-guided Action Rule authoring > binds model-supplied approval limit targets to the validated semantic outcome
+   ↓ model-guided Action Rule authoring > explains that lifetime approval counts are unsupported and accepts one exact rolling replacement
+   ↓ model-guided Action Rule authoring > keeps a second missing approval breaker in the same bounded model conversation
+   ↓ model-guided Action Rule authoring > redirects database-mechanics questions to the model instead of burdening the operator
+   ↓ model-guided Action Rule authoring > keeps reviewer and rolling-count relationship questions behind Runner
+   ↓ model-guided Action Rule authoring > keeps the proposal ledger out of private source verification bindings
+   ↓ model-guided Action Rule authoring > keeps authenticated ownership in trusted scope instead of asking for another rule field
+   ↓ model-guided Action Rule authoring > answers approval-policy separation mechanics without interrupting the operator
+   ↓ model-guided Action Rule authoring > does not ask the operator for an unshown accepted binding name
+   ↓ model-guided Action Rule authoring > adds source identity needed for deterministic derivation without asking the operator
+   ↓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: What validated Verification binding and exact field represent the required billing reviewer?
+   ↓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: What is the fixed reviewer-role label for a warehouse manager (for example, warehouse_manager)?
+   ↓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: What fixed reviewed reviewer-role label should represent a human warehouse manager?
+   ↓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: Runner requires a fixed control-store reviewer-role label; please provide the established label.
+   ↓ model-guided Action Rule authoring > redirects derived-expression mechanics while preserving two genuine business clarifications
+   ↓ model-guided Action Rule authoring > names the final unresolved business question when the bounded dialogue is exhausted
+   ↓ model-guided Action Rule authoring > lets the model repair one refused required-tool payload before completing the phase
+   ↓ model-guided Action Rule authoring > derives internal outcome names without asking the operator
+   ↓ model-guided Action Rule authoring > uses a flat status envelope for OpenAI-compatible authoring while retaining Runner validation
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/action-policy-scope.test.ts > Action approval policy scope wording > does not derive a principal quota from a role glossary: Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.
+ FAIL  apps/runner/src/action-policy-scope.test.ts > Action approval policy scope wording > does not derive a principal quota from a role glossary: Each principal represents an assigned coordinator. Each tenant means one organization.
+ FAIL  apps/runner/src/action-policy-scope.test.ts > Action approval policy scope wording > does not derive a principal quota from a role glossary: Each tenant is an organization; every principal is a person in that organization.
+ FAIL  apps/runner/src/action-policy-scope.test.ts > Action approval policy scope wording > does not derive a principal quota from a role glossary: Every principal refers to an assigned person. Across the Action Boundary allow at most six automatic approvals per day.
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ apps/runner/src/action-policy-scope.test.ts:17:97
+     15|     "Every principal refers to an assigned person. Across the Action B…
+     16|   ])("does not derive a principal quota from a role glossary: %s", (te…
+     17|     expect(explicitTrustedPolicyScopes(text).some(scope => scope.scope…
+       |                                                                                                 ^
+     18|   });
+     19| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  apps/runner/src/action-policy-scope.test.ts > Action approval policy scope wording > retains actual independent limits after role definitions, including a shared later window
+AssertionError: expected [] to deeply equal ArrayContaining{…}
+
+- Expected
++ Received
+
+- ArrayContaining [
+-   ObjectContaining {
+-     "maximum": 8,
+-     "scope": "tenant",
+-     "window_seconds": 86400,
+-   },
+-   ObjectContaining {
+-     "maximum": 2,
+-     "scope": "tenant_principal",
+-     "window_seconds": 86400,
+-   },
+- ]
++ []
+
+ ❯ apps/runner/src/action-policy-scope.test.ts:23:40
+     21|     const text = "Each principal is a person. Each tenant is an organi…
+     22|     expect(explicitTrustedPolicyScopes(text).map(scope => scope.scope)…
+     23|     expect(explicitPolicyLimits(text)).toEqual(expect.arrayContaining([
+       |                                        ^
+     24|       expect.objectContaining({ scope: "tenant", maximum: 8, window_se…
+     25|       expect.objectContaining({ scope: "tenant_principal", maximum: 2,…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  apps/runner/src/action-rule-model.test.ts > conversational Action authoring tools > preserves the saved role explanation without demanding an unrequested principal quota during revision
+Error: ACTION_RULE_MODEL_CLARIFICATION_REQUIRED: The original shared limits validate unchanged.
+ ❯ generateModelActionRuleDraft apps/runner/src/action-rule-model.ts:749:40
+    747|     continuingDraftInternally = false;
+    748|     rememberResponse();
+    749|     if (!input.askClarification) throw new Error(`ACTION_RULE_MODEL_CL…
+       |                                        ^
+    750|     const answer = await input.askClarification(response);
+    751|     if (answer === undefined) throw new Error("ACTION_RULE_MODEL_DRAFT…
+ ❯ apps/runner/src/action-rule-model.test.ts:354:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  6 failed | 119 skipped (125)
+   Start at  10:59:09
+   Duration  2.29s (transform 1.20s, setup 0ms, collect 1.97s, tests 66ms, environment 1ms, prepare 239ms)
+

@@ -1,0 +1,17 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3487148) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/semantic-receipt-setup.test.ts (5 tests) 14456ms
+   ✓ reviewed semantic receipt setup > requires a selection instead of reporting semantic source writes not applicable  2557ms
+   ✓ reviewed semantic receipt setup > previews, confirms and reloads a selection without changing active execution or source bindings  2727ms
+   ✓ reviewed semantic receipt setup > keeps exactly one selection under competing confirmations and refuses stale bindings  3938ms
+   ✓ reviewed semantic receipt setup > preserves an explicitly reviewed Runner-ledger mode and does not provision source objects  2605ms
+   ✓ reviewed semantic receipt setup > declining the actual setup review leaves no saved selection  2627ms
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  11:25:24
+   Duration  18.42s (transform 1.94s, setup 0ms, collect 3.52s, tests 14.46s, environment 0ms, prepare 166ms)
+

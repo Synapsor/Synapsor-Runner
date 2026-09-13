@@ -1,0 +1,13 @@
+
+> synapsor-runner-monorepo@1.8.0 typecheck /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+> tsc -b --pretty false
+
+apps/runner/src/action-rule-model.test.ts(406,14): error TS18048: 'restarted' is possibly 'undefined'.
+apps/runner/src/action-rule-model.test.ts(407,14): error TS18048: 'restarted' is possibly 'undefined'.
+apps/runner/src/semantic-receipt-setup.test.ts(273,28): error TS2352: Conversion of type '{ schema: string; name: string; type: "table"; columns: never[]; primary_key: string[]; role_posture: { privileges: { select: true; insert: true; update: true; delete: false; truncate: false; references: false; trigger: false; }; current_role_is_owner: false; current_role_can_assume_owner: false; }; }' to type 'TableInfo' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ schema: string; name: string; type: "table"; columns: never[]; primary_key: string[]; role_posture: { privileges: { select: true; insert: true; update: true; delete: false; truncate: false; references: false; trigger: false; }; current_role_is_owner: false; current_role_can_assume_owner: false; }; }' is missing the following properties from type 'TableInfo': writable, unique_constraints, foreign_keys, indexes, suggestions
+apps/runner/src/semantic-receipt-setup.test.ts(279,34): error TS2345: Argument of type '{ ok: false; }' is not assignable to parameter of type '{ ok: boolean; details: Record<string, unknown>; }'.
+  Property 'details' is missing in type '{ ok: false; }' but required in type '{ ok: boolean; details: Record<string, unknown>; }'.
+apps/runner/src/verified-action-execution-review.test.ts(270,89): error TS2353: Object literal may only specify known properties, and 'receipts' does not exist in type 'SupervisedWriterPostureAssessment'.
+apps/runner/src/verified-action-execution-review.test.ts(292,76): error TS2353: Object literal may only specify known properties, and 'receipts' does not exist in type 'SupervisedWriterPostureAssessment'.
+ ELIFECYCLE  Command failed with exit code 1.

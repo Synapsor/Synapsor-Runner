@@ -1,0 +1,58 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+ ❯ apps/runner/src/action-policy-scope.test.ts (23 tests | 1 failed | 22 skipped) 13ms
+   ↓ Action approval policy scope wording > does not derive a principal quota from a role glossary: Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.
+   ↓ Action approval policy scope wording > does not derive a principal quota from a role glossary: Each principal represents an assigned coordinator. Each tenant means one organization.
+   ↓ Action approval policy scope wording > does not derive a principal quota from a role glossary: Each tenant is an organization; every principal is a person in that organization.
+   ↓ Action approval policy scope wording > does not derive a principal quota from a role glossary: Every principal refers to an assigned person. Across the Action Boundary allow at most six automatic approvals per day.
+   ↓ Action approval policy scope wording > retains actual independent limits after role definitions, including a shared later window
+   ↓ Action approval policy scope wording > keeps the real quota set when definitions are reordered: Each principal is one assigned operator. Allow at most 8 automatic approvals per tenant and 2 per principal in a rolling 24-hour window.
+   ↓ Action approval policy scope wording > keeps the real quota set when definitions are reordered: Allow at most 8 automatic approvals per tenant and 2 per principal in a rolling 24-hour window. Every principal represents a person; each tenant means an organization.
+   ↓ Action approval policy scope wording > keeps the real quota set when definitions are reordered: Each tenant means an organization. In a rolling 24-hour window, each principal is allowed at most 2 automatic approvals; allow at most 8 per tenant.
+   × Action approval policy scope wording > does not borrow a tenant quota from the remainder of a principal definition 11ms
+     → expected [ 'tenant_principal', 'tenant' ] to deeply equal [ 'tenant' ]
+   ↓ Action approval policy scope wording > keeps a real principal quota despite later glossary and unanswered scope-change questions
+   ↓ Action approval policy scope wording > retains the exact unresolved scope alternative until a concrete operator clarification
+   ↓ Action approval policy scope wording > honors an exact scoped window replacement while retaining another scope's window
+   ↓ Action approval policy scope wording > does not turn explicitly negated principal accounting into a quota
+   ↓ Action approval policy scope wording > honors an explicit later replacement of joint counters without changing unrelated limits
+   ↓ Action approval policy scope wording > preserves explicit joint counters instead of separate per-action allowances: Across both actions allow at most 10 automatic approvals overall and at most 3 per account in a rolling 24-hour period.
+   ↓ Action approval policy scope wording > preserves explicit joint counters instead of separate per-action allowances: The two actions share one joint maximum of 10 automatic approvals overall and 3 per account in a rolling 24-hour period; do not apply either limit separately to each action.
+   ↓ Action approval policy scope wording > does not invent joint limits from ambiguous or separate intent: Allow 10 automatic approvals overall and 3 per account in a rolling 24-hour period for this action.
+   ↓ Action approval policy scope wording > does not invent joint limits from ambiguous or separate intent: Across both actions use automatic approvals with reasonable shared limits.
+   ↓ Action approval policy scope wording > does not invent joint limits from ambiguous or separate intent: Across both actions allow at most 10 automatic approvals overall and 3 per customer in a rolling 24-hour period.
+   ↓ Action approval policy scope wording > does not invent joint limits from ambiguous or separate intent: Allow 10 automatic approvals overall and 3 per account in a rolling 24-hour period, not across both actions.
+   ↓ Action approval policy scope wording > distinguishes an account from a signed-in person and one exact object
+   ↓ Action approval policy scope wording > does not guess whether a bare customer means an account or a person
+   ↓ Action approval policy scope wording > preserves the exact account-wide maximum and rolling window
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/action-policy-scope.test.ts > Action approval policy scope wording > does not borrow a tenant quota from the remainder of a principal definition
+AssertionError: expected [ 'tenant_principal', 'tenant' ] to deeply equal [ 'tenant' ]
+
+- Expected
++ Received
+
+  [
++   "tenant_principal",
+    "tenant",
+  ]
+
+ ❯ apps/runner/src/action-policy-scope.test.ts:41:35
+     39|   it("does not borrow a tenant quota from the remainder of a principal…
+     40|     expect(explicitTrustedPolicyScopes("Each principal is an assigned …
+     41|       .map(entry => entry.scope)).toEqual(["tenant"]);
+       |                                   ^
+     42|   });
+     43| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 22 skipped (23)
+   Start at  11:35:08
+   Duration  469ms (transform 102ms, setup 0ms, collect 88ms, tests 13ms, environment 0ms, prepare 115ms)
+

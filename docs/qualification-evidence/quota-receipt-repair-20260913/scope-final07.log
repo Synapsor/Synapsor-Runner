@@ -1,0 +1,20 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+ ✓ apps/runner/src/action-policy-scope.test.ts (23 tests) 28ms
+(node:3512017) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3512029) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3512023) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/boundary-authoring-resume.test.ts (43 tests) 190ms
+ ✓ apps/runner/src/boundary-authoring-resume-concurrency.test.ts (12 tests) 604ms
+   ✓ authoring resume filesystem compare-and-save > serializes real independent processes using the same saved revision and canonical project alias  461ms
+ ✓ apps/runner/src/action-rule-model.test.ts (113 tests | 1 skipped) 1220ms
+
+ Test Files  4 passed (4)
+      Tests  190 passed | 1 skipped (191)
+   Start at  11:35:39
+   Duration  4.42s (transform 1.97s, setup 0ms, collect 4.35s, tests 2.04s, environment 1ms, prepare 438ms)
+
